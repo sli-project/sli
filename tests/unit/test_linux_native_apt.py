@@ -9,6 +9,8 @@ import pytest
 
 from deploy.linux import native_apt as apt
 
+pytestmark = pytest.mark.posix_only
+
 FPR = "A" * 40
 
 

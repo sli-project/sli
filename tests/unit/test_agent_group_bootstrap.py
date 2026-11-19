@@ -57,6 +57,7 @@ def batch():
     return cur, token, submission
 
 
+@pytest.mark.posix_only
 def test_msi_pending_restart_independent_attestation_personal_profile_and_signal(tmp_path, lifecycle):
     cur = BootstrapCursor()
     token = groups.create_token(cur, {"domain_id": 1, "ou_entity_ids": [2], "computer_entity_ids": [3],

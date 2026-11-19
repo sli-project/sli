@@ -74,6 +74,7 @@ def test_invalid_passwords_have_fixed_errors(password):
         subject.encrypt_password(password, CONTEXT, os.urandom(32))
 
 
+@pytest.mark.posix_only
 def test_key_reader_requires_private_file_and_rejects_all_inline_values(tmp_path):
     key = os.urandom(32)
     path = tmp_path / subject.MASTER_KEY_REF

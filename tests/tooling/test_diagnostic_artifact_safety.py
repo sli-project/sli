@@ -68,7 +68,9 @@ def test_partial_capture_allocation_cleans_up(tmp_path, monkeypatch):
 @pytest.mark.parametrize("tracked", [False, True])
 def test_git_enumeration_scans_real_unusual_names(tmp_path, tracked):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    names = ['кириллица.txt', 'line\nbreak.txt', 'quote"name.txt', ' space .txt']
+    names = ['кириллица.txt', ' space .txt', "single'quote.txt"]
+    if os.name != 'nt':
+        names.extend(['line\nbreak.txt', 'quote"name.txt'])
     for name in names:
         (tmp_path / name).write_text("-----BEGIN " + "PRIVATE KEY-----", encoding="utf-8")
     if tracked:

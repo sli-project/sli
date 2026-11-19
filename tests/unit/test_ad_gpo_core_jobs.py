@@ -11,6 +11,8 @@ from server.sli.core import job_executor, job_queue, job_registry
 from server.sli.sources import ad_gpo_jobs, ad_snapshot_projection
 from tests.unit.test_core_job_queue import Connection
 
+pytestmark = pytest.mark.posix_only
+
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_ID = "00000000-0000-4000-8000-000000000501"
 
