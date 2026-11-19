@@ -238,9 +238,11 @@ def private_postgres(tmp_path):
 
     sql.port = port
     sql.tools = tools
+    # PostgreSQL resolves a relative socket directory inside its private data directory.
+    socket_args = [] if os.name == "nt" else ["-k", "."]
     with (tmp_path / "postgres.log").open("w") as log:
         process = subprocess.Popen([str(tools / ("postgres" + suffix)), "-D", str(data),
-                                    "-h", "127.0.0.1", "-p", str(port)],
+                                    "-h", "127.0.0.1", "-p", str(port), *socket_args],
                                    stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         try:
             for _ in range(100):

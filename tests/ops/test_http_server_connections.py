@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import signal
 import socket
 import ssl
 import sys
@@ -14,7 +15,44 @@ import pytest
 from server.api import http_server
 from server.sli.core import app_config
 from server.sli.core.app_config import AdLogConfig
-from server.sli.ops.shutdown import http_shutdown
+from server.sli.ops import shutdown
+
+
+@pytest.fixture
+def raise_http_sigterm(monkeypatch):
+    if sys.platform == 'win32':
+        # Exercise the Linux shutdown path without changing the process-wide os.name.
+        monkeypatch.setattr(shutdown, 'os', SimpleNamespace(name='posix'))
+    previous = signal.getsignal(signal.SIGTERM)
+
+    def deliver():
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler) and handler is not previous
+        signal.raise_signal(signal.SIGTERM)
+
+    return deliver
+
+
+@pytest.fixture
+def shutdown_socketpair():
+    request, peer = socket.socketpair()
+    with request, peer:
+        if sys.platform == 'win32':
+            # Winsock's local SHUT_RD does not wake the pending receive. A peer
+            # half-close delivers the EOF that the Linux reader gets from SHUT_RD.
+            class Request:
+                def __getattr__(self, name):
+                    return getattr(request, name)
+
+                def shutdown(self, how):
+                    if how == socket.SHUT_RD:
+                        peer.shutdown(socket.SHUT_WR)
+                    else:
+                        request.shutdown(how)
+
+            yield Request(), peer
+        else:
+            yield request, peer
 
 
 @pytest.mark.parametrize('dual_stack', [False, True])
@@ -38,14 +76,12 @@ def test_wildcard_listener_accepts_loopback_and_normalizes_proxy_peer(monkeypatc
 
 @pytest.mark.parametrize("payload", [b"", b"GET / HTTP/1.0\r\nHost: incomplete", b"GET /"])
 @pytest.mark.parametrize("tls", [False, True])
-def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls):
-    import signal
-
+def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls, raise_http_sigterm, shutdown_socketpair):
     wrapped = []
     if tls:
         server.server.adlog_tls_context = _fake_tls_context(lambda _: None, wrapped)
-    request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    request, peer = shutdown_socketpair
+    with shutdown.http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         try:
@@ -53,7 +89,7 @@ def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls)
             if payload:
                 peer.sendall(payload)
             assert server.started.wait(2)
-            signal.raise_signal(signal.SIGTERM)
+            raise_http_sigterm()
             serving.join(timeout=2)
             assert not serving.is_alive()
             for worker in server.workers:
@@ -67,9 +103,7 @@ def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls)
             serving.join(timeout=2)
 
 
-def test_sigterm_wakes_pending_tls_handshake(server):
-    import signal
-
+def test_sigterm_wakes_pending_tls_handshake(server, raise_http_sigterm, shutdown_socketpair):
     entered = threading.Event()
 
     def handshake(request):
@@ -77,14 +111,14 @@ def test_sigterm_wakes_pending_tls_handshake(server):
         assert request.recv(1) == b""
 
     server.server.adlog_tls_context = _fake_tls_context(handshake, [])
-    request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    request, peer = shutdown_socketpair
+    with shutdown.http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         try:
             server.server.process_request(request, ("192.0.2.1", 1234))
             assert entered.wait(2)
-            signal.raise_signal(signal.SIGTERM)
+            raise_http_sigterm()
             serving.join(timeout=2)
             for worker in server.workers:
                 worker.join(timeout=2)
@@ -97,9 +131,7 @@ def test_sigterm_wakes_pending_tls_handshake(server):
             serving.join(timeout=2)
 
 
-def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkeypatch):
-    import signal
-
+def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkeypatch, raise_http_sigterm):
     started, committed, release, closed = (threading.Event() for _ in range(4))
 
     def import_packet(handler):
@@ -110,7 +142,7 @@ def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkey
 
     monkeypatch.setattr(http_server.RequestHandler, "_do_POST", import_packet)
     request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    with request, peer, shutdown.http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         closer = None
@@ -118,7 +150,7 @@ def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkey
             server.server.process_request(request, ("192.0.2.1", 1234))
             peer.sendall(b"POST /api/v1/agent/packets HTTP/1.0\r\nContent-Length: 0\r\n\r\n")
             assert started.wait(2)
-            signal.raise_signal(signal.SIGTERM)
+            raise_http_sigterm()
             serving.join(timeout=2)
             assert not serving.is_alive() and not committed.is_set()
 

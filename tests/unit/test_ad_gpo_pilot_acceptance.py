@@ -7,6 +7,7 @@ import pytest
 
 from scripts.maintenance import ad_gpo_pilot_acceptance as subject
 
+pytestmark = pytest.mark.posix_only
 
 RUN = "10000000-0000-4000-8000-000000000001"
 INSTALLATION = "20000000-0000-4000-8000-000000000001"

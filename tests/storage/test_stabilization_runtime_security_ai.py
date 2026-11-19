@@ -4,6 +4,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from tests.support.pg_fake import FakePgStore
 
 
@@ -102,6 +104,7 @@ def test_redaction_leak_checker_blocks_sensitive_payload() -> None:
     assert ok['status'] == 'ok'
 
 
+@pytest.mark.posix_only
 def test_runtime_storage_cleanup_can_zip_archive_and_explain_exclusions(tmp_path: Path) -> None:
     from server.sli.storage.runtime_storage import apply_raw_cleanup_plan, build_raw_cleanup_plan, get_runtime_storage_summary
 

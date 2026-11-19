@@ -13,6 +13,8 @@ from deploy.linux import backup, backup_policy, sli_update
 from deploy.linux import backup_restore_check as drill
 from tests.unit.test_linux_backup import STAMP
 
+pytestmark = pytest.mark.posix_only
+
 GIB = 1024**3
 
 

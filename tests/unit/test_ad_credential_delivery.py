@@ -27,6 +27,7 @@ def test_key_inventory_has_mandatory_backup_exclusion_and_api_delivery(tmp_path)
             sli_secrets.load_manifest(path)
 
 
+@pytest.mark.posix_only
 def test_ensure_requires_explicit_protected_import_and_never_regenerates(tmp_path, ownership):
     directory = tmp_path / 'secrets'
     with pytest.raises(sli_secrets.SecretError, match='protected_import_required'):
@@ -48,6 +49,7 @@ def test_ensure_requires_explicit_protected_import_and_never_regenerates(tmp_pat
         sli_secrets.ensure(directory, names=[MASTER_KEY_REF], imports={MASTER_KEY_REF: imported}, replace=True)
 
 
+@pytest.mark.posix_only
 def test_import_rejects_group_readable_key_without_changing_existing_files(tmp_path, ownership):
     imported = tmp_path / 'imported'
     imported.write_bytes(base64.b64encode(os.urandom(32)))
@@ -119,6 +121,7 @@ def test_native_backup_rejects_manifest_that_reenables_key_backup(tmp_path, monk
         native_backup.secret_sources()
 
 
+@pytest.mark.posix_only
 def test_entrypoint_requires_private_tmpfs_before_publishing_key(tmp_path, monkeypatch):
     from deploy.linux import ad_credentials_entrypoint as entry
     destination = tmp_path / 'private' / MASTER_KEY_REF
@@ -151,6 +154,7 @@ def test_entrypoint_requires_private_tmpfs_before_publishing_key(tmp_path, monke
         entry.deliver()
 
 
+@pytest.mark.posix_only
 def test_entrypoint_drops_groups_gid_uid_before_exec_and_preserves_api_arguments(monkeypatch):
     from deploy.linux import ad_credentials_entrypoint as entry
     events = []
@@ -169,6 +173,7 @@ def test_entrypoint_drops_groups_gid_uid_before_exec_and_preserves_api_arguments
         ('exec', ['-m', 'deploy.linux.entrypoint', 'api', '--host', '0.0.0.0', '--port', '8443'])]
 
 
+@pytest.mark.posix_only
 def test_entrypoint_never_starts_consumer_after_delivery_failure(monkeypatch, capsys):
     from deploy.linux import ad_credentials_entrypoint as entry
     monkeypatch.setattr(entry.sys, 'argv', ['entrypoint', 'api'])
