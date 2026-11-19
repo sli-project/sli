@@ -72,7 +72,8 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
             if (!acceptingConnections) throw new TimeoutException("Isolated PostgreSQL did not become ready");
             started = true;
         } else {
-            await ProcessAsync("pg_ctl", ct, "-D", Path.Combine(root, "data"), "-l", Path.Combine(root, "postgres.log"), "-o", $"-h {host} -p {port} -c unix_socket_directories= -c timezone=UTC -c logging_collector=on -c log_directory=log -c log_filename=p04.log", "-t", "10", "-w", "start");
+            // PostgreSQL resolves the socket path relative to this cluster's data directory.
+            await ProcessAsync("pg_ctl", ct, "-D", Path.Combine(root, "data"), "-l", Path.Combine(root, "postgres.log"), "-o", $"-h {host} -p {port} -k . -c timezone=UTC -c logging_collector=on -c log_directory=log -c log_filename=p04.log", "-t", "10", "-w", "start");
             started = true;
         }
         // The postmaster can accept sockets before a backend has completed

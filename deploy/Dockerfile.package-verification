@@ -8,7 +8,6 @@ COPY scripts/maintenance/release_package.py scripts/maintenance/apply_update.py 
 COPY scripts/package_project.py scripts/apply_project_zip.py scripts/package_admin_toolkit.py scripts/run_dc_log_pilot.py ./scripts/
 COPY scripts/manual_dc_audit ./scripts/manual_dc_audit/
 COPY scripts/dc_client ./scripts/dc_client/
-COPY docs/ADMINISTRATIVE_TOOLKIT.md ./docs/
 COPY frontend/package.json ./frontend/
 COPY frontend/src/main.tsx ./frontend/src/
 COPY package.json package-lock.json requirements.lock.txt ./
