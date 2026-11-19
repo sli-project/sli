@@ -495,7 +495,7 @@ def coordinator_unit():
     return None
 
 
-def setup_command(argv, *, cwd, env, watch, failure_codes=()):
+def setup_command(argv, *, cwd, env, watch, failure_codes=(), diagnose_failure=None):
     """Wait across the stdlib/runtime boundary using actual child progress.
 
     The writer is inherited only by verified native children; diagnostics and
@@ -529,6 +529,8 @@ def setup_command(argv, *, cwd, env, watch, failure_codes=()):
                 for code in ('operation_stalled', 'operation_deadline_exceeded'):
                     if code in lines or any('(reason_code=' + code + ')' in line for line in lines):
                         raise RuntimeError(code)
+                if diagnose_failure is not None:
+                    diagnose_failure(lines)
                 for line in reversed(lines):
                     if line in failure_codes:
                         raise RuntimeError(line)

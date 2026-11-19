@@ -58,6 +58,8 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         using var certificates = new Certificates();
         string trust = Path.Combine(fixture.Pg.Root, "synthetic-ca.txt");
         await File.WriteAllTextAsync(trust, certificates.Root.ExportCertificatePem() + "\n" + certificates.Issuer.ExportCertificatePem(), ct);
+        string installer = Path.Combine(fixture.Pg.Root, "synthetic-agent.msi");
+        await File.WriteAllTextAsync(installer, "synthetic package bytes", ct);
         using var transportTrust = new Sli.Server.Hosting.AgentTlsTrust(trust);
         var package = AgentPackageTests.Fixture()["cases"]!.AsArray().First(c => c!["error"] is null)!;
         string updateTrust = Path.Combine(fixture.Pg.Root, "synthetic-package-trust.json");
@@ -112,6 +114,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 ["Sli:AuthRequired"] = "1", ["Sli:AllowUnauthenticated"] = "0", ["Sli:AuthAllowInsecureHttp"] = "1",
                 ["Sli:ProjectRoot"] = root, ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "app-data"), ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "app-logs"),
                 ["Sli:AgentUpdateTrustFile"] = updateTrust,
+                ["Sli:AgentServerCaFile"] = trust, ["Sli:AgentInstallerPath"] = installer,
                 ["Sli:Storage:HistoryReadMode"] = "disabled", ["Sli:Storage:ArchiveRoot"] = Path.Combine(fixture.Pg.Root, "archive"),
                 ["Sli:OwnerSetup"] = "0", ["Sli:HttpRatePerMinute"] = "5000", ["urls"] = "http://127.0.0.1:0"
             }))
@@ -229,6 +232,9 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/agent/removal-result", new { command_id = removal?["agent_removal"]?["command_id"]?.ToString(), state = "state_cleaned", reason = (string?)null }, asClient: agentClient);
         var enrollment = await Check("/api/v1/admin/agent-tokens", new { host_id = agent, key_fingerprint = new string('a',64) });
         await Check("/api/v1/admin/agent-tokens/revoke", new { id = enrollment?["id"]?.ToString() ?? agent });
+        var consoleToken = await Check("/api/v1/admin/agent-console-tokens", new { host_limit = 2 });
+        string consoleTokenId = consoleToken?["id"]?.ToString() ?? agent;
+        await Check("/api/v1/admin/agent-console-tokens/revoke", new { id = consoleTokenId });
         await Check("/api/v1/admin/agents/rights-probe", new { agent_id = agent });
         await Check("/api/v1/admin/agents/policy", new { agent_id = agent, expected_revision = 1, collection_policy = new { state = "paused" } });
         await Check("/api/v1/admin/agents/modules", new { agent_id = agent, module_id = "sli.workstations", enabled = false, config = new { } });

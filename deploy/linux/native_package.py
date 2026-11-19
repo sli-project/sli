@@ -33,23 +33,35 @@ def write(root, name, body, mode=0o644):
     path.chmod(mode)
 
 
-def control(root, name, version, depends, description, *, protected=False):
+def control(root, name, version, depends, description):
     write(root, "DEBIAN/control", f"Package: {name}\nVersion: {version}\nArchitecture: amd64\n"
           "Maintainer: SLI packaging <packages@example.invalid>\nSection: admin\nPriority: optional\n"
-          + ("Protected: yes\n" if protected else "")
           + (f"Depends: {depends}\n" if depends else "") + f"Description: {description}\n")
+
+
+def maintainer_header():
+    preinstall = Path(__file__).with_name('native_preinstall.py').read_text(encoding='utf-8')
+    return ("#!/bin/sh\nset -eu\numask 022\nsli_preinstall() {\n"
+            '/usr/bin/python3 -I -B - "$@" <<\'SLI_BYTECODE\'\n' + preinstall +
+            '\nSLI_BYTECODE\n}\nsli_clean_bytecode() {\n  sli_preinstall --clean-recovery "$accepted"\n}\n')
+
+
+def retain_recovery_prerm():
+    return (maintainer_header() + 'case "$1" in\n'
+            ' remove|deconfigure) recovery=$(sli_preinstall --recovery-kind)\n'
+            '  if test "$recovery" = accepted; then\n'
+            '   logger -t sli-setup native_host_still_installed\n'
+            "   echo 'SLI database state is retained. Keep the SLI host and rollback packages for recovery.' >&2\n"
+            '   exit 1\n  fi ;;\nesac\n')
 
 
 def scripts(release, version):
     """preinst must work before the new host/release is unpacked."""
-    # Carry stdlib cleanup in the package: the accepted beta's sealed helper
-    # cannot be patched, and the new sli-host need not have unpacked yet.
-    preinstall = Path(__file__).with_name('native_preinstall.py').read_text(encoding='utf-8')
-    header = ("#!/bin/sh\nset -eu\numask 022\nsli_preinstall() {\n"
-              '/usr/bin/python3 -I -B - "$@" <<\'SLI_BYTECODE\'\n' + preinstall +
-              '\nSLI_BYTECODE\n}\nsli_clean_bytecode() {\n  sli_preinstall --clean-recovery "$accepted"\n}\n')
+    header = maintainer_header()
     guard = (header + f'case "$1" in install|upgrade) sli_preinstall --package-install "$1" {release} ;; esac\n' + "case \"$1\" in\n"
              f"  upgrade) test \"${{2:-}}\" = '{version}' || {{\n"
+             '    recovery=$(sli_preinstall --recovery-kind)\n'
+             '    if test "$recovery" = unfinished; then exit 0; fi\n'
              "    accepted=$(readlink -f /opt/sli/current)\n"
              "    sli_clean_bytecode\n"
              f"    /usr/bin/python3 -I -B \"/var/lib/sli/recovery/${{accepted##*/}}/native_upgrade.py\" dispatch check-package '{version}'; }} ;;\n"
@@ -60,17 +72,20 @@ def scripts(release, version):
                      # Marker comes from this package's preinst install, including
                      # config-files state after remove. Never use old code here.
                      f"  configure) if test -e /var/lib/sli/state/reuse-package.json; then exec /usr/sbin/sli-native-install stage {release}; fi\n"
-                     "    if test -e /var/lib/sli/state/installed.json; then\n"
+                     '    recovery=$(sli_preinstall --recovery-kind)\n'
+                     '    if test "$recovery" = accepted; then\n'
                      "    accepted=$(readlink -f /opt/sli/current)\n"
                      "    sli_clean_bytecode\n"
                      f"    exec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py dispatch configure-package {release} '{version}'\n"
                      f"    else exec /usr/sbin/sli-native-install stage {release}; fi ;;\n"
                      "  abort-upgrade|abort-remove|abort-deconfigure) exit 0 ;;\n  *) exit 1 ;;\nesac\n"),
         "prerm": (header + "case \"$1\" in\n"
-                  "  remove|deconfigure) exec /usr/sbin/sli-native-install remove ;;\n"
+                  '  remove|deconfigure) exec /usr/sbin/sli-native-install remove ;;\n'
                   "  upgrade|failed-upgrade) target=${2:-}\n"
                   f"    if test \"$1\" = failed-upgrade; then target='{version}'; fi\n"
                   f"    if test \"$1\" = failed-upgrade || test \"$target\" != '{version}'; then\n"
+                  '    recovery=$(sli_preinstall --recovery-kind)\n'
+                  '    if test "$recovery" = unfinished; then exit 0; fi\n'
                   "    accepted=$(readlink -f /opt/sli/current)\n"
                   "    sli_clean_bytecode\n"
                   "    exec /usr/bin/python3 -I -B \"/var/lib/sli/recovery/${accepted##*/}/native_upgrade.py\" dispatch prepare-package \"$target\"; fi ;;\n"
@@ -145,12 +160,7 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         write(host, "usr/sbin/sli-cold-tables", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_host.py cold-tables \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-backup", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-upgrade", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py launch \"$@\"\n", 0o755)
-        # Host removal must not leave live services without their privileged CLI.
-        write(host, "DEBIAN/prerm", "#!/bin/sh\nset -eu\numask 022\ncase \"$1\" in\n"
-              " remove|deconfigure) test ! -e /var/lib/sli/state/installed.json || {\n"
-              " logger -t sli-setup native_host_still_installed\n"
-              " echo 'SLI database state is retained. Keep sli-host for data recovery and management.' >&2; exit 1; } ;;\n"
-              "esac\n", 0o755)
+        write(host, "DEBIAN/prerm", retain_recovery_prerm(), 0o755)
         payload = staging / ("sli-release-" + release)
         control(payload, payload.name, version,
                 f"sli-runtime-{runtime} (= {runtime_version}), sli-server-dotnet (= {version})",
@@ -173,8 +183,10 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             # The retained immutable release pins its own exact runtime. Its ID
             # need not equal that runtime's ID (compatible releases may share it).
             dependencies += [f"sli-release-{previous[0]} (= {previous[1]})"]
-        # A real dependency, protected from autoremove, keeps recovery after removing sli.
-        control(hold, hold.name, version, ", ".join(dependencies), "SLI retained application and recovery packages", protected=True)
+        # Retain the recovery dependency for an accepted database, while an
+        # unfinished first start can uninstall the complete kit.
+        control(hold, hold.name, version, ", ".join(dependencies), "SLI retained application and recovery packages")
+        write(hold, "DEBIAN/prerm", retain_recovery_prerm(), 0o755)
         public = staging / "sli"
         control(public, "sli", version, f"sli-host (= {version}), sli-rollback-hold (= {version}), "
                 f"{payload.name} (= {version}), postgresql-18, postgresql-client-18",

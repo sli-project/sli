@@ -35,7 +35,7 @@ def test_directory_rejects_unsupported_filesystem(directory, monkeypatch, filesy
 def test_directory_refuses_low_space_before_creating_data(directory, monkeypatch):
     machine, source = directory
     monkeypatch.setattr(machine, 'backup_free', lambda path: 19 * 1024**3)
-    with pytest.raises(host.HostError, match='native_database_space_insufficient'):
+    with pytest.raises(RuntimeError, match='native_database_space_insufficient'):
         machine.validate_database_directory('/var/lib/sli-db')
     assert not list(source.iterdir())
 
