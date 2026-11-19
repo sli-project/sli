@@ -178,7 +178,9 @@ jobs:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_INSTALL_DIR: ${{ github.workspace }}/artifacts/dotnet
-      PGTZ: UTC
+      # Owned-database admission rejects inherited PG* settings. The test
+      # clusters configure their PostgreSQL timezone independently.
+      TZ: UTC
       SLI_SNAPSHOT_DECIMAL_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-decimal-vectors.json
       SLI_SNAPSHOT_CHUNK_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-chunk-vectors.json
     steps:
