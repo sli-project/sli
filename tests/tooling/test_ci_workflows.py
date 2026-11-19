@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -223,6 +224,26 @@ def test_disposable_postgres_jobs_keep_shared_gates() -> None:
     assert jobs[0] == jobs[1]
 
 
+@pytest.mark.parametrize("name", WORKFLOWS)
+def test_linux_checks_cover_windows_deselections(name: str) -> None:
+    jobs = workflow(name)["jobs"]
+    windows = jobs["tests" if name == "pr-gate.yml" else "backend"]
+    linux, = [
+        step for step in jobs["postgres"]["steps"]
+        if step.get("name") == "Linux unit and filesystem contracts"
+    ]
+    assert "if" not in linux and "continue-on-error" not in linux
+    deselected = {
+        path
+        for step in windows["steps"]
+        for path in re.findall(r"--deselect=(\S+)", step.get("run", ""))
+    }
+    linux_run = linux["run"]
+    prefix = re.search(r"grep '\^([^']+)'", linux_run)
+    assert prefix and prefix[1] in deselected
+    pytest_args = shlex.split(linux_run.split("python -m pytest", 1)[1].replace("\\\n", " "))
+    assert "@.ci-shipped-linux-unit-tests.txt" in pytest_args
+    assert deselected - {prefix[1]} == {arg for arg in pytest_args if arg.startswith("tests/")}
 
 
 @pytest.mark.parametrize("name", WORKFLOWS)

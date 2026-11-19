@@ -83,9 +83,9 @@ it.each(["viewer", "admin"])("creates a user with the entered name, password and
   const save = within(dialog).getByRole("button", { name: "Сохранить" });
   expect((save as HTMLButtonElement).disabled).toBe(true);
   expect(within(dialog).queryByRole("option", { name: "Оператор" })).toBeNull();
-  await user.type(within(dialog).getByLabelText("Имя"), "synthetic.colleague");
+  fireEvent.change(within(dialog).getByLabelText("Имя"), { target: { value: "synthetic.colleague" } });
   await user.selectOptions(within(dialog).getByLabelText("Роль"), role);
-  await user.type(within(dialog).getByLabelText("Пароль"), "Synthetic-only-pass-69");
+  fireEvent.change(within(dialog).getByLabelText("Пароль"), { target: { value: "Synthetic-only-pass-69" } });
   await user.click(save);
   await within(dialog).findByRole("button", { name: "Скопировать" });
   expect(mutations()).toHaveLength(1);

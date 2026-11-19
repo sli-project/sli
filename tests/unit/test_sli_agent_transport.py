@@ -192,7 +192,7 @@ def test_named_tls_cleanup_and_temporary_key_stay_inside_instance(tmp_path, monk
 
 
 @pytest.mark.parametrize("status, body", [(302, b"fixture-secret"), (503, b"fixture-secret"),
-    (200, b"[]"), (200, b"x" * (60 * 1024 + 1))])
+    (200, b"[]"), pytest.param(200, b"x" * (60 * 1024 + 1), id="oversized-response")])
 def test_http_failures_do_not_follow_redirects_or_expose_response(tmp_path, monkeypatch, status, body):
     from sli_agent import transport as module
     monkeypatch.setattr(Transport, "_context", lambda *a: object())
@@ -231,6 +231,8 @@ def test_runtime_retries_with_backoff_and_safe_status(tmp_path, monkeypatch):
             self.waits.append(delay)
     stop = Stop()
     config = AgentConfig("https://core.invalid", tmp_path / "ca.pem", tmp_path)
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda candidate: candidate is config)
+    monkeypatch.setattr(runtime, "probe", lambda *args, **kwargs: {"identity_verified": True, "ready": True})
     runtime.run(config, stop)
     assert stop.waits == [60, 2, 4]
     status = json.loads((tmp_path / "status.json").read_bytes())

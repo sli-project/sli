@@ -238,6 +238,10 @@ def test_retained_hook_observes_generation_changes_and_drain(tmp_path, monkeypat
         (directory / "admission.lock").write_bytes(b"")
     hook = registry.plugin_hook(PLUGIN_ID, "health")
     assert hook() is True
+    # Report modules import the bundled AD package lazily; load them before the
+    # retained generation replaces that package so the test does not depend on
+    # which tests ran earlier in the process.
+    assert reports.get_report("security.problems") is not None
     generation = "a" * 64
     backend = base / "versions" / generation / "backend"
     backend.mkdir(parents=True)

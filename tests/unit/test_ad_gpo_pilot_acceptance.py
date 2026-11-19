@@ -217,7 +217,8 @@ def test_cli_blocks_with_complete_matrix_of_explicit_not_verified(tmp_path, caps
 
 
 @pytest.mark.parametrize("contents", [PRIVATE, '{"password":"' + PRIVATE + '"}',
-    '{"schema_version":1,"schema_version":2}', "x" * (subject.MAX_INPUT_BYTES + 1), "[" * 2000])
+    '{"schema_version":1,"schema_version":2}',
+    pytest.param("x" * (subject.MAX_INPUT_BYTES + 1), id="oversized"), "[" * 2000])
 def test_cli_malformed_input_never_prints_parser_error_path_or_content(tmp_path, capsys, contents):
     path = tmp_path / PRIVATE
     path.write_text(contents)

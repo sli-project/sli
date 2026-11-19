@@ -220,6 +220,8 @@ def test_history_capture_failure_does_not_back_off_live_loop(tmp_path, monkeypat
             self.waits.append(delay)
     config = AgentConfig("https://core.invalid", tmp_path / "ca.pem", tmp_path)
     stop = Stop()
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda candidate: candidate is config)
+    monkeypatch.setattr(runtime, "probe", lambda *args, **kwargs: {"identity_verified": True, "ready": True})
     monkeypatch.setattr(runtime.time, "monotonic", lambda: len(stop.waits) * 60.0)
     runtime.run(config, stop)
     assert stop.waits == [60, 60]

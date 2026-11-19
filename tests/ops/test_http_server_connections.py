@@ -14,7 +14,7 @@ import pytest
 from server.api import http_server
 from server.sli.core import app_config
 from server.sli.core.app_config import AdLogConfig
-from server.sli.ops.shutdown import http_shutdown
+from server.sli.ops import shutdown
 
 
 @pytest.mark.parametrize('dual_stack', [False, True])
@@ -36,16 +36,44 @@ def test_wildcard_listener_accepts_loopback_and_normalizes_proxy_peer(monkeypatc
         server.server_close()
 
 
+@pytest.fixture
+def linux_http_shutdown(monkeypatch):
+    # Exercise the Linux handler even on the Windows CI runner.
+    monkeypatch.setattr(shutdown, "os", SimpleNamespace(name="posix"))
+    return shutdown.http_shutdown
+
+
+def linux_shutdown_socketpair():
+    request, peer = socket.socketpair()
+    if sys.platform == "win32":
+        request = LinuxReadShutdownSocket(request, peer)
+    return request, peer
+
+
+class LinuxReadShutdownSocket(socket.socket):
+    def __init__(self, request, peer):
+        super().__init__(fileno=request.detach())
+        self.peer = peer
+
+    def shutdown(self, how):
+        if how == socket.SHUT_RD:
+            # Winsock SHUT_RD does not wake a pending recv. Deliver Linux's
+            # EOF to the reader while leaving the response direction open.
+            self.peer.shutdown(socket.SHUT_WR)
+            return
+        super().shutdown(how)
+
+
 @pytest.mark.parametrize("payload", [b"", b"GET / HTTP/1.0\r\nHost: incomplete", b"GET /"])
 @pytest.mark.parametrize("tls", [False, True])
-def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls):
+def test_sigterm_wakes_idle_and_partial_header_connections(server, linux_http_shutdown, payload, tls):
     import signal
 
     wrapped = []
     if tls:
         server.server.adlog_tls_context = _fake_tls_context(lambda _: None, wrapped)
-    request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    request, peer = linux_shutdown_socketpair()
+    with request, peer, linux_http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         try:
@@ -67,7 +95,7 @@ def test_sigterm_wakes_idle_and_partial_header_connections(server, payload, tls)
             serving.join(timeout=2)
 
 
-def test_sigterm_wakes_pending_tls_handshake(server):
+def test_sigterm_wakes_pending_tls_handshake(server, linux_http_shutdown):
     import signal
 
     entered = threading.Event()
@@ -77,8 +105,8 @@ def test_sigterm_wakes_pending_tls_handshake(server):
         assert request.recv(1) == b""
 
     server.server.adlog_tls_context = _fake_tls_context(handshake, [])
-    request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    request, peer = linux_shutdown_socketpair()
+    with request, peer, linux_http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         try:
@@ -97,7 +125,7 @@ def test_sigterm_wakes_pending_tls_handshake(server):
             serving.join(timeout=2)
 
 
-def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkeypatch):
+def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, linux_http_shutdown, monkeypatch):
     import signal
 
     started, committed, release, closed = (threading.Event() for _ in range(4))
@@ -109,8 +137,8 @@ def test_update_http_shutdown_waits_for_accepted_import_to_commit(server, monkey
         handler._send_json({"ok": True})
 
     monkeypatch.setattr(http_server.RequestHandler, "_do_POST", import_packet)
-    request, peer = socket.socketpair()
-    with request, peer, http_shutdown(server.server):
+    request, peer = linux_shutdown_socketpair()
+    with request, peer, linux_http_shutdown(server.server):
         serving = threading.Thread(target=server.server.serve_forever, kwargs={"poll_interval": 0.01})
         serving.start()
         closer = None

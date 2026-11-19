@@ -31,7 +31,30 @@ jobs:
       - run: python scripts/maintenance/github_sanitary_check.py --root . --json
       - run: python -m compileall -q server scripts tests
       - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
-      - run: python -m pytest -q -m "not postgres_integration"
+      - run: >-
+          python -m pytest -q -m "not postgres_integration"
+          --deselect=tests/unit/test_linux_
+          --deselect=tests/storage/test_raw_zip_durability.py
+          --deselect=tests/storage/test_stabilization_runtime_security_ai.py::test_runtime_storage_cleanup_can_zip_archive_and_explain_exclusions
+          --deselect=tests/unit/test_ad_credential_delivery.py
+          --deselect=tests/unit/test_ad_credential_secrets.py::test_key_reader_requires_private_file_and_rejects_all_inline_values
+          --deselect=tests/unit/test_ad_gpo_core_jobs.py
+          --deselect=tests/unit/test_ad_gpo_pilot_acceptance.py
+          --deselect=tests/unit/test_ad_plugin_registration.py::test_retained_hook_observes_generation_changes_and_drain
+          --deselect=tests/unit/test_ad_plugin_registration.py::test_registry_retains_old_job_hash_but_schedules_active_generation
+          --deselect=tests/unit/test_agent_group_bootstrap.py::test_msi_pending_restart_independent_attestation_personal_profile_and_signal
+          --deselect=tests/unit/test_plugin_update.py
+          --deselect=tests/unit/test_sli_agent_group_msi.py
+          --deselect=tests/unit/test_sli_installation.py
+          --deselect=tests/unit/test_sli_update.py::test_builder_cannot_follow_a_payload_link_to_the_signing_key
+          --deselect=tests/unit/test_sli_update.py::test_traversal_refused
+          --deselect=tests/unit/test_telegram_proxy.py::test_private_socket_status_validates_proxy_before_return
+          --deselect=tests/unit/test_smtp_setup_deployment.py
+          --deselect=tests/unit/test_smtp_setup_writer.py
+          --deselect=tests/unit/test_telegram_proxy_installation.py
+          --deselect=tests/unit/test_telegram_setup.py
+          --deselect=tests/unit/test_release_artifacts.py
+          --deselect=tests/tooling/test_t002_clickhouse_lifecycle.py::LifecycleTests::test_symlink_state_is_rejected
         env:
           PYTEST_ADDOPTS: "@.ci-shipped-python-tests.txt"
 
@@ -174,6 +197,33 @@ jobs:
               raise SystemExit("The signed AD packet report scenario did not pass")
           PY
       - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
+      - name: Linux unit and filesystem contracts
+        shell: bash
+        run: |
+          grep '^tests/unit/test_linux_' .ci-shipped-python-tests.txt > .ci-shipped-linux-unit-tests.txt
+          python -m pytest -q -m "not postgres_integration and not host_dependent" \
+            @.ci-shipped-linux-unit-tests.txt \
+            tests/storage/test_raw_zip_durability.py \
+            tests/storage/test_stabilization_runtime_security_ai.py::test_runtime_storage_cleanup_can_zip_archive_and_explain_exclusions \
+            tests/unit/test_ad_credential_delivery.py \
+            tests/unit/test_ad_credential_secrets.py::test_key_reader_requires_private_file_and_rejects_all_inline_values \
+            tests/unit/test_ad_gpo_core_jobs.py \
+            tests/unit/test_ad_gpo_pilot_acceptance.py \
+            tests/unit/test_ad_plugin_registration.py::test_retained_hook_observes_generation_changes_and_drain \
+            tests/unit/test_ad_plugin_registration.py::test_registry_retains_old_job_hash_but_schedules_active_generation \
+            tests/unit/test_agent_group_bootstrap.py::test_msi_pending_restart_independent_attestation_personal_profile_and_signal \
+            tests/unit/test_plugin_update.py \
+            tests/unit/test_sli_agent_group_msi.py \
+            tests/unit/test_sli_installation.py \
+            tests/unit/test_sli_update.py::test_builder_cannot_follow_a_payload_link_to_the_signing_key \
+            tests/unit/test_sli_update.py::test_traversal_refused \
+            tests/unit/test_telegram_proxy.py::test_private_socket_status_validates_proxy_before_return \
+            tests/unit/test_smtp_setup_deployment.py \
+            tests/unit/test_smtp_setup_writer.py \
+            tests/unit/test_telegram_proxy_installation.py \
+            tests/unit/test_telegram_setup.py \
+            tests/unit/test_release_artifacts.py \
+            tests/tooling/test_t002_clickhouse_lifecycle.py::LifecycleTests::test_symlink_state_is_rejected
       - name: T002 actual PostgreSQL context at synthetic enterprise scale
         run: python -m pytest -q -s tests/reporting/test_new_logon_pairs_context_native.py
       - name: T051 bounded synthetic context plans and typed timeout

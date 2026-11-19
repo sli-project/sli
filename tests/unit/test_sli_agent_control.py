@@ -50,6 +50,8 @@ def exercise(tmp_path, monkeypatch, states, *, reject=False, ack_failure=False, 
     audit_positions = []
     clock = [0.0]
     monkeypatch.setattr(runtime.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda candidate: candidate is config)
+    monkeypatch.setattr(runtime, "probe", lambda *args, **kwargs: {"identity_verified": True, "ready": True})
     class Collector:
         module_id = "sli.workstations"
         def collect(self, captured, *, now):

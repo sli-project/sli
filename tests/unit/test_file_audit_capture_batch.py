@@ -206,6 +206,8 @@ def test_runtime_drains_file_backlog_only_in_active_controlled_cycle(tmp_path, m
             self.done = True
 
     config = AgentConfig("https://core.invalid", tmp_path / "ca.pem", tmp_path / "state")
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda candidate: candidate is config)
+    monkeypatch.setattr(runtime, "probe", lambda *args, **kwargs: {"identity_verified": True, "ready": True})
     runtime.run(config, Stop())
     spool = Spool(config.storage_dir / "spool", max_bytes=100000, max_age_seconds=86400)
     assert len(spool.pending()) == expected and seen == ([None, 1, 2, 3] if expected else [])

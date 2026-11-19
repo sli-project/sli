@@ -104,6 +104,7 @@ def test_collection_cycle_distinguishes_success_partial_and_failure(
         ),
     )
     queued = []
+    monkeypatch.setattr(collector, "can_start_collection", lambda: {"collection_allowed": True})
     monkeypatch.setattr(collector, "CONTINUOUS_RECOVERY_ENABLED", False)
     monkeypatch.setattr(
         collector,
@@ -149,6 +150,7 @@ def test_continuous_recovery_cycle_budget_is_partial_not_complete(monkeypatch):
         ["pilot"], 0, stdout='{"events_collected": 50000}\n', stderr=""
     )
     queued = []
+    monkeypatch.setattr(collector, "can_start_collection", lambda: {"collection_allowed": True})
     monkeypatch.setattr(collector, "CONTINUOUS_RECOVERY_ENABLED", True)
     monkeypatch.setattr(collector, "CONTINUOUS_RECOVERY_MAX_CYCLES", 1)
     monkeypatch.setattr(collector, "CONTINUOUS_RECOVERY_MAX_JOB_SECONDS", 3600)

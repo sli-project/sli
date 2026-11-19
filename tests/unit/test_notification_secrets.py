@@ -67,7 +67,7 @@ def test_disabled_notifications_do_not_change_default_provisioning(tmp_path, own
 
 @pytest.mark.parametrize("ref,body", [
     (SMTP, b""), (SMTP, b"synthetic\n"), (SMTP, b"synthetic\x00"),
-    (SMTP, b"\xff"), (SMTP, b"x" * 65537),
+    (SMTP, b"\xff"), pytest.param(SMTP, b"x" * 65537, id="oversized-smtp"),
     (TELEGRAM, b"synthetic-invalid"), (TELEGRAM, b"123:with spaces"),
     (TELEGRAM, b"0:synthetic"), (TELEGRAM, b"123:"),
 ])

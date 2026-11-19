@@ -61,7 +61,7 @@ try {
             return $row
         }
     }
-    $script:AdMatches = 0; $script:Rows = @()
+    $script:AdMatches = 0; $script:FormattedRows = @()
     function Read-LabReport { param($Resource, $Filters, $Collection) return [pscustomobject]@{ Items = @(); Complete = $true } }
     function Find-LabEvent {
         param($Expected, $Rows, $Used)
@@ -69,9 +69,9 @@ try {
         $script:AdMatches++
         return [pscustomobject]@{ event_db_id = 1 }
     }
-    function Format-Table { param([Parameter(ValueFromPipeline)]$InputObject, [switch]$AutoSize) process { $script:Rows += $InputObject } }
+    function Format-Table { param([Parameter(ValueFromPipeline)]$InputObject, [switch]$AutoSize) process { $script:FormattedRows += $InputObject } }
     foreach ($mode in @('ad', 'mixed', 'file', 'failed-file')) {
-        $script:Rows = @(); $script:AdMatches = 0
+        $script:FormattedRows = @(); $script:AdMatches = 0
         $rows = switch ($mode) {
             'ad' { New-TestRow }
             'mixed' { New-TestRow; New-TestRow 'file_read' }
@@ -84,8 +84,8 @@ try {
         if ($code -ne $wanted) { throw 'verification_exit_contract' }
         $matches = if ($mode -in @('ad', 'mixed')) { 1 } else { 0 }
         if ($script:AdMatches -ne $matches) { throw 'ad_comparison_skipped' }
-        if ($mode -ne 'ad' -and @($script:Rows | Where-Object { $_.File -eq 'UNAVAILABLE' }).Count -ne 1) { throw 'file_comparison_claimed_complete' }
-        if ($mode -eq 'failed-file' -and $script:Rows[0].Event -ne 'SCENARIO_FAILED') { throw 'scenario_failure_hidden' }
+        if ($mode -ne 'ad' -and @($script:FormattedRows | Where-Object { $_.File -eq 'UNAVAILABLE' }).Count -ne 1) { throw 'file_comparison_claimed_complete' }
+        if ($mode -eq 'failed-file' -and $script:FormattedRows[0].Event -ne 'SCENARIO_FAILED') { throw 'scenario_failure_hidden' }
     }
 } finally {
     Get-ChildItem -LiteralPath $stage -File | Remove-Item -Force

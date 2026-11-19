@@ -285,7 +285,8 @@ def test_lost_lease_while_child_runs_always_kills_group(monkeypatch):
 
 def test_group_kill_uses_sigkill_and_waits_for_stopped_process(monkeypatch):
     calls = []
-    monkeypatch.setattr(executor.os, "killpg", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(executor, "os", SimpleNamespace(killpg=lambda pid, sig: calls.append((pid, sig))))
+    monkeypatch.setattr(executor, "signal", SimpleNamespace(SIGKILL=getattr(executor.signal, "SIGKILL", 9)))
     process = SimpleNamespace(pid=123, wait=lambda: calls.append("stopped"))
     executor.kill_group(process)
     assert calls == [(123, executor.signal.SIGKILL), "stopped"]

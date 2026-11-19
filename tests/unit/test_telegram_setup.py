@@ -101,7 +101,9 @@ def test_setup_http_codes_do_not_trust_provider_descriptions(monkeypatch, caplog
     assert sentinel not in str(caught.value) + caplog.text + str(capsys.readouterr())
 
 
-@pytest.mark.parametrize("raw", [b"not-json-synthetic-private", b"x" * (transport.MAX_RESPONSE + 1)])
+@pytest.mark.parametrize("raw", [
+    b"not-json-synthetic-private", pytest.param(b"x" * (transport.MAX_RESPONSE + 1), id="oversized-response"),
+])
 def test_setup_malformed_or_oversized_reply_is_fixed_protocol(monkeypatch, raw):
     client = Mock()
     client.getresponse.return_value.status = 200
@@ -151,7 +153,7 @@ def test_fixed_setup_error_survives_writer_socket_and_route(monkeypatch, code, h
 
 @pytest.mark.parametrize("raw", [
     b'{"error":"synthetic-private-error"}', b'{"error":"telegram_setup_network","extra":"synthetic-private"}',
-    b'{"error":["telegram_setup_tls"]}', b'[]', b'not-json', b'x' * 65537,
+    b'{"error":["telegram_setup_tls"]}', b'[]', b'not-json', pytest.param(b'x' * 65537, id="oversized-reply"),
     b'{"secret_set":true,"chat_name":"synthetic-private"}',
     b'{"secret_set":0,"chat_bound":false}', b'{"secret_set":true,"chat_bound":"yes"}',
     b'{"secret_set":true,"chat_bound":true,"chat_name":5}',
