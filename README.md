@@ -68,9 +68,27 @@ packages are already staged.
   issues a single-use code for a locked-out owner to enter with their password.
 
 To open the server from another OS, import `/var/lib/sli/tls-ca.crt` from the
-trusted server into the browser's trust store. Repeating
+trusted server into the browser's trust store. Compare its SHA-256 DER
+fingerprint with the one printed by setup. To display it again on Debian, run
+`openssl x509 -in /var/lib/sli/tls-ca.crt -noout -fingerprint -sha256`. Repeating
 `sudo sli-setup` preserves saved settings and keys. Inspect installation
 diagnostics with `sudo journalctl -t sli-setup`.
+
+The default listener covers IPv4 and, when available, IPv6. Health checks use
+loopback with matching TLS certificate names. Use `--bind 192.0.2.10` to restrict
+the listener to one local address, or `--bind 127.0.0.1` behind a local reverse
+proxy with explicitly configured trusted proxies.
+
+Use a stable DNS name or static IP. Setup includes the supplied name or IP and
+the applicable resolved addresses in the certificate. After a DHCP address
+change, update DNS and keep the same DNS URL with wildcard binding. Saved
+server names, binds and ports are retained on retries. Changes fail with
+`native_setup_configuration_conflict`. Keep the original static IP for an
+IP-only installation.
+
+If no eligible data directory has 20 GiB free, use `lsblk -f` to inspect the
+volumes. Mount a dedicated volume persistently before rerunning setup with the
+storage options above. Setup preserves existing filesystems and data.
 
 ### Windows agent
 

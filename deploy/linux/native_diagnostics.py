@@ -68,6 +68,8 @@ MESSAGES = {
     'native_setup_busy': 'Another sli-setup is running. Retry after it finishes.',
     'native_symlink_forbidden': 'An administrative path contains a symbolic link. Use a dedicated directory with trusted ownership and permissions.',
     'native_existing_configuration_conflict': 'An existing configuration differs from SLI’s managed file. Preserve it and resolve the conflict before retrying.',
+    'native_install_inventory_invalid': 'The staged SLI release inventory is invalid. From the matching beta kit run sudo apt install --reinstall ./sli-release-*_amd64.deb, then sudo dpkg --configure -a.',
+    'native_vendor_cluster_guard_missing': 'PostgreSQL startup guard is missing in /etc/postgresql-common/createcluster.conf. Inspect the file and run sudo dpkg --configure -a before retrying setup.',
 }
 
 
@@ -89,12 +91,12 @@ def failure(error, *, default='native_setup_failed'):
               'Free space or mount another disk.', file=sys.stderr)
         return
     if candidate == 'native_command_failed':
-        candidate = 'native_command_failed: ' + (getattr(error, 'command', None) or '')
+        command = 'native_command_failed: ' + (getattr(error, 'command', None) or '')
         unit = getattr(error, 'unit', None)
-        if unit and f'{candidate} {unit}' in COMMAND_FAILURES:
-            candidate = f'{candidate} {unit}'
-        if candidate not in COMMAND_FAILURES:
-            candidate = 'native_command_failed'
+        if unit and f'{command} {unit}' in COMMAND_FAILURES:
+            candidate = f'{command} {unit}'
+        elif command in COMMAND_FAILURES:
+            candidate = command
     if candidate in COMMAND_FAILURES:
         log_code('native_command_failed')
         print(candidate, file=sys.stderr)
@@ -106,4 +108,5 @@ def failure(error, *, default='native_setup_failed'):
         return
     code = candidate if candidate in MESSAGES or re.fullmatch(r'native_[a-z_]{1,100}', candidate) else default
     log_code(code)
-    print(MESSAGES.get(code, 'SLI could not complete this operation. Check journalctl -t sli-setup and systemctl --failed; preserve existing data and configuration.'), file=sys.stderr)
+    message = getattr(error, 'console_message', None) or MESSAGES.get(code)
+    print(message or 'SLI could not complete this operation. Run sudo journalctl -t sli-setup -n 80 --no-pager and systemctl --failed; preserve existing data and configuration.', file=sys.stderr)

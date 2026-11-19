@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
+import hashlib
 import importlib.util
 import ipaddress
 import json
@@ -88,16 +90,20 @@ def server_address(server, bind, port):
     return addresses[0]
 
 
-def tls_names(site):
+def tls_names(site, *, saved=False):
     name, bind = site.get('server_name', site['domain_fqdn']), site['bind']
     names = [name]
+    try:
+        addresses = [str(ipaddress.ip_address(name))]
+    except ValueError:
+        addresses = sorted(resolved_addresses(name, site['https_port']), key=lambda address: (':' in address, address))
+        if not addresses:
+            remedy = f'Correct DNS so getent ahosts {name} succeeds, then rerun sudo sli-setup'
+            if not saved:
+                remedy += ', or find a local address with ip -brief address and rerun sudo sli-setup --server <IP>'
+            raise host.GuardError('native_setup_dns_failed', name, 'server name does not resolve', remedy)
     if ipaddress.ip_address(bind).is_unspecified:
-        try:
-            names.append(str(ipaddress.ip_address(name)))
-        except ValueError:
-            addresses = resolved_addresses(name, site['https_port'])
-            require(bool(addresses), 'native_setup_dns_failed')
-            names.extend(sorted(addresses, key=lambda address: (':' in address, address)))
+        names.extend(addresses)
         names.extend(['localhost', '127.0.0.1', '::1'])
     else:
         names.append(bind)
@@ -134,23 +140,43 @@ def command(argv, *, code, cwd=None, env=None, timeout=120):
         watch.limit += recovery.limit
         watch.stall = watch.limit
         return operation.setup_command(argv, cwd=cwd, env=env, watch=watch,
-                                       failure_codes=diagnostics.COMMAND_FAILURES)
+                                       failure_codes=diagnostics.COMMAND_FAILURES,
+                                       diagnose_failure=diagnose_install_failure)
     result = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=timeout, cwd=cwd, env=env)
     require(result.returncode == 0, code)
     return result.stdout
 
 
-def check_port(site):
-    dual_stack = site['bind'] == '0.0.0.0' and socket.has_dualstack_ipv6()
-    family = socket.AF_INET6 if dual_stack or ':' in site['bind'] else socket.AF_INET
+def diagnose_install_failure(lines):
+    prefix = 'native_existing_configuration_conflict: '
+    paths = [line[len(prefix):] for line in lines if line.startswith(prefix)
+             and host.SYSTEMD_PATH.fullmatch(line[len(prefix):])]
+    if paths:
+        raise host.configuration_conflict(*dict.fromkeys(paths))
+
+
+def check_port(site, *, saved=False):
+    bind, port = site['bind'], site['https_port']
+    dual_stack = bind == '0.0.0.0' and socket.has_dualstack_ipv6()
+    family = socket.AF_INET6 if dual_stack or ':' in bind else socket.AF_INET
     try:
         with socket.socket(family, socket.SOCK_STREAM) as sock:
             if dual_stack:
                 sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-            sock.bind(('::' if dual_stack else site['bind'], site['https_port']))
+            sock.bind(('::' if dual_stack else bind, port))
             return sock.getsockname()[1]
-    except OSError:
-        raise RuntimeError('native_setup_port_busy') from None
+    except OSError as error:
+        if error.errno == errno.EADDRNOTAVAIL:
+            raise host.GuardError('native_setup_port_busy', f'{bind} (HTTPS port {port})', 'address is not assigned locally',
+                                  'Run ip -brief address and rerun sudo sli-setup --bind <local-IP>') from None
+        listeners = host.port_listeners(port)
+        reason = 'cannot bind'
+        if listeners:
+            reason += '; listeners on this port: ' + ', '.join(listeners)
+        remedy = f"Run sudo ss -ltnp 'sport = :{port}' to identify the service and free the port"
+        if not saved:
+            remedy += ', or rerun sudo sli-setup --port <free-port> with the other setup flags'
+        raise host.GuardError('native_setup_port_busy', f'{bind} (HTTPS port {port})', reason, remedy) from None
 
 
 @contextmanager
@@ -363,7 +389,7 @@ def configure(args):
         os.execve(manifest['python'], [manifest['python'], '-I', '-B', str(script),
                                       'reuse-existing', release], install.environment())
         return
-    require(installed or not (install.STATE / 'package-install.json').exists(),
+    require(installed or saved or not (install.STATE / 'package-install.json').exists(),
             'native_install_interrupted_requires_recovery')
     if installed:
         require(existing is not None, 'native_setup_configuration_conflict')
@@ -373,9 +399,11 @@ def configure(args):
         require(pending.exists(), 'native_setup_not_staged')
         release = json.loads(install.trusted(pending))['release']
         try:
-            check_port(site)
-        except RuntimeError as error:
-            if existing is not None or args.port is not None or str(error) != 'native_setup_port_busy':
+            check_port(site, saved=existing is not None)
+        except host.GuardError as error:
+            cause = error.__context__
+            if (existing is not None or args.port is not None or not isinstance(cause, OSError)
+                    or cause.errno != errno.EADDRINUSE):
                 raise
             site['https_port'] = check_port({**site, 'https_port': 0})
             print(f'HTTPS port 443 is busy; using {site["https_port"]}.', flush=True)
@@ -383,18 +411,17 @@ def configure(args):
     python = manifest['python']
     env = install.environment()
     if not installed:
-        names = tls_names(site)
+        names = tls_names(site, saved=existing is not None)
         with host.administrative_lock():
             uuid = saved.get('uuid') if saved else args.uuid
             directory = saved.get('directory', host.DIRECTORY) if saved else args.directory
             if not uuid and directory is None:
                 directory = machine.select_database_directory(backup_root=site.get('backup_root'))
-            if not saved and not uuid:
-                source = machine.validate_database_directory(directory)
-                require(not source.exists() or not any(source.iterdir()), 'native_existing_database')
+            directory = directory or host.DIRECTORY
+            machine.check_setup_units(directory, uuid=uuid, backup=bool(site.get('backup_root')))
+            machine.prepare(uuid, directory=directory)
             if existing is None:
                 machine.write('/etc/sli/site.toml', render_site(site))
-            machine.prepare(uuid, directory=directory or host.DIRECTORY)
         print('Preparing certificates and services / Подготовка сертификатов и служб…', flush=True)
         command([python, '-B', '-m', 'deploy.linux.sli_secrets', 'ensure', '--directory', str(install.SECRETS),
                  '--agents', '--offline-root-dir', '/var/lib/sli-ca-offline',
@@ -439,7 +466,10 @@ def configure(args):
             print('One-time code / Одноразовый код: ' + code)
     if not api_checked:
         wait_api()
-    der = base64.b64encode(ssl.PEM_cert_to_DER_cert(ca)).decode('ascii')
+    certificate = ssl.PEM_cert_to_DER_cert(ca)
+    fingerprint = hashlib.sha256(certificate).hexdigest().upper()
+    print('CA SHA-256 fingerprint: ' + ':'.join(re.findall(r'..', fingerprint)))
+    der = base64.b64encode(certificate).decode('ascii')
     print('Windows first connection / Первый вход с Windows (PowerShell):')
     print("& { $ErrorActionPreference = 'Stop'; $ca = [Security.Cryptography.X509Certificates.X509Certificate2]::new("
           f"[Convert]::FromBase64String('{der}')); "
