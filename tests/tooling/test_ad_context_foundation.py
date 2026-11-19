@@ -21,6 +21,15 @@ from server.ad_context.projection import ContextProjection
 FIXTURE = Path("tests/fixtures/ad_context_privileged_membership.json")
 
 
+@pytest.fixture
+def gpo_module(tmp_path):
+    source = Path("scripts/ad_context/GpoReportContract.psm1")
+    module = tmp_path / source.name
+    # Windows PowerShell 5.1 otherwise interprets BOM-less source in the runner's ANSI code page.
+    module.write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8-sig")
+    return module
+
+
 def _bundle() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
@@ -284,7 +293,7 @@ def test_domain_posture_contract_accepts_new_entity_kinds_and_rejects_unknown_at
 
 @pytest.mark.windows_only
 def test_gpo_report_contract_parses_fixture_facts_under_declared_ceilings(
-    tmp_path: Path,
+    tmp_path: Path, gpo_module: Path,
 ):
     xml_path = tmp_path / "gpo.xml"
     xml_path.write_text("""<?xml version="1.0" encoding="utf-8"?>
@@ -310,9 +319,8 @@ def test_gpo_report_contract_parses_fixture_facts_under_declared_ceilings(
         Path(os.environ.get("WINDIR") or r"C:\Windows")
         / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     )
-    module = Path("scripts/ad_context/GpoReportContract.psm1").resolve()
     command = (
-        f"Import-Module '{module}' -Force -ErrorAction Stop; "
+        f"Import-Module '{gpo_module}' -Force -ErrorAction Stop; "
         f"$facts=ConvertFrom-SLIGpoReportXml (Get-Content -LiteralPath '{xml_path}' -Raw); "
         "$contract=Get-SLIGpoReportContract; "
         "$permissions=[pscustomobject]@{gpo_apply_allow_sids=@();gpo_apply_deny_sids=@();permission_count=0;permissions=@();effective_access_evaluated=$false}; "
@@ -369,15 +377,14 @@ def test_gpo_report_contract_parses_fixture_facts_under_declared_ceilings(
 
 @pytest.mark.host_dependent  # needs the RSAT GroupPolicy/ActiveDirectory modules
 @pytest.mark.windows_only
-def test_gpo_permission_contract_matches_cmdlet_shape_and_preserves_acl_semantics():
+def test_gpo_permission_contract_matches_cmdlet_shape_and_preserves_acl_semantics(gpo_module):
     powershell = (
         Path(os.environ.get("WINDIR") or r"C:\Windows")
         / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     )
-    module = Path("scripts/ad_context/GpoReportContract.psm1").resolve()
     command = f"""
 Import-Module GroupPolicy -ErrorAction Stop
-Import-Module '{module}' -Force -ErrorAction Stop
+Import-Module '{gpo_module}' -Force -ErrorAction Stop
 $rows = @(
   [pscustomobject]@{{
     Trustee=[pscustomobject]@{{Sid='S-1-5-11';SidType='WellKnownGroup';Name='not persisted'}}
@@ -437,14 +444,13 @@ $rows = @(
 
 
 @pytest.mark.windows_only
-def test_gpo_permission_contract_fails_closed_on_invalid_sid_and_permission():
+def test_gpo_permission_contract_fails_closed_on_invalid_sid_and_permission(gpo_module):
     powershell = (
         Path(os.environ.get("WINDIR") or r"C:\Windows")
         / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     )
-    module = Path("scripts/ad_context/GpoReportContract.psm1").resolve()
     command = f"""
-Import-Module '{module}' -Force -ErrorAction Stop
+Import-Module '{gpo_module}' -Force -ErrorAction Stop
 $errors = @()
 foreach ($row in @(
   [pscustomobject]@{{
@@ -472,14 +478,13 @@ $errors | ConvertTo-Json -Compress
 
 
 @pytest.mark.windows_only
-def test_gpo_permission_job_boundary_preserves_normalized_sid_text():
+def test_gpo_permission_job_boundary_preserves_normalized_sid_text(gpo_module):
     powershell = (
         Path(os.environ.get("WINDIR") or r"C:\Windows")
         / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     )
-    module = Path("scripts/ad_context/GpoReportContract.psm1").resolve()
     command = f"""
-Import-Module '{module}' -Force -ErrorAction Stop
+Import-Module '{gpo_module}' -Force -ErrorAction Stop
 $job=Start-Job -ScriptBlock {{
   $sid=[Security.Principal.SecurityIdentifier]'S-1-5-11'
   [pscustomobject]@{{
@@ -511,14 +516,13 @@ try {{
 
 
 @pytest.mark.windows_only
-def test_gpo_governance_merge_preserves_observation_and_acl_boundaries():
+def test_gpo_governance_merge_preserves_observation_and_acl_boundaries(gpo_module):
     powershell = (
         Path(os.environ.get("WINDIR") or r"C:\Windows")
         / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     )
-    module = Path("scripts/ad_context/GpoReportContract.psm1").resolve()
     command = f"""
-Import-Module '{module}' -Force -ErrorAction Stop
+Import-Module '{gpo_module}' -Force -ErrorAction Stop
 $base=[ordered]@{{
   display_name='Policy A'
   description='Observed through LDAP'

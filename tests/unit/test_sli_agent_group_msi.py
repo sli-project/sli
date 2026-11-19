@@ -230,7 +230,11 @@ def test_managed_service_never_starts_runtime_while_pending(tmp_path, monkeypatc
     monkeypatch.setattr(sli_agent.probe, "service_identity_verified", lambda config: True)
     monkeypatch.setattr(msi, "ensure_ca", lambda config: None)
     monkeypatch.setattr(sli_agent.transport, "Transport", lambda config: object())
-    monkeypatch.setattr(IdentityStore, "enroll_group", lambda *a: stop.set())
+    def enrollment_pending(*_):
+        stop.set()
+        return "agent_approval_pending"
+
+    monkeypatch.setattr(msi, "enroll_once", enrollment_pending)
     monkeypatch.setattr(sli_agent.runtime, "run", lambda *a: pytest.fail("pending must not collect"))
     msi.run_managed(config, stop)
     state = json.loads((config.storage_dir / "status.json").read_bytes())

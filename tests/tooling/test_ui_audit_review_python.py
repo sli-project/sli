@@ -30,7 +30,8 @@ def test_review_launches_repository_module_independent_of_cwd(tmp_path, installe
     # Intercept execution in Bash startup, leaving the launcher intact and
     # avoiding Python/module dependencies in the synthetic repository.
     bash_env = tmp_path / "capture_exec.sh"
-    bash_env.write_text('exec() { printf "%s\\n" "$PWD" "$@"; }\n', encoding="utf-8", newline="\n")
+    bash_env.write_text('exec() { pwd -W 2>/dev/null || pwd; printf "%s\\n" "$@"; }\n',
+                        encoding="utf-8", newline="\n")
     environment = dict(os.environ)
     environment.pop("SLI_AUDIT_PYTHON", None)
     environment.pop("SLI_AUDIT_ORIGIN", None)
@@ -39,7 +40,9 @@ def test_review_launches_repository_module_independent_of_cwd(tmp_path, installe
         environment["SLI_AUDIT_PYTHON"] = override
     result = subprocess.run([bash, script.as_posix(), "unused"], cwd=tmp_path,
                             env=environment, capture_output=True, text=True, check=True)
-    assert result.stdout.splitlines() == [
-        root.as_posix(), expected, "-m", "scripts.dev.ui_audit.stand", "review",
+    working_directory, *arguments = result.stdout.splitlines()
+    assert Path(working_directory) == root
+    assert arguments == [
+        expected, "-m", "scripts.dev.ui_audit.stand", "review",
         "--base", "", "--out", "unused",
     ]
