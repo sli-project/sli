@@ -292,12 +292,14 @@ def test_operation_collects_abandoned_drill_before_admission(cleanup_host, monke
         monkeypatch.setattr(native_host.Host, 'receipt', fail)
         action = native.capture
     elif operation == 'prepare':
+        monkeypatch.setattr(upgrade, 'systemd_available', lambda: False)
         monkeypatch.setattr(upgrade, 'operation_lock', lambda root: nullcontext())
         monkeypatch.setattr(upgrade, 'preflight', fail)
         action = lambda: upgrade.prepare('new', TX)
     else:
         action = native.drill
-    with pytest.raises(RuntimeError):
+    expected = 'native_drill_no_backup' if operation == 'drill' else 'admission_failed'
+    with pytest.raises(RuntimeError, match=expected):
         action()
     assert not work.exists()
 

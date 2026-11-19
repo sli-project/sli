@@ -6,6 +6,12 @@ import pytest
 from scripts.maintenance import server_control as module
 
 
+@pytest.fixture(autouse=True)
+def posix_listener_inventory(monkeypatch):
+    # The inventory fakes below return ss/lsof output on every test host.
+    monkeypatch.setattr(module, 'os', SimpleNamespace(name='posix'))
+
+
 def test_ss_ignores_unrelated_ports_and_handles_ipv6(monkeypatch):
     output = ('LISTEN 0 128 127.0.0.1:22 0.0.0.0:* users:(("ssh",pid=9,fd=3))\n'
               'LISTEN 0 128 [::]:8080 [::]:* users:(("python",pid=42,fd=4))\n')
