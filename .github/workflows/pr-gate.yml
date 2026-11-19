@@ -110,7 +110,7 @@ jobs:
     # Native POSIX contracts run on Linux in the required source job.
     needs: changes
     if: ${{ always() }}
-    runs-on: ${{ vars.SLI_TESTS_RUNNER || 'windows-latest' }}
+    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
     env:
       ADLOG_DISABLE_SCHEDULER: "1"
       ADLOG_DISABLE_COLLECTION: "1"
