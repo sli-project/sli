@@ -13,6 +13,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import secrets
 import shutil
 import socket
@@ -24,14 +25,18 @@ from contextlib import contextmanager
 from pathlib import Path
 
 try:
-    from deploy.linux.native_preinstall import ensure_directory
+    from deploy.linux.native_preinstall import GuardError, cluster_guard, ensure_directory, existing_database, write_guard
 except ModuleNotFoundError:  # stdlib-only installed/recovery helper under -I.
     import importlib.util
     _permissions_spec = importlib.util.spec_from_file_location(
         "sli_native_preinstall", Path(__file__).with_name("native_preinstall.py"))
     _permissions = importlib.util.module_from_spec(_permissions_spec)
     _permissions_spec.loader.exec_module(_permissions)
+    GuardError = _permissions.GuardError
+    cluster_guard = _permissions.cluster_guard
     ensure_directory = _permissions.ensure_directory
+    existing_database = _permissions.existing_database
+    write_guard = _permissions.write_guard
 
 
 try:
@@ -68,6 +73,11 @@ ACCOUNTS = tuple("sli-" + name for name in (
     "exec-light", "exec-heavy", "exec-long", "notify", "report"))
 INSTANCES = clickhouse.INSTANCES
 UUID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
+SYSTEMD_DIRECTORY = "/etc/systemd/system"
+SYSTEMD_FILE = r"sli(?:-[A-Za-z0-9_.@-]*)?\.(?:service|target|timer|slice|mount|socket|path)(?:\.d)?"
+SYSTEMD_PATH = re.compile(r"/(?:etc|usr/lib)/systemd/system/(?:" + SYSTEMD_FILE + r"|srv-sli\\x2ddb\.mount(?:\.d)?)")
+BACKUP_DROP_IN = "80-sli-backup-mount.conf"
+BACKUP_DROP_IN_BODY = "[Unit]\nBindsTo=var-backups-sli.mount\nAfter=var-backups-sli.mount\n"
 ROOT_UID = 0
 BOOTSTRAP_MARKER = Path(MOUNT + "/pgdata/18/main/.sli-bootstrap.json")
 COLD_TABLESPACE = "sli_temp_hdd"
@@ -82,6 +92,21 @@ class HostError(RuntimeError):
         super().__init__(code)
         self.command = command
         self.unit = unit
+
+
+def configuration_conflict(*paths):
+    code = "native_existing_configuration_conflict"
+    if not all(SYSTEMD_PATH.fullmatch(path) for path in paths):
+        return GuardError(code, paths[0], "existing file differs from SLI's configuration",
+                          f"Run sudo stat -- {shlex.quote(paths[0])} and reconcile it with the installed kit before retrying")
+    arguments = " ".join(map(shlex.quote, paths))
+    error = GuardError(code, ", ".join(paths), "existing systemd files conflict with SLI setup",
+                       "After verifying they belong to a retired installation, run "
+                       "sudo sh -c 'd=$(mktemp -d /etc/systemd/sli-before-setup.XXXXXX) || exit; "
+                       'for p; do t="$d${p%/*}"; mkdir -p -- "$t" && mv -t "$t" -- "$p" || exit; done; '
+                       "systemctl daemon-reload' sh " + arguments + " and retry")
+    error.conflict_paths = paths
+    return error
 
 
 def run(argv, *, input=None, allow_no_unit_files=False):
@@ -99,6 +124,15 @@ def run(argv, *, input=None, allow_no_unit_files=False):
                 unit = argv[-1]
         raise HostError("native_command_failed", command=command, unit=unit)
     return result.stdout
+
+
+def port_listeners(port):
+    try:
+        output = run(["ss", "-H", "-ltnp", f"sport = :{port}"])
+    except (HostError, OSError, subprocess.SubprocessError):
+        return []
+    entries = re.findall(r'\("([A-Za-z0-9_.@+-]{1,32})",pid=([1-9][0-9]{0,9}),fd=[0-9]+\)', output)
+    return list(dict.fromkeys(f"{name} (PID {pid})" for name, pid in entries))[:5]
 
 
 def pg_cold(sql):
@@ -224,7 +258,11 @@ def check_ports():
                 try:
                     sock.bind((host, port))
                 except OSError:
-                    raise HostError("native_database_port_busy") from None
+                    listeners = port_listeners(port)
+                    reason = "cannot bind" + ("; listeners: " + ", ".join(listeners) if listeners else "")
+                    raise GuardError("native_database_port_busy", f"PostgreSQL port {port}", reason,
+                                     f"Run sudo ss -ltnp 'sport = :{port}' and stop the retired service "
+                                     "before retrying, or use another host") from None
 
 
 @contextmanager
@@ -270,6 +308,8 @@ class Host:
             return
         info = path.lstat()
         if not stat.S_ISDIR(info.st_mode) or any(path.iterdir()):
+            if name == "/etc/postgresql":
+                raise existing_database(name)
             raise HostError("native_existing_database")
         postgres = account("postgres") if name in ("/etc/postgresql", "/var/lib/postgresql") else None
         if (info.st_mode & 0o002 or info.st_uid != ROOT_UID
@@ -496,8 +536,7 @@ class Host:
                    "Before=sli.target\n[Mount]\nWhat=" + site["backup_root"] + "\n"
                    "Where=/var/backups/sli\nType=none\nOptions=bind\n", 0o644)
         for unit in sorted(self.backup_dependent_units()):
-            self.write("/etc/systemd/system/" + unit + ".d/80-sli-backup-mount.conf",
-                       "[Unit]\nBindsTo=var-backups-sli.mount\nAfter=var-backups-sli.mount\n", 0o644)
+            self.write(f"/etc/systemd/system/{unit}.d/{BACKUP_DROP_IN}", BACKUP_DROP_IN_BODY, 0o644)
         run(["systemctl", "daemon-reload"])
         run(["systemctl", "start", "var-backups-sli.mount"])
         if not self.backup_mounted(source, target):
@@ -514,13 +553,13 @@ class Host:
         path = self.path(name)
         ensure_directory(path.parent)
         if path.exists() and (not path.is_file() or path.read_text() != body):
-            print("native_existing_configuration_conflict: " + str(path), file=sys.stderr, flush=True)
-            raise HostError("native_existing_configuration_conflict")
+            raise configuration_conflict(name)
         if path.exists():
             info = path.stat()
             if (info.st_uid != ROOT_UID or info.st_gid != grp.getgrnam(group_name).gr_gid
                     or stat.S_IMODE(info.st_mode) != mode):
-                raise HostError("native_existing_configuration_permissions")
+                raise GuardError("native_existing_configuration_permissions", name, "unexpected owner or permissions",
+                                 f"Run sudo stat -- {shlex.quote(name)} and verify ownership and mode {mode:04o} before retrying")
         if not path.exists():
             fd, temporary = tempfile.mkstemp(dir=path.parent)
             try:
@@ -540,18 +579,123 @@ class Host:
             finally:
                 Path(temporary).unlink(missing_ok=True)
 
-    def mount(self, expected):
+    def check_setup_units(self, directory, *, uuid=None, backup=False):
+        try:
+            from deploy.linux import native_runtime as runtime
+        except ModuleNotFoundError:  # Debian stdlib-only -I setup launcher.
+            spec = importlib.util.spec_from_file_location(
+                "sli_native_runtime", Path(__file__).with_name("native_runtime.py"))
+            runtime = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(runtime)
+        local_units = units()
+        if uuid is None:
+            local_units[MOUNT_UNIT] = directory_mount_unit(directory)
+        backup_dirs = {name + ".d" for name in self.backup_dependent_units()} if backup else set()
+        expected = {SYSTEMD_DIRECTORY: local_units, "/usr/lib/systemd/system": runtime.units({})}
+
+        def matches(path, body):
+            if path.is_symlink() or not path.is_file():
+                return False
+            try:
+                self.backup_trusted(path)
+            except HostError:
+                return False
+            info = path.stat()
+            return (info.st_gid == ROOT_UID and stat.S_IMODE(info.st_mode) == 0o644
+                    and path.read_bytes() == body.encode())
+
+        conflicts = []
+        for base, rendered in expected.items():
+            root = self.path(base)
+            for item in sorted(root.iterdir()) if root.is_dir() else ():
+                path = base + "/" + item.name
+                if not SYSTEMD_PATH.fullmatch(path):
+                    continue
+                if item.name in rendered and matches(item, rendered[item.name]):
+                    continue
+                if (base == SYSTEMD_DIRECTORY and item.name in backup_dirs
+                        and not item.is_symlink() and item.is_dir()
+                        and set(child.name for child in item.iterdir()) <= {BACKUP_DROP_IN}):
+                    # A failed atomic publication can also leave an empty directory.
+                    try:
+                        self.backup_trusted(item)
+                    except HostError:
+                        pass
+                    else:
+                        drop_in = item / BACKUP_DROP_IN
+                        if ((not drop_in.exists() and not drop_in.is_symlink())
+                                or matches(drop_in, BACKUP_DROP_IN_BODY)):
+                            continue
+                conflicts.append(path)
+        if conflicts:
+            raise configuration_conflict(*conflicts)
+
+    def mount(self, expected, *, fresh=False):
         if not UUID.fullmatch(expected):
             raise HostError("native_mount_uuid_invalid")
         try:
             rows = json.loads(run(["findmnt", "--json", "--mountpoint", MOUNT,
-                                   "--output", "TARGET,FSTYPE,UUID"]))["filesystems"]
+                                   "--output", "TARGET,FSTYPE,UUID,OPTIONS"]))["filesystems"]
             if (len(rows) != 1 or rows[0]["target"] != MOUNT or rows[0]["fstype"] != "ext4"
                     or rows[0]["uuid"] != expected):
                 raise ValueError
-        except (KeyError, TypeError, ValueError):
-            raise HostError("native_database_mount_mismatch") from None
-        self.path(MOUNT)
+        except (HostError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
+            raise GuardError("native_database_mount_mismatch", MOUNT, f"ext4 filesystem UUID {expected} is not mounted here",
+                             f"Run lsblk -f, mount the selected filesystem at {MOUNT}, and rerun sudo sli-setup --uuid {expected}") from None
+        source = self.path(MOUNT)
+        if fresh:
+            self.backup_trusted(source)
+            if "rw" not in rows[0].get("options", "").split(","):
+                raise HostError("native_database_filesystem_readonly")
+            self.require_database_space(source, MOUNT)
+
+    def require_database_space(self, path, name):
+        free = self.backup_free(path)
+        if free >= MIN_DATABASE_FREE:
+            return
+        choices = []
+        try:
+            devices = json.loads(run(["lsblk", "--json", "--list", "--bytes", "--paths", "--output",
+                                      "NAME,TYPE,FSTYPE,PTTYPE,UUID,RO,MOUNTPOINTS,FSAVAIL,SIZE"]))["blockdevices"]
+        except (OSError, ValueError, KeyError, HostError, subprocess.SubprocessError):
+            devices = []
+        for device in devices:
+            if device.get("ro") not in (False, "0"):
+                continue
+            filesystem = device.get("fstype")
+            uuid = device.get("uuid") or ""
+            mounts = [target for target in (device.get("mountpoints") or []) if target]
+            available = device.get("fsavail")
+            if filesystem in {"ext4", "xfs"} and isinstance(available, int) and available >= MIN_DATABASE_FREE:
+                target = next((target for target in mounts if re.fullmatch(r"/[A-Za-z0-9_./-]{0,160}", target)), None)
+                if target:
+                    label = f"{target} ({available / 1024**3:.1f} GiB free)"
+                    if filesystem == "ext4" and UUID.fullmatch(uuid) and target.startswith(("/mnt/", "/srv/", "/media/")):
+                        label += f" [mount at {MOUNT} and use --uuid {uuid}]"
+                    elif re.fullmatch(r"/(?:srv|mnt)/[A-Za-z0-9_-]+", target) and target != MOUNT:
+                        label += f" [if empty, use --directory {target}]"
+                    else:
+                        continue
+                    choices.append((2, available, label))
+            elif not mounts and isinstance(device.get("size"), int) and device["size"] >= MIN_DATABASE_FREE:
+                device_name = device.get("name") or ""
+                if re.fullmatch(r"/dev/[A-Za-z0-9_./-]{1,120}", device_name):
+                    size = device["size"]
+                    if filesystem == "ext4" and UUID.fullmatch(uuid):
+                        choices.append((1, size, f"{device_name} ({size / 1024**3:.1f} GiB capacity, unmounted) "
+                                                  f"[if dedicated to SLI, mount at {MOUNT} and use --uuid {uuid}]"))
+                    elif device.get("type") == "disk" and not filesystem and not device.get("pttype"):
+                        choices.append((0, size, f"{device_name} ({size / 1024**3:.1f} GiB capacity, no detected filesystem) "
+                                                  f"[verify it is unused before preparing ext4 for {MOUNT} and --uuid]"))
+        if choices:
+            candidates = "; ".join(choice[2] for choice in sorted(choices, reverse=True)[:3])
+            remedy = (f"Volumes to check: {candidates}. Verify the volume with lsblk -f and rerun sudo sli-setup "
+                      "with the corresponding storage option and the other setup flags")
+        else:
+            remedy = ("Run lsblk -f to locate another disk. Rerun sudo sli-setup --directory /srv/sli-data with an "
+                      "empty directory on a larger ext4 or XFS filesystem, or free space here")
+        raise GuardError("native_database_space_insufficient", name,
+                         f"{free / 1024**3:.1f} GiB free (20 GiB required)", remedy)
 
     def validate_database_directory(self, value, *, fresh=True, writable=True):
         if (not isinstance(value, str) or not re.fullmatch(r"/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+", value)
@@ -573,8 +717,8 @@ class Host:
                 raise HostError("native_database_filesystem_readonly")
         except (KeyError, TypeError, ValueError):
             raise HostError("native_database_filesystem_unsupported") from None
-        if fresh and self.backup_free(parent) < MIN_DATABASE_FREE:
-            raise HostError("native_database_space_insufficient")
+        if fresh:
+            self.require_database_space(parent, value)
         return source
 
     def validate_receipt_file(self, path):
@@ -630,7 +774,7 @@ class Host:
     def prepare(self, expected=None, *, directory=DIRECTORY):
         receipt = self.path(STATE + "/host-prepared.json")
         if expected is not None:
-            self.mount(expected)
+            self.mount(expected, fresh=not receipt.exists())
         else:
             source = self.validate_database_directory(directory, fresh=not receipt.exists())
         validate_identity()
@@ -641,7 +785,7 @@ class Host:
             return
         if expected is None:
             if source.exists() and any(source.iterdir()):
-                raise HostError("native_existing_database")
+                raise existing_database(directory)
             target = self.path(MOUNT)
             managed_mount = self.path('/etc/systemd/system/' + MOUNT_UNIT)
             resuming = (managed_mount.exists() and managed_mount.read_text() == directory_mount_unit(directory)
@@ -650,10 +794,7 @@ class Host:
                 raise HostError("native_existing_database")
         config = self.path("/etc/postgresql-common/createcluster.conf")
         backup = self.path(STATE + "/createcluster.conf.before")
-        original = backup.read_text() if backup.exists() else (config.read_text() if config.exists() else "")
-        managed = original.rstrip() + "\n# SLI host preparation\ncreate_main_cluster = false\n"
-        if config.exists() and config.read_text() not in (original, managed):
-            raise HostError("native_existing_configuration_conflict")
+        original, current, managed = cluster_guard(config, backup)
         # Do not adopt or stop someone else's database, even if it is not running.
         for name in ("/etc/postgresql", "/var/lib/postgresql", "/var/lib/clickhouse",
                      "/etc/clickhouse-server", MOUNT + "/pgdata", MOUNT + "/clickhouse"):
@@ -678,8 +819,10 @@ class Host:
         self.directory("/etc/sli/secrets", 0o750, group_name="sli-secrets")
         # Preserve vendor/site settings; the final assignment takes precedence.
         ensure_directory(config.parent)
-        config.write_text(managed)
-        config.chmod(0o644)
+        if current != managed:
+            write_guard(config, managed, 0o644)
+        else:
+            config.chmod(0o644)
         if expected is None:
             self.directory(directory, 0o755)
             self.directory(MOUNT, 0o755)
@@ -1023,7 +1166,7 @@ def main(argv=None):
             stopped_ch(args.instance)
         else:
             bootstrap_pg()
-    except (HostError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+    except (HostError, GuardError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         _spec = importlib.util.spec_from_file_location('sli_diagnostics', Path(__file__).with_name('native_diagnostics.py'))
         diagnostics = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(diagnostics)
