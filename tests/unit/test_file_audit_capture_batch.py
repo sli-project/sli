@@ -184,6 +184,8 @@ def test_runtime_drains_file_backlog_only_in_active_controlled_cycle(tmp_path, m
     module, _, identity, seen = setup_capture(tmp_path / "fixture")
     control = collection_policy({"state": "active" if state == "unavailable" else state,
                                  "interval_seconds": 1, "batch_size": 4})
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda _: True)
+    monkeypatch.setattr(runtime, "probe", lambda *a, **k: {"identity_verified": True, "ready": True})
     monkeypatch.setattr(runtime.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(runtime, "IdentityStore", lambda _: SimpleNamespace(
         prepare=lambda: {"host_id": AGENT}, load=lambda: identity, renew_if_due=lambda *a, **k: None))

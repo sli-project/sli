@@ -36,6 +36,8 @@ def receipt(value):
 def exercise(tmp_path, monkeypatch, states, *, reject=False, ack_failure=False, limit=100, interval=5,
              instance=None, updating=False, snapshot_config=None, on_report=None, batch_size=4, msi_update=False,
              read_diagnostics=False, delivery_diagnostics=False):
+    monkeypatch.setattr(runtime, "service_identity_verified", lambda _: True)
+    monkeypatch.setattr(runtime, "probe", lambda *a, **k: {"identity_verified": True, "ready": True})
     config = AgentConfig("https://core.invalid", tmp_path / "ca.pem", tmp_path / "state" if updating or msi_update else tmp_path,
         instance_name=instance, host_id=HOST if instance else None,
         **({"update_root": tmp_path / "releases", "update_trust_store": tmp_path / "trust.json",

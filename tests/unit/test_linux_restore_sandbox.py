@@ -10,6 +10,8 @@ import pytest
 
 from deploy.linux import restore_sandbox as sandbox
 
+pytestmark = pytest.mark.posix_only
+
 
 @pytest.mark.parametrize('configured', ['environment', 'argument', 'work_parent'])
 def test_private_restore_records_history_on_backup_disk(tmp_path, monkeypatch, configured):

@@ -16,8 +16,6 @@
 !scripts/manual_dc_audit/**
 !scripts/dc_client
 !scripts/dc_client/**
-!docs
-!docs/ADMINISTRATIVE_TOOLKIT.md
 !frontend
 !frontend/package.json
 !frontend/src

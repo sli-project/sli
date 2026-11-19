@@ -283,6 +283,7 @@ def test_lost_lease_while_child_runs_always_kills_group(monkeypatch):
     assert killed == [process]
 
 
+@pytest.mark.posix_only
 def test_group_kill_uses_sigkill_and_waits_for_stopped_process(monkeypatch):
     calls = []
     monkeypatch.setattr(executor.os, "killpg", lambda pid, sig: calls.append((pid, sig)))
