@@ -81,11 +81,10 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         assert jobs["source"]["steps"][0]["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
         assert any('not postgres_integration and not host_dependent' in step.get("run", "")
                    for step in jobs["tests"]["steps"])
+        assert jobs["tests"]["runs-on"] == "${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}"
     else:
-        assert "backend" in jobs
+        assert jobs["backend"]["runs-on"] == "${{ vars.SLI_TESTS_RUNNER || 'windows-latest' }}"
 
-    tests_job = jobs["tests" if name == "pr-gate.yml" else "backend"]
-    assert tests_job["runs-on"] == "${{ vars.SLI_TESTS_RUNNER || 'windows-latest' }}"
     for job_name in ("source", "frontend", "postgres"):
         if job_name in jobs:
             assert jobs[job_name]["runs-on"] == "${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}"

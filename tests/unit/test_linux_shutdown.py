@@ -1,6 +1,7 @@
 """Linux update fences finish active work without consuming durable backlogs."""
 import signal
 import subprocess
+import sys
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -222,8 +223,11 @@ def test_semantic_backlog_continues_after_version_restart(monkeypatch, sig):
         assert beats[-1]["phase"] == "production_stop_requested"
 
 
-def test_http_sigterm_closes_admission_and_keeps_request_threads_joinable():
+def test_http_sigterm_closes_admission_and_keeps_request_threads_joinable(monkeypatch):
     from threading import Event
+
+    if sys.platform == 'win32':
+        monkeypatch.setattr(shutdown, 'os', SimpleNamespace(name='posix'))
 
     class Server:
         daemon_threads = True
