@@ -8,7 +8,7 @@ using Sli.Server.Storage.Lifecycle;
 
 namespace Sli.Server.Tests.Agents;
 
-// Every test owns a fresh cluster, loopback port and generated login; no inherited DSN.
+// Every test owns a cluster and loopback port; no inherited DSN.
 internal sealed class PostCollectionPostgres(bool canonicalSchema = false, string host = "127.0.0.1", int? fixedPort = null, string database = "postgres", int maxConnections = 100) : IAsyncDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "sli-p04-" + Guid.NewGuid().ToString("N"));
@@ -19,7 +19,9 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
     private Task<string>? serverOutput, serverError;
     internal string ConnectionString => dsn;
     internal string Root => root;
+    internal string DataDirectory => Path.Combine(root, "data");
     internal string BinaryDirectory => bin;
+    internal const string TemplateDatabase = "sli_test_template";
     internal async Task<string> DiagnosticsAsync(CancellationToken ct)
     {
         await using var stream = new FileStream(Path.Combine(root, "data", "log", "p04.log"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -40,13 +42,16 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
         if (process.ExitCode != 0) throw new InvalidOperationException(name + " failed: " + result);
     }
 
-    internal async Task StartAsync(CancellationToken ct)
+    internal async Task StartAsync(CancellationToken ct, string? templateData = null)
     {
         var candidates = OperatingSystem.IsWindows() ? new[] { "D:/PostgreSQL/18/bin", "C:/Program Files/PostgreSQL/18/bin", "C:/Program Files/PostgreSQL/17/bin" }
             : Directory.Exists("/usr/lib/postgresql") ? Directory.GetDirectories("/usr/lib/postgresql").OrderDescending().Select(d => Path.Combine(d, "bin")).ToArray() : ["/usr/local/pgsql/bin"];
         bin = candidates.FirstOrDefault(d => File.Exists(Path.Combine(d, "initdb" + (OperatingSystem.IsWindows() ? ".exe" : "")))) ?? throw new InvalidOperationException("PostgreSQL test binaries required");
         Directory.CreateDirectory(root);
-        await ProcessAsync("initdb", ct, "-D", Path.Combine(root, "data"), "--username=" + login, "--auth=trust", "--no-locale", "--encoding=UTF8");
+        if (templateData is null)
+            await ProcessAsync("initdb", ct, "-D", DataDirectory, "--username=" + login, "--auth=trust", "--no-locale", "--encoding=UTF8");
+        else
+            CopyTemplateData(templateData, DataDirectory, ct);
         await File.AppendAllTextAsync(Path.Combine(root, "data", "postgresql.conf"), $"\nmax_connections={maxConnections}\nsuperuser_reserved_connections=3\n", ct);
         using var listener = new TcpListener(IPAddress.Parse(host), fixedPort ?? 0); listener.Start(); int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
         dsn = new NpgsqlConnectionStringBuilder { Host = host, Port = port, Database = "postgres", Username = login, Pooling = false, Timeout = 3, CommandTimeout = 15, SslMode = SslMode.Disable }.ConnectionString;
@@ -69,7 +74,10 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
                 } catch (IOException) { }
                 await Task.Delay(100, ct);
             }
-            if (!acceptingConnections) throw new TimeoutException("Isolated PostgreSQL did not become ready");
+            if (!acceptingConnections) {
+                string log = File.Exists(Path.Combine(DataDirectory, "log", "p04.log")) ? await DiagnosticsAsync(ct) : "";
+                throw new TimeoutException("Isolated PostgreSQL did not become ready: " + log);
+            }
             started = true;
         } else {
             await ProcessAsync("pg_ctl", ct, "-D", Path.Combine(root, "data"), "-l", Path.Combine(root, "postgres.log"), "-o", $"-h {host} -p {port} -c unix_socket_directories= -c timezone=UTC -c logging_collector=on -c log_directory=log -c log_filename=p04.log", "-t", "10", "-w", "start");
@@ -78,17 +86,56 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
         // The postmaster can accept sockets before a backend has completed
         // startup on a busy runner. Bound fixture setup separately from app I/O.
         var setup = new NpgsqlConnectionStringBuilder(dsn) { Timeout = 10 };
-        if (database != "postgres") {
-            if (database != "sli") throw new ArgumentException(nameof(database));
+        if (database is not ("postgres" or "sli")) throw new ArgumentException(nameof(database));
+        if (templateData is not null) {
+            // Database copying and checkpoints depend on the runner's disk.
+            // Keep the application command timeout on the test connections.
+            var settings = new NpgsqlConnectionStringBuilder(setup.ConnectionString) { Database = "template1", CommandTimeout = 0 };
+            await using var maintenance = new NpgsqlConnection(settings.ConnectionString);
+            await maintenance.OpenAsync(ct);
+            await Sql(maintenance, $"create database {database} template {TemplateDatabase}", ct);
+            await Sql(maintenance, $"drop database {TemplateDatabase}", ct);
+            if (database == "sli") await Sql(maintenance, "create database postgres", ct);
+        } else if (database == "sli") {
             await using var initial = new NpgsqlConnection(setup.ConnectionString); await initial.OpenAsync(ct);
             await Sql(initial, "create database sli", ct);
-            setup.Database = database;
-            dsn = new NpgsqlConnectionStringBuilder(dsn) { Database = database }.ConnectionString;
         }
+        setup.Database = database;
+        dsn = new NpgsqlConnectionStringBuilder(dsn) { Database = database }.ConnectionString;
         await using var db = new NpgsqlConnection(setup.ConnectionString); await db.OpenAsync(ct);
-        await using var seed = new NpgsqlCommand("create table sli_p04_test_owner(id uuid primary key); insert into sli_p04_test_owner values(@id)", db);
+        string own = templateData is null
+            ? "create table sli_p04_test_owner(id uuid primary key); insert into sli_p04_test_owner values(@id)"
+            : "update sli_p04_test_owner set id=@id";
+        await using var seed = new NpgsqlCommand(own, db);
         seed.Parameters.AddWithValue("id", identity); await seed.ExecuteNonQueryAsync(ct);
         if (!canonicalSchema) await SchemaAsync(db, ct);
+    }
+
+    private static void CopyTemplateData(string source, string destination, CancellationToken ct)
+    {
+        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(destination);
+        else Directory.CreateDirectory(destination, File.GetUnixFileMode(source));
+        foreach (var directory in Directory.EnumerateDirectories(source)) {
+            string name = Path.GetFileName(directory);
+            // Startup creates a separate log for each fixture.
+            if (name != "log") CopyTemplateData(directory, Path.Combine(destination, name), ct);
+        }
+        foreach (var file in Directory.EnumerateFiles(source)) {
+            ct.ThrowIfCancellationRequested();
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        }
+    }
+
+    internal async Task FreezeTemplateAsync(CancellationToken ct)
+    {
+        var settings = new NpgsqlConnectionStringBuilder(dsn) { Database = "template1", Timeout = 10, CommandTimeout = 0 };
+        await using (var db = new NpgsqlConnection(settings.ConnectionString)) {
+            await db.OpenAsync(ct);
+            await Sql(db, $"alter database postgres rename to {TemplateDatabase}", ct);
+            await Sql(db, "checkpoint", ct);
+        }
+        // Copy only an offline cluster that completed a clean shutdown.
+        await StopAsync("fast", ct);
     }
     internal async Task ApplyFileAsync(string path, string? role, CancellationToken ct)
     {
@@ -219,10 +266,23 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
             grant execute on function lock_nps_import_agent_v304(uuid) to adlog_nps_agent_import_worker;
             """, ct);
     }
+    private async Task StopAsync(string mode, CancellationToken ct)
+    {
+        if (started || File.Exists(Path.Combine(DataDirectory, "postmaster.pid")))
+            await ProcessAsync("pg_ctl", ct, "-D", DataDirectory, "-t", "10", "-w", "-m", mode, "stop");
+        started = false;
+        if (server is not null) {
+            await server.WaitForExitAsync(ct);
+            if (serverOutput is not null) await serverOutput;
+            if (serverError is not null) await serverError;
+            server.Dispose();
+            server = null;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        if (started || File.Exists(Path.Combine(root, "data", "postmaster.pid"))) await ProcessAsync("pg_ctl", CancellationToken.None, "-D", Path.Combine(root, "data"), "-t", "10", "-w", "-m", "immediate", "stop");
-        if (server is not null) { await server.WaitForExitAsync(); if (serverOutput is not null) await serverOutput; if (serverError is not null) await serverError; server.Dispose(); }
+        await StopAsync("immediate", CancellationToken.None);
         // Only remove this fixture's unique directory after its own server has stopped.
         string resolved = Path.GetFullPath(root), parent = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
         if (Directory.Exists(resolved) && Path.GetDirectoryName(resolved) == parent && Path.GetFileName(resolved).StartsWith("sli-p04-", StringComparison.Ordinal)) Directory.Delete(resolved, true);
