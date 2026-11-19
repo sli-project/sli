@@ -4,6 +4,11 @@ name: Agent .NET MSI (unsigned, manual)
 # Fail closed if the hosted image no longer contains the locked native toolchain.
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      commit:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,7 +24,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: ${{ inputs.commit && '0' || '1' }}
           persist-credentials: false
+      - name: Select the beta kit source commit
+        if: inputs.commit
+        shell: pwsh
+        env:
+          KIT_COMMIT: ${{ inputs.commit }}
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:KIT_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full SHA on main.' }
+          git merge-base --is-ancestor $env:KIT_COMMIT $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Agent source commit is outside main.' }
+          git checkout --detach $env:KIT_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Agent source checkout failed.' }
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: agent-dotnet/global.json
@@ -61,12 +78,13 @@ jobs:
         shell: pwsh
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade'
-          ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version 0.2.3 -NoRestore `
+          ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version 0.3.6 -NoRestore `
             -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
           ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
-            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion 0.2.3
-      - name: Exercise quiet install, upgrade, uninstall and retained registration
+            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion 0.3.6
+      - name: Exercise quiet install, upgrade and uninstall with queue retention
         shell: pwsh
+        working-directory: agent-dotnet
         run: |
           $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -76,29 +94,29 @@ jobs:
           $env:SLI_AGENT_MSI_DISPOSABLE = '1'
           $env:SLI_AGENT_MSI_BASELINE = Join-Path $env:RUNNER_TEMP 'agent-dotnet/SliAgent.msi'
           $env:SLI_AGENT_MSI_UPGRADE = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade/SliAgent.msi'
-          dotnet test agent-dotnet/tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj -c Release `
+          dotnet test tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj -c Release `
             --filter 'FullyQualifiedName~MsiLifecycleWindowsTests' --logger 'console;verbosity=normal'
           if ($LASTEXITCODE -ne 0) { throw 'MSI lifecycle test failed' }
-      - name: Package MSI, portable publish and SHA256SUMS
+      - name: Package MSI and source manifest
         shell: pwsh
+        env:
+          SOURCE_COMMIT: ${{ inputs.commit || github.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet'
           $dest = Join-Path $env:RUNNER_TEMP 'artifact'
           New-Item -ItemType Directory -Force $dest | Out-Null
-          $publish = Join-Path $out 'publish'
-          if (-not (Test-Path -LiteralPath (Join-Path $publish 'SliAgent.exe') -PathType Leaf)) { throw 'SliAgent.exe is missing' }
-          Copy-Item -LiteralPath (Join-Path $out 'SliAgent.msi') -Destination $dest
-          Compress-Archive -Path (Join-Path $publish '*') -DestinationPath (Join-Path $dest 'SliAgent-publish-win-x64.zip')
-          $sums = foreach ($name in @('SliAgent.msi', 'SliAgent-publish-win-x64.zip')) {
-            $file = Join-Path $dest $name
-            if ((Get-Item -LiteralPath $file).Length -eq 0) { throw "Empty artifact: $name" }
-            "$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
-          }
-          $sums | Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS') -Encoding utf8
+          if ($env:SOURCE_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full source SHA.' }
+          $name = "SliAgent-$env:SOURCE_COMMIT.msi"
+          $file = Join-Path $dest $name
+          Copy-Item -LiteralPath (Join-Path $out 'SliAgent.msi') -Destination $file
+          if ((Get-Item -LiteralPath $file).Length -eq 0) { throw "Empty artifact: $name" }
+          $digest = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = @{ source_commit = $env:SOURCE_COMMIT; sha256 = $digest } | ConvertTo-Json
+          [IO.File]::WriteAllText("$file.json", $manifest + "`n")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sli-agent-dotnet-msi-${{ github.sha }}
+          name: sli-agent-dotnet-msi-${{ inputs.commit || github.sha }}
           path: ${{ runner.temp }}/artifact
           if-no-files-found: error
           retention-days: 14

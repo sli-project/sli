@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -8,12 +9,56 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Sli.Server.Agents.Control;
 using Xunit;
 
 namespace Sli.Server.Tests.Agents;
 
 public sealed class AgentEndpointTests
 {
+    [Fact]
+    public async Task Installer_download_is_anonymous_over_https_and_reports_missing_package()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string path = Path.Combine(Path.GetTempPath(), $"sli-test-{Guid.NewGuid():N}.msi");
+        byte[] package = "synthetic MSI"u8.ToArray();
+        try
+        {
+            await File.WriteAllBytesAsync(path, package, ct);
+            using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .ConfigureLogging(logging => logging.ClearProviders())
+                .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sli:AgentInstallerPath"] = path, ["Sli:AgentMtlsCaFile"] = "", ["Sli:AuthRequired"] = "1",
+                    ["Sli:AuthAllowInsecureHttp"] = "1", ["Sli:OwnerSetup"] = "0"
+                })));
+            using var httpClient = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            using var http = await httpClient.GetAsync(AgentConsolePackage.DownloadPath, ct);
+            Assert.Equal(HttpStatusCode.NotFound, http.StatusCode);
+
+            using var client = host.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://sli.example.test") });
+            using var https = await client.GetAsync(AgentConsolePackage.DownloadPath, ct);
+            Assert.Equal(HttpStatusCode.OK, https.StatusCode);
+            Assert.Equal("no-store", https.Headers.CacheControl?.ToString());
+            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(package)), Assert.Single(https.Headers.GetValues("X-SLI-Package-SHA256")));
+            Assert.Equal("SliAgent.msi", https.Content.Headers.ContentDisposition?.FileName);
+            Assert.Equal(package, await https.Content.ReadAsByteArrayAsync(ct));
+
+            File.Delete(path);
+            using var missing = await client.GetAsync(AgentConsolePackage.DownloadPath, ct);
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            using var error = JsonDocument.Parse(await missing.Content.ReadAsByteArrayAsync(ct));
+            Assert.Equal("agent_console_package_unavailable", error.RootElement.GetProperty("error").GetString());
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData("a'b", "'a''b'")]
+    [InlineData("a\u2018\u2019\u201a\u201b\u201cb\u201d", "'a\u2018\u2018\u2019\u2019\u201a\u201a\u201b\u201b\u201cb\u201d'")]
+    public void Installer_arguments_escape_PowerShell_single_quotes(string value, string literal) =>
+        Assert.Equal(literal, AgentConsolePackage.QuotePowerShell(value));
+
     [Fact]
     public async Task PlainHttpCannotEnrollRenewOrSubmitPacket()
     {

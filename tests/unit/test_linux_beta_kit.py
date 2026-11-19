@@ -44,6 +44,60 @@ def test_modified_cache_package_aborts_before_copy(tmp_path):
     assert not list(output.iterdir())
 
 
+@pytest.mark.parametrize('explicit', [False, True])
+def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, explicit):
+    commit = 'a' * 40
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    source = tmp_path / 'agent.msi' if explicit else cache / f'SliAgent-{commit}.msi'
+    source.write_bytes(b'agent MSI bytes')
+    kit.write_json(cache / f'SliAgent-{commit}.msi.json', {
+        'source_commit': commit, 'sha256': kit.sha256(source),
+    })
+    work = tmp_path / 'work'
+    work.mkdir()
+
+    staged = kit.stage_agent_msi(cache, commit, work, source if explicit else None)
+    source.write_bytes(b'changed after verification')
+
+    assert staged.read_bytes() == b'agent MSI bytes'
+
+
+@pytest.mark.parametrize(('problem', 'message'), [
+    ('missing', 'Missing trusted agent MSI manifest'),
+    ('hash', 'Agent MSI SHA-256 mismatch'),
+    ('commit', 'Agent MSI manifest does not identify source commit'),
+])
+def test_beta_kit_rejects_unverified_agent_msi(tmp_path, monkeypatch, problem, message):
+    commit = 'a' * 40
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    source = cache / f'SliAgent-{commit}.msi'
+    source.write_bytes(b'agent MSI bytes')
+    if problem != 'missing':
+        kit.write_json(cache / f'{source.name}.json', {
+            'source_commit': 'b' * 40 if problem == 'commit' else commit,
+            'sha256': '0' * 64 if problem == 'hash' else kit.sha256(source),
+        })
+    monkeypatch.setattr(kit.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(kit.platform, 'machine', lambda: 'x86_64')
+    monkeypatch.setattr(kit.os, 'geteuid', lambda: 1000, raising=False)
+    monkeypatch.setattr(kit.os, 'umask', lambda mask: None)
+    monkeypatch.setattr(kit, 'git', lambda root, operation, *args: commit if operation == 'rev-parse' else '123')
+
+    def export_commit(root, ref, checkout, archive):
+        installer = checkout / 'server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1'
+        installer.parent.mkdir(parents=True)
+        installer.touch()
+
+    monkeypatch.setattr(kit, 'export_commit', export_commit)
+    output = tmp_path / 'kit'
+    with pytest.raises(ValueError, match=message):
+        kit.build(kit.ROOT, commit, cache, output, tmp_path)
+
+    assert not output.exists()
+
+
 def test_generated_linux_restore_must_use_hashes_from_the_committed_lock():
     package = {'type': 'Transitive', 'resolved': '1.0', 'contentHash': 'fixture-sha512'}
     original = {'version': 2, 'dependencies': {'net10.0': {'Package': package}}}

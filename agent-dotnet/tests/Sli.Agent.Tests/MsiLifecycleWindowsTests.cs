@@ -18,7 +18,7 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
 {
     [MsiLifecycleFact]
     [Trait("Category", "WindowsOnly")]
-    public async Task QuietInstallUpgradeAndUninstallPreserveRegistrationAndPendingCursor()
+    public async Task UpgradePreservesIdentityAndUninstallClearsItWithExplicitQueuePurge()
     {
         using var currentUser = WindowsIdentity.GetCurrent();
         Assert.True(new WindowsPrincipal(currentUser).IsInRole(WindowsBuiltInRole.Administrator),
@@ -68,9 +68,9 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
                 Assert.Equal(identity.Certificate.Thumbprint, restored.Certificate.Thumbprint);
                 Assert.True(restored.Certificate.HasPrivateKey);
             }
-            void AssertQueue()
+            void AssertQueue(string directory)
             {
-                using var queue = new FilePacketQueue(Path.Combine(options.StateDir, "queue"),
+                using var queue = new FilePacketQueue(directory,
                     new PhysicalDurableFiles(new WindowsDirectorySecurity()), options.SpoolMaxBytes, options.SpoolMaxAgeSeconds);
                 Assert.Equal(packet, Assert.Single(queue.Pending()).ToCanonical());
                 Assert.Equal(cursor, queue.Captured("sli.test"));
@@ -102,24 +102,25 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             }
             AssertServiceRunning();
             AssertState();
+            AssertQueue(Path.Combine(options.StateDir, "queue"));
             Assert.Equal("https://127.0.0.1:1", MsiConfiguration.ReadSettings()["Agent:ServerUrl"]);
             // Uninstall starts with the service running; MSI itself must stop it before removing files.
             await Msi("uninstall", "/x", upgrade, "/qn", "/norestart");
             AssertServiceAbsent();
             Assert.False(File.Exists(Path.Combine(program, "SliAgent.exe")));
             if (Directory.Exists(program)) Assert.Empty(Directory.EnumerateFiles(program, "*", SearchOption.AllDirectories));
-            AssertState();
-            AssertQueue();
-            Assert.Equal("https://127.0.0.1:1", MsiConfiguration.ReadSettings()["Agent:ServerUrl"]);
-            // Reinstallation with no bootstrap also uses the intentionally retained registration.
-            await Msi("reinstall", "/i", upgrade, "/qn", "/norestart");
+            Assert.False(Directory.Exists(options.StateDir));
+            AssertQueue(Path.Combine(dataRoot, "retained-queue-state"));
+            Assert.False(MsiConfiguration.ReadSettings().ContainsKey("Agent:ServerUrl"));
+            await Msi("reinstall", "/i", upgrade, "/qn", "/norestart", "SERVER_URL=https://127.0.0.1:1",
+                "ENROLL_TOKEN=synthetic-unused-bootstrap");
             AssertServiceRunning();
-            AssertState();
-            await Msi("remove-reinstalled", "/x", upgrade, "/qn", "/norestart");
+            Assert.False(File.Exists(Path.Combine(options.StateDir, "identity.json")));
+            await Msi("remove-reinstalled", "/x", upgrade, "/qn", "/norestart", "PURGE_QUEUE=1");
             AssertServiceAbsent();
             if (Directory.Exists(program)) Assert.Empty(Directory.EnumerateFiles(program, "*", SearchOption.AllDirectories));
-            AssertState();
-            AssertQueue();
+            Assert.False(Directory.Exists(options.StateDir));
+            Assert.Empty(Directory.EnumerateDirectories(dataRoot, "retained-queue-*"));
         }
         finally
         {

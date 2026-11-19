@@ -355,19 +355,22 @@ def test_dotnet_published_package_needs_no_sdk(payload, tmp_path, monkeypatch):
     (published / "Sli.Server").write_bytes(b"synthetic-apphost")
     (published / "Sli.Server.runtimeconfig.json").write_text("{}")
     (published / "Sli.Server.dll").write_bytes(b"synthetic-assembly")
+    msi = tmp_path / "fixture-agent.msi"
+    msi.write_bytes(b"synthetic agent package")
     captured = {}
 
     def run(argv, **kwargs):
         assert argv[:3] == ["dpkg-deb", "--root-owner-group", "--build"]
         root = Path(argv[3])
-        if root.name == "sli-server-dotnet":
+        if root.name in {"sli-server-dotnet", "sli-release-new"}:
             captured.update({p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()})
 
     monkeypatch.setattr(package.subprocess, "run", run)
-    result = package.build(payload, tmp_path / "out", "new", VERSION, VERSION, dotnet_published=published)
+    result = package.build(payload, tmp_path / "out", "new", VERSION, VERSION, dotnet_published=published, agent_msi=msi)
     assert len(result) == 5
     assert captured["opt/sli/dotnet/new/Sli.Server"] == b"synthetic-apphost"
     assert captured["opt/sli/dotnet/new/Sli.Server.dll"] == b"synthetic-assembly"
+    assert captured["opt/sli/releases/new/agent/SliAgent.msi"] == msi.read_bytes()
 
 
 @pytest.mark.parametrize("invalid", ["missing", "incomplete", "private", "both"])

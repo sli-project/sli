@@ -133,6 +133,13 @@ extern "C" __declspec(dllexport) UINT __stdcall RollbackRegistration(MSIHANDLE s
 extern "C" __declspec(dllexport) UINT __stdcall CommitRegistration(MSIHANDLE session) {
     try {Require(MsiGetMode(session,MSIRUNMODE_COMMIT)&&CurrentUserSid()==L"S-1-5-18");const auto input=Context(session);if(StageExists(input))CommitProduction(input.transactionId);return ERROR_SUCCESS;}catch(...){return Failed(session);}
 }
+extern "C" __declspec(dllexport) UINT __stdcall CleanAgentState(MSIHANDLE session) {
+    try {
+        Require(MsiGetMode(session,MSIRUNMODE_COMMIT) && CurrentUserSid()==L"S-1-5-18");
+        CleanProductionState(Property(session,L"CustomActionData")==L"1");
+        return ERROR_SUCCESS;
+    } catch (...) { return Failed(session); }
+}
 extern "C" __declspec(dllexport) UINT __stdcall ClearRegistrationData(MSIHANDLE session) {try{Set(session,L"StageRegistration",L"");Set(session,L"RollbackRegistration",L"");return ERROR_SUCCESS;}catch(...){return Failed(session);}}
 extern "C" __declspec(dllexport) UINT __stdcall ClearCommitData(MSIHANDLE session) {try{Set(session,L"CommitRegistration",L"");return ERROR_SUCCESS;}catch(...){return Failed(session);}}
 extern "C" __declspec(dllexport) UINT __stdcall CleanupUiSnapshot(MSIHANDLE session) {try{CleanupUi(session);}catch(...){/* Protected orphan is retained on uncertain cleanup; no SYSTEM pathname fallback. */}return ERROR_SUCCESS;}

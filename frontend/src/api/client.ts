@@ -2294,6 +2294,11 @@ export const api = {
   agentUpdateWaves: () => request<{ items: AgentUpdateWave[] }>("/api/v1/admin/agent-update-waves"),
   stopAgentUpdateWave: (wave_id: string) => requestMutation<AgentUpdateWave>("/api/v1/admin/agent-update-waves/stop", "POST", { wave_id }),
   createAgentToken: (body: { host_id: string; key_fingerprint: string; ttl_seconds: number; registration_host_name?: string }) => requestMutation<AgentEnrollmentToken>("/api/v1/admin/agent-tokens", "POST", body),
+  createAgentConsoleToken: (hostLimit: number) => requestMutation<{ id: string; expires_at: string; command: string; package_url: string }>(
+    "/api/v1/admin/agent-console-tokens", "POST", { host_limit: hostLimit }),
+  agentConsoleTokens: () => request<{ items: { id: string; created_at: string; expires_at: string; remaining: number }[] }>(
+    "/api/v1/admin/agent-console-tokens"),
+  revokeAgentConsoleToken: (id: string) => requestMutation("/api/v1/admin/agent-console-tokens/revoke", "POST", { id }),
   homeSummary: () => request<HomeSummary>("/api/v1/home/summary").then(localizeHomeSummary),
   homeDecisions: (params = new URLSearchParams()) => {
     const query = new URLSearchParams(params);

@@ -96,6 +96,33 @@ def copy_inputs(cache, output, pins):
             raise ValueError(f'Package changed during copy: {name}')
 
 
+def stage_agent_msi(cache, commit, output, source=None):
+    # The runner's input cache is trusted. An MSI supplied by path cannot
+    # supply its own expected hash or source commit.
+    name = f'SliAgent-{commit}.msi'
+    manifest = cache / f'{name}.json'
+    if not manifest.is_file() or manifest.is_symlink():
+        raise ValueError(f'Missing trusted agent MSI manifest for {commit}: {manifest}')
+    try:
+        metadata = json.loads(manifest.read_text(encoding='utf-8'))
+    except ValueError as error:
+        raise ValueError(f'Invalid agent MSI manifest: {manifest}') from error
+    if not isinstance(metadata, dict) or metadata.get('source_commit') != commit:
+        raise ValueError(f'Agent MSI manifest does not identify source commit {commit}: {manifest}')
+    digest = metadata.get('sha256')
+    if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
+        raise ValueError(f'Invalid agent MSI SHA-256 in {manifest}')
+
+    source = source if source is not None else cache / name
+    if source.suffix.lower() != '.msi' or source.is_symlink() or not source.is_file():
+        raise ValueError(f'Agent MSI for {commit} is missing or invalid: {source}')
+    staged = output / 'SliAgent.msi'
+    shutil.copyfile(source, staged)
+    if staged.stat().st_size == 0 or sha256(staged) != digest:
+        raise ValueError(f'Agent MSI SHA-256 mismatch for {commit}: {source}')
+    return staged
+
+
 def input_pins(pins):
     spec = pins['runtime_build']
     artifact = pins.get('runtime_artifact')
@@ -316,7 +343,7 @@ def finish(output, commit, release, version, *, toolchain):
     return manifest
 
 
-def build(root, ref, cache, output, pg_bin):
+def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64' or os.geteuid() == 0:
         raise ValueError('Run the build as an ordinary user on an amd64 Linux runner')
     if not cache.is_dir() or output.exists() or output.is_symlink():
@@ -337,6 +364,9 @@ def build(root, ref, cache, output, pg_bin):
         checkout.mkdir()
         packages.mkdir()
         export_commit(root, commit, checkout, work / 'source.tar')
+        agent_args = []
+        if (checkout / 'server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1').is_file():
+            agent_args = ['--agent-msi', stage_agent_msi(cache, commit, work, agent_msi).absolute()]
         version = f"{(checkout / 'VERSION').read_text(encoding='utf-8').strip()}-{epoch}{int(commit[:8], 16):010}~deb13"
         if not native_package.VERSION.fullmatch(version):
             raise ValueError('VERSION is not valid for the Debian beta kit')
@@ -367,7 +397,7 @@ def build(root, ref, cache, output, pg_bin):
         prepare_release(checkout, payload, packages / runtime_filename, artifact, pg_version, observed, commit, epoch)
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
-                 '--dotnet-published', published], cwd=checkout, env=env)
+                 '--dotnet-published', published, *agent_args], cwd=checkout, env=env)
         finish(packages, commit, release, version, toolchain=toolchain)
         packages.rename(output)
     return output
@@ -382,6 +412,8 @@ def main():
     output.add_argument('--verify-inputs', action='store_true', help='verify the pinned cache without building')
     parser.add_argument('--pg-bin', type=Path, default=Path('/usr/lib/postgresql/18/bin'),
                         help='PostgreSQL 18 tools for the disposable migration inventory')
+    parser.add_argument('--agent-msi', type=Path,
+                        help='override SliAgent-<commit>.msi; its trusted .msi.json manifest stays in --debs')
     args = parser.parse_args()
     try:
         cache = args.debs.resolve()
@@ -391,7 +423,7 @@ def main():
             _, _, locked = input_pins(pins)
             print(f'{len(checked_inputs(cache, locked))} pinned packages verified for {commit}')
         else:
-            print(build(ROOT, args.commit, cache, args.output.absolute(), args.pg_bin.resolve()))
+            print(build(ROOT, args.commit, cache, args.output.absolute(), args.pg_bin.resolve(), agent_msi=args.agent_msi))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'Beta kit build failed: {error}\n')
 
