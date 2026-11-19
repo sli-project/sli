@@ -226,7 +226,6 @@ def test_loader_isolation_restores_aliases_functions_and_contract_errors():
         contracts._gpo_settings(None)
 
 
-@pytest.mark.posix_only
 def test_retained_hook_observes_generation_changes_and_drain(tmp_path, monkeypatch):
     runtime = tmp_path / "runtime"
     monkeypatch.setenv("SLI_PLUGIN_RUNTIME_DIR", str(runtime))
