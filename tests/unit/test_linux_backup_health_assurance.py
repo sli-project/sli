@@ -14,6 +14,8 @@ from deploy.linux import sli_update as update
 from tests.unit.test_linux_backup import STAMP
 from tests.unit.test_linux_backup_verification import integrity_set, run_scheduled_cycle
 
+pytestmark = pytest.mark.posix_only
+
 
 def captured(root, monkeypatch):
     path, _ = integrity_set(root, monkeypatch)

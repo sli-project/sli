@@ -126,11 +126,20 @@ public sealed partial class WorkstationInventoryJobPostgresTests
     public async Task Final_core_fence_rejects_expiry_after_effects_before_finish(string field)
     {
         await using var db = await fixture.Open(); await Directory(db); var job = await Job(db); var staged = await Stage(db, job);
-        await Exec(db, "update sli_jobs.jobs set " + field + "=clock_timestamp()+interval '2 seconds' where job_id=@p0", Guid.Parse(job.Text("job_id")!));
-        await Assert.ThrowsAsync<CoreJobLeaseLost>(() => Publish(db, job, staged, async () => { await Scalar(db, "select pg_sleep(2.1)"); }));
+        var id = Guid.Parse(job.Text("job_id")!);
+        await Exec(db, "update sli_jobs.jobs set available_at=clock_timestamp()-interval '1 minute' where job_id=@p0", id);
+        bool expiredAfterEffects = false;
+        await Assert.ThrowsAsync<CoreJobLeaseLost>(() => Publish(db, job, staged, async () => {
+            // Move the clock field after plugin publication, while this transaction owns the job lock.
+            await Exec(db, "set local session authorization default");
+            Assert.Equal(1, await Exec(db, "update sli_jobs.jobs set " + field + "=clock_timestamp()-interval '1 second' where job_id=@p0", id));
+            await Exec(db, "set local session authorization sli_job_publisher_light");
+            expiredAfterEffects = true;
+        }));
+        Assert.True(expiredAfterEffects);
         await Empty(db);
-        Assert.Equal("leased", await Scalar(db, "select state from sli_jobs.jobs where job_id=@p0", Guid.Parse(job.Text("job_id")!)));
-        Assert.Null(await Scalar(db, "select result_payload from sli_jobs.jobs where job_id=@p0", Guid.Parse(job.Text("job_id")!)));
+        Assert.Equal("leased", await Scalar(db, "select state from sli_jobs.jobs where job_id=@p0", id));
+        Assert.Null(await Scalar(db, "select result_payload from sli_jobs.jobs where job_id=@p0", id));
     }
 
     [Theory]
@@ -139,16 +148,17 @@ public sealed partial class WorkstationInventoryJobPostgresTests
     public async Task Atomic_receipt_does_not_require_outer_commit_before_lease_wall_clock(bool immediate)
     {
         await using var db = await fixture.Open(); await Directory(db); var job = await Job(db); var staged = await Stage(db, job);
-        await Exec(db, "update sli_jobs.jobs set lease_until=clock_timestamp()+interval '2 seconds' where job_id=@p0", Guid.Parse(job.Text("job_id")!));
+        // Give SQL publication time to finish under load, then wait for the exact expiry before COMMIT.
+        var expires = Assert.IsType<DateTime>(await Scalar(db, "update sli_jobs.jobs set lease_until=clock_timestamp()+interval '15 seconds' where job_id=@p0 returning lease_until", Guid.Parse(job.Text("job_id")!)));
         await As(db, "sli_job_publisher_light", async () => {
-            var session = new DelayedCommit(new PostgresCoreJobSession(db), db, immediate);
+            var session = new DelayedCommit(new PostgresCoreJobSession(db), db, expires, immediate);
             Assert.Equal("committed", await new CoreJobQueue(session).PublishAsync(job, staged, ct => Handler(job).Publish(db, job, staged, ct), Ct));
         });
         Assert.Equal(1L, await Scalar(db, "select count(*) from sli_plugin_workstations.station_inventory"));
         Assert.Equal("completed", await Scalar(db, "select state from sli_jobs.jobs where job_id=@p0", Guid.Parse(job.Text("job_id")!)));
         Assert.Equal(true, await Scalar(db, "select lease_until<clock_timestamp() from sli_plugin_workstations.inventory_publications where job_id=@p0", Guid.Parse(job.Text("job_id")!)));
     }
-    sealed class DelayedCommit(ICoreJobSession inner, NpgsqlConnection db, bool immediate) : ICoreJobSession
+    sealed class DelayedCommit(ICoreJobSession inner, NpgsqlConnection db, DateTime expires, bool immediate) : ICoreJobSession
     {
         public Task<object?> CallAsync(string function, object?[] args, CancellationToken ct) => inner.CallAsync(function, args, ct);
         public Task BeginAsync(CancellationToken ct) => inner.BeginAsync(ct);
@@ -156,7 +166,7 @@ public sealed partial class WorkstationInventoryJobPostgresTests
         public async Task CommitAsync(CancellationToken ct)
         {
             if (immediate) await Exec(db, "set constraints all immediate");
-            await Scalar(db, "select pg_sleep(2.1)");
+            await Scalar(db, "select pg_sleep_until(@p0)", expires);
             await inner.CommitAsync(ct);
         }
     }

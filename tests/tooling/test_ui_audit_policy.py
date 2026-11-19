@@ -133,7 +133,9 @@ def test_missing_passport_blocks_before_browser_or_model(tmp_path, entrypoint):
     if entrypoint == "crawler":
         command = [shutil.which("node"), str(ROOT / "scripts/dev/ui_audit/crawl.cjs"), env["SLI_AUDIT_ORIGIN"], str(tmp_path / "run"), "ru"]
     else:
-        command = ["bash", str(ROOT / "scripts/dev/ui_audit/run_review.sh"), str(tmp_path / "run")]
+        bash = shutil.which("bash")
+        assert bash, "bash is required for the review launcher test"
+        command = [bash, (ROOT / "scripts/dev/ui_audit/run_review.sh").as_posix(), str(tmp_path / "run")]
     result = subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True)
     assert result.returncode == 2
     assert "blocked" in result.stdout + result.stderr

@@ -226,6 +226,7 @@ def test_loader_isolation_restores_aliases_functions_and_contract_errors():
         contracts._gpo_settings(None)
 
 
+@pytest.mark.posix_only
 def test_retained_hook_observes_generation_changes_and_drain(tmp_path, monkeypatch):
     runtime = tmp_path / "runtime"
     monkeypatch.setenv("SLI_PLUGIN_RUNTIME_DIR", str(runtime))
@@ -288,6 +289,7 @@ def test_gpo_registration_imports_no_snapshot_executor(monkeypatch):
 @pytest.mark.parametrize("plugin_id,handler_id", [
     ("sli.ad", "ad-snapshot-manifest-coordinator"), ("sli.gpo", "gpo-snapshot"),
 ])
+@pytest.mark.posix_only
 def test_registry_retains_old_job_hash_but_schedules_active_generation(tmp_path, monkeypatch, plugin_id, handler_id):
     from server.sli.core import job_registry
     from server.sli.core.job_queue import digest
