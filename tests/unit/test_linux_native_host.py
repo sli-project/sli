@@ -61,7 +61,7 @@ def machine(tmp_path, monkeypatch):
         if argv == ["/usr/bin/clickhouse-server", "--version"]:
             return "ClickHouse server version " + host.clickhouse.endpoint("history", "native").version
         if argv[0] == "findmnt":
-            return json.dumps({"filesystems": [{"target": host.MOUNT, "fstype": "ext4", "uuid": DB_UUID}]})
+            return json.dumps({"filesystems": [{"target": host.MOUNT, "fstype": "ext4", "uuid": DB_UUID, "options": "rw"}]})
         if argv[0] == "pg_createcluster":
             path = tmp_path / "etc/postgresql/18/sli/postgresql.conf"
             path.parent.mkdir(parents=True)
@@ -70,6 +70,9 @@ def machine(tmp_path, monkeypatch):
 
     monkeypatch.setattr(host, "run", run)
     machine = host.Host(tmp_path)
+    monkeypatch.setattr(machine, "backup_free", lambda path: 64 * 1024**3)
+    original_trust = machine.backup_trusted
+    monkeypatch.setattr(machine, "backup_trusted", lambda path: None if path == machine.path(host.MOUNT) else original_trust(path))
     machine.calls = calls
     machine.diversions = diversions
     return machine
@@ -146,7 +149,7 @@ def test_vendor_start_diversions_fail_closed(machine, conflict):
 def test_wrong_mount_fails_before_any_writes(machine, monkeypatch, field, value):
     row = {"target": host.MOUNT, "fstype": "ext4", "uuid": DB_UUID, field: value}
     monkeypatch.setattr(host, "run", lambda *a, **kw: json.dumps({"filesystems": [row]}))
-    with pytest.raises(host.HostError, match="mount_mismatch"):
+    with pytest.raises(RuntimeError, match="mount_mismatch"):
         machine.prepare(DB_UUID)
     assert list(machine.root.iterdir()) == []
 
@@ -156,7 +159,7 @@ def test_missing_mount_and_uuid_injection_refused(machine, monkeypatch):
     with pytest.raises(host.HostError, match="uuid_invalid"):
         machine.prepare("--synthetic-option")
     monkeypatch.setattr(host, "run", lambda *a, **kw: '{"filesystems": []}')
-    with pytest.raises(host.HostError, match="mount_mismatch"):
+    with pytest.raises(RuntimeError, match="mount_mismatch"):
         machine.prepare(DB_UUID)
 
 
@@ -165,7 +168,7 @@ def test_foreign_database_refused(machine, directory):
     path = machine.path(directory)
     path.mkdir(parents=True)
     (path / "synthetic-existing").touch()
-    with pytest.raises(host.HostError, match="existing_database"):
+    with pytest.raises(RuntimeError, match="existing_database"):
         machine.prepare(DB_UUID)
     assert not machine.path(host.STATE + "/host-prepared.json").exists()
 

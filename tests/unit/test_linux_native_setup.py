@@ -1,5 +1,6 @@
 """Fresh beta setup contracts; no daemon, network or host secret access."""
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -169,8 +170,34 @@ def test_default_bind_preflight_checks_ipv6_port_too(monkeypatch):
         return nullcontext(SimpleNamespace(bind=bind, setsockopt=lambda *args: None))
     monkeypatch.setattr(socket, 'has_dualstack_ipv6', lambda: True)
     monkeypatch.setattr(socket, 'socket', port)
+    monkeypatch.setattr(setup.host, 'port_listeners', lambda port: [])
     with pytest.raises(RuntimeError, match='native_setup_port_busy'):
         setup.check_port({'bind': '0.0.0.0', 'https_port': 443})
+
+
+def test_busy_https_port_names_listener_and_repair_command(monkeypatch, capsys):
+    import errno
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from deploy.linux import native_setup as setup
+
+    def busy(_):
+        raise OSError(errno.EADDRINUSE, 'synthetic private socket error')
+
+    def ss(argv):
+        assert argv == ['ss', '-H', '-ltnp', 'sport = :443']
+        return 'LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=1234,fd=6),("bad;name",pid=9,fd=8))'
+
+    monkeypatch.setattr(setup.socket, 'socket', lambda *args: nullcontext(SimpleNamespace(bind=busy)))
+    monkeypatch.setattr(setup.host, 'run', ss)
+    with pytest.raises(RuntimeError, match='native_setup_port_busy') as caught:
+        setup.check_port({'bind': '192.0.2.10', 'https_port': 443})
+    setup.diagnostics.failure(caught.value)
+    message = capsys.readouterr().err
+    assert 'HTTPS port 443' in message and 'nginx (PID 1234)' in message
+    assert "sudo ss -ltnp 'sport = :443'" in message and 'sudo sli-setup --port' in message
+    assert 'private socket error' not in message and 'bad;name' not in message
 
 
 @pytest.mark.parametrize('server', ['x;touch /tmp/x', 'https://sli.example.invalid', '-bad', 'name\nsecond', '0.0.0.0'])
@@ -212,8 +239,6 @@ def setup_host(tmp_path, monkeypatch):
     (state / 'pending-release.json').write_text(json.dumps({'release': 'beta'}))
     root = tmp_path / 'release'
     root.mkdir()
-    source = tmp_path / 'database'
-    source.mkdir()
     calls = []
     monkeypatch.setattr(setup.platform, 'freedesktop_os_release', lambda: {'ID': 'debian', 'VERSION_ID': '13'})
     monkeypatch.setattr(setup.platform, 'machine', lambda: 'x86_64')
@@ -243,10 +268,11 @@ def setup_host(tmp_path, monkeypatch):
     def prepare(uuid, *, directory):
         calls.append(('prepare', uuid, directory))
         (state / 'host-prepared.json').write_text(json.dumps({'uuid': uuid, 'directory': directory}))
+    check_setup_units = setup.host.Host(tmp_path / 'host').check_setup_units
     machine = SimpleNamespace(write=write, prepare=prepare, receipt=lambda: calls.append('receipt'),
-                              validate_database_directory=lambda path: source)
+                              check_setup_units=check_setup_units)
     monkeypatch.setattr(setup.host, 'Host', lambda: machine)
-    monkeypatch.setattr(setup, 'check_port', lambda site: calls.append('check-port'))
+    monkeypatch.setattr(setup, 'check_port', lambda site, *, saved: calls.append('check-port'))
     monkeypatch.setattr('builtins.input', lambda prompt: pytest.fail('non-interactive mode must not prompt'))
     def command(argv, **kwargs):
         calls.append(argv)
@@ -259,6 +285,153 @@ def setup_host(tmp_path, monkeypatch):
     args = SimpleNamespace(server='192.0.2.10', bind=None, port=None, clickhouse_mode=None,
                            directory=None, uuid=None, backup_root=None, non_interactive=True)
     return setup, args, calls, state, site_path
+
+
+@pytest.mark.parametrize('bind', [None, '192.0.2.10'])
+def test_unresolved_server_refuses_before_writes_then_setup_accepts_ip(setup_host, monkeypatch, capsys, bind):
+    setup, args, calls, state, site = setup_host
+    args.server, args.bind = 'sli.example.test', bind
+
+    def unresolved(*args, **kwargs):
+        raise setup.socket.gaierror('synthetic resolver output')
+
+    monkeypatch.setattr(setup.socket, 'getaddrinfo', unresolved)
+    with pytest.raises(RuntimeError, match='native_setup_dns_failed') as caught:
+        setup.configure(args)
+    setup.diagnostics.failure(caught.value)
+    message = capsys.readouterr().err
+    assert 'sli.example.test' in message and 'sudo sli-setup --server <IP>' in message
+    assert 'synthetic resolver output' not in message
+    assert not site.exists() and not (state / 'host-prepared.json').exists()
+    assert calls == ['check-port']
+    args.server = '192.0.2.10'
+    setup.configure(args)
+    assert ch.parse_site(site.read_text())['server_name'] == args.server
+
+
+def test_foreign_systemd_units_are_named_and_left_intact_before_retry(setup_host, tmp_path, capsys):
+    setup, args, calls, state, site = setup_host
+    root = tmp_path / 'host'
+    for relative in ['etc/systemd/system/sli-postgresql.service', 'usr/lib/systemd/system/sli-postgresql.service',
+                     'etc/systemd/system/sli-dotnet-api.service.d/local.conf']:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('synthetic private configuration')
+    with pytest.raises(RuntimeError, match='native_existing_configuration_conflict') as caught:
+        setup.configure(args)
+    setup.diagnostics.failure(caught.value)
+    message = capsys.readouterr().err
+    assert '/etc/systemd/system/sli-postgresql.service' in message
+    assert '/usr/lib/systemd/system/sli-postgresql.service' in message
+    assert '/etc/systemd/system/sli-dotnet-api.service.d' in message
+    assert 'sudo sh -c' in message and 'systemctl daemon-reload' in message
+    assert 'synthetic private configuration' not in message
+    assert not site.exists() and not (state / 'host-prepared.json').exists()
+    assert calls == ['check-port']
+
+    for directory in ['etc/systemd/system', 'usr/lib/systemd/system']:
+        original = root / directory
+        saved = original.with_name('saved-units')
+        original.rename(saved)
+        assert all(path.read_text() == 'synthetic private configuration'
+                   for path in saved.rglob('*') if path.is_file())
+    setup.configure(args)
+    assert site.exists() and (state / 'installed.json').exists()
+
+
+@pytest.mark.parametrize('foreign_override', [False, True])
+def test_setup_retries_over_its_units_after_partial_configure(setup_host, tmp_path, monkeypatch, foreign_override):
+    setup, args, calls, state, site = setup_host
+    real_command = setup.command
+    machine_root = tmp_path / 'host'
+    # Model Debian's metadata for actual rendered files on the Windows runner.
+    machine = setup.host.Host().check_setup_units.__self__
+    monkeypatch.setattr(machine, 'backup_trusted', lambda path: None)
+    original_stat = Path.stat
+
+    def stat(path, *args, **kwargs):
+        info = original_stat(path, *args, **kwargs)
+        if path.is_relative_to(machine_root) and path.suffix in {'.service', '.target', '.timer', '.mount', '.slice', '.conf'}:
+            fields = list(info)
+            fields[0], fields[5] = (info.st_mode & ~0o777) | 0o644, 0
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(Path, 'stat', stat)
+    args.backup_root = '/srv/sli-backup'
+
+    def first_attempt(argv, **kwargs):
+        if argv[0] != '/usr/sbin/sli-native-install':
+            return real_command(argv, **kwargs)
+        for base, files in [('etc/systemd/system', setup.host.units()), ('usr/lib/systemd/system', runtime.units({}))]:
+            folder = machine_root / base
+            folder.mkdir(parents=True)
+            for name, body in files.items():
+                (folder / name).write_bytes(body.encode())
+        drop_in = machine_root / 'etc/systemd/system/sli-postgresql.service.d'
+        drop_in.mkdir()
+        (drop_in / setup.host.BACKUP_DROP_IN).write_bytes(setup.host.BACKUP_DROP_IN_BODY.encode())
+        if foreign_override:
+            (drop_in / 'local.conf').write_text('[Service]\n')
+        (state / 'package-install.json').write_text(json.dumps({
+            'schema_version': 1, 'release': 'beta', 'status': 'failed', 'first_start_pending': True,
+            'site_sha256': setup.install.site_digest(ch.parse_site(site.read_text()))}))
+        raise RuntimeError('synthetic_configure_failure')
+
+    monkeypatch.setattr(setup, 'command', first_attempt)
+    with pytest.raises(RuntimeError, match='synthetic_configure_failure'):
+        setup.configure(args)
+    monkeypatch.setattr(setup, 'command', real_command)
+    if foreign_override:
+        with pytest.raises(RuntimeError, match='native_existing_configuration_conflict') as caught:
+            setup.configure(args)
+        assert caught.value.conflict_paths == ('/etc/systemd/system/sli-postgresql.service.d',)
+    else:
+        setup.configure(args)
+        assert (state / 'installed.json').exists()
+    assert len([call for call in calls if call == 'write-site']) == 1
+
+
+@pytest.mark.parametrize('mounted', [True, False])
+def test_low_database_space_reports_free_space_and_volume_options(tmp_path, monkeypatch, capsys, mounted):
+    from deploy.linux import native_setup as setup
+
+    gib = 1024**3
+    machine = setup.host.Host(tmp_path)
+    (tmp_path / 'var/lib').mkdir(parents=True)
+    monkeypatch.setattr(machine, 'backup_trusted', lambda path: None)
+    monkeypatch.setattr(machine, 'backup_free', lambda path: 12 * gib)
+    ext4 = '11111111-2222-3333-4444-555555555555'
+    unmounted = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+    def run(argv):
+        if argv[0] == 'findmnt':
+            return json.dumps({'filesystems': [{'fstype': 'ext4', 'options': 'rw'}]})
+        assert argv[0] == 'lsblk'
+        devices = [
+            {'name': '/dev/sdb1', 'ro': False, 'fstype': 'ext4', 'uuid': ext4,
+             'mountpoints': ['/mnt/big'], 'fsavail': 280 * gib},
+            {'name': '/dev/sdc1', 'ro': False, 'fstype': 'ext4', 'uuid': unmounted,
+             'mountpoints': [None], 'size': 256 * gib},
+            {'name': '/dev/sdd1', 'ro': False, 'fstype': 'xfs', 'mountpoints': ['/mnt/extra'], 'fsavail': 240 * gib},
+            {'name': '/dev/sde1', 'ro': True, 'fstype': 'xfs', 'mountpoints': ['/mnt/readonly'], 'fsavail': 1024 * gib},
+        ] if mounted else [{'name': '/dev/sdb', 'ro': False, 'type': 'disk', 'size': 280 * gib}]
+        return json.dumps({'blockdevices': devices})
+
+    monkeypatch.setattr(setup.host, 'run', run)
+    with pytest.raises(RuntimeError, match='native_database_space_insufficient') as caught:
+        machine.validate_database_directory('/var/lib/sli-db')
+    setup.diagnostics.failure(caught.value)
+    message = capsys.readouterr().err
+    assert '/var/lib/sli-db: 12.0 GiB free (20 GiB required)' in message
+    if mounted:
+        assert '/mnt/big (280.0 GiB free)' in message and f'--uuid {ext4}' in message
+        assert '/dev/sdc1 (256.0 GiB capacity, unmounted)' in message and f'--uuid {unmounted}' in message
+        assert '--directory /mnt/extra' in message
+    else:
+        assert '/dev/sdb (280.0 GiB capacity, no detected filesystem)' in message
+        assert 'verify it is unused' in message
+    assert '/mnt/readonly' not in message and not (tmp_path / 'var/lib/sli-db').exists()
 
 
 def test_setup_fresh_then_repeat_preserves_site_and_never_reprovisions(setup_host, capsys):
@@ -389,9 +562,11 @@ def test_setup_changed_address_or_port_fails_before_any_mutation(setup_host, opt
     assert not calls and path.read_bytes() == before
 
 
-def test_setup_dns_generates_tls_for_server_name_and_local_ip(setup_host):
+def test_setup_dns_generates_tls_for_server_name_and_local_ip(setup_host, monkeypatch):
     setup, args, calls, _, _ = setup_host
     args.server, args.bind = 'sli.example.invalid', '192.0.2.10'
+    monkeypatch.setattr(setup.socket, 'getaddrinfo', lambda *args, **kwargs: [
+        (2, 1, 6, '', ('192.0.2.10', 443))])
     setup.configure(args)
     provision = next(call for call in calls if isinstance(call, list) and 'deploy.linux.sli_secrets' in call)
     names = [provision[i + 1] for i, arg in enumerate(provision) if arg == '--tls-name']
@@ -484,6 +659,35 @@ def first_start_install(tmp_path, monkeypatch):
             raise RuntimeError('native_install_command_failed')
     monkeypatch.setattr(install, 'command', command)
     return state, calls, control
+
+
+@pytest.mark.parametrize('database_exists', [False, True])
+def test_retry_after_early_configure_failure_preserves_existing_postgres(first_start_install, monkeypatch, database_exists):
+    from deploy.linux import native_host
+
+    state, _, control = first_start_install
+    machine = native_host.Host()
+    configure = machine.configure
+    monkeypatch.setattr(native_host, 'Host', lambda: machine)
+
+    def fail():
+        raise RuntimeError('synthetic_host_configure_failure')
+
+    machine.configure = fail
+    with pytest.raises(RuntimeError, match='synthetic_host_configure_failure'):
+        install.configure('beta')
+    machine.configure = configure
+    control['fail'] = False
+    if database_exists:
+        data = Path(native_host.MOUNT) / 'pgdata/PG_VERSION'
+        data.parent.mkdir(parents=True)
+        data.write_bytes(b'18\n')
+        with pytest.raises(RuntimeError, match='native_install_interrupted_requires_recovery'):
+            install.configure('beta')
+        assert data.read_bytes() == b'18\n'
+    else:
+        install.configure('beta')
+        assert json.loads((state / 'package-install.json').read_text())['status'] == 'configured'
 
 
 @pytest.mark.parametrize('legacy', [False, True])
