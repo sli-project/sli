@@ -35,6 +35,45 @@ function choose(id: string, value: string) {
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
+  document.body.classList.remove("sli-password-change");
+  window.history.replaceState(null, "", "/login");
+});
+
+describe("required password change", () => {
+  it("shows only the change form and sends matching passwords to the change endpoint", async () => {
+    window.history.replaceState(null, "", "/login/change-password");
+    localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 400, json: async () => ({ error: "initial_password_reused" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    loadLogin();
+
+    const change = document.getElementById("sli-change-password")!;
+    expect(change.hidden).toBe(false);
+    expect(change.querySelector("h1")?.textContent).toBe("Set a new password");
+    expect((document.getElementById("sli-login-form") as HTMLFormElement).hidden).toBe(true);
+    const form = change.querySelector("form")!;
+    const password = change.querySelector<HTMLInputElement>("#new-password")!;
+    const repeat = change.querySelector<HTMLInputElement>("#repeat-password")!;
+    fireEvent.input(password, { target: { value: "synthetic-new-password" } });
+    fireEvent.input(repeat, { target: { value: "synthetic-different-password" } });
+    fireEvent.submit(form);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(change.querySelector("[role=alert]")?.textContent).toBe("Passwords do not match.");
+
+    choose("sli-locale", "ru");
+    expect(change.querySelector("h1")?.textContent).toBe("Задайте новый пароль");
+    expect(change.querySelector("[role=alert]")?.textContent).toBe("Пароли не совпадают.");
+    fireEvent.input(repeat, { target: { value: password.value } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(change.querySelector("[role=alert]")?.textContent)
+      .toBe("Задайте пароль, отличный от начального."));
+    const [url, request] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/auth/change-initial-password");
+    expect(request.credentials).toBe("same-origin");
+    expect(JSON.parse(request.body)).toEqual({ password: password.value, repeat: repeat.value });
+  });
 });
 afterEach(() => {
   document.body.innerHTML = "";

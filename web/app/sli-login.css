@@ -693,3 +693,21 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+.sli-form[hidden],
+.sli-password-change .sli-features,
+.sli-password-change .sli-eyebrow,
+.sli-password-change .sli-login-card > .sli-title,
+.sli-password-change .sli-description,
+.sli-password-change .sli-tls-note {
+  display: none;
+}
+
+.sli-password-change .sli-login-card {
+  min-height: 0;
+  align-self: start;
+}
+
+#sli-change-password .sli-title {
+  margin-bottom: 32px;
+}

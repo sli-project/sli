@@ -15,7 +15,6 @@ using Sli.Server.Auth;
 using Sli.Server.Auth.Administration;
 using Sli.Server.Auth.Administration.ApiKeys;
 using Sli.Server.Auth.Commands;
-using Sli.Server.Auth.InitialOwner;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Auth.Lifecycle.Security;
 using Sli.Server.Auth.Recovery;
@@ -207,7 +206,6 @@ if (args.Length > 0 && args[0] == "ad-snapshot-worker")
     return;
 }
 bool recoveryCommand = args.Length > 0 && args[0] == "owner-recovery";
-bool ownerCodeCommand = args.Length > 0 && args[0] == "owner-code";
 bool authCommand = args.Length > 0 && args[0] is "create-user" or "create-api-key" or "revoke-api-key" or "issue-report-key";
 if (authCommand && AuthConsole.TryHandleNonMutation(args, out int authExitCode))
 {
@@ -229,19 +227,9 @@ if (recoveryCommand)
         return;
     }
 }
-if (ownerCodeCommand)
-{
-    try { new OwnerRecoveryTerminal().RequireRootInteractiveTerminal(); }
-    catch (UnauthorizedAccessException error) when (error.Message is "host_root_required" or "terminal_required")
-    {
-        Console.Error.WriteLine(error.Message);
-        Environment.ExitCode = 1;
-        return;
-    }
-}
 try
 {
-var builder = WebApplication.CreateBuilder(recoveryCommand || ownerCodeCommand || authCommand ? [] : args);
+var builder = WebApplication.CreateBuilder(recoveryCommand || authCommand ? [] : args);
 // Host/Kestrel log startup exceptions before Run throws. Until listening,
 // emit only the safe setting/error code below, not framework exception text.
 int startupCompleted=0;
@@ -264,7 +252,7 @@ catch (ServerConfigurationException error)
     return;
 }
 AgentTlsTrust? listenerTrust = null;
-if (!recoveryCommand && !ownerCodeCommand && !authCommand && !AgentTlsTrust.TryLoad(builder.Configuration, out listenerTrust))
+if (!recoveryCommand && !authCommand && !AgentTlsTrust.TryLoad(builder.Configuration, out listenerTrust))
 {
     Console.Error.WriteLine("server_configuration_invalid:Sli:AgentMtlsCaFile:invalid");
     Environment.ExitCode = 1;
@@ -295,7 +283,6 @@ builder.Services.AddScoped<Sli.Server.Workspace.IWorkspaceRows, Sli.Server.Works
 Sli.Server.Workspace.WorkspaceCompatibilityEndpoints.AddWorkspaceCompatibility(builder.Services);
 builder.Services.AddSliIngress(builder.Configuration, listenerTrust);
 builder.Services.AddOwnerRecovery();
-builder.Services.AddInitialOwner();
 builder.Services.AddUserAdministration();
 builder.Services.AddAccessWrites();
 builder.Services.AddApiKeyAdministration();
@@ -361,24 +348,7 @@ if (authCommand)
     await app.DisposeAsync();
     return;
 }
-if (ownerCodeCommand)
-{
-    try
-    {
-        await using var scope = app.Services.CreateAsyncScope();
-        Environment.ExitCode = await scope.ServiceProvider.GetRequiredService<IInitialOwnerCodeConsole>()
-            .RunAsync(args, CancellationToken.None);
-    }
-    catch (Exception)
-    {
-        Console.Error.WriteLine("initial_owner_code_failed");
-        Environment.ExitCode = 1;
-    }
-    await app.DisposeAsync();
-    return;
-}
-// Like owner-code, recovery is a local operator command. Dispatch it before
-// resolving HTTP-only policy or validating a listener that it never starts.
+// Dispatch local recovery before validating HTTP-only settings.
 if (recoveryCommand)
 {
     try
@@ -423,6 +393,7 @@ app.Use(async (context, next) =>
             "/api/auth/login" => "/api/auth/login",
             "/api/auth/me" => "/api/auth/me",
             "/api/auth/logout" => "/api/auth/logout",
+            "/api/auth/change-initial-password" => "/api/auth/change-initial-password",
             _ => "other"
         };
         await DomainHttp.WriteUnexpectedAsync(context, app.Logger, error, context.RequestAborted, route);
@@ -431,6 +402,7 @@ app.Use(async (context, next) =>
 app.UseRateLimiter();
 app.UseSliDynamicAdmission();
 app.UseReportKeyRequestGate();
+app.UseInitialPasswordGate();
 app.UseReadRoleRequestGate();
 app.MapAuthEndpoints();
 Sli.Server.Reporting.SliV4FixtureEndpoints.MapSliV4Fixture(app);
@@ -440,7 +412,6 @@ app.MapAccessReadEndpoints();
 app.MapAdHardening();
 Sli.Server.Workspace.WorkspaceEndpoints.MapWorkspaceEndpoints(app);
 Sli.Server.Workspace.WorkspaceCompatibilityEndpoints.MapWorkspaceCompatibility(app);
-app.MapInitialOwnerEndpoints();
 app.MapUserAdministrationEndpoints();
 app.MapAccessWriteEndpoints();
 app.MapApiKeyAdministrationEndpoints();
@@ -555,6 +526,11 @@ app.Map("/api/v1/domains", async context =>
 });
 app.MapFallback("{**path}", async context =>
 {
+    if (context.Request.Path == "/api/auth/bootstrap")
+    {
+        await DomainHttp.WriteAsync(context, new { error = "not_found" }, StatusCodes.Status404NotFound, context.RequestAborted);
+        return;
+    }
     bool api=context.Request.Path.StartsWithSegments("/api");
     if(context.RequestServices.GetRequiredService<AuthRequestPolicy>().AuthRequired)
     {

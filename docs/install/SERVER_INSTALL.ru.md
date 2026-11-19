@@ -2,6 +2,8 @@
 
 [English version](SERVER_INSTALL.en.md) · [Установка агента](AGENT_INSTALL.ru.md)
 
+Для нативной беты на Debian 13 используйте [быструю установку](../../README.ru.md).
+
 Инструкция предназначена для изолированной оценки на Linux-хосте Docker.
 Нужны Docker Engine/Compose и доверенный checkout или выпуск SLI.
 PostgreSQL 18 и ClickHouse обязательны.
@@ -104,10 +106,9 @@ PY
    Сборка и загрузка из сети на целевом хосте не выполняются. Установщик
    проверяет архив и серверный образ до изменения runtime, запускает migrator
    и проверяет health/HTTPS. При успехе `state/installed.json` сохраняет
-   `signing=evaluation-unsigned` и `authenticated=false`. Используйте защищённый
-   `/srv/sli-eval/secrets/platform_owner_password` для входа как `platform-owner`
-   по адресу `https://<клиентское-имя-или-IP>:8443/app`;
-   пароль не печатайте в журнал. При `recovery_required` сохраните тома и разберите
+   `signing=evaluation-unsigned` и `authenticated=false`. Проверьте HTTPS по
+   адресу `https://<клиентское-имя-или-IP>:8443/app`.
+   При `recovery_required` сохраните тома и разберите
    сбой: автоматический повтор свежей установки не разрешён.
 
 Для подписанной поставки выполняйте предыдущую процедуру с внешним trust store;
@@ -173,10 +174,12 @@ openssl verify -CAfile /etc/sli/tls/tls_ca /etc/sli/tls/tls_certificate
    файловых доказательств SLI, полного резервного набора и проверки восстановления.
    Секреты установки и резервные копии храните вне checkout/контекста сборки.
 2. Подготовьте защищённые файлы секретов: `postgres_password`,
-   `migration_password`, `runtime_password`, `platform_owner_password`,
+   `migration_password`, `runtime_password`,
    `semantic_password`, `storage_password`, `history_password`, `warm_password`,
-   `tls_certificate`, `tls_key` и `tls_ca`. Используйте независимые
-   сгенерированные пароли; пароль владельца платформы — не короче 12 символов.
+   `tls_certificate`, `tls_key` и `tls_ca`, а также учётные данные владельца
+   из [манифеста секретов Compose](../../deploy/linux/secrets-manifest.json).
+   Используйте независимые сгенерированные пароли. Пароль владельца должен быть
+   длиной от 12 символов.
    Соблюдайте требования runbook к правам файлов, чтению из контейнеров и LF
    для пароля ClickHouse.
 3. По процедуре подготовки TLS выше подготовьте сертификат для выбранного клиентского имени и внутреннего

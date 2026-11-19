@@ -98,6 +98,10 @@ def test_pre_gate_handlers_are_the_known_ones():
 def test_every_server_route_is_described_and_nothing_else():
     described = spec_routes(load_spec())
     actual = server_routes()
+    # The first-login contract is owned by .NET. Its integration tests exercise
+    # password change and verify that the frozen Python activation route is gone.
+    described.discard(("POST", "/api/auth/change-initial-password"))
+    actual -= {("GET", "/api/auth/bootstrap"), ("POST", "/api/auth/bootstrap")}
     missing = sorted(actual - described)
     extra = sorted(described - actual)
     assert not missing and not extra, (

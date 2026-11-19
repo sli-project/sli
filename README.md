@@ -95,25 +95,20 @@ another PostgreSQL installation. Collection requires one Windows
    openssl x509 -in /var/lib/sli/tls-ca.crt -outform DER | sha256sum
    ```
 
-   This hashes the DER certificate, not the PEM file bytes. Open the printed link,
-   `https://<server>/api/auth/bootstrap`, enter the **one-time code** from setup
-   and choose a new password of at least 12 characters. The account is
-   `platform-owner`; SLI opens after activation. The code becomes unusable and
-   cannot be used for ordinary login. Keep it out of shared logs/tickets.
-   Repeating `sudo sli-setup` preserves settings and keys. If the first start
-   failed after schema/runtime configuration and the owner is still unclaimed,
-   repeat the same command: setup retries readiness and health without resetting
-   the database or rerunning migrations. The one-time code is displayed once;
-   use `sudo sli-setup --new-owner-code` if it was lost or expired.
+   Open the printed SLI address, sign in with `admin` / `admin`, and set a new
+   password of at least 12 characters. Running `sudo sli-setup --reset-admin-password`
+   restores the password `admin`, revokes the owner's sessions and requires a
+   password change at the next sign-in. The owner's username stays the same.
 
    If password guessing locks the activated owner out, run this in the server's
    root terminal:
 
    ```sh
-   sudo sli-setup --owner-recovery platform-owner
+   sudo sli-setup --owner-recovery <owner-username>
    ```
 
-   Enter the displayed single-use code together with the owner's existing
+   Use `admin` on a fresh installation and the existing owner's username on an
+   upgraded installation. Enter the displayed single-use code together with the owner's existing
    password in the login form. It expires after 10 minutes; issuing another
    invalidates the previous code. This does not reset the password or clear
    the regular login lockout. Only an active platform owner can recover.

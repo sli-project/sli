@@ -2,6 +2,8 @@
 
 [Русская версия](SERVER_INSTALL.ru.md) · [Agent installation](AGENT_INSTALL.en.md)
 
+For the native Debian 13 beta, follow the [quick installation](../../README.md#quick-installation--first-beta-debian-13).
+
 This guide is for an isolated evaluation on a Linux Docker host. Use Docker
 Engine/Compose and the trusted SLI checkout or release. PostgreSQL 18 and
 ClickHouse are required. [deploy/dev](../../deploy/dev/docker-compose.yml)
@@ -103,10 +105,8 @@ and cannot update an existing installation.
    No build or network download is needed on the target. The installer checks
    the archive and server image before changing runtime, runs the migrator and
    checks health/HTTPS. On success, `state/installed.json` records
-   `signing=evaluation-unsigned` and `authenticated=false`. Sign in as
-   `platform-owner` using the protected
-   `/srv/sli-eval/secrets/platform_owner_password` file at
-   `https://<client-name-or-IP>:8443/app`; never log its value.
+   `signing=evaluation-unsigned` and `authenticated=false`. Open
+   `https://<client-name-or-IP>:8443/app` to verify the HTTPS endpoint.
    On `recovery_required`, preserve volumes and investigate the failure;
    retrying a fresh install automatically is refused.
 
@@ -173,10 +173,12 @@ the address must match a SAN.
    volumes, SLI filesystem evidence, a complete backup and a restore drill.
    Keep installation secrets and backups outside the checkout/build context.
 2. Prepare protected secret files: `postgres_password`, `migration_password`,
-   `runtime_password`, `platform_owner_password`, `semantic_password`,
+   `runtime_password`, `semantic_password`,
    `storage_password`, `history_password`, `warm_password`, `tls_certificate`,
-   `tls_key` and `tls_ca`. Use independent generated passwords; the platform
-   owner password needs at least 12 characters. Follow the runbook's file
+   `tls_key` and `tls_ca`, and the owner credential specified in the
+   [Compose secret manifest](../../deploy/linux/secrets-manifest.json).
+   Use independent generated passwords and choose at least 12 characters for the
+   owner password. Follow the runbook's file
    permissions, container read-access and ClickHouse LF requirements.
 3. Follow the TLS preparation procedure above for the chosen client-facing name and internal
    service name `api`, plus its trusted CA chain. In examples,

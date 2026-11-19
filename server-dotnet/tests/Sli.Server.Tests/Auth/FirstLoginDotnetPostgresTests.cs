@@ -1,10 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -18,185 +16,300 @@ namespace Sli.Server.Tests.Auth;
 
 public sealed class FirstLoginDotnetPostgresTests
 {
+    private const string Login = "/api/auth/login";
+    private const string Change = "/api/auth/change-initial-password";
+    private const string InitialPassword = "admin";
+    private const string NewPassword = "synthetic-first-login-replacement-91!";
+    private const string NextPassword = "synthetic-second-login-replacement-82!";
+
     [Fact]
-    public async Task Installer_code_opens_owner_session_and_built_app_once_without_disclosing_credentials()
+    public async Task Setup_password_allows_only_change_and_logout_and_root_reset_requires_a_new_change()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
+        await StartAsync(fixture, ct);
+        Assert.Equal("admin", await SetupAsync(fixture, "prepare", ct));
+
+        var logs = new ConcurrentQueue<string>();
+        using var host = OpenHost(fixture, logs);
+        using var browser = OpenClient(host);
+        using var other = OpenClient(host);
+        using (var anonymous = await ChangeAsync(browser, NewPassword, NewPassword, ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        SetCookie(browser, await SignInAsync(browser, InitialPassword, true, ct));
+        SetCookie(other, await SignInAsync(other, InitialPassword, true, ct));
+
+        foreach (string endpoint in new[] { "/api/auth/me", "/api/health", "/api/auth/users", "/api/v1/access/me", "/api/unknown" })
+        {
+            using var denied = await browser.GetAsync(endpoint, ct);
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            Assert.Equal("password_change_required", await ErrorAsync(denied, ct));
+        }
+        using (var foreignLogout = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout") { Content = JsonBody(new { }) })
+        {
+            foreignLogout.Headers.Add("Origin", "https://foreign.example.test");
+            using var denied = await other.SendAsync(foreignLogout, ct);
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            Assert.Equal("cross_origin_request_rejected", await ErrorAsync(denied, ct));
+        }
+        using (var logout = await other.PostAsync("/api/auth/logout", JsonBody(new { }), ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, logout.StatusCode);
+            Assert.Equal("adlog_session=", ReadCookie(logout));
+            Assert.Contains("Max-Age=0", Assert.Single(logout.Headers.GetValues("Set-Cookie")));
+        }
+        using (var replay = await ChangeAsync(other, NextPassword, NextPassword, ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+        SetCookie(other, null);
+        SetCookie(other, await SignInAsync(other, InitialPassword, true, ct));
+        using (var app = await browser.GetAsync("/app", ct))
+        {
+            Assert.Equal(HttpStatusCode.Redirect, app.StatusCode);
+            Assert.StartsWith("/login/change-password", app.Headers.Location!.OriginalString);
+        }
+        using (var page = await browser.GetAsync("/login/change-password", ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+            Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType);
+        }
+        using (var origin = await ChangeAsync(browser, NewPassword, NewPassword, ct, origin: "https://foreign.example.test"))
+            Assert.Equal(HttpStatusCode.Forbidden, origin.StatusCode);
+        using (var insecure = await ChangeAsync(browser, NewPassword, NewPassword, ct, insecure: true))
+            Assert.Equal(HttpStatusCode.Forbidden, insecure.StatusCode);
+        foreach (string invalid in new[] { InitialPassword, "short", "synthetic\0password", new string('a', 4097), string.Concat(Enumerable.Repeat("🔐", 11)) })
+        {
+            using var rejected = await ChangeAsync(browser, invalid, invalid, ct);
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        }
+        using (var mismatch = await ChangeAsync(browser, NewPassword, NextPassword, ct))
+            Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+        using (var changed = await ChangeAsync(browser, NewPassword, NewPassword, ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+            SetCookie(browser, ReadCookie(changed));
+        }
+        Assert.Null(await SetupAsync(fixture, "status", ct));
+        await AssertOwnerAsync(browser, ct);
+        using (var removed = await browser.GetAsync("/api/auth/bootstrap", ct))
+            Assert.Equal(HttpStatusCode.NotFound, removed.StatusCode);
+        using (var removed = await browser.PostAsync("/api/auth/bootstrap", JsonBody(new { }), ct))
+            Assert.Equal(HttpStatusCode.NotFound, removed.StatusCode);
+        using (var replay = await ChangeAsync(other, NextPassword, NextPassword, ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+        SetCookie(other, null);
+        using (var stale = await LoginAsync(other, InitialPassword, ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
+        await SignInAsync(other, NewPassword, false, ct);
+
+        Assert.Equal("admin", await SetupAsync(fixture, "reset", ct));
+        using (var stale = await browser.GetAsync("/api/auth/me", ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
+        using (var stale = await LoginAsync(other, NewPassword, ct))
+            Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
+        SetCookie(browser, await SignInAsync(other, InitialPassword, true, ct));
+        using (var changed = await ChangeAsync(browser, NextPassword, NextPassword, ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+            SetCookie(browser, ReadCookie(changed));
+        }
+        await AssertOwnerAsync(browser, ct);
+        Assert.NotEmpty(logs);
+        string diagnostics = string.Join('\n', logs) + await fixture.Pg.DiagnosticsAsync(ct);
+        foreach (string credential in new[] { NewPassword, NextPassword })
+            Assert.DoesNotContain(credential, diagnostics);
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
+    public async Task Guessing_blocks_correct_initial_password_on_the_standard_login_route()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await StartAsync(fixture, ct);
+        Assert.Equal("admin", await SetupAsync(fixture, "prepare", ct));
+        using var host = OpenHost(fixture, new());
+        using var browser = OpenClient(host);
+        for (int i = 0; i < 5; i++)
+        {
+            using var wrong = await LoginAsync(browser, "synthetic-wrong-password", ct);
+            Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+            Assert.False(wrong.Headers.Contains("Set-Cookie"));
+        }
+        using var blocked = await LoginAsync(browser, InitialPassword, ct, "ADMIN");
+        Assert.Equal(HttpStatusCode.TooManyRequests, blocked.StatusCode);
+        Assert.Equal("login_temporarily_locked", await ErrorAsync(blocked, ct));
+        Assert.NotNull(blocked.Headers.RetryAfter);
+        Assert.False(blocked.Headers.Contains("Set-Cookie"));
+    }
+
+    [Fact]
+    public async Task Insecure_first_login_does_not_persist_a_session_when_http_is_allowed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await StartAsync(fixture, ct);
+        Assert.Equal("admin", await SetupAsync(fixture, "prepare", ct));
+        using var host = OpenHost(fixture, new(), allowHttp: true);
+        using var browser = OpenClient(host);
+        browser.BaseAddress = new Uri("http://localhost");
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
+        await using var count = new NpgsqlCommand("select count(*) from auth_sessions", db);
+        var before = await count.ExecuteScalarAsync(ct);
+        using var insecure = await LoginAsync(browser, InitialPassword, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, insecure.StatusCode);
+        Assert.Equal("secure_transport_required", await ErrorAsync(insecure, ct));
+        Assert.False(insecure.Headers.Contains("Set-Cookie"));
+        Assert.Equal(before, await count.ExecuteScalarAsync(ct));
+    }
+
+    [Fact]
+    public async Task Reset_preserves_the_username_of_an_existing_owner()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await StartAsync(fixture, ct);
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
+        await using var markUsed = new NpgsqlCommand("update auth_users set last_login_at=now() where username='platform-owner'", db);
+        await markUsed.ExecuteNonQueryAsync(ct);
+        Assert.Null(await SetupAsync(fixture, "prepare", ct));
+        Assert.Equal("platform-owner", await SetupAsync(fixture, "reset", ct));
+        using var host = OpenHost(fixture, new());
+        using var browser = OpenClient(host);
+        using var login = await LoginAsync(browser, InitialPassword, ct, "platform-owner");
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        using var body = JsonDocument.Parse(await login.Content.ReadAsStringAsync(ct));
+        Assert.True(body.RootElement.GetProperty("password_change_required").GetBoolean());
+    }
+
+    private static async Task StartAsync(SqlPostgresFixture fixture, CancellationToken ct)
+    {
         await fixture.StartAsync(ct);
-        await using var admin = new NpgsqlConnection(fixture.Pg.ConnectionString);
-        await admin.OpenAsync(ct);
-        await using (var owner = new NpgsqlCommand("""
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
+        await using var insert = new NpgsqlCommand("""
             insert into access_platform_owners(user_id,owner_key,business_reason)
             select id,'primary','Synthetic first login' from auth_users where username='platform-owner'
             on conflict(owner_key) do nothing
-            """, admin)) await owner.ExecuteNonQueryAsync(ct);
+            """, db);
+        await insert.ExecuteNonQueryAsync(ct);
+    }
 
-        // Execute the installer's real rotation/issuance path, including its
-        // argon2-cffi hash and committed PostgreSQL update. Only the privileged
-        // host filesystem/connection boundaries are redirected to this fixture.
-        var codes = await IssueInstallerCodesAsync(fixture, ct);
-        string code = codes.Current, foreignCode = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        Assert.NotEqual(code, codes.Previous);
-        const string password = "Synthetic-first-owner-password-180!";
-        var logs = new ConcurrentQueue<string>();
+    private static WebApplicationFactory<Program> OpenHost(SqlPostgresFixture fixture, ConcurrentQueue<string> logs, bool allowHttp = false)
+    {
         string root = Repository();
-        using (var host = new WebApplicationFactory<Program>()
+        return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(SafeTestEnvironment.ConfigureApiHost)
             .WithWebHostBuilder(builder => builder
-                .ConfigureLogging(logging => logging.ClearProviders().SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturedLogs(logs)))
+                .ConfigureLogging(logging => logging.ClearProviders().SetMinimumLevel(LogLevel.Trace).AddProvider(new CaptureProvider(logs)))
                 .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
                     ["Sli:AgentMtlsCaFile"] = "", ["Sli:TrustedProxies"] = "",
-                    ["Sli:AuthRequired"] = "1", ["Sli:AllowUnauthenticated"] = "0",
-                    ["Sli:AuthCookieSecure"] = "1", ["Sli:AuthAllowInsecureHttp"] = "0",
-                    ["SLI_OWNER_SETUP"] = "1", ["Sli:OwnerSetup"] = "1",
+                    ["Sli:AuthRequired"] = "1", ["Sli:AuthCookieSecure"] = "1", ["Sli:AuthAllowInsecureHttp"] = allowHttp ? "1" : "0",
                     ["Sli:WebRoot"] = Path.Combine(root, "web/app"),
-                    ["Sli:ReactRoot"] = Path.Combine(root, "web/app/react"),
                     ["Sli:ProjectRoot"] = root,
                     ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "app-data"),
                     ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "app-logs"),
                     ["ADLOG_MAX_LOGIN_FAILURES"] = "30"
-                }))))
-        {
-            // Run the product Program and its middleware/routes. TestServer
-            // supplies only HTTPS transport; authentication and SQL stay real.
-            using var client = new HttpClient(host.Server.CreateHandler(context =>
-                context.Features.Get<IHttpRequestFeature>()!.RawTarget = context.Request.Path + context.Request.QueryString))
-                { BaseAddress = new Uri("https://localhost") };
-            using (var anonymous = await client.GetAsync("/api/auth/me", ct))
-                Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
-            using (var page = await client.GetAsync("/api/auth/bootstrap", ct))
-            {
-                Assert.Equal(HttpStatusCode.OK, page.StatusCode);
-                Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType);
-                string html = await page.Content.ReadAsStringAsync(ct);
-                Assert.Contains("<form>", html);
-                Assert.DoesNotContain(code, html);
-            }
-            using (var ordinaryLogin = await PostJsonAsync(client, "/api/auth/login", new { username = "platform-owner", password = code }, ct))
-                Assert.Equal(HttpStatusCode.Unauthorized, ordinaryLogin.StatusCode);
-
-            async Task<string> Denied(string submitted)
-            {
-                using var response = await PostJsonAsync(client, "/api/auth/bootstrap", new { code = submitted, password }, ct);
-                Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-                Assert.False(response.Headers.Contains("Set-Cookie"));
-                return await response.Content.ReadAsStringAsync(ct);
-            }
-            string foreignDenial = await Denied(foreignCode);
-            Assert.Equal(foreignDenial, await Denied(codes.Previous));
-            await using (var expire = new NpgsqlCommand("update auth_users set updated_at=clock_timestamp()-interval '25 hours' where username='platform-owner'", admin))
-                Assert.Equal(1, await expire.ExecuteNonQueryAsync(ct));
-            string expiredDenial = await Denied(code);
-            Assert.Equal(foreignDenial, expiredDenial);
-            await using (var pending = new NpgsqlCommand("select last_login_at is null from auth_users where username='platform-owner'", admin))
-                Assert.Equal(true, await pending.ExecuteScalarAsync(ct));
-            await using (var reissue = new NpgsqlCommand("update auth_users set updated_at=clock_timestamp() where username='platform-owner'", admin))
-                Assert.Equal(1, await reissue.ExecuteNonQueryAsync(ct));
-
-            using var success = await PostJsonAsync(client, "/api/auth/bootstrap", new { code, password }, ct);
-            Assert.Equal(HttpStatusCode.OK, success.StatusCode);
-            string cookie = Assert.Single(success.Headers.GetValues("Set-Cookie"));
-            Assert.Contains("HttpOnly", cookie);
-            Assert.Contains("Secure", cookie);
-            Assert.Contains("SameSite=Strict", cookie);
-            cookie = cookie.Split(';')[0];
-            client.DefaultRequestHeaders.Add("Cookie", cookie);
-            using (var me = await client.GetAsync("/api/auth/me", ct))
-            {
-                Assert.Equal(HttpStatusCode.OK, me.StatusCode);
-                using var body = JsonDocument.Parse(await me.Content.ReadAsStringAsync(ct));
-                Assert.True(body.RootElement.GetProperty("authenticated").GetBoolean());
-                var principal = body.RootElement.GetProperty("principal");
-                Assert.Equal("session", principal.GetProperty("type").GetString());
-                Assert.Equal("platform-owner", principal.GetProperty("username").GetString());
-                Assert.Equal("admin", principal.GetProperty("role").GetString());
-            }
-            string token = cookie[(cookie.IndexOf('=') + 1)..];
-            await using (var persisted = new NpgsqlCommand("""
-                select count(*) from auth_sessions s join auth_users u on u.id=s.user_id
-                join access_platform_owners o on o.user_id=u.id
-                where s.token_hash=@hash and s.revoked_at is null and s.expires_at>clock_timestamp()
-                  and u.username='platform-owner' and u.last_login_at is not null and o.owner_key='primary'
-                """, admin))
-            {
-                persisted.Parameters.AddWithValue("hash", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token))));
-                Assert.Equal(1L, await persisted.ExecuteScalarAsync(ct));
-            }
-            string index = await File.ReadAllTextAsync(Path.Combine(root, "web/app/react/index.html"), ct);
-            // HTML gains a random CSP nonce; all other bytes must be the shipped
-            // frontend build, and its actual JS must also be served by Program.
-            foreach (string path in new[] { "/", "/app", "/app/" })
-            {
-                using var page = await client.GetAsync(path, ct);
-                Assert.Equal(HttpStatusCode.OK, page.StatusCode);
-                Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType);
-                Assert.Equal(index, Regex.Replace(await page.Content.ReadAsStringAsync(ct), " nonce=\"[A-Za-z0-9_-]+\"", ""));
-            }
-            string asset = Regex.Match(index, "src=\"(/app/assets/[^\"]+\\.js)\"").Groups[1].Value;
-            Assert.NotEmpty(asset);
-            using (var script = await client.GetAsync(asset, ct))
-            {
-                Assert.Equal(HttpStatusCode.OK, script.StatusCode);
-                Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(root, "web/app/react", asset[5..]), ct),
-                    await script.Content.ReadAsByteArrayAsync(ct));
-            }
-            client.DefaultRequestHeaders.Remove("Cookie");
-            Assert.Equal(foreignDenial, await Denied(code));
-            using (var closed = await client.GetAsync("/api/auth/bootstrap", ct))
-                Assert.Equal(HttpStatusCode.NotFound, closed.StatusCode);
-            using (var ordinaryLogin = await PostJsonAsync(client, "/api/auth/login", new { username = "platform-owner", password }, ct))
-                Assert.Equal(HttpStatusCode.OK, ordinaryLogin.StatusCode);
-        }
-        string diagnostics = string.Join('\n', logs) + await fixture.Pg.DiagnosticsAsync(ct);
-        await using (var audit = new NpgsqlCommand("select coalesce(jsonb_agg(to_jsonb(a))::text,'[]') from auth_audit a", admin))
-            diagnostics += (string?)await audit.ExecuteScalarAsync(ct);
-        Assert.DoesNotContain(code, diagnostics);
-        Assert.DoesNotContain(foreignCode, diagnostics);
-        Assert.DoesNotContain(codes.Previous, diagnostics);
-        Assert.DoesNotContain(password, diagnostics);
-        Assert.NotEmpty(logs);
-        await fixture.AssertNoSqlErrorsAsync(ct);
+                })));
     }
 
-    private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string path, object payload, CancellationToken ct)
+    private static HttpClient OpenClient(WebApplicationFactory<Program> host) =>
+        new(host.Server.CreateHandler(context =>
+            context.Features.Get<IHttpRequestFeature>()!.RawTarget = context.Request.Path + context.Request.QueryString))
+        { BaseAddress = new Uri("https://localhost") };
+
+    private static void SetCookie(HttpClient client, string? cookie)
     {
-        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        return await client.PostAsync(path, content, ct);
+        client.DefaultRequestHeaders.Remove("Cookie");
+        if (cookie is not null) client.DefaultRequestHeaders.Add("Cookie", cookie);
     }
 
-    private static async Task<(string Previous, string Current)> IssueInstallerCodesAsync(SqlPostgresFixture fixture, CancellationToken ct)
+    private static string ReadCookie(HttpResponseMessage response)
+    {
+        string cookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
+        Assert.Contains("HttpOnly", cookie);
+        Assert.Contains("Secure", cookie);
+        Assert.Contains("SameSite=Strict", cookie);
+        return cookie.Split(';')[0];
+    }
+
+    private static async Task AssertOwnerAsync(HttpClient client, CancellationToken ct)
+    {
+        using var response = await client.GetAsync("/api/auth/me", ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var principal = body.RootElement.GetProperty("principal");
+        Assert.Equal("admin", principal.GetProperty("username").GetString());
+        Assert.Equal("admin", principal.GetProperty("role").GetString());
+    }
+
+    private static async Task<string> SignInAsync(HttpClient client, string password, bool restricted, CancellationToken ct)
+    {
+        using var response = await LoginAsync(client, password, ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        string json = await response.Content.ReadAsStringAsync(ct);
+        Assert.DoesNotContain(password, json);
+        using var body = JsonDocument.Parse(json);
+        Assert.Equal(restricted, body.RootElement.TryGetProperty("password_change_required", out var value) && value.GetBoolean());
+        if (restricted) Assert.False(body.RootElement.TryGetProperty("principal", out _));
+        return ReadCookie(response);
+    }
+
+    private static Task<HttpResponseMessage> LoginAsync(HttpClient client, string password, CancellationToken ct, string username = "admin") =>
+        client.PostAsync(Login, JsonBody(new { username, password, remember = true }), ct);
+
+    private static StringContent JsonBody(object body) =>
+        new(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+    private static async Task<string?> ErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return body.RootElement.GetProperty("error").GetString();
+    }
+
+    private static async Task<HttpResponseMessage> ChangeAsync(HttpClient client, string password, string repeat, CancellationToken ct,
+        string? origin = null, bool insecure = false)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, insecure ? "http://localhost" + Change : Change)
+        {
+            Content = JsonBody(new { password, repeat })
+        };
+        if (origin is not null) request.Headers.TryAddWithoutValidation("Origin", origin);
+        return await client.SendAsync(request, ct);
+    }
+
+    private static string Repository([System.Runtime.CompilerServices.CallerFilePath] string path = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, "../../../.."));
+
+    private static async Task<string?> SetupAsync(SqlPostgresFixture fixture, string mode, CancellationToken ct)
     {
         const string script = """
-            import json, sys
+            import contextlib, json, os, sys
             from pathlib import Path
             from unittest.mock import patch
             import psycopg
             from deploy.linux import native_setup as setup
+
             request = json.load(sys.stdin)
-            directory = Path(request['directory']).resolve()
-            directory.mkdir()
-            secret = directory / 'platform_owner_password'
-            secret.write_text('synthetic-unissued-code', encoding='utf-8')
-            (directory / 'postgres_password').write_text('synthetic-only', encoding='utf-8')
-            connect = psycopg.connect
-            def trusted(path):
-                assert path.parent.resolve() == directory
-                return path.read_bytes()
-            def atomic(path, value):
-                assert path.parent.resolve() == directory
-                path.write_text(json.dumps(value), encoding='utf-8')
-            with patch.object(setup.install, 'SECRETS', directory), patch.object(setup.install, 'STATE', directory), \
-                 patch.object(setup.install, 'trusted', trusted), patch.object(setup.install, 'atomic', atomic), \
-                 patch.object(psycopg, 'connect', lambda **kwargs: connect(**request['postgres'])):
-                previous = setup.owner_code(new=True)
-                current = setup.owner_code(new=True)
-                assert secret.read_text(encoding='utf-8').strip() == current
-                assert setup.owner_code() == 'pending'
-                assert setup.owner_code(check_only=True) == 'unclaimed'
-            print(json.dumps(dict(previous=previous, current=current)))
+            real_connect = psycopg.connect
+            with contextlib.ExitStack() as stack:
+                for context in [
+                    patch.object(setup.install, 'trusted', return_value=b'synthetic-db-password'),
+                    patch.object(setup.install, 'site_configuration', return_value={'owner_setup': True}),
+                    patch.object(setup.install, 'inventory', return_value=(Path.cwd(), {'python': sys.executable}, None)),
+                    patch.object(setup.install, 'trusted_path'),
+                    patch.object(os, 'geteuid', return_value=0, create=True),
+                    patch.object(psycopg, 'connect', lambda **kwargs: real_connect(**request['postgres'])),
+                ]:
+                    stack.enter_context(context)
+                mode = request['mode']
+                if mode == 'prepare':
+                    assert setup.main(['--initial-admin', 'prepare', 'synthetic-release']) == 0
+                    mode = 'status'
+                assert setup.main(['--initial-admin', mode, 'synthetic-release']) == 0
             """;
         var dsn = new NpgsqlConnectionStringBuilder(fixture.Pg.ConnectionString);
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("SLI_TEST_PYTHON") ??
@@ -207,7 +320,9 @@ public sealed class FirstLoginDotnetPostgresTests
             RedirectStandardOutput = true, RedirectStandardError = true
         };
         SafeTestEnvironment.Apply(start);
-        start.ArgumentList.Add("-B"); start.ArgumentList.Add("-c"); start.ArgumentList.Add(script);
+        start.ArgumentList.Add("-B");
+        start.ArgumentList.Add("-c");
+        start.ArgumentList.Add(script);
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync(ct);
         var stderr = process.StandardError.ReadToEndAsync(ct);
@@ -215,17 +330,15 @@ public sealed class FirstLoginDotnetPostgresTests
         {
             await process.StandardInput.WriteAsync(JsonSerializer.Serialize(new
             {
-                directory = Path.Combine(fixture.Pg.Root, "installer"),
+                mode,
                 postgres = new { host = dsn.Host, port = dsn.Port, dbname = dsn.Database, user = dsn.Username }
             }));
             process.StandardInput.Close();
             await process.WaitForExitAsync(ct);
-            string error = await stderr;
-            Assert.True(process.ExitCode == 0, error.Contains("ModuleNotFoundError")
-                ? "Python for the installer test lacks a required module (argon2-cffi or psycopg); set SLI_TEST_PYTHON to an interpreter that has them. " + error
-                : "Synthetic installer failed: " + error);
-            using var result = JsonDocument.Parse(await stdout);
-            return (result.RootElement.GetProperty("previous").GetString()!, result.RootElement.GetProperty("current").GetString()!);
+            Assert.True(process.ExitCode == 0, "Synthetic setup helper failed: " + await stderr);
+            string result = (await stdout).Trim();
+            if (result.Length == 0) return null;
+            return JsonSerializer.Deserialize<string>(result);
         }
         finally
         {
@@ -233,19 +346,17 @@ public sealed class FirstLoginDotnetPostgresTests
         }
     }
 
-    private static string Repository([System.Runtime.CompilerServices.CallerFilePath] string path = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, "../../../.."));
-
-    private sealed class CapturedLogs(ConcurrentQueue<string> events) : ILoggerProvider
+    private sealed class CaptureProvider(ConcurrentQueue<string> logs) : ILoggerProvider
     {
-        public ILogger CreateLogger(string categoryName) => new Capture(events);
+        public ILogger CreateLogger(string categoryName) => new CaptureLogger(logs);
         public void Dispose() { }
-        private sealed class Capture(ConcurrentQueue<string> events) : ILogger
+
+        private sealed class CaptureLogger(ConcurrentQueue<string> events) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel level) => true;
-            public void Log<TState>(LogLevel level, EventId id, TState state, Exception? error, Func<TState, Exception?, string> formatter)
-                => events.Enqueue(formatter(state, error) + error?.ToString());
+            public void Log<TState>(LogLevel level, EventId id, TState state, Exception? error,
+                Func<TState, Exception?, string> formatter) => events.Enqueue(formatter(state, error) + error);
         }
     }
 }

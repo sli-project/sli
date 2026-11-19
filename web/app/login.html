@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title data-i18n="login.documentTitle">SLI — Вход в систему</title>
   <!-- Versioned so a stylesheet change is never served from a stale tab cache. -->
-  <link rel="stylesheet" href="/sli-login.css?v=25">
+  <link rel="stylesheet" href="/sli-login.css?v=26">
 </head>
 <body>
   <main class="sli-page">
@@ -68,7 +68,7 @@
           Введите данные учётной записи администратора или сотрудника.
         </p>
 
-        <form class="sli-form" id="sli-login-form" novalidate>
+        <form class="sli-form" id="sli-login-form" method="post" novalidate>
           <label class="sli-label" for="username" data-i18n="login.username">Логин</label>
           <div class="sli-field">
             <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -147,6 +147,32 @@
             <span data-i18n="login.submit">Войти</span>
           </button>
         </form>
+
+        <section id="sli-change-password" hidden>
+          <h1 class="sli-title" data-i18n="login.change.title">Задайте новый пароль</h1>
+          <form class="sli-form" id="sli-change-form" method="post" novalidate>
+          <label class="sli-label" for="new-password" data-i18n="login.change.password">Новый пароль</label>
+          <div class="sli-field">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="11" rx="2"></rect>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+            </svg>
+            <input class="sli-input" id="new-password" name="password" type="password" autocomplete="new-password"
+              aria-describedby="sli-change-message" required>
+          </div>
+          <label class="sli-label" for="repeat-password" data-i18n="login.change.repeat">Повторите пароль</label>
+          <div class="sli-field">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="11" rx="2"></rect>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+            </svg>
+            <input class="sli-input" id="repeat-password" name="repeat" type="password" autocomplete="new-password"
+              aria-describedby="sli-change-message" required>
+          </div>
+            <p class="sli-form-message" id="sli-change-message" role="alert" aria-live="polite"></p>
+            <button class="sli-submit" type="submit" data-i18n="login.change.submit">Сохранить пароль</button>
+          </form>
+        </section>
 
         <div class="sli-tls-note">
           <img src="/assets/sli-login/feature-shield.svg" alt="" aria-hidden="true">
