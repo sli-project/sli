@@ -13,6 +13,7 @@ import pytest
 from scripts.maintenance.github_sanitary_check import scan
 from server.ad_context.contracts import AdContextContractError, _gpo_settings
 from server.ad_context.repository import _store_gpo_v2_snapshot
+from tests.tooling.test_ad_context_foundation import gpo_module  # noqa: F401 -- shared fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "scripts/ad_context/GpoReportContract.psm1"
@@ -172,7 +173,7 @@ def test_both_powershell_paths_filter_before_normalizing():
     assert "Protect-SLIGpoXmlValues" in module.split("Export-ModuleMember", 1)[1]
 
 
-def test_powershell_filters_xml_attributes_leaves_and_named_values(tmp_path):
+def test_powershell_filters_xml_attributes_leaves_and_named_values(tmp_path, gpo_module):
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell is None:
         pytest.skip("PowerShell is unavailable; both paths are also checked statically")
@@ -184,7 +185,8 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Import-Module $ModulePath -Force -ErrorAction Stop
 $tokens = $null; $errors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile($ExporterPath, [ref]$tokens, [ref]$errors)
+$scriptText = Get-Content -LiteralPath $ExporterPath -Raw -Encoding UTF8
+$ast = [Management.Automation.Language.Parser]::ParseInput($scriptText, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw 'exporter_parse_failed' }
 foreach ($name in @('Convert-GpoReportSettings', 'Get-XmlNodePath', 'Get-Sha256Hex', 'New-StableId', 'New-SourceState')) {
     $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
@@ -208,7 +210,7 @@ $changedRows = Convert-GpoReportSettings -Xml $changedXml -GpoId 'gpo-test' -Gpo
 @{ facts=$facts; rows=$rows; changedFacts=$changedFacts; changedRows=$changedRows; originalPreserved=$xml.OuterXml.Contains('synthetic-redaction-marker') } | ConvertTo-Json -Depth 15 -Compress
 ''', encoding="utf-8-sig")
     completed = subprocess.run(
-        [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(runner), str(MODULE), str(EXPORTER)],
+        [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(runner), str(gpo_module), str(EXPORTER)],
         capture_output=True, timeout=30, check=True,
     )
     result = json.loads(completed.stdout.decode("utf-8-sig"))

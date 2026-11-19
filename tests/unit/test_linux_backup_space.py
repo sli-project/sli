@@ -146,6 +146,7 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(native_backup, 'ROOT', root)
     monkeypatch.setattr(native_backup, 'DRILLS', source / 'restore-check')
     monkeypatch.setattr(native_upgrade, 'TRANSACTIONS', tmp_path / 'transactions')
+    monkeypatch.setattr(native_upgrade, 'systemd_available', lambda: False)
     monkeypatch.setattr(native_upgrade, 'operation_lock', lambda p: nullcontext())
     monkeypatch.setattr(native_upgrade, 'preflight', lambda: (Path('/old'), Path('/recovery')))
     monkeypatch.setattr(native_runtime, 'no_transaction', lambda: None)

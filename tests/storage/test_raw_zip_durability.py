@@ -6,6 +6,9 @@ import pytest
 from server.sli.storage import runtime_storage as storage
 
 
+pytestmark = pytest.mark.posix_only
+
+
 @pytest.fixture
 def planned(tmp_path):
     raw = tmp_path / 'raw'
