@@ -27,6 +27,8 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.passwordDomainRequired": "Password attack detection domain is missing for agent {name} — check the controller’s domain.",
   "systemStatus.services": "Server services",
   "systemStatus.disk": "Disk",
+  "systemStatus.lastBackup": "Last backup: {time}",
+  "systemStatus.lastBackupSameDisk": "Last backup: {time}, on the same disk as the database",
   "systemStatus.computer": "Computer",
   "systemStatus.collection": "Collected data",
   "systemStatus.lastData": "Latest data",

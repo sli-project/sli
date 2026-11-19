@@ -183,7 +183,7 @@ def restore_existing(dump: Path, *, jobs: int = 4, replace_existing: bool = Fals
     print("linux_restore_verified")
 
 
-def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool) -> None:
+def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool, use_default_tablespace: bool = False) -> None:
     """Restore the captured state without applying candidate migrations."""
     counts = manifest["components"]["postgres"]["row_counts"]
     ledger = manifest["migration_ledger_max_version"]
@@ -210,10 +210,13 @@ def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool) -> N
         with backup.pg_connect(passfile, "postgres", autocommit=True) as connection:
             connection.execute("DROP DATABASE IF EXISTS sli WITH (FORCE)")
             connection.execute("CREATE DATABASE sli OWNER sli_migration TEMPLATE template0")
+            if backup.native_mode():
+                connection.execute("REVOKE ALL ON DATABASE sli FROM PUBLIC; GRANT CONNECT ON DATABASE sli TO adlog_user")
         watch = operation_wait.Watch('postgres_restore', minimum=backup.TIMEOUT,
                                      size=manifest['components']['postgres'].get('database_size_bytes', 0),
                                      history=operation_wait.history_path())
         backup.pg_tool(["pg_restore", "--no-password", "--exit-on-error", "--format=directory",
+                        *(["--no-tablespaces"] if use_default_tablespace else []),
                         *backup.postgres_target().arguments(), "--dbname=sli", "--jobs=2",
                         str(path / "postgres")], passfile, watch=watch)
         analyze_postgres(passfile, 2)

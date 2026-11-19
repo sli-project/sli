@@ -56,6 +56,11 @@ FAILURE_MESSAGES = {
     'native_backup_root_mount_mismatch': 'The configured backup volume is not mounted at /var/backups/sli.',
     'native_backup_hash_mismatch': 'Backup integrity check failed / Проверка целостности резервной копии не пройдена.',
     'native_backup_data_mismatch': 'Backup data check failed / Проверка данных резервной копии не пройдена.',
+    'native_restore_source_not_private': 'Use a recovery set accessible only to root / Копия должна быть доступна только root.',
+    'native_restore_version_mismatch': 'Install the Debian kit for the version in this backup / Установите комплект версии, из которой сделана копия.',
+    'native_restore_retry_same_backup': 'Repeat the command with the same recovery set / Повторите команду с той же копией.',
+    'native_restore_target_not_fresh': 'Use a clean server or a configured installation of the same version / Нужен чистый сервер или настроенная установка той же версии.',
+    'native_restore_ad_key_required': 'The original AD credentials key must be provisioned on the destination / На сервере должен быть исходный ключ учётных данных AD.',
 }
 MESSAGES = {
     'native_backup_old_set_untrusted': 'Old backup could not be verified; left untouched for manual review / '
@@ -144,7 +149,7 @@ def capture_volume_admission(root, work, data_filesystems, required, *, work_req
     return admit(root, work, data_filesystems, required, work_required=work_required)
 
 
-def launch(action):
+def launch(action, arguments=()):
     # The stdlib-only host launcher verifies the pinned release before exec.
     helper = RUNTIME_HELPER
     for item in (helper, *helper.parents):
@@ -154,10 +159,22 @@ def launch(action):
     spec = importlib.util.spec_from_file_location('sli_backup_runtime', helper)
     runtime = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runtime)
-    root, manifest, _ = runtime.release()
+    if action == 'restore' and not (STATE / 'installed.json').exists():
+        from importlib.util import module_from_spec, spec_from_file_location
+
+        installer = helper.with_name('native_install.py')
+        runtime.trusted(installer)
+        install_spec = spec_from_file_location('sli_restore_install', installer)
+        install = module_from_spec(install_spec)
+        install_spec.loader.exec_module(install)
+        root, manifest, _ = install.inventory(runtime.document(STATE / 'pending-release.json')['release'])
+    else:
+        root, manifest, _ = runtime.release()
     runtime.trusted(root / 'deploy/linux/native_backup.py')
+    if action == 'restore':
+        arguments = (str(Path(arguments[0]).absolute()),)
     os.chdir(root)
-    os.execve(manifest['python'], [manifest['python'], '-B', '-m', 'deploy.linux.native_backup', action],
+    os.execve(manifest['python'], [manifest['python'], '-B', '-m', 'deploy.linux.native_backup', action, *arguments],
               {'PATH': '/usr/lib/postgresql/18/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                'LC_ALL': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1',
                **{key: os.environ[key] for key in ('SLI_RESTORE_CHECK_ROOT', 'SLI_BACKUP_RETENTION',
@@ -345,7 +362,7 @@ def report_warning(warning):
 
 
 def publish_summary(root, warnings=()):
-    from deploy.linux import backup, backup_policy, operation_wait
+    from deploy.linux import backup, backup_policy, native_host, operation_wait
 
     untrusted = {item['backup_id'] for item in warnings}
     paths = sorted(path for path in root.iterdir() if path.name not in untrusted
@@ -365,6 +382,7 @@ def publish_summary(root, warnings=()):
         'operation_samples': operation_wait.read_history(status / 'summary.json').get('operation_samples', {}),
         'operation_durations': operation_wait.read_history(status / 'summary.json').get('operation_durations', {}),
         'last_backup_at_utc': manifests[-1].get('created_at_utc') if manifests else None,
+        'same_disk_as_postgres': same_disk(root, Path(native_host.MOUNT)) if manifests else None,
         'last_verified_at_utc': verified.get('completed_at_utc') if verified.get('status') == 'restore_verified' else None,
         'capacity_days': backup_policy.capacity_days(shutil.disk_usage(root).free,
                                                      [item.get('size_bytes', 0) for item in manifests], reserve),
@@ -372,6 +390,30 @@ def publish_summary(root, warnings=()):
         'warnings': list(warnings),
     })
     (status / 'summary.json').chmod(0o644)
+
+
+def same_disk(backup_root, postgres_root):
+    """Compare filesystem devices and their underlying Linux block devices."""
+    def disks(device):
+        entry = Path(f'/sys/dev/block/{os.major(device)}:{os.minor(device)}')
+        if not entry.exists():
+            return set()
+        return parents(entry.resolve(strict=True))
+
+    def parents(entry):
+        if (entry / 'partition').is_file():
+            return parents(entry.parent)
+        slaves = list((entry / 'slaves').glob('*'))
+        return set().union(*(parents(path.resolve(strict=True)) for path in slaves)) if slaves else {entry}
+
+    try:
+        source = backup_root.stat().st_dev
+        target = postgres_root.stat().st_dev
+        if source == target:
+            return True
+        return bool(disks(source) & disks(target)) if sys.platform == 'linux' else False
+    except OSError:
+        return None
 
 
 def capture():
@@ -805,8 +847,9 @@ def drill_locked(selected, root, *, prune_sets=True, upgrade_checkpoint=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('capture', 'drill', 'launch'))
+    parser.add_argument('action', choices=('capture', 'drill', 'launch', 'restore'))
     parser.add_argument('operation', nargs='?')
+    parser.add_argument('source', nargs='?')
     args = parser.parse_args(argv)
 
     def interrupted(signum, frame):
@@ -818,10 +861,18 @@ def main(argv=None):
         signal.signal(signal.SIGTERM, interrupted)
         signal.signal(signal.SIGINT, interrupted)
         if args.action == 'launch':
-            require(args.operation in {'capture', 'drill'})
-            launch(args.operation)
+            require(args.operation in {'capture', 'drill', 'restore'}
+                    and (args.operation == 'restore') == (args.source is not None))
+            launch(args.operation, (args.source,)) if args.source else launch(args.operation)
+        elif args.action == 'restore':
+            from deploy.linux.native_restore import restore
+
+            require(args.operation is not None and args.source is None)
+            restore(Path(args.operation))
         elif args.action == 'capture':
-            capture()
+            result = capture()
+            if result is not None:
+                print(f'Backup / Копия: {result}', flush=True)
         else:
             drill()
     except Exception as error:  # noqa: BLE001 - only fixed diagnostics may cross the CLI boundary

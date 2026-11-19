@@ -236,7 +236,10 @@ def test_required_dotnet_package_is_isolated_and_loads_required_credentials(payl
         assert all(command not in files[name][0] for command in ("systemctl start", "systemctl enable", "sli-runtime.target", "sli-api.service"))
     assert "systemctl stop sli-dotnet.target 'sli-dotnet-*.service'" in files["DEBIAN/prerm"][0]
     assert "adduser --system" not in files["DEBIAN/postinst"][0]
-    assert f"sli-server-dotnet (= {VERSION})" in captured["sli-release-new"]["DEBIAN/control"][0]
+    # The selected kit requires its .NET runtime. Retained immutable releases
+    # may coexist and must not force incompatible versions of that package.
+    assert f"sli-server-dotnet (= {VERSION})" in captured["sli-rollback-hold"]["DEBIAN/control"][0]
+    assert "sli-server-dotnet" not in captured["sli-release-new"]["DEBIAN/control"][0]
 
 
 @pytest.mark.parametrize("agents,ad_credentials", [(False, False), (True, False), (False, True), (True, True)])

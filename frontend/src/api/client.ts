@@ -1129,7 +1129,7 @@ export type StorageFootprintComponent = {
 };
 
 export type StorageFootprint = {
-  backups?: { last_backup_at_utc?: string | null; last_verified_at_utc?: string | null; capacity_days?: number | null };
+  backups?: { last_backup_at_utc?: string | null; last_verified_at_utc?: string | null; capacity_days?: number | null; same_disk_as_postgres?: boolean | null };
   schema?: string;
   status?: "ok" | "partial" | "stale" | "unavailable" | string;
   generated_at_utc?: string | null;

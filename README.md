@@ -238,7 +238,16 @@ again. Setup errors explain the next action; diagnostic codes go to
 ### Native backups
 
 Check the scheduled daily backup with `sudo systemctl list-timers sli-backup.timer`.
-To create a recovery set now, run `sudo sli-native-backup capture`.
+`sudo sli-backup` creates a backup now and prints its directory.
+`sudo sli-restore <backup-directory>` restores data and settings on a server with the matching Debian kit installed.
+`sudo sli-rollback [previous-kit-directory]` restores the previous version using the backup taken automatically before the update.
+
+Keep the backup directory accessible to root only. On a new server, install the same
+Debian kit version and keep the original connection address (DNS name or IP) so agents
+reconnect with their existing certificates. If you saved AD credentials, provision
+their original protected key on the new server. Rollback uses the official `.deb` kit
+in the specified protected directory or the same version from APT. Both commands save
+the current data under `/var/backups/sli/native/before-restore` before replacing it.
 The result is `/var/backups/sli/native/last-result.json`; when an external backup
 volume is configured, SLI mounts it under `/var/backups/sli`.
 `backup_created` confirms capture and integrity checks; it does not mean that a full
@@ -270,9 +279,8 @@ Correct storage/identity/configuration conflicts; restore a missing complete
 secret bundle from trusted recovery. Never rename registry/journal files or run
 fresh bootstrap to bypass refusal. An unfinished transaction requires the
 coordinator's `sudo sli-native-upgrade resume-package <target-version>`;
-after rollback, follow its explicit package reconciliation procedure. A committed
-transaction must never be rolled back to its old checkpoint. Use a full VM
-snapshot for disposable rehearsal recovery.
+after automatic recovery from an APT failure, follow its package reconciliation procedure.
+Use `sudo sli-rollback` after a successful update.
 
 In `site.toml`, optional `operation_stall_minutes = 15` (integer 1–180) controls no-progress waits; migrations default to 30 minutes when omitted. Size/history estimate duration; work continues while confirmed progress arrives.
 

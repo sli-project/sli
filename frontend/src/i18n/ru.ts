@@ -24,6 +24,8 @@ export const ru = {
   "systemStatus.passwordDomainRequired": "Для агента {name} не определён домен обнаружения подбора паролей — проверьте домен контроллера.",
   "systemStatus.services": "Службы сервера",
   "systemStatus.disk": "Диск",
+  "systemStatus.lastBackup": "Последняя копия: {time}",
+  "systemStatus.lastBackupSameDisk": "Последняя копия: {time}, на том же диске, что и база",
   "systemStatus.computer": "Компьютер",
   "systemStatus.collection": "Что собирается",
   "systemStatus.lastData": "Последние данные",
