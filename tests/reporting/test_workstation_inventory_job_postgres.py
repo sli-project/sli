@@ -690,13 +690,14 @@ def test_final_core_fence_and_atomic_receipt_do_not_promise_outer_commit_wall_cl
     _directory(conn)
     job = _job(conn)
     staged = _stage(conn, job)
-    conn.execute("update sli_jobs.jobs set lease_until=clock_timestamp()+interval '2 seconds' where job_id=%s", (job['job_id'],))
+    expires = conn.execute("update sli_jobs.jobs set lease_until=clock_timestamp()+interval '15 seconds' "
+                           "where job_id=%s returning lease_until", (job['job_id'],)).fetchone()[0]
     with conn.transaction():
         conn.execute('set local session authorization sli_job_publisher_light')
         assert job_queue.publish(conn, job, staged, projection_jobs.apply) == 'committed'
         if immediate:
             conn.execute('set constraints all immediate')
-        conn.execute('select pg_sleep(2.1)')
+        conn.execute('select pg_sleep_until(%s)', (expires,))
     assert conn.execute('select count(*) from sli_plugin_workstations.station_inventory').fetchone()[0] == 1
     assert conn.execute('select state from sli_jobs.jobs where job_id=%s', (job['job_id'],)).fetchone()[0] == 'completed'
     assert conn.execute('select lease_until<clock_timestamp() from sli_plugin_workstations.inventory_publications where job_id=%s',
@@ -821,14 +822,23 @@ def test_final_core_fence_rejects_expiry_after_effects_before_finish(profile_con
     job = _job(conn)
     staged = _stage(conn, job)
     field = 'lease_until' if expires == 'lease' else 'deadline_at'
-    conn.execute(f"update sli_jobs.jobs set {field}=clock_timestamp()+interval '2 seconds' where job_id=%s", (job['job_id'],))
+    conn.execute("update sli_jobs.jobs set available_at=clock_timestamp()-interval '1 minute' where job_id=%s",
+                 (job['job_id'],))
+    expired_after_effects = False
 
-    def delayed_effects(connection, value, result):
+    def expire_after_effects(connection, value, result):
+        nonlocal expired_after_effects
         projection_jobs.apply(connection, value, result)
-        connection.execute('select pg_sleep(2.1)')
+        connection.execute('set local session authorization default')
+        expired = connection.execute(f"update sli_jobs.jobs set {field}=clock_timestamp()-interval '1 second' "
+                                     'where job_id=%s', (value['job_id'],))
+        assert expired.rowcount == 1
+        connection.execute('set local session authorization sli_job_publisher_light')
+        expired_after_effects = True
 
     with pytest.raises(job_queue.LeaseLost):
-        _publish(conn, job, staged, delayed_effects)
+        _publish(conn, job, staged, expire_after_effects)
+    assert expired_after_effects
     assert conn.execute('select count(*) from sli_plugin_workstations.station_inventory').fetchone()[0] == 0
     assert conn.execute('select count(*) from sli_plugin_workstations.inventory_publications').fetchone()[0] == 0
     assert conn.execute('select state,result_payload from sli_jobs.jobs where job_id=%s', (job['job_id'],)).fetchone() == ('leased', None)

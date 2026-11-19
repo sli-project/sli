@@ -281,7 +281,8 @@ def test_disposable_postgres_moves_toast_preserves_indexes_and_reverses(tmp_path
         return tool("psql", ["-XqAt", "-w", "-h", "127.0.0.1", "-p", str(port), "-U", "postgres",
                              "-d", "postgres", "-v", "ON_ERROR_STOP=1"], body, check=check).stdout.strip()
     log = (tmp_path / "postgres.log").open("w")
-    process = subprocess.Popen([str(tools / ("postgres" + suffix)), "-D", str(data), "-h", "127.0.0.1", "-p", str(port)],
+    socket_args = [] if os.name == "nt" else ["-k", "."]  # Resolved inside PGDATA.
+    process = subprocess.Popen([str(tools / ("postgres" + suffix)), "-D", str(data), "-h", "127.0.0.1", "-p", str(port), *socket_args],
                                stdin=subprocess.DEVNULL, stdout=log, stderr=log)
     try:
         for _ in range(100):

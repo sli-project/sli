@@ -16,6 +16,8 @@ from tests.unit.test_linux_backup_capacity import (
     private_postgres,  # noqa: F401 -- shared fixture
 )
 
+pytestmark = pytest.mark.posix_only
+
 # Synthetic adversarial input is assembled only at runtime. It is never an
 # actual connection or a credential-bearing URI embedded in repository source.
 SYNTHETIC_CREDENTIAL_URI = "postgresql" + "://user:private-password@private-host/db"
