@@ -33,10 +33,9 @@ def write(root, name, body, mode=0o644):
     path.chmod(mode)
 
 
-def control(root, name, version, depends, description, *, protected=False):
+def control(root, name, version, depends, description):
     write(root, "DEBIAN/control", f"Package: {name}\nVersion: {version}\nArchitecture: amd64\n"
           "Maintainer: SLI packaging <packages@example.invalid>\nSection: admin\nPriority: optional\n"
-          + ("Protected: yes\n" if protected else "")
           + (f"Depends: {depends}\n" if depends else "") + f"Description: {description}\n")
 
 
@@ -142,12 +141,8 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         write(host, "usr/sbin/sli-cold-tables", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_host.py cold-tables \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-backup", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-upgrade", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py launch \"$@\"\n", 0o755)
-        # Host removal must not leave live services without their privileged CLI.
-        write(host, "DEBIAN/prerm", "#!/bin/sh\nset -eu\numask 022\ncase \"$1\" in\n"
-              " remove|deconfigure) test ! -e /var/lib/sli/state/installed.json || {\n"
-              " logger -t sli-setup native_host_still_installed\n"
-              " echo 'SLI database state is retained. Keep sli-host for data recovery and management.' >&2; exit 1; } ;;\n"
-              "esac\n", 0o755)
+        write(host, "usr/lib/sli/native_remove.py", (helpers / 'native_remove.py').read_text(encoding='utf-8'))
+        write(host, "usr/sbin/sli-remove", "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_remove.py \"$@\"\n", 0o755)
         payload = staging / ("sli-release-" + release)
         control(payload, payload.name, version,
                 f"sli-runtime-{runtime} (= {runtime_version}), sli-server-dotnet (= {version})",
@@ -166,8 +161,8 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             # The retained immutable release pins its own exact runtime. Its ID
             # need not equal that runtime's ID (compatible releases may share it).
             dependencies += [f"sli-release-{previous[0]} (= {previous[1]})"]
-        # A real dependency, protected from autoremove, keeps recovery after removing sli.
-        control(hold, hold.name, version, ", ".join(dependencies), "SLI retained application and recovery packages", protected=True)
+        # The kit installs this explicitly, so ordinary apt remove sli retains it.
+        control(hold, hold.name, version, ", ".join(dependencies), "SLI retained application and recovery packages")
         public = staging / "sli"
         control(public, "sli", version, f"sli-host (= {version}), sli-rollback-hold (= {version}), "
                 f"{payload.name} (= {version}), postgresql-18, postgresql-client-18",

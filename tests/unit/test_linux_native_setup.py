@@ -535,13 +535,11 @@ def test_install_refuses_resume_with_changed_or_accepted_receipt(first_start_ins
     assert path.read_bytes() == before and not calls
 
 
-def test_uninstall_stops_database_units_after_writers_without_deleting_data(monkeypatch):
+def test_uninstall_delegates_to_stop_only_removal_that_never_erases_data(monkeypatch):
     calls = []
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(runtime, 'stop_writers', lambda: calls.append('writers-stopped'))
     install.remove()
-    databases = ['systemctl', 'stop', *runtime.DATABASES]
-    assert databases in calls and calls.index('writers-stopped') < calls.index(databases)
+    assert calls == [['/usr/sbin/sli-remove', '--stop-services']]
 
 
 @pytest.mark.parametrize('row', [None, ('invalid-hash', None)])

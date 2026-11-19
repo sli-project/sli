@@ -45,18 +45,20 @@ another PostgreSQL installation. Collection requires one Windows
    `sli-server-dotnet`, and pinned vendor dependencies including PostgreSQL 18.
    Source code alone is insufficient. A public APT repository and
    package signing are separate release work; do not add an unverified repository.
-2. Update the distribution package index:
+2. Check the extracted files against the authenticated `SHA256SUMS`:
 
    ```sh
-   sudo apt update
+   sha256sum --check --strict SHA256SUMS
    ```
 
 3. Install the full kit:
 
    ```sh
-   sudo apt install --fix-broken ./*.deb
+   bash ./install-beta-kit
    ```
 
+   The helper verifies the kit, updates the APT index and installs packages
+   without package prompts. It keeps newer installed system packages.
    APT installs the dependencies and startup guard before the database server.
    The guard prevents an automatic vendor `main` cluster;
    package installation stages SLI without starting it, creating an owner or
@@ -287,12 +289,13 @@ a copy never implies a verified restore. Move the generated agent root-key
 directory `/var/lib/sli-ca-offline` to protected offline storage; distribute only
 public CA certificates to agents.
 
-**Uninstall:** `sudo apt remove sli` stops applications, timers and databases.
-Data, `/etc/sli`, secrets and recovery packages survive removal and purge;
-`sli-host` is protected while installed database state remains. History/key
-destruction is a separate operation. Remove the Windows agent through
-**Installed apps → SLI Agent**. These procedures require clean-Debian acceptance;
-source code and unit tests do not constitute deployment acceptance.
+**Uninstall:** `sudo sli-remove` stops SLI and removes its packages and systemd
+units. It retains databases, configuration, keys and recovery files. To erase
+SLI data on this host as well, run `sudo sli-remove --purge-data`.
+For an older installation, use `sudo python3 -I ./remove-beta-kit` from the
+verified current kit. The same `--purge-data` flag applies. Shared Debian and
+database vendor packages, external backup volumes and copies taken offline
+are retained. Remove the Windows agent through **Installed apps → SLI Agent**.
 
 For development, use the separate [dev container workflow](CONTRIBUTING.md).
 
@@ -302,7 +305,7 @@ For an installed beta, obtain the new complete kit described above and verify
 `SHA256SUMS` through the trusted delivery channel. In its `.deb` directory run:
 
 ```sh
-sudo apt install --fix-broken ./*.deb
+bash ./install-beta-kit
 ```
 
 No manual setup is needed.

@@ -173,13 +173,11 @@ def test_package_split_exact_dependencies_and_previous_retention(payload, dotnet
     assert "sli-host (= 1.0-1~deb13)" in public and "postgresql-18" in public
     assert all(value not in public for value in ("Docker", "pip", "gcc", "nodejs", "git,"))
     hold = captured["sli-rollback-hold"]["DEBIAN/control"]
-    assert "Protected: yes" in hold
     assert "sli-host (= 1.0-1~deb13)" in hold
     assert "Installed-Size: " in captured["sli-release-new"]["DEBIAN/control"]
     assert "sli-release-old (= 1.0-1~deb13)" in hold
     assert "sli-runtime-old" not in hold  # Retained release owns its runtime dependency.
     assert "sli-rollback-hold (= 1.0-1~deb13)" in public
-    assert "native_host_still_installed" in captured["sli-host"]["DEBIAN/prerm"]
     assert "usr/lib/sli/native_install.py" in captured["sli-host"]
     assert "--owner-recovery" in captured["sli-host"]["usr/lib/sli/native_setup.py"]
     assert 'native_setup.py "$@"' in captured["sli-host"]["usr/sbin/sli-setup"]
@@ -704,9 +702,7 @@ def test_remove_stops_writers_without_touching_registry_recovery_or_link(lifecyc
     before = {p: p.read_bytes() for p in lifecycle.state.iterdir()}
     lifecycle.calls.clear()
     install.remove()
-    assert lifecycle.calls[:3] == [["systemctl", "disable", "--now", "sli-backup.timer"],
-                                 ["systemctl", "stop", "sli-backup.service", "sli-backup-drill.service"], "stop-writers"]
-    assert ["systemctl", "disable", "sli.target"] in lifecycle.calls
+    assert lifecycle.calls == [["/usr/sbin/sli-remove", "--stop-services"]]
     assert install.CURRENT.resolve() == lifecycle.root
     assert {p: p.read_bytes() for p in lifecycle.state.iterdir()} == before
     assert (install.RECOVERY / "test/installed.json").is_file()

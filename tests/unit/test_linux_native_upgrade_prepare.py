@@ -815,7 +815,7 @@ def test_preflight_failure_without_intent_tells_operator_to_retry_apt(preparatio
     assert upgrade.main(['prepare-package', VERSION]) == 1
     output = capsys.readouterr().err
     assert 'reason_code=native_backup_secret_missing' in output
-    assert 'sudo apt install --fix-broken ./*.deb' in output
+    assert 'bash ./install-beta-kit' in output
     assert 'resume-package' not in output
     assert not list(preparation.transactions.iterdir()) and not preparation.events
 

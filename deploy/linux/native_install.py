@@ -576,15 +576,7 @@ def preserve_recovery(root, manifest, digest):
     native_upgrade.save_recovery(root, manifest, digest)
 
 def remove():
-    from deploy.linux import native_runtime as runtime
-
-    command(["systemctl", "disable", "--now", "sli-backup.timer"])
-    command(["systemctl", "stop", "sli-backup.service", "sli-backup-drill.service"], timeout=600)
-    runtime.stop_writers()
-    command(["systemctl", "disable", "sli.target"])
-    command(["systemctl", "stop", "sli.target", "sli-ready.service", "sli-health.timer", "sli-health.service"])
-    command(["systemctl", "stop", *runtime.DATABASES], timeout=180)
-    # No unlink/rmtree of data, secrets, registry, packages or recovery here.
+    command(["/usr/sbin/sli-remove", "--stop-services"], timeout=None)
 
 
 def main(argv=None):
@@ -609,12 +601,10 @@ def main(argv=None):
             installed = json.loads(trusted(STATE / "installed.json"))
             release = Path(installed["release"]).name
         if args.action == "remove":
-            if not (STATE / "installed.json").exists():
-                require(not CURRENT.exists() and not CURRENT.is_symlink(), "native_install_interrupted_requires_recovery")
-                print("native_install_verified")
-                return 0
-            installed = json.loads(trusted(STATE / "installed.json"))
-            release = Path(installed["release"]).name
+            if any((STATE / name).exists() for name in ("installed.json", "host-prepared.json")) or CURRENT.is_symlink():
+                remove()
+            print("native_install_verified")
+            return 0
         root, manifest, _ = inventory(release)
         # Privileged imports come only from the root-owned immutable release.
         trusted(root / "deploy/linux/native_install.py")
@@ -627,10 +617,8 @@ def main(argv=None):
             sys.path.insert(0, str(root))
             if args.action == "configure":
                 configure_guarded(release)
-            elif args.action == "reconfigure-agents":
-                reconfigure_agents(release)
             else:
-                remove()
+                reconfigure_agents(release)
     except Exception as error:  # noqa: BLE001 - never echo file/subprocess diagnostics
         import importlib.util
         spec = importlib.util.spec_from_file_location('sli_diagnostics', Path(__file__).with_name('native_diagnostics.py'))
