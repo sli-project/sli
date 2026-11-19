@@ -316,6 +316,40 @@ def finish(output, commit, release, version, *, toolchain):
     return manifest
 
 
+def include_agent(source, destination):
+    files = {'SliAgent.msi', 'SliAgent-publish-win-x64.zip'}
+    checksum = source / 'SHA256SUMS'
+    if source.is_symlink() or checksum.is_symlink() or not checksum.is_file():
+        raise ValueError('Provide the matching MSI workflow artifact with SHA256SUMS')
+    lines = checksum.read_text(encoding='utf-8-sig').splitlines()
+    pinned = {}
+    for line in lines:
+        digest, _, name = line.partition('  ')
+        if not re.fullmatch(r'[0-9a-f]{64}', digest) or name not in files or name in pinned:
+            raise ValueError('Invalid agent SHA256SUMS')
+        pinned[name] = digest
+    if pinned.keys() != files:
+        raise ValueError('The agent artifact must include the MSI and portable ZIP')
+
+    destination.mkdir()
+    for name, digest in pinned.items():
+        path = source / name
+        if path.is_symlink() or not path.is_file() or not path.stat().st_size:
+            raise ValueError(f'Missing or unsafe agent artifact: {name}')
+        copied = destination / name
+        shutil.copyfile(path, copied)
+        if sha256(copied) != digest:
+            raise ValueError(f'Agent SHA-256 verification failed: {name}')
+    (destination / 'SHA256SUMS').write_text('\n'.join(lines) + '\n', encoding='ascii', newline='\n')
+
+
+def archive_kit(packages):
+    files = sorted(packages.iterdir())
+    with tarfile.open(packages / 'sli-debian-beta-kit.tar.gz', 'w:gz') as archive:
+        for path in files:
+            archive.add(path, arcname='sli-debian-beta-kit/' + path.name)
+
+
 def build(root, ref, cache, output, pg_bin):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64' or os.geteuid() == 0:
         raise ValueError('Run the build as an ordinary user on an amd64 Linux runner')
@@ -333,7 +367,8 @@ def build(root, ref, cache, output, pg_bin):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.sli-beta-kit-', dir=output.parent) as temporary:
         work = Path(temporary)
-        checkout, packages = work / 'source', work / 'packages'
+        checkout, packages, agent = work / 'source', work / 'packages', work / 'agent'
+        include_agent(cache / f'sli-agent-dotnet-msi-{commit}', agent)
         checkout.mkdir()
         packages.mkdir()
         export_commit(root, commit, checkout, work / 'source.tar')
@@ -365,10 +400,12 @@ def build(root, ref, cache, output, pg_bin):
         payload = work / 'release'
         print(f'Assembling Debian packages for {release}', flush=True)
         prepare_release(checkout, payload, packages / runtime_filename, artifact, pg_version, observed, commit, epoch)
+        agent.rename(payload / 'web/app/installers')
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
                  '--dotnet-published', published], cwd=checkout, env=env)
         finish(packages, commit, release, version, toolchain=toolchain)
+        archive_kit(packages)
         packages.rename(output)
     return output
 
@@ -376,7 +413,8 @@ def build(root, ref, cache, output, pg_bin):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', default='HEAD', help='Git commit to build, default HEAD')
-    parser.add_argument('--debs', type=Path, required=True, help='directory with pinned dependency and runtime .debs')
+    parser.add_argument('--debs', type=Path, required=True,
+                        help='pinned .debs and the trusted sli-agent-dotnet-msi-<commit> artifact directory')
     output = parser.add_mutually_exclusive_group(required=True)
     output.add_argument('--output', type=Path, help='new directory for the finished kit')
     output.add_argument('--verify-inputs', action='store_true', help='verify the pinned cache without building')

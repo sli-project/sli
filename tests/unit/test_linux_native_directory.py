@@ -1,5 +1,6 @@
 """Directory storage contracts; synthetic paths only, no real mounts."""
 import json
+from pathlib import Path
 
 import pytest
 
@@ -38,6 +39,47 @@ def test_directory_refuses_low_space_before_creating_data(directory, monkeypatch
     with pytest.raises(host.HostError, match='native_database_space_insufficient'):
         machine.validate_database_directory('/var/lib/sli-db')
     assert not list(source.iterdir())
+
+
+@pytest.mark.parametrize('default_gib,expected', [(25, '/var/lib/sli-db'), (12, '/mnt/large/sli-db')])
+def test_selects_default_then_largest_suitable_volume(directory, monkeypatch, default_gib, expected):
+    machine, source = directory
+    mounted = [('/mnt/small', 30, 'rw'), ('/mnt/large', 50, 'rw'),
+               ('/mnt/readonly', 90, 'ro'), ('/mnt/occupied', 100, 'rw')]
+    space = {source: default_gib * 1024**3}
+    filesystems = {source: {'target': '/', 'fstype': 'ext4', 'options': 'rw'}}
+    for name, gib, options in mounted:
+        path = machine.path(name)
+        path.mkdir(parents=True)
+        space[path] = gib * 1024**3
+        filesystems[path] = {'target': str(path), 'fstype': 'xfs', 'options': options, 'uuid': 'fixture'}
+    occupied = machine.path('/mnt/occupied/sli-db')
+    occupied.mkdir()
+    (occupied / 'keep').touch()
+    filesystems[occupied] = filesystems[occupied.parent]
+
+    def findmnt(argv):
+        rows = ([filesystems[Path(argv[argv.index('--target') + 1])]] if '--target' in argv
+                else [{'target': name, 'fstype': 'xfs'} for name, _, _ in mounted])
+        return json.dumps({'filesystems': rows})
+    monkeypatch.setattr(host, 'run', findmnt)
+    monkeypatch.setattr(machine, 'backup_free', lambda path: space[path])
+
+    assert machine.select_database_directory() == expected
+    assert not machine.path('/mnt/large/sli-db').exists()
+    assert (occupied / 'keep').exists()
+
+
+def test_setup_reports_available_space_before_creating_data(directory, monkeypatch, capsys):
+    from deploy.linux import native_diagnostics as diagnostics
+
+    machine, source = directory
+    monkeypatch.setattr(machine, 'backup_free', lambda path: 12 * 1024**3)
+    with pytest.raises(host.HostError, match='native_database_space_insufficient') as caught:
+        machine.select_database_directory()
+    diagnostics.failure(caught.value)
+    output = capsys.readouterr().err
+    assert '20 GiB' in output and '12.0 GiB' in output and not list(source.iterdir())
 
 
 @pytest.mark.parametrize('operation', ['validate_database_directory', 'prepare'])
@@ -84,6 +126,18 @@ def prepared_directory(directory, monkeypatch):
 
 def test_directory_receipt_rechecks_bind_identity(prepared_directory):
     machine = prepared_directory
+    with pytest.raises(host.HostError, match='native_database_mount_mismatch'):
+        machine.receipt()
+
+
+def test_directory_receipt_refuses_a_different_filesystem_at_the_same_path(prepared_directory, monkeypatch):
+    machine = prepared_directory
+    receipt = machine.path(host.STATE + '/host-prepared.json')
+    receipt.write_text(json.dumps({**json.loads(receipt.read_text()), 'filesystem_uuid': 'original'}))
+    monkeypatch.setattr(host, 'run', lambda argv: json.dumps({'filesystems': [
+        {'fstype': 'ext4', 'options': 'rw', 'uuid': 'replacement'}]}))
+    monkeypatch.setattr(machine, 'backup_mounted', lambda source, target: True)
+
     with pytest.raises(host.HostError, match='native_database_mount_mismatch'):
         machine.receipt()
 
