@@ -1,9 +1,12 @@
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using Npgsql;
+using Sli.Agent.Core;
 using Sli.Server.Domains;
 using Sli.Server.Problems;
 using Sli.Server.Semantic.Detections;
 using Sli.Server.Semantic.Password;
+using Sli.Server.Storage.Direct;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Semantic;
 using Xunit;
@@ -20,8 +23,34 @@ public sealed class AdminGroupLogAuditTests
     static DetectionRow Event(int id, long native = 1) => new(new(Scope, "core_event", native.ToString(), new string('a',64)), DateTimeOffset.Parse(At).AddMinutes(native-1), id, "dc.example.test", new() {
         ["SubjectUserName"] = "admin", ["SubjectDomainName"] = "example.test", ["SubjectUserSid"] = MemberSid,
         ["TargetSid"] = GroupSid, ["TargetUserName"] = "Domain Admins", ["MemberSid"] = MemberSid, ["MemberName"] = "member",
-        ["CategoryId"] = "%%8273", ["SubcategoryGuid"] = "{0cce9215-69ae-11d9-bed3-505054503030}", ["AuditPolicyChanges"] = "%%8448 %%8450" }) {
+        ["CategoryId"] = "%%8273", ["SubcategoryGuid"] = "{0cce9215-69ae-11d9-bed3-505054503030}", ["AuditPolicyChanges"] = "%%8448 %%8450",
+        ["Channel"] = "Security" }) {
             Channel=id==104?"System":"Security", Provider=id is 104 or 1102?"Microsoft-Windows-Eventlog":"Microsoft-Windows-Security-Auditing" };
+    static DetectionRow ShortEvent(DetectionRow row)
+    {
+        bool membership = row.EventId is 4728 or 4732 or 4756;
+        var native = DetectionTests.Native(row, membership);
+        XNamespace ns = EventXml.Namespace;
+        var root = XElement.Parse(native["source_xml"]!.GetValue<string>());
+        root.Element(ns + "System")!.Add(new XElement(ns + "Channel", row.Channel),
+            new XElement(ns + "Provider", new XAttribute("Name", row.Provider)), new XElement(ns + "EventRecordID", row.Ref.NativeId));
+        if (row.EventId is 104 or 1102) {
+            XNamespace eventlog = "http://manifests.microsoft.com/win/2004/08/windows/eventlog";
+            root.Element(ns + "EventData")!.ReplaceWith(new XElement(ns + "UserData", new XElement(eventlog + "LogFileCleared",
+                row.Fields!.Select(field => new XElement(eventlog + field.Key, field.Value!.ToString())))));
+        }
+        var input = EventXml.Parse(root.ToString(), row.Host, row.Host, row.Channel);
+        var compact = Assert.IsType<ShortEventRow>(ShortEventRow.Create(long.Parse(row.Ref.NativeId), 1, input, Direct4624Projection.Create(input), 1));
+        var method = JsonNode.Parse(compact.Method)!;
+        var fields = method["$principals"]!.DeepClone().AsObject();
+        foreach (var (key, value) in compact.Fields) fields[key] = value;
+        native["source_xml"] = new JsonObject {
+            ["version"] = "sli.short-event.1", ["source_event_id"] = compact.EventId, ["event_id"] = compact.Kind,
+            ["occurred_at_utc"] = D.Stamp(new(compact.Time)), ["scope"] = Scope.Document, ["fields"] = fields,
+            ["computer"] = method["$machine_name"]?.DeepClone(), ["channel"] = method["$channel"]?.DeepClone(), ["provider"] = method["$provider"]?.DeepClone()
+        }.ToJsonString();
+        return Assert.Single(DetectionNative.ParseEvents(Scope, [native], membership));
+    }
     static IReadOnlyList<JsonObject> Detect(params DetectionRow[] rows) => rows[0].EventId is 4728 or 4732 or 4756
         ? IdentityAttacks.Evaluate(Scope, rows, DateTimeOffset.Parse(At).AddHours(1))
         : AttackPrecursors.DetectEvents(rows, DateTimeOffset.Parse(At).AddHours(1));
@@ -35,19 +64,16 @@ public sealed class AdminGroupLogAuditTests
 
     [Theory]
     [InlineData(4728)] [InlineData(4732)] [InlineData(4756)] [InlineData(1102)] [InlineData(104)] [InlineData(4719)]
-    public async Task Native_series_publishes_once_and_presents_catalog_text_in_both_languages(int id)
+    public async Task Short_events_enqueue_once_and_present_catalog_text_in_both_languages(int id)
     {
-        var row = Event(id);
-        var native = DetectionTests.Native(row, identity: id is 4728 or 4732 or 4756);
-        native["source_xml"]=native["source_xml"]!.ToString().Replace("</System>",$"<Channel>{row.Channel}</Channel><Provider Name='{row.Provider}'/></System>");
-        var parsed = DetectionNative.ParseEvents(Scope, [native], id is 4728 or 4732 or 4756);
-        var signal = Assert.Single(Detect(parsed.ToArray()));
+        var row = ShortEvent(Event(id));
+        var signal = Assert.Single(Detect(row));
         Assert.Equal(Rule(id), signal["rule_id"]!.ToString()); Assert.Equal("high", signal["effective_severity"]!.ToString());
         var sql = new DetectionProducerTests.Sql();
         await DetectionProducer.Admit(sql, id is 4728 or 4732 or 4756 ? IdentityAttacks.PolicyDefinition(Scope,Rule(id)) : AttackPrecursors.PolicyDefinition(signal), Ct);
         await DetectionProducer.Enqueue(sql,signal,Ct); await DetectionProducer.Enqueue(sql,signal,Ct);
         Assert.Single(sql.Signals); Assert.Single(sql.Jobs);
-        var finding = Finding(id); ProblemRepository.AttachDetectionPresentation([finding],[Observation(parsed[0])]);
+        var finding = Finding(id); ProblemRepository.AttachDetectionPresentation([finding],[Observation(row)]);
         foreach (string language in new[] {"ru","en"}) {
             bool en = language=="en";
             string title = id is 4728 or 4732 or 4756 ? en ? "An account was added to an administrators group" : "Учётную запись добавили в группу администраторов"
@@ -80,6 +106,12 @@ public sealed class AdminGroupLogAuditTests
             Assert.DoesNotContain("Нет данных",text); Assert.DoesNotContain("Unknown",text);
             Assert.DoesNotContain("previous-admin",text);
             Assert.False(string.IsNullOrWhiteSpace(text));
+            if (id == 4728) Assert.Contains(language == "en" ? "an account" : "учётную запись", text);
+            string next = ProblemPresentation.RuleMessage(finding,"next",language)["text"]!.ToString();
+            Assert.False(string.IsNullOrWhiteSpace(next));
+            Assert.DoesNotContain("{",next);
+            Assert.DoesNotContain("previous-admin",next);
+            Assert.False(next.StartsWith("2)", StringComparison.Ordinal));
         }
     }
 
@@ -91,6 +123,18 @@ public sealed class AdminGroupLogAuditTests
         Assert.Empty(Detect(Event(4729)));
         Assert.Empty(Detect(Event(104) with { Provider="Synthetic-Other-Provider" }));
         Assert.Empty(Detect(Event(104) with { Channel="Application" }));
+    }
+
+    [Theory]
+    [InlineData("System")]
+    [InlineData("Application")]
+    [InlineData(null)]
+    public void System_event_104_needs_the_cleared_log_to_be_security(string? log)
+    {
+        var row = Event(104);
+        if (log is null) row.Fields!.Remove("Channel");
+        else row.Fields!["Channel"] = log;
+        Assert.Empty(Detect(ShortEvent(row)));
     }
 
     [Fact]
@@ -110,7 +154,7 @@ public sealed class AdminGroupLogAuditTests
         Assert.All(repeated,s=>Assert.Equal(initial["entity_key"]!.ToString(),s["entity_key"]!.ToString()));
         Assert.Equal(new[] {"1","2"},repeated.SelectMany(s=>s["evidence_refs"]!.AsArray()).Select(r=>r!["native_id"]!.ToString()).Distinct().Order());
     }
-    [Theory] [InlineData(4728)] [InlineData(1102)] [InlineData(4719)]
+    [Theory] [InlineData(4728)] [InlineData(1102)] [InlineData(104)] [InlineData(4719)]
     public async Task Queue_keeps_one_row_and_increases_count_for_repeated_series(int id)
     {
         await using var pg=new PostCollectionPostgres(); await pg.StartAsync(Ct);
@@ -128,15 +172,16 @@ public sealed class AdminGroupLogAuditTests
                 insert into findings_active(id,rule_code,fingerprint,target,source,severity,status,repeat_count,first_seen_utc,last_seen_utc) values(@finding,@rule,'semantic:'||@hash,null,null,'high','new',0,@at,@at);
                 insert into semantic_security_scenarios values(decode(@hash,'hex'),@kind,'synthetic',jsonb_build_object('entity',@entity::text));
                 insert into finding_event_details337 values(@finding,@native,@event,@at::timestamptz,'dc.example.test',
-                    'admin','example.test','Domain Admins',@sid,'Security',@provider,'primary');
+                    'admin','example.test','Domain Admins',@sid,@channel,@provider,'primary');
                 insert into finding_event_copies337 values(@finding,@native,@at::timestamptz,'primary',
-                    '{"MemberName":"member","CategoryId":"%%8273","SubcategoryGuid":"{0cce9215-69ae-11d9-bed3-505054503030}"}');
+                    '{"MemberName":"member","CategoryId":"%%8273","SubcategoryGuid":"{0cce9215-69ae-11d9-bed3-505054503030}","Channel":"Security"}');
                 """,db);
             cmd.Parameters.AddWithValue("finding",finding); cmd.Parameters.AddWithValue("rule","semantic."+Rule(id));
             cmd.Parameters.AddWithValue("hash",new string(finding==1?'a':'b',64)); cmd.Parameters.AddWithValue("kind",Rule(id));
             cmd.Parameters.AddWithValue("entity",signal["entity_key"]!.ToString()); cmd.Parameters.AddWithValue("at",ev.At.ToString("O"));
             cmd.Parameters.AddWithValue("native",long.Parse(ev.Ref.NativeId)); cmd.Parameters.AddWithValue("event",id);
-            cmd.Parameters.AddWithValue("provider",id==1102?"Microsoft-Windows-Eventlog":"Microsoft-Windows-Security-Auditing"); cmd.Parameters.AddWithValue("sid",MemberSid); await cmd.ExecuteNonQueryAsync(Ct);
+            cmd.Parameters.AddWithValue("channel",ev.Channel); cmd.Parameters.AddWithValue("provider",ev.Provider);
+            cmd.Parameters.AddWithValue("sid",MemberSid); await cmd.ExecuteNonQueryAsync(Ct);
         }
         string queue=ProblemCohorts.Queue("from findings_active findings","","findings.status","false")+"select occurrence_count from queue_groups";
         async Task<long[]> Counts() { await using var cmd=new NpgsqlCommand(queue,db); await using var reader=await cmd.ExecuteReaderAsync(Ct); var values=new List<long>(); while(await reader.ReadAsync(Ct))values.Add(Convert.ToInt64(reader.GetValue(0))); return values.ToArray(); }
@@ -144,6 +189,13 @@ public sealed class AdminGroupLogAuditTests
         var second=Event(id,2); await Add(2,second,Assert.Single(Detect(second))); Assert.Equal(new long[]{2},await Counts());
         // An event linked twice under different proof roles is still one occurrence.
         await PostCollectionPostgres.Sql(db,"insert into finding_event_details337 select finding_id,event_db_id,event_id,time_created_utc,hostname,subject_user_name,subject_domain_name,target_user_name,membership_member_sid,channel,identity_provider,'secondary' from finding_event_details337 where finding_id=2;",Ct); Assert.Equal(new long[]{2},await Counts());
+        if (id == 104) await PostCollectionPostgres.Sql(db,"""
+            insert into finding_event_details337 select finding_id,3,event_id,time_created_utc+interval '1 minute',hostname,
+                'other-admin',subject_domain_name,target_user_name,membership_member_sid,channel,identity_provider,evidence_role
+                from finding_event_details337 where finding_id=1;
+            insert into finding_event_copies337 select finding_id,3,time_created_utc+interval '1 minute',evidence_role,
+                jsonb_set(fields,'{Channel}','"Application"') from finding_event_copies337 where finding_id=1;
+            """,Ct);
         var finding=Finding(id);
         await using var command=new NpgsqlCommand(ProblemRepository.DetectionPresentationSql,db); command.Parameters.AddWithValue("ids",new long[]{1});
         await using var details=await command.ExecuteReaderAsync(Ct); var observations=new List<JsonObject>();
