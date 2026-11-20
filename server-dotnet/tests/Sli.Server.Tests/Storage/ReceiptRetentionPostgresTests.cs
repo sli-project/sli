@@ -15,16 +15,6 @@ namespace Sli.Server.Tests.Storage;
 
 public sealed class ReceiptRetentionPostgresTests
 {
-    // Proposed schema capability, only installed in this disposable cluster.
-    internal const string Schema = """
-        set role adlog_storage_owner;
-        alter table public.sli_agents add column receipt_summary jsonb not null default '{}'::jsonb
-          check(jsonb_typeof(receipt_summary)='object');
-        grant select(id,receipt_summary),update(receipt_summary) on public.sli_agents to adlog_storage_lifecycle_delete;
-        grant delete on public.sli_agent_receipts to adlog_storage_lifecycle_delete;
-        grant select(packet_id) on public.sli_agent_snapshot_chunks to adlog_storage_lifecycle_delete;
-        reset role;
-        """;
     static readonly Guid Agent = Guid.Parse("00000000-0000-4000-8000-000000000017");
     static readonly DateTime Cutoff = new(2026,11,1,0,0,0,DateTimeKind.Utc);
     static NpgsqlDataSource Deletion(SqlPostgresFixture fixture) => NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(fixture.Dsn("sli_storage_lifecycle_delete_login")) {
@@ -53,10 +43,10 @@ public sealed class ReceiptRetentionPostgresTests
     }
 
     [Fact]
-    public async Task Compaction_merges_ranges_and_gap_flags_and_keeps_live_inbox_receipts()
+    public async Task Migration_391_from_390_enables_compaction_and_keeps_live_inbox_receipts()
     {
         var ct=TestContext.Current.CancellationToken;
-        await using var fixture=new SqlPostgresFixture(); await fixture.StartAsync(ct);
+        await using var fixture=new SqlPostgresFixture(); await fixture.StartAsync(ct, throughVersion: 390);
         await using var db=new NpgsqlConnection(fixture.Pg.ConnectionString); await db.OpenAsync(ct);
         await SeedAgent(db,ct);
         foreach(long sequence in new long[] {1,2,5}) await Receipt(db,sequence,"sli.windows.ad-dc",ct,sequence==5);
@@ -76,7 +66,13 @@ public sealed class ReceiptRetentionPostgresTests
         var retention=new ReceiptRetention(deletion,state.Files);
         Assert.Equal("receipt_retention_schema_not_ready",(await retention.RunAsync(Cutoff,Guid.Empty,1000,ct))["reason"]?.ToString());
         object? indexes=await Scalar(db,"select count(*) from pg_index",ct);
-        await PostCollectionPostgres.Sql(db,Schema,ct);
+        string migration=Path.Combine(PostCollectionPostgres.Repository(),"config/postgres_migrations/391_agent_receipt_summary.sql");
+        string rollback=Path.ChangeExtension(migration,".rollback.sql");
+        await fixture.Pg.ApplyFileAsync(migration,null,ct);
+        await fixture.Pg.ApplyFileAsync(rollback,null,ct);
+        Assert.Equal("receipt_retention_schema_not_ready",(await retention.RunAsync(Cutoff,Guid.Empty,1000,ct))["reason"]?.ToString());
+        await fixture.Pg.ApplyFileAsync(migration,null,ct);
+        Assert.Equal("{}",await Scalar(db,"select receipt_summary::text from sli_agents",ct));
         Assert.Equal(indexes,await Scalar(db,"select count(*) from pg_index",ct));
         Guid after=Guid.Empty; long deleted=0,scanned=0; var held=new Dictionary<string,long>();
         while(true) {
@@ -103,6 +99,9 @@ public sealed class ReceiptRetentionPostgresTests
         Assert.Equal("[[1,2],[5,6]]",(await Summary(db,"sli.windows.ad-dc",ct))["ranges"]!.ToJsonString());
         Assert.Equal(false,await Scalar(db,$"select exists(select 1 from sli_agent_receipts where packet_id='{own}')",ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
+        var refused=await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Pg.ApplyFileAsync(rollback,null,ct));
+        Assert.Contains("agent_receipt_summary391_rollback_compacted_receipts",refused.Message);
+        Assert.Equal("[[1,2],[5,6]]",(await Summary(db,"sli.windows.ad-dc",ct))["ranges"]!.ToJsonString());
     }
 
     [Fact]
@@ -112,7 +111,6 @@ public sealed class ReceiptRetentionPostgresTests
         await using var fixture=new SqlPostgresFixture(); await fixture.StartAsync(ct);
         await using var db=new NpgsqlConnection(fixture.Pg.ConnectionString); await db.OpenAsync(ct);
         await SeedAgent(db,ct); Guid packet=await Receipt(db,1,"sli.heartbeat",ct);
-        await PostCollectionPostgres.Sql(db,Schema,ct);
         using var state=new StorageLifecycleTests.State(); await using var deletion=Deletion(fixture);
         bool waiting=false; var retention=new ReceiptRetention(deletion,state.Files,value => waiting=value);
         await using var writer=new NpgsqlConnection(fixture.Pg.ConnectionString); await writer.OpenAsync(ct);
@@ -170,7 +168,7 @@ public sealed class ReceiptRetentionPostgresTests
             var result=await service.ReceiveAsync(db,tx,identity,cert,packet,ct); await tx.CommitAsync(ct); return result;
         }
         var first=Packet(1,""); Assert.Equal("committed",(await Send(first))["status"]?.ToString());
-        await PostCollectionPostgres.Sql(db,Schema+"update sli_agent_receipts set received_at=now()-interval '8 days'",ct);
+        await PostCollectionPostgres.Sql(db,"update sli_agent_receipts set received_at=now()-interval '8 days'",ct);
         await using var deletion=Deletion(fixture); var retention=new ReceiptRetention(deletion,state.Files);
         Assert.Equal(1,LifecycleJson.Number(await retention.RunAsync(DateTime.UtcNow.AddDays(-7),Guid.Empty,1000,ct),"deleted_count"));
         Assert.Equal("agent_sequence_replayed",(await Send(first))["error_code"]?.ToString());
