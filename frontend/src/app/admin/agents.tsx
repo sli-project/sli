@@ -100,9 +100,11 @@ function AgentsContent() {
       setSelectedId(id);
     }
   }, [agentId, inventory.data]);
-  const [adding, setAdding] = useState(() => new URLSearchParams(window.location.search).get("register") === "1");
+  const [adding, setAdding] = useState(false);
   const [enrollment, setEnrollment] = useState<"group" | "manual">(() => access?.platform_owner ? "group" : "manual");
-  const [consoleSession, setConsoleSession] = useState<string>();
+  const sessionKey = JSON.stringify([access?.subject.type, access?.subject.id, access?.subject.username, access?.evaluated_at_utc]);
+  const [consoleSession, setConsoleSession] = useState(() =>
+    new URLSearchParams(window.location.search).get("register") === "1" ? sessionKey : undefined);
   const [keysSession, setKeysSession] = useState<string>();
   const [auditSaved, setAuditSaved] = useState<{ id: string; at: string }>();
   const [filter, setFilter] = useState<AgentFilter>(() => {
@@ -148,7 +150,6 @@ function AgentsContent() {
       return dcAuditFailure(agent) ?? (count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured"));
     } },
   ];
-  const sessionKey = JSON.stringify([access?.subject.type, access?.subject.id, access?.subject.username, access?.evaluated_at_utc]);
   const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
   const selectedState = selected && collectionState(selected);

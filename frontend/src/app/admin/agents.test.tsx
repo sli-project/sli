@@ -117,10 +117,19 @@ it.each(["ru", "en"] as const)("offers registration instead of removal for an er
   expect(state.action).not.toHaveBeenCalled();
 });
 
-it("opens the existing registration panel from the certificate recovery link", async () => {
+it("opens command creation from the registration link on an empty installation", async () => {
   window.history.replaceState(null, "", "/app/agents?register=1");
+  state.list.mockResolvedValue({ items: [] });
   mount();
-  expect(await screen.findByRole("dialog", { name: t("agents.addComputer") })).toBeTruthy();
+  const panel = within(await screen.findByRole("dialog", { name: t("agents.addComputer") }));
+  const count = panel.getByRole("spinbutton", { name: t("agents.console.hostLimit") });
+  const issue = panel.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
+  await waitFor(() => expect(issue.disabled).toBe(false));
+  fireEvent.change(count, { target: { value: "2" } });
+  fireEvent.click(issue);
+  expect(await panel.findByRole("button", { name: t("agents.copy") })).toBeTruthy();
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(2, true, window.location.origin);
+  expect(state.deploymentDirectory).not.toHaveBeenCalled();
 });
 
 it("shows the reissue fact without an owner action to a reader", async () => {
