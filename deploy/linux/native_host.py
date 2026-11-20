@@ -697,29 +697,80 @@ class Host:
         raise GuardError("native_database_space_insufficient", name,
                          f"{free / 1024**3:.1f} GiB free (20 GiB required)", remedy)
 
-    def validate_database_directory(self, value, *, fresh=True, writable=True):
-        if (not isinstance(value, str) or not re.fullmatch(r"/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+", value)
-                or value in {MOUNT, "/var/lib/sli", "/var/lib/postgresql", "/var/lib/clickhouse"}):
-            raise HostError("native_database_directory_invalid")
-        source = self.path(value)
-        parent = source if source.exists() else source.parent
-        if not parent.is_dir() or source.exists() and not source.is_dir():
-            raise HostError("native_database_directory_invalid")
-        self.backup_trusted(parent)
+    def database_filesystem(self, path, *, writable=True):
         try:
-            rows = json.loads(run(["findmnt", "--json", "--target", str(parent),
-                                   "--output", "FSTYPE,OPTIONS"]))["filesystems"]
+            rows = json.loads(run(["findmnt", "--json", "--target", str(path),
+                                   "--output", "TARGET,FSTYPE,OPTIONS,UUID"]))["filesystems"]
             if len(rows) != 1 or rows[0]["fstype"] not in {"ext4", "xfs"}:
                 raise HostError("native_database_filesystem_unsupported")
             # ProtectSystem=strict presents a read-only view to observers.
             # Only root prepare/setup must require a writable host filesystem.
             if writable and "rw" not in rows[0]["options"].split(","):
                 raise HostError("native_database_filesystem_readonly")
+            return rows[0]
         except (KeyError, TypeError, ValueError):
             raise HostError("native_database_filesystem_unsupported") from None
+
+    def validate_database_directory(self, value, *, fresh=True, writable=True, mounted=False, filesystem_uuid=None):
+        try:
+            clickhouse.database_directory_path(value)
+        except ValueError:
+            raise HostError("native_database_directory_invalid") from None
+        source = self.path(value)
+        parent = source if source.exists() else source.parent
+        if not parent.is_dir() or source.exists() and not source.is_dir():
+            raise HostError("native_database_directory_invalid")
+        self.backup_trusted(parent)
+        filesystem = self.database_filesystem(parent, writable=writable)
+        mounted_directory = mounted or not re.fullmatch(r"/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+", value)
+        if ((mounted_directory and (filesystem.get('target') != str(source.parent) or not filesystem.get('uuid')))
+                or (filesystem_uuid is not None and filesystem.get('uuid') != filesystem_uuid)):
+            raise HostError("native_database_mount_mismatch")
         if fresh:
             self.require_database_space(parent, value)
         return source
+
+    def select_database_directory(self, *, backup_root=None):
+        # A retry must continue preparing the same bind mount even if disk usage changed.
+        unit = self.path('/etc/systemd/system/' + MOUNT_UNIT)
+        if unit.exists():
+            self.backup_trusted(unit)
+            body = unit.read_text()
+            match = re.search(r'(?m)^What=(/[^\n]+)$', body)
+            if match is None or body != directory_mount_unit(match[1]):
+                raise configuration_conflict('/etc/systemd/system/' + MOUNT_UNIT)
+            self.validate_database_directory(match[1])
+            return match[1]
+
+        best = None
+        free = 0
+        backup = self.path(backup_root) if backup_root else None
+        backup_device = self.backup_device(backup) if backup is not None and backup.is_dir() else None
+        targets = [DIRECTORY]
+        for directory in targets:
+            try:
+                source = self.validate_database_directory(directory, fresh=False, mounted=directory != DIRECTORY)
+                if source.exists() and any(source.iterdir()):
+                    raise HostError('native_existing_database')
+                parent = source if source.exists() else source.parent
+                if self.backup_device(parent) != backup_device:
+                    available = self.backup_free(parent)
+                    if directory == DIRECTORY and available >= MIN_DATABASE_FREE:
+                        return directory
+                    if available > free:
+                        best, free = directory, available
+            except (HostError, OSError) as error:
+                if directory == DIRECTORY and str(error) == 'native_existing_database':
+                    raise
+            if directory == DIRECTORY:
+                mounted = json.loads(run(['findmnt', '--json', '--list', '--real',
+                                          '--output', 'TARGET,FSTYPE']))['filesystems']
+                targets.extend(sorted({row['target'] + '/sli-db' for row in mounted
+                                       if row['target'] != '/' and row['fstype'] in {'ext4', 'xfs'}}
+                                      - {DIRECTORY}))
+        if free < MIN_DATABASE_FREE:
+            raise HostError(f'native_database_space_insufficient:{free}')
+        return best
 
     def validate_receipt_file(self, path):
         info = path.stat()
@@ -734,7 +785,8 @@ class Host:
             if value["version"] != 1 or value["mount"] != MOUNT:
                 raise ValueError
             if value.get("storage_mode", "uuid") == "directory":
-                source = self.validate_database_directory(value["directory"], fresh=False, writable=False)
+                source = self.validate_database_directory(value["directory"], fresh=False, writable=False,
+                                                          filesystem_uuid=value.get('filesystem_uuid'))
                 if not self.backup_mounted(source, self.path(MOUNT)):
                     raise HostError("native_database_mount_mismatch")
             elif value.get("storage_mode", "uuid") == "uuid":
@@ -773,6 +825,7 @@ class Host:
 
     def prepare(self, expected=None, *, directory=DIRECTORY):
         receipt = self.path(STATE + "/host-prepared.json")
+        filesystem_uuid = None
         if expected is not None:
             self.mount(expected, fresh=not receipt.exists())
         else:
@@ -792,6 +845,7 @@ class Host:
                         and self.backup_mounted(source, target))
             if target.exists() and (not target.is_dir() or any(target.iterdir()) or os.path.ismount(target)) and not resuming:
                 raise HostError("native_existing_database")
+            filesystem_uuid = self.database_filesystem(source if source.exists() else source.parent).get('uuid')
         config = self.path("/etc/postgresql-common/createcluster.conf")
         backup = self.path(STATE + "/createcluster.conf.before")
         original, current, managed = cluster_guard(config, backup)
@@ -833,6 +887,7 @@ class Host:
                 raise HostError("native_database_mount_mismatch")
         self.write(STATE + "/host-prepared.json", json.dumps(
             {"version": 1, "mount": MOUNT, "uuid": expected,
+             **({"filesystem_uuid": filesystem_uuid} if filesystem_uuid else {}),
              **({"storage_mode": "directory", "directory": directory} if expected is None else {})},
             sort_keys=True) + "\n", 0o600)
 
