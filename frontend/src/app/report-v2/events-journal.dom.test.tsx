@@ -7,11 +7,12 @@ import definitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/r
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ReportRenderer } from "./ReportRenderer";
 
+const definition = { ...definitions.find((item) => item.key === "events.journal"), filter_options: {} } as unknown as ReportDefinitionDto;
+
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function journal(state: ReportResultDto["state"] = "ok", empty = false, stateDetails: NonNullable<ReportResultDto["state_details"]> = { reason: "freshness_exceeded", source: "dc01.example.test", stale_since_utc: "2026-11-11T12:00:00Z" }, items?: Record<string, unknown>[], nextPageItems?: Record<string, unknown>[]) {
-  const definition = { ...definitions.find((item) => item.key === "events.journal"), filter_options: {} } as unknown as ReportDefinitionDto;
   const result: ReportResultDto = {
     contract_id: "sli.report-result.v2", report_key: "events.journal", state,
     items: empty ? [] : [{ id: 1, time_created_utc: "2026-11-11T12:00:00Z", title_text: "Synthetic event",
@@ -85,6 +86,28 @@ it.each(["ru", "en"] as const)("keeps an explicit period and shows a single empt
   expect(screen.queryByText(t("reports.empty.source_diagnostics"))).toBeNull();
   expect(screen.queryByText(t("reports.renderer.limitations_title"))).toBeNull();
   expect(requests.find((url) => url.pathname.endsWith("/data"))!.searchParams.get("period")).toBe("24h");
+});
+
+it.each(["definition", "data"] as const)("names the journal when the %s request fails and retries that request", async (failure) => {
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const data = new URL(String(input), window.location.origin).pathname.endsWith("/data");
+    const failed = data === (failure === "data");
+    return new Response(JSON.stringify(failed ? { error: "synthetic_failure" } : definition),
+      { status: failed ? 500 : 200, headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ReportRenderer reportKey="events.journal"/>
+  </QueryClientProvider>);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Не загрузился журнал событий");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Журнал событий");
+  expect(document.querySelector(".sli-ds-state")).toBeNull();
+  expect(screen.queryByText(t("reports.v2.events.journal.empty"))).toBeNull();
+  const failedRequest = fetch.mock.calls.at(-1)?.[0];
+  expect(new URL(String(failedRequest), window.location.origin).pathname.endsWith("/data")).toBe(failure === "data");
+  fireEvent.click(within(alert).getByRole("button", { name: t("state.retry") }));
+  await waitFor(() => expect(fetch.mock.calls.filter(([request]) => request === failedRequest)).toHaveLength(2));
 });
 
 it.each(["ru", "en"] as const)("does not claim there were no events when collection is not confirmed (%s)", async (locale) => {

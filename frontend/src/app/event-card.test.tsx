@@ -4,37 +4,27 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { expect, it, vi } from "vitest";
 
-const captured = vi.hoisted(() => ({ options: [] as Array<{ mutationFn: (variables: never) => Promise<unknown> }> }));
-
-vi.mock("@tanstack/react-query", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
-  return {
-    ...actual,
-    useMutation: (options: { mutationFn: (variables: never) => Promise<unknown> }) => {
-      captured.options.push(options);
-      return { data: undefined, variables: undefined, isPending: false, isError: false, isSuccess: false, mutate: vi.fn() };
-    },
-  };
-});
-
-import { localeRuntime, setLocale } from "../i18n";
+import { localeRuntime, setLocale, t } from "../i18n";
 import { api, type EventDetail } from "../api/client";
 import { EventCardPage, RawSections } from "./event-card";
 
 const EVENT_PATH = "/app/events/517548?time_from=2026-09-10T00%3A00%3A00Z&time_to=2026-09-11T00%3A00%3A00Z&timezone=UTC";
 
-async function render(options: { role?: string; relations?: unknown; entities?: unknown; semantics?: Record<string, unknown>; expired?: boolean } = {}) {
+async function render(options: { role?: string; relations?: unknown; entities?: unknown; semantics?: Record<string, unknown>; sourceState?: EventDetail["source_payload_state"] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(["bootstrap"], { effective_role: options.role ?? "viewer" });
   client.setQueryData(["event", "517548"], { item: {
     event_db_id: 517548, event_id: 4722, time_created_utc: "2026-09-10T12:00:00Z", subject: "admin", target: "S-1-5-21-affected",
     server: "dc01.example.test", source: null, provider_name: null, event_record_id: null, event_data: { TargetUserName: "analyst" }, message_text: null,
     semantics: options.semantics ?? { title: "Изменение учётной записи", final_risk: "low", risk: "Низкий", assessment_confidence: "unknown", summary: "Наблюдение.", facts: [["Что изменилось", "Пароль"]], checks: [], known: true, classification_origin: "catalog_base", card_completeness: "not_applicable" },
-    source_payload_state: options.expired ? "expired" : undefined,
+    source_payload_state: options.sourceState,
   } });
   if (options.relations !== null) client.setQueryData(["event-relations", "517548"], options.relations ?? { items: [] });
   client.setQueryData(["event-entities", "517548"], options.entities ?? { items: [] });
-  client.setQueryData(["investigation-cases"], { items: [{ id: 72, title: "Existing" }] });
+  client.setQueryData(["semantic-event-actions", "event_db_id=517548&time_from=2026-09-10T00%3A00%3A00Z&time_to=2026-09-11T00%3A00%3A00Z&timezone=UTC"], {
+    state: "available", items: [{ canonical_action_id: "synthetic-action", status: "observed" }], limits: { synthetic_limit: 50 },
+  });
+  client.setQueryData(["semantic-event-scenarios", "event_db_id=517548&time_from=2026-09-10T00%3A00%3A00Z&time_to=2026-09-11T00%3A00%3A00Z&timezone=UTC"], { state: "empty", items: [] });
   const root = createRootRoute();
   const route = createRoute({ getParentRoute: () => root, path: "/events/$eventId", component: EventCardPage });
   const investigations = createRoute({ getParentRoute: () => root, path: "/investigations", component: () => null });
@@ -71,109 +61,82 @@ it.each(["ru", "en"] as const)("shows server-calculated watch priority in %s", a
       facts: [], checks: [], known: true, summary: "Synthetic observation",
       watch_priority: { base_severity: "info", effective_severity: "low", reason: "watch" },
     } });
-    expect(html).toContain(locale === "ru" ? "Наблюдение за учёткой" : "Account watch");
-    expect(html).toContain(locale === "ru" ? "Уверенность не изменена" : "Confidence is unchanged");
-    expect(await render()).not.toContain(locale === "ru" ? "Наблюдение за учёткой" : "Account watch");
+    expect(html).toContain(locale === "ru" ? "Приоритет наблюдаемой учётной записи" : "Watched account priority");
+    expect(html).not.toContain(locale === "ru" ? "Уверенность не изменена" : "Confidence is unchanged");
+    expect(await render()).not.toContain(locale === "ru" ? "Приоритет наблюдаемой учётной записи" : "Watched account priority");
   } finally {
     setLocale("ru"); vi.restoreAllMocks();
   }
 });
 
-it("keeps historical facts and relations available when source text expires", async () => {
-  const html = await render({ expired: true, relations: { items: [{
-    relation_type: "computed_correlation", related_event_db_id: 2, confidence: 0.8,
+it.each(["expired", "archive_unavailable"] as const)("shows one dated source-record message for %s and keeps facts and links", async (sourceState) => {
+  const html = await render({ sourceState, relations: { items: [{
+    relation_type: "computed_correlation", related_event_id: 4624, related_event_db_id: 2, confidence: 0.8,
   }] } });
-  expect(html).toContain("Исходный текст удалён по сроку хранения");
+  const message = t(sourceState === "expired" ? "events.card.recordExpired" : "events.card.recordUnavailable", {
+    id: 4722, time: "10.09.2026, 12:00:00",
+  });
+  expect(html.split(message)).toHaveLength(2);
   expect(html).toContain("Пароль");
-  expect(html).toContain("Показано до 1 связей");
-  expect(html).not.toContain('data-state="unavailable"');
+  expect(html).toMatch(/href="\/app\/events\/2\?[^"]*">Event 4624 · DB 2/);
+  expect(html).not.toContain("sli-ds-state--banner");
+  expect(html).not.toContain("DB 517548; источник");
 });
 
-it.each(["ru", "en"] as const)("explains expired raw sections and displays retained facts in %s", (locale) => {
+it.each(["ru", "en"] as const)("uses dashes for absent source fields and shows retained facts in %s", (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale(locale);
   try {
     const html = renderToStaticMarkup(<RawSections timeZone="UTC" item={{
       event_db_id: 41, event_id: 4624, source_payload_state: "expired",
+      read_representation: "authentication_session", source_event_state: "expired_represented_by_session",
       retained_facts: { logon_type: 3 }, event_data: {}, message_text: "",
     } as EventDetail}/>);
-    expect(html).toContain(locale === "ru" ? "Исходный текст удалён по сроку хранения" : "source text was deleted");
     expect(html).toContain(locale === "ru" ? "Сохранённые факты" : "Retained facts");
     expect(html).toContain("logon_type");
-    expect(html).not.toContain('data-state="unavailable"');
-    expect(html).not.toContain('data-state="empty"');
+    expect(html).toContain(">—<");
+    expect(html).not.toContain("sli-ds-state");
+    expect(html).not.toContain(locale === "ru" ? "Показана сохранённая сессия входа" : "A retained sign-in session is shown");
   } finally {
     setLocale("ru"); vi.restoreAllMocks();
   }
 });
 
-it("explains that an expired sign-in event is represented by a session", () => {
-  const html = renderToStaticMarkup(<RawSections timeZone="UTC" item={{
-    event_db_id: 41, event_id: 4624, source_payload_state: "expired",
-    read_representation: "authentication_session", source_event_state: "expired_represented_by_session",
-    retained_facts: { state: "incomplete", quality_reason: "incomplete_missing_close" },
-  } as EventDetail}/>);
-  expect(html).toContain("Показана сохранённая сессия входа");
-  expect(html).toContain("полнота сбора не доказана");
-  expect(html).not.toContain('data-state="unavailable"');
-  expect(html).not.toContain('data-state="error"');
-});
-
 it("does not present relations that were not received as an empty result", async () => {
-  const pending = await render({ relations: null });
-  expect(pending).not.toContain("не найдены");
-  const empty = await render({ relations: { items: [] } });
-  expect(empty).toContain('data-state="empty"');
-  expect(empty).toContain("не найдены");
-  expect(pending).toContain("Показано до — связей");
-  expect(empty).toContain("Показано до 0 связей");
+  const empty = t("events.card.relationsEmpty");
+  expect(await render({ relations: null })).not.toContain(empty);
+  expect(await render({ relations: { items: [] } })).toContain(empty);
 });
 
-it.each([true, false, undefined])("shows bounded relation counts and only warns on server truncation (%s)", async (truncated) => {
-  const html = await render({ relations: { truncated, items: [{
-    relation_type: "computed_correlation", related_event_db_id: 2, confidence: 0.8,
+it("keeps actual relation and action rows without service limits, summaries or truncation notices", async () => {
+  const html = await render({ relations: { truncated: true, items: [{
+    relation_type: "computed_correlation", related_event_db_id: 2, related_event_id: 4624, confidence: 0.8,
+    relation_rule: "synthetic_rule", evidence_fields: ["synthetic_field"],
   }] } });
-  expect(html).toContain("Показано до 1 связей");
-  if (truncated) {
-    expect(html).toContain("Выборка связей усечена. Есть дополнительные связи.");
-    const link = html.match(/<a[^>]*>Уточнить период в контексте расследования<\/a>/)?.[0];
-    expect(link).toContain("/app/investigations?");
-    expect(link).toContain("event_db_id=517548");
-    expect(link).toContain("time_from=");
-    expect(link).toContain("timezone=UTC");
-  } else {
-    expect(html).not.toContain("Выборка связей усечена");
-    expect(html).not.toContain("Уточнить период в контексте расследования");
-  }
+  expect(html).toContain("Event 4624 · DB 2");
+  expect(html).toContain(t("events.card.statusObserved"));
+  expect(html).not.toContain("<details");
+  expect(html).not.toMatch(/связей усечена|Показано до|Наблюдение\.|synthetic_rule|synthetic_field|synthetic_limit|synthetic-action/);
 });
 
-it("shows an entity query timeout as unavailable with an unknown count", async () => {
+it("shows an entity query timeout without an empty-result message or a status banner", async () => {
   const html = await render({ entities: { api_version: "v1", event_db_id: 517548, event_found: null, evidence_status: "timeout", items: [], limit: 100 } });
   const section = html.match(/<section id="evidence"[\s\S]*?<\/section>/)?.[0];
   expect(section).toBeDefined();
-  expect(section).toContain('data-state="unavailable"');
-  expect(section).toContain("превышено время запроса");
-  expect(section).toContain("Это не означает, что связей нет.");
-  expect(section).toContain('class="sli-ds-chip">—</span>');
-  expect(section).not.toContain('data-state="empty"');
-  expect(section).not.toContain('class="sli-ds-chip">0</span>');
+  expect(section).toContain(t("events.card.entitiesTimeout"));
+  expect(section).not.toContain(t("events.card.entitiesEmpty"));
+  expect(section).not.toContain("sli-ds-state");
 });
 
-it("add-to-case and create-case call the api with the exact event id", async () => {
-  captured.options.length = 0;
-  await render({ role: "operator" });
-  const create = vi.spyOn(api, "createInvestigation").mockResolvedValue({ id: 71 } as never);
-  const add = vi.spyOn(api, "addInvestigationEvent").mockResolvedValue({} as never);
-  const [createOptions, addOptions] = captured.options.slice(0, 2);
-  await createOptions.mutationFn({ title: "Дело", owner: " ", eventDbId: 517548 } as never);
-  await addOptions.mutationFn({ caseId: 72, eventDbId: 517548 } as never);
-  expect(create).toHaveBeenCalledWith({ title: "Дело", owner: null, event_db_id: 517548 });
-  expect(add).toHaveBeenCalledWith(72, { event_db_id: 517548 });
-});
-
-it("does not offer case mutations to a role without the permission", async () => {
-  const html = await render({ role: "guest" });
-  expect(html).not.toContain("Создать дело и добавить evidence");
+it.each(["guest", "admin"])("keeps case actions out of the event card for a %s", async (role) => {
+  const list = vi.spyOn(api, "investigationCases");
+  try {
+    const html = await render({ role });
+    expect(html).not.toMatch(/Создать дело|Добавить в существующее дело|case-title|existing-case/);
+    expect(list).not.toHaveBeenCalled();
+  } finally {
+    list.mockRestore();
+  }
 });
 
 it("renders English semantic descriptions and relation reasons without changing object facts", async () => {
@@ -191,12 +154,10 @@ it("renders English semantic descriptions and relation reasons without changing 
       reason_code: "same_logon_id_same_server", reason_params: { time_delta_seconds: 3 },
     }] } });
     expect(html).toContain("Account enabled");
-    expect(html).toContain("Enabling an account may restore access");
+    expect(html).not.toContain("Enabling an account may restore access");
     expect(html).toContain("Matching LogonId and server; time difference 3 s.");
-    expect(html).toContain("neither a probability nor proof of causation");
-    expect(html).toContain("Showing up to 1 relations");
-    expect(html).toContain("The relations result is truncated. Additional relations exist.");
-    expect(html).toContain("Refine the time range in the investigation context");
+    expect(html).not.toContain("neither a probability nor proof of causation");
+    expect(html).not.toContain("The relations result is truncated.");
     expect(html).toContain("Описание объекта из источника");
     expect(html).not.toContain("Серверный заголовок");
     expect(html).not.toContain("Серверная причина");
