@@ -51,6 +51,8 @@ def test_catalog_completeness_and_frontend_wording():
     expected |= set(WORKSTATION_ERRORS.values())
     expected |= PLUGIN_SETTINGS_MESSAGE_CODES
     expected |= {"events.unknown_type", "events.semantic.System:Service Control Manager:7036.title",
+                 "events.semantic.Security:Microsoft-Windows-Eventlog:1104.title",
+                 "events.semantic.Security:Microsoft-Windows-Eventlog:1104.summary",
                  "events.catalog_title", "events.participant_unknown"}
     expected |= {"domain_archive_must_be_boolean", "domain_archive_update_fields_invalid"}
     expected |= {"invalid_agent_registration_name", "agent_registration_name_mismatch"}

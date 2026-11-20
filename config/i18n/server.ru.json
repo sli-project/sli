@@ -1478,6 +1478,8 @@
   "events.semantic.Microsoft-Windows-PowerShell/Operational:Microsoft-Windows-PowerShell:4104.summary": "Источник фиксирует ScriptBlock PowerShell на контроллере домена; содержимое доступно только по отдельной sensitive capability.",
   "events.semantic.Security:Microsoft-Windows-Eventlog:1102.title": "Security log очищен",
   "events.semantic.Security:Microsoft-Windows-Eventlog:1102.summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита.",
+  "events.semantic.Security:Microsoft-Windows-Eventlog:1104.title": "Журнал Security заполнен",
+  "events.semantic.Security:Microsoft-Windows-Eventlog:1104.summary": "В журнале безопасности закончилось место для новых событий.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4624.title": "Успешный вход",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4624.summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4625.title": "Неуспешный вход",
