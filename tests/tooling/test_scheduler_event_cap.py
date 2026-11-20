@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from server.jobs import collector
 
-def test_db0101_caps_scheduler_max_events_to_5000_by_default() -> None:
-    text = Path("server/jobs/collector.py").read_text(encoding="utf-8")
-    assert "ADLOG_CANARY_MAX_EVENTS_CAP" in text
-    assert "requested_max_events_per_channel" in text
-    assert "max_events_capped" in text
-    assert "min(requested_max_events, max_events_cap)" in text
+
+def test_db0101_caps_scheduler_max_events_to_5000_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("ADLOG_SCHEDULER_CANARY", "1")
+    monkeypatch.setenv("ADLOG_CANARY_MAX_EVENTS", "10000")
+    monkeypatch.delenv("ADLOG_CANARY_MAX_EVENTS_CAP", raising=False)
+    monkeypatch.setattr(collector, "_runtime_db_backend", lambda: "postgres")
+
+    canary = collector.get_scheduler_runtime_status()["scheduler_canary"]
+
+    assert canary["requested_max_events_per_channel"] == 10000
+    assert canary["max_events_per_channel"] == 5000
+    assert canary["max_events_capped"] is True
 
 
 def test_db0101_toolkit_does_not_offer_old_5k_scheduler() -> None:
