@@ -10,6 +10,7 @@ namespace Sli.Server.Agents.Control;
 public sealed partial class AgentManagementService
 {
     private const string ConsoleServerUrlSetting = "agents.console_server_url";
+    internal const int ConsoleHostLimit = 100;
 
     private static async Task<string?> ReadConsoleServerUrlAsync(NpgsqlConnection db, NpgsqlTransaction tx, CancellationToken ct)
     {
@@ -28,7 +29,7 @@ public sealed partial class AgentManagementService
             || payload.EnumerateObject().Any(property => property.Name is not ("host_limit" or "manage_windows_audit" or "server_url"))
             || payload.EnumerateObject().Count() != payload.EnumerateObject().Select(property => property.Name).Distinct().Count()
             || !payload.TryGetProperty("host_limit", out var count) || count.ValueKind != JsonValueKind.Number
-            || !count.TryGetInt32(out int limit) || limit is < 1 or > 100)
+            || !count.TryGetInt32(out int limit) || limit is < 1 or > ConsoleHostLimit)
             throw new AgentControlException("invalid_agent_console_host_limit");
         payload.TryGetProperty("manage_windows_audit", out var auditSetting);
         if (auditSetting.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
@@ -38,9 +39,26 @@ public sealed partial class AgentManagementService
         bool hasServerUrl = payload.TryGetProperty("server_url", out var serverUrl);
         string? address = hasServerUrl
             ? serverUrl.ValueKind == JsonValueKind.String ? serverUrl.GetString() : ""
-            : await ReadConsoleServerUrlAsync(db, tx, ct);
-        var package = await AgentConsolePackage.ReadAsync(context, address, ct);
-        if (hasServerUrl)
+            : null;
+        if (!context.Request.IsHttps)
+            throw new AgentControlException("agent_console_https_required");
+        var issued = await IssueConsoleTokenAsync(db, tx, limit, manageWindowsAudit, address, actor,
+            context.RequestServices.GetRequiredService<IConfiguration>(), hasServerUrl,
+            "https://" + context.Request.Host.ToUriComponent(), ct);
+        return JsonSerializer.SerializeToElement(new
+        {
+            id = issued.Id, expires_at = issued.Expires, command = issued.Command, package_url = AgentConsolePackage.DownloadPath,
+        });
+    }
+
+    internal async Task<(Guid Id, DateTime Expires, string Command)> IssueConsoleTokenAsync(
+        NpgsqlConnection db, NpgsqlTransaction tx, int limit, bool manageWindowsAudit, string? address,
+        string actor, IConfiguration config, bool saveAddress, string? fallbackAddress, CancellationToken ct)
+    {
+        address ??= await ReadConsoleServerUrlAsync(db, tx, ct) ?? fallbackAddress
+            ?? throw new AgentControlException("agent_console_server_url_required");
+        var package = await AgentConsolePackage.ReadAsync(config, address, ct);
+        if (saveAddress)
         {
             await using var save = new NpgsqlCommand("""
                 insert into platform_settings(key,value,updated_by) values(@key,@value,@actor)
@@ -66,10 +84,7 @@ public sealed partial class AgentManagementService
         var expires = (DateTime)(await insert.ExecuteScalarAsync(ct))!;
         await audit.AppendAsync(db, tx, "token_create", actor, id.ToString(),
             new { host_limit = limit, ttl_seconds = 3600, manage_windows_audit = manageWindowsAudit, server_url = package.Origin.AbsoluteUri }, ct);
-        return JsonSerializer.SerializeToElement(new
-        {
-            id, expires_at = expires, command = package.Command(token), package_url = AgentConsolePackage.DownloadPath,
-        });
+        return (id, expires, package.Command(token));
     }
 
     public async Task<JsonElement> ListConsoleTokensAsync(NpgsqlConnection db, NpgsqlTransaction tx, string actor, CancellationToken ct)
@@ -133,17 +148,14 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
         finally { if (stream is not null) await stream.DisposeAsync(); }
     }
 
-    public static async Task<AgentConsolePackage> ReadAsync(HttpContext context, string? address, CancellationToken ct)
+    public static async Task<AgentConsolePackage> ReadAsync(IConfiguration config, string address, CancellationToken ct)
     {
-        if (!context.Request.IsHttps)
-            throw new AgentControlException("agent_console_https_required");
-        var config = context.RequestServices.GetRequiredService<IConfiguration>();
         try
         {
             string certificatePath = config["Kestrel:Certificates:Default:Path"]
                 ?? throw new ServerConfigurationException("Kestrel:Certificates:Default:Path", "missing");
             using var certificate = X509Certificate2.CreateFromPem(await File.ReadAllTextAsync(certificatePath, ct));
-            var origin = ValidateOrigin(address ?? "https://" + context.Request.Host.ToUriComponent(), certificate);
+            var origin = ValidateOrigin(address, certificate);
             string caPath = config["Sli:AgentServerCaFile"] ?? config["SLI_TLS_CA_FILE"] ?? "/var/lib/sli/tls-ca.crt";
             using var root = X509Certificate2.CreateFromPem(await File.ReadAllTextAsync(
                 InstalledConfiguration.CredentialPath(config, caPath, "SLI_TLS_CA_FILE"), ct));
