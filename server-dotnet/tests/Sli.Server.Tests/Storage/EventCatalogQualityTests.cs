@@ -12,10 +12,13 @@ public sealed class EventCatalogQualityTests
     static string[] Codes(JsonObject result)=>result["errors"]!.AsArray().Select(e=>e!["code"]!.ToString()).ToArray();
     static KnownBundleNormalizer Normalizer()=>new(EventCardSemanticsTests.Repository(),null,null);
 
-    [Fact] public async Task Shipped_catalog_validates_dns_timeout_is_known_and_task_203_is_unknown()
+    [Fact] public async Task Shipped_catalog_validates_log_full_and_dns_timeout_are_known_and_task_203_is_unknown()
     {
-        Assert.True(JsonNode.DeepEquals(Object("""{"valid":true,"entry_count":105,"errors":[]}"""),EventCatalogQuality.ValidateCatalogData(Catalog())));
+        var result=EventCatalogQuality.ValidateCatalogData(Catalog());
+        Assert.True((bool)result["valid"]!,result["errors"]!.ToJsonString());
         var normalizer=Normalizer();
+        var logFull=await normalizer.CardAsync(Object("""{"event_id":1104,"channel":"Security","provider_name":"Microsoft-Windows-Eventlog"}"""),TestContext.Current.CancellationToken);
+        Assert.True((bool)logFull["catalog_match"]!); Assert.Equal("critical",logFull["severity"]!.ToString());
         var dns=await normalizer.CardAsync(Object("""{"event_id":4016,"channel":"DNS Server","provider_name":"Microsoft-Windows-DNS-Server-Service"}"""),TestContext.Current.CancellationToken);
         Assert.True((bool)dns["catalog_match"]!); Assert.Equal("medium",dns["severity"]!.ToString()); Assert.Equal("important",dns["purpose_tier"]!.ToString());
         var unknown=await normalizer.CardAsync(Object("""{"event_id":203,"channel":"Microsoft-Windows-TaskScheduler/Operational","provider_name":"Microsoft-Windows-TaskScheduler"}"""),TestContext.Current.CancellationToken);

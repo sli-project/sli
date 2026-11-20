@@ -28,8 +28,7 @@ public sealed class EventCatalogContractTests
 
     [Fact] public void Unmodified_catalog_passes_the_original_boundary()
     {
-        var result = EventCatalogQuality.ValidateChanges(Catalog(), Baseline());
-        Valid(result); Assert.Equal(30, result["новых"]!.GetValue<int>()); Assert.Equal(75, result["изменённых"]!.GetValue<int>());
+        Valid(EventCatalogQuality.ValidateChanges(Catalog(), Baseline()));
     }
     [Fact] public void New_incomplete_entry_blocks_and_reports_all_v2_fields()
     {
@@ -37,14 +36,15 @@ public sealed class EventCatalogContractTests
         foreach (string key in entry.Select(p => p.Key).Where(k => !new[] { "source", "stream", "event_key", "severity", "title", "why", "fix" }.Contains(k)).ToArray()) entry.Remove(key);
         catalog["entries"]!.AsArray().Add(entry);
         var result = EventCatalogQuality.ValidateChanges(catalog, Baseline()); Invalid(result);
-        Assert.Equal(31, result["новых"]!.GetValue<int>()); var violation = FirstViolation(result);
+        var violation = FirstViolation(result);
+        Assert.Equal("sli.exchange/message-tracking/receive", violation["identity"]!.ToString());
         Assert.Equal("новая", violation["вид"]!.ToString());
         foreach (string field in new[] { "lifecycle", "correlation", "required_fields" }) Assert.Contains(field, violation["не_заполнено"]!.AsArray().Select(n => n!.ToString()));
     }
     [Fact] public void New_complete_entry_passes()
     {
         var catalog = Catalog(); catalog["entries"]!.AsArray().Add(Complete());
-        var result = EventCatalogQuality.ValidateChanges(catalog, Baseline()); Valid(result); Assert.Equal(31, result["новых"]!.GetValue<int>());
+        Valid(EventCatalogQuality.ValidateChanges(catalog, Baseline()));
     }
     [Fact] public void Missing_warm_period_blocks_new_entry()
     {
@@ -157,18 +157,18 @@ public sealed class EventCatalogContractTests
         var catalog = Catalog(); var entry = EventCatalogQuality.Entries(catalog).Single(e => e["event_id"]!.GetValue<int>() == 4624);
         entry.Remove("noise_class"); entry["title"] = entry["title"]!.ToString() + " (правка)";
         var result = EventCatalogQuality.ValidateChanges(catalog, Baseline()); Invalid(result);
-        Assert.Equal(75, result["изменённых"]!.GetValue<int>()); Assert.Equal("изменённая", FirstViolation(result)["вид"]!.ToString());
+        var violation = FirstViolation(result);
+        Assert.Equal(EventCatalogQuality.Identity(entry), violation["identity"]!.ToString());
+        Assert.Equal("изменённая", violation["вид"]!.ToString());
+        Assert.Contains("noise_class", violation["не_заполнено"]!.AsArray().Select(n => n!.ToString()));
     }
     [Fact] public void Canonical_catalog_shape_is_valid() => Valid(EventCatalogQuality.Validate(Catalog()));
-    [Fact] public void Baseline_and_current_catalog_have_the_expected_entry_counts()
-    {
-        Assert.Equal(103, Baseline()["entry_count"]!.GetValue<int>()); Assert.Equal(105, Catalog()["entries"]!.AsArray().Count);
-    }
     [Fact] public void Operations_completeness_counts_actual_declarations()
     {
-        var result = new OperationsCatalog().Completeness(); Assert.Equal(Catalog()["entries"]!.AsArray().Count, result["entry_count"]!.GetValue<int>());
-        Assert.Equal(105, result["fully_classified"]!.GetValue<int>()); Assert.Equal(1d, result["classification_ratio"]!.GetValue<double>());
-        Assert.Equal(105, result["schema_v2_ready"]!.GetValue<int>());
+        int entryCount = Catalog()["entries"]!.AsArray().Count;
+        var result = new OperationsCatalog().Completeness(); Assert.Equal(entryCount, result["entry_count"]!.GetValue<int>());
+        Assert.Equal(entryCount, result["fully_classified"]!.GetValue<int>()); Assert.Equal(1d, result["classification_ratio"]!.GetValue<double>());
+        Assert.Equal(entryCount, result["schema_v2_ready"]!.GetValue<int>());
     }
     [Fact] public void Unchanged_incomplete_legacy_is_exempt_until_edited()
     {
