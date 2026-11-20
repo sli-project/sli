@@ -69,12 +69,15 @@ sudo apt update && sudo apt upgrade
 
 ### Install from the archive
 
-1. Download `sli-debian-beta-kit.tar.gz` and `SHA256SUMS` from the same
-   `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
-   The release notes link to the GitHub Actions run and identify its source commit.
-   In the download directory, verify the archive before extracting it.
+1. Copy the `beta-…` tag from the pre-release in
+   [Releases](https://github.com/sli-project/sli/releases) and substitute it for
+   `beta-COMMIT12` below. The release notes identify the source commit and link to
+   the GitHub Actions run. Download both files and verify the archive before extracting it.
 
    ```sh
+   tag=beta-COMMIT12
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/sli-debian-beta-kit.tar.gz" &&
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/SHA256SUMS" &&
    sha256sum --check SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
    ```
 
