@@ -35,7 +35,12 @@ def run(monkeypatch):
             "clean_debian_13": True, "public_readme_only": True, "commands": 3, "file_edits": 0,
             "started_at": stamp(started), "ready_at": stamp(started + timedelta(minutes=30)),
         },
-        "first_login": {"one_time_code_used": True, "dotnet_screen_opened": True},
+        "first_login": {
+            "initial_password_used": True,
+            "home_blocked_before_change": True,
+            "password_changed": True,
+            "dotnet_screen_opened": True,
+        },
         "agent": {
             "id": str(AGENT), "msi_count": 1, "commands": 1, "started_at": stamp(started),
             "collecting_at": stamp(started + timedelta(minutes=10)),
@@ -114,8 +119,23 @@ def test_cli_prints_nine_green_rows_for_complete_observations(run, tmp_path, mon
     ]) == 0
     output = capsys.readouterr().out
     assert output.count("| Зелёная |") == 9
+    assert "| 2. Первый вход владельца | Зелёная |" in output
     assert "9 из 9" in output
     assert "fixture-token" not in output
+
+
+@pytest.mark.parametrize("field", [
+    "initial_password_used", "home_blocked_before_change", "password_changed", "dotnet_screen_opened",
+])
+def test_first_login_stays_red_when_a_step_is_missing_or_unconfirmed(run, field):
+    observations, _, get = run
+    for value in (None, False, 1):
+        if value is None:
+            observations["first_login"].pop(field)
+        else:
+            observations["first_login"][field] = value
+        rows = acceptance.run_checks(get, observations, 1, AGENT)
+        assert "| 2. Первый вход владельца | Красная |" in acceptance.table(rows)
 
 
 def test_incomplete_evidence_and_live_error_stay_red_without_hiding_other_rows(run):
@@ -131,7 +151,7 @@ def test_incomplete_evidence_and_live_error_stay_red_without_hiding_other_rows(r
     rows = acceptance.run_checks(get, observations, 1, AGENT)
 
     assert [passed for passed, _ in rows] == [True, False, True, False, False, False, False, False, False]
-    assert "/api/auth/bootstrap" in rows[1][1]
+    assert "/login" in rows[1][1]
     assert "ad.users.v2" in rows[3][1]
     assert "workspace" in rows[8][1]
     assert "fixture-sensitive" not in acceptance.table(rows)
@@ -212,7 +232,8 @@ class FixtureHttps(HTTPSHandler):
         return response
 
 
-def test_owner_uses_normal_login_cookie_and_logs_out_its_session_only():
+@pytest.mark.parametrize(("login_args", "username"), [((), "admin"), (("platform-owner",), "platform-owner")])
+def test_owner_uses_normal_login_cookie_and_logs_out_its_session_only(login_args, username):
     api = acceptance.Api(ORIGIN, "adl_fixture")
     visited = []
 
@@ -222,9 +243,9 @@ def test_owner_uses_normal_login_cookie_and_logs_out_its_session_only():
         if request.full_url.endswith("/login"):
             assert request.get_method() == "POST"
             assert request.get_header("Origin") == ORIGIN
-            assert json.loads(request.data) == {"username": "platform-owner", "password": "fixture-password"}
+            assert json.loads(request.data) == {"username": username, "password": "fixture-password"}
             return 200, {"authenticated": True, "principal": {
-                "username": "platform-owner", "type": "session", "role": "admin",
+                "username": username, "type": "session", "role": "admin",
             }}, {"Set-Cookie": "adlog_session=fixture-cookie; Path=/; Secure; HttpOnly; SameSite=Strict"}
         assert request.get_header("Cookie") == "adlog_session=fixture-cookie"
         if request.full_url.endswith("/logout"):
@@ -236,7 +257,7 @@ def test_owner_uses_normal_login_cookie_and_logs_out_its_session_only():
     api.opener.add_handler(FixtureHttps(handle))
     api.logout_owner()
     assert visited == []
-    api.login_owner("fixture-password")
+    api.login_owner("fixture-password", *login_args)
     with pytest.raises(acceptance.CheckFailed, match=r"^HTTP 302$"):
         api.get("/api/health")
     api.logout_owner()
@@ -308,7 +329,7 @@ def test_logout_rejects_invalid_confirmation_without_showing_the_response(malfor
     def handle(request):
         if request.full_url.endswith("/login"):
             return 200, {"authenticated": True, "principal": {
-                "username": "platform-owner", "type": "session", "role": "admin",
+                "username": "admin", "type": "session", "role": "admin",
             }}, {"Set-Cookie": "adlog_session=fixture-cookie; Path=/; Secure"}
         if malformed_http:
             raise BadStatusLine("fixture-sensitive")

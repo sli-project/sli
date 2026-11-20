@@ -41,7 +41,9 @@ public sealed partial class ProblemRepository
             """, args, ct) ?? throw new InvalidOperationException("finding_update_missing");
         if (change.Audit)
         {
-            args["old"] = ProblemJson.Text(current["status"]) is { Length: > 0 } old ? old : "new"; args["actor"] = actor.Trim(); args["note"] = input.Note ?? change.Reason;
+            args["old"] = ProblemJson.Text(current["status"]) is { Length: > 0 } old ? old : "new";
+            args["actor"] = actor.Trim();
+            args["note"] = input.Status == "closed" && !input.ReasonSupplied ? null : input.Note ?? change.Reason;
             await Execute(tx, """
                 insert into finding_status_history(finding_id,old_status,new_status,changed_by,note)
                 values(@id,@old,@status,@actor,@note)
@@ -135,7 +137,11 @@ public sealed partial class ProblemRepository
         if (!query.Suppressed && query.Risk != "accepted") clauses.Add("not (" + Suppressed + ")");
         if (query.Domains is not null) { args["domains"] = query.Domains; clauses.Add("semantic_finding_in_domains_v265(findings.id,@domains::bigint[])"); }
         if (query.EntityId is not null) { args["entity"] = query.EntityId; clauses.Add("exists(select 1 from finding_entities linked where linked.finding_id=findings.id and linked.entity_id=@entity)"); }
-        if (!string.IsNullOrEmpty(query.Status)) { args["status"] = query.Status; clauses.Add("(" + EffectiveStatus + ")=@status"); }
+        if (!string.IsNullOrEmpty(query.Status)) {
+            if (query.PageQueue && query.Status == "new") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
+            else if (query.PageQueue && query.Status == "active") clauses.Add($"({EffectiveStatus}) in ('active','review')");
+            else { args["status"] = query.Status; clauses.Add($"({EffectiveStatus})=@status"); }
+        }
         if (!string.IsNullOrEmpty(query.Severity)) { args["severity"] = query.Severity; clauses.Add("findings.severity=@severity"); }
         if (!string.IsNullOrEmpty(query.From)) { args["from"] = query.From; clauses.Add("findings.last_seen_utc::timestamptz>=@from::timestamptz"); }
         if (!string.IsNullOrEmpty(query.To)) { args["to"] = query.To; clauses.Add("findings.last_seen_utc::timestamptz<@to::timestamptz"); }

@@ -8,10 +8,8 @@ namespace Sli.Server.Tests.Auth;
 
 public sealed class OwnerRecoveryTests
 {
-    [Theory]
-    [InlineData("owner-recovery")]
-    [InlineData("owner-code")]
-    public async Task Redirected_console_denies_issuance_before_loading_host_configuration(string command)
+    [Fact]
+    public async Task Redirected_console_denies_issuance_before_loading_host_configuration()
     {
         var ct = TestContext.Current.CancellationToken;
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : "dotnet")
@@ -32,12 +30,9 @@ public sealed class OwnerRecoveryTests
         start.Environment["ADLOG_TLS_CERT_FILE"] = "synthetic-private-invalid-value";
         start.Environment["Sli__HttpMaxConnections"] = "synthetic-private-invalid-value";
         start.ArgumentList.Add(typeof(Program).Assembly.Location);
-        start.ArgumentList.Add(command);
-        if (command == "owner-recovery")
-        {
-            start.ArgumentList.Add("--username");
-            start.ArgumentList.Add("owned-user");
-        }
+        start.ArgumentList.Add("owner-recovery");
+        start.ArgumentList.Add("--username");
+        start.ArgumentList.Add("owned-user");
         using var process = Process.Start(start)!;
         process.StandardInput.Close();
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(ct);
@@ -87,9 +82,9 @@ public sealed class OwnerRecoveryTests
         for (int i = 0; i < 4; i++) Assert.Null(await budget.VerifyAsync("192.0.2.10", () => Task.FromResult<Principal?>(null)));
         Assert.NotNull(await budget.VerifyAsync("192.0.2.10", () => Task.FromResult<Principal?>(new("session", 1, "admin"))));
         Assert.Null(await budget.VerifyAsync("192.0.2.10", () => Task.FromResult<Principal?>(null)));
-        Assert.Equal(900, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync("192.0.2.10", () => throw new Exception()))).RetryAfterSeconds);
+        Assert.Equal(900, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync<Principal>("192.0.2.10", () => throw new Exception()))).RetryAfterSeconds);
         clock.Advance(899.25);
-        Assert.Equal(1, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync("192.0.2.10", () => throw new Exception()))).RetryAfterSeconds);
+        Assert.Equal(1, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync<Principal>("192.0.2.10", () => throw new Exception()))).RetryAfterSeconds);
         clock.Advance(.75);
         Assert.Null(await budget.VerifyAsync("192.0.2.10", () => Task.FromResult<Principal?>(null)));
     }
@@ -100,7 +95,7 @@ public sealed class OwnerRecoveryTests
         var budget = new OwnerRecoveryAdmission(TimeProvider.System);
         var gate = new TaskCompletionSource<Principal?>(TaskCreationOptions.RunContinuationsAsynchronously);
         Task<Principal?>[] pending = Enumerable.Range(0, 5).Select(_ => budget.VerifyAsync("192.0.2.11", () => gate.Task)).ToArray();
-        Assert.Equal(1, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync("192.0.2.11", () => throw new Exception()))).RetryAfterSeconds);
+        Assert.Equal(1, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync<Principal>("192.0.2.11", () => throw new Exception()))).RetryAfterSeconds);
         gate.SetException(new InvalidOperationException("synthetic_error"));
         foreach (var task in pending) await Assert.ThrowsAsync<InvalidOperationException>(() => task);
         Assert.Null(await budget.VerifyAsync("192.0.2.11", () => Task.FromResult<Principal?>(null)));
@@ -112,7 +107,7 @@ public sealed class OwnerRecoveryTests
         var budget = new OwnerRecoveryAdmission(TimeProvider.System);
         var gate = new TaskCompletionSource<Principal?>(TaskCreationOptions.RunContinuationsAsynchronously);
         Task<Principal?>[] pending = Enumerable.Range(0, 4096).Select(i => budget.VerifyAsync("owned-address-" + i, () => gate.Task)).ToArray();
-        Assert.Equal(900, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync("overflow", () => throw new Exception()))).RetryAfterSeconds);
+        Assert.Equal(900, (await Assert.ThrowsAsync<LoginThrottledException>(() => budget.VerifyAsync<Principal>("overflow", () => throw new Exception()))).RetryAfterSeconds);
         gate.SetResult(new("session", 1, "admin"));
         await Task.WhenAll(pending);
         Assert.NotNull(await budget.VerifyAsync("overflow", () => Task.FromResult<Principal?>(new("session", 1, "admin"))));

@@ -21,6 +21,53 @@ export function statusLabel(status: unknown): string {
   return t(STATUS_LABELS[String(status ?? "").toLowerCase()] ?? "reports.problemLifecycle.unknown");
 }
 
+export function queueStatus(status: string): string {
+  if (status === "confirmed" || status === "repeated") return "new";
+  return status === "review" ? "active" : status;
+}
+
+export function canResolveProblem(row: Row): boolean {
+  const id = Number(row.id);
+  return Number.isSafeInteger(id) && id > 0 && row.status !== "closed"
+    && Array.isArray(row.allowed_statuses) && row.allowed_statuses.includes("closed");
+}
+
+export function ResolveProblem({ row, compact, onResolved }: { row: Row; compact?: boolean; onResolved?: () => void }) {
+  const client = useQueryClient();
+  const { openModal, closeModal, toast } = useOverlays();
+  const resolve = useMutation({
+    mutationFn: (note: string | null) => api.updateFinding(Number(row.id), { status: "closed", note }),
+    onSuccess: async () => {
+      onResolved?.();
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["report-v2", "data"] }),
+        client.invalidateQueries({ queryKey: ["home", "summary"] }),
+      ]);
+      toast(t("reports.problemLifecycle.resolved"), "");
+    },
+    onError: () => toast(t("reports.problemLifecycle.failed"), ""),
+  });
+  return <button type="button" className="sli-ds-button" data-size={compact ? "compact" : undefined}
+    disabled={resolve.isPending || resolve.isSuccess} onClick={(event) => {
+      event.stopPropagation();
+      openModal({
+        title: t("reports.problemLifecycle.resolveTitle"),
+        subtitle: String(row.title_text ?? row.title ?? "") || undefined,
+        body: <div className="sli-ds-field">
+          <label htmlFor="resolve-problem-note">{t("reports.problemLifecycle.optionalComment")}</label>
+          <textarea id="resolve-problem-note" name="note" maxLength={2000}/>
+        </div>,
+        footer: <button type="submit" className="sli-ds-button" data-variant="primary">{t("reports.problemLifecycle.resolve")}</button>,
+        onSubmit: (submitEvent) => {
+          submitEvent.preventDefault();
+          const note = String(new FormData(submitEvent.currentTarget).get("note") ?? "").trim();
+          closeModal();
+          resolve.mutate(note || null);
+        },
+      });
+    }}>{t("reports.problemLifecycle.resolve")}</button>;
+}
+
 function historyActor(value: unknown): string {
   if (value === "semantic-worker") return t("reports.problemLifecycle.semanticWorker");
   return value === "system" ? t("reports.problemLifecycle.system") : String(value ?? "").trim() || t("reports.problemLifecycle.system");
@@ -41,8 +88,10 @@ export function ProblemLifecycle({ row, formatTime }: { row: Row; formatTime: (v
   const client = useQueryClient();
   const { toast } = useOverlays();
   const id = Number(row.id);
-  const status = String(row.status ?? "new");
-  const statuses = Array.isArray(row.allowed_statuses) ? (row.allowed_statuses as string[]) : [status];
+  const currentStatus = String(row.status ?? "new");
+  const status = queueStatus(currentStatus);
+  const allowed = Array.isArray(row.allowed_statuses) ? (row.allowed_statuses as string[]) : [];
+  const statuses = [...new Set([status, ...allowed.filter((value) => value !== "closed" && queueStatus(value) === value)])];
   const history = Array.isArray(row.status_history) ? (row.status_history as HistoryEntry[]) : [];
   const canManage = Boolean(access?.capabilities.includes("investigations.manage"));
   const refresh = () => client.invalidateQueries({ queryKey: ["report-v2", "data"] });
@@ -59,8 +108,9 @@ export function ProblemLifecycle({ row, formatTime }: { row: Row; formatTime: (v
     const assignedTo = String(data.get("assigned_to") || "").trim();
     const reason = String(data.get("note") || "").trim();
     if (!reason) return;
+    const next = String(data.get("status") || status);
     update.mutate({
-      status: String(data.get("status") || status),
+      status: next === status ? currentStatus : next,
       ...(assignedTo !== String(row.assigned_to ?? "").trim() ? { assigned_to: assignedTo || null } : {}),
       note: reason,
     });
@@ -68,10 +118,10 @@ export function ProblemLifecycle({ row, formatTime }: { row: Row; formatTime: (v
 
   return <section aria-label={t("reports.problemLifecycle.aria")} className="sli-ds-report__views">
     <ProblemNotification findingId={id}/>
-    <h3 style={{ margin: 0 }}>{t("reports.problemLifecycle.history")}</h3>
-    {history.length
-      ? <ul className="sli-ds-state__text">{history.map((entry) => <li key={entry.id}>{formatTime(entry.changed_at)} · {statusLabel(entry.new_status)} · {historyActor(entry.changed_by)}{historyNote(entry) ? ` · ${historyNote(entry)}` : ""}</li>)}</ul>
-      : <p className="sli-ds-header__subtitle">{t("reports.problemLifecycle.noHistory")}</p>}
+    {history.length ? <>
+      <h3 style={{ margin: 0 }}>{t("reports.problemLifecycle.history")}</h3>
+      <ul className="sli-ds-state__text">{history.map((entry) => <li key={entry.id}>{formatTime(entry.changed_at)} · {statusLabel(entry.new_status)} · {historyActor(entry.changed_by)}{historyNote(entry) ? ` · ${historyNote(entry)}` : ""}</li>)}</ul>
+    </> : null}
     <h3 style={{ margin: 0 }}>{t("reports.problemLifecycle.change")}</h3>
     {canManage ? <form className="sli-ds-filters" onSubmit={submit} key={`${id}:${status}`}>
       <div className="sli-ds-filters__fields">

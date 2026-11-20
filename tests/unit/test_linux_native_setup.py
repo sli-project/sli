@@ -1,7 +1,6 @@
 """Fresh beta setup contracts; no daemon, network or host secret access."""
 import json
 import os
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -255,6 +254,8 @@ def setup_host(tmp_path, monkeypatch):
     monkeypatch.setattr(setup.ssl, 'PEM_cert_to_DER_cert', lambda text: b'synthetic DER certificate')
     monkeypatch.setattr(setup.install, 'inventory', lambda release: (root, {'python': '/accepted/python'}, 'digest'))
     monkeypatch.setattr(setup.install, 'environment', dict)
+    monkeypatch.setattr(setup.install, 'CURRENT', root)
+    monkeypatch.setattr(setup.install, 'trusted_path', lambda path: path)
     monkeypatch.setattr(setup.install, 'wait_api', lambda config: None)
     monkeypatch.setattr(runtime, 'configuration', lambda: {
         'health_url': 'https://127.0.0.1:443/api/health/ready'})
@@ -269,6 +270,7 @@ def setup_host(tmp_path, monkeypatch):
         (state / 'host-prepared.json').write_text(json.dumps({'uuid': uuid, 'directory': directory}))
     check_setup_units = setup.host.Host(tmp_path / 'host').check_setup_units
     machine = SimpleNamespace(write=write, prepare=prepare, receipt=lambda: calls.append('receipt'),
+                              select_database_directory=lambda **kwargs: '/var/lib/sli-db',
                               check_setup_units=check_setup_units)
     monkeypatch.setattr(setup.host, 'Host', lambda: machine)
     monkeypatch.setattr(setup, 'check_port', lambda site, *, saved: calls.append('check-port'))
@@ -279,19 +281,75 @@ def setup_host(tmp_path, monkeypatch):
             (state / 'installed.json').write_text(json.dumps({'release': str(root)}))
             (state / 'package-install.json').write_text(json.dumps({'status': 'configured',
                 'site_sha256': setup.install.site_digest(ch.parse_site(site_path.read_text()))}))
-        return 'a' * 64 if '--owner-code' in argv else ''
+        return json.dumps('admin') if '--initial-admin' in argv else ''
     monkeypatch.setattr(setup, 'command', command)
     args = SimpleNamespace(server='192.0.2.10', bind=None, port=None, clickhouse_mode=None,
-                           directory=None, uuid=None, backup_root=None, non_interactive=True, new_owner_code=False)
+                           directory=None, uuid=None, backup_root=None, non_interactive=True)
     return setup, args, calls, state, site_path
 
 
+@pytest.mark.parametrize('dns', ['local', 'loopback', 'unresolved'])
+def test_setup_without_arguments_selects_address_and_never_prompts(setup_host, monkeypatch, capsys, dns):
+    setup, args, calls, _, path = setup_host
+    args.server, args.non_interactive = None, False
+    monkeypatch.setattr(setup.socket, 'getfqdn', lambda: 'sli.example.test')
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
+    addresses = {'local': {'192.0.2.10'}, 'loopback': {'127.0.1.1'}, 'unresolved': set()}
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: addresses[dns])
+
+    setup.configure(args)
+
+    site = ch.parse_site(path.read_text())
+    address = 'sli.example.test' if dns == 'local' else '192.0.2.10'
+    assert site['server_name'] == address and site['https_port'] == 443
+    assert ('prepare', None, '/var/lib/sli-db') in calls
+    output = capsys.readouterr().out
+    assert f"Start-Process 'https://{address}/app'" in output
+    assert ('using 192.0.2.10.' in output) == (dns != 'local')
+
+
+def test_setup_uses_available_port_if_443_busy(setup_host, monkeypatch, capsys):
+    setup, args, _, _, path = setup_host
+    def check_port(site, *, saved=False):
+        if site['https_port'] == 443:
+            try:
+                raise OSError(setup.errno.EADDRINUSE, 'synthetic occupied port')
+            except OSError:
+                raise setup.host.GuardError('native_setup_port_busy', 'HTTPS port 443', 'cannot bind', '') from None
+        assert site['https_port'] == 0
+        return 49152
+    monkeypatch.setattr(setup, 'check_port', check_port)
+
+    setup.configure(args)
+
+    assert ch.parse_site(path.read_text())['https_port'] == 49152
+    assert "Start-Process 'https://192.0.2.10:49152/app'" in capsys.readouterr().out
+
+
+def test_unresolved_explicit_name_falls_back_and_can_be_retried(setup_host, monkeypatch):
+    setup, args, calls, _, path = setup_host
+    args.server = 'sli.example.test'
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: set())
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
+
+    setup.configure(args)
+    calls.clear()
+    setup.configure(args)
+
+    assert ch.parse_site(path.read_text())['server_name'] == '192.0.2.10'
+    assert 'write-site' not in calls
+
+
 @pytest.mark.parametrize('bind', [None, '192.0.2.10'])
-def test_unresolved_server_refuses_before_writes_then_setup_accepts_ip(setup_host, monkeypatch, capsys, bind):
+def test_dns_failure_during_tls_preflight_refuses_writes_then_setup_accepts_ip(setup_host, monkeypatch, capsys, bind):
     setup, args, calls, state, site = setup_host
     args.server, args.bind = 'sli.example.test', bind
 
+    resolved = iter([True, False])
+
     def unresolved(*args, **kwargs):
+        if next(resolved):
+            return [(2, 1, 6, '', ('192.0.2.10', 443))]
         raise setup.socket.gaierror('synthetic resolver output')
 
     monkeypatch.setattr(setup.socket, 'getaddrinfo', unresolved)
@@ -442,10 +500,13 @@ def test_setup_fresh_then_repeat_preserves_site_and_never_reprovisions(setup_hos
     provision = next(call for call in calls if isinstance(call, list) and 'deploy.linux.sli_secrets' in call)
     assert provision.count('--tls-name') == 4  # Server IP plus health loopbacks.
     assert '--agents' in provision and '--offline-root-dir' in provision
-    assert 'https://192.0.2.10/api/auth/bootstrap' in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert 'https://192.0.2.10/app' in output
+    assert 'Логин admin, пароль admin — смените при первом входе.' in output
     calls.clear()
     setup.configure(args)
     assert path.read_bytes() == original
+    assert 'Login admin, password admin — change it at first sign-in.' in capsys.readouterr().out
     assert 'write-site' not in calls and not any(isinstance(call, tuple) for call in calls)
     assert not any('ensure' in call for call in calls if isinstance(call, list))
 
@@ -560,13 +621,12 @@ def test_setup_changed_address_or_port_fails_before_any_mutation(setup_host, opt
 
 def test_setup_dns_generates_tls_for_server_name_and_local_ip(setup_host, monkeypatch):
     setup, args, calls, _, _ = setup_host
-    args.server, args.bind = 'sli.example.invalid', '192.0.2.10'
-    monkeypatch.setattr(setup.socket, 'getaddrinfo', lambda *args, **kwargs: [
-        (2, 1, 6, '', ('192.0.2.10', 443))])
+    args.server, args.bind = 'sli.example.test', '192.0.2.10'
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: {'192.0.2.10'})
     setup.configure(args)
     provision = next(call for call in calls if isinstance(call, list) and 'deploy.linux.sli_secrets' in call)
     names = [provision[i + 1] for i, arg in enumerate(provision) if arg == '--tls-name']
-    assert names == ['sli.example.invalid', '192.0.2.10']
+    assert names == ['sli.example.test', '192.0.2.10']
 
 
 def test_setup_does_not_select_clickhouse_for_new_install(setup_host):
@@ -651,7 +711,7 @@ def first_start_install(tmp_path, monkeypatch):
         calls.append(argv)
         if argv == ['systemctl', 'start', 'sli-ready.service'] and control['fail']:
             raise RuntimeError('synthetic_first_start_failure')
-        if '--check-unclaimed-owner' in argv and control['owner'] != 'unclaimed':
+        if '--initial-admin' in argv and 'check' in argv and control['owner'] != 'unclaimed':
             raise RuntimeError('native_install_command_failed')
     monkeypatch.setattr(install, 'command', command)
     return state, calls, control
@@ -746,21 +806,6 @@ def test_uninstall_delegates_to_stop_only_removal_that_never_erases_data(monkeyp
     assert calls == [['/usr/sbin/sli-remove', '--stop-services']]
 
 
-@pytest.mark.parametrize('row', [None, ('invalid-hash', None)])
-def test_owner_code_does_not_report_missing_or_changed_bootstrap_as_activated(monkeypatch, row):
-    from contextlib import nullcontext
-    from types import SimpleNamespace
-
-    import psycopg
-
-    from deploy.linux import native_setup as setup
-    monkeypatch.setattr(setup.install, 'trusted', lambda path: b'a' * 64)
-    monkeypatch.setattr(psycopg, 'connect', lambda **kwargs: nullcontext(
-        SimpleNamespace(execute=lambda sql: SimpleNamespace(fetchone=lambda: row))))
-    with pytest.raises(RuntimeError, match='native_setup_owner_code_unavailable'):
-        setup.owner_code()
-
-
 def test_package_cli_requires_no_clickhouse_image(tmp_path, monkeypatch):
     from deploy.linux import native_package as package
     captured = []
@@ -770,225 +815,60 @@ def test_package_cli_requires_no_clickhouse_image(tmp_path, monkeypatch):
     assert 'clickhouse_mode' not in captured[0] and 'image_archive' not in captured[0]
 
 
-@pytest.fixture
-def owner_runtime(tmp_path, monkeypatch):
+@pytest.mark.parametrize('root', [True, False])
+def test_reset_admin_password_requires_root_and_does_not_configure(setup_host, monkeypatch, capsys, root):
     from contextlib import nullcontext
-    from types import SimpleNamespace
 
-    import psycopg
-
-    from deploy.linux import native_setup as setup
-    from server.sli.access.auth import PASSWORD_HASHER
-    secret = tmp_path / 'platform_owner_password'
-    secret.write_text('a' * 64)
-    checked = datetime(2026, 10, 30, tzinfo=UTC)
-    state = {'row': (PASSWORD_HASHER.hash('a' * 64), None, checked, checked), 'updates': []}
-    def execute(sql, params=None):
-        if sql.lstrip().startswith('update'):
-            state['updates'].append(params)
-            state['row'] = (params[0], None, checked, checked)
-        return SimpleNamespace(fetchone=lambda: state['row'])
-    monkeypatch.setattr(setup.install, 'SECRETS', tmp_path)
-    monkeypatch.setattr(setup.install, 'STATE', tmp_path)
-    monkeypatch.setattr(setup.install, 'atomic', lambda path, value: path.write_text(json.dumps(value)))
-    monkeypatch.setattr(setup.install, 'trusted', lambda path: path.read_bytes() if path.exists() else b'synthetic')
-    monkeypatch.setattr(psycopg, 'connect', lambda **kwargs: nullcontext(SimpleNamespace(execute=execute)))
-    return setup, secret, state
+    setup, _, calls, _, _ = setup_host
+    monkeypatch.setattr(setup.os, 'geteuid', lambda: 0 if root else 1000, raising=False)
+    monkeypatch.setattr(setup, 'setup_lock', nullcontext)
+    status = setup.main(['--reset-admin-password'])
+    output = capsys.readouterr()
+    if root:
+        assert status == 0
+        (command,) = calls
+        assert command[-3:-1] == ['--initial-admin', 'reset']
+        assert 'Login admin, password admin — change it at first sign-in.' in output.out
+    else:
+        assert status == 1
+        assert not calls
+        assert not output.out
 
 
-def test_activated_owner_code_is_removed_idempotently(owner_runtime):
-    setup, secret, state = owner_runtime
-    state['row'] = ('unused', 'claimed', False)
-    assert setup.owner_code() == 'activated'
-    assert not secret.exists()
-    assert setup.owner_code(new=True) == 'activated'
-    assert not state['updates']
-
-
-@pytest.mark.parametrize('activated', [False, True])
-def test_resume_owner_check_never_issues_rotates_or_deletes_code(owner_runtime, activated):
-    setup, secret, state = owner_runtime
-    if activated:
-        state['row'] = ('unused', 'claimed', False)
-    original = secret.read_bytes()
-    assert setup.owner_code(check_only=True) == ('activated' if activated else 'unclaimed')
-    assert secret.read_bytes() == original
-    assert not state['updates']
-    assert not (secret.parent / 'owner-code-issued.json').exists()
-
-
-def test_owner_code_prints_once_and_rotation_invalidates_old_code(owner_runtime):
-    from argon2.exceptions import VerifyMismatchError
-
-    from server.sli.access.auth import PASSWORD_HASHER
-    setup, secret, state = owner_runtime
-    assert setup.owner_code() == 'a' * 64
-    assert setup.owner_code() == 'pending'
-    new = setup.owner_code(new=True)
-    assert new != 'a' * 64 and secret.read_text().strip() == new
-    assert PASSWORD_HASHER.verify(state['row'][0], new)
-    with pytest.raises(VerifyMismatchError):
-        PASSWORD_HASHER.verify(state['row'][0], 'a' * 64)
-    assert setup.owner_code() == 'pending'
-
-
-def test_staged_package_needs_one_setup_command_and_prints_owner_code_once(setup_host, owner_runtime, monkeypatch, capsys):
+def test_staged_package_needs_one_setup_command_and_preserves_owner_password(setup_host, monkeypatch, capsys):
     from contextlib import nullcontext
 
     setup, _, calls, state, site = setup_host
-    _, secret, owner = owner_runtime
-    monkeypatch.setattr(install, 'STATE', state)
     monkeypatch.setattr(setup.os, 'geteuid', lambda: 0, raising=False)
     monkeypatch.setattr(setup, 'setup_lock', nullcontext)
-    command = setup.command
-
-    def dispatch(argv, **kwargs):
-        if '--owner-code' in argv:
-            return setup.owner_code()
-        return command(argv, **kwargs)
-
-    monkeypatch.setattr(setup, 'command', dispatch)
+    monkeypatch.setattr(install, 'atomic', lambda path, value: path.write_text(json.dumps(value)))
+    monkeypatch.setattr(setup.socket, 'getfqdn', lambda: 'debian')
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
     (state / 'pending-release.json').unlink()
-    assert not site.exists()
+
     assert install.main(['stage', 'beta']) == 0
-    assert not site.exists()  # Package installation only stages the release.
-    assert setup.main(['--non-interactive', '--server', '192.0.2.10']) == 0
+    assert not site.exists()
+    assert not calls
+
+    assert setup.main([]) == 0
     output = capsys.readouterr().out
-    assert 'https://192.0.2.10/app' in output
-    assert 'One-time code / Одноразовый код: ' + secret.read_text() in output
+    assert "Start-Process 'https://192.0.2.10/app'" in output
+    assert 'Login admin, password admin' in output
     original = site.read_bytes()
     calls.clear()
-    assert setup.main(['--non-interactive', '--server', '192.0.2.10']) == 0
-    assert 'One-time code / Одноразовый код:' not in capsys.readouterr().out
+
+    command = setup.command
+
+    def established_owner(argv, **kwargs):
+        result = command(argv, **kwargs)
+        if '--initial-admin' in argv:
+            assert argv[-2] == 'status'
+            return ''
+        return result
+
+    monkeypatch.setattr(setup, 'command', established_owner)
+    assert setup.main([]) == 0
+    assert 'Login admin, password admin' not in capsys.readouterr().out
     assert site.read_bytes() == original
-    assert not owner['updates']  # Repeating setup cannot reset the owner's credential.
     assert 'write-site' not in calls
-
-
-def test_expired_owner_code_requires_explicit_rotation(owner_runtime):
-    setup, secret, state = owner_runtime
-    state['row'] = (state['row'][0], None, state['row'][3] - timedelta(hours=24), state['row'][3])
-    assert setup.owner_code() == 'expired'
-    assert secret.read_text() == 'a' * 64
-    assert setup.owner_code(new=True) not in {'expired', 'pending', 'activated'}
-
-
-def test_configure_disables_activated_owner_setup(setup_host, monkeypatch):
-    setup, args, _calls, _, _ = setup_host
-    setup.configure(args)
-    monkeypatch.setattr(setup, 'command', lambda argv, **kwargs: 'activated' if '--owner-code' in argv else '')
-    disabled = []
-    monkeypatch.setattr(setup, 'disable_owner_setup', lambda: disabled.append(True))
-    setup.configure(args)
-    assert disabled == [True]
-
-
-@pytest.mark.parametrize('status', ['pending', 'expired'])
-def test_configure_does_not_print_existing_code_and_forwards_rotation(setup_host, monkeypatch, capsys, status):
-    setup, args, _calls, _, _ = setup_host
-    setup.configure(args)
-    capsys.readouterr()
-    args.new_owner_code = True
-    commands = []
-    def command(argv, **kwargs):
-        commands.append(argv)
-        return status if '--owner-code' in argv else ''
-    monkeypatch.setattr(setup, 'command', command)
-    setup.configure(args)
-    assert '--new-owner-code' in next(argv for argv in commands if '--owner-code' in argv)
-    assert 'One-time code' not in capsys.readouterr().out
-
-
-def test_disable_owner_setup_regenerates_dotnet_unit_on_retry(tmp_path, monkeypatch):
-    from deploy.linux import native_setup as setup
-    config_path = tmp_path / 'runtime.json'
-    config = {'schema_version': 1, 'profiles': ['light'], 'radius_pilot': False, 'owner_setup': True,
-              'bind': '192.0.2.10', 'https_port': 443, 'health_url': 'https://192.0.2.10:443/api/health/ready'}
-    config_path.write_text(json.dumps(config))
-    monkeypatch.setattr(runtime, 'CONFIG', config_path)
-    monkeypatch.setattr(runtime, 'configuration', lambda: json.loads(config_path.read_text()))
-    monkeypatch.setattr(setup.install, 'STATE', tmp_path)
-    monkeypatch.setattr(setup.install, 'atomic', lambda path, value: path.write_text(json.dumps(value)))
-    monkeypatch.setattr(setup.install, 'trusted', lambda path: path.read_bytes())
-    calls = []
-    monkeypatch.setattr(setup, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(setup.install, 'wait_api', lambda config: calls.append('api-ready'))
-    setup.disable_owner_setup()
-    assert json.loads(config_path.read_text())['owner_setup'] is False
-    body = runtime.dotnet_unit('test', json.loads(config_path.read_text()))
-    assert 'SLI_OWNER_SETUP' not in body
-    assert 'User=sli-api' in body and 'InaccessiblePaths=/etc/sli/secrets' in body
-    assert 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' in body
-    assert calls == [['systemctl', 'daemon-reload'], ['systemctl', 'restart', 'sli-dotnet-api.service'], 'api-ready']
-    calls.clear()
-    setup.disable_owner_setup()
-    assert runtime.dotnet_unit('test', json.loads(config_path.read_text())) == body
-    assert calls == ['api-ready']
-
-
-def test_disable_owner_setup_retries_restart_after_interruption(tmp_path, monkeypatch):
-    from deploy.linux import native_setup as setup
-    config_path = tmp_path / 'runtime.json'
-    config = {'profiles': ['light'], 'radius_pilot': False, 'owner_setup': True,
-              'bind': '127.0.0.1', 'health_url': 'https://127.0.0.1:8443/api/health/ready'}
-    config_path.write_text(json.dumps(config))
-    monkeypatch.setattr(runtime, 'CONFIG', config_path)
-    monkeypatch.setattr(runtime, 'configuration', lambda: json.loads(config_path.read_text()))
-    monkeypatch.setattr(setup.install, 'STATE', tmp_path)
-    monkeypatch.setattr(setup.install, 'atomic', lambda path, value: path.write_text(json.dumps(value)))
-    monkeypatch.setattr(setup.install, 'trusted', lambda path: path.read_bytes())
-    commands = []
-    monkeypatch.setattr(setup, 'command', lambda argv, **kwargs: commands.append(argv))
-    def unready(config):
-        raise RuntimeError('native_install_api_unready')
-    monkeypatch.setattr(setup.install, 'wait_api', unready)
-    with pytest.raises(RuntimeError, match='native_setup_health_failed'):
-        setup.disable_owner_setup()
-    assert not json.loads(config_path.read_text())['owner_setup']
-    commands.clear()
-    monkeypatch.setattr(setup.install, 'wait_api', lambda config: None)
-    setup.disable_owner_setup()
-    assert commands == [['systemctl', 'daemon-reload'], ['systemctl', 'restart', 'sli-dotnet-api.service']]
-    commands.clear()
-    setup.disable_owner_setup()
-    assert not commands
-
-
-@pytest.mark.parametrize('activated,new', [(True, False), (False, True)])
-def test_owner_file_is_not_mutated_when_trust_check_fails(owner_runtime, monkeypatch, activated, new):
-    setup, secret, state = owner_runtime
-    if activated:
-        state['row'] = ('unused', 'claimed', False)
-    original = secret.read_bytes()
-    trusted = setup.install.trusted
-    def refuse(path):
-        if path == secret:
-            raise RuntimeError('native_install_untrusted_path')
-        return trusted(path)
-    monkeypatch.setattr(setup.install, 'trusted', refuse)
-    with pytest.raises(RuntimeError, match='native_install_untrusted_path'):
-        setup.owner_code(new=new)
-    assert secret.read_bytes() == original
-    assert not state['updates']
-
-
-def test_explicit_rotation_recovers_file_database_mismatch(owner_runtime):
-    from server.sli.access.auth import PASSWORD_HASHER
-    setup, secret, state = owner_runtime
-    secret.write_text('interrupted-write')
-    with pytest.raises(RuntimeError, match='native_setup_owner_code_unavailable'):
-        setup.owner_code()
-    code = setup.owner_code(new=True)
-    assert secret.read_text().strip() == code
-    assert PASSWORD_HASHER.verify(state['row'][0], code)
-    assert setup.owner_code() == 'pending'
-
-
-def test_missing_primary_owner_cannot_be_rotated(owner_runtime):
-    setup, secret, state = owner_runtime
-    state['row'] = None
-    original = secret.read_bytes()
-    with pytest.raises(RuntimeError, match='native_setup_owner_code_unavailable'):
-        setup.owner_code(new=True)
-    assert secret.read_bytes() == original
-    assert not state['updates']
+    assert not any(isinstance(call, list) and call[0] == '/usr/sbin/sli-native-install' for call in calls)

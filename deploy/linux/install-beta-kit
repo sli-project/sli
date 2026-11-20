@@ -75,4 +75,5 @@ sudo apt-get update
 sudo env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes \
     -o APT::Get::allow-Downgrades=false \
     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
-    install --fix-broken "${install[@]}"
+    install --no-remove --fix-broken "${install[@]}"
+sudo /usr/sbin/sli-setup "$@"

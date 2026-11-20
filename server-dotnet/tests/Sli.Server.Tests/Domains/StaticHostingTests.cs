@@ -262,6 +262,35 @@ public sealed class StaticHostingTests
     }
 
     [Fact]
+    public async Task BundledAgentRequiresLoginAndDownloadsThePackage()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "sli-hosting-" + Guid.NewGuid());
+        Directory.CreateDirectory(Path.Combine(root, "installers"));
+        var ct = TestContext.Current.CancellationToken;
+        const string url = "https://localhost/app/installers/SliAgent.msi";
+        byte[] payload = [0, 1, 2, 255];
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(root, "installers", "SliAgent.msi"), payload, ct);
+            using var factory = Factory(root);
+            using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+            using var anonymous = await client.GetAsync(url, ct);
+            Assert.Equal(HttpStatusCode.Redirect, anonymous.StatusCode);
+            Assert.StartsWith("/login?next=", anonymous.Headers.Location!.OriginalString);
+
+            client.DefaultRequestHeaders.Add("X-Test-Authenticated", "yes");
+            using var response = await client.GetAsync(url, ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("SliAgent.msi", response.Content.Headers.ContentDisposition!.FileName);
+            Assert.True(response.Headers.CacheControl!.NoStore);
+            Assert.Equal(payload, await response.Content.ReadAsByteArrayAsync(ct));
+            using var missing = await client.GetAsync("https://localhost/app/installers/SliAgent-publish-win-x64.zip", ct);
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task ExplicitAuthOptOutServesReactWithoutCallingAuthenticator()
     {
         string root = Path.Combine(Path.GetTempPath(), "sli-hosting-" + Guid.NewGuid());

@@ -77,7 +77,8 @@ public sealed partial class OperationsService
                 ["retired_clickhouse_data"] = OperatingSystem.IsLinux() && Directory.Exists("/srv/sli-db/clickhouse"),
                 ["disk_pressure"] = new JsonObject { ["disk"] = measurements },
                 ["footprint"] = new JsonObject { ["components"] = components,
-                    ["backups"] = new JsonObject { ["last_backup_at_utc"] = Copy(footprint["backups"]?["last_backup_at_utc"]) } } } };
+                    ["backups"] = new JsonObject { ["last_backup_at_utc"] = Copy(footprint["backups"]?["last_backup_at_utc"]),
+                        ["same_disk_as_postgres"] = Copy(footprint["backups"]?["same_disk_as_postgres"]) } } } };
     }
 
     internal async Task<JsonObject> PostgresAsync(int limit, CancellationToken ct)

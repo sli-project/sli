@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
 using Npgsql;
+using Sli.Server.Auth.InitialOwner;
 using Sli.Server.Infrastructure;
 
 namespace Sli.Server.Auth;
@@ -137,16 +138,17 @@ public sealed class PrincipalAuthenticator(IPostgresConnectionFactory connection
 
     private async Task<Principal?> SessionAsync(string? token, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(token)) return null;
+        if (string.IsNullOrEmpty(token) || InitialAdminPassword.IsRestricted(token)) return null;
         await using var connection = await connections.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await using var command = new NpgsqlCommand("""
             select u.id, u.username, u.role, s.id as session_id
             from auth_sessions s join auth_users u on u.id=s.user_id
             where s.token_hash=@hash and s.revoked_at is null
-              and s.expires_at > now() and u.is_active=true
+              and s.expires_at > now() and u.is_active=true and not starts_with(u.password_hash,@pending)
             """, connection, transaction);
         command.Parameters.AddWithValue("hash", Digest(token));
+        command.Parameters.AddWithValue("pending", InitialAdminPassword.HashPrefix);
         Principal? principal = null;
         long sessionId = 0;
         await using (var reader = await command.ExecuteReaderAsync(ct))

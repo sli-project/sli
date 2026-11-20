@@ -12,6 +12,11 @@ using Xunit;
 
 namespace Sli.Server.Tests.Agents;
 
+[CollectionDefinition("Agent inbox stderr", DisableParallelization = true)]
+public sealed class AgentInboxStderrCollection;
+
+// PollAsync redirects process-wide stderr across awaits.
+[Collection("Agent inbox stderr")]
 public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
 {
     [Theory]

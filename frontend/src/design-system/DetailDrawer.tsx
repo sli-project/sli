@@ -23,6 +23,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, children, footer 
       .filter((element) => !element.closest('[hidden],[inert],[aria-hidden="true"]') && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
     panel.current?.focus();
     const onKey = (event: KeyboardEvent) => {
+      if (panel.current?.closest("[inert]")) return;
       if (event.key === "Escape") { event.preventDefault(); closeRef.current(); return; }
       if (event.key !== "Tab") return;
       const items = focusable();

@@ -16,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Sli.Server.Auth.InitialOwner;
+using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
 using Sli.Server.Agents.Certificates;
 using Sli.Agent.Core;
@@ -58,6 +60,8 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         using var certificates = new Certificates();
         string trust = Path.Combine(fixture.Pg.Root, "synthetic-ca.txt");
         await File.WriteAllTextAsync(trust, certificates.Root.ExportCertificatePem() + "\n" + certificates.Issuer.ExportCertificatePem(), ct);
+        string installer = Path.Combine(fixture.Pg.Root, "synthetic-agent.msi");
+        await File.WriteAllTextAsync(installer, "synthetic package bytes", ct);
         using var transportTrust = new Sli.Server.Hosting.AgentTlsTrust(trust);
         var package = AgentPackageTests.Fixture()["cases"]!.AsArray().First(c => c!["error"] is null)!;
         string updateTrust = Path.Combine(fixture.Pg.Root, "synthetic-package-trust.json");
@@ -112,6 +116,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 ["Sli:AuthRequired"] = "1", ["Sli:AllowUnauthenticated"] = "0", ["Sli:AuthAllowInsecureHttp"] = "1",
                 ["Sli:ProjectRoot"] = root, ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "app-data"), ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "app-logs"),
                 ["Sli:AgentUpdateTrustFile"] = updateTrust,
+                ["Sli:AgentServerCaFile"] = trust, ["Sli:AgentInstallerPath"] = installer,
                 ["Sli:Storage:HistoryReadMode"] = "disabled", ["Sli:Storage:ArchiveRoot"] = Path.Combine(fixture.Pg.Root, "archive"),
                 ["Sli:OwnerSetup"] = "0", ["Sli:HttpRatePerMinute"] = "5000", ["urls"] = "http://127.0.0.1:0"
             }))
@@ -229,6 +234,9 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/agent/removal-result", new { command_id = removal?["agent_removal"]?["command_id"]?.ToString(), state = "state_cleaned", reason = (string?)null }, asClient: agentClient);
         var enrollment = await Check("/api/v1/admin/agent-tokens", new { host_id = agent, key_fingerprint = new string('a',64) });
         await Check("/api/v1/admin/agent-tokens/revoke", new { id = enrollment?["id"]?.ToString() ?? agent });
+        var consoleToken = await Check("/api/v1/admin/agent-console-tokens", new { host_limit = 2 });
+        string consoleTokenId = consoleToken?["id"]?.ToString() ?? agent;
+        await Check("/api/v1/admin/agent-console-tokens/revoke", new { id = consoleTokenId });
         await Check("/api/v1/admin/agents/rights-probe", new { agent_id = agent });
         await Check("/api/v1/admin/agents/policy", new { agent_id = agent, expected_revision = 1, collection_policy = new { state = "paused" } });
         await Check("/api/v1/admin/agents/modules", new { agent_id = agent, module_id = "sli.workstations", enabled = false, config = new { } });
@@ -315,8 +323,35 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             state.Parameters.AddWithValue("current", currentId);
             if (await state.ExecuteScalarAsync(ct) is not 2L) failures.Add("DC registration statuses were not exchanged");
         }
-        // Logout is last: earlier writes must use a real authenticated owner session.
+        // Finish writes with the original owner session before testing first login.
         await Check("/api/auth/logout", new { });
+        client.DefaultRequestHeaders.Remove("Cookie");
+
+        const string initialPassword = "synthetic-initial-password-A1!";
+        const string replacementPassword = "synthetic-replacement-password-B2!";
+        await using (var pending = new NpgsqlCommand(
+            "update auth_users set password_hash=@hash where username='platform-owner'", admin))
+        {
+            pending.Parameters.AddWithValue("hash", InitialAdminPassword.HashPrefix + new PasswordCodec().Hash(initialPassword));
+            await pending.ExecuteNonQueryAsync(ct);
+        }
+        using var initialLogin = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { username = "platform-owner", password = initialPassword }),
+            System.Text.Encoding.UTF8, "application/json");
+        using (var login = await client.PostAsync("/api/auth/login", initialLogin, ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            var body = await login.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
+            Assert.True(body?["password_change_required"]?.GetValue<bool>() is true);
+            client.DefaultRequestHeaders.Add("Cookie", Assert.Single(login.Headers.GetValues("Set-Cookie")).Split(';')[0]);
+        }
+        var changed = await Check("/api/auth/change-initial-password",
+            new { password = replacementPassword, repeat = replacementPassword });
+        Assert.True(changed?["authenticated"]?.GetValue<bool>() is true);
+        client.DefaultRequestHeaders.Remove("Cookie");
+        var signedIn = await Check("/api/auth/login", new { username = "platform-owner", password = replacementPassword });
+        Assert.Equal("platform-owner", signedIn?["principal"]?["username"]?.GetValue<string>());
+
         var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? []).Where(m => m is "POST" or "PUT" or "DELETE").Select(m => (Method: m, Pattern: e.RoutePattern.RawText!))).Distinct().ToArray();
         foreach (var route in routes)

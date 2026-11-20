@@ -92,6 +92,9 @@ FAILURE_MESSAGES = {
     'native_pg_migration_failed': 'PostgreSQL package migration failed over local peer access / Не удалось применить миграции пакета через локальный peer-доступ PostgreSQL.',
     'native_upgrade_reconciliation_required': 'The previous upgrade failed; explicit package reconciliation is required.',
     'native_upgrade_committed_no_rollback': 'The upgrade is committed; restoring its old checkpoint would lose new data.',
+    'native_upgrade_no_previous_release': 'No completed update of this release is available to roll back.',
+    'native_upgrade_previous_packages_unavailable': 'Run sudo sli-rollback with the path to the previous trusted Debian kit, or make that version available to APT.',
+    'native_upgrade_rollback_package_failed': 'The previous data is restored. Check APT diagnostics and repeat sudo sli-rollback to finish installing the previous kit.',
     'native_upgrade_insufficient_space': 'There is not enough space for the checkpoint and isolated restore.',
     'native_upgrade_migration_interrupted': 'The migration was interrupted before durable completion; the verified checkpoint was restored to avoid replaying uncertain SQL.',
     'native_upgrade_recovery_pending': 'Checkpoint recovery is incomplete; run resume-package again to finish restoring the previous release.',
@@ -228,11 +231,12 @@ def digest(path, *, progress=False):
     return hashlib.sha256(trusted(path)).hexdigest()
 
 
-def sync_tree(root):
+def sync_tree(root, *, recursive=True):
     """Make saved recovery/checkpoint bytes durable before journalling success."""
     from deploy.linux.operation_wait import made_progress
 
-    for path in sorted(root.rglob('*'), reverse=True) + [root]:
+    descendants = sorted(root.rglob('*'), reverse=True) if recursive else []
+    for path in [*descendants, root]:
         require(not path.is_symlink())
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         try:
@@ -566,7 +570,7 @@ def cleanup_checkpoints():
                 finished.append(journal)
         commits = []
         for journal in finished:
-            if journal.value['status'] == 'committed':
+            if journal.value['status'] == 'committed' and not journal.value.get('kind'):
                 stamps = [event['utc'] for event in journal.value.get('events', [])
                           if event.get('phase') == 'committed' and event.get('step') == 'after']
                 # An undated accepted commit must not lose its recovery set.
@@ -1008,8 +1012,8 @@ def wait_restore_databases():
         raise
 
 
-def restore_checkpoint(journal):
-    """Restore one fenced transaction set; never rewind accepted new writes."""
+def restore_checkpoint(journal, *, committed_source=None):
+    """Replay a fenced set for automatic recovery or a separate operator intent."""
     from deploy.linux import backup, native_backup as native, native_install as install
     from deploy.linux import native_runtime as runtime, restore_existing as restore
     from deploy.linux import operation_wait
@@ -1020,14 +1024,20 @@ def restore_checkpoint(journal):
             'native_upgrade_committed_no_rollback')
     require(journal.value['status'] == 'recovering' and journal.value['step'] == 'before',
             'native_upgrade_recovery_intent_required')
-    metadata = journal.path / 'file-metadata.json'
-    require(digest(metadata) == journal.value['file_metadata_sha256'], 'native_upgrade_metadata_mismatch')
-    checkpoint = checkpoint_root(journal) / journal.value['checkpoint']
-    checkpoint_receipt(journal)
+    source_journal = committed_source or journal
+    if committed_source is not None:
+        require(journal.value.get('kind') == 'rollback' and journal.value.get('safety_backup')
+                and journal.value.get('checkpoint_transaction') == source_journal.path.name
+                and source_journal.value['status'] == 'committed' and finished_transaction(source_journal),
+                'native_upgrade_recovery_intent_required')
+    metadata = source_journal.path / 'file-metadata.json'
+    require(digest(metadata) == source_journal.value['file_metadata_sha256'], 'native_upgrade_metadata_mismatch')
+    checkpoint = checkpoint_root(source_journal) / source_journal.value['checkpoint']
+    checkpoint_receipt(source_journal)
     fence()
     with snapshot(checkpoint.parent, checkpoint.name, temporary_root=checkpoint.parent,
                   progress=operation_wait.made_progress) as (private, _):
-        require(digest(private / 'manifest.json') == journal.value['checkpoint_sha256'],
+        require(digest(private / 'manifest.json') == source_journal.value['checkpoint_sha256'],
                 'native_upgrade_checkpoint_mismatch')
         manifest, data, data_manifest = native.verify(private, checkpoint.name)
         require(manifest['consistency_point']['writers_fenced'] is True)
@@ -1035,11 +1045,18 @@ def restore_checkpoint(journal):
         # Rewrite captured bytes in place, preserving service ownership/modes.
         install.command(['systemctl', 'stop', *runtime.DATABASES])
         companion = private / 'companion'
-        for source, destination in ((companion / 'secrets', native.CONFIG / 'secrets'),
-                                    (companion / 'postgresql', POSTGRES_CONFIG)):
-            require(set(backup.content_inventory(source, exclude_manifest=False))
-                    == set(backup.content_inventory(destination, exclude_manifest=False)),
-                    'native_upgrade_configuration_inventory_changed')
+        configuration = [(companion / 'postgresql', POSTGRES_CONFIG)]
+        if committed_source is None:
+            configuration.insert(0, (companion / 'secrets', native.CONFIG / 'secrets'))
+        else:
+            from deploy.linux.native_restore import restore_credentials, secret_material
+
+            config = json.loads((companion / 'runtime.json').read_bytes())
+            restore_credentials(secret_material(companion, config), config)
+        for source, destination in configuration:
+            source_files = set(backup.content_inventory(source, exclude_manifest=False))
+            target_files = set(backup.content_inventory(destination, exclude_manifest=False))
+            require(source_files == target_files, 'native_upgrade_configuration_inventory_changed')
             for path in source.rglob('*'):
                 if path.is_file():
                     target = destination / path.relative_to(source)
@@ -1541,7 +1558,26 @@ def launch(candidate, transaction, *, action='prepare', arguments=None):
         os.execve(manifest['python'], [manifest['python'], '-I', '-B', str(script), action, *arguments],
                   install.environment())
         return
-    if pending:
+    if action == 'rollback':
+        # Current may already point to the previous release after an interrupted
+        # switch. Retry with the coordinator that wrote the operator intent.
+        retry = None
+        if TRANSACTIONS.exists():
+            for path in TRANSACTIONS.iterdir():
+                value = runtime.document(path / 'journal.json')
+                if value.get('kind') == 'rollback' and not value.get('services_restored'):
+                    retry = value
+                    break
+        if retry:
+            release = retry['candidate']
+            require(re.fullmatch(r'[a-z0-9][a-z0-9.+-]{0,63}', release), 'native_upgrade_journal_invalid')
+            saved = RECOVERY / release
+            manifest = runtime.document(saved / 'release/native-runtime.json')
+            manifest_digest = hashlib.sha256(runtime.trusted(saved / 'release/native-runtime.json')).hexdigest()
+        else:
+            root, manifest, manifest_digest = runtime.release()
+            saved = RECOVERY / root.name
+    elif pending:
         value = max(pending, key=lambda item: item['created_at_utc'])
         if value.get('reuse_existing') or value.get('dotnet_coordinator'):
             # Preparation and resumption must both use the new coordinator,
@@ -1583,7 +1619,7 @@ def launch(candidate, transaction, *, action='prepare', arguments=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('launch', 'prepare', 'dispatch', 'prepare-package', 'check-package',
-                                         'configure-package', 'reconcile', 'resume-package', 'reuse-existing', 'check-reuse'))
+                                         'configure-package', 'reconcile', 'resume-package', 'reuse-existing', 'check-reuse', 'rollback'))
     parser.add_argument('arguments', nargs='+')
     parser.add_argument('--target-version')
     parser.add_argument('--previous-version')
@@ -1593,7 +1629,7 @@ def main(argv=None):
         require(os.geteuid() == 0, 'native_root_required')
         os.umask(0o022)
         if args.action == 'launch':
-            if args.arguments[0] in {'reconcile', 'resume-package'}:
+            if args.arguments[0] in {'reconcile', 'resume-package', 'rollback'}:
                 launch(None, None, action=args.arguments[0], arguments=args.arguments[1:])
             else:
                 launch(*args.arguments)
@@ -1602,6 +1638,14 @@ def main(argv=None):
             launch(None, None, action=args.arguments[0], arguments=args.arguments[1:])
         else:
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+            if args.action == 'rollback':
+                from deploy.linux.native_restore import rollback
+
+                require(args.arguments[0] == 'latest' and len(args.arguments) <= 2)
+                os.umask(0o077)
+                rollback(Path(args.arguments[1]) if len(args.arguments) == 2 else None)
+                print('Previous version restored / Предыдущая версия восстановлена')
+                return 0
             if args.action in {'reuse-existing', 'check-reuse'}:
                 from deploy.linux import native_install as install, native_runtime as runtime
 

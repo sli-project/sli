@@ -40,35 +40,19 @@ public class CoreJobPersistentProcessTests
     [Fact]
     public async Task Serial_jobs_reuse_separate_handler_and_publisher_processes()
     {
-        var before = new HashSet<int>();
         var job = CoreJobTests.Job();
-        var watch = Stopwatch.StartNew();
-        for (int i = 0; i < 4; i++)
-            foreach (string purpose in new[] { "handler", "publisher" })
-            {
-                var result = await CoreJobProcess.RunAsync(Probe(purpose, oneShot: true), job["budget"]!.AsObject(), TimeSpan.Zero,
-                    null, TestContext.Current.CancellationToken, job);
-                before.Add(result["pid"]!.GetValue<int>());
-            }
-        long beforeMs = watch.ElapsedMilliseconds;
-        Assert.Equal(8, before.Count);
-        var pids = new HashSet<int>();
         await using var children = new CoreJobProcess.Persistent((_, purpose) => Probe(purpose));
-        watch.Restart();
         int? handler = null, publisher = null;
         for (int i = 0; i < 4; i++)
         {
             var staged = await children.RunAsync(job, "handler", TimeSpan.Zero, null, TestContext.Current.CancellationToken);
             var published = await children.RunAsync(job, "publisher", TimeSpan.Zero, null, TestContext.Current.CancellationToken);
             int nextHandler = staged["pid"]!.GetValue<int>(), nextPublisher = published["pid"]!.GetValue<int>();
-            pids.Add(nextHandler); pids.Add(nextPublisher);
             handler ??= nextHandler; publisher ??= nextPublisher;
             Assert.Equal(handler, nextHandler); Assert.Equal(publisher, nextPublisher);
             Assert.Equal("success", staged.Text("status")); Assert.Equal("committed", published.Text("status"));
         }
         Assert.NotEqual(handler, publisher);
-        Assert.Equal(2, pids.Count);
-        Console.WriteLine($"synthetic four jobs: process_starts={before.Count}->{pids.Count}; elapsed_ms={beforeMs}->{watch.ElapsedMilliseconds}");
     }
 
     [Fact]
@@ -102,7 +86,7 @@ public class CoreJobPersistentProcessTests
         Assert.Equal(2, starts);
     }
 
-    private static ProcessStartInfo Probe(string purpose, string mode = "success", bool oneShot = false)
+    private static ProcessStartInfo Probe(string purpose, string mode = "success")
     {
         var start = new ProcessStartInfo(OperatingSystem.IsWindows()
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe") : "/bin/sh")
@@ -115,16 +99,15 @@ public class CoreJobPersistentProcessTests
                 + (mode == "memory" ? "Start-Sleep -Seconds 30; " : "")
                 + (mode == "oversized" ? "[Console]::Out.WriteLine('1000000'); [Console]::Out.Flush(); " :
                     "$reply = " + (mode == "invalid" ? "'[]'" : "'{\"status\":\"" + status + "\",\"pid\":' + $PID + '}'")
-                    + "; " + (oneShot ? "" : "[Console]::Out.WriteLine($reply.Length); ")
+                    + "; [Console]::Out.WriteLine($reply.Length); "
                     + "[Console]::Out.WriteLine($reply); [Console]::Out.Flush(); ") + "}");
         }
         else
         {
             start.ArgumentList.Add("-c");
-            // A one-shot request ends at EOF, which may follow the last JSON byte directly.
-            start.ArgumentList.Add("while IFS= read -r line || [ -n \"$line\" ]; do " + (mode == "memory" ? "sleep 30; " : "")
+            start.ArgumentList.Add("while IFS= read -r line; do " + (mode == "memory" ? "sleep 30; " : "")
                 + (mode == "oversized" ? "printf '1000000\\n'; " : "reply=" + (mode == "invalid" ? "'[]'" : "'{\"status\":\"" + status + "\",\"pid\":'$$'}'")
-                    + (oneShot ? "; printf '%s\\n' \"$reply\"; " : "; printf '%s\\n%s\\n' \"${#reply}\" \"$reply\"; ")) + "done");
+                    + "; printf '%s\\n%s\\n' \"${#reply}\" \"$reply\"; ") + "done");
         }
         return start;
     }

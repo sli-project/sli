@@ -16,7 +16,7 @@ public sealed class OwnerRecoveryAdmission(TimeProvider time)
     private readonly Dictionary<string, (Budget State, LinkedListNode<string> Node)> addresses = new(StringComparer.Ordinal);
     private readonly LinkedList<string> order = [];
 
-    public async Task<Principal?> VerifyAsync(string address, Func<Task<Principal?>> authenticate)
+    public async Task<T?> VerifyAsync<T>(string address, Func<Task<T?>> authenticate) where T : class
     {
         Budget state;
         lock (sync)
@@ -44,7 +44,7 @@ public sealed class OwnerRecoveryAdmission(TimeProvider time)
             Touch(address);
         }
         bool completed = false;
-        Principal? principal = null;
+        T? principal = null;
         try
         {
             principal = await authenticate();

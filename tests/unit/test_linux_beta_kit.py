@@ -3,10 +3,46 @@ import json
 import os
 import shutil
 import subprocess
+import tarfile
 
 import pytest
 
 from deploy.linux import build_beta_kit as kit, native_plugins
+
+
+@pytest.mark.parametrize('tampered', [False, True])
+def test_copy_agent_checks_packaged_bytes(tmp_path, tampered):
+    source = tmp_path / 'agent'
+    source.mkdir()
+    payloads = {'SliAgent.msi': b'synthetic MSI', 'SliAgent-publish-win-x64.zip': b'synthetic ZIP'}
+    for name, body in payloads.items():
+        (source / name).write_bytes(body)
+    sums = ''.join(f'{hashlib.sha256(body).hexdigest()}  {name}\n' for name, body in payloads.items())
+    (source / 'SHA256SUMS').write_text(sums, encoding='utf-8-sig')
+    destination = tmp_path / 'installers'
+    if tampered:
+        (source / 'SliAgent.msi').write_bytes(b'changed MSI')
+        with pytest.raises(ValueError, match='Agent SHA-256 verification failed'):
+            kit.include_agent(source, destination)
+    else:
+        kit.include_agent(source, destination)
+        assert {path.name: path.read_bytes() for path in destination.iterdir()} == {
+            **payloads, 'SHA256SUMS': sums.encode('ascii'),
+        }
+
+
+def test_archive_contains_the_installer_and_verified_kit_bytes(tmp_path):
+    files = {'install-beta-kit': b'synthetic script', 'sli-fixture.deb': b'synthetic package',
+             'manifest.json': b'{}', 'SHA256SUMS': b'synthetic checksums'}
+    for name, body in files.items():
+        (tmp_path / name).write_bytes(body)
+
+    kit.archive_kit(tmp_path)
+
+    with tarfile.open(tmp_path / 'sli-debian-beta-kit.tar.gz') as archive:
+        assert {member.name: archive.extractfile(member).read() for member in archive} == {
+            'sli-debian-beta-kit/' + name: body for name, body in files.items()
+        }
 
 
 def test_copies_only_pinned_debs_and_leaves_cache_intact(tmp_path):
@@ -79,6 +115,61 @@ def test_builder_reports_unusable_postgresql_before_export(tmp_path, monkeypatch
     with pytest.raises(ValueError, match=f'initdb.*{expected}'):
         kit.build(tmp_path, 'HEAD', tmp_path, tmp_path / 'kit', tmp_path / 'pg')
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize('explicit', [False, True])
+def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, explicit):
+    commit = 'a' * 40
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    source = tmp_path / 'agent.msi' if explicit else cache / f'SliAgent-{commit}.msi'
+    source.write_bytes(b'agent MSI bytes')
+    kit.write_json(cache / f'SliAgent-{commit}.msi.json', {
+        'source_commit': commit, 'sha256': kit.sha256(source),
+    })
+    work = tmp_path / 'work'
+    work.mkdir()
+
+    staged = kit.stage_agent_msi(cache, commit, work, source if explicit else None)
+    source.write_bytes(b'changed after verification')
+
+    assert staged.read_bytes() == b'agent MSI bytes'
+
+
+@pytest.mark.parametrize(('problem', 'message'), [
+    ('missing', 'Missing trusted agent MSI manifest'),
+    ('hash', 'Agent MSI SHA-256 mismatch'),
+    ('commit', 'Agent MSI manifest does not identify source commit'),
+])
+def test_beta_kit_rejects_unverified_agent_msi(tmp_path, monkeypatch, problem, message):
+    commit = 'a' * 40
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    source = cache / f'SliAgent-{commit}.msi'
+    source.write_bytes(b'agent MSI bytes')
+    if problem != 'missing':
+        kit.write_json(cache / f'{source.name}.json', {
+            'source_commit': 'b' * 40 if problem == 'commit' else commit,
+            'sha256': '0' * 64 if problem == 'hash' else kit.sha256(source),
+        })
+    monkeypatch.setattr(kit.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(kit.platform, 'machine', lambda: 'x86_64')
+    monkeypatch.setattr(kit.os, 'geteuid', lambda: 1000, raising=False)
+    monkeypatch.setattr(kit.os, 'umask', lambda mask: None)
+    monkeypatch.setattr(kit, 'postgres_environment', lambda pg_bin: {})
+    monkeypatch.setattr(kit, 'git', lambda root, operation, *args: commit if operation == 'rev-parse' else '123')
+
+    def export_commit(root, ref, checkout, archive):
+        installer = checkout / 'server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1'
+        installer.parent.mkdir(parents=True)
+        installer.touch()
+
+    monkeypatch.setattr(kit, 'export_commit', export_commit)
+    output = tmp_path / 'kit'
+    with pytest.raises(ValueError, match=message):
+        kit.build(kit.ROOT, commit, cache, output, tmp_path)
+
+    assert not output.exists()
 
 
 def test_generated_linux_restore_must_use_hashes_from_the_committed_lock():
@@ -161,8 +252,8 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     result = subprocess.run([server], capture_output=True, text=True, check=True, env={'PATH': '/usr/bin:/bin'})
     assert result.stdout.strip() == 'beta kit smoke'
 
-@pytest.mark.skipif(not shutil.which('bash'), reason='Bash required')
-@pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
+@pytest.mark.skipif(os.name != 'posix' or not shutil.which('bash'), reason='Linux shell tools required')
+@pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
 def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     source = kit.ROOT / 'deploy/linux/install-beta-kit'
     assert source.is_file(), 'The Debian beta kit needs a standalone install helper'
@@ -193,7 +284,9 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     bin_dir.mkdir()
     apt_calls = tmp_path / 'apt-calls'
     sudo = bin_dir / 'sudo'
-    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n', encoding='utf-8', newline='\n')
+    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n'
+                    'if [[ $SCENARIO == apt_failure && " $* " == *" install "* ]]; then exit 1; fi\n',
+                    encoding='utf-8', newline='\n')
     sudo.chmod(0o755)
     dpkg_deb = bin_dir / 'dpkg-deb'
     dpkg_deb.write_text('''#!/usr/bin/env bash
@@ -208,8 +301,10 @@ esac
     dpkg.write_text('#!/usr/bin/env bash\ntest "$*" = "--compare-versions 2026e gt 2026c"\n', encoding='utf-8', newline='\n')
     for stub in (dpkg_deb, query, dpkg):
         stub.chmod(0o755)
-    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=apt_calls.as_posix())
-    run = subprocess.run([shutil.which('bash'), './install-beta-kit'], cwd=extracted, env=env, capture_output=True, text=True)
+    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls),
+               SCENARIO=scenario)
+    run = subprocess.run(['bash', './install-beta-kit', '--port', '9443'],
+                         cwd=extracted, env=env, capture_output=True, text=True)
     if scenario in {'valid', 'newer_vendor'}:
         assert run.returncode == 0, run.stderr
         if scenario == 'newer_vendor':
@@ -217,8 +312,12 @@ esac
         assert apt_calls.read_text(encoding='utf-8').splitlines() == [
             'apt-get update', 'env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes '
             '-o APT::Get::allow-Downgrades=false -o Dpkg::Options::=--force-confdef '
-            f'-o Dpkg::Options::=--force-confold install --fix-broken ./{deb.name}',
+            f'-o Dpkg::Options::=--force-confold install --no-remove --fix-broken ./{deb.name}',
+            '/usr/sbin/sli-setup --port 9443',
         ]
+    elif scenario == 'apt_failure':
+        assert run.returncode != 0
+        assert '/usr/sbin/sli-setup' not in apt_calls.read_text(encoding='utf-8')
     else:
         assert run.returncode != 0
         assert 'SLI beta kit:' in run.stderr
@@ -265,6 +364,7 @@ def test_install_plan_keeps_newer_system_packages_and_installs_pinned_dependenci
     sudo.write_text('''#!/usr/bin/env bash
 set -eu
 if [[ $1 == apt-get && $2 == update ]]; then exit 0; fi
+if [[ $# == 1 && $1 == /usr/sbin/sli-setup ]]; then exit 0; fi
 test "$1 $2 $3" = 'env DEBIAN_FRONTEND=noninteractive apt-get'
 shift 3
 exec "$REAL_APT" -s -o Dir::State::status="$FIXTURE_ADMIN/status" -o Dir::State="$FIXTURE_ADMIN" \\

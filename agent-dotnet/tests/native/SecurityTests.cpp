@@ -150,6 +150,22 @@ int wmain(int argc, wchar_t** argv) {
         CommitFixture(stageRoot, next.transactionId);
         Check(FileExists(next.enrollmentPath), "commit_retains_pending_input");
         Reject([&] { RollbackFixture(stageRoot, next.transactionId); }, "committed_not_removed");
+
+        const auto state = stageRoot + L"\\state";
+        const auto external = root + L"\\external-" + GenerateTransactionId();
+        Check(CreateDirectoryW(state.c_str(), nullptr) != 0, "uninstall_state_fixture");
+        Check(CreateDirectoryW((state + L"\\queue").c_str(), nullptr) != 0, "uninstall_queue_fixture");
+        Check(CreateDirectoryW(external.c_str(), nullptr) != 0, "uninstall_external_fixture");
+        WriteSource(state + L"\\identity-key.json", "synthetic protected key");
+        WriteSource(state + L"\\queue\\packet.json", "synthetic packet");
+        WriteSource(external + L"\\untouched.txt", "synthetic external data");
+        Junction(state + L"\\junction", external);
+        CleanFixture(stageRoot, false);
+        Check(!FileExists(state), "uninstall_removes_identity_and_state");
+        Check(FileExists(stageRoot + L"\\retained-queue-state\\packet.json"), "uninstall_retains_queue_by_default");
+        Check(FileExists(external + L"\\untouched.txt"), "uninstall_does_not_follow_junction");
+        CleanFixture(stageRoot, true);
+        Check(!FileExists(stageRoot + L"\\retained-queue-state"), "uninstall_explicitly_purges_retained_queue");
 #endif
         std::cout << "PASS " << checks << " snapshot/staging checks in synthetic fixture policy\n";
         return 0;

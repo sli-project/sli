@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Npgsql;
+using Sli.Server.Auth.InitialOwner;
 using Sli.Server.Access;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Auth.Lifecycle.Security;
@@ -112,13 +113,15 @@ public sealed class UserAdministrationService(IPostgresConnectionFactory connect
         long userId = (long)targetId;
         await using var connection = await connections.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using var select = new NpgsqlCommand("select id,username,is_active from auth_users where id=@id for update", connection, transaction);
+        await using var select = new NpgsqlCommand("select id,username,is_active,password_hash from auth_users where id=@id for update", connection, transaction);
         select.Parameters.AddWithValue("id", userId);
         string username;
         await using (var reader = await select.ExecuteReaderAsync(ct))
         {
             if (!await reader.ReadAsync(ct)) throw new UserAdministrationException("user_not_found");
             if (!reader.GetBoolean(2)) throw new UserAdministrationException("cannot_reset_password_for_disabled_user");
+            if (InitialAdminPassword.IsPending(reader.GetString(3)))
+                throw new UserAdministrationException("initial_password_change_required");
             username = reader.GetString(1);
         }
         await using var update = new NpgsqlCommand("update auth_users set password_hash=@hash,updated_at=now() where id=@id", connection, transaction);

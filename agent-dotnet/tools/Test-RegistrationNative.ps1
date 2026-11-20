@@ -33,4 +33,23 @@ foreach($suite in $suites){
     if($suite.name -eq 'Security'){& $binary $fixture}else{& $binary}
     if($LASTEXITCODE -ne 0){throw ($suite.name+' tests failed')}
 }
+# Exercise the command's move on synthetic state without running its MSI/service entry point.
+$consoleScript=Join-Path $project '../server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1'
+$parseErrors=$null
+$syntax=[Management.Automation.Language.Parser]::ParseFile($consoleScript,[ref]$null,[ref]$parseErrors)
+if($parseErrors.Count){throw 'Console install command must parse'}
+$move=$syntax.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Move-PreviousAgentState'},$false)
+. ([scriptblock]::Create($move.Extent.Text))
+$root=Join-Path $fixture ('reconnect-'+[guid]::NewGuid().ToString('N'))
+$state=Join-Path $root 'state'
+$archive=Join-Path $root 'previous'
+New-Item -ItemType Directory $root,$state | Out-Null
+[IO.File]::WriteAllText((Join-Path $state 'identity.json'),'synthetic old identity')
+if(!(Move-PreviousAgentState $state $archive)){throw 'Existing agent state was not moved'}
+New-Item -ItemType Directory $state | Out-Null
+if((Test-Path -LiteralPath (Join-Path $state 'identity.json')) -or
+    [IO.File]::ReadAllText((Join-Path $archive 'identity.json')) -ne 'synthetic old identity'){
+    throw 'Reconnect did not preserve the old identity separately from the new state'
+}
+Write-Output 'PASS reconnect preserves previous identity outside active state'
 # This executes only fixture binaries, never Windows Installer or the production custom-action DLL.

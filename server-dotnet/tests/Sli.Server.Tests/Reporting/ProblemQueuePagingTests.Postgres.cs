@@ -181,6 +181,35 @@ public sealed partial class ProblemQueuePagingTests
             var result = await repository.FindingsAsync(query, new(Context().Access), ct);
             Assert.Equal(expected ? 1 : 0, result["items"]!.AsArray().Count);
         }
+        await PostCollectionPostgres.Sql(admin, """
+            update findings set status=case id when 206 then 'confirmed' else 'repeated' end where id in (206,207);
+            """, ct);
+        foreach (var (status, ids) in new (string, long[])[] { ("active", [209, 208]), ("new", [207, 206, 205]) }) {
+            var parameters = new JsonObject { ["status"] = status };
+            var query = SecurityProblemsReader.Input(Context(parameters) with { DomainIds = [domainId] }) with {
+                GroupQueue = false, Limit = ids.Length, Compact = true
+            };
+            var result = await repository.FindingsAsync(query, new(Context().Access), ct);
+            Assert.Equal(ids, result["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
+        }
+        await PostCollectionPostgres.Sql(admin, """
+            update findings set assigned_to='synthetic-owner',status_reason='Earlier decision' where id=206;
+            """, ct);
+        var close = FindingStatusInput.Parse(new() { ["status"] = "closed" }, "synthetic-operator");
+        var resolution = await repository.StatusAsync(206, close, "synthetic-operator", ct);
+        var resolved = resolution["finding"]!;
+        Assert.Equal("closed", resolved["status"]!.ToString());
+        Assert.NotNull(resolved["closed_at"]);
+        Assert.Equal("synthetic-owner", resolved["assigned_to"]!.ToString());
+        Assert.Equal("Earlier decision", resolved["status_reason"]!.ToString());
+        var entry = Assert.Single(resolved["status_history"]!.AsArray())!;
+        Assert.Equal("confirmed", entry["old_status"]!.ToString());
+        Assert.Equal("closed", entry["new_status"]!.ToString());
+        Assert.Equal("synthetic-operator", entry["changed_by"]!.ToString());
+        Assert.Null(entry["note"]);
+        var retry = await repository.StatusAsync(206, close, "synthetic-operator", ct);
+        Assert.False(retry["changed"]!.GetValue<bool>());
+        Assert.Single(retry["finding"]!["status_history"]!.AsArray());
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 

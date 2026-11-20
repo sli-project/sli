@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.FileProviders;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
+using Sli.Server.Auth.InitialOwner;
 using Sli.Server.Domains;
 
 namespace Sli.Server.Hosting;
@@ -13,7 +14,8 @@ public static partial class StaticHosting
     // Set Sli:WebRoot to the existing web/app directory. No profile or working-directory fallback.
     public static IEndpointRouteBuilder MapSliStaticAssets(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/login", context => SendFileAsync(context, "login.html", "text/html; charset=utf-8", null));
+        endpoints.MapGet("/login", LoginAsync);
+        endpoints.MapGet(InitialAdminPassword.ChangePage, LoginAsync);
         endpoints.MapGet("/sli-login.css", context => SendFileAsync(context, "sli-login.css", "text/css; charset=utf-8", "no-cache"));
         endpoints.MapGet("/sli-login.js", context => SendFileAsync(context, "sli-login.js", "application/javascript; charset=utf-8", "no-cache"));
         foreach (string name in new[] { "collector-server.svg", "feature-brain.svg", "feature-eye.svg", "feature-shield.svg", "sli-logo.svg" })
@@ -24,12 +26,41 @@ public static partial class StaticHosting
         endpoints.MapGet("/", ReactAsync);
         endpoints.MapGet("/app", ReactAsync);
         endpoints.MapGet("/app/{**path}", ReactAsync);
+        foreach (string name in new[] { "SliAgent.msi", "SliAgent-publish-win-x64.zip", "SHA256SUMS" })
+            endpoints.MapGet("/app/installers/" + name, context => ServeAppAsync(context, name));
         foreach (string route in new[] { "access", "access-center", "access-requests", "access-user", "admin", "ad-accounts", "ad-report", "agents", "cases", "computers-report", "computers-v5-report", "computers-v6-report", "entities", "events", "extensions", "gpo-report", "gpo-v2-report", "notifications", "objects", "operations", "platform-settings", "plugins", "privileged-report", "problems", "project-readiness", "report", "report-builder", "report-management", "report-editor", "report-studio", "reports", "scenarios", "security-events-report", "security-overview", "settings", "investigations", "setup", "ui-kit", "users-report", "users-v2-report", "vpn-connections", "vpn-report", "what-where-when-report", "workstations" })
             endpoints.MapGet(route == "reports" ? "/reports" : "/" + route + "/{**path}", ReactAsync);
         return endpoints;
     }
 
-    private static async Task ReactAsync(HttpContext context)
+    private static async Task LoginAsync(HttpContext context)
+    {
+        string? token = InitialAdminPassword.RequestToken(context);
+        var services = context.RequestServices;
+        var transport = services.GetRequiredService<TransportGate>();
+        bool changePage = context.Request.Path == InitialAdminPassword.ChangePage;
+        if (changePage)
+        {
+            if (token is null || !transport.IsSecureTransport(context)
+                || !await services.GetRequiredService<InitialAdminPassword>().CanChangeAsync(token, context.RequestAborted))
+            {
+                if (token is not null)
+                    context.Response.Headers.SetCookie = AuthEndpoints.Cookie("", 0, true);
+                context.Response.Redirect("/login");
+                return;
+            }
+        }
+        else if (token is not null)
+        {
+            context.Response.Redirect(InitialAdminPassword.ChangePage + context.Request.QueryString);
+            return;
+        }
+        await SendFileAsync(context, "login.html", "text/html; charset=utf-8", null);
+    }
+
+    private static Task ReactAsync(HttpContext context) => ServeAppAsync(context);
+
+    private static async Task ServeAppAsync(HttpContext context, string? installer = null)
     {
         var ct = context.RequestAborted;
         if (context.RequestServices.GetRequiredService<AuthRequestPolicy>().AuthRequired)
@@ -46,6 +77,11 @@ public static partial class StaticHosting
                 context.Response.Redirect("/");
                 return;
             }
+        }
+        if (installer is not null)
+        {
+            await SendFileAsync(context, "installers/" + installer, "application/octet-stream", "no-store", installer);
+            return;
         }
         if (context.Request.Path != "/" && !context.Request.Path.StartsWithSegments("/app"))
         {
@@ -105,7 +141,7 @@ public static partial class StaticHosting
             ? new PhysicalFileProvider(root) : null;
     }
 
-    private static async Task SendFileAsync(HttpContext context, string path, string contentType, string? cache)
+    private static async Task SendFileAsync(HttpContext context, string path, string contentType, string? cache, string? downloadName = null)
     {
         using var provider = GetProvider(context);
         IFileInfo? file = provider?.GetFileInfo(path);
@@ -114,10 +150,10 @@ public static partial class StaticHosting
             await DomainHttp.WriteAsync(context, new { error = "file_not_found" }, 404, context.RequestAborted);
             return;
         }
-        await WriteFileAsync(context, file, contentType, cache);
+        await WriteFileAsync(context, file, contentType, cache, downloadName);
     }
 
-    private static async Task WriteFileAsync(HttpContext context, IFileInfo file, string contentType, string? cache)
+    private static async Task WriteFileAsync(HttpContext context, IFileInfo file, string contentType, string? cache, string? downloadName = null)
     {
         string? nonce = null;
         if (contentType.StartsWith("text/html", StringComparison.Ordinal))
@@ -132,7 +168,7 @@ public static partial class StaticHosting
             return;
         }
         DomainHttp.ApplyHeaders(context, cache, nonce);
-        await Results.File(file.CreateReadStream(), contentType).ExecuteAsync(context);
+        await Results.File(file.CreateReadStream(), contentType, downloadName).ExecuteAsync(context);
     }
 
     [GeneratedRegex("<(script|style)(?![^>]*\\bnonce=)(?=[\\s>])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
