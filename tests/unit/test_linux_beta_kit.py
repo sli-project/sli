@@ -109,6 +109,15 @@ def test_modified_cache_package_aborts_before_copy(tmp_path):
     assert not list(output.iterdir())
 
 
+@pytest.mark.parametrize(('filename', 'asset_name'), [
+    ('sli-runtime-fixture_1~deb13_amd64.deb', 'sli-runtime-fixture_1.deb13_amd64.deb'),
+    ('sli-runtime-fixture_1-deb13_amd64.deb', 'sli-runtime-fixture_1-deb13_amd64.deb'),
+    ('.sli-runtime fixture.deb.', 'sli-runtime.fixture.deb'),
+])
+def test_github_release_asset_name(filename, asset_name):
+    assert kit.github_release_asset_name(filename) == asset_name
+
+
 @pytest.mark.parametrize('tampered', [False, True])
 def test_fetch_inputs_verifies_packages_before_they_enter_cache(tmp_path, monkeypatch, tampered):
     runtime = b'pinned runtime'
@@ -116,9 +125,11 @@ def test_fetch_inputs_verifies_packages_before_they_enter_cache(tmp_path, monkey
     row = {'name': 'libfixture', 'filename': 'pool/main/libf/libfixture/libfixture_1_amd64.deb',
            'sha256': hashlib.sha256(package).hexdigest(), 'version': '1',
            'url': 'http://deb.debian.org/debian/pool/main/libf/libfixture/libfixture_1_amd64.deb'}
+    runtime_version = '1~deb13'
     pins = {'roots': [], 'packages': [row], 'dependency_edges': [], 'captured_utc': '2020-01-02T03:04:05Z',
-            'runtime_build': {'id': 'fixture', 'version': '1', 'debian_artifacts': [], 'debian_runtime': [row]},
-            'runtime_artifact': {'runtime_id': 'fixture', 'version': '1', 'sha256': hashlib.sha256(runtime).hexdigest()}}
+            'runtime_build': {'id': 'fixture', 'version': runtime_version, 'debian_artifacts': [], 'debian_runtime': [row]},
+            'runtime_artifact': {'runtime_id': 'fixture', 'version': runtime_version,
+                                 'sha256': hashlib.sha256(runtime).hexdigest()}}
     urls = []
 
     def download(argv):
@@ -140,8 +151,11 @@ def test_fetch_inputs_verifies_packages_before_they_enter_cache(tmp_path, monkey
     else:
         kit.fetch_inputs(tmp_path, pins)
         assert (tmp_path / name).read_bytes() == package
-    assert urls[-2:] == [row['url'].replace('http:', 'https:'),
-                         f"https://snapshot.debian.org/archive/debian/20200102T030405Z/{row['filename']}"]
+    assert (tmp_path / 'sli-runtime-fixture_1~deb13_amd64.deb').read_bytes() == runtime
+    assert urls == ['https://github.com/sli-project/sli/releases/download/'
+                    'beta-input-fixture/sli-runtime-fixture_1.deb13_amd64.deb',
+                    row['url'].replace('http:', 'https:'),
+                    f"https://snapshot.debian.org/archive/debian/20200102T030405Z/{row['filename']}"]
     assert list(tmp_path.glob('.beta-download-*')) == []
 
 

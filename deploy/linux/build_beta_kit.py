@@ -164,11 +164,16 @@ def package_urls(row, captured_utc):
     return url or f'https://{mirror}/{repository}/{filename}', snapshot
 
 
+def github_release_asset_name(filename):
+    return re.sub(r'[^A-Za-z0-9._-]', '.', filename).strip('.')
+
+
 def fetch_inputs(cache, pins):
     artifact, runtime_filename, locked = input_pins(pins)
     # The accepted runtime is a binary input, pinned independently of its mirror.
+    asset_name = github_release_asset_name(runtime_filename)
     runtime_url = ('https://github.com/sli-project/sli/releases/download/'
-                   f"beta-input-{artifact['runtime_id']}/{runtime_filename}")
+                   f"beta-input-{artifact['runtime_id']}/{asset_name}")
     sources = {runtime_filename: (runtime_url,)}
     sources.update({Path(row['filename']).name: package_urls(row, pins['captured_utc']) for row in package_rows(pins)})
     cache.mkdir(parents=True, exist_ok=True)
