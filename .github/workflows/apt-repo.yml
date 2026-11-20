@@ -1,0 +1,94 @@
+name: Publish SLI APT repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Full SHA on main (default is the dispatched main commit)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sli-apt-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/beta-kit-build.yml
+    with:
+      commit: ${{ inputs.commit || github.sha }}
+      upload_artifact: true
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: apt-publish
+    outputs:
+      artifact_name: ${{ steps.artifact.outputs.name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sli-debian-beta-kit-${{ needs.build.outputs.commit }}
+          path: ${{ runner.temp }}/sli-beta-kit
+      - name: Extract SLI packages from the verified kit
+        shell: bash
+        working-directory: ${{ runner.temp }}/sli-beta-kit
+        run: |
+          set -euo pipefail
+          sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
+          mkdir "$RUNNER_TEMP/sli-apt-debs"
+          tar -xzf sli-debian-beta-kit.tar.gz -C "$RUNNER_TEMP/sli-apt-debs" \
+            --strip-components=1 --wildcards --no-wildcards-match-slash -- \
+            'sli-debian-beta-kit/sli_*.deb' 'sli-debian-beta-kit/sli-*.deb'
+      - name: Sign the APT repository
+        shell: bash
+        env:
+          SLI_APT_SIGNING_KEY: ${{ secrets.SLI_APT_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SLI_APT_SIGNING_KEY" ]]; then
+            echo "::error::The apt-publish environment requires SLI_APT_SIGNING_KEY"
+            exit 1
+          fi
+          key=$(mktemp "$RUNNER_TEMP/sli-apt-signing.XXXXXXXX")
+          trap 'rm -f -- "$key"' EXIT
+          printf '%s\n' "$SLI_APT_SIGNING_KEY" > "$key"
+          unset SLI_APT_SIGNING_KEY
+          printf 'SLI APT package sizes (bytes)\n\n```\n' >> "$GITHUB_STEP_SUMMARY"
+          python3 -m deploy.linux.build_apt_repo \
+            --debs "$RUNNER_TEMP/sli-apt-debs" \
+            --output "$RUNNER_TEMP/sli-apt-site" --signing-key "$key" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Name the Pages artifact
+        id: artifact
+        shell: bash
+        run: printf 'name=github-pages-apt-%s\n' "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/sli-apt-site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        with:
+          artifact_name: ${{ needs.publish.outputs.artifact_name }}

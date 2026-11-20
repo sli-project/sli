@@ -35,6 +35,40 @@ PostgreSQL работает на хосте.
 места** на локальном томе ext4 или XFS. Разрешите входящие HTTPS-подключения
 на порт 443 или на порт, который напечатает установщик.
 
+### Установка из apt-репозитория
+
+Этот способ доступен после публикации репозитория. Нужны `curl` и источники APT,
+из которых доступны закреплённые пакеты PostgreSQL 18 от PGDG и точные версии
+системных библиотек для `sli-runtime`. Стандартные источники Debian 13 содержат
+PostgreSQL 17. Если требуемых версий нет, воспользуйтесь архивом ниже.
+Вместо `<FINGERPRINT>` укажите опубликованный полный отпечаток ключа подписи.
+
+```sh
+(
+  set -eu
+  keyring=$(mktemp)
+  trap 'rm -f "$keyring"' EXIT
+  curl -fsSL https://sli-project.github.io/sli/sli-archive-keyring.gpg -o "$keyring"
+  sudo install -D -m 0644 "$keyring" /etc/apt/keyrings/sli-archive-keyring.gpg
+)
+printf '%s\n' 'deb [arch=amd64 signed-by=/etc/apt/keyrings/sli-archive-keyring.gpg,<FINGERPRINT>] https://sli-project.github.io/sli trixie main' | sudo tee /etc/apt/sources.list.d/sli.list >/dev/null
+```
+
+Установите пакеты и выполните первоначальную настройку:
+
+```sh
+sudo apt update && sudo apt install sli
+sudo sli-setup
+```
+
+Обновление установленной SLI:
+
+```sh
+sudo apt update && sudo apt upgrade
+```
+
+### Установка из архива
+
 1. Скачайте `sli-debian-beta-kit.tar.gz` и `SHA256SUMS` из одного выпуска
    `beta-…` в разделе [Releases](https://github.com/sli-project/sli/releases).
    В описании выпуска указаны исходный коммит и ссылка на сборку GitHub Actions.

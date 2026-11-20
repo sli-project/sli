@@ -35,6 +35,40 @@ Use clean **Debian 13 amd64** with sudo, network access to Debian repositories,
 after APT installs the packages. Allow inbound HTTPS on port 443 or the port
 printed by the installer.
 
+### Install from the APT repository
+
+Use this path once the repository is published. You need `curl` and APT sources
+that provide the pinned PostgreSQL 18 packages from PGDG and the exact system
+library versions required by `sli-runtime`. The standard Debian 13 sources ship
+PostgreSQL 17. If the required versions are unavailable, use the archive below.
+Use the published full signing key fingerprint for `<FINGERPRINT>`.
+
+```sh
+(
+  set -eu
+  keyring=$(mktemp)
+  trap 'rm -f "$keyring"' EXIT
+  curl -fsSL https://sli-project.github.io/sli/sli-archive-keyring.gpg -o "$keyring"
+  sudo install -D -m 0644 "$keyring" /etc/apt/keyrings/sli-archive-keyring.gpg
+)
+printf '%s\n' 'deb [arch=amd64 signed-by=/etc/apt/keyrings/sli-archive-keyring.gpg,<FINGERPRINT>] https://sli-project.github.io/sli trixie main' | sudo tee /etc/apt/sources.list.d/sli.list >/dev/null
+```
+
+Install the packages and run first-time setup:
+
+```sh
+sudo apt update && sudo apt install sli
+sudo sli-setup
+```
+
+Update an existing installation:
+
+```sh
+sudo apt update && sudo apt upgrade
+```
+
+### Install from the archive
+
 1. Download `sli-debian-beta-kit.tar.gz` and `SHA256SUMS` from the same
    `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
    The release notes link to the GitHub Actions run and identify its source commit.
