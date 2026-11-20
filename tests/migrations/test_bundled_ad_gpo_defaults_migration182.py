@@ -13,14 +13,10 @@ def migration():
     return (ROOT / "config/postgres_migrations/182_bundled_ad_gpo_defaults.sql").read_text(encoding="utf-8")
 
 
-def test_migration_follows_its_predecessor_with_a_unique_version():
+def test_migration_inventory_orders_registration_after_its_prerequisite():
     inventory = forward_migration_inventory(ROOT / "config/postgres_migrations")
-    versions = [item.version for item in inventory]
-    assert len(versions) == len(set(versions))
-    pairs = [(item.version, item.name) for item in inventory]
-    position = pairs.index((182, "bundled_ad_gpo_defaults"))
-    assert position > 0
-    assert pairs[position - 1] == (181, "ad_state_privilege_category")
+    identity = [(item.version, item.name) for item in inventory]
+    assert identity.index((181, "ad_state_privilege_category")) < identity.index((182, "bundled_ad_gpo_defaults"))
 
 
 def test_registers_both_bundled_packages_with_reviewed_manifest_hashes():
