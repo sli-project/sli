@@ -163,6 +163,23 @@ public sealed class WindowsAuditTests : IDisposable
     }
 
     [Fact]
+    public void DcOptOutSkipsWritesAndOptInOnlyChangesAuditSubcategories()
+    {
+        _api.CommandLine = 0;
+        var before = new Dictionary<string, int>(_api.Values);
+        Manager().Reconcile(DcPolicy(false), Helpers.Now);
+        Assert.Equal(0, _api.Writes);
+
+        Manager().Reconcile(DcPolicy(), Helpers.Now);
+        Assert.True(_api.Writes > 0);
+        Assert.Equal(0, _api.RootWrites);
+        Assert.Equal(0, _api.CommandLine);
+
+        Manager().Reconcile(DcPolicy(false), Helpers.Now);
+        Assert.All(before, pair => Assert.Equal(pair.Value, _api.Values[pair.Key]));
+    }
+
+    [Fact]
     public void DcReportsPolicyThatRejectsWriteAndDoesNotRetryOrRestoreOverIt()
     {
         _api.IgnoreWrites = true;

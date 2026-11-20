@@ -12,10 +12,15 @@ public sealed partial class AgentManagementService
     public async Task<JsonElement> CreateConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx,
         JsonElement payload, string actor, HttpContext context, CancellationToken ct)
     {
-        if (payload.ValueKind != JsonValueKind.Object || payload.EnumerateObject().Count() != 1
+        if (payload.ValueKind != JsonValueKind.Object
+            || payload.EnumerateObject().Any(property => property.Name is not ("host_limit" or "manage_windows_audit"))
+            || payload.EnumerateObject().Count() != (payload.TryGetProperty("manage_windows_audit", out var auditSetting) ? 2 : 1)
             || !payload.TryGetProperty("host_limit", out var count) || count.ValueKind != JsonValueKind.Number
             || !count.TryGetInt32(out int limit) || limit is < 1 or > 100)
             throw new AgentControlException("invalid_agent_console_host_limit");
+        if (auditSetting.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
+            throw new AgentControlException("invalid_agent_collection_policy");
+        bool manageWindowsAudit = auditSetting.ValueKind != JsonValueKind.False;
 
         var package = await AgentConsolePackage.ReadAsync(context, ct);
         var id = Guid.NewGuid();
@@ -30,7 +35,8 @@ public sealed partial class AgentManagementService
         insert.Parameters.AddWithValue("hash", hash);
         insert.Parameters.AddWithValue("limit", limit);
         var expires = (DateTime)(await insert.ExecuteScalarAsync(ct))!;
-        await audit.AppendAsync(db, tx, "token_create", actor, id.ToString(), new { host_limit = limit, ttl_seconds = 3600 }, ct);
+        await audit.AppendAsync(db, tx, "token_create", actor, id.ToString(),
+            new { host_limit = limit, ttl_seconds = 3600, manage_windows_audit = manageWindowsAudit }, ct);
         return JsonSerializer.SerializeToElement(new
         {
             id, expires_at = expires, command = package.Command(token), package_url = AgentConsolePackage.DownloadPath,

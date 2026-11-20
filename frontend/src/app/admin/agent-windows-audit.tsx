@@ -4,6 +4,7 @@ import type { AgentItem, AgentWindowsAudit } from "../../api/client";
 import { DataTable, type TableColumn } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { isValidTimeZone, zonedParts } from "../../shared/date-time";
+import { agentHasDcAudit } from "./agent-actions";
 
 const subcategoryKeys: Record<string, MessageKey> = {
   logon: "agents.auditSubcategory.logon", logoff: "agents.auditSubcategory.logoff",
@@ -48,21 +49,25 @@ export function auditMaskLabel(success: boolean | null, failure: boolean | null)
     : success ? "agents.auditMask.success" : failure ? "agents.auditMask.failure" : "agents.auditMask.none");
 }
 
-export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone = "browser" }: {
-  agent: AgentItem; change?: (kind: "policy", body: Record<string, unknown>) => void; busy?: boolean; timeZone?: string;
+export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone = "browser", savedAt }: {
+  agent: AgentItem; change?: (kind: "policy", body: Record<string, unknown>) => void; busy?: boolean; timeZone?: string; savedAt?: string;
 }) {
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [confirmDomain, setConfirmDomain] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const report = agent.windows_audit?.policy_revision === agent.policy_revision ? agent.windows_audit as AgentWindowsAudit : null;
+  const dc = agentHasDcAudit(agent);
+  const managed = agent.collection_policy?.manage_windows_audit === true;
+  const [auditEnabled, setAuditEnabled] = useState(managed);
   const rows = [...new Map(Object.values(report?.families ?? {}).flatMap((family) => family?.required ?? []).map((row) => [row.guid, row])).values()];
   const hasDomainRoot = rows.some((row) => row.subcategory === "domain_root_sacl");
-  const hasDomainConsent = hasDomainRoot || agent.collection_policy?.manage_domain_root_sacl === true;
+  const hasDomainConsent = agent.collection_policy?.manage_domain_root_sacl === true;
   const send = (enable: boolean, domainConsent = false) => change?.("policy", { agent_id: agent.id, expected_revision: agent.policy_revision,
-    collection_policy: { manage_windows_audit: enable, ...(domainConsent || !enable && hasDomainConsent ? { manage_domain_root_sacl: enable } : {}),
-      ...(!enable ? { audit_process_command_line: false } : {}) } });
+    collection_policy: { manage_windows_audit: enable,
+      ...(domainConsent || dc || hasDomainConsent ? { manage_domain_root_sacl: domainConsent } : {}),
+      ...(!domainConsent && (dc || !enable) ? { audit_process_command_line: false } : {}) } });
   const name = (row: AuditRow) => subcategoryKeys[row.subcategory] ? t(subcategoryKeys[row.subcategory]) : "—";
-  const enabledTime = (value: string) => {
+  const auditTime = (value: string) => {
     if (!Number.isFinite(Date.parse(value)) || !(timeZone === "browser" || isValidTimeZone(timeZone))) return "—";
     const parts = zonedParts(new Date(value), timeZone);
     return `${parts.hour}:${parts.minute}`;
@@ -73,7 +78,7 @@ export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone 
     { key: "actual", label: t("agents.auditNow"), render: (row) => {
       if (row.subcategory === "domain_root_sacl") return <>{t(row.state === "ok" ? "agents.auditRoot.ok" : row.state === "restored" ? "agents.auditRoot.restored"
         : row.state === "missing" ? "agents.auditRoot.missing" : "agents.auditMask.unknown")}
-        {row.enabled_at ? <><br/>{t("agents.auditEnabledAt", { time: enabledTime(row.enabled_at) })}</> : null}</>;
+        {row.enabled_at ? <><br/>{t("agents.auditEnabledAt", { time: auditTime(row.enabled_at) })}</> : null}</>;
       const managed = row.state === "managed_by_gpo" || !row.state && report?.families && Object.values(report.families).some((family) => family?.state === "managed_by_gpo");
       const command = `auditpol /set /subcategory:"${name(row)}"${row.success ? " /success:enable" : ""}${row.failure ? " /failure:enable" : ""}`;
       return <>{auditMaskLabel(row.actual_success, row.actual_failure)}
@@ -83,17 +88,28 @@ export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone 
               try { await navigator.clipboard.writeText(command); setCopyError(false); }
               catch { setCopyError(true); }
             })();
-          }}>{t("agents.copy")}</button></> : row.enabled_at ? <><br/><span>{t("agents.auditEnabledAt", { time: enabledTime(row.enabled_at) })}</span></> : null}
+          }}>{t("agents.copy")}</button></> : row.enabled_at ? <><br/><span>{t("agents.auditEnabledAt", { time: auditTime(row.enabled_at) })}</span></> : null}
       </>;
     } },
     { key: "required", label: t("agents.auditNeeded"), render: (row) => auditMaskLabel(row.success, row.failure) },
   ];
   const disabled = busy || agent.status !== "active" || !change;
   return <>
-    <div className="sli-ds-header__actions">
+    {dc ? <form className="sli-ds-header__actions" onSubmit={(event) => {
+      event.preventDefault();
+      if (disabled || auditEnabled === managed) return;
+      if (auditEnabled) send(true); else setConfirmRestore(true);
+    }}>
+      <label><input type="checkbox" checked={auditEnabled} disabled={disabled}
+        onChange={(event) => setAuditEnabled(event.target.checked)}/>{t("agents.manageWindowsAudit")}</label>
+      <button className="sli-ds-button" type="submit" disabled={disabled || auditEnabled === managed}>{t("agents.saveAudit")}</button>
+      {hasDomainRoot && managed && !hasDomainConsent ? <button className="sli-ds-button" type="button" disabled={disabled}
+        onClick={() => setConfirmDomain(true)}>{t("agents.auditSubcategory.domain_root_sacl")}</button> : null}
+    </form> : <div className="sli-ds-header__actions">
       <button className="sli-ds-button" type="button" disabled={disabled} onClick={() => hasDomainConsent ? setConfirmDomain(true) : send(true)}>{t("agents.auditApply")}</button>
       <button className="sli-ds-button" type="button" disabled={disabled} onClick={() => setConfirmRestore(true)}>{t("agents.auditRestore")}</button>
-    </div>
+    </div>}
+    {dc && savedAt && !busy ? <p role="status">{t("agents.auditSavedAt", { time: auditTime(savedAt) })}</p> : null}
     {rows.length ? <DataTable columns={columns} rows={rows} rowKey={(row) => row.subcategory} caption={t("agents.windowsAudit")} showFooter={false} stickyHeader={false}/> : null}
     {report?.management_state === "restored" ? <p role="status">{t("agents.auditManagement.restored")}</p> : null}
     {copyError ? <p role="alert">{t("agents.auditCopyError")}</p> : null}
@@ -112,7 +128,6 @@ export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone 
     <ModalOverlay className="sli-ds-modal" isOpen={confirmDomain} isDismissable onOpenChange={setConfirmDomain}>
       <Modal className="sli-ds-modal__panel"><Dialog>
         <Heading slot="title">{t("agents.auditRootApplyTarget", { name: agent.host_name || agent.hostname || "—" })}</Heading>
-        <Button className="sli-ds-button" isDisabled={disabled} onPress={() => { send(true); setConfirmDomain(false); }}>{t("agents.auditOnlySubcategories")}</Button>
         <Button className="sli-ds-button" onPress={() => setConfirmDomain(false)}>{t("agents.cancel")}</Button>
         <Button className="sli-ds-button" isDisabled={disabled} onPress={() => { send(true, true); setConfirmDomain(false); }}>{t("agents.auditApply")}</Button>
       </Dialog></Modal>
