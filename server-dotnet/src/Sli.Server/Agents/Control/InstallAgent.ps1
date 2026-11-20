@@ -99,9 +99,130 @@ function Remove-InstalledAgentMsi($Product) {
     if ($process.ExitCode -notin 0, 1605, 3010) { throw "SLI Agent removal failed ($($process.ExitCode))." }
 }
 
+function Remove-LegacyAgent($Products) {
+    foreach ($product in $Products) {
+        if ($product.Service -eq 'SLIAgent') {
+            Write-Host 'Removing previous SLI Agent...'
+            Remove-InstalledAgentMsi $product
+        }
+    }
+    if (Get-Service -Name 'SLIAgent' -ErrorAction SilentlyContinue) {
+        throw 'The legacy SLI Agent service remains after MSI removal.'
+    }
+}
+
 function Move-PreviousAgentState($State, $Archive) {
     if (!(Test-Path -LiteralPath $State)) { return $false }
     [IO.Directory]::Move($State, $Archive)
+    return $true
+}
+
+function Assert-AgentMsiUpgrade($Msi, $Product) {
+    foreach ($hive in 'HKLM:', 'HKCU:') {
+        $policy = "$hive\SOFTWARE\Policies\Microsoft\Windows\Installer"
+        if (Test-Path -LiteralPath $policy) {
+            $key = Get-Item -LiteralPath $policy
+            try {
+                if ($key.GetValue('DisableRollback') -eq 1) {
+                    throw 'SLI Agent .NET update requires Windows Installer rollback.'
+                }
+            } finally { $key.Dispose() }
+        }
+    }
+    # WiX detects earlier versions only. A rebuilt MSI with the same version
+    # and a different ProductCode would install a second product instead.
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $null
+    $view = $null
+    try {
+        $installedVersion = [version]$installer.ProductInfo($Product.Code, 'VersionString')
+        $package = @{}
+        $database = $installer.OpenDatabase($Msi, 0)
+        $view = $database.OpenView('SELECT `Property`, `Value` FROM `Property`')
+        [void]$view.Execute()
+        while ($record = $view.Fetch()) {
+            try { $package[$record.StringData(1)] = $record.StringData(2) }
+            finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+        }
+        [void]$view.Close()
+        $version = [version]$package['ProductVersion']
+        $sameProduct = $package['ProductCode'] -eq $Product.Code
+        if ($package['UpgradeCode'] -ne '{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}' -or
+            $version -lt $installedVersion -or ($version -eq $installedVersion) -ne $sameProduct) {
+            throw 'SLI Agent .NET update requires the installed MSI or a newer SLI Agent .NET MSI.'
+        }
+    } finally {
+        if ($view) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+        if ($database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    }
+}
+
+function Copy-AgentState($Source, $Destination) {
+    foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Unsafe path in SLI Agent state directory.'
+        }
+        $target = Join-Path $Destination $item.Name
+        if ($item.PSIsContainer) {
+            [void][IO.Directory]::CreateDirectory($target)
+            Copy-AgentState $item.FullName $target
+        } else {
+            [IO.File]::Copy($item.FullName, $target)
+        }
+    }
+}
+
+function Install-AgentMsi($Arguments) {
+    $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') `
+        -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+    if ($process.ExitCode -notin 0, 3010) { throw "SLI Agent installation failed ($($process.ExitCode))." }
+}
+
+function Update-InstalledAgent($Products, $Msi, $State, $Work) {
+    $net = @($Products | Where-Object { $_.Service -eq 'SLIAgentNet' })
+    if (!$net.Count) { return $false }
+    if ($net.Count -ne 1) { throw 'Multiple SLI Agent .NET installations were found.' }
+    Assert-AgentMsiUpgrade $Msi $net[0]
+
+    $archive = Join-Path $Work 'previous-state'
+    $failedState = Join-Path $Work 'failed-state'
+    $service = Get-Service -Name 'SLIAgentNet' -ErrorAction SilentlyContinue
+    $wasRunning = $service -and $service.Status -ne 'Stopped'
+    $snapshotReady = $false
+    try {
+        if ($wasRunning) { Stop-Service -InputObject $service }
+        if (Test-Path -LiteralPath $State) {
+            Assert-PrivateDirectory $State
+            New-PrivateDirectory $archive
+            Copy-AgentState $State $archive
+        }
+        $snapshotReady = $true
+        Remove-LegacyAgent $Products
+        Write-Host 'Updating SLI Agent .NET...'
+        # Retain the installed bootstrap settings and identity. WiX rolls back
+        # the service and binaries if RemoveExistingProducts or installation fails.
+        Install-AgentMsi ('/i "{0}" /qn /norestart' -f $Msi)
+    } catch {
+        $installFailure = $_
+        try {
+            if ($snapshotReady) {
+                $service = Get-Service -Name 'SLIAgentNet' -ErrorAction SilentlyContinue
+                if ($service -and $service.Status -ne 'Stopped') { Stop-Service -InputObject $service }
+                if (Test-Path -LiteralPath $State) { [IO.Directory]::Move($State, $failedState) }
+                if (Test-Path -LiteralPath $archive) { [IO.Directory]::Move($archive, $State) }
+            }
+            if ($wasRunning) { Start-Service -Name 'SLIAgentNet' }
+            if ([IO.Directory]::Exists($archive)) { [IO.Directory]::Delete($archive, $true) }
+            if ([IO.Directory]::Exists($failedState)) { [IO.Directory]::Delete($failedState, $true) }
+        } catch {
+            throw "$($installFailure.Exception.Message) SLI Agent .NET recovery failed: $($_.Exception.Message)"
+        }
+        throw $installFailure
+    }
+    # A repeat command using the installed ProductCode may run no MSI actions.
+    if ($wasRunning) { Start-Service -Name 'SLIAgentNet' }
+    if ([IO.Directory]::Exists($archive)) { [IO.Directory]::Delete($archive, $true) }
     return $true
 }
 
@@ -199,8 +320,7 @@ if ($current) {
 Initialize-SliRoot $sliRoot
 if (!(Test-Path -LiteralPath $data)) { New-PrivateDirectory $data }
 Assert-PrivateDirectory $data
-# The .NET uninstaller cleans its own data directory, including its install lock
-# and old downloads. Keep the new verified MSI and the lock outside that tree.
+# Keep the verified MSI, rollback copy and lock outside the agent data tree.
 $work = Join-Path $sliRoot ('install-agent-' + [guid]::NewGuid().ToString('N'))
 New-PrivateDirectory $work
 $msi = Join-Path $work 'SliAgent.msi'
@@ -238,13 +358,16 @@ try {
     $products = @(Get-InstalledAgentProducts)
     if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
     if (Test-Path -LiteralPath (Join-Path $data 'agent.json')) { throw 'SLI Agent has custom machine settings.' }
-    foreach ($product in $products) {
-        Write-Host 'Removing previous SLI Agent...'
-        Remove-InstalledAgentMsi $product
+    if (Update-InstalledAgent $products $msi $state $work) {
+        $committed = $true
+        Write-Host 'SLI Agent service started. Check the Agents page for its last connection.'
+        return
     }
-    if (Get-Service -Name 'SLIAgent', 'SLIAgentNet' -ErrorAction SilentlyContinue) {
-        throw 'An SLI Agent service remains after MSI removal.'
+    if (Get-Service -Name 'SLIAgentNet' -ErrorAction SilentlyContinue) {
+        throw 'The SLI Agent .NET service has no registered MSI product.'
     }
+    $archived = Move-PreviousAgentState $state $backup
+    Remove-LegacyAgent $products
     if (!(Test-Path -LiteralPath $data)) { New-PrivateDirectory $data }
     Assert-PrivateDirectory $data
     $registry = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registration, $true)
@@ -257,7 +380,6 @@ try {
     if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
 
     Write-Host 'Configuring SLI Agent...'
-    $archived = Move-PreviousAgentState $state $backup
     New-PrivateDirectory $state
     $newState = $true
     $pem = "-----BEGIN CERTIFICATE-----`r`n" +
@@ -274,25 +396,28 @@ try {
         foreach ($name in @('CaFingerprint', 'InstanceName', 'EnrollmentToken')) { $registry.DeleteValue($name, $false) }
     }
     $arguments = '/i "{0}" /qn /norestart SERVER_URL="{1}" CA_FILE="{2}" TOKEN_FILE="{3}"' -f $msi, $Server, $caPath, $keyPath
-    $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
-    if ($process.ExitCode -notin 0, 3010) { throw "SLI Agent installation failed ($($process.ExitCode))." }
+    Install-AgentMsi $arguments
     $committed = $true
     Write-Host 'SLI Agent service started. Check the Agents page for its last connection.'
 } finally {
-    if (!$committed) {
-        if ($newState -and (Test-Path -LiteralPath $keyPath)) { [IO.File]::Delete($keyPath) }
-        if ($changed) {
-            foreach ($name in $settings) {
-                if ($prior.ContainsKey($name)) { $registry.SetValue($name, $prior[$name]) }
-                else { $registry.DeleteValue($name, $false) }
+    try {
+        if (!$committed) {
+            if ($newState -and (Test-Path -LiteralPath $keyPath)) { [IO.File]::Delete($keyPath) }
+            if ($changed) {
+                foreach ($name in $settings) {
+                    if ($prior.ContainsKey($name)) { $registry.SetValue($name, $prior[$name]) }
+                    else { $registry.DeleteValue($name, $false) }
+                }
             }
+            if ($newState -and [IO.Directory]::Exists($state)) { [IO.Directory]::Delete($state, $true) }
+            if ($archived) { [IO.Directory]::Move($backup, $state) }
+            if ([IO.File]::Exists($caPath)) { [IO.File]::Delete($caPath) }
         }
-        if ($newState) { [IO.Directory]::Delete($state, $true) }
-        if ($archived) { [IO.Directory]::Move($backup, $state) }
-        if ([IO.File]::Exists($caPath)) { [IO.File]::Delete($caPath) }
+    } finally {
+        if ($registry) { $registry.Dispose() }
+        if ($lock) { $lock.Dispose() }
+        if ([IO.File]::Exists($msi)) { [IO.File]::Delete($msi) }
+        # If rollback itself failed, keep any recoverable state in the private work directory.
+        if (!(Get-ChildItem -LiteralPath $work -Force)) { [IO.Directory]::Delete($work) }
     }
-    if ($registry) { $registry.Dispose() }
-    if ($lock) { $lock.Dispose() }
-    if ([IO.File]::Exists($msi)) { [IO.File]::Delete($msi) }
-    [IO.Directory]::Delete($work)
 }
