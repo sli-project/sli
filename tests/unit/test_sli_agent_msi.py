@@ -216,6 +216,40 @@ def test_cleanup_refuses_unmanaged_state(tmp_path):
     assert (tmp_path / "identity-key.json").exists()
 
 
+@pytest.mark.parametrize("service_present", [True, False])
+def test_remove_action_cleans_owned_state_without_service_or_account(tmp_path, monkeypatch, service_present):
+    import sys
+
+    from sli_agent import enrollment
+
+    class MissingAccount(Exception):
+        winerror = 1332
+
+    def lookup(*args):
+        assert service_present
+        raise MissingAccount()
+
+    root = tmp_path / "Agent"
+    audit = root / "state" / "windows-audit"
+    audit.mkdir(parents=True)
+    (audit / "state.json").write_text('{"subcategories": {}, "command_line": null}', encoding="ascii")
+    (root / ".msi-owned").write_text(msi.OWNER, encoding="ascii")
+    sid = "S-1-5-21-100000001-200000002-300000003-1001"
+    config = msi.configuration("https://agents.example.test", root, sid)
+    (root / "agent.json").write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setattr(msi, "machine_config_path", lambda: root / "agent.json")
+    monkeypatch.setattr(msi, "os", SimpleNamespace(name="nt", walk=msi.os.walk))
+    monkeypatch.setitem(sys.modules, "pywintypes", SimpleNamespace(error=MissingAccount))
+    monkeypatch.setitem(sys.modules, "winerror", SimpleNamespace(ERROR_NONE_MAPPED=1332))
+    monkeypatch.setitem(sys.modules, "win32security", SimpleNamespace(
+        ConvertStringSidToSid=lambda value: value, LookupAccountSid=lookup))
+    monkeypatch.setattr(enrollment, "IdentityStore", lambda *a: pytest.fail("missing service identity cannot report"))
+    monkeypatch.setattr(sys, "argv", ["msi", "remove"] + ([] if service_present else ["no-service"]))
+
+    assert msi.main() == 0
+    assert not root.exists()
+
+
 def test_public_properties_hex_roundtrip_and_no_shell_interpretation():
     value = 'C:\\synthetic folder\\a"&.pem'
     encoded = value.encode("utf-16le").hex()

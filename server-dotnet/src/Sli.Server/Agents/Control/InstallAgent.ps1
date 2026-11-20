@@ -30,16 +30,55 @@ function Assert-PrivateDirectory($Path) {
     }
 }
 
-function Get-AgentPackageVersion($Path) {
+function Get-InstalledAgentProducts {
+    # Query registered MSI families without touching Win32_Product or triggering repairs.
     $installer = New-Object -ComObject WindowsInstaller.Installer
-    $database = $installer.OpenDatabase($Path, 0)
-    $view = $database.OpenView('SELECT `Value` FROM `Property` WHERE `Property` = ''ProductVersion''')
     try {
-        $view.Execute() | Out-Null
-        return [version]$view.Fetch().StringData(1)
+        foreach ($family in @(
+            @{ Code = '{D6836D37-49FA-4AB6-BDFD-10B07ED51973}'; Service = 'SLIAgent' },
+            @{ Code = '{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}'; Service = 'SLIAgentNet' }
+        )) {
+            foreach ($value in @($installer.RelatedProducts($family.Code))) {
+                $code = [guid]::ParseExact($value, 'B')
+                if ($code -eq [guid]::Empty) { throw 'Invalid SLI Agent MSI product code.' }
+                @{ Code = $code.ToString('B'); Service = $family.Service }
+            }
+        }
     } finally {
-        $view.Close() | Out-Null
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
     }
+}
+
+function Test-LegacyAgentServiceMissing {
+    $key = 'HKLM:\SYSTEM\CurrentControlSet\Services\SLIAgent'
+    if (!(Test-Path -LiteralPath $key)) { return $true }
+    $serviceKey = Get-Item -LiteralPath $key
+    try { $account = $serviceKey.GetValue('ObjectName') }
+    finally { $serviceKey.Dispose() }
+    if (!$account) { return $true }
+    if ($account -in 'LocalSystem', 'NT AUTHORITY\SYSTEM') { return $false }
+    if ($account.StartsWith('.\')) { $account = $env:COMPUTERNAME + $account.Substring(1) }
+    try {
+        [void][Security.Principal.NTAccount]::new($account).Translate([Security.Principal.SecurityIdentifier])
+        return $false
+    } catch [Security.Principal.IdentityNotMappedException] {
+        return $true
+    }
+}
+
+function Remove-InstalledAgentMsi($Product) {
+    $arguments = '/x {0} /qn /norestart' -f $Product.Code
+    $legacyMissing = $Product.Service -eq 'SLIAgent' -and (Test-LegacyAgentServiceMissing)
+    $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') `
+        -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+    if ($legacyMissing -and $process.ExitCode -eq 1603) {
+        # Released Python MSIs run their cached custom action. Keep their local
+        # state and rollback records when that action fails without its service.
+        $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') `
+            -ArgumentList ($arguments + ' PRESERVE_STATE=1') -Wait -PassThru -WindowStyle Hidden
+        if ($process.ExitCode -in 0, 3010) { Write-Host 'Previous SLI Agent state was retained.' }
+    }
+    if ($process.ExitCode -notin 0, 1605, 3010) { throw "SLI Agent removal failed ($($process.ExitCode))." }
 }
 
 function Move-PreviousAgentState($State, $Archive) {
@@ -133,7 +172,9 @@ foreach ($directory in @($sliRoot, $data)) {
     if (!(Test-Path -LiteralPath $directory)) { New-PrivateDirectory $directory }
     Assert-PrivateDirectory $directory
 }
-$work = Join-Path $data ('install-' + [guid]::NewGuid().ToString('N'))
+# The .NET uninstaller cleans its own data directory, including its install lock
+# and old downloads. Keep the new verified MSI and the lock outside that tree.
+$work = Join-Path $sliRoot ('install-agent-' + [guid]::NewGuid().ToString('N'))
 New-PrivateDirectory $work
 $msi = Join-Path $work 'SliAgent.msi'
 $state = Join-Path $data 'state'
@@ -146,13 +187,12 @@ $settings = 'ServerUrl', 'CaBundle', 'CaFingerprint', 'TokenFile', 'InstanceName
 $registry = $null
 $prior = @{}
 $changed = $false
-$stopped = $false
 $archived = $false
 $newState = $false
 $committed = $false
 $lock = $null
 try {
-    $lock = [IO.File]::Open((Join-Path $data 'install.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+    $lock = [IO.File]::Open((Join-Path $sliRoot 'install-agent.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
     Write-Host 'Downloading SLI Agent...'
     $ca = [Convert]::FromBase64String($CaDer)
     try {
@@ -170,47 +210,35 @@ try {
         throw 'SLI installer Authenticode signature is invalid.'
     }
 
-    $service = Get-Service -Name 'SLIAgentNet' -ErrorAction SilentlyContinue
+    $products = @(Get-InstalledAgentProducts)
+    if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
+    if (Test-Path -LiteralPath (Join-Path $data 'agent.json')) { throw 'SLI Agent has custom machine settings.' }
+    $current = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registration)
+    if ($current) {
+        try {
+            $configuredState = $current.GetValue('StateDirectory')
+            if ($configuredState -and $configuredState -ne $state) { throw 'SLI Agent has a custom state directory.' }
+        } finally { $current.Dispose() }
+    }
+    foreach ($product in $products) {
+        Write-Host 'Removing previous SLI Agent...'
+        Remove-InstalledAgentMsi $product
+    }
+    if (Get-Service -Name 'SLIAgent', 'SLIAgentNet' -ErrorAction SilentlyContinue) {
+        throw 'An SLI Agent service remains after MSI removal.'
+    }
+    if (!(Test-Path -LiteralPath $data)) { New-PrivateDirectory $data }
+    Assert-PrivateDirectory $data
     $registry = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registration, $true)
     if ($registry) {
         foreach ($name in $settings) {
             $value = $registry.GetValue($name)
             if ($null -ne $value) { $prior[$name] = $value }
         }
-        $configuredState = $registry.GetValue('StateDirectory')
-        if ($configuredState -and $configuredState -ne $state) { throw 'SLI Agent has a custom state directory.' }
-    }
-    if (Test-Path -LiteralPath (Join-Path $data 'agent.json')) { throw 'SLI Agent has custom machine settings.' }
-    if ($service -and !$registry) { throw 'SLI Agent installation settings are missing.' }
-    $install = !$service
-    if ($service) {
-        $installed = $registry.OpenSubKey('Product')
-        if (!$installed) { throw 'SLI Agent MSI product information is missing.' }
-        try { $install = (Get-AgentPackageVersion $msi) -gt [version]$installed.GetValue('Version') }
-        finally { $installed.Dispose() }
     }
     if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
-    if ($service -and $prior['ServerUrl'] -and $prior['ServerUrl'].TrimEnd('/') -eq $Server.TrimEnd('/') -and
-        (Test-Path -LiteralPath (Join-Path $state 'identity.json')) -and $prior['CaBundle'] -and
-        [IO.File]::Exists($prior['CaBundle'])) {
-        $savedCa = [IO.File]::ReadAllText($prior['CaBundle']) -replace '-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s', ''
-        if ($savedCa -ceq $CaDer) {
-            if ($install) {
-                $upgrade = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') `
-                    -ArgumentList ('/i "{0}" /qn /norestart' -f $msi) -Wait -PassThru -WindowStyle Hidden
-                if ($upgrade.ExitCode -notin 0, 3010) { throw "SLI Agent upgrade failed ($($upgrade.ExitCode))." }
-            }
-            Start-Service -Name 'SLIAgentNet'
-            Write-Host 'SLI Agent is already connected to this server.'
-            return
-        }
-    }
 
     Write-Host 'Configuring SLI Agent...'
-    if ($service -and $service.Status -ne 'Stopped') {
-        Stop-Service -Name 'SLIAgentNet'
-        $stopped = $true
-    }
     $archived = Move-PreviousAgentState $state $backup
     New-PrivateDirectory $state
     $newState = $true
@@ -227,13 +255,9 @@ try {
         $registry.SetValue('TokenFile', $keyPath)
         foreach ($name in @('CaFingerprint', 'InstanceName', 'EnrollmentToken')) { $registry.DeleteValue($name, $false) }
     }
-    if ($install) {
-        $arguments = '/i "{0}" /qn /norestart SERVER_URL="{1}" CA_FILE="{2}" TOKEN_FILE="{3}"' -f $msi, $Server, $caPath, $keyPath
-        $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
-        if ($process.ExitCode -notin 0, 3010) { throw "SLI Agent installation failed ($($process.ExitCode))." }
-    } else {
-        Start-Service -Name 'SLIAgentNet'
-    }
+    $arguments = '/i "{0}" /qn /norestart SERVER_URL="{1}" CA_FILE="{2}" TOKEN_FILE="{3}"' -f $msi, $Server, $caPath, $keyPath
+    $process = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'msiexec.exe') -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+    if ($process.ExitCode -notin 0, 3010) { throw "SLI Agent installation failed ($($process.ExitCode))." }
     $committed = $true
     Write-Host 'SLI Agent service started. Check the Agents page for its last connection.'
 } finally {
@@ -248,7 +272,6 @@ try {
         if ($newState) { [IO.Directory]::Delete($state, $true) }
         if ($archived) { [IO.Directory]::Move($backup, $state) }
         if ([IO.File]::Exists($caPath)) { [IO.File]::Delete($caPath) }
-        if ($stopped) { Start-Service -Name 'SLIAgentNet' }
     }
     if ($registry) { $registry.Dispose() }
     if ($lock) { $lock.Dispose() }

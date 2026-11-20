@@ -15,12 +15,13 @@ COMMAND = "00000000-0000-4000-8000-000000000002"
 OFFER = {"agent_id": AGENT, "agent_removal": {"command_id": COMMAND, "action": "uninstall"}}
 
 
-def owned(root):
+def owned(root, *, service_identity_sid=None):
     root.mkdir()
     (root / ".msi-owned").write_text(msi.OWNER)
     config = AgentConfig("https://core.invalid", root / "ca.pem", root / "state")
     (root / "agent.json").write_text(json.dumps({"server_url": config.server_url,
-        "ca_bundle": str(config.ca_bundle), "state_dir": str(config.state_dir)}))
+        "ca_bundle": str(config.ca_bundle), "state_dir": str(config.state_dir),
+        "service_identity_sid": service_identity_sid}))
     config.state_dir.mkdir()
     (config.state_dir / "identity-key.json").write_text("fixture-key")
     (config.state_dir / "spool").mkdir()
@@ -100,12 +101,14 @@ def test_windows_command_rejects_product_argument_injection(tmp_path, monkeypatc
 
 def test_offline_msi_uninstall_removes_owned_key_buffer_and_preserves_neighbour(tmp_path, monkeypatch):
     root = tmp_path / "Agent"
-    owned(root)
+    owned(root, service_identity_sid="S-1-5-18")
     sibling = tmp_path / "other"
     sibling.mkdir()
     (sibling / "keep").write_text("fixture")
-    monkeypatch.setattr("sli_agent.enrollment.IdentityStore", lambda _: SimpleNamespace(load=Mock(side_effect=OSError("offline"))))
+    load = Mock(side_effect=OSError("offline"))
+    monkeypatch.setattr("sli_agent.enrollment.IdentityStore", lambda _: SimpleNamespace(load=load))
     msi.uninstall_owned(root)
+    load.assert_called_once_with()
     assert not root.exists() and (sibling / "keep").exists()
     msi.uninstall_owned(root)  # An interrupted MSI retry is harmless.
 
@@ -128,7 +131,7 @@ def test_file_audit_ownership_blocks_uninstall_and_preserves_journal(tmp_path, m
 
 def test_online_cleanup_reports_after_deletion_without_recreating_identity(tmp_path, monkeypatch):
     root = tmp_path / "Agent"
-    owned(root)
+    owned(root, service_identity_sid="S-1-5-18")
     identity = SimpleNamespace(agent_id=AGENT)
     monkeypatch.setattr("sli_agent.enrollment.IdentityStore", lambda _: SimpleNamespace(load=lambda: identity))
     calls = []
@@ -172,12 +175,16 @@ def test_audit_restore_failure_preserves_rollback_state_and_key(tmp_path, monkey
     config = owned(root)
     audit = config.state_dir / "windows-audit"
     audit.mkdir()
-    (audit / "state.json").write_text("fixture")
+    (audit / "state.json").write_text(json.dumps({
+        "subcategories": {},
+        "command_line": {"previous": 0, "applied": 1, "phase": "confirmed"},
+    }))
     monkeypatch.setattr("sli_agent.enrollment.IdentityStore", lambda _: SimpleNamespace(load=lambda: None))
-    monkeypatch.setattr("sli_agent.windows_audit.AuditManager", lambda _: SimpleNamespace(
-        reconcile=lambda *a: {"management_state": "blocked"}))
+    reconcile = Mock(return_value={"management_state": "blocked"})
+    monkeypatch.setattr("sli_agent.windows_audit.AuditManager.reconcile", reconcile)
     with pytest.raises(ValueError, match="agent_removal_cleanup_failed"):
         msi.uninstall_owned(root)
+    reconcile.assert_called_once()
     assert (audit / "state.json").exists() and (config.state_dir / "identity-key.json").exists()
 
 

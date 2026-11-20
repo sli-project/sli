@@ -29,6 +29,58 @@ Initialize-SliAgentPinnedPackage
 '''
 
 
+@pytest.mark.parametrize('shell', ['pwsh', 'powershell'])
+def test_old_msi_removal_retries_only_for_missing_legacy_service(tmp_path, shell):
+    executable = shutil.which(shell)
+    if executable is None:
+        pytest.skip(f'{shell} is unavailable')
+    harness = tmp_path / 'uninstall.ps1'
+    harness.write_text(r'''
+param($Installer)
+$ErrorActionPreference = 'Stop'
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$errors)
+if ($errors) { throw ($errors | Out-String) }
+$remove = $ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Remove-InstalledAgentMsi'}, $true)
+. ([scriptblock]::Create($remove.Extent.Text))
+function Test-LegacyAgentServiceMissing { return $script:missing }
+# On Linux the shell has no Windows system directory. Resolve the fake
+# executable name without calling the Windows-only installer.
+if (![Environment]::SystemDirectory) {
+    function Join-Path($Path, $ChildPath) { [IO.Path]::Combine($Path, $ChildPath) }
+}
+function Start-Process {
+    param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru, $WindowStyle)
+    if ([IO.Path]::GetFileName($FilePath) -ne 'msiexec.exe') { throw 'Unexpected installer executable.' }
+    $script:calls.Add($ArgumentList)
+    return @{ ExitCode = $script:codes.Dequeue() }
+}
+$product = @{ Code = '{00000000-0000-4000-8000-000000000001}'; Service = 'SLIAgent' }
+function RunCase($Service, $Missing, [int[]]$Codes) {
+    $product.Service = $Service
+    $script:missing = $Missing
+    $script:codes = [Collections.Generic.Queue[int]]::new()
+    foreach ($code in $Codes) { $script:codes.Enqueue($code) }
+    $script:calls = [Collections.Generic.List[string]]::new()
+    try { Remove-InstalledAgentMsi $product; 'removed' } catch { $_.Exception.Message }
+    $script:calls
+}
+RunCase SLIAgent $true @(1603, 0)
+RunCase SLIAgent $false @(1603)
+RunCase SLIAgentNet $true @(1603)
+RunCase SLIAgentNet $false @(0)
+''', encoding='ascii')
+    result = subprocess.run([executable, '-NoProfile', '-File', str(harness), str(INSTALLER)],
+                            capture_output=True, text=True, timeout=45, check=True)
+    remove = '/x {00000000-0000-4000-8000-000000000001} /qn /norestart'
+    assert result.stdout.splitlines() == [
+        'Previous SLI Agent state was retained.', 'removed', remove, f'{remove} PRESERVE_STATE=1',
+        'SLI Agent removal failed (1603).', remove,
+        'SLI Agent removal failed (1603).', remove, 'removed', remove,
+    ]
+
+
 def certificate(name, issuer=None, issuer_key=None, *, expired=False):
     now = datetime.now(timezone.utc)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
