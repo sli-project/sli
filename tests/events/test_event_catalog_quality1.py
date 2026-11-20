@@ -14,8 +14,9 @@ def test_shipped_catalog_passes_schema_event_4016_is_known_and_203_remains_unkno
     from server.sli.events.event_catalog import lookup_event_catalog
     from server.sli.events.event_catalog_quality import validate_catalog_data
 
-    result = validate_catalog_data(_catalog())
-    assert result == {"valid": True, "entry_count": 105, "errors": []}
+    catalog = _catalog()
+    result = validate_catalog_data(catalog)
+    assert result == {"valid": True, "entry_count": len(catalog["entries"]), "errors": []}
     dns_timeout = lookup_event_catalog(
         4016, "DNS Server", "Microsoft-Windows-DNS-Server-Service"
     )

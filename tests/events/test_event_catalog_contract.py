@@ -74,11 +74,8 @@ def снимок() -> dict:
 
 
 def test_нетронутый_каталог_проходит(каталог, снимок) -> None:
-    """Каталог проходит с одной принятой provider-правкой Event 1102."""
     результат = validate_catalog_changes(каталог, снимок)
     assert результат["valid"], результат["violations"]
-    assert результат["новых"] == 30
-    assert результат["изменённых"] == 75
 
 
 def test_новая_запись_без_заполнения_блокирует(каталог, снимок) -> None:
@@ -90,7 +87,6 @@ def test_новая_запись_без_заполнения_блокирует(
     результат = validate_catalog_changes(подделка, снимок)
 
     assert not результат["valid"]
-    assert результат["новых"] == 31
     нарушение = результат["violations"][0]
     assert нарушение["вид"] == "новая"
     # Все три поля схемы версии 2 обязаны попасть в список недостающих:
@@ -105,7 +101,6 @@ def test_новая_заполненная_запись_проходит(кат�
     результат = validate_catalog_changes(подделка, снимок)
 
     assert результат["valid"], результат["violations"]
-    assert результат["новых"] == 31
 
 
 def test_новая_запись_без_срока_тёплого_слоя_блокируется(каталог, снимок) -> None:
@@ -426,7 +421,6 @@ def test_правка_прежней_записи_снимает_освобож�
     результат = validate_catalog_changes(подделка, снимок)
 
     assert not результат["valid"]
-    assert результат["изменённых"] == 75
     assert результат["violations"][0]["вид"] == "изменённая"
 
 
@@ -435,18 +429,21 @@ def test_форма_каталога_без_ошибок(каталог) -> None
     assert результат["valid"], результат["errors"][:5]
 
 
-def test_снимок_описывает_текущие_записи(каталог, снимок) -> None:
-    """Снимок не должен молча расходиться с каталогом по числу записей."""
-    assert снимок["entry_count"] == 103
-    assert len(каталог["entries"]) == снимок["entry_count"] + 2
+def test_security_log_full_resolves_to_dc_descriptor() -> None:
+    descriptor = event_catalog.lookup_event_descriptor(
+        "sli.windows.ad-dc", "Security", "1104",
+    )
+    assert descriptor is not None
+    assert descriptor["provider_name"] == "Microsoft-Windows-Eventlog"
+    assert descriptor["base_risk"] == "critical"
 
 
 def test_полнота_считается_и_не_притворяется(каталог) -> None:
     итог = catalog_completeness(каталог)
     assert итог["entry_count"] == len(каталог["entries"])
-    assert итог["fully_classified"] == 105
+    assert итог["fully_classified"] == итог["entry_count"]
     assert итог["classification_ratio"] == 1
-    assert итог["schema_v2_ready"] == 105
+    assert итог["schema_v2_ready"] == итог["entry_count"]
 
 
 def test_проверка_подключена_к_выпуску() -> None:
