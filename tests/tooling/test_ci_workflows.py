@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ import psycopg
 import pytest
 import yaml
 
+from scripts.ci.server_dotnet_shard import plan_profiles, read_rules
 from scripts.maintenance import existing_postgres_bootstrap as bootstrap
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +36,16 @@ RECEIPT_STEPS = {
 NATIVE_RESTORE_TEST = "tests/migrations/test_qw_restore_context_migration.py"
 NATIVE_RESTORE_RUN = f"python -m pytest -q {NATIVE_RESTORE_TEST} -m postgres_integration"
 POSTGRES_SUITE_STEP = "Remaining PostgreSQL integration tests"
+LOGON_PAIRS_TESTS = (
+    "tests/reporting/test_new_logon_pairs_context_native.py",
+    "tests/reporting/test_new_logon_pairs_diagnostics_postgres.py",
+)
+PACKET = "Sli.Server.Tests.Agents.AgentPacketReportPostgresTests"
+CHECKPOINT = "Sli.Server.Tests.InstallationSetup.NativeCheckpointCleanupTests"
+VECTORS = {
+    f"Sli.Server.Tests.Agents.Agent{family}ValidatorTests"
+    for family in ("FileAudit", "Nps", "Workstation")
+}
 
 
 def workflow(name: str) -> dict:
@@ -85,12 +97,18 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     jobs = workflow(name)["jobs"]
     if name == "pr-gate.yml":
         assert {"source", "tests", "frontend"} <= jobs.keys()
-        assert jobs["source"]["needs"] == ["changes", "postgres"]
-        assert jobs["source"]["if"] == "${{ always() }}"
+        assert "needs" not in jobs["source"]
+        gate = jobs["gate"]
+        assert gate["name"] == "source"
+        assert set(gate["needs"]) == {"changes", "source", "postgres"}
+        assert gate["if"] == "${{ always() }}"
         # postgres may be skipped only for a UI-only change detected by the changes job.
-        assert 'test "$POSTGRES_RESULT" = success ||' in jobs["source"]["steps"][0]["run"]
-        assert 'test "$CHANGES_RESULT" = success' in jobs["source"]["steps"][0]["run"]
-        assert jobs["source"]["steps"][0]["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
+        guard, = gate["steps"]
+        assert 'test "$POSTGRES_RESULT" = success ||' in guard["run"]
+        assert 'test "$CHANGES_RESULT" = success' in guard["run"]
+        assert 'test "$SOURCE_RESULT" = success' in guard["run"]
+        assert guard["env"]["SOURCE_RESULT"] == "${{ needs.source.result }}"
+        assert guard["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
         assert any('not postgres_integration and not host_dependent' in step.get("run", "")
                    for step in jobs["tests"]["steps"])
         assert jobs["tests"]["runs-on"] == "ubuntu-latest"
@@ -146,6 +164,9 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         # The volume test is manual-only; PRs retain exact fact-parity coverage.
         assert RECEIPT_EXPERIMENT_RUN not in runs
         assert "Measure synthetic plugin receipt plans" not in steps
+        # Each logon-pairs file has one explicit invocation and is absent from the shared suite.
+        for path in LOGON_PAIRS_TESTS:
+            assert runs.count(f"python -m pytest -q -s {path}") == 1
     native_restore = steps["Verify full-schema ACL directory backup and parallel restore"]
     assert native_restore["run"] == NATIVE_RESTORE_RUN
     assert runs.index(steps["Bootstrap baseline and migrations"]["run"]) < runs.index(NATIVE_RESTORE_RUN)
@@ -155,9 +176,12 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         shlex.split(line) for line in suite["run"].replace("\\\n", "").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
+    dedicated_files = (NATIVE_RESTORE_TEST, COLLECTION_EXPERIMENT_TEST, RECEIPT_EXPERIMENT_TEST)
+    if name == "pr-gate.yml":
+        dedicated_files += LOGON_PAIRS_TESTS
     assert filter_files == [
-        "grep", "-vxF", "-e", NATIVE_RESTORE_TEST, "-e", COLLECTION_EXPERIMENT_TEST,
-        "-e", RECEIPT_EXPERIMENT_TEST, ".ci-shipped-python-tests.txt", ">", ".ci-shipped-postgres-tests.txt",
+        "grep", "-vxF", *[part for file in dedicated_files for part in ("-e", file)],
+        ".ci-shipped-python-tests.txt", ">", ".ci-shipped-postgres-tests.txt",
     ]
     pytest_options = []
     if name == "pr-gate.yml":
@@ -189,6 +213,73 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert '"$PGDATA/postmaster.pid"' in stop["run"]
     assert 'pg_ctl -D "$PGDATA" -m immediate -w stop' in stop["run"]
     assert not any("SLI_BOOTSTRAP_TEST_PG_DSN" in key for key in postgres["env"])
+
+
+def test_pr_source_cases_have_one_owner_for_both_unit_selections():
+    jobs = workflow("pr-gate.yml")["jobs"]
+    source_steps = [step for step in jobs["source"]["steps"] if "pytest" in step.get("run", "")]
+    unit, = [step["run"] for step in jobs["tests"]["steps"] if "pytest" in step.get("run", "")]
+    manifests = re.findall(r"@([\w/]+\.txt)", "\n".join(step["run"] for step in source_steps))
+    assert set(manifests) == {"scripts/ci/pr_source_tests.txt", "scripts/ci/pr_checkpoint_tests.txt"}
+    dedicated = Counter(
+        selector for manifest in manifests
+        for selector in (ROOT / manifest).read_text(encoding="utf-8").splitlines()
+    )
+    assert dedicated == Counter({selector: 1 for selector in (
+        "tests/tooling/test_ui_domain_binding_guard.py", "tests/unit/test_ui_domain_binding_api.py",
+        "tests/core/test_report_domain.py", "tests/unit/test_sli_secrets.py",
+        "tests/unit/test_updater_component.py", "tests/unit/test_updater_transition_contract.py",
+        "tests/unit/test_updater_transition.py", "tests/unit/test_updater_isolated_closure.py",
+        "tests/unit/test_plugin_validation.py", "tests/events/test_event_catalog_contract.py",
+        "tests/sources/test_plugin_package_manifest.py", "tests/migrations/test_sli_v4_contract.py",
+        "tests/unit/test_linux_native_cleanup.py",
+        *(f"tests/unit/test_linux_native_upgrade_prepare.py::{method}" for method in (
+            "test_legacy_checkpoint_mode_keeps_full_restore_on_resume",
+            "test_legacy_checkpoint_mode_requires_stopped_restore",
+            "test_legacy_checkpoint_mode_rejects_integrity_receipt",
+            "test_unknown_checkpoint_verification_mode_is_refused",
+            "test_integrity_receipt_rejects_invalid_binding",
+            "test_integrity_receipt_rechecks_current_manifest",
+        )),
+    )})
+    assert not any("if" in step or "continue-on-error" in step for step in source_steps)
+    # Deselect the same cases after either the full or the UI-only file selection.
+    assert set(re.search(r"cat (scripts/ci/[^)]+)\)", unit)[1].split()) == set(manifests)
+    assert '"${dedicated[@]/#/--deselect=}" "${selected[@]}"' in unit.split("\nfi\n", 1)[1]
+
+
+@pytest.mark.parametrize("postgres_runs", [True, False])
+def test_pr_dotnet_cases_have_one_owner_even_without_postgres(postgres_runs):
+    pr, dotnet = (workflow(name)["jobs"] for name in ("pr-gate.yml", "server-dotnet.yml"))
+    tracked = VECTORS | {PACKET, CHECKPOINT}
+    rules = [rule for rule in read_rules(ROOT / "scripts/ci/server_dotnet_ci_profiles.txt")
+             if rule[1] == "class" and rule[2] in tracked]
+    cases = [{"Class": name, "Method": "Scenario", "Explicit": False} for name in tracked]
+    profiles = plan_profiles(cases, [], rules)
+    shard_step, = [step for step in dotnet["server-tests"]["steps"]
+                   if "python ../scripts/ci/server_dotnet_shard.py " in step.get("run", "")]
+    assert shard_step["env"]["PR_POSTGRES"] == "${{ needs.changes.outputs.pr-postgres }}"
+    for changes in (pr["changes"], dotnet["changes"]):
+        assert any('bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD"' in step.get("run", "")
+                   for step in changes["steps"])
+    run = shard_step["run"]
+    assert '--covered-by source-vectors' in run
+    assert 'if [ "$EVENT" = pull_request ]; then\n  covered+=(--covered-by pr-python)' in run
+    assert 'if [ "$PR_POSTGRES" = true ]; then\n    covered+=(--covered-by pr-postgres)' in run
+    assert '"${covered[@]}"' in run
+
+    sharded = profiles["pr"] - profiles["source-vectors"] - profiles["pr-python"]
+    vectors = [name for step in dotnet["source-vectors"]["steps"]
+               for name in re.findall(r"-class (\S+)", step.get("run", ""))]
+    assert set(vectors) == VECTORS
+    assert set(dotnet["build-and-test"]["needs"]) == {"server-tests", "source-vectors"}
+    actual = Counter(vectors) + Counter({CHECKPOINT: 1})  # Python checkpoint manifest proves this coverage.
+    if postgres_runs:
+        sharded -= profiles["pr-postgres"]
+        actual.update(name for step in pr["postgres"]["steps"]
+                      for name in re.findall(r"-class (\S+)", step.get("run", "")))
+    actual.update(name.rsplit(".", 1)[0] for name in sharded)
+    assert actual == Counter(tracked)
 
 
 @pytest.mark.parametrize("missing_client", ("pg_dump", "pg_restore"))

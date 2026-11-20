@@ -228,6 +228,14 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             write(dotnet, "usr/sbin/sli-plugin-runtime-dotnet",
                   "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_plugin_runtime.py --release "
                   + release + ' "$@"\n', 0o755)
+            write(dotnet, "usr/sbin/sli-agent-command",
+                  "#!/bin/sh\nset -eu\n"
+                  "exec /usr/bin/env -i LC_ALL=C.UTF-8 SLI_DEPLOYMENT_MODE=native "
+                  "'ADLOG_PG_DSN=host=127.0.0.1 port=5432 dbname=sli user=adlog_user' "
+                  "ADLOG_PG_PASSWORD_FILE=/etc/sli/secrets/runtime_password "
+                  "Kestrel__Certificates__Default__Path=/etc/sli/secrets/tls_certificate "
+                  "SLI_TLS_CA_FILE=/etc/sli/secrets/tls_ca "
+                  f'/opt/sli/dotnet/{release}/Sli.Server agent-command "$@"\n', 0o755)
             write(dotnet, "usr/lib/systemd/system-generators/sli-dotnet-api",
                   "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_dotnet_generator.py "
                   '"$@"\n', 0o755)

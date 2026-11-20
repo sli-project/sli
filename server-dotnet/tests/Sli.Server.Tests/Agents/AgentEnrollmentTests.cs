@@ -18,6 +18,16 @@ namespace Sli.Server.Tests.Agents;
 
 public class AgentEnrollmentTests
 {
+    [Fact]
+    public async Task Agent_command_denies_non_root_before_loading_configuration()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.Equal(1, await AgentCommandConsole.RunAsync([], false, output, error));
+        Assert.Empty(output.ToString());
+        Assert.Equal("host_root_required", error.ToString().Trim());
+    }
+
     [Theory]
     [InlineData("https://agents.example.test:8443", "https://agents.example.test:8443/")]
     [InlineData("https://branch.dc.example.test", "https://branch.dc.example.test/")]
@@ -90,12 +100,14 @@ public class AgentEnrollmentTests
             DateTimeOffset.UtcNow.AddYears(1), RandomNumberGenerator.GetBytes(16));
         await File.WriteAllTextAsync(certificatePath, certificate.ExportCertificatePem(), ct);
         await File.WriteAllTextAsync(msiPath, "synthetic package bytes", ct);
-        using var sp = new ServiceCollection().AddSingleton<IConfiguration>(
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Sli:AgentServerCaFile"] = caPath, ["Sli:AgentInstallerPath"] = msiPath,
-                ["Kestrel:Certificates:Default:Path"] = certificatePath,
-            }).Build()).BuildServiceProvider();
+        using var configuration = new ConfigurationManager();
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Sli:AgentServerCaFile"] = caPath, ["Sli:AgentInstallerPath"] = msiPath,
+            ["Kestrel:Certificates:Default:Path"] = certificatePath,
+            ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
+        });
+        using var sp = new ServiceCollection().AddSingleton<IConfiguration>(configuration).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = sp };
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("sli.example.test");
@@ -117,9 +129,13 @@ public class AgentEnrollmentTests
             Assert.DoesNotContain("'https://sli.example.test/'", command);
             Assert.Contains(Convert.ToHexStringLower(SHA256.HashData(root.RawData)), command);
             Assert.Contains(Convert.ToHexStringLower(SHA256.HashData("synthetic package bytes"u8)), command);
+            return (issued.GetProperty("id").GetGuid(), CommandToken(command));
+        }
+        static string CommandToken(string command)
+        {
             var token = System.Text.RegularExpressions.Regex.Match(command, "'(?<key>[A-Za-z0-9_-]{43})'").Groups["key"].Value;
             Assert.Equal(43, token.Length);
-            return (issued.GetProperty("id").GetGuid(), token);
+            return token;
         }
         static string Csr(Guid host, ECDsa key) => new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256).CreateSigningRequestPem();
         async Task<JsonObject> Enroll(string token, string csr, string hostName = "fixture.example.test", string role = "workstation")
@@ -165,16 +181,23 @@ public class AgentEnrollmentTests
         await Reject(single.Token, csr1);
         await Reject(single.Token, csr2);
 
-        var batch = await Issue(2, manageWindowsAudit: false);
-        var second = await Enroll(batch.Token, csr2, "FIXTURE", "domain_controller");
+        using var cliOutput = new StringWriter();
+        using var cliError = new StringWriter();
+        Assert.Equal(0, await AgentCommandConsole.RunAsync(["--count", "2", "--no-audit"], true,
+            cliOutput, cliError, configuration));
+        Assert.Empty(cliError.ToString());
+        var batchToken = CommandToken(cliOutput.ToString());
+        var expectedPackage = await AgentConsolePackage.ReadAsync(configuration, savedAddress, ct);
+        Assert.Equal(expectedPackage.Command(batchToken) + cliOutput.NewLine, cliOutput.ToString());
+        var second = await Enroll(batchToken, csr2, "FIXTURE", "domain_controller");
         var optedOut = await CheckIn(second);
         Assert.Null(optedOut["collection_policy"]!["manage_windows_audit"]);
-        await Reject(batch.Token, Csr(Guid.NewGuid(), key2), "other.example.test");
-        await Reject(batch.Token, Csr(host2, key3), "other.example.test");
-        await Reject(batch.Token, csr3, "fixture.example.test", "domain_controller");
-        var workstation = await Enroll(batch.Token, csr3, "other.example.test");
+        await Reject(batchToken, Csr(Guid.NewGuid(), key2), "other.example.test");
+        await Reject(batchToken, Csr(host2, key3), "other.example.test");
+        await Reject(batchToken, csr3, "fixture.example.test", "domain_controller");
+        var workstation = await Enroll(batchToken, csr3, "other.example.test");
         Assert.True((bool)(await CheckIn(workstation))["collection_policy"]!["manage_windows_audit"]!);
-        await Reject(batch.Token, Csr(Guid.NewGuid(), key3));
+        await Reject(batchToken, Csr(Guid.NewGuid(), key3));
 
         var oldId = Guid.Parse((string)first["agent_id"]!);
         var newId = Guid.Parse((string)second["agent_id"]!);
@@ -259,9 +282,18 @@ public class AgentEnrollmentTests
             await tx.CommitAsync(ct);
         }
         await Reject(revoked.Token, csr3);
-        await using var audit = new NpgsqlCommand("select details->>'host_limit' from sli_agent_audit where action='token_create' and target=@id", db);
-        audit.Parameters.AddWithValue("id", batch.Id.ToString());
-        Assert.Equal("2", await audit.ExecuteScalarAsync(ct));
+        await using var audit = new NpgsqlCommand("""
+            select a.actor, a.details->>'host_limit', a.details::text, t.expires_at-t.created_at
+            from sli_agent_console_tokens t join sli_agent_audit a on a.target=t.id::text
+            where a.action='token_create' and t.token_hash=@hash
+            """, db);
+        audit.Parameters.AddWithValue("hash", Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(batchToken))));
+        await using var issuance = await audit.ExecuteReaderAsync(ct);
+        Assert.True(await issuance.ReadAsync(ct));
+        Assert.Equal("host_admin:root", issuance.GetString(0));
+        Assert.Equal("2", issuance.GetString(1));
+        Assert.DoesNotContain(batchToken, issuance.GetString(2));
+        Assert.Equal(TimeSpan.FromHours(1), issuance.GetTimeSpan(3));
     }
 
     [Fact]

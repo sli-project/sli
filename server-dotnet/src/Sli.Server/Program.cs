@@ -31,6 +31,11 @@ using Sli.Server.Reports;
 using Sli.Server.Legacy;
 using Sli.Server.Semantic;
 
+if (args.Length > 0 && args[0] == "agent-command")
+{
+    Environment.ExitCode = await AgentCommandConsole.RunAsync(args[1..]);
+    return;
+}
 if (args.Length > 0 && args[0] == "existing-postgres-bootstrap")
 {
     Environment.ExitCode = await Sli.Server.InstallationSetup.PostgresBootstrapCommand.RunAsync(args[1..]);

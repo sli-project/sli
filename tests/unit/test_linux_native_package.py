@@ -384,6 +384,11 @@ def test_dotnet_published_package_needs_no_sdk(payload, tmp_path, monkeypatch):
     def run(argv, **kwargs):
         assert argv[:3] == ["dpkg-deb", "--root-owner-group", "--build"]
         root = Path(argv[3])
+        if root.name == "sli-server-dotnet":
+            launcher = root / "usr/sbin/sli-agent-command"
+            assert launcher.is_file()
+            if os.name == "posix":
+                assert launcher.stat().st_mode & 0o100
         if root.name in {"sli-server-dotnet", "sli-release-new"}:
             captured.update({p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()})
 

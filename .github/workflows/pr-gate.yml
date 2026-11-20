@@ -33,27 +33,14 @@ jobs:
         run: |
           python=true
           if [ "$EVENT" = pull_request ]; then
-            # --no-renames: a move out of server/ must count its old path too.
-            files=$(git diff --name-only --no-renames "$BASE...$HEAD")
-            other=$(printf '%s\n' "$files" | grep -vE '^(frontend/|docs/)|\.md$' || true)
-            if [ -n "$files" ] && [ -z "$other" ]; then python=false; fi
+            python=$(bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD")
           fi
           echo "python=$python" | tee -a "$GITHUB_OUTPUT"
 
   source:
-    # Keep the existing required check red if the disposable DB gate fails.
-    needs: [changes, postgres]
-    if: ${{ always() }}
+    name: Source checks
     runs-on: ubuntu-latest
     steps:
-      - name: Require PostgreSQL integration success
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
-          POSTGRES_RESULT: ${{ needs.postgres.result }}
-        run: |
-          test "$CHANGES_RESULT" = success
-          test "$POSTGRES_RESULT" = success || { test "$PYTHON_CHANGED" = false && test "$POSTGRES_RESULT" = skipped; }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -73,16 +60,23 @@ jobs:
       - run: python -m pip install --disable-pip-version-check ruff==0.16.9
       - run: python -m ruff check --config .github/ruff-ci.toml server scripts tests
       - run: python scripts/maintenance/github_sanitary_check.py --root . --json
-      - name: UI and API domain binding guard
-        run: python -m pytest -q tests/tooling/test_ui_domain_binding_guard.py tests/unit/test_ui_domain_binding_api.py tests/core/test_report_domain.py
       - run: python -m compileall -q server scripts tests
-      - name: Secret manifest and provisioning contracts (no database)
+      - run: python -m ruff check --config .github/ruff-ci.toml deploy/linux/sli_secrets.py deploy/linux/installation.py deploy/linux/sli_update.py deploy/linux/updater_component.py deploy/linux/updater_launcher.py tests/unit/test_sli_secrets.py
+      - name: Domain binding, secrets, updater, plugin and event contracts
+        run: python -m pytest -q @scripts/ci/pr_source_tests.txt
+      - name: Verify installer checkpoint cleanup and recovery
+        shell: bash
         run: |
-          python -m ruff check --config .github/ruff-ci.toml deploy/linux/sli_secrets.py deploy/linux/installation.py deploy/linux/sli_update.py deploy/linux/updater_component.py deploy/linux/updater_launcher.py tests/unit/test_sli_secrets.py
-          python -m pytest -q tests/unit/test_sli_secrets.py
-      - name: Authenticated updater transition and isolated closure (Linux, synthetic only)
-        run: python -m pytest -q tests/unit/test_updater_component.py tests/unit/test_updater_transition_contract.py tests/unit/test_updater_transition.py tests/unit/test_updater_isolated_closure.py tests/unit/test_plugin_validation.py
-      - run: python -m pytest -q tests/events/test_event_catalog_contract.py tests/sources/test_plugin_package_manifest.py tests/migrations/test_sli_v4_contract.py
+          report=$(mktemp "$RUNNER_TEMP/sli-checkpoint-cleanup.XXXXXX")
+          python -B -m pytest -q --junitxml="$report" @scripts/ci/pr_checkpoint_tests.txt
+          python - "$report" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          cases = list(ET.parse(sys.argv[1]).iter('testcase'))
+          if not cases or any(case.find('skipped') is not None for case in cases):
+              raise SystemExit('Installer checkpoint tests must run without skips')
+          PY
       - name: Verify native Linux unit contracts
         env:
           ADLOG_DISABLE_SCHEDULER: "1"
@@ -102,6 +96,24 @@ jobs:
           tests/unit/test_linux_backup_capacity.py tests/unit/test_linux_backup_health_assurance.py
           tests/unit/test_linux_backup_pg_diagnostics.py tests/unit/test_linux_native_apt.py
           tests/unit/test_linux_restore_sandbox.py
+
+  gate:
+    # Preserve the required status check name while the source checks run independently.
+    name: source
+    needs: [changes, source, postgres]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require source checks and applicable PostgreSQL integration
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SOURCE_RESULT: ${{ needs.source.result }}
+          PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
+          POSTGRES_RESULT: ${{ needs.postgres.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          test "$SOURCE_RESULT" = success
+          test "$POSTGRES_RESULT" = success || { test "$PYTHON_CHANGED" = false && test "$POSTGRES_RESULT" = skipped; }
 
   tests:
     # Shipped Python unit/contracts: live-PostgreSQL tests are
@@ -151,7 +163,9 @@ jobs:
             # Tests of shipped code only (server/ removal, stage B).
             selected=("@.ci-shipped-python-tests.txt")
           fi
-          python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" "${selected[@]}"
+          mapfile -t dedicated < <(cat scripts/ci/pr_source_tests.txt scripts/ci/pr_checkpoint_tests.txt)
+          python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" \
+            "${dedicated[@]/#/--deselect=}" "${selected[@]}"
 
   frontend:
     runs-on: ubuntu-latest
@@ -340,9 +354,13 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
         run: |
-          # --ignore does not drop a file passed explicitly, so the three files run
-          # in their own steps above are removed from the shipped list here.
-          grep -vxF -e tests/migrations/test_qw_restore_context_migration.py -e tests/reporting/test_agent_collection_query_plan_postgres.py -e tests/reporting/test_plugin_receipts_query_plan_postgres.py .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt
+          # --ignore does not drop a file passed explicitly. Remove the files run in their own steps above.
+          grep -vxF -e tests/migrations/test_qw_restore_context_migration.py \
+            -e tests/reporting/test_agent_collection_query_plan_postgres.py \
+            -e tests/reporting/test_plugin_receipts_query_plan_postgres.py \
+            -e tests/reporting/test_new_logon_pairs_context_native.py \
+            -e tests/reporting/test_new_logon_pairs_diagnostics_postgres.py \
+            .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt
           python -m pytest -v -m "postgres_integration and not e2e" \
             -p scripts.ci.postgres_test_shard --postgres-shard "$SHARD" "$SHARD_COUNT" \
             -o junit_family=xunit1 --junitxml=postgres-test-results.xml @.ci-shipped-postgres-tests.txt
