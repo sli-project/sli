@@ -6,12 +6,26 @@ import { t } from "../../i18n";
 type IssuedCommand = Awaited<ReturnType<typeof api.createAgentConsoleToken>>;
 
 export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
+  const [serverUrl, setServerUrl] = useState(window.location.origin);
+  const [addressLoaded, setAddressLoaded] = useState(false);
+  const [addressError, setAddressError] = useState<string>();
   const [hostLimit, setHostLimit] = useState("1");
   const [manageWindowsAudit, setManageWindowsAudit] = useState(true);
   const [issued, setIssued] = useState<IssuedCommand>();
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<"issue" | "package" | "copy">();
+  useEffect(() => {
+    let active = true;
+    api.agentConsoleSettings().then((settings) => {
+      if (!active) return;
+      setServerUrl(settings.server_url ?? window.location.origin);
+      setAddressLoaded(true);
+    }, () => {
+      if (active) setAddressError(t("agents.console.serverUrlLoadError"));
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (!issued) return;
     const timer = window.setTimeout(() => {
@@ -22,13 +36,22 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
     return () => window.clearTimeout(timer);
   }, [issued]);
   async function issue() {
-    if (busy || issued) return;
+    if (busy || issued || !addressLoaded) return;
     setBusy(true);
     setError(undefined);
+    setAddressError(undefined);
     try {
-      setIssued(await api.createAgentConsoleToken(Number(hostLimit || 1), manageWindowsAudit));
+      setIssued(await api.createAgentConsoleToken(Number(hostLimit || 1), manageWindowsAudit, serverUrl));
     } catch (failure) {
-      setError(failure instanceof ApiResponseError && failure.code === "agent_console_package_unavailable" ? "package" : "issue");
+      if (failure instanceof ApiResponseError && failure.code === "invalid_agent_console_server_url") {
+        const names = failure.payload?.allowed_hosts;
+        const hosts = Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : [];
+        setAddressError(hosts.length
+          ? t("agents.console.serverUrlInvalid", { hosts: hosts.join(", ") })
+          : t("agents.console.serverUrlNoHosts"));
+      } else {
+        setError(failure instanceof ApiResponseError && failure.code === "agent_console_package_unavailable" ? "package" : "issue");
+      }
     } finally {
       setBusy(false);
     }
@@ -55,13 +78,21 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
               <button className="sli-ds-button" data-variant="primary" type="button" onClick={() => { void copy(issued.command); }}>{t("agents.copy")}</button>
             </div>
           </div> : <>
+            <div className="sli-ds-field">
+              <label htmlFor="agent-console-server-url">{t("agents.console.serverUrl")}</label>
+              <input id="agent-console-server-url" type="text" inputMode="url" autoComplete="off" spellCheck={false} maxLength={1024}
+                value={serverUrl} disabled={busy || !addressLoaded} aria-invalid={addressLoaded && !!addressError}
+                aria-describedby={addressError ? "agent-console-address-error" : undefined}
+                onChange={(event) => { setServerUrl(event.target.value); setAddressError(undefined); }}/>
+              {addressError && <span className="sli-ds-field__error" id="agent-console-address-error" role="alert">{addressError}</span>}
+            </div>
             <div className="sli-ds-filters__fields">
               <div className="sli-ds-field">
                 <label htmlFor="agent-console-limit">{t("agents.console.hostLimit")}</label>
                 <input id="agent-console-limit" type="number" min={1} max={100} value={hostLimit}
                   style={{ boxSizing: "border-box" }} disabled={busy} onChange={(event) => setHostLimit(event.target.value)}/>
               </div>
-              <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy}>{t("agents.console.issue")}</button>
+              <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy || !addressLoaded}>{t("agents.console.issue")}</button>
             </div>
             <label><input type="checkbox" checked={manageWindowsAudit} disabled={busy}
               onChange={(event) => setManageWindowsAudit(event.target.checked)}/>{t("agents.console.manageWindowsAudit")}</label>

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Net;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Agents.Certificates;
@@ -17,6 +18,40 @@ namespace Sli.Server.Tests.Agents;
 
 public class AgentEnrollmentTests
 {
+    [Theory]
+    [InlineData("https://agents.example.test:8443", "https://agents.example.test:8443/")]
+    [InlineData("https://branch.dc.example.test", "https://branch.dc.example.test/")]
+    [InlineData("https://192.0.2.40:8443", "https://192.0.2.40:8443/")]
+    [InlineData("https://[2001:db8::40]:8443", "https://[2001:db8::40]:8443/")]
+    [InlineData("http://agents.example.test", null)]
+    [InlineData("https://cn.example.test", null)]
+    [InlineData("https://missing.example.test", null)]
+    [InlineData("https://nested.branch.dc.example.test", null)]
+    [InlineData("https://192.0.2.41", null)]
+    [InlineData("https://agents.example.test/path/..", null)]
+    [InlineData("https://agents.example.test:0", null)]
+    [InlineData("https://user@agents.example.test", null)]
+    public void Console_addresses_require_https_and_a_certificate_san(string address, string? expected)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest("CN=cn.example.test", key, HashAlgorithmName.SHA256);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddDnsName("agents.example.test");
+        san.AddDnsName("*.dc.example.test");
+        san.AddIpAddress(IPAddress.Parse("192.0.2.40"));
+        san.AddIpAddress(IPAddress.Parse("2001:db8::40"));
+        request.CertificateExtensions.Add(san.Build());
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        if (expected is not null)
+            Assert.Equal(expected, AgentConsolePackage.ValidateOrigin(address, certificate).AbsoluteUri);
+        else
+        {
+            var error = Assert.Throws<AgentControlException>(() => AgentConsolePackage.ValidateOrigin(address, certificate));
+            Assert.Equal("invalid_agent_console_server_url", error.Message);
+            Assert.Equal(new[] { "agents.example.test", "*.dc.example.test", "192.0.2.40", "2001:db8::40" }, error.AllowedHosts);
+        }
+    }
+
     [Fact]
     public async Task Console_token_binds_first_keys_and_rejects_reuse_expiry_and_revocation()
     {
@@ -42,13 +77,24 @@ public class AgentEnrollmentTests
         var service = new AgentEnrollmentService(ca, new AgentIdentityService(ca));
         var management = new AgentManagementService(new AgentControlAudit());
         string caPath = Path.Combine(fixture.Pg.Root, "fixture-ca.crt");
+        string certificatePath = Path.Combine(fixture.Pg.Root, "fixture-server.crt");
         string msiPath = Path.Combine(fixture.Pg.Root, "fixture.msi");
         await File.WriteAllTextAsync(caPath, root.ExportCertificatePem(), ct);
+        using var serverKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest("CN=sli.example.test", serverKey, HashAlgorithmName.SHA256);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddDnsName("sli.example.test");
+        san.AddIpAddress(IPAddress.Parse("192.0.2.40"));
+        request.CertificateExtensions.Add(san.Build());
+        using var certificate = request.Create(root, DateTimeOffset.UtcNow.AddHours(-1),
+            DateTimeOffset.UtcNow.AddYears(1), RandomNumberGenerator.GetBytes(16));
+        await File.WriteAllTextAsync(certificatePath, certificate.ExportCertificatePem(), ct);
         await File.WriteAllTextAsync(msiPath, "synthetic package bytes", ct);
         using var sp = new ServiceCollection().AddSingleton<IConfiguration>(
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Sli:AgentServerCaFile"] = caPath, ["Sli:AgentInstallerPath"] = msiPath,
+                ["Kestrel:Certificates:Default:Path"] = certificatePath,
             }).Build()).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = sp };
         context.Request.Scheme = "https";
@@ -56,16 +102,19 @@ public class AgentEnrollmentTests
         await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await db.OpenAsync(ct);
 
-        async Task<(Guid Id, string Token)> Issue(int count, bool? manageWindowsAudit = null)
+        const string savedAddress = "https://192.0.2.40:8443/";
+        async Task<(Guid Id, string Token)> Issue(int count, bool? manageWindowsAudit = null, string? address = null)
         {
             var payload = new JsonObject { ["host_limit"] = count };
             if (manageWindowsAudit is { } enabled) payload["manage_windows_audit"] = enabled;
+            if (address is not null) payload["server_url"] = address;
             await using var tx = await db.BeginTransactionAsync(ct);
             var issued = await management.CreateConsoleTokenAsync(db, tx,
                 JsonSerializer.SerializeToElement(payload), "synthetic", context, ct);
             await tx.CommitAsync(ct);
             var command = issued.GetProperty("command").GetString()!;
-            Assert.Contains("https://sli.example.test/", command);
+            Assert.Contains($"'{savedAddress}'", command);
+            Assert.DoesNotContain("'https://sli.example.test/'", command);
             Assert.Contains(Convert.ToHexStringLower(SHA256.HashData(root.RawData)), command);
             Assert.Contains(Convert.ToHexStringLower(SHA256.HashData("synthetic package bytes"u8)), command);
             var token = System.Text.RegularExpressions.Regex.Match(command, "'(?<key>[A-Za-z0-9_-]{43})'").Groups["key"].Value;
@@ -96,7 +145,17 @@ public class AgentEnrollmentTests
         var host1 = Guid.NewGuid();
         var host2 = Guid.NewGuid();
         string csr1 = Csr(host1, key1), csr2 = Csr(host2, key2), csr3 = Csr(Guid.NewGuid(), key3);
-        var single = await Issue(1);
+        var single = await Issue(1, address: savedAddress.TrimEnd('/'));
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            var error = await Assert.ThrowsAsync<AgentControlException>(() => management.CreateConsoleTokenAsync(
+                db, tx, JsonSerializer.SerializeToElement(new { host_limit = 1, server_url = "https://outside.example.test" }),
+                "synthetic", context, ct));
+            Assert.Equal("invalid_agent_console_server_url", error.Message);
+            Assert.Contains("192.0.2.40", error.AllowedHosts!);
+            var settings = await management.ReadConsoleSettingsAsync(db, tx, ct);
+            Assert.Equal(savedAddress, settings.GetProperty("server_url").GetString());
+        }
         var first = await Enroll(single.Token, csr1, "fixture.example.test", "domain_controller");
         Assert.NotNull(first["certificate_pem"]);
         var automatic = (await CheckIn(first))["collection_policy"]!.AsObject();

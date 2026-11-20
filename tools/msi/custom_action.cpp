@@ -45,6 +45,16 @@ static UINT error(MSIHANDLE session, const wchar_t* message) {
     return ERROR_INSTALL_FAILURE;
 }
 
+static DWORD agentServiceStatus() {
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!manager) return GetLastError();
+    SC_HANDLE service = OpenServiceW(manager, L"SLIAgent", SERVICE_QUERY_STATUS);
+    const DWORD status = service ? ERROR_SUCCESS : GetLastError();
+    if (service) CloseServiceHandle(service);
+    CloseServiceHandle(manager);
+    return status;
+}
+
 extern "C" __declspec(dllexport) UINT __stdcall PrepareAgent(MSIHANDLE session) {
     try {
         PWSTR folder = nullptr;
@@ -56,13 +66,7 @@ extern "C" __declspec(dllexport) UINT __stdcall PrepareAgent(MSIHANDLE session) 
         if (MsiSetTargetPathW(session, L"INSTALLFOLDER", root.c_str()) != ERROR_SUCCESS)
             throw std::runtime_error("directory");
         if (property(session, L"Installed").empty() && property(session, L"WIX_UPGRADE_DETECTED").empty()) {
-            SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
-            if (!manager) return error(session, L"Cannot read the service registry. Use an elevated administrator or SYSTEM installation job.");
-            SC_HANDLE existing = OpenServiceW(manager, L"SLIAgent", SERVICE_QUERY_STATUS);
-            DWORD status = existing ? ERROR_SUCCESS : GetLastError();
-            if (existing) CloseServiceHandle(existing);
-            CloseServiceHandle(manager);
-            if (status != ERROR_SERVICE_DOES_NOT_EXIST)
+            if (agentServiceStatus() != ERROR_SERVICE_DOES_NOT_EXIST)
                 return error(session, L"A service named SLIAgent already exists or cannot be inspected. Resolve the pilot installation before installing this MSI; existing identity will not be overwritten.");
         } else {
             auto account = property(session, L"STORED_SERVICE_ACCOUNT");
@@ -72,10 +76,14 @@ extern "C" __declspec(dllexport) UINT __stdcall PrepareAgent(MSIHANDLE session) 
         std::wstring configure = command + L"configure";
         for (const wchar_t* name : {L"SERVER_URL", L"CA_FILE", L"CA_FINGERPRINT", L"TOKEN_FILE", L"SERVICE_ACCOUNT"})
             configure += L" " + hex(property(session, name));
+        std::wstring remove = command + L"remove";
+        // Record the service's absence before DeleteServices runs.
+        if (property(session, L"REMOVE") == L"ALL" && agentServiceStatus() == ERROR_SERVICE_DOES_NOT_EXIST)
+            remove += L" no-service";
         for (const auto& item : {std::make_pair(L"ConfigureAgent", configure),
                 std::make_pair(L"RestoreAgent", command + L"restore " + hex(property(session, L"RESTORE_STATE"))),
                 std::make_pair(L"PreserveAgent", command + L"preserve"),
-                std::make_pair(L"RemoveAgent", command + L"remove"),
+                std::make_pair(L"RemoveAgent", remove),
                 std::make_pair(L"RollbackAgent", command + L"rollback"),
                 std::make_pair(L"CommitAgent", command + L"commit")}) {
             if (MsiSetPropertyW(session, item.first, item.second.c_str()) != ERROR_SUCCESS)

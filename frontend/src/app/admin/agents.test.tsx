@@ -7,7 +7,7 @@ import { localeRuntime, setLocale, t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
 const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
-  issueCommand: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
+  issueCommand: vi.fn(), consoleSettings: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner, capabilities: state.capabilities, subject: { type: "session", id: 1, username: "fixture-owner" }, evaluated_at_utc: state.accessRevision }), useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../api/client", async (original) => ({ ...await original<typeof import("../../api/client")>(), api: {
   agentFileAuditStatus: (agentId: string) => state.auditStatus(agentId),
@@ -16,7 +16,8 @@ vi.mock("../../api/client", async (original) => ({ ...await original<typeof impo
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
   agents: () => state.list(), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
   setupStatus: () => state.setupStatus(),
-  createAgentConsoleToken: (limit: number, audit: boolean) => state.issueCommand(limit, audit), agentConsoleTokens: () => state.consoleTokens(),
+  agentConsoleSettings: () => state.consoleSettings(),
+  createAgentConsoleToken: (limit: number, audit: boolean, serverUrl: string) => state.issueCommand(limit, audit, serverUrl), agentConsoleTokens: () => state.consoleTokens(),
   revokeAgentConsoleToken: (id: string) => state.revokeConsoleToken(id),
 } }));
 import { AgentsPage } from "./agents";
@@ -41,6 +42,7 @@ beforeEach(() => {
   state.deploymentDirectory.mockResolvedValue({ domains: [] }); state.deploymentTemplates.mockResolvedValue({ items: [] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
   state.consoleTokens.mockResolvedValue({ items: [] });
+  state.consoleSettings.mockResolvedValue({ server_url: null });
   state.issueCommand.mockImplementation(async () => ({ id: agent.id, expires_at: new Date(Date.now() + 3600000).toISOString(),
     command: "& { 'synthetic-command' }", package_url: "/api/v1/agent/installer/SliAgent.msi" }));
 });
@@ -274,14 +276,17 @@ it.each([["", true], ["3", false]] as const)("creates a command with computer co
   expect(panel.getByRole("link", { name: t("agents.console.download") }).getAttribute("href")).toBe("/api/v1/agent/installer/SliAgent.msi");
 
   const count = panel.getByLabelText(t("agents.console.hostLimit"));
+  expect(panel.getByLabelText(t("agents.console.serverUrl"))).toHaveProperty("value", window.location.origin);
   expect(count).toHaveProperty("value", "1");
   const audit = panel.getByRole("checkbox", { name: t("agents.console.manageWindowsAudit") });
   expect(audit).toHaveProperty("checked", true);
   if (!auditEnabled) fireEvent.click(audit);
   fireEvent.change(count, { target: { value: limit } });
-  fireEvent.click(panel.getByRole("button", { name: t("agents.console.issue") }));
+  const issue = panel.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
+  await waitFor(() => expect(issue.disabled).toBe(false));
+  fireEvent.click(issue);
   expect(await panel.findByLabelText(t("agents.console.powerShell"))).toHaveProperty("value", "& { 'synthetic-command' }");
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1), auditEnabled);
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1), auditEnabled, window.location.origin);
   fireEvent.click(panel.getByRole("button", { name: t("agents.copy") }));
   await waitFor(() => expect(copy).toHaveBeenCalledWith("& { 'synthetic-command' }"));
   expect(JSON.stringify(client.getQueryCache().getAll().map((item) => item.state.data))).not.toContain("synthetic-command");
@@ -290,11 +295,30 @@ it.each([["", true], ["3", false]] as const)("creates a command with computer co
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
+it("loads the saved address and shows the certificate names beside a rejected address", async () => {
+  state.consoleSettings.mockResolvedValueOnce({ server_url: "https://agents.example.test:8443/" });
+  state.issueCommand.mockRejectedValueOnce(new ApiResponseError(400, "invalid_agent_console_server_url", undefined,
+    { allowed_hosts: ["agents.example.test", "192.0.2.40"] }));
+  mount(); await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  const address = screen.getByLabelText(t("agents.console.serverUrl"));
+  await waitFor(() => expect(address).toHaveProperty("value", "https://agents.example.test:8443/"));
+  fireEvent.change(address, { target: { value: "https://other.example.test" } });
+  fireEvent.click(screen.getByRole("button", { name: t("agents.console.issue") }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent",
+    t("agents.console.serverUrlInvalid", { hosts: "agents.example.test, 192.0.2.40" }));
+  expect(address.getAttribute("aria-invalid")).toBe("true");
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(1, true, "https://other.example.test");
+  expect(screen.queryByLabelText(t("agents.console.powerShell"))).toBeNull();
+});
+
 it("reports when the server has no agent package", async () => {
   state.issueCommand.mockRejectedValue(new ApiResponseError(503, "agent_console_package_unavailable"));
   mount(); await screen.findByText(agent.host_name!);
   fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  fireEvent.click(screen.getByRole("button", { name: t("agents.console.issue") }));
+  const issue = screen.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
+  await waitFor(() => expect(issue.disabled).toBe(false));
+  fireEvent.click(issue);
   expect(await screen.findByRole("alert")).toHaveProperty("textContent", t("agents.console.packageError"));
 });
 

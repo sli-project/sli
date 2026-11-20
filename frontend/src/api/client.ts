@@ -2296,8 +2296,9 @@ export const api = {
   agentUpdateWaves: () => request<{ items: AgentUpdateWave[] }>("/api/v1/admin/agent-update-waves"),
   stopAgentUpdateWave: (wave_id: string) => requestMutation<AgentUpdateWave>("/api/v1/admin/agent-update-waves/stop", "POST", { wave_id }),
   createAgentToken: (body: { host_id: string; key_fingerprint: string; ttl_seconds: number; registration_host_name?: string }) => requestMutation<AgentEnrollmentToken>("/api/v1/admin/agent-tokens", "POST", body),
-  createAgentConsoleToken: (hostLimit: number, manageWindowsAudit: boolean) => requestMutation<{ id: string; expires_at: string; command: string; package_url: string }>(
-    "/api/v1/admin/agent-console-tokens", "POST", { host_limit: hostLimit, manage_windows_audit: manageWindowsAudit }),
+  agentConsoleSettings: () => request<{ server_url: string | null }>("/api/v1/admin/agent-console-tokens/settings"),
+  createAgentConsoleToken: (hostLimit: number, manageWindowsAudit: boolean, serverUrl: string) => requestMutation<{ id: string; expires_at: string; command: string; package_url: string }>(
+    "/api/v1/admin/agent-console-tokens", "POST", { host_limit: hostLimit, manage_windows_audit: manageWindowsAudit, server_url: serverUrl }),
   agentConsoleTokens: () => request<{ items: { id: string; created_at: string; expires_at: string; remaining: number }[] }>(
     "/api/v1/admin/agent-console-tokens"),
   revokeAgentConsoleToken: (id: string) => requestMutation("/api/v1/admin/agent-console-tokens/revoke", "POST", { id }),

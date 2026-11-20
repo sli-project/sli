@@ -378,7 +378,25 @@ def remove_owned(root, *, rollback=False):
     root.rmdir()
 
 
-def uninstall_owned(root):
+def _service_account_present(sid):
+    if sid is None:
+        return False
+    if os.name != "nt" or sid == "S-1-5-18":
+        return True
+    import pywintypes
+    import win32security
+    from winerror import ERROR_NONE_MAPPED
+
+    try:
+        win32security.LookupAccountSid(None, win32security.ConvertStringSidToSid(sid))
+        return True
+    except pywintypes.error as exc:
+        if exc.winerror != ERROR_NONE_MAPPED:
+            raise
+        return False
+
+
+def uninstall_owned(root, *, service_present=True):
     """Best-effort revocation online; offline cleanup never claims server success.
 
     MSI has already stopped/deleted its service. Keep TLS trust/identity only in
@@ -396,7 +414,8 @@ def uninstall_owned(root):
         raise ValueError("agent_msi_state_unmanaged")
     identity, transport, command_id = None, None, None
     try:
-        identity = IdentityStore(config).load() if config is not None else None
+        if service_present and config is not None and _service_account_present(config.service_identity_sid):
+            identity = IdentityStore(config).load()
         if identity is not None:
             transport = Transport(config)
             context = transport._context(identity)
@@ -417,10 +436,12 @@ def uninstall_owned(root):
         audit_root = root / "state/windows-audit"
         if (audit_root / "state.json").exists():
             from sli_agent.windows_audit import AuditManager
-            result = AuditManager(audit_root).reconcile([], {"manage_windows_audit": False,
-                                                           "audit_process_command_line": False}, 1)
-            if result["management_state"] not in ("restored", "disabled"):
-                raise ValueError("agent_removal_cleanup_failed")
+            audit = AuditManager(audit_root)
+            state = audit._read()
+            if state["subcategories"] or state["command_line"] is not None:
+                result = audit.reconcile([], {"manage_windows_audit": False, "audit_process_command_line": False}, 1)
+                if result["management_state"] not in ("restored", "disabled"):
+                    raise ValueError("agent_removal_cleanup_failed")
         remove_owned(root)
     except (OSError, ValueError):
         if command_id is not None:
@@ -548,8 +569,8 @@ def main():
             restore_owned(Path(decode_property(fields[0])), root)
         elif operation == "preserve" and not fields:
             validate_owned(root)
-        elif operation == "remove":
-            uninstall_owned(root)
+        elif operation == "remove" and (not fields or fields == ["no-service"]):
+            uninstall_owned(root, service_present=not fields)
         elif operation == "rollback":
             remove_owned(root, rollback=True)
         elif operation == "commit":

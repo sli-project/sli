@@ -25,6 +25,7 @@ public static class AgentControlEndpoints
     {
         endpoints.MapGet(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
         endpoints.MapPost(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
+        endpoints.MapGet(ConsoleTokens + "/settings", context => HandleAsync(context, ConsoleTokens + "/settings", noStoreOnly: true));
         endpoints.MapPost(ConsoleTokens + "/revoke", context => HandleAsync(context, ConsoleTokens + "/revoke", noStoreOnly: true));
         endpoints.MapGet(AgentConsolePackage.DownloadPath, AgentConsolePackage.DownloadAsync).AllowAnonymous();
         foreach (string route in new[] { "/api/v1/admin/agents", "/api/v1/admin/agent-tokens" }) endpoints.MapGet(route, ctx => HandleAsync(ctx, route));
@@ -82,6 +83,7 @@ public static class AgentControlEndpoints
             {
                 ("GET", "/api/v1/admin/agents") => await management.ListAgentsAsync(db, tx, Values(context, "agent_id").FirstOrDefault(), actor, durable),
                 ("GET", ConsoleTokens) => await management.ListConsoleTokensAsync(db, tx, actor, durable),
+                ("GET", ConsoleTokens + "/settings") => await management.ReadConsoleSettingsAsync(db, tx, durable),
                 ("GET", _) => await management.ListTokensAsync(db, tx, actor, durable),
                 ("POST", ConsoleTokens) => await management.CreateConsoleTokenAsync(db, tx, body!.RootElement, actor, context, durable),
                 ("POST", ConsoleTokens + "/revoke") => await management.RevokeConsoleTokenAsync(db, tx, body!.RootElement, actor, durable),
@@ -93,7 +95,13 @@ public static class AgentControlEndpoints
             };
             await tx.CommitAsync(durable); await DomainHttp.WriteAsync(context, output, 200, ct);
         }
-        catch (AgentControlException error) { await DomainHttp.WriteAsync(context, new { error = error.Message }, error.Status, ct); }
+        catch (AgentControlException error)
+        {
+            object body = error.AllowedHosts is { } hosts
+                ? new { error = error.Message, allowed_hosts = hosts }
+                : new { error = error.Message };
+            await DomainHttp.WriteAsync(context, body, error.Status, ct);
+        }
         catch (AuthInputException error) { await DomainHttp.WriteAsync(context, new { error = error.Code }, error.StatusCode, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception error)
