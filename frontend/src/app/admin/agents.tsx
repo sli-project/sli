@@ -8,7 +8,7 @@ import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { Note } from "./gate";
 import { AgentCollectionControls, AgentModuleControls } from "./agent-policy-controls";
-import { AgentActions, agentHostName, agentModuleName } from "./agent-actions";
+import { AgentActions, agentHasDcAudit, agentHostName, agentModuleName } from "./agent-actions";
 import { AgentWindowsAuditStatus } from "./agent-windows-audit";
 import { AgentRemovalStatus, OldAgentsTable } from "./agent-removal-status";
 import { AgentDeploymentPanel } from "./agent-deployment";
@@ -30,21 +30,28 @@ export function AgentsPage() {
 type AgentFilter = "all" | "silent" | "auditOff" | "disabled";
 // The server uses the same five-minute silence threshold for agent removal readback.
 const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen || Date.now() - Date.parse(agent.last_seen) > 300_000);
+function missingAuditSetting(row: { success: boolean; failure: boolean; actual_success: boolean | null; actual_failure: boolean | null }) {
+  return row.success && row.actual_success === false || row.failure && row.actual_failure === false;
+}
 function auditDisabled(agent: AgentItem): number | null {
   const report = agent.windows_audit;
   if (report?.policy_revision !== agent.policy_revision) return null;
-  if (agent.assigned_modules.some((module) => typeof module !== "string" && module.enabled && module.module_id === "sli.windows.ad-dc") && !report.families?.domain_controller) return null;
-  const required = new Map<string, { success: boolean; failure: boolean; actual_success: boolean | null; actual_failure: boolean | null }>();
-  for (const family of Object.values(report.families ?? {})) {
-    for (const row of family?.required ?? []) required.set(row.guid, row);
-  }
-  if (!required.size) return null;
-  let count = 0;
-  for (const row of required.values()) {
-    if (row.success && row.actual_success === false || row.failure && row.actual_failure === false) count++;
-    else if (row.success && row.actual_success === null || row.failure && row.actual_failure === null) return null;
-  }
-  return count;
+  const families = agentHasDcAudit(agent) ? [report.families?.domain_controller] : Object.values(report.families ?? {});
+  const rows = [...new Map(families.flatMap((family) => family?.required ?? []).filter((row) =>
+    row.subcategory !== "domain_root_sacl").map((row) => [row.guid, row])).values()];
+  const count = rows.filter(missingAuditSetting).length;
+  return count || (rows.length && rows.every((row) => row.actual_success !== null && row.actual_failure !== null) ? 0 : null);
+}
+function dcAuditFailure(agent: AgentItem) {
+  if (!agentHasDcAudit(agent) || agent.status !== "active" || !agent.collection_policy?.manage_windows_audit) return null;
+  const report = agent.windows_audit;
+  if (report?.policy_revision !== agent.policy_revision) return null;
+  const rows = report.families?.domain_controller?.required.filter((row) => row.subcategory !== "domain_root_sacl");
+  if (!rows?.length) return null;
+  const missing = rows.filter(missingAuditSetting);
+  if (missing.some((row) => row.state === "managed_by_gpo")) return t("agents.auditBlockedByPolicy");
+  if (missing.length || rows.some((row) => row.actual_success === null || row.actual_failure === null)) return t("agents.auditApplyFailed");
+  return null;
 }
 const moduleId = (module: AgentItem["assigned_modules"][number]) => typeof module === "string" ? module : module.module_id;
 function computers(items: AgentItem[]) {
@@ -76,6 +83,7 @@ function AgentsContent() {
   const [enrollment, setEnrollment] = useState<"group" | "manual">(() => access?.platform_owner ? "group" : "manual");
   const [consoleSession, setConsoleSession] = useState<string>();
   const [keysSession, setKeysSession] = useState<string>();
+  const [auditSaved, setAuditSaved] = useState<{ id: string; at: string }>();
   const [filter, setFilter] = useState<AgentFilter>(() => {
     const value = new URLSearchParams(window.location.search).get("filter");
     return value === "silent" || value === "auditOff" || value === "disabled" ? value : "all";
@@ -87,7 +95,13 @@ function AgentsContent() {
     window.history.replaceState(window.history.state, "", url);
   };
   const action = useMutation({ mutationFn: ({ kind, body }: { kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove"; body: Record<string, unknown> }) => api.agentAction(kind, body),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: ["admin-agents"] }); } });
+    onSuccess: (_, { kind, body }) => {
+      const policy = body.collection_policy;
+      if (kind === "policy" && typeof body.agent_id === "string" && policy && typeof policy === "object" && "manage_windows_audit" in policy) {
+        setAuditSaved({ id: body.agent_id, at: new Date().toISOString() });
+      }
+      void client.invalidateQueries({ queryKey: ["admin-agents"] });
+    } });
   const changePolicy = (kind: "modules" | "policy", body: Record<string, unknown>) => action.mutate({ kind, body });
   const date = (value?: string | null) => formatDateTime(value, timeZone);
   const items = computers((inventory.data?.items ?? []).filter((agent) => agent.status !== "replaced"));
@@ -104,12 +118,16 @@ function AgentsContent() {
     { key: "agent_version", label: t("agents.version"), render: (agent) => agent.agent_version || "—" },
     { key: "role", label: t("agents.computerRole"), render: (agent) => agent.assigned_modules.some((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(moduleId(module)))
       ? t("agents.roleDc") : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? t("agents.roleWorkstation") : "—" },
-    { key: "status", label: t("agents.status"), render: (agent) => agent.status !== "active" ? t("agents.disabled") : silent(agent)
-      ? agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected") : (auditDisabled(agent) ?? 0) > 0 ? t("agents.auditOffStatus", { count: auditDisabled(agent)! }) : t("agents.working") },
+    { key: "status", label: t("agents.status"), render: (agent) => {
+      if (agent.status !== "active") return t("agents.disabled");
+      if (silent(agent)) return agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected");
+      const count = auditDisabled(agent);
+      return count && !dcAuditFailure(agent) ? t("agents.auditOffStatus", { count }) : t("agents.working");
+    } },
     { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (agent) => date(agent.last_seen) },
     { key: "windows_audit", label: t("agents.windowsAudit"), render: (agent) => {
       const count = auditDisabled(agent);
-      return count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured");
+      return dcAuditFailure(agent) ?? (count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured"));
     } },
     { key: "certificates", label: t("agents.certificateUntil"), kind: "datetime", render: (agent) => date(agent.certificates.filter((cert) => !cert.revoked_at).sort((a, b) => Date.parse(b.not_after) - Date.parse(a.not_after))[0]?.not_after) },
   ];
@@ -148,7 +166,11 @@ function AgentsContent() {
         {selected.delivery_diagnostics ? <AgentDeliveryDiagnostics agent={selected} timeZone={timeZone} recoveryAvailable={Boolean(access?.platform_owner)}/> : null}
         {access?.platform_owner && selected.delivery_diagnostics?.items.some((item) => !item.resolved_at_utc && ["agent_sequence_gap", "agent_cursor_mismatch"].includes(item.error_code)) ? <AgentSequenceRecovery agentId={selected.id} hostName={agentHostName(selected)} canRecover active={selected.status === "active"} timeZone={timeZone}/> : null}
       </section> : null}
-      {selected.assigned_modules.some((module) => typeof module !== "string" && module.enabled && module.module_id === "sli.windows.ad-dc") || selected.windows_audit?.policy_revision !== undefined ? <section><h3>{t("agents.windowsAudit")}</h3><AgentWindowsAuditStatus agent={selected} change={changePolicy} busy={action.isPending} timeZone={timeZone}/></section> : null}
+      {agentHasDcAudit(selected) || selected.windows_audit?.policy_revision !== undefined ? <section>
+        <h3>{t("agents.windowsAudit")}</h3>
+        <AgentWindowsAuditStatus key={`${selected.id}:${selected.policy_revision}`} agent={selected} change={changePolicy}
+          busy={action.isPending} timeZone={timeZone} savedAt={auditSaved?.id === selected.id && !action.isError ? auditSaved.at : undefined}/>
+      </section> : null}
       {selected.certificates.length ? <section><h3>{t("agents.certificate")}</h3><ul>{selected.certificates.map((cert) => <li key={cert.serial}>{date(cert.not_after)} · {t("agents.certificateSerial", { serial: cert.serial })}{cert.revoked_at ? ` · ${t("agents.revoked")}` : ""}</li>)}</ul></section> : null}
       {selected.policy_audit?.length ? <section><h3>{t("agents.audit")}</h3><ul>{selected.policy_audit.map((entry) => <li key={entry.id}>
         {t(entry.action === "module_assign" ? "agents.auditModule" : entry.action === "policy_ack" ? "agents.auditAck" : "agents.auditPolicy")} · {entry.actor} · {date(entry.occurred_at)}
