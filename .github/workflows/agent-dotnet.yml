@@ -45,7 +45,7 @@ jobs:
   # Build with warnings as errors, run portable tests, and verify the .NET packets on the server side.
   # WindowsOnly tests require the dedicated acceptance VM.
   portable:
-    runs-on: ${{ vars.SLI_AGENT_RUNNER || 'windows-latest' }}
+    runs-on: windows-latest
     env:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -91,7 +91,7 @@ jobs:
 
   # Build and validate the payload for MSI packaging.
   windows:
-    runs-on: ${{ vars.SLI_AGENT_RUNNER || 'windows-latest' }}
+    runs-on: windows-latest
     env:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"

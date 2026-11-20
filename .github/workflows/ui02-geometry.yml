@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   geometry:
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       ADLOG_DB_BACKEND: postgres
       ADLOG_PG_DSN: postgresql://sli-pytest.invalid:5432/sli_pytest_unreachable

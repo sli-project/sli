@@ -15,7 +15,7 @@ jobs:
   changes:
     # PRs that touch only the React UI or docs skip the Python suites:
     # tests then runs only Python tests that read frontend/, postgres is skipped.
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.diff.outputs.python }}
     steps:
@@ -44,7 +44,7 @@ jobs:
     # Keep the existing required check red if the disposable DB gate fails.
     needs: [changes, postgres]
     if: ${{ always() }}
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Require PostgreSQL integration success
         env:
@@ -110,7 +110,7 @@ jobs:
     # Native POSIX contracts run on Linux in the required source job.
     needs: changes
     if: ${{ always() }}
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       ADLOG_DISABLE_SCHEDULER: "1"
       ADLOG_DISABLE_COLLECTION: "1"
@@ -154,7 +154,7 @@ jobs:
           python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" "${selected[@]}"
 
   frontend:
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -191,7 +191,7 @@ jobs:
     name: postgres (${{ matrix.shard }})
     needs: changes
     if: ${{ needs.changes.outputs.python == 'true' }}
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -365,7 +365,7 @@ jobs:
 
   t002-native:
     if: startsWith(github.head_ref || github.ref_name, 'codex/t002-')
-    runs-on: ${{ vars.SLI_T002_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # Keep bounded headroom for setup, integration, cleanup and cache upload.
     env:
       ADLOG_DISABLE_SCHEDULER: "1"

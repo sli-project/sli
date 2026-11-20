@@ -122,7 +122,7 @@ class WindowsAuditContracts(unittest.TestCase):
         self.assertEqual(len(paths), 6)
         self.assertIn("on:\n  pull_request:\n    paths:", workflow)
         self.assertIn("permissions:\n  contents: read\n", workflow)
-        self.assertIn("runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}", workflow)
+        self.assertIn("runs-on: ubuntu-latest", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("python3 -m unittest discover -s tests/unit -p test_windows_audit_diagnostics_contracts.py -v", workflow)
         self.assertIn("WindowsOnly: deferred", workflow)

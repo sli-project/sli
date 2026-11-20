@@ -10,7 +10,7 @@
     <!-- Server snapshot schedules use IANA timezones, including on Windows. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <RepositoryUrl>https://github.com/sli-project/sli-platform</RepositoryUrl>
+    <RepositoryUrl>https://github.com/sli-project/sli</RepositoryUrl>
     <Company>SLI</Company>
     <Version>0.3.4</Version>
   </PropertyGroup>

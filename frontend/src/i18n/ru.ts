@@ -1519,15 +1519,6 @@ export const ru = {
 
 
   // pages:operations — keys of this area go right below this line
-  "operations.watchdog.pcLoad": "Нагрузка ПК",
-  "operations.watchdog.loadValues": "процессор {cpu}%, память {memory}%; порог запуска {limit}%",
-  "operations.watchdog.labTunnel": "LAB-туннель",
-  "operations.watchdog.taskId": "Имя задачи",
-  "operations.watchdog.domain": "Домен",
-  "operations.watchdog.area": "Область",
-  "operations.watchdog.http": "HTTP",
-  "operations.watchdog.reportState": "Состояние",
-  "operations.watchdog.networkOffline": "Сеть: нет ответа (перезапустите VPN)",
   "operations.sources.unused": "Не используется",
   "operations.sources.unusedDetail": "Серверный сбор отключён, новых данных больше 7 дней нет. Состояние сбора определяется по агентам.",
   "operations.agent_collection.historical": "{count} старых пакетов не импортированы (ошибка от {time}).",

@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ${{ vars.SLI_TESTS_RUNNER || 'windows-latest' }}
+    runs-on: windows-latest
     env:
       ADLOG_DISABLE_SCHEDULER: "1"
       ADLOG_DISABLE_COLLECTION: "1"
@@ -36,7 +36,7 @@ jobs:
           PYTEST_ADDOPTS: "@.ci-shipped-python-tests.txt"
 
   frontend:
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -59,7 +59,7 @@ jobs:
       - run: npm --prefix frontend run build
 
   postgres:
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # Keep bounded headroom for setup, integration, cleanup and cache upload.
     env:
       ADLOG_DISABLE_SCHEDULER: "1"
