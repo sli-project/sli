@@ -27,8 +27,8 @@ beforeEach(() => {
     Array.from(String(value), (character) => `\\${(character.codePointAt(0) || 0xfffd).toString(16)} `).join("") });
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
-async function openMenu() {
-  await userEvent.click(screen.getByRole("button", { name: t("agents.actionsFor", { host: "fixture-host" }) }));
+async function openMenu(user: Pick<typeof userEvent, "click"> = userEvent) {
+  await user.click(screen.getByRole("button", { name: t("agents.actionsFor", { host: "fixture-host" }) }));
   return screen.findByRole("menu");
 }
 
@@ -182,20 +182,30 @@ it.each(["ru", "en"] as const)("requires confirmation to enable audit management
 });
 
 it("sends command line consent only after selection and cancels without a mutation", async () => {
+  const user = userEvent.setup();
   render(<AgentActions agent={agent} busy={false} change={change}/>);
-  let menu = await openMenu();
-  await userEvent.click(within(menu).getByRole("menuitem", { name: t("agents.auditEnable") }));
+  const trigger = screen.getByRole("button", { name: t("agents.actionsFor", { host: "fixture-host" }) });
+  let menu = await openMenu(user);
+  await user.click(within(menu).getByRole("menuitem", { name: t("agents.auditEnable") }));
   let dialog = await screen.findByRole("dialog");
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  await userEvent.click(within(dialog).getByRole("button", { name: t("agents.cancel") }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const selected = within(dialog).getByRole<HTMLInputElement>("checkbox", { name: t("agents.auditCommandLineConsent") });
+  await user.click(selected);
+  expect(selected.checked).toBe(true);
+  await user.click(within(dialog).getByRole("button", { name: t("agents.cancel") }));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
   expect(change).not.toHaveBeenCalled();
-  menu = await openMenu();
-  await userEvent.click(within(menu).getByRole("menuitem", { name: t("agents.auditEnable") }));
+  menu = await openMenu(user);
+  await user.click(within(menu).getByRole("menuitem", { name: t("agents.auditEnable") }));
   dialog = await screen.findByRole("dialog");
-  expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  await userEvent.click(within(dialog).getByRole("button", { name: t("agents.auditEnable") }));
+  const consent = within(dialog).getByRole<HTMLInputElement>("checkbox", { name: t("agents.auditCommandLineConsent") });
+  expect(consent.checked).toBe(false);
+  await user.click(consent);
+  expect(change).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: t("agents.auditEnable") }));
+  expect(change).toHaveBeenCalledTimes(1);
   expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 2,
     collection_policy: { manage_windows_audit: true, audit_process_command_line: true } });
 });
