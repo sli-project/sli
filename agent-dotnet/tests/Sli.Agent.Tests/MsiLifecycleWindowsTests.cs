@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Principal;
 using System.ServiceProcess;
+using System.Text;
 using Microsoft.Win32;
 using Sli.Agent.Core;
+using Sli.Agent.Protocol;
 using Sli.Agent.Service;
 using Sli.Agent.Tests.Support;
 using Sli.Agent.Windows;
@@ -47,12 +49,12 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             var now = DateTimeOffset.UtcNow;
             using var authority = new TestAuthority(now);
             using var identity = store.Accept(authority.Issue(store), now);
-            string packet;
+            SignedPacket packet;
             CapturedPosition? cursor;
             using (var queue = new FilePacketQueue(Path.Combine(options.StateDir, "queue"),
                        new PhysicalDurableFiles(new WindowsDirectorySecurity()), options.SpoolMaxBytes, options.SpoolMaxAgeSeconds))
             {
-                packet = queue.Capture(identity.Signer, identity.AgentId, Helpers.Sample("", "42"), now).ToCanonical();
+                packet = queue.Capture(identity.Signer, identity.AgentId, Helpers.Sample("", "42"), now);
                 cursor = queue.Captured("sli.test");
             }
             var saved = new[] { "host.json", "identity-key.json", "identity.json", "queue/checkpoints.json" }
@@ -72,7 +74,7 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             {
                 using var queue = new FilePacketQueue(directory,
                     new PhysicalDurableFiles(new WindowsDirectorySecurity()), options.SpoolMaxBytes, options.SpoolMaxAgeSeconds);
-                Assert.Equal(packet, Assert.Single(queue.Pending()).ToCanonical());
+                Assert.Equal(packet.ToCanonical(), Assert.Single(queue.Pending()).ToCanonical());
                 Assert.Equal(cursor, queue.Captured("sli.test"));
             }
 
@@ -102,7 +104,10 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             }
             AssertServiceRunning();
             AssertState();
-            AssertQueue(Path.Combine(options.StateDir, "queue"));
+            // The running service owns the queue lock. AssertState already checked the checkpoint bytes.
+            var packetPath = Assert.Single(Directory.EnumerateFiles(Path.Combine(options.StateDir, "queue"), "*.packet"));
+            Assert.Equal(packet.Envelope.PacketId + ".packet", Path.GetFileName(packetPath));
+            Assert.Equal(Encoding.ASCII.GetBytes(packet.ToCanonical()), File.ReadAllBytes(packetPath));
             Assert.Equal("https://127.0.0.1:1", MsiConfiguration.ReadSettings()["Agent:ServerUrl"]);
             // Uninstall starts with the service running; MSI itself must stop it before removing files.
             await Msi("uninstall", "/x", upgrade, "/qn", "/norestart");
