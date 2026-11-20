@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { api, type HomeDecisionSummary } from "../api/client";
 import { Badge, PageHeader, StateView } from "../design-system";
 import { counted, getLocale, t, type MessageKey } from "../i18n";
@@ -19,13 +20,13 @@ function HomeDenied() {
   </div>;
 }
 
-export function HomeComposition({ data, onRetry }: { data: HomeDecisionSummary; onRetry: () => void }) {
+export function HomeComposition({ data, onRetry, actions }: { data: HomeDecisionSummary; onRetry: () => void; actions?: ReactNode }) {
   const denied = data.state === "denied";
   const unconfirmed = data.state === "partial" || data.state === "stale";
   const showAssignee = data.groups.some((group) => group.assigned_to?.trim());
   const remainingProblems = data.remaining_problems;
   return <>
-    <PageHeader title={t("home.title")}/>
+    <PageHeader title={t("home.title")} actions={actions}/>
     {denied ? <HomeDenied/> : <>
       {data.groups.length ? <>
         <div className="sli-ds-report__views"><div className="sli-ds-table sli-ds-home-queue"><div className="sli-ds-table__scroll"><table aria-label={t("home.title")}>
@@ -65,15 +66,24 @@ export function HomePage() {
   const { timeZone } = useTimeZone();
   const access = useEffectiveAccess();
   const accessStatus = useAccessStatus();
+  const canManageAgents = accessStatus === "получены" && Boolean(access?.platform_owner || access?.capabilities.includes("access.manage"));
+  const inventory = useQuery({ queryKey: ["admin-agents"], queryFn: () => api.agents(), retry: false, enabled: canManageAgents });
+  const canConfigureNotifications = access?.platform_owner || (access?.subject.coarse_role === "admin"
+    && ["notifications.channels", "notifications.deliveries"].every((key) => access.reports.some((report) => report.report_key === key && report.allowed)));
+  const actions = canManageAgents && inventory.isSuccess && inventory.data.items.length === 0 ? <>
+    <a className="sli-ds-button" data-variant="primary" href="/app/agents?register=1">{t("home.addAgent")}</a>
+    {canConfigureNotifications ? <a className="sli-ds-button" href="/app/notifications?tab=channels">{t("home.connectNotifications")}</a> : null}
+  </> : null;
   const params = homeParams(window.location.search, timeZone);
   const summary = useQuery({ queryKey: ["home", "summary", "v3", params.toString(), getLocale(), access],
     queryFn: () => api.homeDecisions(params), staleTime: 30_000, retry: false, enabled: accessStatus === "получены" });
   const failure = summary.error ? errorState(summary.error) : null;
   return <section className="sli-ds-report sli-ds-home">
-    {accessStatus === "загружается" || summary.isLoading ? <><PageHeader title={t("home.title")}/><StateView state="loading" compact skeleton="table"/></>
+    {actions && !summary.data?.groups.length ? <PageHeader title={t("home.title")} actions={actions}/>
+      : accessStatus === "загружается" || summary.isLoading || inventory.isLoading && !summary.data?.groups.length ? <><PageHeader title={t("home.title")}/><StateView state="loading" compact skeleton="table"/></>
       : accessStatus === "отказ" ? <><PageHeader title={t("home.title")}/><StateView state="error" compact/></>
       : failure ? <><PageHeader title={t("home.title")}/>{failure.state === "denied" ? <HomeDenied/> : <StateView {...failure} compact onRetry={() => void summary.refetch()}/>}</>
-      : summary.data ? <HomeComposition data={summary.data} onRetry={() => void summary.refetch()}/> : null}
+      : summary.data ? <HomeComposition data={summary.data} actions={actions} onRetry={() => void summary.refetch()}/> : null}
   </section>;
 }
 

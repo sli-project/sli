@@ -182,7 +182,7 @@ public sealed record FindingStatusInput(string Status, string? Note, bool Assign
         bool changed = old != Status;
         if (changed && (!Transitions.TryGetValue(old, out var targets) || !targets.Contains(Status)))
             throw new ProblemException("invalid_transition", 409, $"Finding status transition '{old}' -> '{Status}' is not allowed");
-        if (changed && Note is null && Reason is null) throw new ProblemException("reason_required", message: "Finding transitions require a reason");
+        if (changed && Status != "closed" && Note is null && Reason is null) throw new ProblemException("reason_required", message: "Finding transitions require a reason");
         string? assignee = AssigneeSupplied ? Assignee : current["assigned_to"]?.GetValue<string>();
         string? reason = ReasonSupplied ? Reason : current["status_reason"]?.GetValue<string>();
         bool reasonChanged = reason != current["status_reason"]?.GetValue<string>();
