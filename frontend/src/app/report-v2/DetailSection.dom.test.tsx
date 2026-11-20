@@ -27,6 +27,21 @@ function show(row = { id: 7, evidence_total: 70 }) {
   return render(<QueryClientProvider client={client}><DetailSection definition={definition} detail={detail} row={row} baseParams="status=new&severity=high&limit=50"/></QueryClientProvider>);
 }
 
+it("keeps GPO detail facts without the limitation column or remarks", async () => {
+  const gpoDetail: ReportDetailDto = { ...detail, title: "Synthetic policy settings",
+    columns: [{ key: "setting", path: "setting", label: "Setting", kind: "text" },
+      { key: "limitation", path: "limitation", label: "Limitation", kind: "text" }] };
+  vi.spyOn(api, "reportV2Detail").mockResolvedValue({ ...page(1, 1, false), report_key: "ad.gpo.v2",
+    items: [{ id: 8, setting: "Synthetic setting", limitation: "Synthetic caveat" }],
+    limitations: [{ code: "synthetic", text: "Synthetic remark" }] });
+  render(<QueryClientProvider client={new QueryClient()}><DetailSection definition={{ ...definition, key: "ad.gpo.v2" }}
+    detail={gpoDetail} row={{ id: 7 }} baseParams=""/></QueryClientProvider>);
+  expect(await screen.findByRole("cell", { name: "Synthetic setting" })).toBeTruthy();
+  expect(screen.queryByRole("columnheader", { name: "Limitation" })).toBeNull();
+  expect(screen.queryByText("Synthetic caveat")).toBeNull();
+  expect(screen.queryByText("Synthetic remark")).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("loads all 70 evidence rows in pages and retains return_to (%s)", async (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
   const request = vi.spyOn(api, "reportV2Detail").mockImplementation(async (_key, _row, params) => {

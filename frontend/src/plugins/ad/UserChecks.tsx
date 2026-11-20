@@ -4,7 +4,7 @@ import { memo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { ReportColumnDto, ReportResultDto } from "../../api/report-v2-types";
-import { Callout, DataTable, FactList, formatCell, type TableColumn } from "../../design-system";
+import { DataTable, FactList, formatCell, type TableColumn } from "../../design-system";
 import { ReviewList, type ReviewItem } from "../../design-system/ReviewList";
 import { t } from "../../i18n";
 import { tableColumns } from "../../app/report-v2/DetailSection";
@@ -64,14 +64,16 @@ function CheckObjects({ check, baseParams, onSelect }: { check: Row; baseParams:
   ];
   return <>
     {all && query.isLoading ? <p role="status">{t("table.loadingMore")}</p> : null}
-    {all && query.error ? <Callout tone="warning" title={t("reports.ad.users.objects_unavailable")}><button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></Callout> : null}
+    {all && (query.error || query.data?.state === "error") ? <p role="alert">
+      {t("reports.ad.users.objects_unavailable", { check: text(check.title) ?? missing() })}{" "}
+      <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button>
+    </p> : null}
     {rows.length ? <DataTable caption={String(check.title)} columns={columns} rows={rows} rowKey={(row) => `${row.domain_id}:${row.entity_id ?? row.name}`}
       stickyHeader={false} showFooter={all} total={all ? query.data?.filtered_count : undefined}
       pagination={all ? { start: (cursors.length - 1) * 50 + 1, busy: query.isFetching,
         onPrevious: cursors.length > 1 ? () => setCursors((current) => current.slice(0, -1)) : undefined,
         onNext: query.data?.has_more && query.data.next_cursor ? () => setCursors((current) => [...current, query.data!.next_cursor]) : undefined } : undefined}/> : null}
-    {!all ? <p><span>{t("reports.ad.users.preview", { count: preview.length, total: count(check.total) ?? missing() })}</span>{" · "}
-      <button type="button" className="sli-ds-button" onClick={() => setAll(true)}>{t("reports.ad.users.open_all")}</button></p> : null}
+    {!all ? <button type="button" className="sli-ds-button" onClick={() => setAll(true)}>{t("reports.ad.users.open_all")}</button> : null}
   </>;
 }
 
@@ -88,7 +90,6 @@ export const UserChecks = memo(function UserChecks({ result, baseParams, onSelec
     detail: <>
       <p><strong>{t("reports.ad.checks.column.why")}: </strong>{text(check.why) ?? missing()}</p>
       <p><strong>{t("reports.ad.checks.column.action")}: </strong>{text(check.action) ?? missing()}</p>
-      <details><summary>{t("reports.ad.checks.column.remediation")}</summary><p>{text(check.remediation) ?? missing()}</p></details>
       <p className="sli-ds-muted">{t("reports.ad.users.observed")}: {date(check.last_seen_utc)} · {t("reports.ad.users.actor")}: {text(object(check.change).actor) ?? missing()}</p>
       <CheckObjects check={check} baseParams={baseParams} onSelect={onSelect}/>
     </>,
@@ -106,8 +107,7 @@ export const UserChanges = memo(function UserChanges({ columns, rows, title, onS
         return value === null || value === undefined || value === "" ? missing() : formatCell(value, column.kind);
       }),
   }));
-  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect}/>
-    : <p>{t("reports.ad.users.no_changes")}</p>;
+  return <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect}/>;
 });
 
 export function UserReasons({ row }: { row: Row }) {

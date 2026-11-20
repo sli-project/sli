@@ -73,7 +73,8 @@ it("expands a check and opens every exact match with a bounded request", async (
     ? page("all", { items: Array.from({ length: 7 }, (_, i) => ({ ...account(i + 1), name: `synthetic-${i + 1}` })), filtered_count: 7 }) : page("checks"))));
   show(); fireEvent.click((await screen.findByText("Synthetic check", { selector: "strong" })).closest("summary")!);
   expect(await screen.findByText("Synthetic why")).toBeTruthy();
-  expect(screen.getByText("Показаны 3 из 7")).toBeTruthy();
+  expect(screen.queryByText("Показаны 3 из 7")).toBeNull();
+  expect(screen.getByRole("button", { name: "synthetic-3" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Открыть все" }));
   expect(await screen.findByRole("button", { name: "synthetic-7" })).toBeTruthy();
   const request = calls.find((params) => params.has("check"))!;

@@ -49,7 +49,7 @@ it.each(["not_proven", "future_value", "partial", "complete"] as const)("shows n
 
 it.each([undefined, null, "invalid", "", 42])("omits unknown source time %s", (observed_at_utc) => {
   const element = header({ observed_at_utc });
-  expect(element.textContent).not.toContain(t("reports.passport.unknown"));
+  expect(element.textContent).not.toMatch(/неизвестно|unknown/i);
   expect(element.textContent).not.toContain(t("reports.passport.observed", { value: "" }).trim());
 });
 

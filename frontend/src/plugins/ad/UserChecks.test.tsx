@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { localeRuntime, setLocale } from "../../i18n";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
-import type { ReportColumnDto } from "../../api/report-v2-types";
-import { UserChanges, UserReasons, userTableColumns } from "./UserChecks";
+import { api } from "../../api/client";
+import type { ReportColumnDto, ReportResultDto } from "../../api/report-v2-types";
+import { UserChanges, UserChecks, UserReasons, userTableColumns } from "./UserChecks";
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale("ru"); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
@@ -47,4 +49,28 @@ it("opens a change account in the same overlay callback and hides secondary mobi
   expect(screen.queryByRole("link")).toBeNull();
   expect(screen.getByRole("cell", { name: "—" })).toBeTruthy();
   expect(container.querySelector('th[data-mobile="false"]')?.textContent).toBe("Actor");
+});
+
+it("keeps the check action and retries a failed user list without a callout", async () => {
+  const result: ReportResultDto = {
+    contract_id: "sli.report-result.v2", report_key: "ad.users.v2", state: "ok",
+    items: [{ key: "synthetic-check", title: "Synthetic check", status: "new", total: 2, action: "Synthetic action",
+      remediation: "Synthetic remediation", objects: [{ entity_id: 7, name: "synthetic-user" }] }],
+    has_more: false, next_cursor: null, filtered_count: 1, metrics: [], series: {}, coverage: {}, filter_options: {}, limitations: [], window: {},
+  };
+  const request = vi.spyOn(api, "reportV2Data").mockRejectedValueOnce(new Error("Internal error"))
+    .mockResolvedValueOnce({ ...result, items: [{ entity_id: 8, name: "synthetic-user-two" }] });
+  const { container } = render(<QueryClientProvider client={new QueryClient()}>
+    <UserChecks result={result} baseParams="" onSelect={vi.fn()}/>
+  </QueryClientProvider>);
+  fireEvent.click(screen.getByText("Synthetic check").closest("summary")!);
+  expect(await screen.findByText("Synthetic action", { exact: false })).toBeTruthy();
+  expect(screen.queryByText("Synthetic remediation")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t("reports.ad.users.open_all") }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain(t("reports.ad.users.objects_unavailable", { check: "Synthetic check" }));
+  expect(container.querySelector(".sli-ds-callout")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
+  expect(await screen.findByRole("button", { name: "synthetic-user-two" })).toBeTruthy();
+  expect(request).toHaveBeenCalledTimes(2);
 });

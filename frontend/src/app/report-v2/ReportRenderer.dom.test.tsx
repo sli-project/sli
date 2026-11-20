@@ -1753,6 +1753,67 @@ it.each((["ru", "en"] as const).flatMap((locale) => [false, true].map((withPassp
   expect(context.closest('[role="status"]')).toBeNull();
 });
 
+it.each(["ru", "en"] as const)("shows the archived AD user's domain and observed date in one line (%s)", async (locale) => {
+  setLocale(locale);
+  vi.spyOn(appContext, "useTimeZone").mockReturnValue({ timeZone: "UTC", setTimeZone: vi.fn() });
+  const raw = { ...definition, key: "ad.users.v2", params: [], presets: [], views: [{ kind: "table", key: "all" }] };
+  const body = page({ report_key: raw.key, domains: [{ id: 1, display_name: "archive.example.test", is_archived: true,
+    freshness: { observed_at_utc: "2026-10-12T00:00:00Z" } }], coverage: { domains: [{ domain_id: 1, observed_at_utc: "2026-09-01T00:00:00Z" }] } });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/data?") ? body : raw))));
+  renderReport(raw.key);
+  const context = await screen.findByText(/archive\.example\.test/);
+  expect(context.textContent).toContain(locale === "ru" ? "01.09.2026" : "Sep 1, 2026");
+  expect(context.textContent).not.toContain(t("domain.archive.coverage"));
+  expect(context.closest("details")).toBeNull();
+});
+
+it.each([
+  { key: "ad.users.v2", empty: "reports.ad.users.no_changes", error: "reports.ad.users.changes_load_failed" },
+  { key: "ad.computers.v6", empty: "reports.ad.computers.no_changes", error: "reports.ad.computers.changes_load_failed" },
+  { key: "ad.gpo.v2", empty: "reports.ad.gpo.empty", error: "reports.ad.table_load_failed" },
+] as const)("only confirms an empty changes list after successful reading for $key", async ({ key, empty, error }) => {
+  const raw = { ...definition, key, params: [], presets: [],
+    views: [{ kind: "table", key: key === "ad.gpo.v2" ? "gpos" : "all" }, { kind: "table", key: "changes", title: "Изменения", source: "changes" }] };
+  window.history.replaceState(null, "", `/app/report/${key}?tab=changes`);
+  let state: ReportResultDto["state"] = "not_collected";
+  const data = vi.spyOn(api, "reportV2Data").mockImplementation(async () => page({
+    report_key: key, state, items: [], collections: { changes: [] },
+    limitations: [{ code: "synthetic", text: "Internal diagnostic" }],
+  }));
+  vi.spyOn(api, "reportV2Definition").mockResolvedValue(raw as ReportDefinitionDto);
+  const { container, unmount } = renderReport(key);
+  await waitFor(() => expect(container.querySelector(".sli-ds-report")?.getAttribute("data-state")).toBe("partial"));
+  expect(screen.queryByText(t(empty))).toBeNull();
+  expect(screen.queryByText("Internal diagnostic")).toBeNull();
+  unmount();
+
+  state = "error";
+  renderReport(key);
+  const alert = await screen.findByRole("alert");
+  const table = key === "ad.gpo.v2" ? t("reports.v2.ad.gpo.v2.views.changes.title") : "";
+  expect(alert.textContent).toContain(t(error, { table }));
+  expect(screen.queryByText(t(empty))).toBeNull();
+  state = "empty";
+  fireEvent.click(within(alert).getByRole("button", { name: t("state.retry") }));
+  expect(await screen.findByText(t(empty))).toBeTruthy();
+  expect(data).toHaveBeenCalledTimes(3);
+});
+
+it("keeps the computer logon rows without report metadata and limitations", async () => {
+  const key = "ad.computer-logons";
+  const raw: ReportDefinitionDto = { ...definition, key, params: [], presets: [], intent: passport };
+  vi.spyOn(api, "reportV2Definition").mockResolvedValue(raw);
+  vi.spyOn(api, "reportV2Data").mockResolvedValue(page({ report_key: key, state: "ok",
+    coverage: { state: "stale", completeness: "not_proven", observed_at_utc: "2026-09-15T03:26:12Z" },
+    limitations: [{ code: "synthetic", text: "Internal diagnostic" }],
+  }));
+  const { container } = renderReport(key);
+  expect(await screen.findByText("DC1$")).toBeTruthy();
+  expect(screen.queryByText(t("reports.passport.more"))).toBeNull();
+  expect(screen.queryByText("Internal diagnostic")).toBeNull();
+  expect(container.querySelector(".sli-ds-state--banner, .sli-ds-badge[data-tone='warning']")).toBeNull();
+});
+
 it.each((["ru", "en"] as const).flatMap(locale => ["ok", "empty", "partial", "not_collected"].map(state => ({ locale, state }))))("explains USB empty collection in $locale / $state", async ({ locale, state }) => {
   setLocale(locale);
   const raw: ReportDefinitionDto = { ...definition, key: "workstations.usb", params: [], presets: [], columns: [{ key: "host_name", label: "Computer", kind: "text", path: "host_name" }], views: [{ key: "table", kind: "table", source: "items" }] };

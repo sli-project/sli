@@ -115,6 +115,9 @@ it.each(["ru", "en"] as const)("omits missing assessments and removes data comme
   expect(container.querySelectorAll(".sli-ds-state--banner, .sli-ds-callout")).toHaveLength(0);
   fireEvent.click(summary);
   expect(screen.getByRole("button", { name: "synthetic-preview" })).toBeTruthy();
+  expect(screen.getByText("Synthetic action", { exact: false })).toBeTruthy();
+  expect(screen.queryByText("Synthetic remediation")).toBeNull();
+  expect(summary.parentElement?.querySelector("details")).toBeNull();
 });
 
 it("keeps workspace navigation in the report tab strip", async () => {
@@ -195,9 +198,9 @@ it("keeps checks selected after URL persistence and restores tabs through browse
   await waitFor(() => expect(screen.getByRole("tab", { name: "Требуют проверки" }).getAttribute("aria-selected")).toBe("true"));
 });
 
-it("shows an empty comparison without source warnings or a note", async () => {
+it("shows an empty comparison after successful reading without a note", async () => {
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?tab=changes&domain_id=8");
-  respond = () => page({ items: [], collections: { changes: [] }, coverage: { comparison_missing_domains: ["example.test"],
+  respond = () => page({ state: "empty", items: [], collections: { changes: [] }, coverage: {
     domains: [{ domain_name: "example.test", state: "complete", observed_at_utc: new Date().toISOString() }] } });
   const { container } = show();
   await screen.findByText(t("reports.ad.computers.no_changes"));
@@ -207,11 +210,18 @@ it("shows an empty comparison without source warnings or a note", async () => {
 });
 
 
-it("keeps zero counts distinct from missing assessments without commentary and collapses the hygiene tail", () => {
-  const { rerender, container } = render(<ComputerChecks result={page({ coverage: { not_evaluated_count: 0 }, items: [{ ...check, total: 0, is_lower_bound: false }, { ...check, id: "low", key: "low", severity: "low", total: 0, is_lower_bound: false }] })} onSelect={vi.fn()} onInventory={vi.fn()}/>);
+it("keeps low-priority checks in the same list and filters them by importance", () => {
+  const { rerender, container } = render(<ComputerChecks result={page({ coverage: { not_evaluated_count: 0 }, items: [
+    { ...check, total: 0, is_lower_bound: false },
+    { ...check, id: "low", key: "low", title: "Synthetic low-priority check", severity: "low", severity_text: "Низкая", total: 0, is_lower_bound: false },
+  ] })} onSelect={vi.fn()} onInventory={vi.fn()}/>);
   expect(container.querySelector(".sli-ds-review-list__total")?.textContent).toBe("0");
   expect(container.querySelector("[role='status']")).toBeNull();
   expect(container.querySelector("details[open]")).toBeNull();
+  expect(screen.getByText("Synthetic low-priority check", { selector: "strong" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("combobox", { name: t("reports.ad.checks.column.severity") }), { target: { value: "low" } });
+  expect(screen.queryByText(check.title)).toBeNull();
+  expect(screen.getByText("Synthetic low-priority check", { selector: "strong" })).toBeTruthy();
   rerender(<ComputerChecks result={page({ items: [{ ...check, total: null }] })} onSelect={vi.fn()} onInventory={vi.fn()}/>);
   expect(container.querySelector(".sli-ds-review-list__item")).toBeNull();
   expect(computerRole("unknown")).toBe("—");

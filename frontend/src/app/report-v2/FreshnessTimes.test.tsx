@@ -10,7 +10,7 @@ it("omits missing and invalid clocks while labeling valid dates separately", () 
   const { container } = render(<FreshnessTimes event="invalid" snapshot={null} published="2026-10-07T00:00:00Z" observed={42} timeZone="UTC"/>);
   expect(container.querySelectorAll("span")).toHaveLength(1);
   expect(container.textContent).toBe(t("reports.freshness.published", { time: "07.10.2026, 00:00" }));
-  expect(container.textContent).not.toContain(t("reports.passport.unknown"));
+  expect(container.textContent).not.toMatch(/неизвестно|unknown/i);
 });
 
 it.each(["ru", "en"] as const)("dates source data before publication and formats its age (%s)", (locale) => {

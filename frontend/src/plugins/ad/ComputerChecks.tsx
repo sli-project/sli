@@ -1,12 +1,12 @@
 import { useTimeZone } from "../../shared/time-zone";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
-import { DataTable, type TableColumn } from "../../design-system";
+import { useState } from "react";
+import { DataTable, formatCell, type TableColumn } from "../../design-system";
 import { ReviewList, type ReviewItem } from "../../design-system/ReviewList";
 import type { ReportColumnDto, ReportResultDto } from "../../api/report-v2-types";
 import { t } from "../../i18n";
 import { tableColumns } from "../../app/report-v2/DetailSection";
 import { columnValue } from "../../app/report-v2/state";
-import { formatCell } from "../../design-system";
 import { AgentStatus, DnsIp, dnsColumnLabel } from "./ReportAdditions";
 import { ComputerGpoPlan } from "./GpoPlan";
 
@@ -15,7 +15,7 @@ type ComputerPreview = Row & { name: string | null; domain_name: string | null; 
 type Check = {
   key: string; title: string; severity: string; severityText: string; status: string;
   total: number | null; newCount: number | null; remaining: number;
-  why: string; action: string; remediation: string; observed: string | null; actor: string | null;
+  why: string; action: string; observed: string | null; actor: string | null;
   objects: ComputerPreview[];
 };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value : null;
@@ -61,7 +61,6 @@ export function ComputerReasons({ row }: { row: Row }) {
       <h4 className="sli-ds-section-title">{text(reason.label) ?? t("table.noValue")}</h4>
       <p><strong>{t("reports.ad.checks.column.why")}: </strong>{text(reason.qualification) ?? text(reason.observed) ?? t("table.noValue")}</p>
       <p><strong>{t("reports.ad.checks.column.action")}: </strong>{text(reason.next_action) ?? t("table.noValue")}</p>
-      {text(reason.limitation) ? <p className="sli-ds-muted">{String(reason.limitation)}</p> : null}
     </section>) : <p className="sli-ds-muted">{t("reports.ad.computers.no_recorded_reasons")}</p>}
   </section>;
 }
@@ -86,7 +85,7 @@ function checkModel(row: Row): Check {
     total: count(row.total), newCount: count(row.new_count),
     remaining: count(row.remaining_objects) ?? 0,
     why: text(row.why) ?? t("table.noValue"), action: text(row.action) ?? t("table.noValue"),
-    remediation: text(row.remediation) ?? t("table.noValue"), observed: text(row.last_seen_utc), actor: text(change.actor),
+    observed: text(row.last_seen_utc), actor: text(change.actor),
     objects: (Array.isArray(row.objects) ? row.objects : []).filter((obj): obj is Row => Boolean(obj) && typeof obj === "object")
       .map((obj) => ({ ...obj, name: text(obj.name), domain_name: text(obj.domain_name), computer_type: text(obj.computer_type) })),
   };
@@ -97,8 +96,10 @@ export function ComputerChecks({ result, onSelect, onInventory }: {
 }) {
   const { formatDateTime } = useDateFormatters();
   const { timeZone } = useTimeZone();
+  const [severity, setSeverity] = useState("");
   const checks = (result?.items ?? []).filter((row) => row.section !== "not_evaluated").map(checkModel)
     .filter((check) => check.status !== t("table.noValue") || check.total !== null || check.newCount !== null);
+  const severities = new Map(checks.map((check) => [check.severity, check.severityText]));
   const item = (check: Check): ReviewItem => {
     const columns: TableColumn<ComputerPreview>[] = [
       { key: "name", label: t("reports.v2.ad.computers.v6.columns.display_name.label"), render: (obj) => <>
@@ -122,18 +123,21 @@ export function ComputerChecks({ result, onSelect, onInventory }: {
         <p><strong>{t("reports.ad.checks.column.why")}: </strong>{check.why}</p>
         <p><strong>{t("reports.ad.checks.column.action")}: </strong>{check.action}</p>
         {check.key === "no_sli_agent" ? <ComputerGpoPlan rows={check.objects}/> : null}
-        <details><summary>{t("reports.ad.checks.column.remediation")}</summary><p>{check.remediation}</p></details>
         <p className="sli-ds-muted">{t("reports.ad.computers.last_seen")}: {formatDateTime(check.observed)}
           {check.key !== "no_sli_agent" ? <> · {t("reports.ad.computers.actor")}: {check.actor ?? t("table.noValue")}</> : null}</p>
         {check.objects.length ? <DataTable caption={check.title} columns={columns} rows={check.objects} rowKey={(obj) => `${obj.domain_id}:${obj.name}`} stickyHeader={false}/> : null}
-        {check.remaining > 0 ? <p>{t("reports.ad.computers.preview", { count: check.objects.length, total: check.total ?? t("table.noValue") })}
-          {" · "}<button className="sli-ds-button" type="button" onClick={onInventory}>{t("reports.ad.computers.inventory")}</button></p> : null}
+        {check.remaining > 0 ? <button className="sli-ds-button" type="button" onClick={onInventory}>{t("reports.ad.computers.inventory")}</button> : null}
       </>,
     };
   };
-  const hygiene = checks.filter((check) => check.severity === "low");
+  const activeSeverity = severities.has(severity) ? severity : "";
   return <>
-    <ReviewList compact items={checks.filter((check) => check.severity !== "low").map(item)}/>
-    {hygiene.length ? <details><summary>{t("reports.ad.checks.hygiene")} · {t("reports.ad.computers.more_checks", { count: hygiene.length })}</summary><ReviewList compact items={hygiene.map(item)}/></details> : null}
+    {severities.size > 1 ? <label className="sli-ds-field">{t("reports.ad.checks.column.severity")}
+      <select value={activeSeverity} onChange={(event) => setSeverity(event.target.value)}>
+        <option value="">{t("filters.any")}</option>
+        {[...severities].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+    </label> : null}
+    <ReviewList compact items={checks.filter((check) => !activeSeverity || check.severity === activeSeverity).map(item)}/>
   </>;
 }

@@ -16,7 +16,9 @@ export function ArchiveDomainNotice({ domains, coverage, timeZone, detail = fals
       const observed = "observed_at_utc" in row ? row.observed_at_utc : row.latest_observed_at_utc;
       return knownTime(observed) ? [observed] : [];
     }).sort((a, b) => Date.parse(a) - Date.parse(b));
-    return <span role={detail ? undefined : "status"} key={domain.id}>{domain.display_name} · {t("domain.archive.label")} · {observations[0]
-      ? t("domain.archive.asOf", { date: formatDateTime(observations[0], timeZone) }) : t("domain.archive.unknownDate")}. {t("domain.archive.coverage")}</span>;
+    const date = observations[0] ? t("domain.archive.asOf", { date: formatDateTime(observations[0], timeZone) }) : null;
+    return <span role={detail ? undefined : "status"} key={domain.id}>{domain.display_name} · {t("domain.archive.label")}
+      {date ? <> · {date}</> : detail ? <> · {t("domain.archive.unknownDate")}</> : null}
+      {detail ? <>. {t("domain.archive.coverage")}</> : null}</span>;
   })}</>;
 }

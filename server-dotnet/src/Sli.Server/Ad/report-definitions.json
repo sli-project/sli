@@ -148,7 +148,7 @@
             },
             {
               "value": "not_evaluated",
-              "label": "Не оценено"
+              "label": "—"
             },
             {
               "value": "policy_not_defined",
@@ -303,7 +303,7 @@
           "sortable": true,
           "labels": {
             "failed": "Не пройдено",
-            "not_evaluated": "Не оценено",
+            "not_evaluated": "—",
             "policy_not_defined": "Требование не задано",
             "passed": "Пройдено"
           }
@@ -387,7 +387,6 @@
           "key": "changes",
           "source": "changes",
           "title": "Изменения AD",
-          "note": "Изменения за выбранный период. Значения атрибутов представлены отпечатками; неполное покрытие отмечается явно.",
           "columns": [
             {
               "key": "observed_at",
@@ -451,7 +450,6 @@
           "key": "spn_collisions",
           "source": "spn_collisions",
           "title": "Коллизии SPN",
-          "note": "Одна строка на владельца SPN. Снимки старше 36 часов отмечаются как устаревшие; данные ограничены последними 31 сутками.",
           "columns": [
             {
               "key": "spn",
@@ -531,37 +529,10 @@
               "path": "msds_supported_encryption_types"
             },
             {
-              "key": "owner_quality",
-              "label": "Параметры владельца",
-              "kind": "state",
-              "path": "owner_quality",
-              "labels": {
-                "known": "Известны",
-                "unknown": "Часть неизвестна"
-              }
-            },
-            {
               "key": "observed_at_utc",
               "label": "Наблюдалось",
               "kind": "datetime",
               "path": "observed_at_utc"
-            },
-            {
-              "key": "source_freshness",
-              "label": "Свежесть источника",
-              "kind": "state",
-              "path": "source_freshness",
-              "labels": {
-                "fresh": "Свежий",
-                "stale": "Устаревший",
-                "unknown": "Неизвестна"
-              }
-            },
-            {
-              "key": "run_id",
-              "label": "Снимок",
-              "kind": "code",
-              "path": "run_id"
             }
           ]
         },
@@ -570,7 +541,6 @@
           "key": "semantic",
           "source": "semantic",
           "title": "Связанные находки",
-          "note": "Только опубликованные находки, точно связанные с инфраструктурной сущностью AD. Пустой список не доказывает отсутствие рисков.",
           "columns": [
             {
               "key": "title",
@@ -653,12 +623,6 @@
           "label": "Непройденные",
           "params": {
             "view": "risks"
-          }
-        },
-        {
-          "label": "Не оценено",
-          "params": {
-            "qualification": "not_evaluated"
           }
         },
         {
@@ -958,7 +922,7 @@
             },
             {
               "value": "unknown",
-              "label": "Нет данных"
+              "label": "—"
             }
           ]
         },
@@ -1413,7 +1377,6 @@
           "key": "changes",
           "source": "changes",
           "title": "Изменения",
-          "note": "Сравнение двух последних снимков; отсутствие объекта не доказывает его удаление.",
           "columns": [
             {
               "key": "observed_at_utc",
@@ -2572,7 +2535,7 @@
             },
             {
               "value": "missing",
-              "label": "Нет данных"
+              "label": "—"
             },
             {
               "value": "within_30_days",
@@ -2704,7 +2667,7 @@
           "labels": {
             "recent": "Активен",
             "stale": "Давно не входил",
-            "missing": "Нет данных",
+            "missing": "—",
             "not_applicable": "Не оценивается",
             "within_threshold": "В пределах порога",
             "over_threshold": "Старше порога"

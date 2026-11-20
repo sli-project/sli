@@ -12,6 +12,7 @@ import { columnValue } from "../app/report-v2/state";
 import { ru } from "./ru";
 import { gpoReportDefinition } from "../plugins/ad/gpo-report";
 import gpoDeclaration from "../../../server-dotnet/src/Sli.Server/Gpo/declaration.json";
+import adDefinitions from "../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json";
 import { testPython } from "../test-support/python";
 
 it.each(["logons", "processes", "usb", "protection"])("localizes workstation %s scope limitations without changing access state", (family) => {
@@ -139,8 +140,9 @@ const registry = readRegistry();
 // replaces the frozen Python one.
 const shippedDefinitions = JSON.parse(readFileSync(
   resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json"), "utf8")) as ReportDefinitionDto[];
-for (const key of ["security.events.chains", "ad.infrastructure"]) {
-  const shipped = shippedDefinitions.find((item) => item.key === key)!;
+const shippedAdDefinitions = adDefinitions as unknown as Record<string, { declaration: ReportDefinitionDto }>;
+for (const key of ["security.events.chains", "ad.infrastructure", "ad.users.v2"]) {
+  const shipped = shippedAdDefinitions[key]?.declaration ?? shippedDefinitions.find((item) => item.key === key)!;
   registry.definitions = registry.definitions.map((item) => item.key === key ? { ...shipped, filter_options: {} } : item);
 }
 
@@ -230,6 +232,8 @@ it("localizes visible GPO tabs without changing source records or access state",
   expect(changes.columns?.find((column) => column.key === "before_sha256")?.label).toBe("Previous fingerprint");
   expect(changes.columns?.find((column) => column.key === "kind")?.labels?.object_removed).toBe("Object removed");
   expect(links.columns?.find((column) => column.key === "outcome")?.labels?.blocked).toBe("Blocked");
+  expect(links.columns?.find((column) => column.key === "outcome")?.labels?.unknown).toBe("—");
+  expect(links.columns?.find((column) => column.key === "wmi_state")?.labels?.partial).toBe("—");
   const evidence = { path: "user-a → group-a → policy-a [ACE 0]", ace_id: "ace-0", outcome: "unknown" };
   const result: ReportResultDto = { contract_id: "sli.report-result.v2", report_key: raw.key, state: "partial",
     items: [], metrics: [], filtered_count: 0, has_more: false, next_cursor: null,
@@ -559,14 +563,13 @@ describe("v2 registry metadata", () => {
     expect(reportMetadataText(report.key, "title", changed.title)).toBe(changed.title);
   });
 
-  it("localizes the four approved Users tabs and the temporary membership reason without changing evidence", () => {
+  it("localizes Users tab captions and the temporary membership reason without changing evidence", () => {
     setLocale("en");
     const report = registry.definitions.find((item) => item.key === "ad.users.v2")!;
     const localized = localizeReportDefinition(report);
-    expect(localized.views.map((view) => [view.key, view.title])).toEqual([
-      ["checks", "Require review"], ["privileged", "Privileged"],
-      ["changes", "Changes"], ["all", "All accounts"],
-    ]);
+    expect(Object.fromEntries(localized.views.map((view) => [view.key, view.title]))).toMatchObject({
+      checks: "Require review", privileged: "Privileged", changes: "Changes", all: "All accounts",
+    });
     expect(localized.views.map((view) => view.access)).toEqual(report.views.map((view) => view.access));
     const reason = { key: "temporary_membership", label: "Краткое членство в контрольной группе", summary: "Synthetic control group",
       observed: "2", condition: "Условие", qualification: "Наблюдение", limitation: "Ограничение", next: "Следующий шаг", evidence: [[1, 2]] };
@@ -595,10 +598,9 @@ describe("v2 registry metadata", () => {
     const untouched = { ...result, items: [unchanged] };
     expect(localizeReportResult(untouched).items).toBe(untouched.items);
     setLocale("ru");
-    expect(localizeReportDefinition(report).views.map((view) => [view.key, view.title])).toEqual([
-      ["checks", "Требуют проверки"], ["privileged", "Привилегированные"],
-      ["changes", "Изменения"], ["all", "Все учётки"],
-    ]);
+    expect(Object.fromEntries(localizeReportDefinition(report).views.map((view) => [view.key, view.title]))).toMatchObject({
+      checks: "Требуют проверки", privileged: "Привилегированные", changes: "Изменения", all: "Все учётки",
+    });
     expect(localizeReportResult(result)).toBe(result);
   });
 
@@ -627,7 +629,7 @@ describe("v2 registry metadata", () => {
     const computers = localizeReportResult({ ...result, report_key: "ad.computers.v6", filter_options: {
       os: [{ value: "__missing__", label: "Updated sentinel" }, { value: "Политика", label: "Политика" }],
     } });
-    expect(computers.filter_options.os[0]).toEqual({ value: "__missing__", label: "No data" });
+    expect(computers.filter_options.os[0]).toEqual({ value: "__missing__", label: "—" });
     expect(computers.filter_options.os[1].label).toBe("Политика");
     setLocale("ru");
     expect(localizeReportResult(result)).toBe(result);

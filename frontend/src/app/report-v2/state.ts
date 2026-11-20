@@ -24,7 +24,10 @@ export function filterFields(definition: ReportDefinitionDto, live?: Record<stri
   return definition.params.filter((param) => !param.hidden && !(definition.key === "ad.gpo.v2" && view !== "changes" && param.kind === "period")).map((param): FilterField => {
     if (param.kind === "period") return { key: param.key, label: param.label, kind: "period", presets: param.presets as PeriodPreset[] | undefined };
     if (param.kind === "choice" || param.kind === "domain") {
-      const options = paramOptions(definition, param.key, live);
+      const declared = paramOptions(definition, param.key, live);
+      const options = definition.key === "ad.computers.v6"
+        ? declared.map((option) => option.value === "__missing__" ? { ...option, label: t("table.noValue") } : option)
+        : declared;
       return { key: param.key, label: param.label, kind: "select", options: param.kind === "domain" && !param.required
         ? [{ value: "", label: t("reports.filters.all_domains") }, ...options.filter((option) => option.value !== "")] : options };
     }

@@ -38,9 +38,12 @@ it("shows the exact finite selection and requires acknowledgment before saving a
   await open();
   expect(api.gpoPlanCredentials).toHaveBeenCalledWith(selection);
   expect(api.previewGpoPlan).toHaveBeenCalledWith({ ...selection, ...credentialFields });
-  expect(screen.getByText("synthetic-host")).toBeTruthy();
-  expect(screen.getByText(t("reports.ad.gpo.readOnly"))).toBeTruthy();
-  expect(screen.getByText(t("reports.ad.gpo.packageUnknown"))).toBeTruthy();
+  const dialog = screen.getByRole("dialog");
+  expect(screen.getByRole("listitem", { name: "" }).textContent).toBe("synthetic-host");
+  expect(screen.getByText(t("reports.ad.gpo.signature.unavailable"))).toBeTruthy();
+  expect(dialog.querySelector("details")).toBeNull();
+  expect(dialog.textContent).not.toContain(plan.plan_sha256);
+  expect(screen.getByText(/План действует до/)).toBeTruthy();
   const confirm = screen.getByRole("button", { name: t("reports.ad.gpo.confirm") });
   expect((confirm as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("checkbox"));

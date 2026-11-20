@@ -80,7 +80,8 @@ export function DetailSection({ definition, detail, row, baseParams }: {
   });
   const inlineRows = detail.kind === "inline" && detail.inline ? ((readPath(row, detail.inline) as Row[] | undefined) ?? []) : null;
   const rows = useMemo(() => inlineRows ?? query.data?.pages.flatMap((page) => page.items as Row[]) ?? [], [inlineRows, query.data]);
-  const declaredColumns = useMemo(() => tableColumns(detail.columns, timeZone), [detail, timeZone]);
+  const gpoReport = definition.key === "ad.gpo.v2";
+  const declaredColumns = useMemo(() => tableColumns(gpoReport ? detail.columns.filter((column) => column.key !== "limitation") : detail.columns, timeZone), [detail, gpoReport, timeZone]);
   const first = query.data?.pages[0];
   const latest = query.data?.pages.at(-1);
   const deniedError = query.error instanceof ApiResponseError && [401, 403].includes(query.error.status) ? query.error : null;
@@ -129,7 +130,7 @@ export function DetailSection({ definition, detail, row, baseParams }: {
         {query.isFetchNextPageError ? <ReportState state="error" compact onRetry={() => void query.fetchNextPage()}/> : null}
       </>}
     {RowComponent && chosen ? <div aria-label={t("reports.detail.selected_row_aria")}><RowComponent row={chosen} parent={row} params={new URLSearchParams(baseParams)}/></div> : RowComponent ? <p className="sli-ds-header__subtitle">{t("reports.detail.select_row_hint")}</p> : null}
-    {first?.limitations.length ? <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul> : null}
+    {!gpoReport && first?.limitations.length ? <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul> : null}
     {Actions ? <Actions row={row}/> : null}
   </section>;
 }

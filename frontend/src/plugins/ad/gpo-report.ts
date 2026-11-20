@@ -16,7 +16,12 @@ export function gpoReportDefinition(definition: ReportDefinitionDto): ReportDefi
       })),
     views: tabs.flatMap((key) => definition.views.filter((view) => view.key === key)).map((view) => ({ ...view,
       title: t(`reports.v2.ad.gpo.v2.views.${view.key}.title` as MessageKey), note: undefined,
-      columns: view.columns?.map((column, index) => ({ ...column, hidden_by_default: column.hidden_by_default || index >= 7 })),
+      columns: view.columns?.map((column, index) => ({
+        ...column,
+        hidden_by_default: column.hidden_by_default || index >= 7,
+        labels: view.key === "linked_scopes" && column.key === "outcome" ? { ...column.labels, unknown: t("reports.v2.ad.gpo.v2.views.linked_scopes.columns.outcome.labels.unknown") }
+          : view.key === "linked_scopes" && column.key === "wmi_state" ? { ...column.labels, partial: t("reports.v2.ad.gpo.v2.views.linked_scopes.columns.wmi_state.labels.partial") } : column.labels,
+      })),
     })),
     presets: ["all", "attention", "unlinked"].map((view) => ({
       label: t(`reports.v2.ad.gpo.v2.params.view.options.${view}` as MessageKey), params: { view },

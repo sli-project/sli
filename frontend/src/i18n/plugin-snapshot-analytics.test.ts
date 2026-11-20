@@ -4,6 +4,8 @@ import { en } from "./en";
 import { ru } from "./ru";
 import { localeRuntime, setLocale } from "./index";
 import { localizeReportView, reportMetadataText } from "./report-metadata";
+import adDefinitions from "../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json";
+import type { ReportViewDto } from "../api/report-v2-types";
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { setLocale("ru"); vi.restoreAllMocks(); });
@@ -18,17 +20,16 @@ describe("plugin snapshot analytics metadata", () => {
     }
   });
 
-  it("localizes SPN owner quality and freshness without rewriting SPNs", () => {
+  it("shows the SPN and observation time without source commentary or run IDs", () => {
     setLocale("en");
-    const view = localizeReportView({ kind: "table", key: "spn_collisions", source: "spn_collisions", title: "Коллизии SPN", columns: [
-      { key: "spn", label: "SPN", kind: "code", path: "spn" },
-      { key: "owner_quality", label: "Параметры владельца", kind: "state", path: "owner_quality", labels: { unknown: "Часть неизвестна" } },
-      { key: "source_freshness", label: "Свежесть источника", kind: "state", path: "source_freshness", labels: { stale: "Устаревший" } },
-    ] }, "ad.infrastructure");
+    const declaration = adDefinitions["ad.infrastructure"].declaration.views.find((view) => view.key === "spn_collisions") as ReportViewDto;
+    const view = localizeReportView(declaration, "ad.infrastructure");
     expect(view.title).toBe("SPN collisions");
-    expect(view.columns?.[0].path).toBe("spn");
-    expect(view.columns?.[1].labels?.unknown).toBe("Partly unknown");
-    expect(view.columns?.[2].labels?.stale).toBe("Stale");
+    const columns = view.columns?.map((column) => column.path);
+    expect(columns).toContain("spn");
+    expect(columns).toContain("observed_at_utc");
+    for (const path of ["owner_quality", "source_freshness", "run_id"]) expect(columns).not.toContain(path);
+    expect(view.note).toBeUndefined();
   });
 
   it("explains an empty Accounting projection explicitly in English", () => {
