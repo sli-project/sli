@@ -1,6 +1,7 @@
 """Beta package acceptance on a private filesystem and a stateful service double."""
 
 from contextlib import contextmanager, nullcontext
+from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
@@ -78,6 +79,11 @@ def runtime_host(tmp_path, monkeypatch):
         if action == "list-units":
             return "\n".join(name + " loaded active running SLI" for name, state in states.items()
                              if name in argv[2:] and state["active"])
+        if action == "reset-failed":
+            for name, state in states.items():
+                if state.get("failed") and any(fnmatchcase(name, pattern) for pattern in argv[2:]):
+                    state["failed"] = False
+            return ""
         if action in {"disable", "stop"}:
             for name in argv[2:]:
                 if name.startswith("--"):
@@ -141,6 +147,8 @@ def runtime_host(tmp_path, monkeypatch):
 
 def test_beta_configuration_creates_dotnet_services_without_database_containers(runtime_host):
     system = runtime_host
+    system.states["sli-backup.service"] = {"enabled": False, "active": False, "failed": True}
+    system.states["unrelated.service"] = {"enabled": False, "active": False, "failed": True}
     runtime.configure({"schema_version": 1, "profiles": ["light"], "radius_pilot": False,
                        "agents": True, "bind": "192.0.2.10", "https_port": 443,
                        "health_url": "https://192.0.2.10:443/api/health/ready"})
@@ -160,6 +168,8 @@ def test_beta_configuration_creates_dotnet_services_without_database_containers(
     assert not any("clickhouse" in name or "docker" in name for name in units)
     assert not any("docker.service" in body or "sli-clickhouse-" in body for body in units.values())
     assert system.states["sli-postgresql.service"] == {"enabled": True, "active": True}
+    assert system.states["sli-backup.service"] == {"enabled": False, "active": False, "failed": False}
+    assert system.states["unrelated.service"]["failed"] is True
 
 
 def test_runtime_upgrade_retires_both_clickhouse_services_and_preserves_all_data(runtime_host):
