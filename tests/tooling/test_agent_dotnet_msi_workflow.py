@@ -39,6 +39,7 @@ def test_msi_workflow_builds_and_checks_dotnet_before_upload():
     assert build < check < package < upload
     assert not any("if" in s or "continue-on-error" in s for s in steps[build:upload + 1])
     assert steps[upload]["with"]["name"] == "sli-agent-dotnet-msi-${{ inputs.commit || github.sha }}"
+    assert steps[upload]["with"]["path"] == "agent-msi-artifact"
     assert steps[upload]["with"]["if-no-files-found"] == "error"
     assert "-MsvcRoot $env:SLI_MSVC_ROOT" in steps[build]["run"]
     assert "-WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT" in steps[build]["run"]
@@ -85,11 +86,10 @@ def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path, s
                                      text=True, timeout=30).strip()
     source_commit = commit if source_matches else ("1" if commit[0] == "0" else "0") + commit[1:]
 
-    runner_temp = tmp_path / "runner-temp"
-    output = runner_temp / "agent-dotnet"
+    output = checkout / ".net-local/agent-dotnet"
     output.mkdir(parents=True)
     (output / "SliAgent.msi").write_bytes(b"synthetic MSI")
-    script = runner_temp / "package.ps1"
+    script = tmp_path / "package.ps1"
     # The offline test exercises packaging without installing the agent SDK.
     script.write_text(
         """function dotnet {
@@ -104,13 +104,12 @@ def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path, s
         [pwsh, "-NoProfile", "-File", str(script)], cwd=working_dir, env={
             **os.environ,
             "GITHUB_WORKSPACE": str(checkout),
-            "RUNNER_TEMP": str(runner_temp),
             "SOURCE_COMMIT": source_commit,
             "TEST_DOTNET_SDK": sdk,
         }, capture_output=True, text=True, timeout=30,
     )
 
-    artifact = runner_temp / "artifact"
+    artifact = checkout / "agent-msi-artifact"
     if not source_matches:
         assert result.returncode != 0
         assert "Unexpected MSI source checkout." in result.stdout + result.stderr
