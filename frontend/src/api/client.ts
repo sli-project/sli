@@ -2452,6 +2452,7 @@ export const api = {
   platformReadiness: () => request<PlatformReadiness>("/api/v1/operations/overview?view=readiness"),
   sourceDetail: (hostname: string) => request<SourceDetail>(`/api/v1/operations/sources/${encodeURIComponent(hostname)}`),
   diagnostics: () => request<DiagnosticsOverview>("/api/diagnostics/overview?run_checks=0"),
+  securityLogFull: () => request<{ items: { server: string; time_created_utc: string; record_id: string }[] }>("/api/v1/operations/security-log-full"),
   systemHealth: () => request<SystemHealth>("/api/system/health"),
   dashboardSnapshot: () => request<DashboardSnapshot>("/api/dashboard/snapshot"),
   overview: (params = new URLSearchParams()) => request<OverviewWorkspace>(`/api/v1/overview?${params.toString()}`),

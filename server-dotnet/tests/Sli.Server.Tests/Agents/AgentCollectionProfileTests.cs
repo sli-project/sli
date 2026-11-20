@@ -73,6 +73,7 @@ public sealed class AgentCollectionProfileTests
     }
 
     [Theory]
+    [InlineData(1104,true,true)]
     [InlineData(4625,true,true)]
     [InlineData(4727,true,true)]
     [InlineData(4741,true,true)]
@@ -99,8 +100,9 @@ public sealed class AgentCollectionProfileTests
         var document=new XmlDocument();
         document.LoadXml($"<Event><System><EventID>{id}</EventID></System></Event>");
         var readable=document.SelectNodes(EventQueries.Build("Security",cursor,catalog))!.Count>0;
-        Assert.Equal(beta,readable && catalog.Contains("Security","Microsoft-Windows-Security-Auditing",id) && AgentEnrollmentService.BetaEventIds().Contains(id));
-        Assert.Equal(full,readable && catalog.Contains("Security","Microsoft-Windows-Security-Auditing",id));
+        var provider = Provider(id);
+        Assert.Equal(beta,readable && catalog.Contains("Security",provider,id) && AgentEnrollmentService.BetaEventIds().Contains(id));
+        Assert.Equal(full,readable && catalog.Contains("Security",provider,id));
         foreach(var (profile,expected) in new[] { ("beta",beta),("full",full) })
         {
             var configuration=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Sli:CollectionProfile"]=profile }).Build();
@@ -161,15 +163,23 @@ public sealed class AgentCollectionProfileTests
         Assert.Throws<ProtocolException>(() => AgentAdDcValidator.Validate(envelope,sample.Payload,wrong,"fixture"));
     }
 
+    private static string Provider(int id) => id switch
+    {
+        1104 => "Microsoft-Windows-Eventlog",
+        4103 or 4104 => "Microsoft-Windows-PowerShell",
+        _ => "Microsoft-Windows-Security-Auditing"
+    };
+
     private sealed class EventSource(int id) : IEventLogSource
     {
         public SourceBatch Read(string channel,ChannelProgress progress,int limit) => new([
             new EventRow($"""
                 <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
-                  <System><Provider Name="{(id is 4103 or 4104 ? "Microsoft-Windows-PowerShell" : "Microsoft-Windows-Security-Auditing")}"/><EventID>{id}</EventID>
+                  <System><Provider Name="{Provider(id)}"/><EventID>{id}</EventID>
                     <TimeCreated SystemTime="2026-11-13T00:00:00.000000Z"/><EventRecordID>1</EventRecordID>
                     <Channel>{channel}</Channel><Computer>fixture.example.test</Computer></System>
-                  <EventData><Data Name="TargetUserName">fixture</Data><Data Name="Properties">1131f6aa-9c07-11d1-f79f-00c04fc2dcd2</Data></EventData>
+                  {(id == 1104 ? "<UserData><FileIsFull xmlns='http://manifests.microsoft.com/win/2004/08/windows/eventlog'/></UserData>"
+                      : "<EventData><Data Name='TargetUserName'>fixture</Data><Data Name='Properties'>1131f6aa-9c07-11d1-f79f-00c04fc2dcd2</Data></EventData>")}
                 </Event>
                 ""","fixture-bookmark")]);
     }

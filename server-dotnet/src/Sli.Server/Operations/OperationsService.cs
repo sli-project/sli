@@ -60,6 +60,8 @@ public sealed partial class OperationsService(IOperationsQueries queries, Operat
                 ? await PostgresReadinessAsync(OperationsEndpoints.Flag(query, "connect", "1"), ct)
                 : await DbStatusAsync(OperationsEndpoints.Flag(query, "connect", "1"), ct);
             case "/api/system/health": return await SystemAsync(OperationsEndpoints.Flag(query, "force"), ct);
+            case "/api/v1/operations/security-log-full":
+                return new JsonObject { ["items"] = await queries.ReadAsync(OperationsSql.SecurityLogFull, ct) };
             case "/api/storage/health":
                 var health = await StorageHealthAsync(OperationsEndpoints.Flag(query, "deep"), ct);
                 return OperationsEndpoints.Flag(query, "summary_only") ? OperationsStorageCompact.Health(health) : health;
