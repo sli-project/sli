@@ -50,6 +50,13 @@ def retain_recovery_prerm():
     return (maintainer_header() + 'case "$1" in\n'
             ' remove|deconfigure) recovery=$(sli_preinstall --recovery-kind)\n'
             '  if test "$recovery" = accepted; then\n'
+            # sli-remove stops services before parking these paths in trusted directories.
+            '   receipt=/var/lib/sli/state/installed.json\n'
+            '   current=/opt/sli/current\n'
+            '   if test "$1" = remove && test ! -e "$receipt" && test ! -L "$receipt" &&\n'
+            '      test ! -e "$current" && test ! -L "$current" &&\n'
+            '      { { test -f "$receipt.sli-removing" && test ! -L "$receipt.sli-removing"; } ||\n'
+            '        test -L "$current.sli-removing"; }; then exit 0; fi\n'
             '   logger -t sli-setup native_host_still_installed\n'
             "   echo 'SLI database state is retained. Keep the SLI host and rollback packages for recovery.' >&2\n"
             '   exit 1\n  fi ;;\nesac\n')
@@ -162,6 +169,8 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         write(host, "usr/sbin/sli-backup", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup capture \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-restore", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup restore \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-upgrade", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py launch \"$@\"\n", 0o755)
+        write(host, "usr/lib/sli/native_remove.py", (helpers / 'native_remove.py').read_text(encoding='utf-8'))
+        write(host, "usr/sbin/sli-remove", "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_remove.py \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-rollback", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-upgrade rollback latest \"$@\"\n", 0o755)
         write(host, "DEBIAN/prerm", retain_recovery_prerm(), 0o755)
         payload = staging / ("sli-release-" + release)

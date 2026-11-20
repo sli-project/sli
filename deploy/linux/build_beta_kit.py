@@ -195,7 +195,26 @@ def publish_dotnet(project, output, commit, env, *, source_root=None):
             raise ValueError('The .NET publication is missing its Linux apphost or bundled runtime')
 
 
-def runtime_inventory(checkout, pg_bin, expected_version):
+def postgres_environment(pg_bin):
+    # Keep database/credential variables out of the disposable cluster. Allow
+    # a builder using unpacked tools to supply their library directory.
+    env = {'PATH': str(pg_bin) + os.pathsep + os.defpath, 'LC_ALL': 'C.UTF-8'}
+    if os.environ.get('LD_LIBRARY_PATH'):
+        env['LD_LIBRARY_PATH'] = os.environ['LD_LIBRARY_PATH']
+    for name in ('initdb', 'postgres', 'pg_isready'):
+        tool = pg_bin / name
+        try:
+            result = subprocess.run([tool, '--version'], env=env, capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise ValueError(f'PostgreSQL 18 builder tool {tool}: {error.strerror}') from None
+        if result.returncode:
+            raise ValueError(f'PostgreSQL 18 builder tool {tool}: {result.stderr.strip() or result.returncode}')
+        if not re.search(r'\(PostgreSQL\) 18(?:\.|\s|$)', result.stdout):
+            raise ValueError(f'{tool} must be from PostgreSQL 18 (found {result.stdout.strip()})')
+    return env
+
+
+def runtime_inventory(checkout, pg_bin, expected_version, env):
     """Observe production SQL and roles in a fresh, private PostgreSQL 18 cluster."""
     import psycopg
 
@@ -206,7 +225,6 @@ def runtime_inventory(checkout, pg_bin, expected_version):
         sock.mkdir(mode=0o700)
         password.write_text(secrets.token_urlsafe(32) + '\n', encoding='ascii')
         password.chmod(0o600)
-        env = {'PATH': str(pg_bin) + os.pathsep + os.defpath, 'LC_ALL': 'C.UTF-8'}
         command([pg_bin / 'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=scram-sha-256',
                  f'--pwfile={password}', '--locale=C.UTF-8', '--encoding=UTF8'], env=env, stdout=subprocess.DEVNULL)
         with socket.socket() as candidate:
@@ -266,11 +284,8 @@ def observe_migrations(checkout, connection, password, work, env, actual_version
         'with psycopg.connect(host=sys.argv[1], port=int(sys.argv[2]), user="postgres", dbname="sli") as conn:\n'
         '    native_plugins.bootstrap(conn)\n'
     )
-    python_env = dict(env)
-    if 'LD_LIBRARY_PATH' in os.environ:
-        python_env['LD_LIBRARY_PATH'] = os.environ['LD_LIBRARY_PATH']
     command([sys.executable, '-B', '-c', migration, connection['host'], str(connection['port'])],
-            cwd=checkout, env=python_env)
+            cwd=checkout, env=env)
     with psycopg.connect(**connection, dbname='sli') as conn:
         ledger = native_pg_inventory.read_ledger(conn)
         native_pg_inventory.verify_ledger(ledger, native_pg_inventory.expected_ledger(checkout), root=checkout)
@@ -331,12 +346,17 @@ def finish(output, commit, release, version, *, toolchain):
     installer = output / 'install-beta-kit'
     installer_source = ROOT / 'deploy/linux/install-beta-kit'
     installer.write_text(installer_source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+    remover = output / 'remove-beta-kit'
+    remover_source = ROOT / 'deploy/linux/native_remove.py'
+    remover.write_text(remover_source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
     manifest = {'schema_version': 1, 'git_commit': commit, 'release': release, 'version': version,
                 'target': 'debian-13-amd64', 'toolchain': toolchain, 'packages': rows,
-                'installer': {'filename': installer.name, 'sha256': sha256(installer)}}
+                'installer': {'filename': installer.name, 'sha256': sha256(installer)},
+                'remover': {'filename': remover.name, 'sha256': sha256(remover)}}
     write_json(output / 'manifest.json', manifest)
     sums = {row['filename']: row['sha256'] for row in rows}
     sums[installer.name] = manifest['installer']['sha256']
+    sums[remover.name] = manifest['remover']['sha256']
     sums['manifest.json'] = sha256(output / 'manifest.json')
     (output / 'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in sorted(sums.items())),
                                       encoding='utf-8')
@@ -382,6 +402,7 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
         raise ValueError('Run the build as an ordinary user on an amd64 Linux runner')
     if not cache.is_dir() or output.exists() or output.is_symlink():
         raise ValueError('Provide a pinned .deb cache and a new output directory')
+    pg_env = postgres_environment(pg_bin)
     os.umask(0o022)
     commit = git(root, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}')
     epoch = int(git(root, 'show', '-s', '--format=%ct', commit))
@@ -423,7 +444,7 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
         ledger = json.loads((checkout / 'deploy/linux/native_pg_ledger.json').read_text(encoding='utf-8'))
         native_pg_inventory.verify_manifest(checkout, ledger)
         print('Observing the release migrations in temporary PostgreSQL', flush=True)
-        observed = runtime_inventory(checkout, pg_bin, pg_version)
+        observed = runtime_inventory(checkout, pg_bin, pg_version, pg_env)
 
         print('Building the web app and .NET server', flush=True)
         toolchain = {'python': platform.python_version(), 'postgresql_inventory': observed[3]}

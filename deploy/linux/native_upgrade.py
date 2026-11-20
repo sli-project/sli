@@ -1685,7 +1685,7 @@ def main(argv=None):
             try:
                 package_transaction(version)
             except (OSError, RuntimeError, ValueError):
-                recovery_command = 'sudo apt install --fix-broken ./*.deb'
+                recovery_command = 'bash ./install-beta-kit'
             else:
                 # The installed wrapper already supplies the launch action.
                 recovery_command = f'sudo sli-native-upgrade resume-package {version}'

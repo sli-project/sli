@@ -180,8 +180,9 @@ def test_package_split_exact_dependencies_and_previous_retention(payload, dotnet
     assert "sli-release-old (= 1.0-1~deb13)" in hold
     assert "sli-runtime-old" not in hold  # Retained release owns its runtime dependency.
     assert "sli-rollback-hold (= 1.0-1~deb13)" in public
-    assert "native_host_still_installed" in captured["sli-host"]["DEBIAN/prerm"]
     assert "usr/lib/sli/native_install.py" in captured["sli-host"]
+    assert 'native_remove.py "$@"' in captured["sli-host"]["usr/sbin/sli-remove"]
+    assert captured["sli-host"]["DEBIAN/prerm"] == captured["sli-rollback-hold"]["DEBIAN/prerm"]
     assert "--owner-recovery" in captured["sli-host"]["usr/lib/sli/native_setup.py"]
     assert 'native_setup.py "$@"' in captured["sli-host"]["usr/sbin/sli-setup"]
     assert 'native_host.py cold-tables "$@"' in captured["sli-host"]["usr/sbin/sli-cold-tables"]
@@ -565,6 +566,10 @@ def test_package_scripts_reinstall_and_remove_without_adopting_data(tmp_path, wo
         body = body.replace('/usr/sbin/sli-native-install',
                             'sh ' + shlex.quote(launcher.as_posix()))
         body = body.replace('/var/lib/sli/state/reuse-package.json', (state / 'reuse-package.json').as_posix())
+        body = body.replace('receipt=/var/lib/sli/state/installed.json',
+                            'receipt=' + shlex.quote((state / 'installed.json').as_posix()))
+        body = body.replace('current=/opt/sli/current',
+                            'current=' + shlex.quote((tmp_path / 'opt/sli/current').as_posix()))
         # Use the real embedded state logic against an isolated Debian tree.
         # This filesystem belongs to the test runner, which need not be root.
         body = body.replace("if __name__ == '__main__':",
@@ -585,10 +590,18 @@ def test_package_scripts_reinstall_and_remove_without_adopting_data(tmp_path, wo
                        ('preinst', ('upgrade', '0.9-1~deb13')), ('postinst', ('configure',))]:
         result = run(scripts[name], *args)
         assert result.returncode == int(working), result.stderr
-    result = run(package.retain_recovery_prerm(), 'remove')
+    retain = package.retain_recovery_prerm()
+    result = run(retain, 'remove')
     assert result.returncode == int(working), result.stderr
     if working:
         assert not record.exists()
+        installed = state / 'installed.json'
+        parked = installed.with_name('installed.json.sli-removing')
+        installed.rename(parked)
+        assert run(retain, 'remove').returncode == 0
+        assert run(retain, 'deconfigure').returncode == 1
+        installed.write_bytes(parked.read_bytes())
+        assert run(retain, 'remove').returncode == 1
     else:
         assert run(scripts['prerm'], 'remove').returncode == 0
         assert run(scripts['preinst'], 'install').returncode == 0
@@ -598,12 +611,16 @@ def test_package_scripts_reinstall_and_remove_without_adopting_data(tmp_path, wo
     assert data.read_bytes() == b'18\n' and conf.read_bytes() == b'# synthetic configuration\n'
 
 
-def test_remove_after_failed_configure_stops_loaded_database_without_runtime(tmp_path, monkeypatch):
+@pytest.mark.parametrize('accepted', [False, True])
+def test_remove_stops_services_without_release_runtime(tmp_path, monkeypatch, accepted):
     state = tmp_path / 'state'
     state.mkdir()
     receipt = state / 'package-install.json'
-    receipt.write_text(json.dumps({'schema_version': 1, 'release': 'old', 'status': 'failed',
-                                   'first_start_pending': True, 'site_sha256': '1' * 64}))
+    status = 'configured' if accepted else 'failed'
+    receipt.write_text(json.dumps({'schema_version': 1, 'release': 'old', 'status': status,
+                                   'first_start_pending': not accepted, 'site_sha256': '1' * 64}))
+    if accepted:
+        (state / 'installed.json').write_text(json.dumps({'release': '/opt/sli/releases/old'}))
     monkeypatch.setattr(native_preinstall, 'trusted', lambda path: None)
     monkeypatch.setattr(install, 'STATE', state)
     monkeypatch.setattr(install, 'RECOVERY', tmp_path / 'recovery')
@@ -615,8 +632,9 @@ def test_remove_after_failed_configure_stops_loaded_database_without_runtime(tmp
     monkeypatch.setattr(install.subprocess, 'run', lambda argv, **kwargs: SimpleNamespace(
         stdout='sli-postgresql.service loaded active running\npostgresql.service loaded active running\n'))
     assert install.main(['remove']) == 0
-    assert calls == [['systemctl', 'stop', 'sli-postgresql.service']]
-    assert json.loads(receipt.read_text())['status'] == 'failed'
+    expected = ['/usr/sbin/sli-remove', '--stop-services'] if accepted else ['systemctl', 'stop', 'sli-postgresql.service']
+    assert calls == [expected]
+    assert json.loads(receipt.read_text())['status'] == status
 
 
 @pytest.fixture
@@ -790,16 +808,16 @@ def test_reinstall_rejects_changed_manifest_without_mutation(lifecycle):
     assert "host-configure" not in lifecycle.calls
 
 
-def test_remove_stops_writers_without_touching_registry_recovery_or_link(lifecycle):
+def test_remove_stops_writers_without_touching_registry_recovery_or_link(lifecycle, monkeypatch):
     install.configure("test")
     assert lifecycle.calls.index("workers-healthy") < lifecycle.calls.index("backup-configured")
     assert ["systemctl", "enable", "--now", "sli-backup.timer"] in lifecycle.calls
     before = {p: p.read_bytes() for p in lifecycle.state.iterdir()}
     lifecycle.calls.clear()
-    install.remove()
-    assert lifecycle.calls[:3] == [["systemctl", "disable", "--now", "sli-backup.timer"],
-                                 ["systemctl", "stop", "sli-backup.service", "sli-backup-drill.service"], "stop-writers"]
-    assert ["systemctl", "disable", "sli.target"] in lifecycle.calls
+    monkeypatch.setattr(install.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(install, "inventory", lambda release: pytest.fail("removal needs no release runtime"))
+    assert install.main(["remove"]) == 0
+    assert lifecycle.calls == [["/usr/sbin/sli-remove", "--stop-services"]]
     assert install.CURRENT.resolve() == lifecycle.root
     assert {p: p.read_bytes() for p in lifecycle.state.iterdir()} == before
     assert (install.RECOVERY / "test/installed.json").is_file()

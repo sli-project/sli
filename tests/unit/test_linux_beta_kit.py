@@ -80,6 +80,43 @@ def test_modified_cache_package_aborts_before_copy(tmp_path):
     assert not list(output.iterdir())
 
 
+def test_builder_probes_postgresql_with_its_loader_path_and_no_database_environment(tmp_path, monkeypatch):
+    calls = []
+
+    def probe(argv, *, env, **kwargs):
+        calls.append(argv)
+        assert env['LD_LIBRARY_PATH'] == str(tmp_path / 'lib')
+        assert 'PGHOST' not in env
+        return subprocess.CompletedProcess(argv, 0, stdout=f'{argv[0].name} (PostgreSQL) 18.6\n', stderr='')
+
+    monkeypatch.setenv('PGHOST', 'example.test')
+    monkeypatch.setenv('LD_LIBRARY_PATH', str(tmp_path / 'lib'))
+    monkeypatch.setattr(kit.subprocess, 'run', probe)
+    env = kit.postgres_environment(tmp_path)
+    assert env['LC_ALL'] == 'C.UTF-8'
+    assert calls == [[tmp_path / name, '--version'] for name in ('initdb', 'postgres', 'pg_isready')]
+
+
+@pytest.mark.parametrize('failure', ['missing', 'loader', 'wrong_major'])
+def test_builder_reports_unusable_postgresql_before_export(tmp_path, monkeypatch, failure):
+    def probe(argv, **kwargs):
+        if failure == 'missing':
+            raise FileNotFoundError(2, 'No such file or directory')
+        if failure == 'loader':
+            return subprocess.CompletedProcess(argv, 127, stdout='', stderr='libicuuc.so.76: cannot open shared object file')
+        return subprocess.CompletedProcess(argv, 0, stdout='initdb (PostgreSQL) 17.1\n', stderr='')
+
+    monkeypatch.setattr(kit.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(kit.platform, 'machine', lambda: 'x86_64')
+    monkeypatch.setattr(kit.os, 'geteuid', lambda: 123, raising=False)
+    monkeypatch.setattr(kit.subprocess, 'run', probe)
+    expected = {'missing': 'No such file or directory', 'loader': r'libicuuc\.so\.76', 'wrong_major': '17.1'}[failure]
+
+    with pytest.raises(ValueError, match=f'initdb.*{expected}'):
+        kit.build(tmp_path, 'HEAD', tmp_path, tmp_path / 'kit', tmp_path / 'pg')
+    assert not list(tmp_path.iterdir())
+
+
 @pytest.mark.parametrize('explicit', [False, True])
 def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, explicit):
     commit = 'a' * 40
@@ -119,6 +156,7 @@ def test_beta_kit_rejects_unverified_agent_msi(tmp_path, monkeypatch, problem, m
     monkeypatch.setattr(kit.platform, 'machine', lambda: 'x86_64')
     monkeypatch.setattr(kit.os, 'geteuid', lambda: 1000, raising=False)
     monkeypatch.setattr(kit.os, 'umask', lambda mask: None)
+    monkeypatch.setattr(kit, 'postgres_environment', lambda pg_bin: {})
     monkeypatch.setattr(kit, 'git', lambda root, operation, *args: commit if operation == 'rev-parse' else '123')
 
     def export_commit(root, ref, checkout, archive):
@@ -205,6 +243,7 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
         'sli', 'sli-host', 'sli-release-fixture', 'sli-rollback-hold', 'sli-server-dotnet',
     }
     assert json.loads((output / 'manifest.json').read_text()) == manifest
+    assert kit.sha256(output / 'remove-beta-kit') == manifest['remover']['sha256']
     subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True)
     extracts = tmp_path / 'package'
     server_package = next(output.glob('sli-server-dotnet_*.deb'))
@@ -214,20 +253,24 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     assert result.stdout.strip() == 'beta kit smoke'
 
 @pytest.mark.skipif(os.name != 'posix' or not shutil.which('bash'), reason='Linux shell tools required')
-@pytest.mark.parametrize('scenario', ['valid', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
+@pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
 def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     source = kit.ROOT / 'deploy/linux/install-beta-kit'
     assert source.is_file(), 'The Debian beta kit needs a standalone install helper'
     extracted = tmp_path / 'kit'
     extracted.mkdir()
     script = extracted / source.name
-    shutil.copyfile(source, script)
+    script.write_text(source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
     deb = extracted / 'sli-example_1.0~deb13_amd64.deb'
     deb.write_bytes(b'synthetic package')
     manifest = extracted / 'manifest.json'
     manifest.write_text('{}\n', encoding='utf-8')
     lines = [f'{kit.sha256(path)}  {path.name}\n' for path in (script, deb, manifest)]
-    if scenario == 'unlisted':
+    if scenario == 'newer_vendor':
+        vendor = extracted / 'tzdata_2026c_all.deb'
+        vendor.write_bytes(b'verified vendor package')
+        lines.append(f'{kit.sha256(vendor)}  {vendor.name}\n')
+    elif scenario == 'unlisted':
         (extracted / 'unlisted.deb').write_bytes(b'not authorized')
     elif scenario == 'tampered':
         deb.write_bytes(b'changed package')
@@ -235,23 +278,41 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
         lines.append(f'{kit.sha256(deb)}  ../{deb.name}\n')
     elif scenario == 'duplicate':
         lines.append(lines[1])
-    (extracted / 'SHA256SUMS').write_text(''.join(lines), encoding='utf-8')
+    (extracted / 'SHA256SUMS').write_text(''.join(lines), encoding='utf-8', newline='\n')
 
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
     apt_calls = tmp_path / 'apt-calls'
     sudo = bin_dir / 'sudo'
     sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n'
-                    'if [[ $SCENARIO == apt_failure && $* == *"apt-get install"* ]]; then exit 1; fi\n',
-                    encoding='utf-8')
+                    'if [[ $SCENARIO == apt_failure && " $* " == *" install "* ]]; then exit 1; fi\n',
+                    encoding='utf-8', newline='\n')
     sudo.chmod(0o755)
-    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls), SCENARIO=scenario,
-               TMPDIR=str(tmp_path))
-    run = subprocess.run(['bash', script, '--port', '9443'], cwd=extracted, env=env, capture_output=True, text=True)
-    if scenario == 'valid':
+    dpkg_deb = bin_dir / 'dpkg-deb'
+    dpkg_deb.write_text('''#!/usr/bin/env bash
+case "$2:$3" in
+    ./tzdata*:Package) echo tzdata;; ./tzdata*:Version) echo 2026c;; ./tzdata*:Architecture) echo all;;
+    *:Package) echo sli-example;; *:Version) echo 1.0;; *:Architecture) echo amd64;; *) exit 1;;
+esac
+''', encoding='utf-8', newline='\n')
+    query = bin_dir / 'dpkg-query'
+    query.write_text('#!/usr/bin/env bash\ntest "$3" = tzdata && echo "installed 2026e"\n', encoding='utf-8', newline='\n')
+    dpkg = bin_dir / 'dpkg'
+    dpkg.write_text('#!/usr/bin/env bash\ntest "$*" = "--compare-versions 2026e gt 2026c"\n', encoding='utf-8', newline='\n')
+    for stub in (dpkg_deb, query, dpkg):
+        stub.chmod(0o755)
+    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls),
+               SCENARIO=scenario)
+    run = subprocess.run(['bash', './install-beta-kit', '--port', '9443'],
+                         cwd=extracted, env=env, capture_output=True, text=True)
+    if scenario in {'valid', 'newer_vendor'}:
         assert run.returncode == 0, run.stderr
+        if scenario == 'newer_vendor':
+            assert 'Keeping tzdata 2026e' in run.stdout
         assert apt_calls.read_text(encoding='utf-8').splitlines() == [
-            'apt-get update', f'DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove --fix-broken ./{deb.name}',
+            'apt-get update', 'env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes '
+            '-o APT::Get::allow-Downgrades=false -o Dpkg::Options::=--force-confdef '
+            f'-o Dpkg::Options::=--force-confold install --no-remove --fix-broken ./{deb.name}',
             '/usr/sbin/sli-setup --port 9443',
         ]
     elif scenario == 'apt_failure':
@@ -259,4 +320,64 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
         assert '/usr/sbin/sli-setup' not in apt_calls.read_text(encoding='utf-8')
     else:
         assert run.returncode != 0
+        assert 'SLI beta kit:' in run.stderr
         assert not apt_calls.exists()
+
+
+@pytest.mark.skipif(not all(shutil.which(name) for name in ('apt-get', 'dpkg-deb', 'bash')),
+                    reason='Debian package planning tools required')
+def test_install_plan_keeps_newer_system_packages_and_installs_pinned_dependencies(tmp_path):
+    extracted = tmp_path / 'kit'
+    extracted.mkdir()
+    script = extracted / 'install-beta-kit'
+    shutil.copyfile(kit.ROOT / 'deploy/linux/install-beta-kit', script)
+    manifest = extracted / 'manifest.json'
+    manifest.write_text('{}\n', encoding='utf-8')
+    files = [script, manifest]
+    control = 'Package: {0}\nVersion: {1}\nArchitecture: {2}\nMaintainer: Fixture <fixture@example.test>\nDescription: Fixture\n'
+    for name, version, arch, depends in (
+        ('tzdata', '2026c-1', 'all', ''),
+        ('libfixture1', '2:1.0-1', 'amd64', ''),
+        ('libfixture2', '1.0-1', 'amd64', ''),
+        ('sli-fixture', '1.0-1', 'amd64', 'Depends: tzdata (>= 2026c-1), libfixture1, libfixture2\n'),
+    ):
+        staging = tmp_path / name / 'DEBIAN'
+        staging.mkdir(parents=True)
+        (staging / 'control').write_text(control.format(name, version, arch) + depends, encoding='utf-8')
+        deb = extracted / f'{name}_fixture.deb'
+        subprocess.run(['dpkg-deb', '--root-owner-group', '--build', staging.parent, deb], check=True)
+        files.append(deb)
+    (extracted / 'SHA256SUMS').write_text(''.join(f'{kit.sha256(file)}  {file.name}\n' for file in files), encoding='utf-8')
+
+    admin = tmp_path / 'dpkg'
+    admin.mkdir()
+    (admin / 'status').write_text(''.join(
+        control.format(name, version, arch) + 'Status: install ok installed\n\n'
+        for name, version, arch in (('tzdata', '2026e-1', 'all'), ('libfixture1', '3:0.9-1', 'amd64'))
+    ), encoding='utf-8')
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    query = bin_dir / 'dpkg-query'
+    query.write_text('#!/usr/bin/env bash\nexec "$REAL_QUERY" --admindir="$FIXTURE_ADMIN" "$@"\n', encoding='utf-8')
+    query.chmod(0o755)
+    sudo = bin_dir / 'sudo'
+    sudo.write_text('''#!/usr/bin/env bash
+set -eu
+if [[ $1 == apt-get && $2 == update ]]; then exit 0; fi
+if [[ $# == 1 && $1 == /usr/sbin/sli-setup ]]; then exit 0; fi
+test "$1 $2 $3" = 'env DEBIAN_FRONTEND=noninteractive apt-get'
+shift 3
+exec "$REAL_APT" -s -o Dir::State::status="$FIXTURE_ADMIN/status" -o Dir::State="$FIXTURE_ADMIN" \\
+    -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=- -o Dir::Etc::preferences=/dev/null \\
+    -o Dir::Etc::preferencesparts=- -o Dir::Cache="$FIXTURE_ADMIN" "$@"
+''', encoding='utf-8')
+    sudo.chmod(0o755)
+    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', FIXTURE_ADMIN=str(admin),
+               REAL_QUERY=shutil.which('dpkg-query'), REAL_APT=shutil.which('apt-get'))
+
+    result = subprocess.run(['bash', script], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert 'Keeping tzdata 2026e-1' in result.stdout
+    assert 'Keeping libfixture1:amd64 3:0.9-1' in result.stdout
+    assert 'Inst sli-fixture' in result.stdout and 'Inst libfixture2' in result.stdout
+    assert 'Inst tzdata' not in result.stdout and 'Inst libfixture1' not in result.stdout

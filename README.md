@@ -36,7 +36,9 @@ after APT installs the packages. Allow inbound HTTPS on port 443 or the port
 printed by the installer.
 
 1. Get `sli-debian-beta-kit.tar.gz` through your beta provider's authenticated
-   delivery channel and unpack it on Debian.
+   delivery channel and unpack it on Debian. The complete Debian 13 amd64
+   kit contains the SLI packages and pinned vendor packages, including
+   PostgreSQL 18. Compare the kit checksums with those supplied by your provider.
 2. From the directory where you unpacked the archive, run:
 
    ```sh
@@ -44,7 +46,9 @@ printed by the installer.
    ```
 
    The script verifies the kit checksums, installs the packages and runs setup
-   without asking for a server address, port or disk.
+   without asking for a server address, port or disk. It keeps newer installed
+   vendor packages. The startup guard prevents PostgreSQL from creating a
+   vendor default cluster during package installation.
 3. Open the printed HTTPS address. For first-time access on Windows, paste the
    PowerShell line from your trusted server console to add the server's public CA
    to your Windows account and open the address. Sign in with `admin` / `admin` and
@@ -163,12 +167,13 @@ backup disk is absent. Restore verification requires a separate volume. Move
 `/var/lib/sli-ca-offline` to protected offline storage and distribute only public
 CA certificates to agents.
 
-**Uninstall:** `sudo apt remove sli` stops applications, timers and databases.
-Data, `/etc/sli`, secrets and recovery packages survive removal and purge;
-`sli-host` is protected while installed database state remains. History/key
-destruction is a separate operation. Remove the Windows agent through
-**Installed apps → SLI Agent**. These procedures require clean-Debian acceptance;
-source code and unit tests do not constitute deployment acceptance.
+**Uninstall:** `sudo sli-remove` stops SLI and removes its packages and systemd
+units. It retains databases, configuration, keys and recovery files. To erase
+SLI data on this host as well, run `sudo sli-remove --purge-data`.
+For an older installation, use `sudo python3 -I ./remove-beta-kit` from the
+verified current kit. The same `--purge-data` flag applies. Shared Debian and
+database vendor packages, external backup volumes and copies taken offline
+are retained. Remove the Windows agent through **Installed apps → SLI Agent**.
 
 For development, use the separate [dev container workflow](CONTRIBUTING.md).
 
@@ -178,7 +183,7 @@ For an installed beta, obtain the new complete kit described above and verify
 `SHA256SUMS` through the trusted delivery channel. In its `.deb` directory run:
 
 ```sh
-sudo apt install --fix-broken ./*.deb
+bash ./install-beta-kit
 ```
 
 No manual setup is needed.

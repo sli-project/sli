@@ -21,7 +21,7 @@ while IFS= read -r line || [[ -n $line ]]; do
     [[ -f $name && ! -L $name ]] || fail "Missing or unsafe file: $name"
     case $name in
         *.deb) packages+=("./$name") ;;
-        manifest.json|install-beta-kit) ;;
+        manifest.json|install-beta-kit|remove-beta-kit) ;;
         *) fail "Unexpected entry: $name" ;;
     esac
     listed[$name]=1
@@ -44,6 +44,36 @@ cd -- "$staging"
 printf '%s\n' "${checksums[@]}" | sha256sum --check --strict --status - || fail 'SHA-256 verification failed'
 chmod 0755 -- "$staging"
 
+install=()
+for file in "${packages[@]}"; do
+    package=$(dpkg-deb -f "$file" Package)
+    version=$(dpkg-deb -f "$file" Version)
+    arch=$(dpkg-deb -f "$file" Architecture)
+    [[ $package =~ ^[a-z0-9][a-z0-9+.-]+$ && $arch =~ ^[a-z0-9]+$ && -n $version ]] \
+        || fail "Invalid Debian package metadata: $file"
+    case $package in
+        sli|sli-*) ;;
+        *)
+            query=$package
+            [[ $arch == all ]] || query+=":$arch"
+            if entry=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "$query" 2>/dev/null); then
+                read -r status installed <<< "$entry"
+                case $status in
+                    installed|unpacked|half-installed|half-configured|triggers-awaited|triggers-pending)
+                        if dpkg --compare-versions "$installed" gt "$version"; then
+                            printf 'Keeping %s %s (kit version %s)\n' "$query" "$installed" "$version"
+                            continue
+                        fi ;;
+                esac
+            fi ;;
+    esac
+    install+=("$file")
+done
+[[ ${#install[@]} -gt 0 ]] || fail 'No packages to install'
+
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove --fix-broken "${packages[@]}"
+sudo env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes \
+    -o APT::Get::allow-Downgrades=false \
+    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+    install --no-remove --fix-broken "${install[@]}"
 sudo /usr/sbin/sli-setup "$@"
