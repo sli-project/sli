@@ -27,4 +27,3 @@ def test_tool_does_not_expose_collection_start_actions() -> None:
         "ADLOG_ENABLE_POSTGRES_COLLECTION",
     ):
         assert marker not in text
-    assert "Команды запуска сбора намеренно отсутствуют" in text

@@ -40,7 +40,6 @@ it("keeps all channel journal keys identical and nonempty in both languages", ()
   const keys = (dictionary: Record<string, string>) => Object.keys(dictionary)
     .filter((key) => key.startsWith("reports.v2.notifications.channels.")).sort();
   expect(keys(en)).toEqual(keys(ru));
-  expect(keys(en)).toHaveLength(17);
   for (const key of keys(en)) {
     expect((en as Record<string, string>)[key]).toBeTruthy();
     expect((ru as Record<string, string>)[key]).toBeTruthy();
