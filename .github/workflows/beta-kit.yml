@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${KIT_DEBS:?Configure SLI_BETA_KIT_DEBS_DIR on the runner}"
+          : "${KIT_DEBS:?Configure SLI_BETA_KIT_DEBS_DIR with pinned Debian packages and trusted agent MSI inputs}"
           kit_root="${KIT_OUTPUT:-$RUNNER_TOOL_CACHE/sli-beta-kits}"
           mkdir -p "$kit_root"
           kit="$kit_root/$KIT_COMMIT-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

@@ -147,6 +147,80 @@ void CommitAt(const std::wstring& base, const std::wstring& transaction) {
     Require(FileExists(directory + L"\\receipt.txt"));
     NewFile(directory + L"\\committed.txt", "SLI1 committed; enrollment retained for existing runtime\n");
 }
+
+std::vector<std::wstring> Children(const std::wstring& directory) {
+    WIN32_FIND_DATAW entry{};
+    const auto search = FindFirstFileW((directory + L"\\*").c_str(), &entry);
+    if (search == INVALID_HANDLE_VALUE) {
+        Require(GetLastError() == ERROR_FILE_NOT_FOUND);
+        return {};
+    }
+    std::vector<std::wstring> names;
+    do {
+        const std::wstring name = entry.cFileName;
+        if (name != L"." && name != L"..") names.push_back(name);
+    } while (FindNextFileW(search, &entry));
+    const auto error = GetLastError();
+    FindClose(search);
+    Require(error == ERROR_NO_MORE_FILES);
+    return names;
+}
+
+void DeleteTree(const std::wstring& path) {
+    const auto attributes = GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        const auto error = GetLastError();
+        Require(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
+        return;
+    }
+    if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+        {
+            Handle locked;
+            locked.value = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+            BY_HANDLE_FILE_INFORMATION info{};
+            Require(locked.value != INVALID_HANDLE_VALUE && GetFileInformationByHandle(locked.value, &info)
+                && (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY));
+            if (!(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+                for (const auto& name : Children(path)) DeleteTree(path + L"\\" + name);
+        }
+        Require(RemoveDirectoryW(path.c_str()) != 0);
+    } else {
+        Require(DeleteFileW(path.c_str()) != 0);
+    }
+}
+
+void CleanState(const std::wstring& root, const std::wstring& name, bool purgeQueue) {
+    const auto state = root + L"\\" + name;
+    const auto queue = state + L"\\queue";
+    const auto attributes = GetFileAttributesW(state.c_str());
+    if (!purgeQueue && attributes != INVALID_FILE_ATTRIBUTES
+        && (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) == FILE_ATTRIBUTE_DIRECTORY) {
+        const auto queueAttributes = GetFileAttributesW(queue.c_str());
+        if (queueAttributes != INVALID_FILE_ATTRIBUTES
+            && (queueAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) == FILE_ATTRIBUTE_DIRECTORY) {
+            const auto retained = root + L"\\retained-queue-" + name;
+            if (GetFileAttributesW(retained.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                // Keep both queues if a previous uninstall already retained one.
+                const auto unique = retained + L"-" + std::to_wstring(GetTickCount64());
+                Require(MoveFileExW(queue.c_str(), unique.c_str(), MOVEFILE_WRITE_THROUGH) != 0);
+            } else {
+                Require(MoveFileExW(queue.c_str(), retained.c_str(), MOVEFILE_WRITE_THROUGH) != 0);
+            }
+        }
+    }
+    DeleteTree(state);
+}
+void CleanAt(const std::wstring& root, bool purgeQueue) {
+    Handle lockedRoot;
+    OpenDirectory(root, lockedRoot, false);
+    for (const auto& name : Children(root)) {
+        if (name == L"state" || name.starts_with(L"previous-")) CleanState(root, name, purgeQueue);
+        else if (name == L"registration" || name == L"install.lock" || name.starts_with(L"install-")
+            || (name.starts_with(L"ca-") && name.ends_with(L".crt"))
+            || (purgeQueue && name.starts_with(L"retained-queue-"))) DeleteTree(root + L"\\" + name);
+    }
+}
 }
 
 std::wstring ProductionStageBase() {
@@ -156,8 +230,39 @@ std::wstring ProductionStageBase() {
 StageReceipt StageProduction(const std::wstring& transaction, std::string_view enrollment) { return StageAt(ProductionStageBase(), transaction, enrollment); }
 void RollbackProduction(const std::wstring& transaction) { RollbackAt(ProductionStageBase(), transaction); }
 void CommitProduction(const std::wstring& transaction) { CommitAt(ProductionStageBase(), transaction); }
+void CleanProductionState(bool purgeQueue) {
+    Require(CurrentUserSid() == L"S-1-5-18");
+    const auto stage = ProductionStageBase();
+    const auto root = stage.substr(0, stage.find_last_of(L'\\'));
+    if (GetFileAttributesW(root.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        const auto parent = root.substr(0, root.find_last_of(L'\\'));
+        Handle lockedParent;
+        lockedParent.value = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        BY_HANDLE_FILE_INFORMATION info{};
+        Require(lockedParent.value != INVALID_HANDLE_VALUE && GetFileInformationByHandle(lockedParent.value, &info)
+            && (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) == FILE_ATTRIBUTE_DIRECTORY);
+        CleanAt(root, purgeQueue);
+    } else {
+        const auto error = GetLastError();
+        Require(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
+    }
+    HKEY key = nullptr;
+    const auto opened = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\SLI\\AgentNet", 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &key);
+    Require(opened == ERROR_SUCCESS || opened == ERROR_FILE_NOT_FOUND);
+    if (key) {
+        bool cleared = true;
+        for (const auto name : {L"ServerUrl", L"CaBundle", L"CaFingerprint", L"TokenFile", L"InstanceName", L"EnrollmentToken", L"StateDirectory"}) {
+            const auto result = RegDeleteValueW(key, name);
+            cleared = cleared && (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND);
+        }
+        RegCloseKey(key);
+        Require(cleared);
+    }
+}
 #ifdef REGISTRATION_TESTS
 StageReceipt StageFixture(const std::wstring& base, const std::wstring& transaction, std::string_view enrollment) { return StageAt(base, transaction, enrollment); }
 void RollbackFixture(const std::wstring& base, const std::wstring& transaction) { RollbackAt(base, transaction); }
 void CommitFixture(const std::wstring& base, const std::wstring& transaction) { CommitAt(base, transaction); }
+void CleanFixture(const std::wstring& base, bool purgeQueue) { CleanAt(base, purgeQueue); }
 #endif

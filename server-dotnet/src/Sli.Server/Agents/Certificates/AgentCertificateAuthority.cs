@@ -13,6 +13,9 @@ public sealed class AgentCertificateException(string code, int status = 400) : E
 public static class AgentCertificateAuthority
 {
     public static CertificateRequest ParseCsr(string? pem, Guid hostId)
+        => ParseCsr(pem, hostId, out _);
+
+    internal static CertificateRequest ParseCsr(string? pem, Guid? expectedHost, out Guid hostId)
     {
         if (pem is null || pem.Length is < 1 or > 16384 || pem.Any(c => c > 127))
             throw new AgentCertificateException("invalid_agent_csr");
@@ -30,7 +33,9 @@ public static class AgentCertificateAuthority
             if (attribute.ReadObjectIdentifier() != "2.5.4.3") throw new AgentCertificateException("agent_csr_subject_mismatch");
             var tag = attribute.PeekTag();
             var value = attribute.ReadCharacterString((UniversalTagNumber)tag.TagValue);
-            if (attribute.HasData || rdn.HasData || name.HasData || value != hostId.ToString())
+            if (attribute.HasData || rdn.HasData || name.HasData
+                || !Guid.TryParseExact(value, "D", out hostId) || value != hostId.ToString()
+                || (expectedHost.HasValue && hostId != expectedHost.Value))
                 throw new AgentCertificateException("agent_csr_subject_mismatch");
             if (request.CertificateExtensions.Count != 0) throw new AgentCertificateException("agent_csr_extensions_forbidden");
             return request;

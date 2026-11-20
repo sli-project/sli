@@ -1,10 +1,10 @@
 """Offline contracts for the beta .NET MSI artifact workflow."""
 import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,7 @@ def workflow():
 
 def test_msi_workflow_builds_and_checks_dotnet_before_upload():
     config = workflow()
-    assert set(config["on"]) == {"workflow_dispatch"}
+    assert set(config["on"]) == {"workflow_dispatch", "workflow_call"}
     assert config["permissions"] == {"contents": "read"}
     job = config["jobs"]["msi"]
     assert job["runs-on"] == "windows-2025"
@@ -34,11 +34,11 @@ def test_msi_workflow_builds_and_checks_dotnet_before_upload():
     assert setup["with"]["global-json-file"] == "agent-dotnet/global.json"
     build = next(i for i, s in enumerate(steps) if "Build-Msi.ps1" in s.get("run", ""))
     check = next(i for i, s in enumerate(steps) if "Test-MsiTables.ps1" in s.get("run", ""))
-    package = next(i for i, s in enumerate(steps) if "Compress-Archive" in s.get("run", ""))
+    package = next(i for i, s in enumerate(steps) if s.get("name") == "Package MSI and source manifest")
     upload = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/upload-artifact@"))
     assert build < check < package < upload
     assert not any("if" in s or "continue-on-error" in s for s in steps[build:upload + 1])
-    assert steps[upload]["with"]["name"] == "sli-agent-dotnet-msi-${{ github.sha }}"
+    assert steps[upload]["with"]["name"] == "sli-agent-dotnet-msi-${{ inputs.commit || github.sha }}"
     assert steps[upload]["with"]["if-no-files-found"] == "error"
     assert "-MsvcRoot $env:SLI_MSVC_ROOT" in steps[build]["run"]
     assert "-WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT" in steps[build]["run"]
@@ -59,33 +59,29 @@ def test_msi_actions_reuse_existing_pins_and_keep_checkout_read_only():
     assert "pull_request_target" not in source
 
 
-def test_msi_artifact_contains_complete_publish_and_matching_digests(tmp_path):
+def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("PowerShell is required to execute the packaging step")
     output = tmp_path / "agent-dotnet"
-    publish = output / "publish"
-    publish.mkdir(parents=True)
+    output.mkdir()
     (output / "SliAgent.msi").write_bytes(b"synthetic MSI")
-    payload = {"SliAgent.exe": b"synthetic executable", "SliAgent.dll": b"assembly", "runtime.json": b"{}"}
-    for name, data in payload.items():
-        (publish / name).write_bytes(data)
-    step, = [s for s in workflow()["jobs"]["msi"]["steps"] if "Compress-Archive" in s.get("run", "")]
+    step, = [s for s in workflow()["jobs"]["msi"]["steps"] if s.get("name") == "Package MSI and source manifest"]
     script = tmp_path / "package.ps1"
     script.write_text(step["run"], encoding="utf-8")
+    commit = "a" * 40
     result = subprocess.run([pwsh, "-NoProfile", "-File", str(script)],
-                            env={**os.environ, "RUNNER_TEMP": str(tmp_path)},
+                            env={**os.environ, "RUNNER_TEMP": str(tmp_path), "SOURCE_COMMIT": commit},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     artifact = tmp_path / "artifact"
-    assert {p.name for p in artifact.iterdir()} == {"SliAgent.msi", "SliAgent-publish-win-x64.zip", "SHA256SUMS"}
-    with zipfile.ZipFile(artifact / "SliAgent-publish-win-x64.zip") as archive:
-        assert {name.replace("\\", "/"): archive.read(name) for name in archive.namelist()} == payload
-    lines = (artifact / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 2
-    for line in lines:
-        digest, name = line.split("  ")
-        assert digest == hashlib.sha256((artifact / name).read_bytes()).hexdigest()
+    name = f"SliAgent-{commit}.msi"
+    assert {p.name for p in artifact.iterdir()} == {name, f"{name}.json"}
+    assert (artifact / name).read_bytes() == b"synthetic MSI"
+    assert json.loads((artifact / f"{name}.json").read_text(encoding="utf-8")) == {
+        "source_commit": commit,
+        "sha256": hashlib.sha256(b"synthetic MSI").hexdigest(),
+    }
 
 
 @pytest.mark.parametrize(("msvc", "sdk", "message"), [

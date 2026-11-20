@@ -107,7 +107,7 @@ def validate_dotnet_payload(target):
 
 
 def build(source, output, release, version, runtime_version, previous=None, *, clickhouse_mode="native", image_archive=None,
-          dotnet_project=None, dotnet_published=None):
+          dotnet_project=None, dotnet_published=None, agent_msi=None):
     require(ID.fullmatch(release) and VERSION.fullmatch(version) and VERSION.fullmatch(runtime_version),
             "native_package_identity_invalid")
     if previous:
@@ -120,6 +120,9 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
     if dotnet_published is not None:
         # Validate before copytree: copying could dereference a forbidden symlink.
         validate_dotnet_payload(dotnet_published)
+    if agent_msi is not None:
+        require(agent_msi.is_file() and not agent_msi.is_symlink() and agent_msi.suffix.lower() == ".msi",
+                "native_agent_msi_invalid")
     # Reject secret-bearing/special payloads rather than silently shipping them.
     for path in source.rglob("*"):
         require(not path.is_symlink() and (path.is_dir() or path.is_file()), "native_package_payload_invalid")
@@ -165,6 +168,10 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         control(payload, payload.name, version, f"sli-runtime-{runtime} (= {runtime_version})",
                 "SLI immutable application release")
         shutil.copytree(source, payload / "opt/sli/releases" / release)
+        if agent_msi is not None:
+            agent = payload / "opt/sli/releases" / release / "agent/SliAgent.msi"
+            agent.parent.mkdir(exist_ok=True)
+            shutil.copyfile(agent_msi, agent)
         write(payload, f"opt/sli/releases/{release}/native-runtime.json",
               json.dumps(manifest, sort_keys=True) + "\n")
         write(payload, f"opt/sli/releases/{release}/native-package.json",
@@ -247,11 +254,12 @@ def main(argv=None):
     dotnet = parser.add_mutually_exclusive_group()
     dotnet.add_argument("--dotnet-project", type=Path, help=".NET server project to publish for linux-x64")
     dotnet.add_argument("--dotnet-published", type=Path, help="Ready self-contained linux-x64 publish directory; no SDK needed")
+    parser.add_argument("--agent-msi", type=Path, help="Windows agent MSI for console enrollment")
     args = parser.parse_args(argv)
     try:
         build(args.source, args.output, args.release, args.version, args.runtime_version, args.previous,
               dotnet_project=args.dotnet_project,
-              dotnet_published=args.dotnet_published)
+              dotnet_published=args.dotnet_published, agent_msi=args.agent_msi)
     except ValueError as error:
         if str(error) == "native_dotnet_payload_required":
             print("native_dotnet_payload_required")
