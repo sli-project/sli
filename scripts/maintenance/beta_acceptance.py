@@ -21,8 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 MAX_JSON_BYTES = 8 * 1024 * 1024
 REPORTS = ("ad.infrastructure", "ad.users.v2", "ad.computers.v6", "ad.gpo.v2")
 LAB_SCENARIOS = range(1, 11)  # Beta catalog, shared with the existing LAB exercise results.
-FIRST_LOGIN = ("На чистой установке откройте /api/auth/bootstrap в браузере, "
-               "введите одноразовый код и убедитесь, что открылась главная .NET-сервера.")
+FIRST_LOGIN = ("На чистой установке войдите как admin через /login с начальным паролем, "
+               "проверьте, что главная недоступна, смените пароль и откройте главную .NET-сервера.")
 
 
 class CheckFailed(Exception):
@@ -103,14 +103,14 @@ class Api:
             raise AuthorizationFailed(self.login_error)
         return self._request(path, params=params)
 
-    def login_owner(self, password):
+    def login_owner(self, password, username="admin"):
         self.opener.add_handler(HTTPCookieProcessor(self.cookies))
         try:
             response = self._request("/api/auth/login", method="POST",
-                                     body={"username": "platform-owner", "password": password})
+                                     body={"username": username, "password": password})
             principal = response.get("principal")
             require(response.get("authenticated") is True and isinstance(principal, dict)
-                    and principal.get("username") == "platform-owner" and principal.get("type") == "session"
+                    and principal.get("username") == username and principal.get("type") == "session"
                     and principal.get("role") == "admin"
                     and any(cookie.name == "adlog_session" and cookie.secure and cookie.value
                             for cookie in self.cookies), "SLI не подтвердил защищённую сессию владельца.")
@@ -175,8 +175,10 @@ def installation(get, entry):
 
 
 def first_login(entry):
-    require(entry.get("one_time_code_used") is True and entry.get("dotnet_screen_opened") is True, FIRST_LOGIN)
-    return "Куратор подтвердил одноразовый код и открытие главной с .NET-сервера."
+    require(all(entry.get(key) is True for key in (
+        "initial_password_used", "home_blocked_before_change", "password_changed", "dotnet_screen_opened",
+    )), FIRST_LOGIN)
+    return "Вход с начальным паролем подтверждён. Главная .NET открылась после обязательной смены пароля."
 
 
 def agent_collection(get, entry, agent_id):
@@ -450,12 +452,14 @@ def read_observations(file, base, domain_id):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, epilog=(
-        "Set SLI_ACCEPTANCE_OWNER_PASSWORD to sign in as platform-owner. "
+        "Set SLI_ACCEPTANCE_OWNER_PASSWORD to sign in after changing the initial password. "
         "SLI_OPERATOR_TOKEN accepts an API key when that key has access to all checks."
     ))
     parser.add_argument("--api-url", required=True, help="HTTPS origin of installed SLI")
     parser.add_argument("--domain-id", required=True, type=int, help="SLI domain ID for LAB")
     parser.add_argument("--agent-id", type=UUID, help="Installed LAB DC agent UUID")
+    parser.add_argument("--owner-username", choices=("admin", "platform-owner"), default="admin",
+                        help="Owner account to sign in as (default: admin)")
     parser.add_argument("--observations", help="Curator's observations in JSON, or - for stdin")
     args = parser.parse_args(argv)
     if args.domain_id <= 0:
@@ -473,7 +477,7 @@ def main(argv=None):
         observations = {}
     if owner_password:
         try:
-            api.login_owner(owner_password)
+            api.login_owner(owner_password, args.owner_username)
         except CheckFailed as error:
             print(error, file=sys.stderr)
     try:

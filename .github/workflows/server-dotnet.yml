@@ -33,6 +33,9 @@ on:
       - "config/postgres_schema.sql"
       - "requirements*.txt"
       - "scripts/ci/server_dotnet_*"
+      - "scripts/ci/server_test_durations.*"
+      - "scripts/ci/shard_balance.py"
+      - "scripts/ci/postgres_test_shard.py"
       - "tests/tooling/test_server_dotnet_shard.py"
       - ".github/workflows/server-dotnet.yml"
   push:
@@ -68,6 +71,9 @@ on:
       - "config/postgres_schema.sql"
       - "requirements*.txt"
       - "scripts/ci/server_dotnet_*"
+      - "scripts/ci/server_test_durations.*"
+      - "scripts/ci/shard_balance.py"
+      - "scripts/ci/postgres_test_shard.py"
       - "tests/tooling/test_server_dotnet_shard.py"
       - ".github/workflows/server-dotnet.yml"
   schedule:
@@ -226,10 +232,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
           PROFILE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }}
-        run: |
-          args=()
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--split-classes); fi
-          python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" "${args[@]}"
+        run: python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE"
       - name: Preserve per-case test results
         if: always()
         # A full artifact quota must not turn passed tests red.
@@ -239,4 +242,5 @@ jobs:
           name: server-dotnet-test-results-${{ matrix.shard }}
           path: server-dotnet/server-dotnet-results.xml
           if-no-files-found: warn
-          retention-days: 1
+          # Keep recent main runs available to rebuild the duration table.
+          retention-days: ${{ github.event_name == 'push' && 7 || 1 }}

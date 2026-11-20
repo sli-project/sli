@@ -31,6 +31,7 @@ export function auditActionLabel(value: string): string {
   const keys = {
     initial_owner_claimed: "access.audit.actions.initial_owner_claimed",
     "auth.initial_owner.claimed": "access.audit.actions.initial_owner_claimed",
+    "auth.initial_admin_password.changed": "access.audit.actions.initial_admin_password_changed",
     report_assignment_created: "access.audit.actions.report_assignment_created",
     package_assignment_created: "access.audit.actions.package_assignment_created",
     platform_setting_update: "access.audit.actions.platform_setting_update",

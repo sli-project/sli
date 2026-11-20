@@ -1,8 +1,8 @@
 namespace Sli.Server.Auth.Lifecycle;
 
 public sealed record LoginCommand(string Username, string Password, bool Remember);
-public sealed record RequestIdentity(string RemoteAddress);
-public sealed record LoginResult(Principal? Principal, string? SessionToken, int RetryAfterSeconds = 0)
+public sealed record RequestIdentity(string RemoteAddress, bool SecureTransport = true);
+public sealed record LoginResult(Principal? Principal, string? SessionToken, int RetryAfterSeconds = 0, bool PasswordChangeRequired = false)
 {
     public bool Succeeded => Principal is not null && SessionToken is not null;
 }

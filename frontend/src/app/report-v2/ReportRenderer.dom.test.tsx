@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportIntentDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "./ReportRenderer";
+import { api } from "../../api/client";
+import { OverlayProvider } from "../../design-system";
 import { PAGE_ACTIONS } from "./custom";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
@@ -60,6 +62,37 @@ function renderReport(reportKey = "demo.events") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
 }
+
+it.each(["list", "drawer"] as const)("resolves a problem from the %s in two actions", async (surface) => {
+  const raw = { ...definition, ...reportDefinitions.find((item) => item.key === "security.problems"), detail: "fields" } as ReportDefinitionDto;
+  const problem = { id: 7, title_text: "Synthetic problem", status: "confirmed", allowed_statuses: ["confirmed", "active", "closed"] };
+  dataResponse.body = page({ report_key: raw.key, items: [problem] });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).includes("/data?") ? dataResponse.body : raw)));
+  vi.spyOn(appContext, "useEffectiveAccess").mockReturnValue({ capabilities: ["investigations.manage"] } as ReturnType<typeof appContext.useEffectiveAccess>);
+  const update = vi.spyOn(api, "updateFinding").mockImplementation(async () => {
+    dataResponse.body = page({ report_key: raw.key, state: "empty", items: [] });
+    return { status: "ok", changed: true, finding: { ...problem, status: "closed" } } as Awaited<ReturnType<typeof api.updateFinding>>;
+  });
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OverlayProvider><ReportRenderer reportKey={raw.key}/></OverlayProvider></QueryClientProvider>);
+
+  const table = await screen.findByRole("table");
+  expect(within(table).getByText("Открыта")).toBeTruthy();
+  let target = table;
+  if (surface === "drawer") {
+    fireEvent.click(within(table).getByText(problem.title_text));
+    target = screen.getByRole("dialog", { name: problem.title_text });
+  }
+  fireEvent.click(within(target).getByRole("button", { name: "Решено" }));
+  if (surface === "list") expect(screen.queryByRole("dialog", { name: problem.title_text })).toBeNull();
+  const confirm = screen.getByRole("dialog", { name: "Закрыть проблему" });
+  const note = within(confirm).getByRole("textbox", { name: "Комментарий (необязательно)" });
+  if (surface === "drawer") fireEvent.change(note, { target: { value: " Исправлено " } });
+  expect(update).not.toHaveBeenCalled();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Решено" }));
+  await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith(7, { status: "closed", note: surface === "drawer" ? "Исправлено" : null }));
+  await waitFor(() => expect(screen.queryByText(problem.title_text)).toBeNull());
+});
 
 it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-state clutter (%s)", async (locale) => {
   setLocale(locale);
@@ -294,7 +327,8 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(raw.description)).toBeNull();
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.progress.label"))).toBeNull();
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
-  expect(screen.getByText(t("reports.v2.security.problems.metrics.open.label"))).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: t("reports.summaryAria") }))
+    .getByText(t("reports.v2.security.problems.metrics.open.label"))).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(locale === "ru"
     ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]

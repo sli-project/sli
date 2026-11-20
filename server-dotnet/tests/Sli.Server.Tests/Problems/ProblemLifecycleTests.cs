@@ -55,6 +55,23 @@ public sealed class ProblemLifecycleTests
         Assert.Null(clear.Assignee); Assert.True(clear.Audit); Assert.False(clear.Changed); Assert.Equal("clear", clear.Reason); Assert.Equal("original", row["status_reason"]!.GetValue<string>());
     }
     [Theory]
+    [InlineData("new")]
+    [InlineData("review")]
+    [InlineData("confirmed")]
+    [InlineData("repeated")]
+    public void ResolveWithoutCommentKeepsOwnerAndReasonAndRequiresAudit(string status)
+    {
+        var row = new JsonObject { ["status"] = status, ["assigned_to"] = "bob", ["status_reason"] = "original" };
+        var input = FindingStatusInput.Parse(O("""{"status":"closed","note":null}"""), "alice");
+        var result = input.Apply(row);
+
+        Assert.True(result.Changed);
+        Assert.True(result.Audit);
+        Assert.Null(input.Note);
+        Assert.Equal("bob", result.Assignee);
+        Assert.Equal("original", result.Reason);
+    }
+    [Theory]
     [InlineData("{\"status\":\"active\"}")]
     [InlineData("{\"status\":\"new\",\"assigned_to\":null}")]
     [InlineData("{\"status\":\"new\",\"status_reason\":\"\"}")]

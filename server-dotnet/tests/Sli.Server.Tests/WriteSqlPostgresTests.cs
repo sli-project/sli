@@ -16,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Sli.Server.Auth.InitialOwner;
+using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
 using Sli.Server.Agents.Certificates;
 using Sli.Agent.Core;
@@ -321,8 +323,35 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             state.Parameters.AddWithValue("current", currentId);
             if (await state.ExecuteScalarAsync(ct) is not 2L) failures.Add("DC registration statuses were not exchanged");
         }
-        // Logout is last: earlier writes must use a real authenticated owner session.
+        // Finish writes with the original owner session before testing first login.
         await Check("/api/auth/logout", new { });
+        client.DefaultRequestHeaders.Remove("Cookie");
+
+        const string initialPassword = "synthetic-initial-password-A1!";
+        const string replacementPassword = "synthetic-replacement-password-B2!";
+        await using (var pending = new NpgsqlCommand(
+            "update auth_users set password_hash=@hash where username='platform-owner'", admin))
+        {
+            pending.Parameters.AddWithValue("hash", InitialAdminPassword.HashPrefix + new PasswordCodec().Hash(initialPassword));
+            await pending.ExecuteNonQueryAsync(ct);
+        }
+        using var initialLogin = new StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { username = "platform-owner", password = initialPassword }),
+            System.Text.Encoding.UTF8, "application/json");
+        using (var login = await client.PostAsync("/api/auth/login", initialLogin, ct))
+        {
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            var body = await login.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
+            Assert.True(body?["password_change_required"]?.GetValue<bool>() is true);
+            client.DefaultRequestHeaders.Add("Cookie", Assert.Single(login.Headers.GetValues("Set-Cookie")).Split(';')[0]);
+        }
+        var changed = await Check("/api/auth/change-initial-password",
+            new { password = replacementPassword, repeat = replacementPassword });
+        Assert.True(changed?["authenticated"]?.GetValue<bool>() is true);
+        client.DefaultRequestHeaders.Remove("Cookie");
+        var signedIn = await Check("/api/auth/login", new { username = "platform-owner", password = replacementPassword });
+        Assert.Equal("platform-owner", signedIn?["principal"]?["username"]?.GetValue<string>());
+
         var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? []).Where(m => m is "POST" or "PUT" or "DELETE").Select(m => (Method: m, Pattern: e.RoutePattern.RawText!))).Distinct().ToArray();
         foreach (var route in routes)

@@ -5,6 +5,15 @@
   // login.test.ts checks the rendered translations against those dictionaries.
   const dictionaries = {
     "ru": {
+      "login.change.title": "Задайте новый пароль",
+      "login.change.password": "Новый пароль",
+      "login.change.repeat": "Повторите пароль",
+      "login.change.submit": "Сохранить пароль",
+      "login.change.busy": "Сохраняем пароль…",
+      "login.change.mismatch": "Пароли не совпадают.",
+      "login.change.invalid": "Введите новый пароль от 12 символов.",
+      "login.change.reused": "Задайте пароль, отличный от начального.",
+      "login.change.failed": "Не удалось сохранить новый пароль. Повторите попытку.",
       "login.error.authenticationRequired": "Необходимо войти в систему.",
       "login.error.origin": "Запрос входа отклонён. Откройте страницу входа с адреса сервера.",
       "login.documentTitle": "SLI — Вход в систему",
@@ -47,6 +56,15 @@
       "login.error.timeout": "Сервер не ответил вовремя. Проверьте соединение и повторите попытку."
     },
     "en": {
+      "login.change.title": "Set a new password",
+      "login.change.password": "New password",
+      "login.change.repeat": "Repeat password",
+      "login.change.submit": "Save password",
+      "login.change.busy": "Saving password…",
+      "login.change.mismatch": "Passwords do not match.",
+      "login.change.invalid": "Enter a new password of at least 12 characters.",
+      "login.change.reused": "Choose a different password from the initial password.",
+      "login.change.failed": "Could not save the new password. Try again.",
       "login.error.authenticationRequired": "Sign in to continue.",
       "login.error.origin": "Sign-in request rejected. Open the sign-in page from the server address.",
       "login.documentTitle": "SLI — Sign in",
@@ -90,6 +108,12 @@
     }
   };
 
+  const changePage = window.location.pathname.toLowerCase() === "/login/change-password";
+  const changeSection = document.querySelector("#sli-change-password");
+  const changeForm = document.querySelector("#sli-change-form");
+  const changeSubmit = changeForm?.querySelector('button[type="submit"]');
+  const newPassword = document.querySelector("#new-password");
+  const repeatPassword = document.querySelector("#repeat-password");
   const form = document.querySelector("#sli-login-form");
   const username = document.querySelector("#username");
   const password = document.querySelector("#password");
@@ -98,7 +122,7 @@
   const toggle = document.querySelector(".sli-password-toggle");
   const submit = document.querySelector("#sli-login-submit");
   const submitLabel = submit?.querySelector("span");
-  const message = document.querySelector("#sli-login-message");
+  const message = document.querySelector(changePage ? "#sli-change-message" : "#sli-login-message");
   const transportNote = document.querySelector("#sli-transport-note");
   const localeSelect = document.querySelector("#sli-locale");
   const readPreference = (key) => {
@@ -120,6 +144,13 @@
     !message
   ) {
     return;
+  }
+
+  if (changePage) {
+    document.body.classList.add("sli-password-change");
+    form.hidden = true;
+    changeSection.hidden = false;
+    newPassword.focus();
   }
 
   let messageTranslation = null;
@@ -155,7 +186,12 @@
       element.setAttribute("aria-label", translate(element.dataset.i18nAriaLabel));
     }
     toggle.setAttribute("aria-label", translate(password.type === "password" ? "login.password.show" : "login.password.hide"));
-    setBusy(submit.disabled);
+    if (changePage) {
+      document.title = "SLI — " + translate("login.change.title");
+      changeSubmit.textContent = translate(changeSubmit.disabled ? "login.change.busy" : "login.change.submit");
+    } else {
+      setBusy(submit.disabled);
+    }
     if (messageTranslation) message.textContent = translate(messageTranslation.key, messageTranslation.params);
     if (transportNote) transportNote.textContent = translate(window.location.protocol !== "https:" ? "login.transport.http" : "login.transport.tls");
     if (localeSelect) localeSelect.value = locale;
@@ -173,7 +209,7 @@
 
     try {
       const target = new URL(rawValue, window.location.origin);
-      if (target.origin !== window.location.origin || target.pathname === "/login") {
+      if (target.origin !== window.location.origin || target.pathname === "/login" || target.pathname.startsWith("/login/")) {
         return fallback;
       }
       return `${target.pathname}${target.search}${target.hash}`;
@@ -210,6 +246,56 @@
     }
     return messageCopy("login.error.generic");
   };
+
+  const requested = new URLSearchParams(window.location.search).get("next");
+  if (changePage) {
+    for (const input of [newPassword, repeatPassword]) input.addEventListener("input", () => setMessage());
+    changeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage();
+      if ([...newPassword.value].length < 12) {
+        setMessage(messageCopy("login.change.invalid"));
+        newPassword.focus();
+        return;
+      }
+      if (newPassword.value !== repeatPassword.value) {
+        setMessage(messageCopy("login.change.mismatch"));
+        repeatPassword.focus();
+        return;
+      }
+
+      changeSubmit.disabled = true;
+      changeSubmit.textContent = translate("login.change.busy");
+      changeForm.setAttribute("aria-busy", "true");
+      try {
+        const response = await fetch("/api/auth/change-initial-password", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json", "Accept-Language": locale, "Content-Type": "application/json" },
+          body: JSON.stringify({ password: newPassword.value, repeat: repeatPassword.value }),
+        });
+        if (response.ok) {
+          window.location.replace(safeDestination(requested));
+          return;
+        }
+        if (response.status === 401) {
+          window.location.replace("/login" + window.location.search);
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        const key = payload.error === "initial_password_reused" ? "reused"
+          : payload.error === "new_password_invalid" ? "invalid" : "failed";
+        setMessage(messageCopy("login.change." + key));
+      } catch {
+        setMessage(messageCopy("login.change.failed"));
+      } finally {
+        changeForm.setAttribute("aria-busy", "false");
+        changeSubmit.disabled = false;
+        changeSubmit.textContent = translate("login.change.submit");
+      }
+    });
+    return;
+  }
 
   toggle.addEventListener("click", () => {
     const makeVisible = password.type === "password";
@@ -266,7 +352,10 @@
         throw new Error(errorMessage(payload, response.status));
       }
 
-      const requested = new URLSearchParams(window.location.search).get("next");
+      if (payload.password_change_required === true) {
+        window.location.replace("/login/change-password" + window.location.search);
+        return;
+      }
       window.location.assign(safeDestination(requested));
     } catch (error) {
       const copy = error instanceof DOMException && error.name === "AbortError"

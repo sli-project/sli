@@ -36,7 +36,7 @@ public sealed class OwnerRecoveryDatabaseTests
 
     private sealed class FailingSessions : ISessionLifecycle
     {
-        public Task<string> IssueAsync(Sli.Server.Auth.Principal principal, bool remember, CancellationToken ct) =>
+        public Task<string?> IssueForPasswordAsync(Sli.Server.Auth.Principal principal, string hash, bool remember, CancellationToken ct) =>
             throw new InvalidOperationException("synthetic_session_failure");
         public Task RevokeAsync(string? token, CancellationToken ct) => throw new NotSupportedException();
     }

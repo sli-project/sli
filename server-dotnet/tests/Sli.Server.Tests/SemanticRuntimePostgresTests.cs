@@ -305,45 +305,69 @@ public sealed class SemanticRuntimePostgresTests(ITestOutputHelper output)
         await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);
         var (slowHost, _) = await SeedShortAsync(fixture,owner,0,ct);
         var (otherHost, _) = await SeedShortAsync(fixture,owner,1,ct);
-        // Delay only one real reader in this disposable cluster; retain its
-        // actual admission, native proof, OID, owner and grants.
+        // Hold one real reader until the test has observed concurrent progress.
+        // The replacement retains its admission, native proof, OID, owner and grants.
+        const long readerGate = 900006;
+        await PostCollectionPostgres.Sql(owner,$"select pg_advisory_lock({readerGate})",ct);
         await using(var definition=new NpgsqlCommand("select pg_get_functiondef('public.read_account_decoy_events(uuid,text,text,text,text,uuid)'::regprocedure)",owner)) {
             string sql=(string)(await definition.ExecuteScalarAsync(ct))!;
             int begin=sql.IndexOf("\nbegin\n",StringComparison.OrdinalIgnoreCase);Assert.True(begin>0);
-            sql=sql.Insert(begin+7,$"    if p_source='{slowHost:D}' then perform pg_sleep(31); end if;\n");
+            sql=sql.Insert(begin+7,$"    if p_source='{slowHost:D}' then perform pg_advisory_xact_lock({readerGate}); end if;\n");
             await PostCollectionPostgres.Sql(owner,sql,ct);
         }
         var info=NativeProcess(fixture,true,true);info.ArgumentList.Add("--poll-seconds");info.ArgumentList.Add("5");
         using var process=Process.Start(info)!;
         var stdout=process.StandardOutput.ReadToEndAsync(ct);var stderr=process.StandardError.ReadToEndAsync(ct);
-        async Task<JsonObject> Observe(Func<JsonObject,bool> ready) {
+        async Task<(JsonObject Heartbeat,JsonObject Reader)> Observe(Func<JsonObject,JsonObject,bool> ready) {
             while(true) {
-                Assert.False(process.HasExited,"worker exited before observation");
-                await using var query=new NpgsqlCommand("select to_jsonb(h)::text from runtime_worker_heartbeats h where worker_name='semantic'",owner);
-                if(await query.ExecuteScalarAsync(ct) is string text) {var row=JsonNode.Parse(text)!.AsObject();if(ready(row))return row;}
+                Assert.False(process.HasExited,"worker exited before reporting the blocked reader");
+                await using var query=new NpgsqlCommand("""
+                    select to_jsonb(h)::text,operation::text
+                    from runtime_worker_heartbeats h
+                    cross join lateral jsonb_array_elements(h.details_json->'executing') as operation
+                    where h.worker_name='semantic' and operation->>'query'='read_account_decoy_events'
+                        and pg_backend_pid()=any(pg_blocking_pids((operation->>'backend_pid')::int))
+                    """,owner);
+                await using(var rows=await query.ExecuteReaderAsync(ct)) {
+                    while(await rows.ReadAsync(ct)) {
+                        var heartbeat=JsonNode.Parse(rows.GetString(0))!.AsObject();
+                        var reader=JsonNode.Parse(rows.GetString(1))!.AsObject();
+                        if(ready(heartbeat,reader))return (heartbeat,reader);
+                    }
+                }
                 await Task.Delay(50,ct);
             }
         }
-        JsonNode? Slow(JsonObject row)=>row["details_json"]?["executing"]?.AsArray().FirstOrDefault(x=>x.Text("query")=="read_account_decoy_events");
+        async Task WaitForCheckpoint(Guid host) {
+            await using var check=new NpgsqlCommand("select exists(select 1 from semantic_account_decoy_checks where scope_json->>'source_instance_id'=@host)",owner);
+            check.Parameters.AddWithValue("host",host.ToString());
+            while(await check.ExecuteScalarAsync(ct) is not true) {
+                Assert.False(process.HasExited,"worker exited before committing the source checkpoint");
+                await Task.Delay(50,ct);
+            }
+        }
         try {
-            var first=await Observe(h=>Slow(h) is not null);var slow=Slow(first)!;
-            Assert.NotNull(slow.Text("started_at"));Assert.True(slow.Number("backend_pid")>0);
-            var next=await Observe(h=>Slow(h).Text("query_started_at")==slow.Text("query_started_at") &&
-                DateTimeOffset.Parse(h.Text("heartbeat_at")!)>DateTimeOffset.Parse(first.Text("heartbeat_at")!).AddSeconds(4));
-            Assert.Equal(slow.Text("operation"),Slow(next).Text("operation"));
+            var (first,slow)=await Observe((_,_)=>true);
+            Assert.NotNull(slow.Text("started_at"));Assert.NotNull(slow.Text("query_started_at"));
+            Assert.True(slow.Number("backend_pid")>0);
+            var firstHeartbeat=DateTimeOffset.Parse(first.Text("heartbeat_at")!);
             await PostCollectionPostgres.Sql(owner,"set lock_timeout='500ms'",ct);
             var (_, imported) = await SeedShortAsync(fixture,owner,2,ct);
             await using(var read=new NpgsqlCommand("select count(*) from event_hot where event_id=any(@ids)",owner)) {
                 read.Parameters.AddWithValue("ids", imported.Select(row => row.EventId).ToArray());
                 Assert.Equal((long)imported.Length,await read.ExecuteScalarAsync(ct));
             }
-            await Observe(h=>Slow(h).Text("query_started_at")==slow.Text("query_started_at") && h["details_json"]?["result"]?["detections"].Number("completed")>0);
-            await using var advanced=new NpgsqlCommand("select exists(select 1 from semantic_account_decoy_checks where scope_json->>'source_instance_id'=@host)",owner);
-            advanced.Parameters.AddWithValue("host",otherHost.ToString());
-            Assert.Equal(true,await advanced.ExecuteScalarAsync(ct));
+            await WaitForCheckpoint(otherHost);
+            await Observe((h,operation)=>operation.Text("operation")==slow.Text("operation") &&
+                operation.Text("query_started_at")==slow.Text("query_started_at") &&
+                operation.Number("backend_pid")==slow.Number("backend_pid") &&
+                DateTimeOffset.Parse(h.Text("heartbeat_at")!)>firstHeartbeat.AddSeconds(4));
+            await PostCollectionPostgres.Sql(owner,$"select pg_advisory_unlock({readerGate})",ct);
+            await WaitForCheckpoint(slowHost);
             string stop=Path.Combine(fixture.Pg.Root,"runtime","semantic-production-stop.json");Directory.CreateDirectory(Path.GetDirectoryName(stop)!);
             await File.WriteAllTextAsync(stop,new JsonObject{["requested_at_utc"]=DateTimeOffset.UtcNow.ToString("O")}.ToJsonString(),ct);
             await process.WaitForExitAsync(ct);await stdout;string errors=await stderr;
+            Assert.Equal(0,process.ExitCode);
             Assert.DoesNotContain("client_timeout",errors);Assert.DoesNotContain("57014",errors);
         }
         finally {if(!process.HasExited){process.Kill(true);await process.WaitForExitAsync(CancellationToken.None);}}

@@ -30,6 +30,19 @@ const notifications = (enabled = false): NotificationWorkspace => ({ channels: [
   tls_mode: "tls", revision: 1, updated_at: "2026-11-14T01:16:00Z", last_accepted_at: null, last_attempt_at: null, last_result_code: null, secret_status: null }],
   can_configure: true, subscriptions: [], counts: { total: 0, new_count: 0, accepted: 0, errors: 0, waiting: 0, other: 0 }, items: [], has_more: false, next_cursor: null, previous_login_at: null });
 const clients: QueryClient[] = [];
+it.each([true, false, null])("shows the latest backup and reports a shared disk only when confirmed (%s)", async (sameDisk) => {
+  setLocale("ru");
+  const time = "2026-11-14T01:16:00Z";
+  vi.mocked(api.storageOverview).mockResolvedValue({ storage: { footprint: {
+    components: [], backups: { last_backup_at_utc: time, same_disk_as_postgres: sameDisk },
+  } } });
+  renderPage();
+  const line = await screen.findByText(/^Последняя копия:/);
+  expect(line.textContent).toBe(t(sameDisk ? "systemStatus.lastBackupSameDisk" : "systemStatus.lastBackup", {
+    time: formatDateTime(time, "UTC"),
+  }));
+});
+
 it.each(["ru", "en"] as const)("shows disk admission refusal with an action and clears it after recovery (%s)", async (locale) => {
   setLocale(locale);
   vi.mocked(api.storageOverview).mockResolvedValue({ storage: { agent_inbox_capacity: "full" } });
