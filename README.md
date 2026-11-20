@@ -148,6 +148,8 @@ command and run it in 64-bit PowerShell as administrator on the target Windows
 computer (the domain controller for AD collection). Check the agent's last
 connection on the **Agents** page.
 
+On the SLI server, run `sudo sli-agent-command [--count N] [--server-url URL] [--no-audit]` to print the same PowerShell command. Supply `--server-url` if no agent server address has been saved.
+
 To download the MSI manually without signing in, append
 `/api/v1/agent/installer/SliAgent.msi` to your SLI server's HTTPS address.
 The download response includes the expected SHA-256 in the
