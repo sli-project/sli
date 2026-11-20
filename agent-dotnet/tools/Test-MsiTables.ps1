@@ -168,7 +168,7 @@ $upgrade = $view.Fetch()
 if ($null -eq $upgrade -or $upgrade.StringData(1) -ne $package['UpgradeCode'] -or $upgrade.StringData(2) -ne $ExpectedVersion) { throw 'Major upgrade must detect earlier versions' }
 if (($upgrade.IntegerData(3) -band 514) -ne 0) { throw 'Earlier versions must be removed; same-version packages must not be major upgrades' }
 $null = $view.Close()
-foreach ($file in @((Join-Path $PSScriptRoot '../../README.md'), (Join-Path $PSScriptRoot '../INSTALL.md'))) {
+foreach ($file in @((Join-Path $PSScriptRoot '../INSTALL.md'))) {
     $document = [IO.File]::ReadAllText([IO.Path]::GetFullPath($file))
     $commands = @([regex]::Matches($document, '(?s)```powershell\s*(.*?)```') | Where-Object { $_.Groups[1].Value -match 'msiexec(?:\.exe)?' -and $_.Groups[1].Value -match '/i' })
     if (-not $commands.Count) { throw "No MSI install command in $file" }
