@@ -6,7 +6,41 @@ using Npgsql;
 using Sli.Server.Tests.Agents;
 using Xunit;
 
+[assembly: AssemblyFixture<Sli.Server.Tests.SqlPostgresTemplate>]
+
 namespace Sli.Server.Tests;
+
+// Keep cluster-wide state (roles, connection limits and server logs) isolated.
+// Each test gets a private copy of this stopped cluster and clones its database.
+public sealed class SqlPostgresTemplate : IAsyncDisposable
+{
+    private static readonly Lazy<Task<SqlPostgresFixture>> Template = new(CreateAsync);
+
+    internal static async Task<string> DataDirectoryAsync(CancellationToken ct) =>
+        (await Template.Value.WaitAsync(ct)).Pg.DataDirectory;
+
+    private static async Task<SqlPostgresFixture> CreateAsync()
+    {
+        var fixture = new SqlPostgresFixture();
+        try {
+            await fixture.InstallAsync(CancellationToken.None, throughVersion: null);
+            await fixture.Pg.FreezeTemplateAsync(CancellationToken.None);
+            return fixture;
+        } catch {
+            await fixture.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!Template.IsValueCreated) return;
+        SqlPostgresFixture fixture;
+        try { fixture = await Template.Value; }
+        catch { return; } // Failed setup already attempted cleanup and failed the test.
+        await fixture.DisposeAsync();
+    }
+}
 
 // Same clean-install path as ReadSqlPostgresTests. No substitute tables or grants.
 internal sealed class SqlPostgresFixture(bool nativeJobAddress = false, string nativeJobHost = "127.0.0.2", int maxConnections = 100) : IAsyncDisposable
@@ -37,6 +71,18 @@ internal sealed class SqlPostgresFixture(bool nativeJobAddress = false, string n
     }
     internal async Task StartAsync(CancellationToken ct, int? throughVersion = null)
     {
+        if (throughVersion is not null) {
+            await InstallAsync(ct, throughVersion);
+            return;
+        }
+        await Pg.StartAsync(ct, await SqlPostgresTemplate.DataDirectoryAsync(ct));
+        await using var db = new NpgsqlConnection(Pg.ConnectionString); await db.OpenAsync(ct);
+        // PostgreSQL clones objects and their grants, but not the database ACL.
+        await GrantWorkerConnectAsync(db, int.MaxValue, ct);
+    }
+
+    internal async Task InstallAsync(CancellationToken ct, int? throughVersion)
+    {
         await Pg.StartAsync(ct);
         await using var db = new NpgsqlConnection(Pg.ConnectionString); await db.OpenAsync(ct);
         await PostCollectionPostgres.Sql(db, "create role adlog_user login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication", ct);
@@ -60,20 +106,28 @@ internal sealed class SqlPostgresFixture(bool nativeJobAddress = false, string n
         // deploy/linux/migrate.py configure_worker_logins: NOINHERIT + one role,
         // requiring the worker to SET ROLE itself, exactly as native runtime.
         // CONNECT belongs to the login: SET ROLE is only possible after connecting.
-        string database = new NpgsqlCommandBuilder().QuoteIdentifier(db.Database);
-        (string Login, string Role, int Introduced)[] workerRoles =
-        [
-            ("sli_storage_login", "adlog_storage_worker", version),
-            ("sli_context_login", "adlog_context_worker", version),
-            ("sli_semantic_login", "adlog_semantic_worker", version),
-            ("sli_notification_login", "adlog_notification_worker", 261),
-            ("sli_storage_lifecycle_login", "adlog_storage_lifecycle_worker", 319),
-            ("sli_storage_lifecycle_delete_login", "adlog_storage_lifecycle_delete", 319),
-        ];
         // Historical tests install only a predecessor. Future roles must come
         // from their real migration; current-schema grants still fail if missing.
-        foreach (var (login, role, _) in workerRoles.Where(worker => installed[^1] >= worker.Introduced))
-            await PostCollectionPostgres.Sql(db, $"create role {login} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication; grant {role} to {login}; grant connect on database {database} to {login}", ct);
+        foreach (var (login, role, _) in WorkerRoles.Where(worker => installed[^1] >= worker.Introduced))
+            await PostCollectionPostgres.Sql(db, $"create role {login} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication; grant {role} to {login}", ct);
+        await GrantWorkerConnectAsync(db, installed[^1], ct);
+    }
+
+    private static readonly (string Login, string Role, int Introduced)[] WorkerRoles =
+    [
+        ("sli_storage_login", "adlog_storage_worker", 0),
+        ("sli_context_login", "adlog_context_worker", 0),
+        ("sli_semantic_login", "adlog_semantic_worker", 0),
+        ("sli_notification_login", "adlog_notification_worker", 261),
+        ("sli_storage_lifecycle_login", "adlog_storage_lifecycle_worker", 319),
+        ("sli_storage_lifecycle_delete_login", "adlog_storage_lifecycle_delete", 319),
+    ];
+
+    private static Task GrantWorkerConnectAsync(NpgsqlConnection db, int version, CancellationToken ct)
+    {
+        string database = new NpgsqlCommandBuilder().QuoteIdentifier(db.Database);
+        string logins = string.Join(", ", WorkerRoles.Where(worker => version >= worker.Introduced).Select(worker => worker.Login));
+        return PostCollectionPostgres.Sql(db, $"grant connect on database {database} to {logins}", ct);
     }
     internal async Task<string> SeedOwnerAsync(CancellationToken ct)
     {

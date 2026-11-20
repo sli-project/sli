@@ -33,6 +33,7 @@ on:
       - "config/postgres_schema.sql"
       - "requirements*.txt"
       - "scripts/ci/server_dotnet_*"
+      - "tests/tooling/test_server_dotnet_shard.py"
       - ".github/workflows/server-dotnet.yml"
   push:
     branches: [main]
@@ -67,21 +68,24 @@ on:
       - "config/postgres_schema.sql"
       - "requirements*.txt"
       - "scripts/ci/server_dotnet_*"
+      - "tests/tooling/test_server_dotnet_shard.py"
       - ".github/workflows/server-dotnet.yml"
+  schedule:
+    - cron: "23 19 * * *" # 02:23 Asia/Bangkok
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: server-dotnet-${{ github.ref }}
-  cancel-in-progress: true
+  group: server-dotnet-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   source-vectors:
     timeout-minutes: 20
     name: Source vectors (${{ matrix.os }})
-    runs-on: ${{ matrix.os == 'windows-latest' && (vars.SLI_TESTS_RUNNER || 'windows-latest') || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest') }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (matrix.os == 'windows-latest' && (vars.SLI_TESTS_RUNNER || 'windows-latest') || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,7 +153,7 @@ jobs:
     timeout-minutes: 4
     needs: server-tests
     if: ${{ always() }}
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest') }}
     steps:
       - name: Require every server shard to pass
         env:
@@ -157,15 +161,16 @@ jobs:
         run: test "$SERVER_TESTS_RESULT" = success
 
   server-tests:
-    # Keep the full list running under the measured load on our shared runners.
+    # Keep the existing ceiling for the full nightly suite. PR latency is
+    # measured through the required check, including setup and runner wait.
     timeout-minutes: 90
     name: Server tests (${{ matrix.shard }})
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: ${{ github.event_name == 'pull_request' && 16 || 3 }}
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]') || fromJSON('[1,2,3,4,5,6]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest') }}
     defaults:
       run:
         working-directory: server-dotnet
@@ -173,6 +178,9 @@ jobs:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_INSTALL_DIR: ${{ github.workspace }}/artifacts/dotnet
+      # Owned-database admission rejects inherited PG* settings. The test
+      # clusters configure their PostgreSQL timezone independently.
+      TZ: UTC
       SLI_SNAPSHOT_DECIMAL_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-decimal-vectors.json
       SLI_SNAPSHOT_CHUNK_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-chunk-vectors.json
     steps:
@@ -188,6 +196,10 @@ jobs:
           python-version: "3.14"
       - name: Python reference dependencies for parity tests
         run: python -m pip install --disable-pip-version-check -r ../requirements.txt 'argon2-cffi==25.1.0'
+      - name: Test CI profile and shard selection
+        if: matrix.shard == 1
+        working-directory: .
+        run: python -m pytest -q tests/tooling/test_server_dotnet_shard.py
       - name: Locked restore
         run: dotnet restore tests/Sli.Server.Tests/Sli.Server.Tests.csproj --locked-mode --disable-build-servers
       - name: Build
@@ -213,7 +225,11 @@ jobs:
           DOTNET_GCHeapHardLimit: "40000000"
           SHARD: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
-        run: python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT"
+          PROFILE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }}
+        run: |
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--split-classes); fi
+          python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" "${args[@]}"
       - name: Preserve per-case test results
         if: always()
         # A full artifact quota must not turn passed tests red.
