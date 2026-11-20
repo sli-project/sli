@@ -1082,6 +1082,15 @@ export const en: Record<MessageKey, string> = {
   "platformSettings.save": "Save",
 
   // pages:login — keys of this area go right below this line
+  "login.change.title": "Set a new password",
+  "login.change.password": "New password",
+  "login.change.repeat": "Repeat password",
+  "login.change.submit": "Save password",
+  "login.change.busy": "Saving password…",
+  "login.change.mismatch": "Passwords do not match.",
+  "login.change.invalid": "Enter a new password of at least 12 characters.",
+  "login.change.reused": "Choose a different password from the initial password.",
+  "login.change.failed": "Could not save the new password. Try again.",
   "login.error.authenticationRequired": "Sign in to continue.",
   "login.error.origin": "Sign-in request rejected. Open the sign-in page from the server address.",
   "login.documentTitle": "SLI — Sign in",
@@ -1163,6 +1172,7 @@ export const en: Record<MessageKey, string> = {
   "access.people.audit.actorId": "Actor ID",
   "access.people.audit.subjectId": "Subject ID",
   "access.audit.actions.initial_owner_claimed": "Initial owner activation",
+  "access.audit.actions.initial_admin_password_changed": "Initial administrator password changed",
   "access.audit.assignmentBasis": "Access allowed by assignment and capability policy",
   "access.audit.noReason": "No reason recorded",
   "access.audit.noSource": "Assignment source not recorded",

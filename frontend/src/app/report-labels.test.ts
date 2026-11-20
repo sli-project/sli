@@ -26,6 +26,12 @@ it.each(["initial_owner_claimed", "auth.initial_owner.claimed"])("names owner ac
   expect(auditActionLabel(action)).toBe("Initial owner activation");
 });
 
+it("labels the initial password change in both languages", () => {
+  expect(auditActionLabel("auth.initial_admin_password.changed")).toBe("Сменён начальный пароль администратора");
+  setLocale("en");
+  expect(auditActionLabel("auth.initial_admin_password.changed")).toBe("Initial administrator password changed");
+});
+
 it.each([
   ["ad_group", "Группа Active Directory", "Active Directory group"],
   ["device", "Устройство", "Device"],

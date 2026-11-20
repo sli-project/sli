@@ -10,12 +10,14 @@ public sealed class OwnerRecoveryService(IPostgresConnectionFactory connections,
     ICredentialTokens tokens, IAuthAudit audit, ISessionLifecycle sessions, OwnerRecoveryAdmission admission,
     OwnerRecoveryTerminal terminal) : IOwnerRecoveryService
 {
+    private sealed record VerifiedCredential(Principal Principal, string Hash);
+
     public async Task<LoginResult> LoginAsync(LoginCommand command, string recoveryCode, RequestIdentity identity, CancellationToken ct)
     {
-        Principal? principal;
+        VerifiedCredential? credential;
         try
         {
-            principal = await admission.VerifyAsync(identity.RemoteAddress,
+            credential = await admission.VerifyAsync(identity.RemoteAddress,
                 () => AuthenticateAsync(command, recoveryCode, identity.RemoteAddress, ct));
         }
         catch (LoginThrottledException error)
@@ -23,25 +25,26 @@ public sealed class OwnerRecoveryService(IPostgresConnectionFactory connections,
             await audit.WriteAsync(new("anonymous", null, "owner_recovery_login", "throttled", identity.RemoteAddress), ct);
             return new(null, null, error.RetryAfterSeconds);
         }
-        if (principal is null)
+        if (credential is null)
         {
             await audit.WriteAsync(new("anonymous", null, "login", "failed", identity.RemoteAddress), ct);
             return new(null, null);
         }
         // Credential consumption commits before the route audit, which commits before session issuance.
+        var (principal, hash) = credential;
         await audit.WriteAsync(new("session", principal.Id, "login", RemoteAddress: identity.RemoteAddress), ct);
-        string token = await sessions.IssueAsync(principal, command.Remember, ct);
+        string? token = await sessions.IssueForPasswordAsync(principal, hash, command.Remember, ct);
         return new(principal, token);
     }
 
-    private async Task<Principal?> AuthenticateAsync(LoginCommand command, string code, string address, CancellationToken ct)
+    private async Task<VerifiedCredential?> AuthenticateAsync(LoginCommand command, string code, string address, CancellationToken ct)
     {
         await using var connection = await connections.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await using var select = new NpgsqlCommand("""
             select u.id,u.username,u.password_hash,u.role from auth_users u
             where lower(u.username)=lower(@username) and u.is_active=true
-              and exists(select 1 from access_platform_owners o where o.user_id=u.id)
+              and exists(select 1 from access_platform_owners o where o.user_id=u.id) for update of u
             """, connection, transaction);
         select.Parameters.AddWithValue("username", Strip(command.Username));
         long id = 0;
@@ -85,7 +88,7 @@ public sealed class OwnerRecoveryService(IPostgresConnectionFactory connections,
         await audit.AppendAsync(transaction, new(principal is null ? "anonymous" : "session", principal?.Id,
             "owner_recovery_login", principal is null ? "failed" : "ok", address), ct);
         await transaction.CommitAsync(ct);
-        return principal;
+        return principal is null ? null : new(principal, hash);
     }
 
     // No HTTP endpoint calls issuance; root and terminal are verified here as well as by the CLI adapter.

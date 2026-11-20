@@ -517,7 +517,7 @@ def configure(release):
         runtime.wait_databases()
         try:
             command([manifest["python"], "-I", "-B", str(root / "deploy/linux/native_setup.py"),
-                     "--check-unclaimed-owner", release], cwd=root, env=environment())
+                     "--initial-admin", "check", release], cwd=root, env=environment())
         except RuntimeError:
             raise RuntimeError("native_install_interrupted_requires_recovery") from None
     writers_configured = bool(installed)
@@ -536,6 +536,9 @@ def configure(release):
             command(["systemctl", "start", "sli-bootstrap-pg.service"])
             runtime.wait_databases()
             command([python, "-B", "-m", "deploy.linux.entrypoint", "migrate"], cwd=root, env=env, timeout=None)
+            if site.get("owner_setup"):
+                command([python, "-I", "-B", str(root / "deploy/linux/native_setup.py"),
+                         "--initial-admin", "prepare", release], cwd=root, env=env, timeout=None)
             if "cold_tablespace_root" in site:
                 # Only a fresh, fenced database: existing data moves exclusively
                 # through the explicit reversible maintenance command.

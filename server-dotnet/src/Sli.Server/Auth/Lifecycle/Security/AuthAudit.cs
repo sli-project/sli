@@ -20,6 +20,7 @@ public sealed class AuthAudit(IPostgresConnectionFactory connections) : IAuthAud
             ["owner_recovery_issued"] = ("access_management", "auth.owner_recovery.issued", null),
             ["logout"] = ("authentication", "auth.logout", null),
             ["initial_owner_claimed"] = ("access_management", "auth.initial_owner.claimed", "platform_owner"),
+            ["initial_admin_password_changed"] = ("access_management", "auth.initial_admin_password.changed", "platform_owner"),
             ["user_created"] = ("access_management", "auth.user.created", "user"),
             ["user_updated"] = ("access_management", "auth.user.updated", "user"),
             ["user_password_reset"] = ("access_management", "auth.user.password_reset", "user"),

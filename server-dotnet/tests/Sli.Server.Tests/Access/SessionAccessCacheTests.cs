@@ -52,8 +52,10 @@ public sealed class SessionAccessCacheTests
                 create table access_capability_assignments(subject_type text,subject_id bigint,capability_id bigint,source_type text,effect text,scope_json jsonb,valid_from timestamptz,valid_until timestamptz);
                 create table access_report_assignments(id bigint,subject_type text,subject_id bigint,report_key text,effect text,field_categories jsonb,allowed_actions jsonb,scope_json jsonb,source_type text,business_reason text,valid_from timestamptz,valid_until timestamptz);
                 create table auth_users(id bigint primary key,username text,role text,is_active boolean default true,
-                    password_hash text,created_at timestamptz default now(),updated_at timestamptz,last_login_at timestamptz);
-                insert into auth_users(id,username,role) values(1,'synthetic-a','viewer'),(2,'synthetic-b','viewer');
+                    password_hash text not null,created_at timestamptz default now(),updated_at timestamptz,last_login_at timestamptz);
+                insert into auth_users(id,username,role,password_hash)
+                values (1,'synthetic-a','viewer','synthetic-password-hash'),
+                       (2,'synthetic-b','viewer','synthetic-password-hash');
                 create table auth_sessions(id bigserial primary key,user_id bigint,token_hash text,expires_at timestamptz,revoked_at timestamptz,last_used_at timestamptz);
                 create table auth_audit(id bigserial primary key,actor_type text,actor_id bigint,action text,outcome text,remote_address text,created_at timestamptz default now());
                 """);

@@ -45,8 +45,8 @@ printed by the installer.
    without asking for a server address, port or disk.
 3. Open the printed HTTPS address. For first-time access on Windows, paste the
    PowerShell line from your trusted server console to add the server's public CA
-   to your Windows account and open the address. Enter the one-time code from
-   setup and set a password for `platform-owner`.
+   to your Windows account and open the address. Sign in with `admin` / `admin` and
+   set a new password of at least 12 characters.
 
 ### Optional setup settings
 
@@ -63,9 +63,13 @@ packages are already staged.
 - `--backup-root /mnt/backup/sli` selects an existing directory on a separate disk
   for backups. `--cold-tablespace-root` selects an existing directory on a
   separate disk for cold PostgreSQL tables.
-- `sudo sli-setup --new-owner-code` replaces an expired or lost activation code
-  before claiming the owner. `sudo sli-setup --owner-recovery platform-owner`
-  issues a single-use code for a locked-out owner to enter with their password.
+- `sudo sli-setup --reset-admin-password` sets the owner's password to `admin`,
+  revokes existing sessions and requires a password change at the next sign-in.
+  The owner's username stays the same.
+- From the server's root terminal, run `sudo sli-setup --owner-recovery <owner-username>`
+  for a locked-out owner. Use `admin` on a fresh installation or the existing
+  username after an upgrade. Enter the single-use code within 10 minutes together
+  with the current password.
 
 To open the server from another OS, import `/var/lib/sli/tls-ca.crt` from the
 trusted server into the browser's trust store. Compare its SHA-256 DER

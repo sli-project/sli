@@ -1078,6 +1078,15 @@ export const ru = {
   "platformSettings.save": "Сохранить",
 
   // pages:login — keys of this area go right below this line
+  "login.change.title": "Задайте новый пароль",
+  "login.change.password": "Новый пароль",
+  "login.change.repeat": "Повторите пароль",
+  "login.change.submit": "Сохранить пароль",
+  "login.change.busy": "Сохраняем пароль…",
+  "login.change.mismatch": "Пароли не совпадают.",
+  "login.change.invalid": "Введите новый пароль от 12 символов.",
+  "login.change.reused": "Задайте пароль, отличный от начального.",
+  "login.change.failed": "Не удалось сохранить новый пароль. Повторите попытку.",
   "login.error.authenticationRequired": "Необходимо войти в систему.",
   "login.error.origin": "Запрос входа отклонён. Откройте страницу входа с адреса сервера.",
   "login.documentTitle": "SLI — Вход в систему",
@@ -1159,6 +1168,7 @@ export const ru = {
   "access.people.audit.actorId": "Идентификатор автора",
   "access.people.audit.subjectId": "Идентификатор субъекта",
   "access.audit.actions.initial_owner_claimed": "Активация первого владельца",
+  "access.audit.actions.initial_admin_password_changed": "Сменён начальный пароль администратора",
   "access.audit.assignmentBasis": "Доступ разрешён назначением и политикой возможностей",
   "access.audit.noReason": "Основание не записано",
   "access.audit.noSource": "Источник назначения не записан",

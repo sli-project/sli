@@ -248,31 +248,39 @@ paths:
           type: string
       x-sli-capability: access.manage
       x-sli-route-match: template
-  /api/auth/bootstrap:
-    get:
-      operationId: get_api_auth_bootstrap
-      tags:
-      - auth
-      summary: 'Read: one-time owner activation form (native install)'
-      responses:
-        '200':
-          description: HTML form; 404 unless owner setup is enabled
-      security: []
+  /api/auth/change-initial-password:
     post:
-      operationId: post_api_auth_bootstrap
+      operationId: post_api_auth_change_initial_password
       tags:
       - auth
-      summary: 'Change: claim the initial owner with the one-time setup code'
+      summary: Change the initial administrator password
+      description: Requires HTTPS and the restricted session issued by login.
+      security:
+      - sessionCookie: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              description: TODO schema
+              type: object
+              required: [password, repeat]
+              properties:
+                password:
+                  type: string
+                  minLength: 12
+                  format: password
+                repeat:
+                  type: string
+                  format: password
       responses:
         '200':
-          description: TODO schema
-      security: []
+          description: Password changed and a new session cookie issued.
+        '400':
+          description: Invalid, mismatched or reused password.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/auth/login:
     post:
       operationId: post_api_auth_login
