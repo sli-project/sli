@@ -37,10 +37,9 @@ printed by the installer.
 
 ### Install from the APT repository
 
-Use this path once the repository is published. You need `curl` and APT sources
-that provide the pinned PostgreSQL 18 packages from PGDG and the exact system
-library versions required by `sli-runtime`. The standard Debian 13 sources ship
-PostgreSQL 17. If the required versions are unavailable, use the archive below.
+Use this path once the repository is published. Keep the standard Debian 13
+sources enabled and have `curl` available. The signed SLI repository includes
+the pinned PostgreSQL 18 packages and the libraries required by `sli-runtime`.
 Use the published full signing key fingerprint for `<FINGERPRINT>`.
 
 ```sh
@@ -66,6 +65,10 @@ Update an existing installation:
 ```sh
 sudo apt update && sudo apt upgrade
 ```
+
+The repository keeps the current and previous SLI releases. Run `sudo sli-rollback`
+to restore the version installed before the update and its backup. If that version
+has left the repository, pass its extracted archive directory to `sudo sli-rollback`.
 
 ### Install from the archive
 
