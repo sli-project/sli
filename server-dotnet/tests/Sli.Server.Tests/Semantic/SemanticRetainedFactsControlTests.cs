@@ -118,8 +118,21 @@ public sealed partial class SemanticRetainedFactsControlTests
     [Fact]
     public async Task Changed_rules_fail_before_source_reads_or_publication()
     {
-        using var f = new Fixture { Mode = "facts-v1" }; var c = f.Control(); Write(c.FactsPath, FactsCheckpoint(f, fingerprint: "changed"));
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => c.FactsPoll(Ct)); Assert.Contains("rules fingerprint mismatch", error.Message); Assert.Single(f.Calls); Assert.Empty(f.Published);
+        using var f = new Fixture { Mode = "facts-v1" }; f.Add(2, 4728);
+        var c = f.Control();
+        Write(c.FactsPath, FactsCheckpoint(f, fingerprint: PreviousRulesFingerprint));
+        byte[] previous = File.ReadAllBytes(c.FactsPath);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => c.FactsPoll(Ct));
+        Assert.Contains("rules fingerprint mismatch", error.Message);
+        Assert.Single(f.Calls);
+        Assert.Empty(f.Published);
+        Assert.Equal(previous, File.ReadAllBytes(c.FactsPath));
+
+        File.Move(c.FactsPath, c.FactsPath + ".previous");
+        var result = await c.FactsPoll(Ct);
+        Assert.Equal(0, result.Number("from_event_id_exclusive"));
+        Assert.Equal(new long[] { 2 }, Assert.Single(f.Published));
+        Assert.Equal(SemanticRetainedControl.RulesFingerprint(), Read(c.FactsPath).Text("rules_fingerprint"));
     }
     [Fact]
     public async Task New_facts_checkpoint_freezes_upper_bound_before_first_publication()
