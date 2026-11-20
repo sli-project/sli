@@ -3,9 +3,10 @@ using Npgsql;
 
 namespace Sli.Server.Agents.Control;
 
-public sealed class AgentControlException(string code, int status = 400) : Exception(code)
+public sealed class AgentControlException(string code, int status = 400, string[]? allowedHosts = null) : Exception(code)
 {
     public int Status { get; } = status;
+    public string[]? AllowedHosts { get; } = allowedHosts;
 }
 
 public interface IAgentControlAudit

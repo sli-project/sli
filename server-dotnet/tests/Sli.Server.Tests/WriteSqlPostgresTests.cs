@@ -60,6 +60,16 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         using var certificates = new Certificates();
         string trust = Path.Combine(fixture.Pg.Root, "synthetic-ca.txt");
         await File.WriteAllTextAsync(trust, certificates.Root.ExportCertificatePem() + "\n" + certificates.Issuer.ExportCertificatePem(), ct);
+        const string consoleHost = "agents.example.test";
+        string serverCertificatePath = Path.Combine(fixture.Pg.Root, "synthetic-server.crt");
+        using var serverKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var serverRequest = new CertificateRequest($"CN={consoleHost}", serverKey, HashAlgorithmName.SHA256);
+        var serverSan = new SubjectAlternativeNameBuilder();
+        serverSan.AddDnsName(consoleHost);
+        serverRequest.CertificateExtensions.Add(serverSan.Build());
+        using var serverCertificate = serverRequest.Create(certificates.Root, DateTimeOffset.UtcNow.AddHours(-1),
+            DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
+        await File.WriteAllTextAsync(serverCertificatePath, serverCertificate.ExportCertificatePem(), ct);
         string installer = Path.Combine(fixture.Pg.Root, "synthetic-agent.msi");
         await File.WriteAllTextAsync(installer, "synthetic package bytes", ct);
         using var transportTrust = new Sli.Server.Hosting.AgentTlsTrust(trust);
@@ -117,6 +127,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 ["Sli:ProjectRoot"] = root, ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "app-data"), ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "app-logs"),
                 ["Sli:AgentUpdateTrustFile"] = updateTrust,
                 ["Sli:AgentServerCaFile"] = trust, ["Sli:AgentInstallerPath"] = installer,
+                ["Kestrel:Certificates:Default:Path"] = serverCertificatePath,
                 ["Sli:Storage:HistoryReadMode"] = "disabled", ["Sli:Storage:ArchiveRoot"] = Path.Combine(fixture.Pg.Root, "archive"),
                 ["Sli:OwnerSetup"] = "0", ["Sli:HttpRatePerMinute"] = "5000", ["urls"] = "http://127.0.0.1:0"
             }))
@@ -234,7 +245,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/agent/removal-result", new { command_id = removal?["agent_removal"]?["command_id"]?.ToString(), state = "state_cleaned", reason = (string?)null }, asClient: agentClient);
         var enrollment = await Check("/api/v1/admin/agent-tokens", new { host_id = agent, key_fingerprint = new string('a',64) });
         await Check("/api/v1/admin/agent-tokens/revoke", new { id = enrollment?["id"]?.ToString() ?? agent });
-        var consoleToken = await Check("/api/v1/admin/agent-console-tokens", new { host_limit = 2 });
+        var consoleToken = await Check("/api/v1/admin/agent-console-tokens", new { host_limit = 2, server_url = $"https://{consoleHost}" });
         string consoleTokenId = consoleToken?["id"]?.ToString() ?? agent;
         await Check("/api/v1/admin/agent-console-tokens/revoke", new { id = consoleTokenId });
         await Check("/api/v1/admin/agents/rights-probe", new { agent_id = agent });
