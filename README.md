@@ -2,6 +2,8 @@
 
 [Русская версия](README.ru.md)
 
+> **Status: in development.** SLI is not ready for use yet. The first beta is planned for **1 December 2026**.
+
 SLI collects and analyses Windows security events and Active Directory data.
 The .NET server handles ingestion, access control, reports and alerts. The first
 beta covers Active Directory checks, including Group Policy, and detects attacks
