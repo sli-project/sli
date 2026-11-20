@@ -20,14 +20,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 try:
-    from deploy.linux.native_preinstall import ensure_directory
+    from deploy.linux.native_preinstall import GuardError, ensure_directory, recovery_required
 except ModuleNotFoundError:  # stdlib-only installed/recovery helper under -I.
     import importlib.util
     _permissions_spec = importlib.util.spec_from_file_location(
         "sli_native_preinstall", Path(__file__).with_name("native_preinstall.py"))
     _permissions = importlib.util.module_from_spec(_permissions_spec)
     _permissions_spec.loader.exec_module(_permissions)
+    GuardError = _permissions.GuardError
     ensure_directory = _permissions.ensure_directory
+    recovery_required = _permissions.recovery_required
 
 
 RELEASES = Path("/opt/sli/releases")
@@ -205,16 +207,38 @@ def command(argv, *, cwd=None, env=None, timeout=120):
 def inventory(release):
     require(re.fullmatch(r"[a-z0-9][a-z0-9.+-]{0,63}", release), "native_install_release_invalid")
     root = RELEASES / release
-    raw = trusted(root / "native-runtime.json")
-    manifest = json.loads(raw)
-    require(manifest.get("schema_version") == 1 and manifest.get("migration_ledger")
-            and manifest.get("plugins") and manifest.get("roles"), "native_install_inventory_invalid")
+    inventory_path = root / "native-runtime.json"
+    try:
+        raw = trusted(inventory_path)
+    except FileNotFoundError:
+        raise GuardError("native_install_inventory_missing", inventory_path, "staged SLI release inventory is missing",
+                         f"From the matching beta kit run sudo apt install --reinstall ./sli-release-{release}_*_amd64.deb, "
+                         "then sudo dpkg --configure -a") from None
+    try:
+        manifest = json.loads(raw)
+    except ValueError:
+        raise RuntimeError("native_install_inventory_invalid") from None
+    require(isinstance(manifest, dict) and manifest.get("schema_version") == 1 and manifest.get("migration_ledger")
+            and manifest.get("plugins") and manifest.get("roles") and isinstance(manifest.get("python"), str)
+            and isinstance(manifest.get("python_sha256"), str), "native_install_inventory_invalid")
     python = Path(manifest["python"])
     require(python.is_relative_to(RUNTIMES) and len(python.relative_to(RUNTIMES).parts) == 3
+            and re.fullmatch(r"[a-z0-9][a-z0-9.+-]{0,63}", python.parent.parent.name)
             and python.parent.name == "bin" and python.name == "python3.14",
             "native_install_runtime_invalid")
-    require(hashlib.sha256(trusted(python)).hexdigest() == manifest["python_sha256"]
-            and os.access(python, os.X_OK), "native_install_runtime_mismatch")
+    package = f"sli-runtime-{python.parent.parent.name}"
+    remedy = (f"From the matching beta kit run sudo apt install --reinstall ./{package}_*_amd64.deb, "
+              "then sudo dpkg --configure -a")
+    try:
+        content = trusted(python)
+    except FileNotFoundError:
+        raise GuardError("native_install_runtime_missing", python, "required SLI runtime executable is missing", remedy) from None
+    except RuntimeError as error:
+        if str(error) not in {"native_install_untrusted_path", "native_install_file_required"}:
+            raise
+        raise GuardError(str(error), python, "SLI runtime path is not a trusted regular file", remedy) from None
+    if hashlib.sha256(content).hexdigest() != manifest["python_sha256"] or not os.access(python, os.X_OK):
+        raise GuardError("native_install_runtime_mismatch", python, "SLI runtime is modified or not executable", remedy)
     return root, manifest, hashlib.sha256(raw).hexdigest()
 
 
@@ -471,11 +495,18 @@ def configure(release):
                         "native_install_interrupted_requires_recovery")
         else:
             require(not CURRENT.exists() and not CURRENT.is_symlink(), "native_install_foreign_current")
-            require(not (STATE / "package-install.json").exists(), "native_install_interrupted_requires_recovery")
+            intent = STATE / "package-install.json"
+            if intent.exists() or intent.is_symlink():
+                previous = json.loads(trusted(intent))
+                require(previous.get("schema_version") == 1 and previous.get("first_start_pending") is True
+                        and previous.get("status") in {"failed", "configuring"}
+                        and previous.get("site_sha256") == receipt_base["site_sha256"],
+                        "native_install_interrupted_requires_recovery")
             # A pre-existing configured dataset is not implicitly adopted as fresh.
-            require(not (Path(host.MOUNT) / "pgdata").exists()
-                    and not (Path(host.MOUNT) / "clickhouse").exists(), "native_install_foreign_data")
-            atomic(STATE / "package-install.json", dict(receipt_base, status="configuring"))
+            require(not any(path.exists() or path.is_symlink() for path in
+                            (Path(host.MOUNT) / "pgdata", Path(host.MOUNT) / "clickhouse")),
+                    "native_install_interrupted_requires_recovery" if intent.exists() else "native_install_foreign_data")
+            atomic(intent, dict(receipt_base, status="configuring"))
     resuming = bool(installed) and receipt_base["first_start_pending"]
     if resuming:
         # Fence any writers left by a killed first start before checking owner
@@ -587,6 +618,31 @@ def remove():
     # No unlink/rmtree of data, secrets, registry, packages or recovery here.
 
 
+def remove_unfinished():
+    if not (STATE / "package-install.json").exists():
+        return  # Setup never tried to start a database or application units.
+    try:
+        from deploy.linux import native_runtime as runtime
+    except ModuleNotFoundError:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'sli_native_runtime', Path(__file__).with_name('native_runtime.py'))
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
+    if CURRENT.is_symlink():
+        runtime.stop_writers()
+    # An interrupted configure can leave PostgreSQL running before publishing
+    # the registry. Only request stop jobs for the units systemd has loaded.
+    controls = ('sli-ready.service', 'sli-health.timer', 'sli-health.service',
+                'sli-bootstrap-pg.service')
+    ordered = (*controls, *runtime.DATABASES)
+    query = ['systemctl', 'list-units', '--all', '--plain', '--no-legend', '--no-pager', *ordered]
+    result = subprocess.run(query, check=True, capture_output=True, text=True)
+    loaded = {row.split()[0] for row in result.stdout.splitlines() if row.split()}
+    if units := [name for name in ordered if name in loaded]:
+        command(['systemctl', 'stop', *units], timeout=180)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("stage", "configure", "remove", "reconfigure-agents"))
@@ -599,7 +655,7 @@ def main(argv=None):
         if args.action == "stage":
             inventory(release)
             atomic(STATE / "pending-release.json", {"schema_version": 1, "release": release})
-            if (STATE / "installed.json").exists():
+            if (STATE / "reuse-package.json").exists():
                 print("Retained SLI installation. Run sudo sli-setup --reuse-existing / "
                       "Сохранена установка SLI: запустите sudo sli-setup --reuse-existing.")
             else:
@@ -609,8 +665,8 @@ def main(argv=None):
             installed = json.loads(trusted(STATE / "installed.json"))
             release = Path(installed["release"]).name
         if args.action == "remove":
-            if not (STATE / "installed.json").exists():
-                require(not CURRENT.exists() and not CURRENT.is_symlink(), "native_install_interrupted_requires_recovery")
+            if not recovery_required(state=STATE, current=CURRENT, releases=RELEASES, recovery=RECOVERY):
+                remove_unfinished()
                 print("native_install_verified")
                 return 0
             installed = json.loads(trusted(STATE / "installed.json"))
@@ -637,6 +693,10 @@ def main(argv=None):
         diagnostics = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(diagnostics)
         diagnostics.failure(error, default='native_install_failed')
+        paths = getattr(error, 'conflict_paths', ())
+        if paths and args.action == 'configure' and os.environ.get(operations().PROGRESS_FD):
+            for path in paths:
+                print('native_existing_configuration_conflict: ' + path, file=sys.stderr)
         if str(error) in {'operation_stalled', 'operation_deadline_exceeded'}:
             print(str(error), file=sys.stderr)
         return 1

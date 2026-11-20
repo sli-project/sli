@@ -93,6 +93,7 @@ def test_reuse_missing_site_refuses_before_fresh_interactive_questions(retained,
 def test_stage_retained_installation_keeps_accepted_registry(retained, monkeypatch, capsys):
     monkeypatch.setattr(install.os, 'geteuid', lambda: 0, raising=False)
     monkeypatch.setattr(install, 'atomic', lambda path, value: path.write_text(json.dumps(value)))
+    (retained.state / 'reuse-package.json').write_text(json.dumps({'schema_version': 1, 'release': 'new'}))
     before = (retained.state / 'installed.json').read_bytes()
     assert install.main(['stage', 'new']) == 0
     assert (retained.state / 'installed.json').read_bytes() == before

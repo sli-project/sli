@@ -1,5 +1,6 @@
 """Vendor autostart guard runs before dependency configuration."""
 
+import json
 import stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -139,8 +140,33 @@ def test_preinstall_diagnostic_identifies_path_reason_and_remedy(tmp_path, monke
     assert '/etc/postgresql' in message
     assert 'empty directory' in message
     assert 'existing database' in message
+    assert 'sudo pg_lsclusters' in message
+    assert 'sudo mv -T -n -- /etc/postgresql /etc/postgresql.before-sli' in message
+    assert (path / 'existing').is_file()
+    assert not (tmp_path / 'var/lib/sli/state').exists()
     assert str(tmp_path) not in message
     assert 'Use a clean Debian' not in message
+
+
+def test_repeated_vendor_guards_are_collapsed_with_original_settings_preserved(debian_tree):
+    config = debian_tree / 'etc/postgresql-common/createcluster.conf'
+    original = '# Debian default\ncreate_main_cluster = true\nssl = on\n'
+    guard = '# SLI host preparation\ncreate_main_cluster = false\n'
+    saved = debian_tree / 'var/lib/sli/state/createcluster.conf.before'
+    saved.parent.mkdir(parents=True)
+    saved.write_text(original)
+    config.write_text(original + guard * 8)
+    for _ in range(3):
+        pre.prepare(debian_tree)
+        assert saved.read_text() == original
+        assert 'ssl = on' in config.read_text()
+        assert [line for line in config.read_text().splitlines() if line.startswith('create_main_cluster')] == [
+            'create_main_cluster = false']
+    config.write_text(config.read_text().replace('ssl = on', 'ssl = off'))
+    with pytest.raises(RuntimeError, match='native_existing_configuration_conflict') as caught:
+        pre.prepare(debian_tree)
+    assert 'sudo diff -u' in pre.diagnostic(caught.value)
+    assert 'ssl = off' in config.read_text()
 
 
 def test_vendor_guard_preserves_original_config_and_is_repeatable(tmp_path, monkeypatch):
@@ -179,6 +205,41 @@ def test_preinstall_refuses_foreign_data_before_writes(tmp_path, name, monkeypat
     with pytest.raises(RuntimeError, match='native_existing_database'):
         pre.prepare(tmp_path)
     assert not (tmp_path / 'var/lib/sli/state').exists()
+
+
+def test_preinstall_preserves_postgresql_after_vendor_preparation(debian_tree):
+    (debian_tree / 'var/lib/sli/state').mkdir(parents=True)
+    pre.prepare(debian_tree)
+    config = debian_tree / 'etc/postgresql/18/main/postgresql.conf'
+    config.parent.mkdir(parents=True)
+    config.write_bytes(b'# synthetic configuration\n')
+    pre.prepare(debian_tree)
+    assert config.read_bytes() == b'# synthetic configuration\n'
+    assert 'create_main_cluster = false' in (debian_tree / 'etc/postgresql-common/createcluster.conf').read_text()
+
+
+@pytest.mark.parametrize('sealed', [False, True])
+def test_recovery_gate_handles_first_start_that_published_registry(tmp_path, monkeypatch, sealed):
+    state = tmp_path / 'var/lib/sli/state'
+    state.mkdir(parents=True)
+    release = tmp_path / 'opt/sli/releases/test'
+    release.mkdir(parents=True)
+    current = tmp_path / 'opt/sli/current'
+    current_is_symlink = Path.is_symlink
+    readlink = Path.readlink
+    monkeypatch.setattr(Path, 'is_symlink', lambda path: path == current or current_is_symlink(path))
+    monkeypatch.setattr(Path, 'readlink', lambda path: release if path == current else readlink(path))
+    monkeypatch.setattr(pre, 'trusted', lambda path: None)
+    (state / 'installed.json').write_text(json.dumps({'release': str(release)}))
+    (state / 'package-install.json').write_text(
+        '{"schema_version": 1, "release": "test", "status": "failed", "first_start_pending": true}')
+    if sealed:
+        seal = tmp_path / 'var/lib/sli/recovery/test/recovery.json'
+        seal.parent.mkdir(parents=True)
+        seal.touch()
+    assert pre.recovery_required(root=tmp_path) is sealed
+    pre.package_install('install', 'new', root=tmp_path)
+    assert (state / 'reuse-package.json').exists() is sealed
 
 
 def test_postinst_stages_fresh_install_instead_of_starting_database():

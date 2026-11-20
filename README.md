@@ -72,6 +72,15 @@ another PostgreSQL installation. Collection requires one Windows
    just `--server <IP>`. Setup creates site.toml, secrets, TLS SANs for the name
    and IP, the agent CA, services, and `/var/lib/sli-db` bound to `/srv/sli-db`.
 
+   The database needs at least 20 GiB free. If `/var/lib/sli-db` is too small,
+   setup reports the available space and lists candidate volumes. Use `lsblk -f`
+   to identify an existing dedicated ext4 filesystem, mount it at `/srv/sli-db`,
+   and add that mount to `/etc/fstab` so it survives reboot. Then run
+   `sudo sli-setup --uuid <UUID>` with its filesystem UUID and any other setup
+   flags. For an empty directory on an already mounted ext4 or XFS filesystem,
+   use `sudo sli-setup --directory /mnt/sli-data` if that is the mount's directory.
+   Setup does not format or relocate existing data.
+
    New setups listen on all IPv4 addresses (`0.0.0.0`), and IPv6 (`::`) when
    dual stack is available. DHCP changes do not pin the listener to an old IP.
    Health probes use loopback, with loopback SANs in the TLS certificate.

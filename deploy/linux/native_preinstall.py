@@ -50,7 +50,7 @@ class GuardError(RuntimeError):
 
     def __init__(self, code, name, reason, remedy):
         super().__init__(code)
-        self.detail = f'{name}: {reason}. {remedy}'
+        self.console_message = f'{name}: {reason}. {remedy}'
 
 
 def checked_trusted(path, name):
@@ -69,6 +69,16 @@ def postgres_uid():
         return None
 
 
+def existing_database(name):
+    if name == '/etc/postgresql':
+        return GuardError('native_existing_database', name, 'existing PostgreSQL configuration (expected an empty directory)',
+                          'Check sudo pg_lsclusters. After retiring and backing up the existing database, run '
+                          'sudo mv -T -n -- /etc/postgresql /etc/postgresql.before-sli and retry')
+    return GuardError('native_existing_database', name, 'not an empty directory',
+                      'Preserve the existing database and rerun sudo sli-setup --directory /srv/sli-data on a '
+                      'dedicated empty volume if this is your selected storage, or use another host')
+
+
 def database_directory(path, name):
     # The leaf is vendor-owned; administrative ancestors remain strictly trusted.
     checked_trusted(path.parent, name.rsplit('/', 1)[0])
@@ -79,8 +89,11 @@ def database_directory(path, name):
         return
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode) or any(path.iterdir()):
+        if name == '/etc/postgresql':
+            raise existing_database(name)
         raise GuardError('native_existing_database', name, 'not an empty directory',
-                         'Preserve any existing database and choose a host without existing database data')
+                         f'After retiring and backing up the existing database, run sudo mv -T -n -- {name} '
+                         f'{name}.before-sli and retry, or choose another host')
     uid = postgres_uid() if name in ('/etc/postgresql', '/var/lib/postgresql') and info.st_uid != 0 else None
     if info.st_uid != 0 and (uid is None or not 0 < uid < 1000 or info.st_uid != uid):
         raise GuardError('native_path_untrusted', name, 'unexpected owner (requires root or system postgres for PostgreSQL)',
@@ -91,8 +104,46 @@ def database_directory(path, name):
 
 
 def diagnostic(error):
-    detail = error.detail if isinstance(error, GuardError) else 'Check journalctl -t sli-setup for the error code'
+    detail = error.console_message if isinstance(error, GuardError) else 'Run sudo journalctl -t sli-setup -n 80 --no-pager'
     return 'SLI cannot prepare database startup guards. ' + detail + '.'
+
+
+def cluster_guard(config, backup):
+    """Accept original and previously managed bytes, preserving the first backup."""
+    name = '/etc/postgresql-common/createcluster.conf'
+    current = config.read_text() if config.exists() else ''
+    original = backup.read_text() if backup.exists() else current
+    guard = '\n# SLI host preparation\ncreate_main_cluster = false\n'
+    legacy_suffix = re.compile(r'(?:\n# SLI host preparation\ncreate_main_cluster = false[ \t]*)+\Z')
+    original_base = legacy_suffix.sub('', original.rstrip()).rstrip()
+    unmanaged = re.sub(r'(?m)^[ \t]*create_main_cluster[ \t]*=[^\n]*(?:\n|$)', '',
+                       original_base).rstrip()
+    managed = unmanaged + guard
+    if (config.exists() and current not in (original, managed)
+            and legacy_suffix.sub('', current.rstrip()).rstrip() != original_base):
+        raise GuardError('native_existing_configuration_conflict', name, 'settings changed after SLI saved them',
+                         'Run sudo diff -u /var/lib/sli/state/createcluster.conf.before '
+                         f'{name} and reconcile the settings before retrying')
+    return original, current, managed
+
+
+def write_guard(path, text, mode):
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+        if os.name == 'posix':
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def trusted(path):
@@ -118,26 +169,42 @@ def package_install(action, release, *, root=Path('/')):
     trusted(marker)
     installed = state / 'installed.json'
     trusted(installed)
-    if action != 'install' or not installed.exists():
+    if action != 'install' or not installed.exists() or not recovery_required(root=root):
         marker.unlink(missing_ok=True)
         return
-    fd, temporary = tempfile.mkstemp(dir=state)
-    try:
-        with os.fdopen(fd, 'w') as stream:
-            json.dump({'schema_version': 1, 'release': release}, stream)
-            stream.write('\n')
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, marker)
-        if os.name == 'posix':
-            directory = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    write_guard(marker, json.dumps({'schema_version': 1, 'release': release}) + '\n', 0o600)
+
+
+def recovery_required(*, root=Path('/'), state=None, current=None, releases=None, recovery=None):
+    """Only a fresh or explicitly interrupted first start bypasses upgrade recovery."""
+    state = root / 'var/lib/sli/state' if state is None else state
+    current = root / 'opt/sli/current' if current is None else current
+    releases = root / 'opt/sli/releases' if releases is None else releases
+    recovery = root / 'var/lib/sli/recovery' if recovery is None else recovery
+    installed = state / 'installed.json'
+    receipt = state / 'package-install.json'
+    for path in (installed, receipt):
+        trusted(path)
+        if path.exists() and not path.is_file():
+            raise RuntimeError('native_install_interrupted_requires_recovery')
+    trusted(current.parent)
+    selected = current.is_symlink() or current.exists()
+    if not receipt.exists():
+        return installed.exists() or selected
+    value = json.loads(receipt.read_bytes())
+    release = value.get('release')
+    if (value.get('schema_version') != 1 or value.get('first_start_pending') is not True
+            or value.get('status') not in {'configuring', 'failed'}
+            or not isinstance(release, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.+-]{0,63}', release)):
+        return True
+    candidate = releases / release
+    if selected and (not current.is_symlink() or current.readlink() != candidate):
+        return True
+    if installed.exists() and (not selected or json.loads(installed.read_bytes()).get('release') != str(candidate)):
+        return True
+    seal = recovery / release / 'recovery.json'
+    trusted(seal)
+    return seal.exists()
 
 
 def cleanup_bytecode(root, inventory):
@@ -197,32 +264,34 @@ def command(argv):
 def prepare(root=Path('/')):
     state = root / 'var/lib/sli/state'
     checked_trusted(state, '/var/lib/sli/state')
-    if (state / 'host-prepared.json').exists():
+    prepared = state / 'host-prepared.json'
+    checked_trusted(prepared, '/var/lib/sli/state/host-prepared.json')
+    if prepared.exists():
         return  # Existing installs retain their accepted host/recovery guards.
-    for name in ('etc/postgresql', 'var/lib/postgresql', 'var/lib/clickhouse'):
-        path = root / name
-        database_directory(path, '/' + name)
+    marker = state / 'vendor-prepared.json'
+    checked_trusted(marker, '/var/lib/sli/state/vendor-prepared.json')
     config = root / 'etc/postgresql-common/createcluster.conf'
     checked_trusted(config, '/etc/postgresql-common/createcluster.conf')
     checked_trusted(root / 'etc/systemd/system', '/etc/systemd/system')
     original_path = state / 'createcluster.conf.before'
     checked_trusted(original_path, '/var/lib/sli/state/createcluster.conf.before')
-    original = original_path.read_text() if original_path.exists() else config.read_text() if config.exists() else ''
-    managed = original.rstrip() + '\n# SLI host preparation\ncreate_main_cluster = false\n'
-    if config.exists() and config.read_text() not in (original, managed):
-        raise RuntimeError('native_existing_configuration_conflict')
+    if marker.exists():
+        if not marker.is_file() or json.loads(marker.read_bytes()) != {'schema_version': 1} or not original_path.is_file():
+            raise RuntimeError('native_vendor_cluster_guard_missing')
+    else:
+        for name in ('etc/postgresql', 'var/lib/postgresql', 'var/lib/clickhouse'):
+            database_directory(root / name, '/' + name)
+    original, current, managed = cluster_guard(config, original_path)
     ensure_directory(state, 0o700)
     state.chmod(0o700)
     if not original_path.exists():
-        original_path.write_text(original)
-        original_path.chmod(0o600)
+        write_guard(original_path, original, 0o600)
     ensure_directory(config.parent)
-    config.write_text(managed)
-    config.chmod(0o644)
-    marker = state / 'vendor-prepared.json'
-    checked_trusted(marker, '/var/lib/sli/state/vendor-prepared.json')
-    marker.write_text(json.dumps({'schema_version': 1}) + '\n')
-    marker.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    if current != managed:
+        write_guard(config, managed, 0o644)
+    else:
+        config.chmod(0o644)
+    write_guard(marker, json.dumps({'schema_version': 1}) + '\n', 0o600)
 
 
 if __name__ == '__main__':
@@ -232,6 +301,8 @@ if __name__ == '__main__':
         os.umask(0o022)
         if len(sys.argv) == 4 and sys.argv[1] == '--package-install':
             package_install(sys.argv[2], sys.argv[3])
+        elif sys.argv[1:] == ['--recovery-kind']:
+            print('accepted' if recovery_required() else 'unfinished')
         elif len(sys.argv) == 3 and sys.argv[1] == '--clean-recovery':
             accepted = Path(sys.argv[2])
             if accepted.parent != Path('/opt/sli/releases'):
@@ -243,10 +314,10 @@ if __name__ == '__main__':
         try:
             import syslog
             syslog.openlog('sli-setup')
-            code = str(error) if isinstance(error, RuntimeError) else 'native_preinstall_failed'
-            syslog.syslog(syslog.LOG_ERR, code + ': ' + diagnostic(error))
+            code = str(error) if isinstance(error, RuntimeError) else ''
+            syslog.syslog(syslog.LOG_ERR, code if re.fullmatch(r'native_[a-z_]{1,100}', code) else 'native_preinstall_failed')
         except (ImportError, OSError):
             pass
         # Never forward arbitrary paths, existing config or command output.
-        print(diagnostic(error))
+        print(diagnostic(error), file=sys.stderr)
         raise SystemExit(1) from None

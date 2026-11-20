@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import native_backup, native_dotnet_generator, native_upgrade
+from deploy.linux import native_backup, native_dotnet_generator, native_preinstall, native_upgrade
 from deploy.linux import native_host as host
 from deploy.linux import native_install as install
 from deploy.linux import native_package as package
@@ -173,7 +174,7 @@ def test_package_split_exact_dependencies_and_previous_retention(payload, dotnet
     assert "sli-host (= 1.0-1~deb13)" in public and "postgresql-18" in public
     assert all(value not in public for value in ("Docker", "pip", "gcc", "nodejs", "git,"))
     hold = captured["sli-rollback-hold"]["DEBIAN/control"]
-    assert "Protected: yes" in hold
+    assert "Protected: yes" not in hold
     assert "sli-host (= 1.0-1~deb13)" in hold
     assert "Installed-Size: " in captured["sli-release-new"]["DEBIAN/control"]
     assert "sli-release-old (= 1.0-1~deb13)" in hold
@@ -469,6 +470,7 @@ def test_preinst_works_without_unpacked_helper(tmp_path, action, old, expected):
     # running pytest happens to have a real native installation.
     body = package.scripts("test", VERSION)["preinst"]
     body = body.replace("readlink -f /opt/sli/current", "printf '%s' /accepted/test")
+    body = body.replace("sli_preinstall --recovery-kind", "printf '%s' accepted")
     body = body.replace("/var/lib/sli/recovery/", str(tmp_path / "recovery") + "/")
     # The marker writer touches the host state root; package_install has its own
     # rooted tests. Here only record that preinst requests it for install/upgrade.
@@ -507,6 +509,7 @@ def test_prerm_prepares_actual_target_including_old_beta_fallback(tmp_path, acti
     # argument dispatch here without touching any installed administrative tree.
     source = body.split("<<'SLI_BYTECODE'\n", 1)[1].split('\nSLI_BYTECODE\n', 1)[0]
     body = body.replace(source, 'pass')
+    body = body.replace('sli_preinstall --recovery-kind', "printf '%s' accepted")
     body = body.replace('readlink -f /opt/sli/current', "printf '%s' /accepted/test")
     body = body.replace('/var/lib/sli/recovery/', str(tmp_path / 'recovery') + '/')
     body = body.replace('/usr/bin/python3', sys.executable)
@@ -528,6 +531,89 @@ def test_postrm_needs_no_payload_and_keeps_data(tmp_path, action):
     path.write_text(body)
     assert subprocess.run(["/bin/sh", str(path), action], capture_output=True, check=False).returncode == 0
     assert "/var/lib" not in body and "/etc/sli" not in body
+
+
+@pytest.mark.parametrize('working', [False, True])
+def test_package_scripts_reinstall_and_remove_without_adopting_data(tmp_path, working):
+    shell = shutil.which('sh')
+    if not shell:
+        pytest.skip('POSIX shell is required for Debian maintainer scripts')
+    state = tmp_path / 'var/lib/sli/state'
+    state.mkdir(parents=True)
+    receipt = {'schema_version': 1, 'release': 'test', 'status': 'configured' if working else 'failed',
+               'first_start_pending': not working, 'site_sha256': '1' * 64}
+    (state / 'package-install.json').write_text(json.dumps(receipt))
+    if working:
+        (state / 'installed.json').write_text('{}')
+    data = tmp_path / 'srv/sli-db/pgdata/PG_VERSION'
+    data.parent.mkdir(parents=True)
+    data.write_bytes(b'18\n')
+    conf = tmp_path / 'etc/postgresql/18/sli/postgresql.conf'
+    conf.parent.mkdir(parents=True)
+    conf.write_bytes(b'# synthetic configuration\n')
+    record = tmp_path / 'commands'
+    launcher = tmp_path / 'sli-native-install'
+    launcher.write_text(f'printf "%s\\n" "$*" >> {shlex.quote(record.as_posix())}\n', newline='\n')
+    scripts = package.scripts('test', VERSION)
+
+    def run(body, *args):
+        python = shlex.quote(Path(sys.executable).as_posix())
+        body = body.replace('/usr/bin/python3', python)
+        body = body.replace('/usr/sbin/sli-native-install',
+                            'sh ' + shlex.quote(launcher.as_posix()))
+        body = body.replace('/var/lib/sli/state/reuse-package.json', (state / 'reuse-package.json').as_posix())
+        # Use the real embedded state logic against an isolated Debian tree.
+        # This filesystem belongs to the test runner, which need not be root.
+        body = body.replace("if __name__ == '__main__':",
+                            "trusted = lambda path: None\nos.geteuid = lambda: 0\nif __name__ == '__main__':")
+        body = body.replace('recovery_required() else', f'recovery_required(root=Path({str(tmp_path)!r})) else')
+        body = body.replace('package_install(sys.argv[2], sys.argv[3])',
+                            f'package_install(sys.argv[2], sys.argv[3], root=Path({str(tmp_path)!r}))')
+        body = body.replace('readlink -f /opt/sli/current', "printf '%s' /opt/sli/releases/test")
+        body = body.replace('cleanup_recovery(accepted.name)',
+                            f"cleanup_recovery(accepted.name, recovery=Path({str(tmp_path / 'recovery')!r}))")
+        body = body.replace('logger -t sli-setup native_host_still_installed', ':')
+        script = tmp_path / 'maintainer.sh'
+        script.write_text(body, newline='\n')
+        return subprocess.run([shell, script.as_posix(), *args], capture_output=True, text=True, check=False)
+
+    for name, args in [('prerm', ('upgrade', '2.0-1~deb13')),
+                       ('prerm', ('failed-upgrade', '0.9-1~deb13')),
+                       ('preinst', ('upgrade', '0.9-1~deb13')), ('postinst', ('configure',))]:
+        result = run(scripts[name], *args)
+        assert result.returncode == int(working), result.stderr
+    result = run(package.retain_recovery_prerm(), 'remove')
+    assert result.returncode == int(working), result.stderr
+    if working:
+        assert not record.exists()
+    else:
+        assert run(scripts['prerm'], 'remove').returncode == 0
+        assert run(scripts['preinst'], 'install').returncode == 0
+        assert run(scripts['postinst'], 'configure').returncode == 0
+        assert record.read_text().splitlines() == ['stage test', 'remove', 'stage test']
+    assert json.loads((state / 'package-install.json').read_text()) == receipt
+    assert data.read_bytes() == b'18\n' and conf.read_bytes() == b'# synthetic configuration\n'
+
+
+def test_remove_after_failed_configure_stops_loaded_database_without_runtime(tmp_path, monkeypatch):
+    state = tmp_path / 'state'
+    state.mkdir()
+    receipt = state / 'package-install.json'
+    receipt.write_text(json.dumps({'schema_version': 1, 'release': 'old', 'status': 'failed',
+                                   'first_start_pending': True, 'site_sha256': '1' * 64}))
+    monkeypatch.setattr(native_preinstall, 'trusted', lambda path: None)
+    monkeypatch.setattr(install, 'STATE', state)
+    monkeypatch.setattr(install, 'RECOVERY', tmp_path / 'recovery')
+    monkeypatch.setattr(install, 'CURRENT', tmp_path / 'current')
+    monkeypatch.setattr(install.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(install, 'inventory', lambda release: pytest.fail('removal needs no staged runtime'))
+    calls = []
+    monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
+    monkeypatch.setattr(install.subprocess, 'run', lambda argv, **kwargs: SimpleNamespace(
+        stdout='sli-postgresql.service loaded active running\npostgresql.service loaded active running\n'))
+    assert install.main(['remove']) == 0
+    assert calls == [['systemctl', 'stop', 'sli-postgresql.service']]
+    assert json.loads(receipt.read_text())['status'] == 'failed'
 
 
 @pytest.fixture
@@ -555,6 +641,7 @@ def lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(install.platform, "freedesktop_os_release", lambda: {"ID": "debian", "VERSION_ID": "13"})
     monkeypatch.setattr(install.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())
+    monkeypatch.setattr(native_preinstall, "trusted", lambda path: None)
     monkeypatch.setattr(install, "command", lambda argv, **kwargs: calls.append(argv))
     monkeypatch.setattr(install, "wait_api", lambda config: calls.append("api-ready"))
     monkeypatch.setattr(install, "wait_health", lambda: calls.append("workers-healthy"))
