@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Sli.Server.Agents;
+using Sli.Server.Agents.Registry;
 using Sli.Server.Infrastructure;
 using Sli.Server.InstallationSetup;
 using Xunit;
@@ -251,13 +252,35 @@ public sealed class AgentExistingDuplicateTests
 
     private static async Task Startup(IPostgresConnectionFactory connections,CancellationToken ct)
     {
+        var logger = new ReconciliationLogger();
         var services=new ServiceCollection(); services.AddLogging(b=>b.ClearProviders());
         services.AddSingleton(connections); services.AddAgentEnrollment();
+        services.AddSingleton<ILogger<AgentRegistrationReconciliation>>(logger);
         await using var provider=services.BuildServiceProvider();
         var worker=Assert.Single(provider.GetServices<IHostedService>());
         await worker.StartAsync(ct);
-        await ((BackgroundService)worker).ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(30),ct);
-        await worker.StopAsync(ct);
+        try
+        {
+            await logger.Completed.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        }
+        finally
+        {
+            await worker.StopAsync(ct);
+        }
+    }
+
+    private sealed class ReconciliationLogger : ILogger<AgentRegistrationReconciliation>
+    {
+        public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (eventId == AgentRegistrationReconciliation.ReconciliationCompleted)
+                Completed.TrySetResult();
+        }
     }
     private static Task SeedServers(NpgsqlConnection db,CancellationToken ct) => PostCollectionPostgres.Sql(db,"""
         insert into servers(domain_id,hostname,fqdn,role)

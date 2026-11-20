@@ -6,8 +6,10 @@ std::wstring ProductionStageBase();
 StageReceipt StageProduction(const std::wstring& transactionId, std::string_view enrollment);
 void RollbackProduction(const std::wstring& transactionId);
 void CommitProduction(const std::wstring& transactionId);
+void CleanProductionState(bool purgeQueue);
 #ifdef REGISTRATION_TESTS
 StageReceipt StageFixture(const std::wstring& base, const std::wstring& transactionId, std::string_view enrollment);
 void RollbackFixture(const std::wstring& base, const std::wstring& transactionId);
 void CommitFixture(const std::wstring& base, const std::wstring& transactionId);
+void CleanFixture(const std::wstring& base, bool purgeQueue);
 #endif

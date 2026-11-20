@@ -19,6 +19,9 @@
     <CustomAction Id="FinishUiRegistration" BinaryRef="RegistrationCA" DllEntry="FinishUiRegistration" Return="check" />
     <CustomAction Id="CancelUiRegistration" BinaryRef="RegistrationCA" DllEntry="CleanupUiSnapshot" Return="check" />
     <CustomAction Id="ErrorUiRegistration" BinaryRef="RegistrationCA" DllEntry="CleanupUiSnapshot" Return="check" />
+    <CustomAction Id="CleanAgentState" BinaryRef="RegistrationCA" DllEntry="CleanAgentState" Execute="commit" Impersonate="no" Return="check" />
+    <SetProperty Id="CleanAgentState" Value="[PURGE_QUEUE]" Before="CleanAgentState" Sequence="execute"
+                 Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     <InstallUISequence>
       <Custom Action="ValidateInstanceName" Before="LaunchConditions" Condition="NOT REMOVE" />
       <Custom Action="ChooseRegistrationFile" Before="ValidateRegistrationFile" Condition="UILevel &gt;= 5 AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL AND NOT (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE))" />
@@ -36,6 +39,7 @@
       <Custom Action="ClearRegistrationData" Before="WriteRegistryValues" Condition="REGISTRATION_SNAPSHOT" />
       <Custom Action="CommitRegistration" Before="ClearCommitData" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
       <Custom Action="ClearCommitData" Before="InstallFinalize" Condition="REGISTRATION_SNAPSHOT" />
+      <Custom Action="CleanAgentState" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
   </Fragment>
 </Wix>

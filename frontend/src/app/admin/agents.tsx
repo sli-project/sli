@@ -15,6 +15,7 @@ import { AgentDeploymentPanel } from "./agent-deployment";
 import { AgentDeliveryDiagnostics } from "./agent-delivery-diagnostics";
 import { AgentEventlogDiagnostics } from "./agent-eventlog-diagnostics";
 import { AgentSequenceRecovery } from "./agent-sequence-recovery";
+import { AgentConsoleEnrollment } from "./agent-console-enrollment";
 
 export function AgentsPage() {
   const access = useEffectiveAccess();
@@ -72,7 +73,9 @@ function AgentsContent() {
     }
   }, [agentId, inventory.data]);
   const [adding, setAdding] = useState(() => new URLSearchParams(window.location.search).get("register") === "1");
-  const [enrollment, setEnrollment] = useState<"group" | "manual">(access?.platform_owner ? "group" : "manual");
+  const [enrollment, setEnrollment] = useState<"group" | "manual">(() => access?.platform_owner ? "group" : "manual");
+  const [consoleSession, setConsoleSession] = useState<string>();
+  const [keysSession, setKeysSession] = useState<string>();
   const [filter, setFilter] = useState<AgentFilter>(() => {
     const value = new URLSearchParams(window.location.search).get("filter");
     return value === "silent" || value === "auditOff" || value === "disabled" ? value : "all";
@@ -110,8 +113,8 @@ function AgentsContent() {
     } },
     { key: "certificates", label: t("agents.certificateUntil"), kind: "datetime", render: (agent) => date(agent.certificates.filter((cert) => !cert.revoked_at).sort((a, b) => Date.parse(b.not_after) - Date.parse(a.not_after))[0]?.not_after) },
   ];
-  const addButton = <button className="sli-ds-button" type="button" onClick={() => { setEnrollment(access?.platform_owner ? "group" : "manual"); setAdding(true); }}>{t("agents.addComputer")}</button>;
   const sessionKey = JSON.stringify([access?.subject.type, access?.subject.id, access?.subject.username, access?.evaluated_at_utc]);
+  const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
   return <section className="sli-ds-report">
     <PageHeader title={t("agents.title")} actions={addButton}/>
@@ -120,8 +123,18 @@ function AgentsContent() {
     </div>
     {inventory.isLoading ? <StateView state="loading"/> : inventory.isError ? <div><p role="alert">{t("agents.loadError")}</p><button className="sli-ds-button" onClick={() => void inventory.refetch()}>{t("state.retry")}</button></div>
       : groups[filter].length ? <div className="sli-ds-report__views"><DataTable columns={columns} rows={groups[filter]} rowKey={(agent) => agent.id} onRowClick={(agent) => setSelectedId(agent.id)} selectedKey={selectedId} caption={t("agents.title")}/></div>
-      : <div><p>{t(items.length ? "agents.noMatches" : "agents.emptyComputers")}</p>{!items.length ? addButton : null}</div>}
+      : items.length ? <p>{t("agents.noMatches")}</p>
+      : <div><p>{t("agents.emptyComputers")}</p>{addButton}</div>}
     <OldAgentsTable agents={oldAgents} canRemove={Boolean(access?.platform_owner)}/>
+    <div className="sli-ds-filters__actions">
+      <button className="sli-ds-button" type="button" onClick={() => setKeysSession(sessionKey)}>{t("agents.console.keys")}</button>
+      <button className="sli-ds-button" type="button" onClick={() => {
+        setEnrollment(access?.platform_owner ? "group" : "manual");
+        setAdding(true);
+      }}>{t("agents.registrationSettings")}</button>
+    </div>
+    {consoleSession === sessionKey && <AgentConsoleEnrollment onClose={() => setConsoleSession(undefined)}/>}
+    {keysSession === sessionKey && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={() => setKeysSession(undefined)}/>}
     {selected ? <DetailDrawer open title={agentHostName(selected)} onClose={() => setSelectedId(null)}>
       {selected.collection_policy || modules.length || selected.eventlog_diagnostics?.items.length || selected.delivery_diagnostics ? <section>
         <h3>{t("agents.collection")}</h3>
@@ -158,6 +171,24 @@ function AgentsContent() {
       </div>
     </DetailDrawer> : null}
   </section>;
+}
+
+function AgentConsoleKeys({ sessionKey, timeZone, onClose }: { sessionKey: string; timeZone: string; onClose: () => void }) {
+  const tokens = useQuery({ queryKey: ["agent-console-tokens", sessionKey], queryFn: api.agentConsoleTokens,
+    refetchInterval: 15_000, meta: { persist: false } });
+  const revoke = useMutation({ mutationFn: api.revokeAgentConsoleToken,
+    onSuccess: async () => { await tokens.refetch(); } });
+  const date = (value: string) => formatDateTime(value, timeZone);
+  return <DetailDrawer open title={t("agents.console.keys")} onClose={onClose}>
+    {tokens.isLoading ? <StateView state="loading"/> : tokens.isError ? <p role="alert">{t("agents.console.listError")}</p>
+      : tokens.data?.items.length ? <ul>{tokens.data.items.map((token) => <li key={token.id}>
+        {date(token.created_at)} · {t("agents.console.remaining", { count: token.remaining })}{" "}
+        <button className="sli-ds-button" type="button" disabled={revoke.isPending} onClick={() => {
+          if (window.confirm(t("agents.console.confirmRevoke", { date: date(token.created_at) }))) revoke.mutate(token.id);
+        }}>{t("agents.console.revoke")}</button>
+      </li>)}</ul> : <p>{t("agents.console.noKeys")}</p>}
+    {revoke.isError && <p role="alert">{t("agents.console.revokeError")}</p>}
+  </DetailDrawer>;
 }
 
 function ManualEnrollment({ timeZone }: { timeZone: string }) {

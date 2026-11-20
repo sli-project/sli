@@ -10,6 +10,7 @@
     <Property Id="INSTANCE_NAME" Secure="yes" />
     <Property Id="CA_FILE" Secure="yes" />
     <Property Id="CA_FINGERPRINT" Secure="yes" />
+    <Property Id="PURGE_QUEUE" Secure="yes" />
     <Property Id="SAVED_SERVER_URL" Secure="yes">
       <RegistrySearch Id="SavedServerUrl" Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="ServerUrl" Type="raw" Bitness="always64" />
     </Property>
@@ -35,7 +36,7 @@
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet\Product" Name="ProductCode" Value="[ProductCode]" Type="string" KeyPath="yes" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet\Product" Name="Version" Value="[ProductVersion]" Type="string" />
           </Component>
-          <!-- Connection settings survive upgrade/uninstall; a new bootstrap is supplied independently. -->
+          <!-- Preserve settings across upgrades. The uninstall action clears them on removal. -->
           <Component Id="Bootstrap" Guid="4BA7E9A9-FF66-49B7-90DC-989656A48B06" Permanent="yes" NeverOverwrite="yes">
             <RegistryKey Root="HKLM" Key="SOFTWARE\SLI\AgentNet" ForceCreateOnInstall="yes">
               <PermissionEx Sddl="D:P(A;;KA;;;SY)(A;;KA;;;BA)" />
@@ -44,7 +45,7 @@
               <RegistryValue Name="CaFingerprint" Value="[CA_FINGERPRINT]" Type="string" />
             </RegistryKey>
           </Component>
-          <!-- Only explicit bootstrap input replaces an old token, including after /x. Runtime removes it after persistence. -->
+          <!-- Only explicit bootstrap input replaces an old token. Runtime removes it after persistence. -->
           <Component Id="EnrollmentBootstrap" Guid="FB980F8D-5BC5-4CA3-AEA4-B3B880E5B205" Permanent="yes" Condition="ENROLL_TOKEN OR TOKEN_FILE">
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="EnrollmentToken" Value="[ENROLL_TOKEN]" Type="string" KeyPath="yes" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="TokenFile" Value="[TOKEN_FILE]" Type="string" />

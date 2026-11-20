@@ -18,7 +18,7 @@ Get-FileHash artifacts/agent-dotnet/SliAgent.msi -Algorithm SHA256
 ```
 
 WiX 5.0.2 закреплён в локальном tool manifest; системная установка WiX не требуется.
-Выход — self-contained win-x64, без trimming и single-file. `-Version 0.2.3` создаёт
+Выход — self-contained win-x64, без trimming и single-file. `-Version 0.3.6` создаёт
 следующую версию для проверки обновления. `-NoRestore` использует ранее восстановленные
 инструмент и runtime packs. MSI и вспомогательные файлы остаются в artifacts и не коммитятся.
 
@@ -61,7 +61,16 @@ ENROLL_TOKEN скрыт в свойствах MSI. На первом старт�
 без padding. computer_entity_id берётся из разрешённого сервером scope. Агент повторяет
 pending с тем же ключом; только серверное approved разрешает final enrollment.
 Обычная строка группового токена без computer_entity_id не заменяет этот документ.
-Новых серверных ручек или ослабления привязки нет.
+Сборка комплекта Debian берёт `SliAgent-<SHA>.msi` и `SliAgent-<SHA>.msi.json`
+из доверенного кэша. Команда из консоли проверяет закреплённый CA и SHA-256 пакета,
+а для подписанного MSI также проверяет Authenticode. Сервер привязывает регистрацию
+к ключу из первого принятого CSR.
+
+## Удаление
+
+Обычное удаление MSI очищает настройки и личности агента. Очереди остаются в
+`%ProgramData%\SLI\AgentNet\retained-queue-*`. Для удаления вместе с очередями
+запустите `msiexec /x SliAgent.msi PURGE_QUEUE=1`.
 
 ## Перевод хоста с Python-агента на .NET
 

@@ -30,8 +30,6 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     else if (path === '/api/v2/reports') body = { contract_id: 'sli.report-catalog.v2', navigation, items: [] };
     else if (path === '/api/v1/overview') body = {};
     else if (path === '/api/v1/admin/agents') body = { items };
-    else if (path === '/api/v1/admin/agent-deployment-directory') body = { domains: [{ id: 1, name: 'example.test' }] };
-    else if (['/api/v1/admin/agent-templates', '/api/v1/admin/agent-group-tokens', '/api/v1/admin/agent-update-waves'].includes(path)) body = { items: [] };
     else { unexpected.push(path); await route.fulfill({ status: 501, json: { error: 'unmocked_agent_request' } }); return; }
     await route.fulfill({ json: body });
   });
@@ -67,10 +65,17 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   await expect(table.getByText('dc20.example.test')).toBeVisible();
   await page.getByRole('button', { name: 'Все · 19', exact: true }).click();
   await expect(table.getByText('dc20.example.test')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Добавить компьютер', exact: true }).click();
-  const panel = page.getByRole('dialog', { name: 'Добавить компьютер', exact: true });
-  await expect(panel.getByRole('tab', { name: 'Групповая регистрация', exact: true })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Создать групповой токен', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Добавить агента', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'Добавить агента', exact: true });
+  const limit = panel.getByRole('spinbutton', { name: 'Число компьютеров' });
+  const create = panel.getByRole('button', { name: 'Создать команду', exact: true });
+  await expect(limit).toHaveValue('1');
+  await expect(create).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Скачать пакет' })).toHaveAttribute('href', '/api/v1/agent/installer/SliAgent.msi');
+  const inputBox = (await limit.boundingBox())!;
+  const buttonBox = (await create.boundingBox())!;
+  expect(Math.abs(inputBox.y + inputBox.height - buttonBox.y - buttonBox.height)).toBeLessThanOrEqual(2);
+  expect(buttonBox.x).toBeGreaterThanOrEqual(inputBox.x + inputBox.width);
   await page.screenshot({ path: testInfo.outputPath('agents-add.png') });
   expect(unexpected).toEqual([]);
 });

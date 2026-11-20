@@ -69,7 +69,9 @@ packages are already staged.
 - From the server's root terminal, run `sudo sli-setup --owner-recovery <owner-username>`
   for a locked-out owner. Use `admin` on a fresh installation or the existing
   username after an upgrade. Enter the single-use code within 10 minutes together
-  with the current password.
+  with the current password. Issuing another code invalidates the previous one.
+  Only an active platform owner can recover this way. The password and the
+  regular login lockout stay in effect.
 
 To open the server from another OS, import `/var/lib/sli/tls-ca.crt` from the
 trusted server into the browser's trust store. Compare its SHA-256 DER
@@ -96,10 +98,13 @@ storage options above. Setup preserves existing filesystems and data.
 
 ### Windows agent
 
-After signing in, open these paths on your installed SLI server's HTTPS address
-to download the bundled MSI, portable ZIP and their checksums.
-`/app/installers/SliAgent.msi`, `/app/installers/SliAgent-publish-win-x64.zip`
-and `/app/installers/SHA256SUMS`.
+After signing in, open **Agents → Add agent** and run the PowerShell
+command on the domain controller.
+
+The MSI and its checksum are available at `/app/installers/SliAgent.msi`
+and `/app/installers/SHA256SUMS` on the server's HTTPS address. If your kit
+includes the portable ZIP, download it at `/app/installers/SliAgent-publish-win-x64.zip`
+and use the same checksum file.
 See [agent enrollment](docs/agent-enrollment.md) for registration and CA pinning.
 
 ### Native backups

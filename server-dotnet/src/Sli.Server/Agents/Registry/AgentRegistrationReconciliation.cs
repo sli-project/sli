@@ -127,24 +127,36 @@ public sealed partial class AgentEnrollmentService
 // unavailable database is retried without needing an administrator's intervention.
 public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,ILogger<AgentRegistrationReconciliation> logger) : BackgroundService
 {
+    internal static readonly EventId ReconciliationCompleted = new(1, nameof(ReconciliationCompleted));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        bool reconciled = false;
         while(!stoppingToken.IsCancellationRequested)
         {
+            int? reconciledRegistrations = null;
             try
             {
-                logger.LogInformation("agent_registration_reconciliation_started");
                 await using var scope=scopes.CreateAsyncScope();
                 await using var db=await scope.ServiceProvider.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(stoppingToken);
-                await using var tx=await db.BeginTransactionAsync(stoppingToken);
-                int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken);
-                await tx.CommitAsync(stoppingToken);
-                logger.LogInformation("agent_registration_reconciliation_completed retired={Retired}",retired);
-                return;
+                if (!reconciled)
+                {
+                    logger.LogInformation("agent_registration_reconciliation_started");
+                    await using var tx=await db.BeginTransactionAsync(stoppingToken);
+                    int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken);
+                    await tx.CommitAsync(stoppingToken);
+                    reconciled = true;
+                    reconciledRegistrations = retired;
+                }
+                await using var cleanup = new NpgsqlCommand(
+                    "delete from sli_agent_console_tokens where expires_at<=statement_timestamp()", db);
+                await cleanup.ExecuteNonQueryAsync(stoppingToken);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) { return; }
-            catch { logger.LogWarning("agent_registration_reconciliation_failed"); }
-            try { await Task.Delay(TimeSpan.FromSeconds(10),stoppingToken); }
+            catch { logger.LogWarning(reconciled ? "agent_console_token_cleanup_failed" : "agent_registration_reconciliation_failed"); }
+            if (reconciledRegistrations is int retiredCount)
+                logger.LogInformation(ReconciliationCompleted, "agent_registration_reconciliation_completed retired={Retired}", retiredCount);
+            try { await Task.Delay(reconciled ? TimeSpan.FromMinutes(1) : TimeSpan.FromSeconds(10),stoppingToken); }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) { return; }
         }
     }

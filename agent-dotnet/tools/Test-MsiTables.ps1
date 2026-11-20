@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$Msi,
     [Parameter(Mandatory)][string]$PublishDirectory,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$ExpectedVersion = '0.3.4'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$ExpectedVersion = '0.3.5'
 )
 $ErrorActionPreference = 'Stop'
 # OpenDatabase mode 0 is read-only. This does not install, register or execute the package.
@@ -68,6 +68,11 @@ foreach ($scenario in @('fresh', 'upgrade', 'repair', 'uninstall', 'upgrade-remo
         if ($session.EvaluateCondition($actions[$name].Condition) -ne $expected) {
             throw "Registration action $name must run only on fresh installation ($scenario)"
         }
+    }
+    $clean = $actions['CleanAgentState']
+    if ($null -eq $clean -or $clean.Sequence -le $actions['RemoveFiles'].Sequence -or
+        $session.EvaluateCondition($clean.Condition) -ne $(if ($scenario -eq 'uninstall') { 1 } else { 0 })) {
+        throw "State cleanup must run after RemoveFiles and only for explicit uninstall ($scenario)"
     }
 }
 $view = $database.OpenView('SELECT `Condition` FROM `LaunchCondition`')

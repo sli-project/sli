@@ -24,38 +24,62 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var digest = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(token)));
         await AdvisoryAsync(connection,transaction,"sli-agent-registration-reconcile",ct);
         await LockGroupApprovalAsync(connection, transaction, digest, ct);
-        Guid tokenId, hostId;
-        string keyFingerprint;
-        string? instance;
-        Guid? replacement;
+        Guid tokenId = Guid.NewGuid(), hostId = default;
+        string? keyFingerprint = null;
+        string? instance = null;
+        Guid? replacement = null;
         await using (var q = new NpgsqlCommand("select id,host_id,key_fingerprint,instance_name,replacement_for,used_at,revoked_at,expires_at from sli_agent_enrollment_tokens where token_hash=@hash for update", connection, transaction))
         {
             q.Parameters.AddWithValue("hash", digest);
             await using var reader = await q.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct) || !reader.IsDBNull(5) || !reader.IsDBNull(6) || reader.GetFieldValue<DateTime>(7) <= DateTime.UtcNow) throw RejectToken();
-            tokenId = reader.GetGuid(0); hostId = reader.GetGuid(1); keyFingerprint = reader.GetString(2);
-            instance = reader.IsDBNull(3) ? null : reader.GetString(3);
-            replacement = reader.IsDBNull(4) ? null : reader.GetGuid(4);
+            if (await reader.ReadAsync(ct))
+            {
+                if (!reader.IsDBNull(5) || !reader.IsDBNull(6) || reader.GetFieldValue<DateTime>(7) <= DateTime.UtcNow) throw RejectToken();
+                tokenId = reader.GetGuid(0); hostId = reader.GetGuid(1); keyFingerprint = reader.GetString(2);
+                instance = reader.IsDBNull(3) ? null : reader.GetString(3);
+                replacement = reader.IsDBNull(4) ? null : reader.GetGuid(4);
+            }
         }
+        Guid? consoleToken = keyFingerprint is null
+            ? await LockConsoleTokenAsync(connection, transaction, digest, ct)
+            : null;
         ValidateInstance(instance);
         var requestedInstance = StringValue(body, "instance_name");
         if (body["instance_name"] is not null && requestedInstance is null) throw new AgentCertificateException("invalid_agent_instance_name");
         ValidateInstance(requestedInstance);
         if (requestedInstance != instance) throw new AgentCertificateException("agent_instance_name_mismatch");
-        var csr = AgentCertificateAuthority.ParseCsr(StringValue(body, "csr_pem"), hostId);
+        var csr = AgentCertificateAuthority.ParseCsr(StringValue(body, "csr_pem"), consoleToken is null ? hostId : null, out hostId);
         var received = SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo());
-        if (!CryptographicOperations.FixedTimeEquals(received, Convert.FromHexString(keyFingerprint))) throw new AgentCertificateException("agent_csr_key_mismatch");
+        if (keyFingerprint is not null && !CryptographicOperations.FixedTimeEquals(received, Convert.FromHexString(keyFingerprint))) throw new AgentCertificateException("agent_csr_key_mismatch");
+        keyFingerprint ??= Convert.ToHexStringLower(received);
         var hostName = HostName(StringValue(body, "reported_hostname"));
+        var role = body.ContainsKey("machine_role") ? StringValue(body, "machine_role") : "workstation";
+        if (role is not ("workstation" or "domain_controller")) throw new AgentCertificateException("invalid_agent_module_config");
+        var dc=role=="domain_controller" && hostName is not null ? await ResolveDcAsync(connection,transaction,hostName,ct) : null;
+        if(dc is {} configuredDc && configuredDc.Name.Length>128)throw new AgentCertificateException("invalid_agent_module_config");
+        if (consoleToken is { } grant)
+        {
+            if (hostName is null) throw new AgentCertificateException("invalid_agent_registration_name");
+            await using var used = new NpgsqlCommand("""
+                select 1 from sli_agent_enrollment_tokens e left join sli_agents a on a.id=e.enrolled_agent_id
+                where e.console_token_id=@id and (e.host_id=@host or e.key_fingerprint=@key
+                    or lower(a.registration_host_name)=lower(@name)
+                    or exists(select 1 from sli_agent_audit issued where issued.target=a.id::text and issued.action='issue'
+                        and issued.details->>'server_id'=@server::text)) limit 1
+                """, connection, transaction);
+            used.Parameters.AddWithValue("id", grant);
+            used.Parameters.AddWithValue("host", hostId);
+            used.Parameters.AddWithValue("key", keyFingerprint);
+            used.Parameters.AddWithValue("name", hostName);
+            used.Parameters.Add("server", NpgsqlDbType.Bigint).Value = (object?)dc?.Server ?? DBNull.Value;
+            if (await used.ExecuteScalarAsync(ct) is not null) throw RejectToken();
+        }
         string? versionText=StringValue(body,"agent_version"); Version? agentVersion=null;
         if(body.ContainsKey("agent_version") && (versionText is null || versionText.Length>32 || !Version.TryParse(versionText,out agentVersion) || agentVersion.Build<0 || agentVersion.Revision>=0))
             throw new AgentCertificateException("invalid_agent_module_config");
         string? approved;
         await using (var q = new NpgsqlCommand("select details->>'registration_host_name' from sli_agent_audit where target=@id and action='token_create' order by id desc limit 1", connection, transaction))
         { q.Parameters.AddWithValue("id", tokenId.ToString()); approved = await q.ExecuteScalarAsync(ct) as string; }
-        var role = body.ContainsKey("machine_role") ? StringValue(body, "machine_role") : "workstation";
-        if (role is not ("workstation" or "domain_controller")) throw new AgentCertificateException("invalid_agent_module_config");
-        var dc=role=="domain_controller" && hostName is not null ? await ResolveDcAsync(connection,transaction,hostName,ct) : null;
-        if(dc is {} configuredDc && configuredDc.Name.Length>128)throw new AgentCertificateException("invalid_agent_module_config");
         if (approved is not null && !string.Equals(approved,hostName,StringComparison.OrdinalIgnoreCase))
         {
             var approvedDc=dc is not null ? await ResolveDcAsync(connection,transaction,approved,ct) : null;
@@ -85,8 +109,14 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             }
             throw new AgentCertificateException("agent_host_already_enrolled",409);
         }
-        await using (var q = new NpgsqlCommand("select expires_at > clock_timestamp() from sli_agent_enrollment_tokens where id=@id", connection, transaction))
-        { q.Parameters.AddWithValue("id", tokenId); if ((bool)(await q.ExecuteScalarAsync(ct) ?? false) == false) throw RejectToken(); }
+        if (consoleToken is { } consoleId)
+            await ConsumeConsoleTokenAsync(connection, transaction, consoleId, tokenId, hostId, keyFingerprint, ct);
+        else
+        {
+            await using var q = new NpgsqlCommand("select expires_at > clock_timestamp() from sli_agent_enrollment_tokens where id=@id", connection, transaction);
+            q.Parameters.AddWithValue("id", tokenId);
+            if ((bool)(await q.ExecuteScalarAsync(ct) ?? false) == false) throw RejectToken();
+        }
         var agentId = Guid.NewGuid();
         using var cert = ca.Issue(csr, agentId, hostId);
         int rate = role == "domain_controller" ? AdDcConfig.DefaultRateLimitPerMinute : 120;
@@ -99,15 +129,17 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             q.Parameters.AddWithValue("control", control); await q.ExecuteNonQueryAsync(ct);
         }
         Guid? newer=null;
-        if (approved is not null && replacement is null)
-            newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion);
+        if ((approved is not null || consoleToken is not null) && replacement is null)
+            newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion,consoleToken is not null);
         if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct))
             await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null);
         var serial = await StoreCertificateAsync(connection, transaction, agentId, cert, ct);
         if(newer is not null)await RetireRegistrationAsync(connection,transaction,agentId,newer.Value,"enrollment:"+tokenId,true,ct);
         await using (var q = new NpgsqlCommand("update sli_agent_enrollment_tokens set used_at=clock_timestamp(),enrolled_agent_id=@agent where id=@id; insert into sli_agent_group_members(agent_id,group_id) select @agent,t.group_id from sli_agent_group_approval_links a join sli_agent_group_requests r on r.id=a.request_id join sli_agent_group_tokens t on t.id=r.token_id where a.enrollment_token_id=@id", connection, transaction))
         { q.Parameters.AddWithValue("agent", agentId); q.Parameters.AddWithValue("id", tokenId); await q.ExecuteNonQueryAsync(ct); }
-        await AuditAsync(connection, transaction, "issue", "enrollment:" + tokenId, agentId.ToString(), new JsonObject { ["serial"] = serial, ["registration_ca_sha256"] = ca.RootFingerprint,["agent_version"]=versionText,["server_id"]=dc?.Server }, ct);
+        var issued = new JsonObject { ["serial"] = serial, ["registration_ca_sha256"] = ca.RootFingerprint, ["agent_version"] = versionText, ["server_id"] = dc?.Server };
+        if (consoleToken is { } issuedFrom) issued["console_token_id"] = issuedFrom;
+        await AuditAsync(connection, transaction, "issue", "enrollment:" + tokenId, agentId.ToString(), issued, ct);
         if(approved is not null && dc is {} recoveredDc && replacement is null && newer is null)
         {
             var recoveries=new List<(Guid Id,string Source)>();
@@ -127,6 +159,39 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         }
         await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(connection,transaction,agentId,ct);
         return CertificateResponse(cert, agentId, serial);
+    }
+
+    private static async Task<Guid> LockConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, string digest, CancellationToken ct)
+    {
+        await using var query = new NpgsqlCommand("""
+            select id from sli_agent_console_tokens
+            where token_hash=@hash and remaining>0 and revoked_at is null and expires_at>clock_timestamp()
+            for update
+            """, db, tx);
+        query.Parameters.AddWithValue("hash", digest);
+        return await query.ExecuteScalarAsync(ct) as Guid? ?? throw RejectToken();
+    }
+
+    private static async Task ConsumeConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid grant,
+        Guid claim, Guid host, string fingerprint, CancellationToken ct)
+    {
+        // A claim keeps the ordinary enrollment linkage. Its private digest is
+        // independent of the credential presented at the endpoint.
+        await using var command = new NpgsqlCommand("""
+            with consumed as (
+                update sli_agent_console_tokens set remaining=remaining-1
+                where id=@grant and remaining>0 and revoked_at is null and expires_at>clock_timestamp()
+                returning id,created_at,expires_at
+            )
+            insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at,console_token_id)
+            select @claim,@hash,@host,@key,created_at,expires_at,id from consumed
+            """, db, tx);
+        command.Parameters.AddWithValue("grant", grant);
+        command.Parameters.AddWithValue("claim", claim);
+        command.Parameters.AddWithValue("hash", Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)));
+        command.Parameters.AddWithValue("host", host);
+        command.Parameters.AddWithValue("key", fingerprint);
+        if (await command.ExecuteNonQueryAsync(ct) != 1) throw RejectToken();
     }
 
     private static async Task LockGroupApprovalAsync(NpgsqlConnection c, NpgsqlTransaction t, string digest, CancellationToken ct)
@@ -307,9 +372,9 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var result=(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?(long?)null:reader.GetInt64(3));
         return await reader.ReadAsync(ct) ? null : result;
     }
-    private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server=null,Version? version=null)
+    private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server,Version? version,bool consoleEnrollment)
     {
-        var others=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet)>();
+        var others=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet,bool ConsoleReplacementAllowed)>();
         await using (var q=new NpgsqlCommand("""
             select a.id,coalesce(a.rights_probe->>'agent_version',
                 (select version from sli_agent_update_results v where v.agent_id=a.id order by observed_at desc limit 1),
@@ -319,16 +384,19 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                     or a.rights_probe->>'agent_version' is not null
                     or exists(select 1 from sli_agent_audit v where v.target=a.id::text and v.action='issue' and v.details->>'agent_version' is not null),
                 (select max(t) from (select max(received_at) t from sli_agent_receipts where agent_id=a.id
-                    union all select max(received_at) from sli_agent_stream_receipts where agent_id=a.id) p)
+                    union all select max(received_at) from sli_agent_stream_receipts where agent_id=a.id) p),
+                exists(select 1 from sli_agent_audit issued where issued.target=a.id::text and issued.action='issue'
+                    and issued.details ? 'console_token_id') and not (a.rights_probe ? 'identity_conflict')
+                    and not exists(select 1 from sli_agent_snapshot_bindings s where s.agent_id=a.id and s.enabled)
             from sli_agents a where a.id<>@id and a.status='active' and
             """ + " " +
             (server is null ? "lower(a.registration_host_name)=lower(@name) and a.instance_name is not distinct from @instance" : "exists(select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id='sli.windows.ad-dc')") +
             " and exists(select 1 from sli_agent_audit issued where issued.target=a.id::text and issued.action='issue' and issued.details->>'registration_ca_sha256'=@scope) order by a.id for update of a",c,t))
         {
             q.Parameters.AddWithValue("id",agent); q.Parameters.AddWithValue("name",hostName); q.Parameters.Add("instance",NpgsqlDbType.Text).Value=(object?)instance??DBNull.Value; q.Parameters.AddWithValue("scope",ca.RootFingerprint);
-            await using var reader=await q.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) others.Add((reader.GetGuid(0),!reader.IsDBNull(1) && Version.TryParse(reader.GetString(1),out var prior) ? prior : null,RecentContact(reader.IsDBNull(2)?null:reader.GetDateTime(2),reader.GetInt64(3),DateTime.UtcNow),reader.GetBoolean(4),reader.IsDBNull(5)?null:reader.GetDateTime(5)));
+            await using var reader=await q.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) others.Add((reader.GetGuid(0),!reader.IsDBNull(1) && Version.TryParse(reader.GetString(1),out var prior) ? prior : null,RecentContact(reader.IsDBNull(2)?null:reader.GetDateTime(2),reader.GetInt64(3),DateTime.UtcNow),reader.GetBoolean(4),reader.IsDBNull(5)?null:reader.GetDateTime(5),reader.GetBoolean(6)));
         }
-        var matching=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet)>();
+        var matching=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet,bool ConsoleReplacementAllowed)>();
         foreach (var candidate in others)
         {
             var id=candidate.Id;
@@ -341,13 +409,16 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             }
             matching.Add(candidate);
         }
+        // A bearer command does not carry the owner-approved scope of a manual registration.
+        if (consoleEnrollment && matching.Any(a => !a.ConsoleReplacementAllowed))
+            throw new AgentCertificateException("agent_console_replacement_requires_approval", 409);
         // This enrollment is a current authenticated contact. A stale higher version
         // must not prevent reinstalling the computer. Only equal generations compare versions.
-        var newer=server is not null ? matching.Where(a=>a.Live && (a.DotNet && version is null || a.DotNet==(version is not null) && (a.Version>version || a.Version==version && a.Packet is not null)))
+        var newer=server is not null && !consoleEnrollment ? matching.Where(a=>a.Live && (a.DotNet && version is null || a.DotNet==(version is not null) && (a.Version>version || a.Version==version && a.Packet is not null)))
             .OrderByDescending(a=>a.DotNet).ThenByDescending(a=>a.Version).ThenByDescending(a=>a.Packet).FirstOrDefault() : default;
         if(newer.Id!=Guid.Empty)return newer.Id;
         foreach(var prior in matching)
-            await RetireRegistrationAsync(c,t,prior.Id,agent,"enrollment:"+token,server is not null,ct);
+            await RetireRegistrationAsync(c,t,prior.Id,agent,"enrollment:"+token,server is not null && !consoleEnrollment,ct);
         return null;
     }
     private static async Task RetireRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid id,Guid agent,string actor,bool dc,CancellationToken ct)

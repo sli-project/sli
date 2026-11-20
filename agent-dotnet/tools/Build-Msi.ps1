@@ -1,6 +1,6 @@
 param(
     [string]$OutputRoot = (Join-Path $PSScriptRoot '../../artifacts/agent-dotnet'),
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.4',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.5',
     [switch]$NoRestore,
     [string]$MsvcRoot = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207',
     [string]$WindowsSdkRoot = 'C:\Program Files (x86)\Windows Kits\10',

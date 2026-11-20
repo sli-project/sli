@@ -2,10 +2,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentItem } from "../../api/client";
+import { ApiResponseError, type AgentItem } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
 
-const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn() }));
+const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
+  issueCommand: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner, capabilities: state.capabilities, subject: { type: "session", id: 1, username: "fixture-owner" }, evaluated_at_utc: state.accessRevision }), useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../api/client", async (original) => ({ ...await original<typeof import("../../api/client")>(), api: {
   agentFileAuditStatus: (agentId: string) => state.auditStatus(agentId),
@@ -13,6 +14,8 @@ vi.mock("../../api/client", async (original) => ({ ...await original<typeof impo
   agentTemplates: () => state.deploymentTemplates(), agentGroupTokens: () => state.deploymentTokens(),
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
   agents: () => state.list(), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
+  createAgentConsoleToken: (limit: number) => state.issueCommand(limit), agentConsoleTokens: () => state.consoleTokens(),
+  revokeAgentConsoleToken: (id: string) => state.revokeConsoleToken(id),
 } }));
 import { AgentsPage } from "./agents";
 
@@ -34,15 +37,21 @@ beforeEach(() => {
   state.list.mockResolvedValue({ items: [agent] }); state.action.mockResolvedValue({});
   state.deploymentDirectory.mockResolvedValue({ domains: [] }); state.deploymentTemplates.mockResolvedValue({ items: [] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
+  state.consoleTokens.mockResolvedValue({ items: [] });
+  state.issueCommand.mockImplementation(async () => ({ id: agent.id, expires_at: new Date(Date.now() + 3600000).toISOString(),
+    command: "& { 'synthetic-command' }", package_url: "/api/v1/agent/installer/SliAgent.msi" }));
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 async function openCard(name = agent.host_name!) {
   fireEvent.click((await screen.findByText(name)).closest("tr")!);
   return screen.getByRole("dialog", { name });
 }
+function alternativeRegistration() {
+  fireEvent.click(screen.getByRole("button", { name: t("agents.registrationSettings") }));
+}
 async function manual() {
-  fireEvent.click(screen.getAllByRole("button", { name: t("agents.addComputer") })[0]);
-  fireEvent.click(screen.getByRole("tab", { name: t("agents.manualEnrollment") }));
+  alternativeRegistration();
+  fireEvent.click(await screen.findByRole("tab", { name: t("agents.manualEnrollment") }));
   fireEvent.change(screen.getByLabelText(t("agents.host")), { target: { value: agent.host_id } });
   fireEvent.change(screen.getByLabelText(t("agents.fingerprint")), { target: { value: "a".repeat(64) } });
 }
@@ -166,7 +175,7 @@ it("offers registration in the add panel and hides file audit", async () => {
   mount(); await screen.findByText(agent.host_name!);
   expect(state.deploymentDirectory).not.toHaveBeenCalled();
   expect(screen.queryByText(t("agents.fileAudit.title"))).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  alternativeRegistration();
   const drawer = screen.getByRole("dialog", { name: t("agents.addComputer") });
   expect(within(drawer).getByRole("tab", { name: t("agents.deployment.title") }).getAttribute("aria-selected")).toBe("true");
   expect(within(drawer).getByRole("button", { name: t("agents.deployment.create") })).toBeTruthy();
@@ -176,9 +185,60 @@ it("offers registration in the add panel and hides file audit", async () => {
 
 it("names the next step and opens the add panel from an empty list", async () => {
   state.list.mockResolvedValue({ items: [] }); mount();
-  expect(await screen.findByText(t("agents.emptyComputers"))).toBeTruthy();
-  fireEvent.click(screen.getAllByRole("button", { name: t("agents.addComputer") })[1]);
+  const empty = await screen.findByText(t("agents.emptyComputers"));
+  fireEvent.click(within(empty.parentElement!).getByRole("button", { name: t("agents.addComputer") }));
   expect(screen.getByRole("dialog", { name: t("agents.addComputer") })).toBeTruthy();
+  expect(state.issueCommand).not.toHaveBeenCalled();
+});
+
+it.each(["", "3"])("creates a command only on explicit submission with computer count %j", async (limit) => {
+  const copy = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+  const { client } = mount();
+  await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+  expect(state.issueCommand).not.toHaveBeenCalled();
+  expect(state.consoleTokens).not.toHaveBeenCalled();
+  expect(panel.queryByLabelText(t("agents.console.powerShell"))).toBeNull();
+  expect(panel.queryByText(t("agents.console.keys"))).toBeNull();
+  expect(panel.queryByText(t("agents.registrationSettings"))).toBeNull();
+  expect(panel.getByRole("link", { name: t("agents.console.download") }).getAttribute("href")).toBe("/api/v1/agent/installer/SliAgent.msi");
+
+  const count = panel.getByLabelText(t("agents.console.hostLimit"));
+  expect(count).toHaveProperty("value", "1");
+  fireEvent.change(count, { target: { value: limit } });
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.issue") }));
+  expect(await panel.findByLabelText(t("agents.console.powerShell"))).toHaveProperty("value", "& { 'synthetic-command' }");
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1));
+  fireEvent.click(panel.getByRole("button", { name: t("agents.copy") }));
+  await waitFor(() => expect(copy).toHaveBeenCalledWith("& { 'synthetic-command' }"));
+  expect(JSON.stringify(client.getQueryCache().getAll().map((item) => item.state.data))).not.toContain("synthetic-command");
+  expect(client.getMutationCache().getAll()).toHaveLength(0);
+  fireEvent.click(panel.getByRole("button", { name: t("agents.dismiss") }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("reports when the server has no agent package", async () => {
+  state.issueCommand.mockRejectedValue(new ApiResponseError(503, "agent_console_package_unavailable"));
+  mount(); await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  fireEvent.click(screen.getByRole("button", { name: t("agents.console.issue") }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", t("agents.console.packageError"));
+});
+
+it("offers revocation in the separate registration keys drawer", async () => {
+  const expires = new Date(Date.now() + 3600000).toISOString();
+  state.consoleTokens.mockResolvedValueOnce({ items: [{ id: agent.id, created_at: new Date().toISOString(), expires_at: expires, remaining: 3 }] });
+  state.revokeConsoleToken.mockResolvedValue({});
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  mount(); await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.console.keys") }));
+  const panel = within(screen.getByRole("dialog", { name: t("agents.console.keys") }));
+  fireEvent.click(await panel.findByRole("button", { name: t("agents.console.revoke") }));
+  expect(confirm).toHaveBeenCalledOnce();
+  await waitFor(() => expect(state.revokeConsoleToken).toHaveBeenCalledWith(agent.id));
+  expect(await panel.findByText(t("agents.console.noKeys"))).toBeTruthy();
 });
 
 it("names an inventory loading failure without exposing server details", async () => {
@@ -235,7 +295,7 @@ async function prepareRegistrationSession() {
   } }] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
   const view = mount();
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  alternativeRegistration();
   await screen.findByRole("option", { name: "fixture-enrollment-domain" });
   fireEvent.change(screen.getByLabelText(t("agents.deployment.domain")), { target: { value: "1" } });
   fireEvent.change(screen.getByLabelText(t("agents.deployment.template")), { target: { value: agent.id } });

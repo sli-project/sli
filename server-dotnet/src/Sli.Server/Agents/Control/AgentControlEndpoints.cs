@@ -15,6 +15,7 @@ namespace Sli.Server.Agents.Control;
 
 public static class AgentControlEndpoints
 {
+    private const string ConsoleTokens = "/api/v1/admin/agent-console-tokens";
     public static IServiceCollection AddAgentControl(this IServiceCollection services)
     {
         services.TryAddScoped<IAccessFactsRepository, AccessFactsRepository>();
@@ -22,6 +23,10 @@ public static class AgentControlEndpoints
     }
     public static IEndpointRouteBuilder MapAgentControlEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
+        endpoints.MapPost(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
+        endpoints.MapPost(ConsoleTokens + "/revoke", context => HandleAsync(context, ConsoleTokens + "/revoke", noStoreOnly: true));
+        endpoints.MapGet(AgentConsolePackage.DownloadPath, AgentConsolePackage.DownloadAsync).AllowAnonymous();
         foreach (string route in new[] { "/api/v1/admin/agents", "/api/v1/admin/agent-tokens" }) endpoints.MapGet(route, ctx => HandleAsync(ctx, route));
         foreach (string route in new[] { "/api/v1/admin/agent-tokens", "/api/v1/admin/agent-tokens/revoke", "/api/v1/admin/agents/revoke", "/api/v1/admin/agents/disable", "/api/v1/admin/agents/policy", "/api/v1/admin/agents/modules" }) endpoints.MapPost(route, ctx => HandleAsync(ctx, route));
         return endpoints;
@@ -76,7 +81,10 @@ public static class AgentControlEndpoints
             var output = authorizedOperation is not null ? await authorizedOperation(db, tx, body is null ? default : body.RootElement, principal, new CapabilityComposer().Compose(facts), durable) : rawOperation is not null ? await rawOperation(db, tx, actor, durable) : operation is not null ? await operation(db, tx, body is null ? default : body.RootElement, actor, durable) : (context.Request.Method, route) switch
             {
                 ("GET", "/api/v1/admin/agents") => await management.ListAgentsAsync(db, tx, Values(context, "agent_id").FirstOrDefault(), actor, durable),
+                ("GET", ConsoleTokens) => await management.ListConsoleTokensAsync(db, tx, actor, durable),
                 ("GET", _) => await management.ListTokensAsync(db, tx, actor, durable),
+                ("POST", ConsoleTokens) => await management.CreateConsoleTokenAsync(db, tx, body!.RootElement, actor, context, durable),
+                ("POST", ConsoleTokens + "/revoke") => await management.RevokeConsoleTokenAsync(db, tx, body!.RootElement, actor, durable),
                 ("POST", "/api/v1/admin/agent-tokens") => await management.CreateTokenAsync(db, tx, body!.RootElement, actor, durable),
                 ("POST", "/api/v1/admin/agent-tokens/revoke") => await management.RevokeTokenAsync(db, tx, body!.RootElement, actor, durable),
                 ("POST", "/api/v1/admin/agents/policy") => await services.GetRequiredService<IAgentPolicyService>().UpdateControlAsync(db, tx, body!.RootElement, actor, durable),
