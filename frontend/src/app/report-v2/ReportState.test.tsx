@@ -51,8 +51,11 @@ it("does not reuse a freshness threshold as a failure start", () => {
 
 it("retries errors and keeps ok silent", () => {
   const retry = vi.fn();
-  const { rerender, container } = render(<ReportState state="error" onRetry={retry}/>);
-  expect(screen.getByRole("alert").classList.contains("sli-ds-state")).toBe(true);
+  const { rerender, container } = render(<ReportState state="error" subject="Fixture table" message={{ code: "reports.states.error.summary", params: {} }} onRetry={retry}/>);
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain(t("reports.states.load_failed", { subject: "Fixture table" }));
+  expect(alert.hasAttribute("data-tone")).toBe(false);
+  expect(alert.classList.contains("sli-ds-state--banner")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
   expect(retry).toHaveBeenCalledTimes(1);
   rerender(<ReportState state="ok"/>);

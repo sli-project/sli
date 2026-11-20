@@ -116,11 +116,11 @@ it("keeps source warnings and their details off the home screen", () => {
   expect(screen.getByRole("table")).toBeTruthy();
 });
 
-it("renders a confirmed empty queue with its data update time", () => {
+it("renders a confirmed empty queue without a freshness note", () => {
   const data = { ...summary(), state: "empty", groups: [], total: 0, remaining_groups: 0, remaining_problems: 0 } as HomeDecisionSummary;
   compose(data);
   expect(screen.getByText("Сегодня спокойно: проблем, требующих решения, нет")).toBeTruthy();
-  expect(screen.getByText("Данные обновлены 17.10.2026, 08:52.")).toBeTruthy();
+  expect(screen.queryByText(/Данные обновлены/)).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
   expect(screen.queryByRole("link", { name: /Ещё/ })).toBeNull();
 });
@@ -144,15 +144,14 @@ it("does not turn missing counts, baseline, objects or times into zero", () => {
   expect(screen.getAllByRole("cell", { name: "—" }).length).toBeGreaterThan(0);
 });
 
-it.each(["partial", "stale"] as const)("shows %s empty results as an incomplete check, not a failed request", (state) => {
+it.each(["partial", "stale"] as const)("keeps %s empty results free of diagnostic links and alerts", (state) => {
   const data = { ...summary(), state, total: null, groups: [],
     warnings: [{ domain: "example.test", reason_code: "home.queue.warning.source_incomplete", href: "/app/operations?domain=7" }],
   } as HomeDecisionSummary;
   compose(data);
   expect(screen.queryByText("Нет проблем, требующих решения")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText(t("home.queue.unconfirmed.subtitle"))).toBeNull();
-  expect(screen.getByRole("link", { name: t("home.queue.awaitingAnalysis") })).toBeTruthy();
+  expect(screen.queryByRole("link")).toBeNull();
   expect(screen.queryByText(t("state.unavailable.title"))).toBeNull();
   expect(screen.queryByRole("button", { name: t("state.retry") })).toBeNull();
   expect(screen.queryByRole("link", { name: "Диагностика" })).toBeNull();
@@ -162,26 +161,19 @@ it("keeps an actual failed request retryable", () => {
   compose({ ...summary(), state: "error", total: null, groups: [] });
   expect(screen.getByRole("alert")).toBeTruthy();
   expect(screen.getByRole("button", { name: t("state.retry") })).toBeTruthy();
-  expect(screen.queryByText(t("home.queue.unconfirmed.text"))).toBeNull();
-});
-
-it("links an unconfirmed empty result without domain warnings to operations", () => {
-  compose({ ...summary(), state: "partial", total: null, groups: [] });
-  expect(screen.getByRole("link", { name: t("home.queue.awaitingAnalysis") }).getAttribute("href")).toBe("/app/operations");
 });
 
 it("retains known counts and rows when source coverage is incomplete", () => {
   compose({ ...summary(), state: "partial" });
   expect(screen.getByRole("table")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Synthetic problem" })).toBeTruthy();
-  expect(screen.queryByText(t("home.queue.unconfirmed.text"))).toBeNull();
 });
 
-it("explains incomplete empty results in English", () => {
+it("keeps incomplete empty results free of diagnostic links in English", () => {
   setLocale("en");
   compose({ ...summary(), state: "partial", total: null, groups: [] });
   expect(screen.queryByText("The problem list is not yet confirmed to be complete.")).toBeNull();
-  expect(screen.getByRole("link", { name: t("home.queue.awaitingAnalysis") })).toBeTruthy();
+  expect(screen.queryByRole("link")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
@@ -220,7 +212,10 @@ it("waits for access and ignores any previously cached data when access fails", 
   await screen.findByRole("table"); expect(request).toHaveBeenCalledTimes(1);
   accessStatus = "отказ";
   rerender(<QueryClientProvider client={client}><HomePage/></QueryClientProvider>);
-  expect(screen.queryByRole("table")).toBeNull(); expect(screen.getByRole("alert")).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toBe("Не удалось проверить доступ к очереди проблем");
+  expect(alert.closest(".sli-ds-state--banner, [data-tone]")).toBeNull();
 });
 
 it("shows a denied API response without a table", async () => {

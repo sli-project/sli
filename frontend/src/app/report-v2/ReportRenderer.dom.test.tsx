@@ -327,8 +327,7 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(raw.description)).toBeNull();
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.progress.label"))).toBeNull();
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
-  expect(within(screen.getByRole("region", { name: t("reports.summaryAria") }))
-    .getByText(t("reports.v2.security.problems.metrics.open.label"))).toBeTruthy();
+  expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
   const table = screen.getByRole("table");
   expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(locale === "ru"
     ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
@@ -352,6 +351,37 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   }
 });
 
+it.each(["ru", "en"] as const)("keeps status filters and hides a legacy default action in %s", async (locale) => {
+  setLocale(locale);
+  const raw = {
+    ...definition, key: "security.problems", title: "Synthetic queue", description: "",
+    params: [{ key: "status", label: "Status", kind: "choice", options: [{ value: "closed", label: "Closed" }] }],
+    presets: [{ label: "Closed problems", params: { status: "closed" } }],
+    columns: [
+      { key: "title", label: "Problem", path: "title_text", kind: "text" },
+      { key: "next", label: "Action", path: "next_text", kind: "text", hidden_by_default: true },
+    ],
+  } satisfies ReportDefinitionDto;
+  const oldCode = "security.problems.presentation.default_next";
+  const fetchReport = vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).includes("/data?") ? page({
+    report_key: raw.key,
+    items: [{ id: 7, title_text: "Synthetic problem", next_text: "Legacy internal action",
+      presentation_messages: { next_text: { code: oldCode, text: "Legacy internal action", params: {} } } }],
+    metrics: [{ key: "closed", label: "Closed count", value: 3, filter: { status: "closed" } }],
+  }) : raw));
+  vi.stubGlobal("fetch", fetchReport);
+  window.history.replaceState(null, "", "/app/report/security.problems");
+  renderReport(raw.key);
+  const table = await screen.findByRole("table");
+  expect(screen.queryByText("Closed count")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Closed problems" }));
+  await waitFor(() => expect(fetchReport.mock.calls.some(([url]) => String(url).includes("status=closed"))).toBe(true));
+  fireEvent.click(within(table).getByText("Synthetic problem"));
+  const drawer = screen.getByRole("dialog");
+  expect(within(drawer).getByText(locale === "en" ? "What to do" : "Action").parentElement?.textContent).toContain("—");
+  expect(within(drawer).queryByText(/Legacy internal action/)).toBeNull();
+});
+
 it.each(["partial", "stale", "processing", "not_collected"] as const)("keeps queue data states off the working table (%s)", async (state) => {
   const raw = { ...definition, key: "security.problems", params: [], presets: [] };
   dataResponse.body = page({ state, items: [{ id: 7, actor: { name: "fixture-account" } }],
@@ -363,10 +393,8 @@ it.each(["partial", "stale", "processing", "not_collected"] as const)("keeps que
   await screen.findByText("fixture-account");
   expect(screen.queryByText(/fixture-dc/)).toBeNull();
   expect(view.container.querySelector(".sli-ds-state--banner")).toBeNull();
-  if (state !== "not_collected") {
-    expect(screen.getByText("Progress fixture")).toBeTruthy();
-    expect(screen.getByText("Closed fixture")).toBeTruthy();
-  }
+  expect(screen.queryByText("Progress fixture")).toBeNull();
+  expect(screen.queryByText("Closed fixture")).toBeNull();
 });
 
 it.each(["ru", "en"] as const)("does not copy an unrelated shell collection failure into a healthy report (%s)", async (locale) => {
@@ -956,11 +984,23 @@ it.each(["not_collected", "partial", "processing", "stale", "error"] as const)("
   expect(header.textContent).not.toMatch(/Полнота|Completeness/i);
 });
 
-it("marks a disabled plugin while retaining report rows and the read-only export", async () => {
+it("identifies the table and retries a failed data request", async () => {
+  dataResponse = { status: 503, body: { error: "fixture_failure" } };
+  renderReport();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Не удалось загрузить «Демо-события»");
+  expect(alert.hasAttribute("data-tone")).toBe(false);
+  expect(alert.textContent).not.toContain("fixture_failure");
+  dataResponse = { status: 200, body: page() };
+  fireEvent.click(within(alert).getByRole("button", { name: t("state.retry") }));
+  expect(await screen.findByRole("table", { name: "Демо-события" })).toBeTruthy();
+});
+
+it("retains report rows and read-only export without a disabled plugin badge", async () => {
   dataResponse = { status: 200, body: page({ plugin: { plugin_id: "sli.remote-access", state: "disabled", read_only: true } }) };
   renderReport();
-  expect(await screen.findByText("Плагин выключен — сохранённые данные доступны только для чтения")).toBeTruthy();
-  expect(screen.getByText("DC1$")).toBeTruthy();
+  expect(await screen.findByText("DC1$")).toBeTruthy();
+  expect(screen.queryByText(/Плагин выключен/)).toBeNull();
   expect(screen.getByRole("link", { name: "Экспорт CSV" })).toBeTruthy();
 });
 
@@ -984,7 +1024,7 @@ it.each([
   renderReport();
   await screen.findByText("Часть колонок скрыта: нет доступа к категории кадровые сведения.");
   expect(Boolean(screen.queryByRole("button", { name: "Fixture action" }))).toBe(visible);
-  if (pluginState === "disabled") expect(screen.getByText("Плагин выключен — сохранённые данные доступны только для чтения")).toBeTruthy();
+  expect(screen.queryByText(/Плагин выключен/)).toBeNull();
 });
 
 it("connects report tabs to the result panel, including empty states", async () => {
@@ -1176,8 +1216,8 @@ describe("ReportRenderer", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/data?") ? page({ collections: { daily: [] }, plugin: { plugin_id: "sli.remote-access", state: disabled ? "disabled" : "enabled", read_only: disabled } }) : raw), { status: 200, headers: { "Content-Type": "application/json" } })));
     renderReport();
     const link = await screen.findByRole("link", { name: locale === "ru" ? "Экспорт CSV (все строки: Events)" : "Export CSV (all rows: Events)" });
-    if (disabled) await screen.findByText(t("reports.renderer.plugin_disabled"));
-    expect(Boolean(screen.queryByRole("button", { name: "Fixture action" }))).toBe(!disabled);
+    await waitFor(() => expect(Boolean(screen.queryByRole("button", { name: "Fixture action" }))).toBe(!disabled));
+    expect(screen.queryByText(/Плагин выключен|Plugin disabled/i)).toBeNull();
     expect(new URL(link.getAttribute("href")!, "http://corp.example.test").searchParams.has("tab")).toBe(false);
   });
 

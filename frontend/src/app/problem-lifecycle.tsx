@@ -99,7 +99,7 @@ export function ProblemLifecycle({ row, formatTime }: { row: Row; formatTime: (v
   const update = useMutation({
     mutationFn: (payload: { status: string; assigned_to?: string | null; note: string | null }) => api.updateFinding(id, payload),
     onSuccess: async () => { await refresh(); toast(t("reports.problemLifecycle.saved"), t("reports.problemLifecycle.savedDetail")); },
-    onError: (error) => toast(t("reports.problemLifecycle.failed"), error.message),
+    onError: () => toast(t("reports.problemLifecycle.failed"), String(row.title_text ?? row.title ?? "").trim()),
   });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
