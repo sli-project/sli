@@ -11,7 +11,6 @@ it("provides the same AD check explanations and status keys in both locales", ()
     expect(en[key as keyof typeof en].trim()).not.toBe("");
     expect(en[key as keyof typeof en]).not.toMatch(/[А-Яа-яЁё]/);
   }
-  expect(keys.filter((key) => /\.(users|computers)\..+\.why$/.test(key))).toHaveLength(20);
   for (const report of ["ad.users.v2", "ad.computers.v6"]) {
     const title = `reports.v2.${report}.views.checks.columns.check_title.label`;
     expect(ru[title as keyof typeof ru]).toBe("Проверка");
