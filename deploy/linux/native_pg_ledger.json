@@ -567,6 +567,8 @@
     "config/postgres_migrations/389_file_action_intake.sql": "1703cd274fdafb0bc76556b3a9b99c6d918914d7618903ba75d0b9cfc5c13f45",
     "config/postgres_migrations/390_agent_console_enrollment.rollback.sql": "269a3ede750080478630a7cead3ba3ca0b89ec6b512223f12e3524b4b67d40c4",
     "config/postgres_migrations/390_agent_console_enrollment.sql": "370cb10f95f9d31672ccf94cc5c15898b27a7b06128f97da54e444c47c9ebdcd",
+    "config/postgres_migrations/391_agent_receipt_summary.rollback.sql": "fb618dda81a2f6133eead59549765262b3158961d8184274c6474963b4414936",
+    "config/postgres_migrations/391_agent_receipt_summary.sql": "a26249054f23dcacb2a0fff62d1900b4505950516ce7b9b1c9f64a12a635646c",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
