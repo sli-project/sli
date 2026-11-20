@@ -144,6 +144,13 @@ outside-beta method Sli.Server.Tests.Workstations.WorkstationProjectionTests.Pro
 outside-beta method Sli.Server.Tests.Workstations.WorkstationProjectionTests.Protection_matches_reference_for_false_unknown_missing_stale_and_future
 outside-beta method Sli.Server.Tests.Workstations.WorkstationProjectionTests.Service_and_task_episodes_match_reference_including_exact_pair_and_ambiguity
 
+# These cases run in dedicated jobs when the workflow supplies --covered-by.
+source-vectors class Sli.Server.Tests.Agents.AgentFileAuditValidatorTests
+source-vectors class Sli.Server.Tests.Agents.AgentNpsValidatorTests
+source-vectors class Sli.Server.Tests.Agents.AgentWorkstationValidatorTests
+pr-postgres class Sli.Server.Tests.Agents.AgentPacketReportPostgresTests
+pr-python class Sli.Server.Tests.InstallationSetup.NativeCheckpointCleanupTests
+
 # Security and protocol admission take precedence over the scope of beta functionality.
 security namespace Sli.Server.Tests.Access
 security namespace Sli.Server.Tests.Auth

@@ -1,0 +1,12 @@
+tests/tooling/test_ui_domain_binding_guard.py
+tests/unit/test_ui_domain_binding_api.py
+tests/core/test_report_domain.py
+tests/unit/test_sli_secrets.py
+tests/unit/test_updater_component.py
+tests/unit/test_updater_transition_contract.py
+tests/unit/test_updater_transition.py
+tests/unit/test_updater_isolated_closure.py
+tests/unit/test_plugin_validation.py
+tests/events/test_event_catalog_contract.py
+tests/sources/test_plugin_package_manifest.py
+tests/migrations/test_sli_v4_contract.py
