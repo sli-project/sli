@@ -1,8 +1,9 @@
 """Select beta Python tests without importing application code or dependencies.
 
 Reproduce inventory A: imports (including deferred/conditional imports), literal
-module/source references and embedded Python. Only tests referring exclusively
-to server modules outside the installer's conservative closure are excluded.
+module/source references and embedded Python. Exclude tests referring exclusively
+to server modules outside the installer's conservative closure. Pull requests
+also omit reviewed legacy report tests with equivalent .NET coverage.
 Unknown tests run by default. Package initializers alone do not identify the
 code under test. Output is a pytest @argfile (pytest >= 8.2), one path per line.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -34,6 +36,23 @@ MIGRATION_TESTS = {
     "tests/unit/test_migration_306_reconciliation.py",
     "tests/unit/test_report_producer_migration.py",
     "tests/unit/test_update_ledger_reconciliation.py",
+}
+# These exercise the retired Python reporting entry points. The installer
+# closure also reaches them through shared reporting imports and registries.
+PR_LEGACY_REPORT_TESTS = {
+    # ComputersV6MetricsPartitionTests and AdComputerComparisonBatchTests.
+    "tests/reporting/test_computers_v6_metrics_partition.py",
+    "tests/reports/test_computers_v6_comparison_batch.py",
+    # GpoEffectiveAccessV2Tests.
+    "tests/reporting/test_gpo_effective_access_v2.py",
+    # AdV2Tests.NewLogonPairs, NewLogonPairsContextFailuresTests,
+    # and NewLogonPairsReportPathTests. The .NET volume test runs nightly.
+    "tests/reporting/test_new_logon_pairs_context_failures.py",
+    "tests/reporting/test_new_logon_pairs_report_path.py",
+    "tests/reporting/test_new_logon_pairs_v2.py",
+    # UiLabelsTests and UsersActivityV2Tests.
+    "tests/reporting/test_ui_labels.py",
+    "tests/reporting/test_users_activity_v2.py",
 }
 SOURCE_ROOTS = ("server", "deploy", "scripts", "sli_agent", "sli_collect", "tools")
 SKIP_DIRS = {"__pycache__", ".venv", "node_modules", ".git"}
@@ -166,12 +185,12 @@ def installer_closure(root: Path, index: dict[str, str]) -> set[str]:
     return visited
 
 
-def select_tests(root: Path):
+def select_tests(root: Path, *, include_legacy_reports: bool = False):
     index = source_index(root)
     closure = installer_closure(root, index)
     selected, excluded = [], []
     groups = {"installer": 0, "migrations": 0, "closure": 0,
-              "shipped": 0, "mixed": 0, "other": 0}
+              "shipped": 0, "mixed": 0, "other": 0, "legacy_reports": 0}
     for file in python_files(root / "tests"):
         if not file.name.startswith("test_"):
             continue
@@ -181,14 +200,18 @@ def select_tests(root: Path):
         installer = any(ref.startswith("deploy/linux/") for ref in direct)
         migrations = path.startswith("tests/migrations/") or path in MIGRATION_TESTS
         shipped = any(ref.startswith("server/") for ref in direct & closure)
+        server_only = bool(direct) and all(ref.startswith("server/") for ref in direct)
         groups["installer"] += installer
         groups["migrations"] += migrations
-        groups["closure"] += any(ref.startswith("server/") for ref in direct & closure)
-        if installer or migrations or shipped:
+        groups["closure"] += shipped
+        if not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only and not migrations:
+            groups["legacy_reports"] += 1
+            excluded.append(path)
+        elif installer or migrations or shipped:
             groups["shipped"] += 1
             selected.append(path)
         elif any(ref.startswith("server/") for ref in direct):
-            if all(ref.startswith("server/") for ref in direct):
+            if server_only:
                 excluded.append(path)
             else:
                 groups["mixed"] += 1
@@ -205,7 +228,9 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Write pytest @argfile instead of stdout")
     parser.add_argument("--excluded", action="store_true", help="List excluded files instead")
     args = parser.parse_args()
-    selected, excluded, closure, groups = select_tests(args.root.resolve())
+    selected, excluded, closure, groups = select_tests(
+        args.root.resolve(), include_legacy_reports=os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch",
+    )
     print(f"total={len(selected) + len(excluded)} selected={len(selected)} excluded={len(excluded)} "
           f"server_closure={sum(p.startswith('server/') for p in closure)} "
           + " ".join(f"{name}={count}" for name, count in groups.items()), file=sys.stderr)
