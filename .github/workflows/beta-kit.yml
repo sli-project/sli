@@ -55,6 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$KIT_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          # The container runs as root over a workspace owned by the runner user.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git merge-base --is-ancestor "$KIT_COMMIT" "$GITHUB_SHA"
           global_json="$RUNNER_TEMP/sli-beta-global-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
           git show "$KIT_COMMIT:server-dotnet/global.json" > "$global_json"
