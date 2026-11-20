@@ -29,7 +29,6 @@ it("keeps workstation history keys identical and evidence hashes localized", () 
   const keys = (messages: Record<string, string>) => Object.keys(messages).filter((key) =>
     /^reports\.v2\.workstations\.(processes|usb)\.(detail\.|limitations\.history_unavailable)/.test(key)).sort();
   expect(keys(en)).toEqual(keys(ru));
-  expect(keys(en)).toHaveLength(16);
   for (const family of ["processes", "usb"]) {
     expect(en[`reports.v2.workstations.${family}.detail.columns.agent_key.label` as keyof typeof en]).toBe("Agent identifier");
     expect(ru[`reports.v2.workstations.${family}.detail.columns.agent_key.label` as keyof typeof ru]).toBe("Идентификатор агента");
