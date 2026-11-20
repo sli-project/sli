@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import errno
 import hashlib
 import importlib.util
@@ -49,20 +50,58 @@ def settings(*, server, port, mode=None, bind=None):
     return ch.parse_site(render_site(site))
 
 
+def resolved_addresses(name, port):
+    try:
+        return {str(ipaddress.ip_address(row[4][0]))
+                for row in socket.getaddrinfo(name, port, type=socket.SOCK_STREAM)}
+    except (OSError, ValueError):
+        return set()
+
+
+def server_address(server, bind, port):
+    if server is not None:
+        ch.server_name(server)
+        try:
+            return str(ipaddress.ip_address(server))
+        except ValueError:
+            if resolved_addresses(server, port):
+                return server
+
+    if not ipaddress.ip_address(bind).is_unspecified:
+        addresses = [ch.server_name(bind)]
+    else:
+        local = sorted(map(ipaddress.ip_address, host.run(['hostname', '--all-ip-addresses']).split()),
+                       key=lambda address: address.version)
+        addresses = [str(address) for address in local if not (address.is_loopback or address.is_link_local
+                                                               or address.is_unspecified or address.is_multicast)]
+    require(bool(addresses), 'native_setup_server_required')
+
+    name = server or socket.getfqdn().lower().rstrip('.')
+    if server is None and '.' in name:
+        try:
+            ch.server_name(name)
+        except ValueError:
+            pass  # An invalid local hostname is not a public HTTPS address.
+        else:
+            resolved = resolved_addresses(name, port)
+            if resolved and resolved.issubset(addresses):
+                return name
+    print(f'Server name is not usable for HTTPS; using {addresses[0]}.', flush=True)
+    return addresses[0]
+
+
 def tls_names(site, *, saved=False):
     name, bind = site.get('server_name', site['domain_fqdn']), site['bind']
     names = [name]
     try:
         addresses = [str(ipaddress.ip_address(name))]
     except ValueError:
-        try:
-            rows = socket.getaddrinfo(name, site['https_port'], type=socket.SOCK_STREAM)
-            addresses = sorted({row[4][0] for row in rows}, key=lambda address: (':' in address, address))
-        except OSError:
+        addresses = sorted(resolved_addresses(name, site['https_port']), key=lambda address: (':' in address, address))
+        if not addresses:
             remedy = f'Correct DNS so getent ahosts {name} succeeds, then rerun sudo sli-setup'
             if not saved:
                 remedy += ', or find a local address with ip -brief address and rerun sudo sli-setup --server <IP>'
-            raise host.GuardError('native_setup_dns_failed', name, 'server name does not resolve', remedy) from None
+            raise host.GuardError('native_setup_dns_failed', name, 'server name does not resolve', remedy)
     if ipaddress.ip_address(bind).is_unspecified:
         names.extend(addresses)
         names.extend(['localhost', '127.0.0.1', '::1'])
@@ -125,6 +164,7 @@ def check_port(site, *, saved=False):
             if dual_stack:
                 sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
             sock.bind(('::' if dual_stack else bind, port))
+            return sock.getsockname()[1]
     except OSError as error:
         if error.errno == errno.EADDRNOTAVAIL:
             raise host.GuardError('native_setup_port_busy', f'{bind} (HTTPS port {port})', 'address is not assigned locally',
@@ -310,25 +350,18 @@ def configure(args):
     machine = host.Host()
     existing = ch.parse_site(install.trusted(install.SITE).decode()) if install.SITE.exists() or install.SITE.is_symlink() else None
     if existing is None:
-        server = args.server
-        if not server and not args.non_interactive:
-            server = input('Server hostname or IP / Имя или IP сервера: ').strip().lower()
-        require(bool(server), 'native_setup_server_required')
-        port = args.port
-        if port is None and not args.non_interactive:
-            answer = input('HTTPS port / Порт HTTPS [443]: ').strip()
-            try:
-                port = int(answer) if answer else 443
-            except ValueError:
-                raise RuntimeError('native_site_port_invalid') from None
-        site = settings(server=server, bind=args.bind, port=443 if port is None else port,
-                        mode=None)
+        port = 443 if args.port is None else args.port
+        site = settings(server=args.server or 'localhost', bind=args.bind, port=port)
+        site['server_name'] = server_address(args.server, site['bind'], port)
         if args.backup_root:
             site['backup_root'] = ch.backup_root_path(args.backup_root)
         if getattr(args, 'cold_tablespace_root', None):
             site['cold_tablespace_root'] = ch.cold_tablespace_root_path(args.cold_tablespace_root)
     else:
-        site = requested_site(existing, server=args.server, bind=args.bind, port=args.port, mode=None)
+        server = args.server
+        if server is not None and server != existing.get('server_name'):
+            server = server_address(server, existing['bind'], existing['https_port'])
+        site = requested_site(existing, server=server, bind=args.bind, port=args.port, mode=None)
         require(args.backup_root is None or args.backup_root == site.get('backup_root'),
                 'native_setup_configuration_conflict')
         require(getattr(args, 'cold_tablespace_root', None) is None
@@ -365,16 +398,27 @@ def configure(args):
         pending = install.STATE / 'pending-release.json'
         require(pending.exists(), 'native_setup_not_staged')
         release = json.loads(install.trusted(pending))['release']
-        check_port(site, saved=existing is not None)
+        try:
+            check_port(site, saved=existing is not None)
+        except host.GuardError as error:
+            cause = error.__context__
+            if (existing is not None or args.port is not None or not isinstance(cause, OSError)
+                    or cause.errno != errno.EADDRINUSE):
+                raise
+            site['https_port'] = check_port({**site, 'https_port': 0})
+            print(f'HTTPS port 443 is busy; using {site["https_port"]}.', flush=True)
     root, manifest, _ = install.inventory(release)
     python = manifest['python']
     env = install.environment()
     if not installed:
         names = tls_names(site, saved=existing is not None)
-        directory = saved.get('directory', host.DIRECTORY) if saved else args.directory or host.DIRECTORY
-        uuid = saved.get('uuid') if saved else args.uuid
         with host.administrative_lock():
-            machine.check_setup_units(directory, uuid=uuid, backup=bool(existing and existing.get('backup_root')))
+            uuid = saved.get('uuid') if saved else args.uuid
+            directory = saved.get('directory', host.DIRECTORY) if saved else args.directory
+            if not uuid and directory is None:
+                directory = machine.select_database_directory(backup_root=site.get('backup_root'))
+            directory = directory or host.DIRECTORY
+            machine.check_setup_units(directory, uuid=uuid, backup=bool(site.get('backup_root')))
             machine.prepare(uuid, directory=directory)
             if existing is None:
                 machine.write('/etc/sli/site.toml', render_site(site))
@@ -402,9 +446,8 @@ def configure(args):
                     code='native_setup_install_failed', cwd=root, env=env)
     ca = install.trusted(install.SECRETS / 'tls_ca').decode('ascii')
     machine.write('/var/lib/sli/tls-ca.crt', ca, 0o644)
-    fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(ca)).hexdigest()
-    print('SLI: ' + url(site) + '/app')
-    print('Public TLS CA: /var/lib/sli/tls-ca.crt; SHA256 (DER): ' + fingerprint)
+    browser_url = url(site) + '/app'
+    print('SLI: ' + browser_url)
     api_checked = False
     if site.get('owner_setup'):
         code = command([python, '-I', '-B', str(root / 'deploy/linux/native_setup.py'), '--owner-code', release,
@@ -418,11 +461,21 @@ def configure(args):
             print('Owner code: ' + code + '. Use --new-owner-code to issue a new code (valid for 24 hours).')
         else:
             require(re.fullmatch(r'[A-Za-z0-9_-]{32,128}', code), 'native_setup_secrets_failed')
-            print('Create owner / Создать владельца: ' + url(site) + '/api/auth/bootstrap')
+            browser_url = url(site) + '/api/auth/bootstrap'
+            print('Create owner / Создать владельца: ' + browser_url)
             print('One-time code / Одноразовый код: ' + code)
     if not api_checked:
         wait_api()
-    print('TLS uses a private CA. Verify/trust the public CA on clients; keep /var/lib/sli-ca-offline offline.')
+    certificate = ssl.PEM_cert_to_DER_cert(ca)
+    fingerprint = hashlib.sha256(certificate).hexdigest().upper()
+    print('CA SHA-256 fingerprint: ' + ':'.join(re.findall(r'..', fingerprint)))
+    der = base64.b64encode(certificate).decode('ascii')
+    print('Windows first connection / Первый вход с Windows (PowerShell):')
+    print("& { $ErrorActionPreference = 'Stop'; $ca = [Security.Cryptography.X509Certificates.X509Certificate2]::new("
+          f"[Convert]::FromBase64String('{der}')); "
+          "$store = [Security.Cryptography.X509Certificates.X509Store]::new('Root','CurrentUser'); "
+          "try { $store.Open('ReadWrite'); $store.Add($ca) } finally { $store.Dispose(); $ca.Dispose() }; "
+          f"Start-Process '{browser_url}' }}")
     if 'backup_root' not in site:
         print('Backups are local to this disk. Copy recovery sets to another device for disk-failure protection.')
 
@@ -434,7 +487,7 @@ def main(argv=None):
     parser.add_argument('--port', type=int, help='HTTPS port (default: 443)')
     storage = parser.add_mutually_exclusive_group()
     storage.add_argument('--uuid', help='Optional ext4 filesystem already mounted at /srv/sli-db')
-    storage.add_argument('--directory', help='Database directory (default: /var/lib/sli-db)')
+    storage.add_argument('--directory', help='Database directory (default: /var/lib/sli-db or a mounted volume with free space)')
     parser.add_argument('--backup-root', help='Optional trusted directory on a separate backup disk')
     parser.add_argument('--cold-tablespace-root', help='Каталог ёмкого диска для холодных таблиц PostgreSQL')
     parser.add_argument('--non-interactive', action='store_true')
