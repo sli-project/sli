@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from collections.abc import Set
 import json
 import os
 from pathlib import Path
@@ -10,8 +11,10 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 if __package__:
+    from .server_dotnet_risk import risk_classes
     from .shard_balance import balance, estimated_weights, read_durations
 else:
+    from server_dotnet_risk import risk_classes
     from shard_balance import balance, estimated_weights, read_durations
 
 
@@ -23,7 +26,12 @@ def read_rules(path: Path) -> list[list[str]]:
     ]
 
 
-def plan_profiles(cases: list[dict], exclusions: list[list[str]], rules: list[list[str]]) -> dict[str, Counter]:
+def plan_profiles(
+    cases: list[dict],
+    exclusions: list[list[str]],
+    rules: list[list[str]],
+    promoted_classes: Set[str] = frozenset(),
+) -> dict[str, Counter]:
     excluded = {tuple(rule) for rule in exclusions}
     weights: Counter = Counter()
     default_methods: set[str] = set()
@@ -53,8 +61,13 @@ def plan_profiles(cases: list[dict], exclusions: list[list[str]], rules: list[li
     missing_security = profiles["security"] - (default_methods - nightly_only)
     if missing_security:
         raise ValueError(f"Security tests missing from PR: {', '.join(sorted(missing_security))}")
+    promoted = {
+        method for method in nightly_only if method.rsplit(".", 1)[0] in promoted_classes
+    }
+    if missing := promoted_classes - {method.rsplit(".", 1)[0] for method in promoted}:
+        raise ValueError(f"CI risk classes without nightly-only tests: {', '.join(sorted(missing))}")
     return {
-        "pr": Counter({name: weights[name] for name in default_methods - nightly_only}),
+        "pr": Counter({name: weights[name] for name in (default_methods - nightly_only) | promoted}),
         "nightly": Counter({name: weights[name] for name in default_methods | nightly_only}),
         "nightly-only": Counter({name: weights[name] for name in nightly_only}),
         "security": Counter({name: weights[name] for name in profiles["security"]}),
@@ -105,9 +118,12 @@ def main() -> None:
     parser.add_argument("shard", type=int)
     parser.add_argument("count", type=int)
     parser.add_argument("--profile", choices=("pr", "nightly"), default="pr")
+    parser.add_argument("--risk-areas", default="", help="Space-separated risk areas for a pull request")
     parser.add_argument("--split-classes", action="store_true", help="Balance methods across isolated runners")
     parser.add_argument("--describe", action="store_true", help="List profile classes and shard sizes without running tests")
     args = parser.parse_args()
+    if args.profile != "pr" and args.risk_areas:
+        parser.error("--risk-areas requires the PR profile")
 
     command = [os.environ.get("DOTNET_HOST_PATH", "dotnet"), "run", "--project",
                "tests/Sli.Server.Tests/Sli.Server.Tests.csproj", "--no-build", "--"]
@@ -116,10 +132,12 @@ def main() -> None:
         check=True, stdout=subprocess.PIPE,
     )
     directory = Path(__file__).parent
+    cases = json.loads(discovery.stdout)
     profiles = plan_profiles(
-        json.loads(discovery.stdout),
+        cases,
         read_rules(directory / "server_dotnet_exclusions.txt"),
         read_rules(directory / "server_dotnet_ci_profiles.txt"),
+        risk_classes(args.risk_areas.split()),
     )
     methods = profiles[args.profile]
     # Keep tests from the same xUnit class together unless explicitly split.
@@ -143,7 +161,9 @@ def main() -> None:
     results.unlink(missing_ok=True)
     for method in sorted(selected):
         command.extend(("-method", method))
-    if args.profile == "nightly":
+    if args.profile == "nightly" or any(
+        case["Explicit"] and f'{case["Class"]}.{case["Method"]}' in selected for case in cases
+    ):
         command.extend(("-explicit", "on"))
     command.extend((
         "-failSkips", "-noColor", "-noAutoReporters", "-reporter", "verbose",

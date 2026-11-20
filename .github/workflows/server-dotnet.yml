@@ -5,6 +5,8 @@ on:
     paths:
       - ".gitattributes"
       - "server-dotnet/**"
+      - "deploy/linux/native_backup.py"
+      - "deploy/linux/restore_existing.py"
       - "deploy/linux/native_upgrade.py"
       - "tests/unit/test_linux_native_cleanup.py"
       - "tests/fixtures/plugin_contract_v1/*.json"
@@ -88,6 +90,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      risk-areas: ${{ steps.diff.outputs.risk-areas }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          filter: blob:none
+      - id: diff
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Count both paths when a rename crosses a risk boundary.
+          areas=$(git diff --name-only --no-renames -z "$BASE...$HEAD" | python3 scripts/ci/server_dotnet_risk.py)
+          echo "risk-areas=$areas" >> "$GITHUB_OUTPUT"
+
   source-vectors:
     timeout-minutes: 20
     name: Source vectors (${{ matrix.os }})
@@ -167,6 +191,8 @@ jobs:
         run: test "$SERVER_TESTS_RESULT" = success
 
   server-tests:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result == 'success') }}
     # Keep the existing ceiling for the full nightly suite. PR latency is
     # measured through the required check, including setup and runner wait.
     timeout-minutes: 90
@@ -232,7 +258,8 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
           PROFILE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }}
-        run: python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE"
+          RISK_AREAS: ${{ needs.changes.outputs.risk-areas }}
+        run: python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" --risk-areas "$RISK_AREAS"
       - name: Preserve per-case test results
         if: always()
         # A full artifact quota must not turn passed tests red.

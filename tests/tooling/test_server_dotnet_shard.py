@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from scripts.ci import server_dotnet_shard
+from scripts.ci.server_dotnet_risk import changed_areas, risk_classes
 from scripts.ci.server_dotnet_shard import plan_profiles, shard_methods, verify_results
 from scripts.ci.server_test_durations import build_durations, run_durations
 
@@ -148,6 +149,46 @@ def test_profiles_keep_security_and_new_cases_required_and_move_only_marked_test
         plan_profiles(cases, exclusions, [*rules, ["load", "class", "Tests.Missing"]])
 
 
+@pytest.mark.parametrize(("path", "expected"), [
+    ("config/postgres_migrations/999_sample.sql", ["migrations"]),
+    ("server-dotnet/src/Sli.Server/Auth/Lifecycle/Sample.cs", ["access"]),
+    ("server-dotnet/src/Sli.Server/Access/Sample.cs", ["access"]),
+    ("deploy/linux/native_backup.py", ["recovery"]),
+    ("deploy/linux/restore_existing.py", ["recovery"]),
+    ("deploy/linux/native_upgrade.py", ["recovery"]),
+    ("server-dotnet/src/Sli.Server/Storage/Sample.cs", ["storage"]),
+    ("frontend/src/config/postgres_migrations/sample.ts", []),
+    ("deploy/linux/native_backup.py.notes", []),
+])
+def test_risk_areas_match_repository_paths(path, expected):
+    assert changed_areas([path]) == expected
+
+
+def test_migration_pr_promotes_nightly_only_tests_and_frontend_pr_uses_default_profile():
+    migration = "Sli.Server.Tests.Operations.OperationsStreamPostgresTests"
+    cases = [
+        {"Class": name, "Method": "Run", "Explicit": name == migration}
+        for name in sorted(risk_classes(["migrations"]) | {"Tests.Required", "Tests.UnrelatedLoad"})
+    ]
+    rules = [["load", "class", case["Class"]] for case in cases if case["Class"] != "Tests.Required"]
+    # Exercise the same arguments as the workflow starting from changed filenames.
+    migration_pr = plan_profiles(
+        cases, [], rules, risk_classes(changed_areas(["config/postgres_migrations/999_sample.sql"])),
+    )
+    frontend_pr = plan_profiles(cases, [], rules, risk_classes(changed_areas(["frontend/src/sample.tsx"])))
+    combined = risk_classes(changed_areas([
+        "deploy/linux/native_upgrade.py", "server-dotnet/src/Sli.Server/Auth/Sample.cs",
+    ]))
+
+    assert f"{migration}.Run" in migration_pr["pr"]
+    assert "Tests.UnrelatedLoad.Run" not in migration_pr["pr"]
+    assert set(frontend_pr["pr"]) == {"Tests.Required.Run"}
+    assert migration_pr["nightly"] == frontend_pr["nightly"]
+    assert {migration, "Sli.Server.Tests.Reporting.ReportStudioTests"} <= combined
+    with pytest.raises(ValueError, match="without nightly-only tests.*Tests.Required"):
+        plan_profiles(cases, [], rules, {"Tests.Required"})
+
+
 def test_shard_passes_selected_methods_and_disables_discovery_colors(tmp_path, monkeypatch):
     cli = tmp_path / "run"
     cli.write_text(
@@ -159,6 +200,7 @@ def test_shard_passes_selected_methods_and_disables_discovery_colors(tmp_path, m
         "        sys.stdout.write('\\x1b[0m')\n"
         "else:\n"
         "    assert sys.argv[sys.argv.index('-method')+1] == 'Auth.RequiresOwner'\n"
+        "    assert '-explicit' not in sys.argv\n"
         "    Path('server-dotnet-results.xml').write_text(\n"
         "        '<assemblies><assembly><collection><test type=\"Auth\" method=\"RequiresOwner\" result=\"Pass\"/>'\n"
         "        '</collection></assembly></assemblies>')\n",
@@ -172,3 +214,29 @@ def test_shard_passes_selected_methods_and_disables_discovery_colors(tmp_path, m
     server_dotnet_shard.main()
 
     assert (tmp_path / "server-dotnet-results.xml").is_file()
+
+
+def test_shard_enables_explicit_only_for_selected_nightly_methods(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(server_dotnet_shard, "risk_classes", lambda areas: {"Storage"})
+    monkeypatch.setattr(server_dotnet_shard, "read_rules", lambda path: (
+        [["load", "method", "Storage.Volume"]] if path.name.endswith("ci_profiles.txt") else []
+    ))
+
+    def run(command, **kwargs):
+        if "-list" in command:
+            return subprocess.CompletedProcess(command, 0, stdout=(
+                b'[{"Class":"Storage","Method":"Volume","Explicit":true},'
+                b'{"Class":"Storage","Method":"ExternalHarness","Explicit":true}]'
+            ))
+        assert command[command.index("-explicit") + 1] == "on"
+        assert command.count("-method") == 1
+        assert command[command.index("-method") + 1] == "Storage.Volume"
+        Path("server-dotnet-results.xml").write_text(
+            '<assemblies><assembly><test type="Storage" method="Volume" result="Pass"/></assembly></assemblies>',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(server_dotnet_shard.subprocess, "run", run)
+    monkeypatch.setattr(sys, "argv", ["server_dotnet_shard.py", "1", "1", "--risk-areas", "storage"])
+    server_dotnet_shard.main()
