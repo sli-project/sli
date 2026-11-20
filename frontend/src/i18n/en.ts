@@ -1523,15 +1523,6 @@ export const en: Record<MessageKey, string> = {
 
 
   // pages:operations — keys of this area go right below this line
-  "operations.watchdog.pcLoad": "PC load",
-  "operations.watchdog.loadValues": "CPU {cpu}%, memory {memory}%; dispatch limit {limit}%",
-  "operations.watchdog.labTunnel": "LAB tunnel",
-  "operations.watchdog.taskId": "Task name",
-  "operations.watchdog.domain": "Domain",
-  "operations.watchdog.area": "Scope",
-  "operations.watchdog.http": "HTTP",
-  "operations.watchdog.reportState": "Status",
-  "operations.watchdog.networkOffline": "Network: no response (restart your VPN)",
   "operations.sources.unused": "Not in use",
   "operations.sources.unusedDetail": "Server collection is disabled and there has been no new data for over 7 days. Collection health is determined by agents.",
   "operations.agent_collection.historical": "{count} old packets were not imported (error from {time}).",

@@ -75,13 +75,13 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         assert jobs["source"]["steps"][0]["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
         assert any('not postgres_integration and not host_dependent' in step.get("run", "")
                    for step in jobs["tests"]["steps"])
-        assert jobs["tests"]["runs-on"] == "${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}"
+        assert jobs["tests"]["runs-on"] == "ubuntu-latest"
     else:
-        assert jobs["backend"]["runs-on"] == "${{ vars.SLI_TESTS_RUNNER || 'windows-latest' }}"
+        assert jobs["backend"]["runs-on"] == "windows-latest"
 
     for job_name in ("source", "frontend", "postgres"):
         if job_name in jobs:
-            assert jobs[job_name]["runs-on"] == "${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}"
+            assert jobs[job_name]["runs-on"] == "ubuntu-latest"
 
     locked_python = re.search(r"Python (\d+\.\d+)", (ROOT / "requirements.lock.txt").read_text())[1]
     for job in jobs.values():

@@ -391,22 +391,3 @@ def test_export_preserves_blob_bytes_with_crlf_checkout_configuration(tmp_path, 
                    env={**stand.export_environment(), "PYTHONPATH": str(root)}, capture_output=True, check=True)
     assert (destination / "server/immutable.sql").read_bytes() == body
     assert stand.os.environ["GIT_CONFIG_VALUE_0"] == "true"
-
-
-def test_watchdog_stand_route_preserves_pc_hold_and_dry_mode(tmp_path):
-    import subprocess
-    root = Path(__file__).resolve().parents[2]
-    script = root / "scripts/maintenance/watchdog/deployment.sh"
-    # Windows bind mounts may contain CRLF; exercise the same shell text as LF.
-    normalized = tmp_path / "deployment.sh"
-    normalized.write_text(script.read_text(), newline="\n")
-    config = tmp_path / "stand-config.json"
-    config.write_text("{}")
-    hold = tmp_path / "MIGRATION_HOLD"
-    hold.touch()
-    result = subprocess.run(["bash", "-c", 'note() { printf "%s\\n" "$*"; }; DRY=1; source "$1"; watchdog_update',
-                             "test", str(normalized)], env={**stand.os.environ,
-        "WATCHDOG_STAND_CONFIG": str(config), "WATCHDOG_HOLD_FILE": str(hold)}, capture_output=True, text=True, check=True)
-    assert "Обновление SLI на стенде" in result.stdout
-    assert "DRY-RUN" in result.stdout
-    assert hold.exists()

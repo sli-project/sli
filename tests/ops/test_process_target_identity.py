@@ -62,18 +62,6 @@ def test_cim_inventory_retains_creation_date(monkeypatch):
     assert control.inventory_processes()['processes'][0]['creation_time'] == 'stamp'
 
 
-def test_watchdog_passes_configured_paths_to_inventory_and_external_kill():
-    root = Path(control.__file__).parent / 'watchdog'
-    shell = (root / 'watchdog.sh').read_text()
-    inventory = next(line for line in shell.splitlines() if '-Mode inventory' in line)
-    external = next(line for line in shell.splitlines() if '-Mode repair-kill' in line)
-    for line in (inventory, external):
-        assert '-CiScript' in line and '-ConflictScript' in line
-    ps = (root / 'processes.ps1').read_text()
-    assert 'Get-AuthorizedRepair' in ps
-    assert ps.index('Get-AuthorizedRepair $current') < ps.index('taskkill.exe')
-
-
 @pytest.mark.parametrize('observed', [
     {'complete': False, 'processes': []},
     {'complete': True, 'processes': []},
@@ -100,8 +88,3 @@ def test_foreign_same_basename_never_enters_legacy_target_tree():
 ])
 def test_double_quoted_literal_apostrophes_are_not_quote_delimiters(command, path):
     assert control._has_exact_script(command, Path(path))
-
-
-def test_watchdog_helper_is_required_by_guard_preflight():
-    guard = (Path(control.__file__).parent / 'watchdog' / 'guard-task.ps1').read_text()
-    assert "'repair-identity.ps1'" in guard
