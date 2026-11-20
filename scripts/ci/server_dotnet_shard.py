@@ -1,7 +1,8 @@
-"""Run one Linux CI shard of the existing server xUnit suite."""
+"""Run and verify one shard of the server xUnit PR or nightly suite."""
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 import json
 import os
 from pathlib import Path
@@ -9,42 +10,74 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 
-def shard_classes(classes: list[str], shard: int, count: int) -> list[str]:
-    if not 1 <= shard <= count <= len(classes) or len(set(classes)) != len(classes):
-        raise ValueError("invalid shard or duplicate test classes")
-    # Spread the classes named for database fixtures across the runners.
-    ordered = sorted(classes, key=lambda name: (
-        not any(word in name for word in ("Postgres", "Database", "Benchmark")), name,
-    ))
-    return ordered[shard - 1::count]
+def read_rules(path: Path) -> list[list[str]]:
+    return [
+        entry.split()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (entry := line.partition("#")[0].strip())
+    ]
 
 
-def plan_shard(
-    cases: list[dict],
-    excluded_classes: set[str],
-    excluded_methods: set[str],
-    shard: int,
-    count: int,
-) -> tuple[list[str], set[str]]:
-    required_classes: set[str] = set()
-    required_methods: set[str] = set()
-    explicit_methods: set[str] = set()
+def plan_profiles(cases: list[dict], exclusions: list[list[str]], rules: list[list[str]]) -> dict[str, Counter]:
+    excluded = {tuple(rule) for rule in exclusions}
+    weights: Counter = Counter()
+    default_methods: set[str] = set()
+    targets: dict[tuple[str, str], set[str]] = defaultdict(set)
     for case in cases:
         class_name = case["Class"]
         method = f'{class_name}.{case["Method"]}'
-        if class_name in excluded_classes or method in excluded_methods:
+        if ("class", class_name) in excluded or ("method", method) in excluded:
             continue
-        if case["Explicit"]:
-            explicit_methods.add(method)
-        else:
-            required_classes.add(class_name)
-            required_methods.add(method)
-    selected = shard_classes(list(required_classes), shard, count)
-    # Keep manually requested xUnit profiles out of the default run.
-    return selected, excluded_methods | (explicit_methods - required_methods)
+        targets["class", class_name].add(method)
+        targets["method", method].add(method)
+        namespace = class_name
+        while "." in namespace:
+            namespace = namespace.rsplit(".", 1)[0]
+            targets["namespace", namespace].add(method)
+        weights[method] += 1
+        if not case["Explicit"]:
+            default_methods.add(method)
+
+    profiles = {label: set() for label in ("load", "outside-beta", "security")}
+    for label, kind, name in rules:
+        if (kind, name) not in targets:
+            raise ValueError(f"CI profile rule matches no runnable test: {label} {kind} {name}")
+        profiles[label].update(targets[kind, name])
+
+    nightly_only = profiles["load"] | profiles["outside-beta"]
+    missing_security = profiles["security"] - (default_methods - nightly_only)
+    if missing_security:
+        raise ValueError(f"Security tests missing from PR: {', '.join(sorted(missing_security))}")
+    return {
+        "pr": Counter({name: weights[name] for name in default_methods - nightly_only}),
+        "nightly": Counter({name: weights[name] for name in default_methods | nightly_only}),
+        "nightly-only": Counter({name: weights[name] for name in nightly_only}),
+        "security": Counter({name: weights[name] for name in profiles["security"]}),
+    }
 
 
-def verify_results(results: Path, selected: list[str]) -> None:
+def shard_methods(methods: Counter, shard: int, count: int, *, keep_classes: bool = True) -> set[str]:
+    groups: dict[str, set[str]] = defaultdict(set)
+    weights: Counter = Counter()
+    for method in methods:
+        name = method.rsplit(".", 1)[0]
+        group = name if keep_classes else method
+        groups[group].add(method)
+        database = any(word in name for word in ("Postgres", "Database", "Benchmark"))
+        weights[group] += methods[method] * (4 if database else 1)
+    if not 1 <= shard <= count <= len(groups):
+        raise ValueError("invalid shard count")
+
+    loads = [0] * count
+    shards: list[set[str]] = [set() for _ in range(count)]
+    for group in sorted(groups, key=lambda name: (-weights[name], name)):
+        target = min(range(count), key=loads.__getitem__)
+        shards[target].update(groups[group])
+        loads[target] += weights[group]
+    return shards[shard - 1]
+
+
+def verify_results(results: Path, selected: set[str]) -> None:
     root = ET.parse(results).getroot()
     assemblies = root.findall("assembly")
     if not assemblies or any(
@@ -53,44 +86,64 @@ def verify_results(results: Path, selected: list[str]) -> None:
         for status in ("failed", "errors", "skipped", "not-run")
     ):
         raise ValueError("Server tests failed, were skipped, or did not run")
-    passed = {test.get("type") for test in root.iter("test") if test.get("result") == "Pass"}
-    missing = set(selected) - passed
-    if missing:
-        raise ValueError(f"Server test classes without passing cases: {', '.join(sorted(missing))}")
+    passed = {
+        f"{test.get('type')}.{test.get('method')}"
+        for test in root.iter("test") if test.get("result") == "Pass"
+    }
+    if missing := selected - passed:
+        raise ValueError(f"Server test methods without passing cases: {', '.join(sorted(missing))}")
+    if unexpected := passed - selected:
+        raise ValueError(f"Unexpected server test methods: {', '.join(sorted(unexpected))}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("shard", type=int)
     parser.add_argument("count", type=int)
+    parser.add_argument("--profile", choices=("pr", "nightly"), default="pr")
+    parser.add_argument("--split-classes", action="store_true", help="Balance methods across isolated runners")
+    parser.add_argument("--describe", action="store_true", help="List profile classes and shard sizes without running tests")
     args = parser.parse_args()
-    exclusions = {"class": set(), "method": set()}
-    manifest = Path(__file__).with_name("server_dotnet_exclusions.txt")
-    for line in manifest.read_text(encoding="utf-8").splitlines():
-        entry = line.partition("#")[0].strip()
-        if entry:
-            kind, name = entry.split()
-            exclusions[kind].add(name)
 
-    results = Path("server-dotnet-results.xml")
-    results.unlink(missing_ok=True)
     command = [os.environ.get("DOTNET_HOST_PATH", "dotnet"), "run", "--project",
                "tests/Sli.Server.Tests/Sli.Server.Tests.csproj", "--no-build", "--"]
     discovery = subprocess.run(
-        [*command, "-list", "full/json", "-noColor"], check=True, stdout=subprocess.PIPE,
+        [*command, "-list", "full/json", "-noColor", "-preEnumerateTheories"],
+        check=True, stdout=subprocess.PIPE,
     )
-    selected, omit_methods = plan_shard(
-        json.loads(discovery.stdout), exclusions["class"], exclusions["method"], args.shard, args.count,
+    directory = Path(__file__).parent
+    profiles = plan_profiles(
+        json.loads(discovery.stdout),
+        read_rules(directory / "server_dotnet_exclusions.txt"),
+        read_rules(directory / "server_dotnet_ci_profiles.txt"),
     )
-    for method in sorted(omit_methods):
-        command.extend(("-method-", method))
-    for name in selected:
-        command.extend(("-class", name))
+    methods = profiles[args.profile]
+    # Pushes and nightly runs may use shared runners. Keep native tests that
+    # bind fixed loopback ports in the same xUnit class on a single runner.
+    keep_classes = not args.split_classes
+    selected = shard_methods(methods, args.shard, args.count, keep_classes=keep_classes)
+    if args.describe:
+        for label in ("nightly-only", "security"):
+            classes = {method.rsplit(".", 1)[0] for method in profiles[label]}
+            print(f"{label} ({len(classes)} classes):")
+            print(*sorted(classes), sep="\n")
+        for shard in range(1, args.count + 1):
+            names = shard_methods(methods, shard, args.count, keep_classes=keep_classes)
+            print(f"{args.profile} shard {shard}/{args.count}: {len(names)} methods, "
+                  f"{sum(methods[name] for name in names)} discovered cases")
+        return
+
+    results = Path("server-dotnet-results.xml")
+    results.unlink(missing_ok=True)
+    for method in sorted(selected):
+        command.extend(("-method", method))
+    if args.profile == "nightly":
+        command.extend(("-explicit", "on"))
     command.extend((
         "-failSkips", "-noColor", "-noAutoReporters", "-reporter", "verbose",
         "-longRunning", "300", "-result-xml", str(results),
     ))
-    print(f"Server test shard {args.shard}/{args.count}: {len(selected)} classes", flush=True)
+    print(f"Server {args.profile} shard {args.shard}/{args.count}: {len(selected)} methods", flush=True)
     subprocess.run(command, check=True)
     verify_results(results, selected)
 
