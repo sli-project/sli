@@ -197,16 +197,15 @@ def command(argv, *, cwd=None, env=None, timeout=120):
         program = Path(argv[0]).name + (" " + argv[1] if len(argv) > 1 and argv[1] in {"start", "stop", "restart",
                                                                                       "enable", "disable", "daemon-reload"} else "")
         lines = result.stderr[-4096:].decode("utf-8", errors="replace").strip().splitlines()
-        # Only systemd's own messages are echoed verbatim; other programs
-        # (psql, pg_restore, helpers) may print SQL rows, so only our reason
-        # codes from them are kept.
+        # Keep recognized reason codes and validated systemctl messages.
         reason = re.compile(r"(?:[A-Za-z_.]+Error: )?native_[a-z_]+(?:: \S+)?")
         tail = [line for line in lines if reason.fullmatch(line.strip())][-3:]
         if Path(argv[0]).name == 'systemctl':
             units = [unit for unit in argv[2:] if re.fullmatch(r'sli-[a-z0-9-]+\.(?:service|target|timer)', unit)]
             for unit in units:
                 known = (f'Job for {unit} failed because the control process exited with error code.',
-                         f'Job for {unit} failed because a timeout was exceeded.', f'Unit {unit} not found.',
+                         f'Job for {unit} failed because a timeout was exceeded.',
+                         f'Unit {unit} not found.', f'Unit {unit} not loaded.',
                          f"A dependency job for {unit} failed. See 'journalctl -xe' for details.")
                 line = next((line for line in lines if line in known), None)
                 if line is not None or len(units) == 1:
