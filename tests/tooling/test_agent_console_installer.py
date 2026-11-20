@@ -45,8 +45,14 @@ $remove = $ast.Find({param($node) $node -is [System.Management.Automation.Langua
     $node.Name -eq 'Remove-InstalledAgentMsi'}, $true)
 . ([scriptblock]::Create($remove.Extent.Text))
 function Test-LegacyAgentServiceMissing { return $script:missing }
+# On Linux the shell has no Windows system directory. Resolve the fake
+# executable name without calling the Windows-only installer.
+if (![Environment]::SystemDirectory) {
+    function Join-Path($Path, $ChildPath) { [IO.Path]::Combine($Path, $ChildPath) }
+}
 function Start-Process {
     param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru, $WindowStyle)
+    if ([IO.Path]::GetFileName($FilePath) -ne 'msiexec.exe') { throw 'Unexpected installer executable.' }
     $script:calls.Add($ArgumentList)
     return @{ ExitCode = $script:codes.Dequeue() }
 }
