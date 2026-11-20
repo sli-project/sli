@@ -62,6 +62,11 @@
   },
   {
    "channel": "Security",
+   "event_id": 1104,
+   "provider": "microsoft-windows-eventlog"
+  },
+  {
+   "channel": "Security",
    "event_id": 4608,
    "provider": "microsoft-windows-security-auditing"
   },

@@ -21,6 +21,7 @@ function Status({ tone, children }: { tone: string; children: ReactNode }) {
 /** Each request has its own result; a failed source never hides server health. */
 export function SystemStatusPage() {
   const access = useEffectiveAccess();
+  const canViewOperations = Boolean(access?.platform_owner || access?.capabilities.includes("operations.view"));
   const { timeZone } = useTimeZone();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
@@ -31,6 +32,8 @@ export function SystemStatusPage() {
   const operations = useQuery({ queryKey: ["operations-workers"], queryFn: api.operationsWorkers, ...options });
   const storage = useQuery({ queryKey: ["operations-storage"], queryFn: api.storageOverview, ...options });
   const diagnostics = useQuery({ queryKey: ["operations-diagnostics"], queryFn: api.diagnostics, ...options });
+  const securityLogFull = useQuery({ queryKey: ["operations-security-log-full"], queryFn: api.securityLogFull, ...options,
+    enabled: canViewOperations });
   const notifications = useQuery({ queryKey: ["system-status-notifications"], queryFn: () => api.notificationWorkspace(new URLSearchParams()), ...options });
   const smtp = useQuery({ queryKey: ["smtp-setup"], queryFn: api.smtpSetupStatus, ...options,
     enabled: !!notifications.data?.can_configure && notifications.data.channels.some((channel) => channel.kind === "smtp" && channel.enabled) });
@@ -111,6 +114,10 @@ export function SystemStatusPage() {
       : failed(t("systemStatus.sources"), setup.refetch)}
     {gaps.map(([key, gap]) => <p key={key}>{t("systemStatus.dataGap", { computer: gap.name || EMPTY_VALUE,
       period: `${formatDateTime(gap.from_utc, timeZone)} — ${formatDateTime(gap.to_utc, timeZone)}` })}</p>)}
+    {canViewOperations && securityLogFull.data?.items.map((event) => <p key={`${event.server}:${event.time_created_utc}:${event.record_id}`}>
+      {t("systemStatus.securityLogFull", { computer: event.server, time: formatDateTime(event.time_created_utc, timeZone, { seconds: true }), record: event.record_id })}
+    </p>)}
+    {canViewOperations && securityLogFull.isError ? failed(t("systemStatus.securityLogEvents"), securityLogFull.refetch) : null}
     {agentIssues.length ? <><h2 className="sli-ds-section-title">{t("agents.title")}</h2><DataTable columns={[
       { key: "name", label: t("systemStatus.computer") },
       { key: "state", label: t("systemStatus.state"), render: (row) => row.plain ? row.state : <Status tone="error">{row.state}</Status> },

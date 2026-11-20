@@ -16,7 +16,7 @@ public static class ReadRoleRequestGate
         "/api/jobs", "/api/autocollection/status", "/api/logs/tail", "/reports/collector-health.html",
         "/reports/autocollection.html", "/reports/storage-health.html", "/reports/system-health.html",
         "/reports/db-status.html", "/reports/diagnostics.html",
-        "/api/v1/operations/overview", "/api/v1/operations/plugins",
+        "/api/v1/operations/overview", "/api/v1/operations/plugins", "/api/v1/operations/security-log-full",
         "/api/v1/operations/administrative-activity", "/api/v1/source-packs", "/api/v1/source-adapters"
     };
 

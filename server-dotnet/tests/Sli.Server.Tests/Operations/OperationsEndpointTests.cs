@@ -101,7 +101,7 @@ public sealed class OperationsEndpointTests
         public void Dispose() { Client.Dispose(); host.Dispose(); }
         public OperationsService Service => host.Services.GetRequiredService<OperationsService>();
     }
-    internal static async Task<App> Start(bool allow = true, string role = "admin", bool authenticated = true, bool owner = false, string? effect = null, bool scoped = false, Dictionary<string, string?>? settings = null, OperationsCatalog? catalog = null, Sli.Server.Legacy.LegacyJobStore? legacy = null, TimeProvider? clock = null)
+    internal static async Task<App> Start(bool allow = true, string role = "admin", bool authenticated = true, bool owner = false, string? effect = null, bool scoped = false, Dictionary<string, string?>? settings = null, OperationsCatalog? catalog = null, Sli.Server.Legacy.LegacyJobStore? legacy = null, TimeProvider? clock = null, IOperationsQueries? postgresQueries = null)
     {
         var values = new Dictionary<string, string?> { ["Sli:AuthRequired"] = "true", ["Sli:Operations:SLI_LEGACY_COLLECTION_DISABLED"] = "1" };
         foreach (var entry in settings ?? []) values[entry.Key] = entry.Value;
@@ -111,7 +111,7 @@ public sealed class OperationsEndpointTests
         {
             services.AddRouting(); services.AddLogging(); services.AddSingleton<IConfiguration>(config); services.AddSingleton(new AuthRequestPolicy(config)); services.AddSingleton(new TransportGate(config));
             services.AddSingleton<IPrincipalAuthenticator>(new Auth(role, authenticated)); services.AddSingleton<IAccessFactsRepository>(new Facts(allow, owner, effect, scoped));
-            services.AddSingleton<IOperationsQueries>(queries); services.AddSingleton<OperationsFiles>(files); services.AddSingleton(jobs); services.AddSingleton<TimeProvider>(clock ?? new Clock()); services.AddOperations();
+            services.AddSingleton<IOperationsQueries>(postgresQueries ?? queries); services.AddSingleton<OperationsFiles>(files); services.AddSingleton(jobs); services.AddSingleton<TimeProvider>(clock ?? new Clock()); services.AddOperations();
             if (catalog is not null) services.AddSingleton(catalog);
         }).Configure(app => { app.UseRouting(); app.UseReadRoleRequestGate(); app.UseEndpoints(endpoints => endpoints.MapOperations()); })).StartAsync(TestContext.Current.CancellationToken);
         return new(host, host.GetTestClient(), queries, files, jobs);

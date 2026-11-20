@@ -5,8 +5,8 @@ namespace Sli.Server.Storage.Direct;
 internal static class Direct4624Catalog
 {
     // This is the reviewed frozen source catalog, not a new catalog format.
-    private const string SourceLfSha256 = "d0cd5abece99249751c5b5d0ead5fbd3bb21239fcc96f84747b7d03de8b212d7";
-    private const string SourceCrlfSha256 = "2ab85a006f91bb0c0940923682c253b3fedba68c43cef70b289aa33bc7ad5d35";
+    private const string SourceLfSha256 = "4df026e1f2d99729ac668bb778ec44c4c71c6a6112766a175954a3f3bcea860f";
+    private const string SourceCrlfSha256 = "7bbb8a67b9655e40e4f233f960168c7f693d0a2b7e4182177f4af40682d907b2";
     internal static void RequireRadiusCatalog(string eventCatalogPath)
     {
         using var stream=File.OpenRead(Path.Combine(Path.GetDirectoryName(eventCatalogPath)!,"radius_event_catalog.json"));

@@ -22,7 +22,7 @@ public static class OperationsEndpoints
         "/api/v1/operations/overview", "/api/v1/operations/sources/{hostname}",
         "/api/v1/operations/administrative-activity", "/api/v1/source-packs", "/api/v1/source-adapters",
         "/api/db/status", "/api/diagnostics/overview", "/api/storage/health", "/api/storage/lifecycle",
-        "/api/system/health", "/api/health/details", "/api/runtime/status", "/api/sources",
+        "/api/system/health", "/api/v1/operations/security-log-full", "/api/health/details", "/api/runtime/status", "/api/sources",
         "/api/domain-controllers", "/api/collector/health", "/api/jobs", "/api/jobs/{id}",
         "/api/logs/tail", "/api/autocollection/status"
     ];

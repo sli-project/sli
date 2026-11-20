@@ -3,6 +3,23 @@ namespace Sli.Server.Operations;
 
 internal static class OperationsSql
 {
+    internal const string SecurityLogFull = """
+        select latest.server, latest.time_created_utc, latest.record_id
+        from (
+            select distinct on (s.id) s.id, coalesce(nullif(s.fqdn, ''), s.hostname) as server,
+                e.time_created_utc, e.event_record_id::text as record_id
+            from public.event_hot e
+            join public.servers s on s.id::text = e.method->>'$server_id' and s.domain_id = e.domain_id
+            where s.role = 'domain_controller' and s.is_active
+              and e.event_kind = 1104 and e.method->>'$channel' = 'Security'
+              and lower(e.method->>'$provider') = 'microsoft-windows-eventlog'
+              and e.method#>>'{$origin,plugin_id}' = 'sli.windows.ad-dc'
+              and e.source_sha256 is not null and e.event_record_id is not null
+            order by s.id, e.time_created_utc desc, e.event_id desc
+        ) latest
+        order by latest.time_created_utc desc, latest.id
+        """;
+
     internal const string Agents = """
 select a.id::text, a.host_id::text, a.instance_name, a.status, a.last_seen,
        a.created_at, a.assigned_modules, a.collection_policy, a.registration_host_name,
