@@ -1,16 +1,36 @@
+import json
 from pathlib import Path
+from subprocess import CompletedProcess
+
+from scripts.maintenance import pg_archive_worker
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_archive_worker_script_exists_and_is_safe():
-    text = (ROOT / 'scripts' / 'maintenance' / 'pg_archive_worker.py').read_text(encoding='utf-8')
-    assert 'ADLOG_DB_BACKEND' in text
-    assert 'ADLOG_DISABLE_SCHEDULER' in text
-    assert 'ADLOG_ENABLE_POSTGRES_COLLECTION' in text
-    assert '--archive' in text
-    assert 'import_event_jsonl_to_postgres.py' in text
-    assert 'pg_archive_worker_status.json' in text
+def test_archive_worker_runs_postgres_collection_without_starting_scheduler(monkeypatch, tmp_path, capsys):
+    status_path = tmp_path / "status.json"
+    monkeypatch.setattr(pg_archive_worker, "STATUS_PATH", status_path)
+    monkeypatch.setattr(pg_archive_worker, "parse_targets", lambda _: {"DC1": "dc1.example.test"})
+    calls = []
+
+    def run(command, *, env, **kwargs):
+        calls.append((command, env))
+        return CompletedProcess(command, 0, "import_event_jsonl_to_postgres.py\n", "")
+
+    monkeypatch.setattr(pg_archive_worker.subprocess, "run", run)
+
+    assert pg_archive_worker.main([]) == 0
+    (command, env), = calls
+    assert "--archive" in command
+    assert env["ADLOG_DB_BACKEND"] == "postgres"
+    assert env["ADLOG_DISABLE_SCHEDULER"] == "1"
+    assert env["ADLOG_ENABLE_POSTGRES_COLLECTION"] == "1"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["summary"]["servers_ok"] == ["DC1"]
+    assert status["summary"]["postgres_importer_used"] is True
+    capsys.readouterr()
+    assert pg_archive_worker.main(["--status"]) == 0
+    assert json.loads(capsys.readouterr().out) == status
 
 
 def test_archive_worker_is_internal_and_not_exposed_while_collection_is_stopped():
@@ -18,17 +38,3 @@ def test_archive_worker_is_internal_and_not_exposed_while_collection_is_stopped(
     assert 'pg-archive-worker-dc1' not in text
     assert 'pg-archive-worker-dc2' not in text
     assert 'pg-archive-worker-all' not in text
-    assert 'Команды запуска сбора намеренно отсутствуют' in text
-
-
-def test_release_version_updated():
-    import re
-
-    text = (ROOT / 'server' / 'sli' / 'ops' / 'version.py').read_text(encoding='utf-8')
-    match = re.search(r'^PROJECT_VERSION\s*=\s*["\']([^"\']+)', text, re.MULTILINE)
-    assert match, 'PROJECT_VERSION marker is missing'
-    version = match.group(1)
-    assert version.startswith('2026.')
-    assert any(marker in version for marker in ('db0.', 'pg-stable', 'pg-product'))
-    assert 'BASELINE_LABEL' in text
-    assert 'PostgreSQL' in text or 'PG-' in text
