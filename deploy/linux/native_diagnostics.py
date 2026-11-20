@@ -84,12 +84,6 @@ def log_code(code):
 
 def failure(error, *, default='native_setup_failed'):
     candidate = str(error) if isinstance(error, (RuntimeError, ValueError)) else ''
-    space = re.fullmatch(r'native_database_space_insufficient:([0-9]{1,20})', candidate)
-    if space:
-        log_code('native_database_space_insufficient')
-        print(f'Database storage needs 20 GiB free. Available: {int(space[1]) / 1024**3:.1f} GiB. '
-              'Free space or mount another disk.', file=sys.stderr)
-        return
     if candidate == 'native_command_failed':
         command = 'native_command_failed: ' + (getattr(error, 'command', None) or '')
         unit = getattr(error, 'unit', None)
