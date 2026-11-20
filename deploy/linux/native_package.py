@@ -209,7 +209,9 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             dotnet = staging / "sli-server-dotnet"
             control(dotnet, dotnet.name, version, f"sli-host (= {version}), systemd, adduser, libicu76, libssl3t64, zlib1g",
                     "SLI .NET site services")
-            target = dotnet / "opt/sli/dotnet" / release
+            # The existing rollback hold pins this versioned package across APT upgrades.
+            # Keep the executable at its public path but give the package that survives ownership.
+            target = payload / "opt/sli/dotnet" / release
             if dotnet_published is not None:
                 shutil.copytree(dotnet_published, target)
             else:
@@ -228,7 +230,10 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
                   + release + ' "$@"\n', 0o755)
             write(dotnet, "usr/lib/systemd/system-generators/sli-dotnet-api",
                   "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_dotnet_generator.py "
-                  + release + ' "$@"\n', 0o755)
+                  '"$@"\n', 0o755)
+            write(dotnet, "DEBIAN/preinst", maintainer_header() + 'case "$1" in\n'
+                  '  upgrade) sli_preinstall --retain-legacy-dotnet ;;\n'
+                  '  install|abort-upgrade) ;;\n  *) exit 1 ;;\nesac\n', 0o755)
             write(dotnet, "DEBIAN/postinst", '#!/bin/sh\nset -eu\ncase "$1" in\n configure)\n'
                   '  systemctl daemon-reload ;;\n abort-upgrade|abort-remove|abort-deconfigure) ;;\n'
                   ' *) exit 1 ;;\nesac\n', 0o755)

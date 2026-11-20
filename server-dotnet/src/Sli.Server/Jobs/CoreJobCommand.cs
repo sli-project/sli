@@ -1,8 +1,8 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Agent.Protocol;
+using Sli.Server.Hosting;
 
 namespace Sli.Server.Jobs;
 
@@ -81,12 +81,8 @@ public static class CoreJobCommand
                     await output.WriteLineAsync(CanonicalJson.Serialize(result));
                     return 0;
                 }
-                using var stopping = CancellationTokenSource.CreateLinkedTokenSource(token);
-                using var signal = OperatingSystem.IsLinux() ? PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stopping.Cancel(); }) : null;
-                ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; stopping.Cancel(); };
-                Console.CancelKeyPress += onCancel;
-                try { return await Sli.Server.Operations.OperationsWorkerObservation.RunAsync("core_job_executor_" + selected, () => worker.RunAsync(selected, parse.GetValue(once), stopping.Token), stopping.Token); }
-                finally { Console.CancelKeyPress -= onCancel; }
+                return await WorkerShutdown.RunAsync(stopping => Sli.Server.Operations.OperationsWorkerObservation.RunAsync(
+                    "core_job_executor_" + selected, () => worker.RunAsync(selected, parse.GetValue(once), stopping), stopping), token);
             }
             catch (CoreJobLeaseLost) when (purpose is not null) { await output.WriteLineAsync("{\"status\":\"lease_lost\"}"); return 0; }
             catch (Exception e) when (purpose is not null && e is CoreJobContractException or System.Text.Json.JsonException or FormatException)
@@ -104,7 +100,11 @@ public static class CoreJobCommand
                 return 1;
             }
         });
-        return await root.Parse(args, new ParserConfiguration { ResponseFileTokenReplacer = null }).InvokeAsync(new InvocationConfiguration { EnableDefaultExceptionHandler = false, Output = output, Error = error }, ct);
+        var parsed = root.Parse(args, new ParserConfiguration { ResponseFileTokenReplacer = null });
+        var invocation = new InvocationConfiguration { EnableDefaultExceptionHandler = false, Output = output, Error = error };
+        if (parsed.Errors.Count == 0 && parsed.GetValue(child) is null && !parsed.GetValue(quarantine) && parsed.GetValue(retry) is null)
+            invocation.ProcessTerminationTimeout = null;
+        return await parsed.InvokeAsync(invocation, ct);
     }
     private static async Task WriteFrame(TextWriter output, JsonObject result)
     {

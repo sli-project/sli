@@ -548,7 +548,7 @@ def active_unit_name(service):
 
 def systemd(service, *, dotnet=None):
     fields = ("LoadState", "ActiveState", "SubState", "MainPID", "ExecMainStartTimestampMonotonic",
-              "InvocationID", "NRestarts", "ControlGroup")
+              "InvocationID", "NRestarts", "ControlGroup", "ExecMainStatus")
     name = active_unit_name(service) if dotnet is None else (dotnet_unit_name(service) if dotnet else unit_name(service))
     result = subprocess.run(["systemctl", "show", name, "--no-pager",
                              "--property=" + ",".join(fields)], capture_output=True, text=True,

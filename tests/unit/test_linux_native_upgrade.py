@@ -661,6 +661,30 @@ def test_apt_accepts_only_after_closed_candidate_health_and_durable_commit(activ
     assert json.loads((install.STATE / 'package-install.json').read_text())['release'] == 'new'
 
 
+def test_apt_commits_when_verified_candidate_exits_abnormally_during_planned_stop(activation, monkeypatch):
+    a = activation
+    ready = False
+
+    def start():
+        nonlocal ready
+        ready = True
+
+    def fence():
+        if ready:
+            runtime.stop_services(('executor-light',))
+
+    monkeypatch.setattr(upgrade, 'start_checked', start)
+    monkeypatch.setattr(upgrade, 'fence', fence)
+    monkeypatch.setattr(runtime.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(runtime, 'systemd', lambda service: {
+        'LoadState': 'loaded', 'ActiveState': 'failed', 'MainPID': '0', 'ControlGroup': '', 'ExecMainStatus': '6',
+    })
+    upgrade.configure_package('new', '2.0-1~deb13')
+    result = json.loads((a.operation.path / 'result.json').read_text())
+    assert result['status'] == 'committed' and result['services_restored']
+    assert 'switch-old' not in a.operation.events
+
+
 def test_blocked_apt_setup_has_reason_and_returns_old_services(activation, monkeypatch):
     import signal
     from deploy.linux import operation_wait

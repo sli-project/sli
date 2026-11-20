@@ -189,7 +189,32 @@ def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool, use_
     ledger = manifest["migration_ledger_max_version"]
     if not isinstance(counts, dict) or type(ledger) is not int or not (path / "postgres/toc.dat").is_file():
         raise ValueError("linux_restore_invalid_postgres")
-    with backup.pg_passfile() as passfile:
+    with (backup.pg_passfile() as passfile,
+          backup.helper_temporary_directory(prefix="sli-restore-postgres-") as temporary):
+        native = backup.native_mode()
+        database_acl = None
+        if native:
+            # --create includes database-level ACLs and always recreates the
+            # database. Render just its ACL to SQL and keep the fenced restore
+            # below, where PUBLIC is revoked before restoring the data.
+            listing = Path(temporary) / 'archive.list'
+            backup.pg_tool(['pg_restore', '--create', '--list', '--file', str(listing), str(path / 'postgres')], passfile)
+            entries = listing.read_text(encoding='utf-8').splitlines()
+            acl = [line for line in entries if re.match(r'^\d+; \d+ \d+ ACL - DATABASE sli ', line)]
+            if len(acl) != 1:
+                raise ValueError('linux_restore_invalid_postgres_database_acl')
+            listing.write_text(acl[0] + '\n', encoding='utf-8')
+            script = Path(temporary) / 'database-acl.sql'
+            backup.pg_tool(['pg_restore', '--create', '--schema-only', '--use-list', str(listing),
+                            '--file', str(script), str(path / 'postgres')], passfile)
+            # The trusted archive still emits CREATE DATABASE and a psql
+            # reconnect. Apply only the generated database ACL section.
+            match = re.search(r'^-- Name: DATABASE sli; Type: ACL; Schema: -; Owner: [^\n]*\n--\n'
+                              r'(.*?)^--\n-- PostgreSQL database dump complete$',
+                              script.read_text(encoding='utf-8'), flags=re.MULTILINE | re.DOTALL)
+            if not match or not match[1].strip():
+                raise ValueError('linux_restore_invalid_postgres_database_acl')
+            database_acl = match[1]
         roles_file = path / manifest["components"]["postgres"].get("roles_file", "roles.sql")
         if roles_file != path / "roles.sql":
             raise ValueError("linux_restore_invalid_roles")
@@ -203,15 +228,16 @@ def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool, use_
                 # Role replay uses psql against sli. An empty placeholder makes
                 # it retryable before the normal owned database is recreated.
                 connection.execute("CREATE DATABASE sli TEMPLATE template0")
+                if native:
+                    connection.execute("REVOKE ALL ON DATABASE sli FROM PUBLIC")
             require_empty_database(connection, replace_existing=replace_existing)
             if roles_file.is_file():
-                with backup.helper_temporary_directory(prefix="sli-restore-roles-") as temporary:
-                    restore_roles(roles_file, connection, passfile, Path(temporary))
+                restore_roles(roles_file, connection, passfile, Path(temporary))
         with backup.pg_connect(passfile, "postgres", autocommit=True) as connection:
             connection.execute("DROP DATABASE IF EXISTS sli WITH (FORCE)")
             connection.execute("CREATE DATABASE sli OWNER sli_migration TEMPLATE template0")
-            if backup.native_mode():
-                connection.execute("REVOKE ALL ON DATABASE sli FROM PUBLIC; GRANT CONNECT ON DATABASE sli TO adlog_user")
+            if native:
+                connection.execute("REVOKE ALL ON DATABASE sli FROM PUBLIC")
         watch = operation_wait.Watch('postgres_restore', minimum=backup.TIMEOUT,
                                      size=manifest['components']['postgres'].get('database_size_bytes', 0),
                                      history=operation_wait.history_path())
@@ -219,6 +245,12 @@ def restore_postgres(path: Path, manifest: dict, *, replace_existing: bool, use_
                         *(["--no-tablespaces"] if use_default_tablespace else []),
                         *backup.postgres_target().arguments(), "--dbname=sli", "--jobs=2",
                         str(path / "postgres")], passfile, watch=watch)
+        if database_acl is not None:
+            with backup.pg_connect(passfile, 'postgres', autocommit=True) as connection:
+                try:
+                    connection.execute(database_acl)
+                except psycopg.Error:
+                    raise RuntimeError('linux_restore_postgres_database_acl_failed') from None
         analyze_postgres(passfile, 2)
         with backup.pg_connect(passfile) as connection:
             if (backup.row_counts(connection) != counts

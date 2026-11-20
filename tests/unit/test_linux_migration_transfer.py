@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import backup, restore_existing as subject
+from deploy.linux import backup, native_install as install, native_runtime as runtime, native_upgrade as upgrade
+from deploy.linux import restore_existing as subject
 
 
 @pytest.mark.parametrize('missing', [False, True])
@@ -163,3 +164,92 @@ def test_component_restore_imports_roles_before_replacing_database_and_analyzes_
         assert calls[:2] == ['empty', 'roles']
         assert calls.index('pg_restore') < calls.index('vacuumdb')
         assert any(str(item).startswith('DROP DATABASE') for item in calls)
+
+
+def test_failed_migrated_candidate_restores_database_acl_and_starts_previous_release(tmp_path, monkeypatch):
+    (tmp_path / 'postgres').mkdir()
+    (tmp_path / 'postgres/toc.dat').write_bytes(b'synthetic')
+    (tmp_path / 'roles.sql').write_text('CREATE ROLE sli_semantic_login;\n')
+    accepted = {'sli_semantic_login': {'CONNECT'}, 'sli_migration': {'CONNECT', 'TEMPORARY', 'CREATE'}}
+    acl = {'candidate_only': {'CONNECT'}}
+    calls = []
+    selected = {'release': 'candidate'}
+    accepted_unit = 'ExecStart=/opt/sli/dotnet/accepted/Sli.Server\n'
+    saved = tmp_path / 'recovery/units'
+    saved.mkdir(parents=True)
+    (saved / 'sli-dotnet-api.service').write_text(accepted_unit)
+    units = tmp_path / 'live-units'
+    units.mkdir()
+    (units / 'sli-dotnet-api.service').write_text('ExecStart=/opt/sli/dotnet/candidate/Sli.Server\n')
+
+    def execute(sql):
+        calls.append(sql)
+        if sql.startswith('DROP DATABASE'):
+            acl.clear()
+        if 'GRANT CONNECT,TEMPORARY ON DATABASE sli TO sli_semantic_login;' in sql:
+            assert '\\connect' not in sql and 'CREATE DATABASE' not in sql
+            acl.update(accepted)
+        return SimpleNamespace(fetchone=lambda: (390,))
+
+    def pg_tool(argv, passfile, *, watch=None):
+        if '--list' in argv:
+            assert '--create' in argv
+            Path(argv[argv.index('--file') + 1]).write_text(
+                '1; 1262 123 DATABASE - sli sli_migration\n2; 0 0 ACL - DATABASE sli sli_migration\n')
+            return
+        if '--create' in argv:
+            entries = Path(argv[argv.index('--use-list') + 1]).read_text()
+            assert '1262 123 DATABASE -' not in entries
+            assert 'ACL - DATABASE sli' in entries
+            Path(argv[argv.index('--file') + 1]).write_text(
+                'CREATE DATABASE sli;\n\\connect sli\n'
+                '--\n-- Name: DATABASE sli; Type: ACL; Schema: -; Owner: sli_migration\n--\n\n'
+                'GRANT CONNECT,TEMPORARY ON DATABASE sli TO sli_semantic_login;\n\n'
+                '--\n-- PostgreSQL database dump complete\n--\n')
+            return
+        assert '--dbname=sli' in argv
+        assert any('REVOKE ALL ON DATABASE sli FROM PUBLIC' in sql for sql in calls)
+
+    monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(tmp_path / 'pgpass'))
+    monkeypatch.setattr(backup, 'pg_connect', lambda *a, **kw: nullcontext(SimpleNamespace(execute=execute)))
+    monkeypatch.setattr(backup, 'native_mode', lambda: True)
+    monkeypatch.setattr(backup, 'helper_temporary_directory', lambda **kwargs: nullcontext(tmp_path))
+    monkeypatch.setattr(backup, 'pg_tool', pg_tool)
+    monkeypatch.setattr(backup, 'row_counts', lambda _: {'items': 2})
+    monkeypatch.setattr(subject, 'require_empty_database', lambda *a, **kw: None)
+    monkeypatch.setattr(subject, 'restore_roles', lambda *a: None)
+    monkeypatch.setattr(subject, 'analyze_postgres', lambda *a: None)
+    manifest = {'migration_ledger_max_version': 390,
+                'components': {'postgres': {'roles_file': 'roles.sql', 'row_counts': {'items': 2}}}}
+    journal = object.__new__(upgrade.Journal)
+    journal.path = tmp_path / 'transaction'
+    journal.value = {'status': 'candidate_testing', 'step': 'before', 'schema_changed': True,
+                     'candidate': 'candidate', 'previous': 'accepted'}
+    journal.write = lambda: None
+    results = []
+
+    def start_checked():
+        assert acl == accepted
+        assert selected['release'] == 'accepted'
+        assert (units / 'sli-dotnet-api.service').read_text() == accepted_unit
+        calls.append('accepted-services-started')
+
+    monkeypatch.setattr(upgrade, 'UNITS', units)
+    monkeypatch.setattr(upgrade, 'fence', lambda: None)
+    monkeypatch.setattr(upgrade, 'verify_recovery', lambda release: (saved.parent, {}))
+    monkeypatch.setattr(upgrade, 'restore_checkpoint', lambda _: subject.restore_postgres(tmp_path, manifest, replace_existing=True))
+    monkeypatch.setattr(upgrade, 'switch', lambda root, *args: selected.update(release=root.name))
+    monkeypatch.setattr(upgrade, 'restore_helpers', lambda *a: None)
+    monkeypatch.setattr(upgrade, 'testing_units', lambda *a: None)
+    monkeypatch.setattr(upgrade, 'start_checked', start_checked)
+    monkeypatch.setattr(upgrade, 'cleanup_checkpoints', lambda: None)
+    monkeypatch.setattr(install, 'STATE', tmp_path / 'state')
+    monkeypatch.setattr(install, 'inventory', lambda release: (tmp_path / release, {}, 'digest'))
+    monkeypatch.setattr(install, 'command', lambda argv: calls.append(argv))
+    monkeypatch.setattr(install, 'atomic', lambda path, data: results.append(data))
+    monkeypatch.setattr(runtime, 'configuration', lambda: pytest.fail('no agents reconfiguration intent'))
+    upgrade.record_failure(journal, install.UnitCommandFailure('sli-health.service', 1, 'synthetic health failure'))
+    upgrade.recover_compatible(journal)
+    assert 'accepted-services-started' in calls
+    assert results[-1]['services_restored'] and results[-1]['status'] == 'rolled_back'
+    assert results[-1]['failure_detail']['unit'] == 'sli-health.service'
