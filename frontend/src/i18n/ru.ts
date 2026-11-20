@@ -51,6 +51,7 @@ export const ru = {
   "systemStatus.downloadFailed": "Не удалось скачать диагностику",
   "systemStatus.version": "SLI {version} · установлена {date}",
   "systemStatus.copy": "Скопировать",
+  "systemStatus.serverConsole": "Консоль сервера",
   "systemStatus.copied": "Скопировано",
   "systemStatus.copyFailed": "Не удалось скопировать команду обновления",
   "systemStatus.firstRun": "Первый запуск",

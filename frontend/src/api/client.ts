@@ -1483,6 +1483,7 @@ export type RuntimeCollectionRun = {
 
 export type DiagnosticsOverview = {
   status: string;
+  web_console?: { available: boolean; url: string | null };
   release_metadata?: { project_version?: string; generated_at_utc?: string; build_id?: string; [key: string]: unknown };
   warnings?: string[];
   parsed_checks?: Record<string, { status?: string; duration_ms?: number; [key: string]: unknown } | null>;

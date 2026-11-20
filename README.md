@@ -279,6 +279,10 @@ Diagnostics: `sudo journalctl -t sli-setup`.
 
 After upgrading an old installation, the administrator may choose to delete retained ClickHouse data: `sudo rm -rf -- /srv/sli-db/clickhouse`.
 
+## Administration
+
+Run `sudo sli-setup --web-console` to enable **Server console** on the **System status** page, then sign in with a Linux account that has sudo access.
+
 ## Security model
 
 HTTPS protects operator and agent connections. Enrollment uses an owner-approved

@@ -54,6 +54,7 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.downloadFailed": "Could not download diagnostics",
   "systemStatus.version": "SLI {version} · installed {date}",
   "systemStatus.copy": "Copy",
+  "systemStatus.serverConsole": "Server console",
   "systemStatus.copied": "Copied",
   "systemStatus.copyFailed": "Could not copy the update command",
   "systemStatus.firstRun": "First run",
