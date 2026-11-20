@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -14,6 +15,7 @@ import psycopg
 import pytest
 import yaml
 
+from scripts.ci.pr_scope import plan_jobs, pytest_arguments
 from scripts.ci.server_dotnet_shard import plan_profiles, read_rules
 from scripts.maintenance import existing_postgres_bootstrap as bootstrap
 
@@ -97,16 +99,11 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     jobs = workflow(name)["jobs"]
     if name == "pr-gate.yml":
         assert {"source", "tests", "frontend"} <= jobs.keys()
-        assert "needs" not in jobs["source"]
         gate = jobs["gate"]
         assert gate["name"] == "source"
-        assert set(gate["needs"]) == {"changes", "source", "postgres"}
+        assert {"changes", "source", "tests", "frontend", "postgres"} <= set(gate["needs"])
         assert gate["if"] == "${{ always() }}"
-        # postgres may be skipped only for a UI-only change detected by the changes job.
         guard, = gate["steps"]
-        assert 'test "$POSTGRES_RESULT" = success ||' in guard["run"]
-        assert 'test "$CHANGES_RESULT" = success' in guard["run"]
-        assert 'test "$SOURCE_RESULT" = success' in guard["run"]
         assert guard["env"]["SOURCE_RESULT"] == "${{ needs.source.result }}"
         assert guard["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
         assert any('not postgres_integration and not host_dependent' in step.get("run", "")
@@ -215,41 +212,55 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert not any("SLI_BOOTSTRAP_TEST_PG_DSN" in key for key in postgres["env"])
 
 
-def test_pr_source_cases_have_one_owner_for_both_unit_selections():
-    jobs = workflow("pr-gate.yml")["jobs"]
-    source_steps = [step for step in jobs["source"]["steps"] if "pytest" in step.get("run", "")]
-    unit, = [step["run"] for step in jobs["tests"]["steps"] if "pytest" in step.get("run", "")]
-    manifests = re.findall(r"@([\w/]+\.txt)", "\n".join(step["run"] for step in source_steps))
-    assert set(manifests) == {"scripts/ci/pr_source_tests.txt", "scripts/ci/pr_checkpoint_tests.txt"}
-    dedicated = Counter(
-        selector for manifest in manifests
-        for selector in (ROOT / manifest).read_text(encoding="utf-8").splitlines()
-    )
-    assert dedicated == Counter({selector: 1 for selector in (
-        "tests/tooling/test_ui_domain_binding_guard.py", "tests/unit/test_ui_domain_binding_api.py",
-        "tests/core/test_report_domain.py", "tests/unit/test_sli_secrets.py",
-        "tests/unit/test_updater_component.py", "tests/unit/test_updater_transition_contract.py",
-        "tests/unit/test_updater_transition.py", "tests/unit/test_updater_isolated_closure.py",
-        "tests/unit/test_plugin_validation.py", "tests/events/test_event_catalog_contract.py",
-        "tests/sources/test_plugin_package_manifest.py", "tests/migrations/test_sli_v4_contract.py",
-        "tests/unit/test_linux_native_cleanup.py",
-        *(f"tests/unit/test_linux_native_upgrade_prepare.py::{method}" for method in (
-            "test_legacy_checkpoint_mode_keeps_full_restore_on_resume",
-            "test_legacy_checkpoint_mode_requires_stopped_restore",
-            "test_legacy_checkpoint_mode_rejects_integrity_receipt",
-            "test_unknown_checkpoint_verification_mode_is_refused",
-            "test_integrity_receipt_rejects_invalid_binding",
-            "test_integrity_receipt_rechecks_current_manifest",
-        )),
-    )})
-    assert not any("if" in step or "continue-on-error" in step for step in source_steps)
-    # Deselect the same cases after either the full or the UI-only file selection.
-    assert set(re.search(r"cat (scripts/ci/[^)]+)\)", unit)[1].split()) == set(manifests)
-    assert '"${dedicated[@]/#/--deselect=}" "${selected[@]}"' in unit.split("\nfi\n", 1)[1]
+@pytest.mark.parametrize("paths", [["deploy/linux/native_host.py"], ["config/postgres_migrations/example.sql"]])
+def test_pr_source_and_unit_collect_each_case_once(tmp_path, paths):
+    selection = pytest_arguments(ROOT, paths)
+    checkpoint_file = "tests/unit/test_linux_native_upgrade_prepare.py"
+    checkpoint_case = f"{checkpoint_file}::test_integrity_receipt_rechecks_current_manifest"
+    source_file = "tests/unit/test_sli_secrets.py"
+    synthetic_cases = {
+        source_file: ["test_secret_guard"],
+        checkpoint_file: ["test_integrity_receipt_rechecks_current_manifest", "test_other_upgrade_behavior"],
+    }
+    for path, methods in synthetic_cases.items():
+        file = tmp_path / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("".join(f"def {method}(): pass\n" for method in methods), encoding="utf-8")
+    config = tmp_path / "pytest.ini"
+    config.write_text("[pytest]\n", encoding="utf-8")
+    collected = Counter()
+    for suite in ("source", "checkpoint", "unit"):
+        args = [selector for selector in selection[suite]
+                if selector.removeprefix("--deselect=").split("::", 1)[0] in synthetic_cases
+                and ("::" not in selector or selector.removeprefix("--deselect=") == checkpoint_case)]
+        assert args
+        argfile = tmp_path / f"{suite}.txt"
+        argfile.write_text("\n".join(args) + "\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", "-c", str(config), f"@{argfile}"],
+            cwd=tmp_path, capture_output=True, text=True, check=True,
+            env=os.environ | {"PYTEST_ADDOPTS": "", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+        )
+        collected.update(line for line in result.stdout.splitlines() if line.startswith("tests/"))
+    assert collected == Counter(f"{path}::{method}" for path, methods in synthetic_cases.items() for method in methods)
 
 
-@pytest.mark.parametrize("postgres_runs", [True, False])
-def test_pr_dotnet_cases_have_one_owner_even_without_postgres(postgres_runs):
+def test_report_access_cases_run_for_auth_changes_and_wide_profile():
+    guards = {
+        "tests/reporting/test_gpo_effective_access_v2.py",
+        "tests/reporting/test_new_logon_pairs_v2.py",
+        "tests/reporting/test_new_logon_pairs_report_path.py",
+    }
+    for paths in (["server-dotnet/src/Sli.Server/Auth/Access.cs"], ["scripts/ci/pr_scope.py"]):
+        assert guards <= set(pytest_arguments(ROOT, paths)["unit"])
+
+
+@pytest.mark.parametrize("paths", [
+    ["server-dotnet/src/Sli.Server/Storage/Db.cs"],
+    ["server-dotnet/src/Sli.Server/Installation/InstallationService.cs"],
+    ["server-dotnet/src/Sli.Server/Jobs/Worker.cs"],
+])
+def test_pr_dotnet_cases_have_one_owner_even_when_python_jobs_are_skipped(paths):
     pr, dotnet = (workflow(name)["jobs"] for name in ("pr-gate.yml", "server-dotnet.yml"))
     tracked = VECTORS | {PACKET, CHECKPOINT}
     rules = [rule for rule in read_rules(ROOT / "scripts/ci/server_dotnet_ci_profiles.txt")
@@ -259,23 +270,33 @@ def test_pr_dotnet_cases_have_one_owner_even_without_postgres(postgres_runs):
     shard_step, = [step for step in dotnet["server-tests"]["steps"]
                    if "python ../scripts/ci/server_dotnet_shard.py " in step.get("run", "")]
     assert shard_step["env"]["PR_POSTGRES"] == "${{ needs.changes.outputs.pr-postgres }}"
+    assert shard_step["env"]["PR_CHECKPOINT"] == "${{ needs.changes.outputs.pr-checkpoint }}"
     for changes in (pr["changes"], dotnet["changes"]):
-        assert any('bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD"' in step.get("run", "")
+        assert any("python3 -m scripts.ci.pr_scope" in step.get("run", "")
                    for step in changes["steps"])
-    run = shard_step["run"]
-    assert '--covered-by source-vectors' in run
-    assert 'if [ "$EVENT" = pull_request ]; then\n  covered+=(--covered-by pr-python)' in run
-    assert 'if [ "$PR_POSTGRES" = true ]; then\n    covered+=(--covered-by pr-postgres)' in run
-    assert '"${covered[@]}"' in run
-
-    sharded = profiles["pr"] - profiles["source-vectors"] - profiles["pr-python"]
+    jobs = plan_jobs(paths)
+    env = os.environ | {
+        "EVENT": "pull_request", "SHARD": "1", "SHARD_COUNT": "16", "PROFILE": "pr", "RISK_AREAS": "",
+        "PR_POSTGRES": str(jobs["postgres"]).lower(), "PR_CHECKPOINT": str(jobs["checkpoint"]).lower(),
+    }
+    bash = shutil.which("bash")
+    assert bash, "Bash is required to check workflow routing"
+    command = subprocess.run(
+        [bash, "-eo", "pipefail", "-c", "python() { printf '%s\\n' \"$@\"; }\n" + shard_step["run"]],
+        capture_output=True, text=True, check=True, env=env,
+    ).stdout.splitlines()
+    sharded = profiles["pr"].copy()
+    for flag, profile in zip(command, command[1:]):
+        if flag == "--covered-by":
+            sharded -= profiles[profile]
     vectors = [name for step in dotnet["source-vectors"]["steps"]
                for name in re.findall(r"-class (\S+)", step.get("run", ""))]
     assert set(vectors) == VECTORS
     assert set(dotnet["build-and-test"]["needs"]) == {"server-tests", "source-vectors"}
-    actual = Counter(vectors) + Counter({CHECKPOINT: 1})  # Python checkpoint manifest proves this coverage.
-    if postgres_runs:
-        sharded -= profiles["pr-postgres"]
+    actual = Counter(vectors)
+    if jobs["checkpoint"]:
+        actual[CHECKPOINT] += 1
+    if jobs["postgres"]:
         actual.update(name for step in pr["postgres"]["steps"]
                       for name in re.findall(r"-class (\S+)", step.get("run", "")))
     actual.update(name.rsplit(".", 1)[0] for name in sharded)
@@ -317,7 +338,7 @@ def test_failed_jobs_fetch_pinned_setup_actions_over_git(job_name, action, revis
 def test_disposable_postgres_jobs_keep_shared_gates() -> None:
     pr, manual = (workflow(name)["jobs"]["postgres"] for name in WORKFLOWS)
     assert pr.pop("needs") == "changes"
-    assert pr.pop("if") == "${{ needs.changes.outputs.python == 'true' }}"
+    assert pr.pop("if") == "${{ needs.changes.outputs.postgres == 'true' }}"
     pr.pop("name")
     strategy = pr.pop("strategy")
     shards = strategy["matrix"]["shard"]
