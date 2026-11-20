@@ -46,17 +46,21 @@ def setup_steps(job: dict, action: str) -> list[dict]:
             or step.get("uses") == f"./artifacts/ci-actions/{action}"]
 
 
-@pytest.mark.parametrize(("name", "runners"), [
-    ("beta-kit.yml", {"build": "ubuntu-latest", "release": "ubuntu-latest"}),
-    ("agent-msi.yml", {"msi": "windows-2025"}),
+@pytest.mark.parametrize(("name", "job_name", "runner"), [
+    ("beta-kit.yml", "release", "ubuntu-latest"),
+    ("beta-kit-build.yml", "build", "ubuntu-latest"),
+    ("agent-msi.yml", "msi", "windows-2025"),
 ])
-def test_release_builds_use_fixed_hosted_runners(name, runners):
+def test_release_builds_use_fixed_hosted_runners(name, job_name, runner):
     source = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
     assert not any(re.search(r"\bvars\s*[.\[]", expression)
                    for expression in re.findall(r"\$\{\{(.*?)\}\}", source, re.DOTALL))
     jobs = workflow(name)["jobs"]
-    assert {job_name: job["runs-on"] for job_name, job in jobs.items() if "runs-on" in job} == runners
+    assert jobs[job_name]["runs-on"] == runner
+    assert all(job["runs-on"] == runner for job in jobs.values() if "runs-on" in job)
     if name == "beta-kit.yml":
+        assert jobs["build"]["uses"] == "./.github/workflows/beta-kit-build.yml"
+    elif name == "beta-kit-build.yml":
         assert jobs["agent-msi"]["uses"] == "./.github/workflows/agent-msi.yml"
 
 
