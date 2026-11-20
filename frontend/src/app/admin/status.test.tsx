@@ -98,6 +98,26 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><SystemStatusPage/></QueryClientProvider>);
 }
 
+it.each(["ru", "en"] as const)("shows one Security log full line with the exact record ID and action in %s", async (locale) => {
+  setLocale(locale);
+  const event = { server: "dc.example.test", time_created_utc: "2026-11-14T01:16:42Z", record_id: "9007199254740993" };
+  vi.mocked(api.securityLogFull).mockResolvedValue({ items: [event] });
+  renderPage();
+  const message = locale === "ru" ? /журнал Security заполнился/ : /the Security log filled up/;
+  const line = await screen.findByText(message);
+  expect(line.tagName).toBe("P");
+  expect(line.closest(".sli-ds-state--banner, details")).toBeNull();
+  expect(line.textContent).toContain(event.server);
+  expect(line.textContent).toContain(formatDateTime(event.time_created_utc, "UTC", { seconds: true }));
+  expect(line.textContent).toContain(event.record_id);
+  expect(line.textContent).toContain(locale === "ru" ? "Часть событий аудита могла не записаться" : "Some audit events may not have been recorded");
+  expect(line.textContent).toContain(locale === "ru" ? "включите перезапись" : "enable overwriting");
+  expect(screen.getAllByText(message)).toHaveLength(1);
+  vi.mocked(api.securityLogFull).mockResolvedValue({ items: [] });
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["operations-security-log-full"] });
+  await waitFor(() => expect(screen.queryByText(message)).toBeNull());
+});
+
 it.each(["ru", "en"] as const)("shows an unresolved password detection domain with the agent and action in %s", async (locale) => {
   setLocale(locale);
   vi.mocked(api.setupStatus).mockResolvedValue(setup([{ ...agent, password_domain_required: true }]));
@@ -116,6 +136,7 @@ beforeEach(() => {
   vi.spyOn(api, "operationsWorkers").mockResolvedValue({ workers: operations.workers });
   vi.spyOn(api, "storageOverview").mockResolvedValue({ storage: operations.storage });
   vi.spyOn(api, "diagnostics").mockResolvedValue({ status: "ok", release_metadata: { project_version: "1.0.0", generated_at_utc: "2026-11-01T01:00:00Z" } });
+  vi.spyOn(api, "securityLogFull").mockResolvedValue({ items: [] });
   vi.spyOn(api, "notificationWorkspace").mockResolvedValue(notifications());
   vi.spyOn(api, "telegramSetup").mockResolvedValue({ secret_set: true, chat_bound: true });
   vi.spyOn(api, "smtpSetupStatus").mockRejectedValue(new Error("not requested"));

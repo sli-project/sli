@@ -698,6 +698,8 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.inboxDiskFull": "Agent event intake is paused: the server disk is low on space. Expand the server disk.",
   "systemStatus.inboxDiskUnavailable": "Agent event intake is paused: free disk space could not be checked. Check server access to the PostgreSQL disk.",
   "systemStatus.dataGap": "No data from {computer} for {period}",
+  "systemStatus.securityLogFull": "{computer} · {time} · record {record}: the Security log filled up. Some audit events may not have been recorded. Increase the Security log size or enable overwriting.",
+  "systemStatus.securityLogEvents": "Security log full events",
   "shell.adminNav.computers": "Agents",
   "shell.adminNav.users": "Users & roles",
   "shell.adminNav.storage": "Storage",

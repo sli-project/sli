@@ -1581,6 +1581,16 @@
       ]
     },
     {
+      "event_id": 1104,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Eventlog",
+      "kind": "Журнал Security заполнен",
+      "layer": "fact",
+      "actor_fields": [],
+      "target_fields": [],
+      "fields": []
+    },
+    {
       "event_id": 1112,
       "channel": "System",
       "provider": "Microsoft-Windows-GroupPolicy",

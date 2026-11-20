@@ -108,6 +108,30 @@ public class AdDcModuleTests
     }
 
     [Fact]
+    public void CapturesSecurityLogFullOnlyFromTheEventlogProvider()
+    {
+        const string provider = "Microsoft-Windows-Eventlog";
+        var source = new ScriptedSource { Script = new JsonObject { ["mode"] = "rows", ["rows"] = new JsonArray(
+            Row(1104, 1, provider, "FileIsFull"),
+            Row(1104, 2, "Microsoft-Windows-Security-Auditing", "FileIsFull"),
+            Row(1102, 3, provider, "LogFileCleared")) } };
+        var sample = Module(source).Collect(null, Helpers.Now).Sample!;
+        var events = sample.Payload["records"]!.AsArray().Select(record => record!["payload"]!["event_id"]!.GetValue<int>());
+        Assert.Equal([1104, 1102], events.ToArray());
+        Assert.Equal(1, sample.FilteredCount);
+
+        static JsonObject Row(int id, long record, string provider, string element) => new() {
+            ["bookmark"] = $"bookmark-{record}",
+            ["xml"] = $"""
+                <Event xmlns="{EventXml.Namespace}"><System><Provider Name="{provider}"/><EventID>{id}</EventID>
+                <TimeCreated SystemTime="{Iso8601.Format(Helpers.Now)}"/><EventRecordID>{record}</EventRecordID>
+                <Channel>Security</Channel><Computer>dc.example.test</Computer></System>
+                <UserData><{element} xmlns="http://manifests.microsoft.com/win/2004/08/windows/eventlog"/></UserData></Event>
+                """
+        };
+    }
+
+    [Fact]
     public void NoEnabledChannelMeansNoPacket()
     {
         var module = Module(new ScriptedSource(), new JsonObject { ["channels"] = new JsonObject(

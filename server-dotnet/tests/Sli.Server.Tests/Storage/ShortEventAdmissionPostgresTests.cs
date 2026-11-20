@@ -56,7 +56,7 @@ public sealed class ShortEventAdmissionPostgresTests
         foreach (int kind in kinds) {
             if(nativeTimestamps is not null) stamp=nativeTimestamps[natives.Count];
             string provider = powershell ? "Microsoft-Windows-PowerShell" : channel=="System" ? "Service Control Manager"
-                : kind==1102 ? "Microsoft-Windows-Eventlog" : "Microsoft-Windows-Security-Auditing";
+                : kind is 1102 or 1104 ? "Microsoft-Windows-Eventlog" : "Microsoft-Windows-Security-Auditing";
             string fields = powershell ? "<Data Name='ScriptBlockText'>vssadmin delete shadows /all /quiet</Data>"
                 : "<Data Name='TargetUserSid'>S-1-5-21-100000001-200000002-300000003-1001</Data><Data Name='TargetUserName'>synthetic-user</Data><Data Name='TargetDomainName'>example.test</Data><Data Name='LogonType'>3</Data><Data Name='IpAddress'>192.0.2.1</Data>";
             if(eventKinds is not null) fields += kind switch {
@@ -71,7 +71,10 @@ public sealed class ShortEventAdmissionPostgresTests
                 foreach (var (key, value) in nativeFields.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                     fields += new XElement("Data", new XAttribute("Name", key), value).ToString(SaveOptions.DisableFormatting);
             }
-            string xml = $"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='{provider}'/><EventID>{kind}</EventID><EventRecordID>{natives.Count+firstRecordId}</EventRecordID><TimeCreated SystemTime='{stamp}'/><Channel>{channel}</Channel><Computer>{hostName}</Computer></System><EventData>{fields}</EventData></Event>";
+            string payload = kind == 1104
+                ? "<UserData><FileIsFull xmlns='http://manifests.microsoft.com/win/2004/08/windows/eventlog'/></UserData>"
+                : $"<EventData>{fields}</EventData>";
+            string xml = $"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='{provider}'/><EventID>{kind}</EventID><EventRecordID>{natives.Count+firstRecordId}</EventRecordID><TimeCreated SystemTime='{stamp}'/><Channel>{channel}</Channel><Computer>{hostName}</Computer></System>{payload}</Event>";
             natives.Add(EventXml.Parse(xml,hostName,hostName,channel));
         }
         var envelope = new JsonObject { ["agent_id"]=agent.ToString(),["module_id"]="sli.windows.ad-dc",["source_instance_id"]=host.ToString(),["generation"]=host.ToString() };

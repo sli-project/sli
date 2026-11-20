@@ -694,6 +694,8 @@ export const ru = {
   "systemStatus.inboxDiskFull": "Приём событий агентов приостановлен: на диске сервера мало места. Увеличьте диск сервера.",
   "systemStatus.inboxDiskUnavailable": "Приём событий агентов приостановлен: не удалось проверить свободное место. Проверьте доступ сервера к диску PostgreSQL.",
   "systemStatus.dataGap": "нет данных с {computer} за {period}",
+  "systemStatus.securityLogFull": "{computer} · {time} · запись № {record}: журнал Security заполнился. Часть событий аудита могла не записаться. Увеличьте размер журнала Security или включите перезапись.",
+  "systemStatus.securityLogEvents": "события заполнения журнала Security",
   "shell.adminNav.computers": "Агенты",
   "shell.adminNav.users": "Пользователи и роли",
   "shell.adminNav.storage": "Хранение",
