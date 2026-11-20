@@ -19,6 +19,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
     {
         var agent=await ReadAsync(db,tx,identity.Id,ct);bool fileHook=true;
         await Ingress.AgentPolicyAssignments.DisableUnavailableAsync(db,tx,agent,ct);
+        await SnapshotPublication.AdSnapshotSchedule.RefreshAsync(db,tx,agent,ct);
         // Bundled file-audit is present in this native build. An activated Python
         // generation's hook inventory awaits M5; never silently assume its hooks.
         if(agent["file_audit"]?["request"] is JsonObject request && request.Count>0 && new PluginGenerationReader().Read("sli.file-audit").Generation is not null)

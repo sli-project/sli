@@ -47,13 +47,21 @@ public sealed class EnrollmentTests : IDisposable
     public async Task EnrollmentReportsTheLocalWindowsRole(string? productType, string role)
     {
         Store.Prepare();
+        const string sid = "S-1-5-21-100000001-200000002-300000003";
         var transport = new Transport((path, body) =>
         {
             Assert.Equal("/api/v1/agent/enroll", path);
             Assert.Equal(role, body["machine_role"]!.GetValue<string>());
+            if (role == "domain_controller")
+            {
+                Assert.Equal("branch.example.test", body["domain_dns"]?.GetValue<string>());
+                Assert.Equal("example.test", body["forest_dns"]?.GetValue<string>());
+                Assert.Equal(sid, body["domain_sid"]?.GetValue<string>());
+            }
+            else Assert.Null(body["domain_sid"]);
             return _ca.Issue(Store);
         });
-        using var identity = await new Enrollment(Store, transport, _clock, () => productType)
+        using var identity = await new Enrollment(Store, transport, _clock, () => productType, () => ("branch.example.test", "example.test", sid))
             .EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
     }

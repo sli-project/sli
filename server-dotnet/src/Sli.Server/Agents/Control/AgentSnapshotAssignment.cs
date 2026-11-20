@@ -28,12 +28,12 @@ internal static class AgentSnapshotAssignment
     }
 
     internal static async Task PublishAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, string module,
-        JsonObject config, bool enabled, CancellationToken ct)
+        JsonObject config, bool enabled, CancellationToken ct, bool followServerTimezone = false)
     {
         await using var write=new NpgsqlCommand("""
-            insert into sli_agent_snapshot_bindings(agent_id,module_id,config,enabled)
-            values(@agent,@module,@config::jsonb,@enabled) on conflict(agent_id,module_id)
-            do update set config=excluded.config,enabled=excluded.enabled;
+            insert into sli_agent_snapshot_bindings(agent_id,module_id,config,enabled,follow_server_timezone)
+            values(@agent,@module,@config::jsonb,@enabled,@follow) on conflict(agent_id,module_id)
+            do update set config=excluded.config,enabled=excluded.enabled,follow_server_timezone=excluded.follow_server_timezone;
             update sli_agent_snapshot_policies set superseded_at=clock_timestamp()
             where agent_id=@agent and module_id=@module and superseded_at is null;
             insert into sli_agent_snapshot_policies(agent_id,module_id,config,enabled)
@@ -41,6 +41,7 @@ internal static class AgentSnapshotAssignment
             """,db,tx);
         write.Parameters.AddWithValue("agent",agent);write.Parameters.AddWithValue("module",module);
         write.Parameters.AddWithValue("config",config.ToJsonString());write.Parameters.AddWithValue("enabled",enabled);
+        write.Parameters.AddWithValue("follow",followServerTimezone);
         await write.ExecuteNonQueryAsync(ct);
     }
 }

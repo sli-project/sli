@@ -18,10 +18,11 @@ public static class AdPublicationPreparation
     };
     public static AdPreparedCycle Prepare(JsonObject policy, IReadOnlyDictionary<string, JsonObject> families)
     {
-        if (!families.Keys.ToHashSet().SetEquals(SnapshotPolicy.AdFamilies)) throw new ProtocolException("agent_ad_required_families_missing");
+        ValidateFamilies(policy, families.Keys);
         var bundles = new Dictionary<string, JsonObject>(); var runs = new HashSet<string>(); string? observed = null;
         int count = 0; long bytes = 0;
         foreach (var (family, sections) in Sections) {
+            if (!families.ContainsKey(family)) continue;
             var b = Normalize(families[family]);
             Require(Text(b["domain"]!["sid"]) == Text(policy["domain_sid"]) && Text(b["domain"]!["dns_name"]) == Text(policy["domain_dns"]));
             Require(b["sections"]!.AsArray().Select(s => Text(s!["name"])).SequenceEqual(sections) && runs.Add(Text(b["run_id"])));
@@ -56,7 +57,8 @@ public static class AdPublicationPreparation
             var refs = policy["groups"]!.AsArray().Select(Text).Select(r => { var p = r.Split(':', 2); return (Area: p[0], Value: p.Length == 2 ? p[1] : "", Original: r); })
                 .Where(r => area == "vpn" ? r.Area == "vpn" : r.Area != "vpn")
                 .Select(r => r.Area is "vpn" or "privileged" ? r.Value : r.Original).Select(UnicodeCaseFold.Fold).ToHashSet();
-            var b = bundles[family]; var records = b["records"]!.AsArray(); var groups = records.Where(r => Text(r!["record_type"]) == "entity" && Text(r["identity"]!["kind"]) == "ad_group").ToArray();
+            if (!bundles.TryGetValue(family, out var b)) continue;
+            var records = b["records"]!.AsArray(); var groups = records.Where(r => Text(r!["record_type"]) == "entity" && Text(r["identity"]!["kind"]) == "ad_group").ToArray();
             bool Matches(JsonNode? g, string reference) => new[] { Optional(g!["identity"]!["object_sid"]) ?? "", Optional(g["attributes"]!["distinguished_name"]) ?? "" }.Select(UnicodeCaseFold.Fold).Contains(reference);
             var resolved = groups.Where(g => refs.Any(r => Matches(g, r))).Select(g => UnicodeCaseFold.Fold(Optional(g!["identity"]!["object_sid"]) ?? "")).ToHashSet();
             Require(resolved.SetEquals(b["scope"]![scopeKey]!.AsArray().Select(Text).Select(UnicodeCaseFold.Fold)));
@@ -69,5 +71,15 @@ public static class AdPublicationPreparation
         Require(expectedComputers.SetEquals(computer["objects"]!.AsArray().Select(r => Text(r!["objectGuid"]))));
         if (count + computer["objects"]!.AsArray().Count > policy["max_objects"]!.GetValue<int>() || bytes > policy["max_bytes"]!.GetValue<long>()) throw new ProtocolException("agent_ad_size_limit");
         return new(bundles, computer);
+    }
+
+    internal static void ValidateFamilies(JsonObject policy, IEnumerable<string> families)
+    {
+        var supplied = families.ToHashSet(StringComparer.Ordinal);
+        var assigned = new SnapshotPolicy(SnapshotPolicy.Ad, policy).Families;
+        bool needsVpn = policy["groups"]!.AsArray().Select(Text).Any(group => group.StartsWith("vpn:", StringComparison.Ordinal));
+        if (!supplied.SetEquals(assigned) || !SnapshotPolicy.AdFamilies.All(family =>
+                supplied.Contains(family) || family == "ad_vpn_membership" && !needsVpn))
+            throw new ProtocolException("agent_ad_required_families_missing");
     }
 }
