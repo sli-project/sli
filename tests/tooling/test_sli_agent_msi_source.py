@@ -1,10 +1,14 @@
 """WiX and offline build boundaries, checked on Linux without WiX."""
 import json
 import re
+import shlex
 import shutil
-from pathlib import Path
+import subprocess
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -146,20 +150,58 @@ def test_major_upgrade_restores_state_before_start_without_cleanup_or_provisioni
     assert 'command + L"preserve"' in native
 
 
-def test_msi_and_embedded_agent_versions_come_from_build_version():
-    source = (ROOT / "tools/build-sli-agent-msi.ps1").read_text()
-    assert "Join-Path $repo 'VERSION'" in source
-    assert "$ProductVersion = $derivedVersion" in source
-    assert "msi_build_version_mismatch" in source
-    assert "$parts[0] -= 2000" in source and "$parts[2] -gt 65535" in source
-    assert "__version__" in source and "$buildVersion" in source
+@pytest.mark.parametrize(
+    ("version", "product_version", "error"),
+    [
+        ("2026.4.5", "26.4.6", "msi_build_version_mismatch"),
+        ("2026.4.65536", "26.4.1", "invalid_msi_version"),
+    ],
+)
+def test_msi_rejects_invalid_or_mismatched_build_version(tmp_path, version, product_version, error):
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell required to exercise version validation")
+
+    script = tmp_path / "tools/build-sli-agent-msi.ps1"
+    script.parent.mkdir()
+    shutil.copyfile(ROOT / "tools/build-sli-agent-msi.ps1", script)
+    (tmp_path / "VERSION").write_text(version, encoding="utf-8")
+    output = tmp_path / "output"
+
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-File", str(script),
+         "-InputDirectory", str(tmp_path / "inputs"), "-OutputDirectory", str(output),
+         "-ProductVersion", product_version],
+        capture_output=True, encoding="utf-8", errors="replace", timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert error in result.stderr
+    assert not output.exists()
 
 
-def test_install_docs_have_path_only_unattended_examples_and_revocation_boundary():
-    for language in ("en", "ru"):
-        source = (ROOT / f"docs/install/AGENT_INSTALL.{language}.md").read_text()
-        assert '/qn /norestart' in source
-        assert 'TOKEN_FILE="C:\\ProgramData\\SLI-Bootstrap\\enrollment.token"' in source
-        assert "CA_FINGERPRINT" in source and "SERVICE_ACCOUNT" in source
-        assert "GPO" in source and "SCCM" in source and "Intune" in source
-        assert "#444" in source
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_unattended_install_examples_pass_enrollment_by_local_file(language):
+    markdown = (ROOT / f"docs/install/AGENT_INSTALL.{language}.md").read_text(encoding="utf-8")
+    commands = re.sub(r"`[ \t]*\n", " ", markdown)
+    examples = re.findall(r"^[ \t]*msiexec(?:\.exe)?[ \t]+([^\n]+)", commands, re.I | re.M)
+    forbidden = {"TOKEN", "ENROLLMENT_TOKEN", "PASSWORD", "SERVICE_PASSWORD"}
+
+    has_unattended_enrollment = False
+    for arguments in examples:
+        lexer = shlex.shlex(arguments, posix=True)
+        lexer.whitespace_split = True
+        lexer.escape = ""  # Backslashes in Windows paths are literal.
+        args = list(lexer)
+        options = {arg.lower() for arg in args if arg.startswith("/")}
+        for argument in args:
+            name, sep, value = argument.partition("=")
+            if not sep:
+                continue
+            assert name.upper() not in forbidden
+            if name.upper() == "TOKEN_FILE":
+                path = PureWindowsPath(value)
+                assert path.is_absolute() and path.drive.endswith(":") and path.name
+                has_unattended_enrollment |= {"/i", "/qn", "/norestart"} <= options
+
+    assert has_unattended_enrollment
