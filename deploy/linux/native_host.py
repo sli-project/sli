@@ -25,13 +25,14 @@ from contextlib import contextmanager
 from pathlib import Path
 
 try:
-    from deploy.linux.native_preinstall import GuardError, cluster_guard, ensure_directory, existing_database, write_guard
+    from deploy.linux.native_preinstall import POSTGRES_DATA_DIRECTORY, GuardError, cluster_guard, ensure_directory, existing_database, write_guard
 except ModuleNotFoundError:  # stdlib-only installed/recovery helper under -I.
     import importlib.util
     _permissions_spec = importlib.util.spec_from_file_location(
         "sli_native_preinstall", Path(__file__).with_name("native_preinstall.py"))
     _permissions = importlib.util.module_from_spec(_permissions_spec)
     _permissions_spec.loader.exec_module(_permissions)
+    POSTGRES_DATA_DIRECTORY = _permissions.POSTGRES_DATA_DIRECTORY
     GuardError = _permissions.GuardError
     cluster_guard = _permissions.cluster_guard
     ensure_directory = _permissions.ensure_directory
@@ -79,7 +80,7 @@ SYSTEMD_PATH = re.compile(r"/(?:etc|usr/lib)/systemd/system/(?:" + SYSTEMD_FILE 
 BACKUP_DROP_IN = "80-sli-backup-mount.conf"
 BACKUP_DROP_IN_BODY = "[Unit]\nBindsTo=var-backups-sli.mount\nAfter=var-backups-sli.mount\n"
 ROOT_UID = 0
-BOOTSTRAP_MARKER = Path(MOUNT + "/pgdata/18/main/.sli-bootstrap.json")
+BOOTSTRAP_MARKER = Path(POSTGRES_DATA_DIRECTORY) / ".sli-bootstrap.json"
 COLD_TABLESPACE = "sli_temp_hdd"
 COLD_TABLES = ("sli_agent_packet_inbox", "event_source_representations_v2",
                "storage_v2_archive_sets", "storage_v2_archive_blocks")
@@ -916,12 +917,12 @@ class Host:
         clusters = run(["pg_lsclusters", "--no-header"]).splitlines()
         if any(row.split()[:2] != ["18", "sli"] or len(row.split()) < 6
                or row.split()[2:5] != ["5432", "down", "postgres"]
-               or row.split()[5] != MOUNT + "/pgdata/18/main" for row in clusters):
+               or row.split()[5] != POSTGRES_DATA_DIRECTORY for row in clusters):
             raise HostError("native_unexpected_postgres_cluster")
         self.passwords()
         if not clusters:
             self.directory(MOUNT + "/pgdata", 0o750, "postgres", "postgres")
-            run(["pg_createcluster", "18", "sli", "--datadir", MOUNT + "/pgdata/18/main",
+            run(["pg_createcluster", "18", "sli", "--datadir", POSTGRES_DATA_DIRECTORY,
                  "--port", "5432", "--start-conf=manual", "--encoding=UTF8", "--locale=C.UTF-8",
                  "--", "--auth-local=peer",
                  "--auth-host=scram-sha-256"])
@@ -1042,7 +1043,7 @@ def units(mode="native"):
     result = {"sli-postgresql.service": "[Unit]\nDescription=SLI PostgreSQL 18\n" + dependencies +
               "StartLimitIntervalSec=0\n" +
               "[Service]\nType=simple\nUser=postgres\nGroup=postgres\n" + guard +
-              "ExecStart=/usr/lib/postgresql/18/bin/postgres -D /srv/sli-db/pgdata/18/main "
+              f"ExecStart=/usr/lib/postgresql/18/bin/postgres -D {POSTGRES_DATA_DIRECTORY} "
               "-c config_file=/etc/postgresql/18/sli/postgresql.conf\n"
               "Restart=on-failure\nRestartSec=5s\n"
               "KillSignal=SIGINT\nTimeoutStopSec=120\nNoNewPrivileges=yes\nPrivateTmp=yes\n" +

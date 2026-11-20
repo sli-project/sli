@@ -23,13 +23,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 try:
-    from deploy.linux.native_preinstall import ensure_directory
+    from deploy.linux.native_preinstall import POSTGRES_DATA_DIRECTORY, ensure_directory
 except ModuleNotFoundError:  # stdlib-only installed/recovery helper under -I.
     import importlib.util
     _permissions_spec = importlib.util.spec_from_file_location(
         "sli_native_preinstall", Path(__file__).with_name("native_preinstall.py"))
     _permissions = importlib.util.module_from_spec(_permissions_spec)
     _permissions_spec.loader.exec_module(_permissions)
+    POSTGRES_DATA_DIRECTORY = _permissions.POSTGRES_DATA_DIRECTORY
     ensure_directory = _permissions.ensure_directory
 
 
@@ -42,6 +43,8 @@ except ModuleNotFoundError:  # stdlib launcher with -I, before release imports.
     _spec.loader.exec_module(clickhouse)
 
 CURRENT = Path("/opt/sli/current")
+# Only SLI units loaded by systemd, including failed one-shot backup services.
+RESET_FAILED_UNITS = ("systemctl", "reset-failed", "sli[-.]*")
 RELEASES = Path("/opt/sli/releases")
 RUNTIMES = Path("/opt/sli/runtimes")
 STATE = Path("/var/lib/sli/state")
@@ -234,6 +237,9 @@ def environment(service, config, *, dotnet=False):
         "SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS": "90",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    if service == "api" and dotnet:
+        # The API role cannot read PostgreSQL's data_directory setting.
+        env["SLI_POSTGRES_DATA_DIRECTORY"] = POSTGRES_DATA_DIRECTORY
     secrets = {"ADLOG_PG_PASSWORD": "runtime_password"}
     roles = []
     if service in {"post-collection", "entity-state"} or (service == "storage-lifecycle" and not dotnet):
@@ -515,6 +521,7 @@ def configure(config):
                       "d /run/sli 0711 root root -\nf /run/sli-native-host.lock 0600 root root -\n", 0o644)
         host.run(["systemd-tmpfiles", "--create", "/usr/lib/tmpfiles.d/sli-runtime.conf"])
         host.run(["systemctl", "daemon-reload"])
+        host.run(list(RESET_FAILED_UNITS))
 
 
 def launch(service, *, control=False):
