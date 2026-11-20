@@ -204,6 +204,7 @@ public sealed class InstalledConfigurationTests
     [InlineData("absent", "server_configuration_invalid:ADLOG_PG_PASSWORD:missing")]
     [InlineData("dsn", "server_configuration_invalid:ADLOG_PG_DSN:invalid")]
     [InlineData("tls", "server_configuration_invalid:ADLOG_TLS_KEY_FILE:missing")]
+    [InlineData("issuer", "server_configuration_invalid:Sli:AgentMtlsCaFile:invalid")]
     [InlineData("no-dsn", "server_configuration_invalid:ADLOG_PG_DSN:missing")]
     [InlineData("connections", "server_configuration_invalid:Sli:HttpMaxConnections:invalid")]
     [InlineData("requests", "server_configuration_invalid:Sli:HttpMaxConcurrentRequests:invalid")]
@@ -215,6 +216,7 @@ public sealed class InstalledConfigurationTests
         if (failure == "absent") fixture.Settings.Remove("ADLOG_PG_PASSWORD_FILE");
         if (failure == "dsn") fixture.Settings["ADLOG_PG_DSN"] = "host='" + Password;
         if (failure == "tls") fixture.Settings.Remove("ADLOG_TLS_KEY_FILE");
+        if (failure == "issuer") fixture.Settings["SLI_AGENT_CA_ISSUER_CERT_FILE"] = fixture.Settings["ADLOG_TLS_CERT_FILE"];
         if (failure == "no-dsn") fixture.Settings.Remove("ADLOG_PG_DSN");
         if (failure == "connections") fixture.Settings["ADLOG_HTTP_MAX_CONNECTIONS"] = "invalid";
         if (failure == "requests") fixture.Settings["ADLOG_HTTP_MAX_CONCURRENT_REQUESTS"] = "invalid";
@@ -325,6 +327,16 @@ public sealed class InstalledConfigurationTests
             using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
             File.WriteAllText(Path.Combine(Directory, "tls_certificate"), cert.ExportCertificatePem());
             File.WriteAllText(Path.Combine(Directory, "tls_key"), key.ExportPkcs8PrivateKeyPem());
+            using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+            using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+            var agentRootRequest = AgentCaRequest("CN=Test agent root", rootKey, 1);
+            var agentIssuerRequest = AgentCaRequest("CN=Test agent issuer", issuerKey, 0);
+            var now = DateTimeOffset.UtcNow;
+            using var agentRoot = agentRootRequest.CreateSelfSigned(now.AddMinutes(-2), now.AddDays(2));
+            using var agentIssuer = agentIssuerRequest.Create(agentRoot, now.AddMinutes(-1), now.AddDays(1), RandomNumberGenerator.GetBytes(16));
+            File.WriteAllText(Path.Combine(Directory, "agent_root_certificate"), agentRoot.ExportCertificatePem());
+            File.WriteAllText(Path.Combine(Directory, "agent_issuer_certificate"), agentIssuer.ExportCertificatePem());
+            File.WriteAllText(Path.Combine(Directory, "agent_issuer_key"), issuerKey.ExportPkcs8PrivateKeyPem());
             File.WriteAllText(Path.Combine(Directory, "runtime_password"), Password + "\r\n");
             File.WriteAllText(Path.Combine(Directory, "history_password"), "synthetic-history-password\n");
             foreach (var (name, value) in new Dictionary<string, string> {
@@ -333,13 +345,22 @@ public sealed class InstalledConfigurationTests
                 ["ADLOG_HISTORY_CLICKHOUSE_HOST"] = "127.0.0.1", ["ADLOG_HISTORY_CLICKHOUSE_PORT"] = "8123",
                 ["ADLOG_HISTORY_CLICKHOUSE_USER"] = "sli_history", ["ADLOG_HISTORY_CLICKHOUSE_PASSWORD_FILE"] = Path.Combine(Directory, "history_password"),
                 ["ADLOG_TLS_CERT_FILE"] = Path.Combine(Directory, "tls_certificate"), ["ADLOG_TLS_KEY_FILE"] = Path.Combine(Directory, "tls_key"),
-                ["SLI_TLS_CA_FILE"] = Path.Combine(Directory, "tls_certificate"), ["SLI_AGENT_MTLS_CA_FILE"] = Path.Combine(Directory, "tls_certificate"),
-                ["SLI_AGENT_CA_ROOT_CERT_FILE"] = Path.Combine(Directory, "tls_certificate"),
-                ["SLI_AGENT_CA_ISSUER_CERT_FILE"] = Path.Combine(Directory, "tls_certificate"), ["SLI_AGENT_CA_ISSUER_KEY_FILE"] = Path.Combine(Directory, "tls_key"),
+                ["SLI_TLS_CA_FILE"] = Path.Combine(Directory, "tls_certificate"), ["SLI_AGENT_MTLS_CA_FILE"] = Path.Combine(Directory, "agent_root_certificate"),
+                ["SLI_AGENT_CA_ROOT_CERT_FILE"] = Path.Combine(Directory, "agent_root_certificate"),
+                ["SLI_AGENT_CA_ISSUER_CERT_FILE"] = Path.Combine(Directory, "agent_issuer_certificate"), ["SLI_AGENT_CA_ISSUER_KEY_FILE"] = Path.Combine(Directory, "agent_issuer_key"),
                 ["ADLOG_DATA_DIR"] = Directory, ["ADLOG_LOG_DIR"] = Directory, ["ADLOG_AUTH_REQUIRED"] = "1",
                 ["SLI_PLUGIN_RUNTIME_DIR"] = Directory, ["SLI_PLUGIN_LOCK_DIR"] = Directory, ["SLI_DEPLOYMENT_MODE"] = "native",
                 ["ADLOG_REACT_WEB_DIR"] = Directory, ["SLI_HEALTH_URL"] = Url + "/api/health/ready"
             }) Settings.Add(name, value);
+        }
+
+        private static CertificateRequest AgentCaRequest(string name, ECDsa key, int pathLength)
+        {
+            var request = new CertificateRequest(name, key, HashAlgorithmName.SHA256);
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, pathLength, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.2")], false));
+            return request;
         }
         public Process Start(params string[] args)
         {
