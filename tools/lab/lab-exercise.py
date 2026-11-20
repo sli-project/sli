@@ -96,6 +96,21 @@ def quiet_snapshot(home, observed_at):
             "within_ten": count <= 10 if state in {"ok", "empty"} else None}
 
 
+def quiet_home_snapshot(home, observed_at):
+    if home.get("contract_id") != "sli.home-summary.v3" or "total" not in home:
+        raise ExerciseError("api_contract_invalid")
+    count = home["total"]
+    state = home.get("state")
+    if state not in ("ok", "empty", "partial", "stale", "denied", "error"):
+        raise ExerciseError("api_contract_invalid")
+    if count is not None and (type(count) is not int or count < 0):
+        raise ExerciseError("api_contract_invalid")
+    if (state == "ok" and not count) or (state == "empty" and count != 0):
+        raise ExerciseError("api_contract_invalid")
+    return {"observed_at_utc": observed_at, "problem_count": count,
+            "within_ten": count <= 10 if state in ("ok", "empty") else None}
+
+
 def telegram_configured(payload):
     channels = payload.get("channels")
     if not isinstance(channels, list) or any(not isinstance(row, dict) for row in channels):
@@ -157,7 +172,8 @@ def markdown(report):
 
     quiet = report["quiet"]
     outcome = {True: "да", False: "нет", None: "—"}[quiet["within_ten"]]
-    lines = [f"Тихое состояние ({quiet['observed_at_utc']}): проблем на главной — {quiet['problem_count']}; ≤10 — {outcome}.",
+    count = quiet["problem_count"] if quiet["problem_count"] is not None else "—"
+    lines = [f"Тихое состояние ({quiet['observed_at_utc']}): проблем на главной — {count}; ≤10 — {outcome}.",
              "", "| Атака | Найдена | Минут | Заголовок проблемы | Telegram¹ | Итог |",
              "|---|---|---|---|---|---|"]
     labels = {"accepted": "да", "not_configured": "не настроен", "unverified": "—"}
@@ -363,7 +379,8 @@ def main(argv=None):
             raise ExerciseError("ssh_identity_required")
         api = Api(args.api_url, token)
         home = api.get("/api/v1/home/summary", {"contract": "v3", "domain_id": args.domain_id, "tz": "UTC"})
-        report = {"schema_version": 1, "quiet": quiet_snapshot(home, utc_now()), "attacks": [], "complete": args.quiet_only}
+        snapshot = quiet_home_snapshot if args.quiet_only else quiet_snapshot
+        report = {"schema_version": 1, "quiet": snapshot(home, utc_now()), "attacks": [], "complete": args.quiet_only}
         write_results(args.results, report)
         if not args.quiet_only:
             inventory = json.loads((HERE / "lab-data.json").read_text("utf-8-sig"))
