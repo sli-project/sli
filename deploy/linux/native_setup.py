@@ -16,6 +16,7 @@ import ssl
 import stat
 import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -194,6 +195,27 @@ def setup_lock():
         yield
     finally:
         os.close(fd)
+
+
+def replace_text(path, body, *, mode=0o600):
+    """Replace trusted root-owned text without following an existing symlink."""
+    install.trusted(path)
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(body)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+        if os.name == 'posix':
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def owner_recovery(username):
