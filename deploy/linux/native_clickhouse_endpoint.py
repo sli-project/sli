@@ -189,7 +189,7 @@ def site_configuration(root=Path("/")):
 def database_directory_path(value):
     require(isinstance(value, str)
             and (re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
-                 or re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)+sli-db', value))
+                 or re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)*sli-db(?:-2)?', value))
             and not value.startswith(('/srv/sli-db/', '/var/lib/sli/', '/var/lib/postgresql/',
                                       '/var/lib/clickhouse/', '/var/backups/sli/', '/opt/sli/',
                                       '/home/', '/root/', '/run/', '/tmp/', '/var/tmp/'))
