@@ -20,9 +20,12 @@ public static class ProblemPresentation
         var catalog = DomainHttp.SelectEnglish(language) ? En.Value : Ru.Value;
         var alternate = DomainHttp.SelectEnglish(language) ? Ru.Value : En.Value; parameters ??= new();
         string text = catalog.GetValueOrDefault(code) ?? alternate.GetValueOrDefault(code) ?? code;
-        if (code == "security.problems.presentation.t109.agent-tamper.what" &&
-            (parameters["actor"] is null || string.IsNullOrWhiteSpace(parameters["actor"]!.ToString())))
-            text = Regex.Replace(text, @"[,;]\s+[^,;]*\{actor\}[^.]*", "");
+        if (code == "security.problems.presentation.t109.agent-tamper.what") {
+            if (parameters["actor"] is null || string.IsNullOrWhiteSpace(parameters["actor"]!.ToString()))
+                text = Regex.Replace(text, @"[,;]\s+[^,;]*\{actor\}[^.]*", "");
+            if (parameters["computer"] is null) text = text.Replace(" на {computer}", "").Replace(" on {computer}", "");
+            if (parameters["time"] is null) text = text.Replace(" в {time}", "").Replace(" at {time}", "");
+        }
         if (code is "security.problems.presentation.kerberoasting_what" or "security.problems.presentation.asrep_what") {
             if (parameters["source"] is null) text = text.Replace(", запрос с {source}", "").Replace(", requested from {source}", "")
                 .Replace(" с {source}", "").Replace(" from {source}", "");
@@ -130,22 +133,27 @@ public static class ProblemPresentation
         string rule = ProblemJson.Text(finding["rule_code"]);
         bool password = rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
         if (password && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
-        var message = Message(RuleMessageCode(rule, suffix), language, RuleParameters(finding, access, language));
+        var parameters = RuleParameters(finding, access, language);
+        string code = RuleMessageCode(rule, suffix);
+        if (suffix == "next" && (CatalogDetection(rule) || rule == "semantic.qw.agent-tamper") &&
+            (parameters["actor"] is null || rule == "semantic.qw.privileged-group-addition" && parameters["member"] is null))
+            code += "_without_names";
+        var message = Message(code, language, parameters);
         if (suffix == "what" && CatalogDetection(rule)) {
-            var parameters = message["params"]!.AsObject();
-            var catalog = DomainHttp.SelectEnglish(language) ? En.Value : Ru.Value;
-            string template = catalog[RuleMessageCode(rule, suffix)];
+            bool english = DomainHttp.SelectEnglish(language);
+            var catalog = english ? En.Value : Ru.Value;
+            string template = catalog[code];
             if (parameters["actor"] is null) template = template.Replace("{actor} добавил", "Добавили").Replace("{actor} очистил", "Очистили")
                 .Replace("{actor} отключил", "Отключили").Replace("{actor} added", "Added").Replace("{actor} cleared", "Cleared").Replace("{actor} turned", "Turned");
+            if (parameters["member"] is null) template = template.Replace("{member}", english ? "an account" : "учётную запись");
             foreach (var (key, fragments) in new[] {
-                ("member", new[] { "{member} " }), ("group", new[] { " в группу {group}", " to {group}" }),
+                ("group", new[] { " в группу {group}", " to {group}" }),
                 ("category", new[] { " «{category}»", " of {category}" }),
                 ("computer", new[] { " на {computer}", " on {computer}" }), ("time", new[] { " в {time}", " at {time}" }) })
                 if (parameters[key] is null) foreach (string fragment in fragments) template = template.Replace(fragment, "");
             message["text"] = Render(template, parameters);
         }
         if (suffix == "what" && !CatalogDetection(rule) && rule != "semantic.qw.agent-tamper" && rule is not ("semantic.qw.kerberoasting" or "semantic.qw.asrep-roasting") && (!password || string.IsNullOrWhiteSpace(ProblemJson.Text(message["text"])))) {
-            var parameters = message["params"]!.AsObject();
             string rendered = ProblemJson.Text(message["text"]);
             var facts = new[] { "actor", "account", "computer", "source", "count", "time" }
                 .Where(key => parameters[key] is not null && !rendered.Contains(parameters[key]!.ToString(), StringComparison.Ordinal))

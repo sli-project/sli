@@ -53,7 +53,8 @@ public sealed partial class ProblemRepository
         where e.finding_id=any(@ids) and (
             e.event_id in(4728,4732,4756,4719) and e.channel='Security' and e.identity_provider='Microsoft-Windows-Security-Auditing'
             or e.event_id=1102 and e.channel='Security' and e.identity_provider='Microsoft-Windows-Eventlog'
-            or e.event_id=104 and e.channel='System' and e.identity_provider='Microsoft-Windows-Eventlog')
+            or e.event_id=104 and e.channel='System' and e.identity_provider='Microsoft-Windows-Eventlog'
+                and lower(c.fields->>'Channel')='security')
         order by e.finding_id,e.time_created_utc desc,e.event_db_id desc
         """;
     internal static void AttachDetectionPresentation(IEnumerable<JsonObject> rows, IEnumerable<JsonObject> observations)

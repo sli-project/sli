@@ -92,11 +92,15 @@ public static class RetainedFactsCommand
             byte[] raw = Encoding.UTF8.GetBytes(File.ReadAllText(path).Replace("\r\n", "\n"));
             files.Add(new JsonObject { ["path"] = Path.GetRelativePath(root, path).Replace('\\', '/'), ["sha256"] = Convert.ToHexStringLower(SHA256.HashData(raw)) });
         }
-        return SemanticJson.Hash(new JsonObject {
+        string fingerprint = SemanticJson.Hash(new JsonObject {
             ["selector"] = new JsonObject { ["owner"] = "publish_semantic_candidates", ["source"] = "semantic_event_rows", ["ordered_by"] = "id_ascending", ["include_context"] = true, ["max_batch"] = SemanticProducer.MaxBatch },
             ["catalog"] = files,
             ["normalizer"] = new JsonObject { ["id"] = SemanticEvent.Normalizer, ["version"] = SemanticEvent.Version, ["semantic_contract_version"] = 1 },
             ["assemblers"] = new JsonArray(new JsonObject { ["id"] = "semantic-action-assembler", ["version"] = "1.1" }, new JsonObject { ["id"] = "process-episode-assembler", ["version"] = "1.0" })
         });
+        // Selection and normalization use the catalog embedded in this build.
+        if (fingerprint != SemanticRetainedControl.RulesFingerprint())
+            throw new InvalidOperationException("retained facts installed rules do not match the server rules fingerprint");
+        return fingerprint;
     }
 }

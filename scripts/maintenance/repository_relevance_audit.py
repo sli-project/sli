@@ -190,6 +190,7 @@ COMPONENTS: dict[str, tuple[str, ...]] = {
         "tools/lab/lab-06-file-simulate.ps1",
         "tools/lab/lab-08-nps-denials.ps1",
         "tools/lab/lab-common.ps1",
+        "tools/lab/lab-detection-catalog.ps1",
         "tools/lab/lab-exercise-attack.ps1",
         "tools/lab/lab-exercise.py",
         "tools/lab/lab-orchestrate.ps1",

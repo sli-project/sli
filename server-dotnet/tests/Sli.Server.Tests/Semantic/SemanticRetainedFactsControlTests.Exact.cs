@@ -7,13 +7,60 @@ namespace Sli.Server.Tests.Semantic;
 
 public sealed partial class SemanticRetainedFactsControlTests
 {
+    private const string PreviousRulesFingerprint = "e00a5ff93d87fa53770f64ae2e49b19c01160846b84e91806d300d2aaf42d495";
+
     [Fact]
-    public void Fingerprints_and_exact_digest_match_executed_python_reference()
+    public void Exact_digest_binds_current_rules_and_selection_fingerprints_match_reference()
     {
-        Assert.Equal("e00a5ff93d87fa53770f64ae2e49b19c01160846b84e91806d300d2aaf42d495", SemanticRetainedControl.RulesFingerprint());
+        string fingerprint = SemanticRetainedControl.RulesFingerprint();
         Assert.Equal("4556f8b134a27bd5d1b6aa7d8fdc290a1e537b21d982502e67497c961065fc72", SelectionFingerprint(5000, false));
         Assert.Equal("842718a615f6ada7acf392be70b181853332414b90cee17749569ac5eede499a", SelectionFingerprint(5000, true));
-        using var f = new Fixture(); Assert.Equal("de0fa6981fe2056ba77e20dac1a343a0915e9673cfa65e0a72f1b26eaa74bb1a", SemanticRetainedControl.ExactDigest([7, 8], "rules-v1", f.IdentityValue));
+        using var f = new Fixture();
+        Assert.Equal("f71b901390a358364e80f0eafeb6157425162626e577477707d12a34bbdb1854", SemanticRetainedControl.ExactDigest([7, 8], fingerprint, f.IdentityValue));
+    }
+
+    [Fact]
+    public void Installed_catalog_must_match_the_server_rules_before_planning()
+    {
+        string root = SemanticProduction.SourceBundleRoot(null, AppContext.BaseDirectory);
+        string fingerprint = SemanticRetainedControl.RulesFingerprint();
+        Assert.Equal(fingerprint, RetainedFactsCommand.RulesFingerprint(root));
+
+        using var f = new Fixture();
+        string config = Path.Combine(root, "config");
+        string installed = Path.Combine(f.DirectoryPath, "config");
+        Directory.CreateDirectory(Path.Combine(installed, "source_packs"));
+        foreach (string catalog in Directory.GetFiles(config, "*event_catalog.json"))
+            File.Copy(catalog, Path.Combine(installed, Path.GetFileName(catalog)));
+        foreach (string manifest in Directory.GetFiles(Path.Combine(config, "source_packs"), "*.json"))
+            File.Copy(manifest, Path.Combine(installed, "source_packs", Path.GetFileName(manifest)));
+
+        Assert.Equal(fingerprint, RetainedFactsCommand.RulesFingerprint(f.DirectoryPath));
+        string catalogPath = Path.Combine(installed, "event_catalog.json");
+        var catalogDocument = JsonNode.Parse(File.ReadAllText(catalogPath))!.AsObject();
+        catalogDocument["version"] = "synthetic-catalog-drift";
+        File.WriteAllText(catalogPath, catalogDocument.ToJsonString());
+        var error = Assert.Throws<InvalidOperationException>(() => RetainedFactsCommand.RulesFingerprint(f.DirectoryPath));
+        Assert.Contains("installed rules do not match", error.Message);
+    }
+
+    [Fact]
+    public async Task Previous_rules_confirmation_cannot_publish_or_write_intent()
+    {
+        using var f = new Fixture(); f.Add(7, 4728); f.Add(8, 4728);
+        var paths = f.Control();
+        string manifest = paths.ExactPath;
+        var previous = new RetainedFactsControl(f, paths.FactsPath, PreviousRulesFingerprint);
+        var oldPlan = await previous.CheckPlanAsync([7, 8], manifest, Ct);
+        var control = new RetainedFactsControl(f, paths.FactsPath, SemanticRetainedControl.RulesFingerprint());
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            control.CheckAsync([7, 8], manifest, oldPlan.Text("plan_digest")!, oldPlan.Text("confirmation")!,
+                (_, _, _) => throw new InvalidOperationException("must not execute an old plan"), Ct));
+
+        Assert.Contains("plan digest mismatch", error.Message);
+        Assert.False(File.Exists(manifest));
+        Assert.Empty(f.Published);
+        Assert.All(f.Calls, call => Assert.False(call.Write));
     }
     [Fact]
     public async Task Invalid_exact_ids_fail_before_database_or_environment()
