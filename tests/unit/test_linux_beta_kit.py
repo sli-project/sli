@@ -45,6 +45,35 @@ def test_archive_contains_the_installer_and_verified_kit_bytes(tmp_path):
         }
 
 
+@pytest.mark.parametrize('change', [None, 'package', 'commit', 'unlisted'])
+def test_verify_offline_kit_checks_the_archived_files_and_source(tmp_path, change):
+    commit = 'a' * 40
+    files = {'install-beta-kit': b'installer', 'remove-beta-kit': b'remover', 'sli-fixture.deb': b'package'}
+    for name, body in files.items():
+        (tmp_path / name).write_bytes(body)
+    entries = {name: {'filename': name, 'sha256': kit.sha256(tmp_path / name)} for name in files}
+    kit.write_json(tmp_path / 'manifest.json', {
+        'git_commit': 'b' * 40 if change == 'commit' else commit,
+        'target': 'debian-13-amd64', 'packages': [entries['sli-fixture.deb']],
+        'installer': entries['install-beta-kit'], 'remover': entries['remove-beta-kit'],
+    })
+    sums = {name: row['sha256'] for name, row in entries.items()}
+    sums['manifest.json'] = kit.sha256(tmp_path / 'manifest.json')
+    (tmp_path / 'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in sums.items()))
+    if change == 'package':
+        (tmp_path / 'sli-fixture.deb').write_bytes(b'changed')
+    elif change == 'unlisted':
+        (tmp_path / 'unlisted.deb').write_bytes(b'unlisted')
+    kit.archive_kit(tmp_path)
+    archive = tmp_path / 'sli-debian-beta-kit.tar.gz'
+    if change:
+        reason = 'selected commit and target' if change == 'commit' else 'do not match SHA256SUMS'
+        with pytest.raises(ValueError, match=reason):
+            kit.verify_offline_kit(archive, commit)
+    else:
+        kit.verify_offline_kit(archive, commit)
+
+
 def test_copies_only_pinned_debs_and_leaves_cache_intact(tmp_path):
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -78,6 +107,42 @@ def test_modified_cache_package_aborts_before_copy(tmp_path):
         })
 
     assert not list(output.iterdir())
+
+
+@pytest.mark.parametrize('tampered', [False, True])
+def test_fetch_inputs_verifies_packages_before_they_enter_cache(tmp_path, monkeypatch, tampered):
+    runtime = b'pinned runtime'
+    package = b'pinned Debian package'
+    row = {'name': 'libfixture', 'filename': 'pool/main/libf/libfixture/libfixture_1_amd64.deb',
+           'sha256': hashlib.sha256(package).hexdigest(), 'version': '1',
+           'url': 'http://deb.debian.org/debian/pool/main/libf/libfixture/libfixture_1_amd64.deb'}
+    pins = {'roots': [], 'packages': [row], 'dependency_edges': [], 'captured_utc': '2020-01-02T03:04:05Z',
+            'runtime_build': {'id': 'fixture', 'version': '1', 'debian_artifacts': [], 'debian_runtime': [row]},
+            'runtime_artifact': {'runtime_id': 'fixture', 'version': '1', 'sha256': hashlib.sha256(runtime).hexdigest()}}
+    urls = []
+
+    def download(argv):
+        destination, url = argv[-2:]
+        urls.append(url)
+        if '/beta-input-' in url:
+            destination.write_bytes(runtime)
+        elif url.startswith('https://deb.debian.org/'):
+            raise subprocess.CalledProcessError(22, argv)
+        else:
+            destination.write_bytes(b'tampered package' if tampered else package)
+
+    monkeypatch.setattr(kit, 'command', download)
+    name = 'libfixture_1_amd64.deb'
+    if tampered:
+        with pytest.raises(ValueError, match=f'Package SHA-256 mismatch: {name}'):
+            kit.fetch_inputs(tmp_path, pins)
+        assert not (tmp_path / name).exists()
+    else:
+        kit.fetch_inputs(tmp_path, pins)
+        assert (tmp_path / name).read_bytes() == package
+    assert urls[-2:] == [row['url'].replace('http:', 'https:'),
+                         f"https://snapshot.debian.org/archive/debian/20200102T030405Z/{row['filename']}"]
+    assert list(tmp_path.glob('.beta-download-*')) == []
 
 
 def test_builder_probes_postgresql_with_its_loader_path_and_no_database_environment(tmp_path, monkeypatch):
@@ -134,6 +199,23 @@ def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, e
     source.write_bytes(b'changed after verification')
 
     assert staged.read_bytes() == b'agent MSI bytes'
+
+
+@pytest.mark.parametrize('sdk', ['10.0.113', '10.0.112', None])
+def test_hosted_agent_msi_manifest_matches_the_locked_sdk(tmp_path, sdk):
+    commit = 'a' * 40
+    source = tmp_path / f'SliAgent-{commit}.msi'
+    source.write_bytes(b'agent MSI bytes')
+    metadata = {'source_commit': commit, 'sha256': kit.sha256(source)}
+    if sdk is not None:
+        metadata['dotnet_sdk'] = sdk
+    kit.write_json(tmp_path / f'{source.name}.json', metadata)
+    if sdk == '10.0.113':
+        assert kit.stage_agent_msi(tmp_path, commit, tmp_path, expected_sdk='10.0.113').read_bytes() == source.read_bytes()
+    else:
+        with pytest.raises(ValueError, match=r'does not identify \.NET SDK 10\.0\.113'):
+            kit.stage_agent_msi(tmp_path, commit, tmp_path, expected_sdk='10.0.113')
+        assert not (tmp_path / 'SliAgent.msi').exists()
 
 
 @pytest.mark.parametrize(('problem', 'message'), [

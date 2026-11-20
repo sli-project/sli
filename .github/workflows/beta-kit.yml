@@ -11,19 +11,39 @@ on:
         description: 'Upload the finished kit to GitHub Actions'
         default: false
         type: boolean
+      release:
+        description: 'Create a draft GitHub release with the verified kit'
+        default: false
+        type: boolean
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  build:
+  agent-msi:
     if: github.ref == 'refs/heads/main'
-    runs-on: ${{ vars.SLI_BETA_KIT_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/agent-msi.yml
+    with:
+      commit: ${{ inputs.commit || github.sha }}
+
+  build:
+    needs: agent-msi
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     env:
-      KIT_DEBS: ${{ vars.SLI_BETA_KIT_DEBS_DIR }}
-      KIT_OUTPUT: ${{ vars.SLI_BETA_KIT_OUTPUT_DIR }}
       KIT_COMMIT: ${{ inputs.commit || github.sha }}
     steps:
+      - name: Install builder tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git python3
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
@@ -38,44 +58,103 @@ jobs:
           git merge-base --is-ancestor "$KIT_COMMIT" "$GITHUB_SHA"
           global_json="$RUNNER_TEMP/sli-beta-global-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
           git show "$KIT_COMMIT:server-dotnet/global.json" > "$global_json"
+          printf 'commit=%s\n' "$KIT_COMMIT" >> "$GITHUB_OUTPUT"
           printf 'global_json=%s\n' "$global_json" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sli-agent-dotnet-msi-${{ steps.source.outputs.commit }}
+          path: .net-local/beta-kit-agent
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.14.6'
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        env:
+          DOTNET_INSTALL_DIR: /opt/dotnet
         with:
           global-json-file: ${{ steps.source.outputs.global_json }}
-      - name: Build and verify the Debian kit
-        id: build
+      - name: Download and verify pinned inputs
         shell: bash
         run: |
           set -euo pipefail
-          : "${KIT_DEBS:?Configure SLI_BETA_KIT_DEBS_DIR with pinned Debian packages and trusted agent MSI inputs}"
-          kit_root="${KIT_OUTPUT:-$RUNNER_TOOL_CACHE/sli-beta-kits}"
-          mkdir -p "$kit_root"
-          kit="$kit_root/$KIT_COMMIT-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          requirements="$RUNNER_TEMP/sli-beta-wheels-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
-          git show "$KIT_COMMIT:deploy/linux/native_pins.json" | python -c \
-            'import json, sys; from deploy.linux.native_runtime_build import wheel_lock; print(wheel_lock(json.load(sys.stdin)["runtime_build"]), end="")' \
-            > "$requirements"
-          python -m venv "$RUNNER_TEMP/sli-beta-venv"
-          py="$RUNNER_TEMP/sli-beta-venv/bin/python"
-          "$py" -m pip install --require-hashes --no-deps -r "$requirements"
-          "$py" -m pip install 'pytest==9.0.3'
-          "$py" -m pytest tests/unit/test_linux_beta_kit.py -q
-          "$py" -m deploy.linux.build_beta_kit --commit "$KIT_COMMIT" --debs "$KIT_DEBS" --output "$kit"
-          (cd "$kit" && sha256sum --check SHA256SUMS)
-          printf 'path=%s\n' "$kit" >> "$GITHUB_OUTPUT"
-          printf 'Runner `%s` (container hostname `%s`)\n\n' "$RUNNER_NAME" "$(hostname)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Runner kit directory `%s`\n' "$kit" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload the optional kit artifact
-        if: inputs.upload_artifact
+          python3 -m deploy.linux.build_beta_kit --commit "$KIT_COMMIT" --debs .net-local/beta-kit-inputs --fetch-inputs
+      - name: Provision PostgreSQL 18 and the Python runtime
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          debs="$GITHUB_WORKSPACE/.net-local/beta-kit-inputs"
+          runtime=("$debs"/sli-runtime-*.deb)
+          [[ "${#runtime[@]}" -eq 1 && -f "${runtime[0]}" ]]
+
+          # Install compatible system libraries. The pinned copies remain intact in the kit.
+          dependencies=$(dpkg-deb --field "${runtime[0]}" Depends)
+          read -ra libraries <<< "$(sed -E 's/ \(= [^)]+\)//g; s/,//g' <<< "$dependencies")"
+          printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+          chmod 0755 /usr/sbin/policy-rc.d
+          apt-get install -y --no-install-recommends "${libraries[@]}" \
+            "$debs"/libpq5_*.deb "$debs"/postgresql-{client-,}18_*.deb \
+            "$debs"/postgresql-{client-,}common_*.deb
+          dpkg-deb --extract "${runtime[0]}" /
+          useradd --create-home sli-builder
+          chown -R sli-builder:sli-builder "$GITHUB_WORKSPACE"
+      - name: Build and verify the Debian kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$GITHUB_WORKSPACE/.net-local"
+          kit="$work/kit"
+          assets="$GITHUB_WORKSPACE/beta-kit-release"
+          msi="SliAgent-$KIT_COMMIT.msi"
+          mv -- "$work/beta-kit-agent/$msi" "$work/beta-kit-agent/$msi.json" "$work/beta-kit-inputs/"
+          runtime_python=(/opt/sli/runtimes/*/bin/python3.14)
+          [[ "${#runtime_python[@]}" -eq 1 && -x "${runtime_python[0]}" ]]
+          runuser -u sli-builder -- "${runtime_python[0]}" -m venv --system-site-packages "$work/venv"
+          py="$work/venv/bin/python"
+          runuser -u sli-builder -- "$py" -m pip install 'pytest==9.0.3'
+          runuser -u sli-builder -- env TZ=UTC "$py" -m pytest tests/unit/test_linux_beta_kit.py -q
+          runuser -u sli-builder -- "$py" -m deploy.linux.build_beta_kit \
+            --commit "$KIT_COMMIT" --debs "$work/beta-kit-inputs" --output "$kit" --require-agent-sdk
+          runuser -u sli-builder -- "$py" -m deploy.linux.build_beta_kit \
+            --commit "$KIT_COMMIT" --verify-offline-kit "$kit/sli-debian-beta-kit.tar.gz"
+          mkdir "$assets"
+          mv "$kit/sli-debian-beta-kit.tar.gz" "$assets/"
+          (cd "$assets" && sha256sum sli-debian-beta-kit.tar.gz > SHA256SUMS)
+          printf 'Verified Debian beta kit for `%s`.\n' "$KIT_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the verified kit
+        if: inputs.upload_artifact || inputs.release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sli-debian-beta-kit-${{ env.KIT_COMMIT }}
-          path: ${{ steps.build.outputs.path }}/sli-debian-beta-kit.tar.gz
+          name: sli-debian-beta-kit-${{ steps.source.outputs.commit }}
+          path: beta-kit-release/
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
+
+  release:
+    if: inputs.release && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sli-debian-beta-kit-${{ needs.build.outputs.commit }}
+          path: release
+      - name: Create draft release
+        shell: bash
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KIT_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$KIT_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
+          tag="beta-${KIT_COMMIT:0:12}"
+          notes=$(printf 'Source commit: `%s`\n\nGitHub Actions build: %s/%s/actions/runs/%s\n' \
+            "$KIT_COMMIT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          gh release create "$tag" sli-debian-beta-kit.tar.gz SHA256SUMS \
+            --target "$KIT_COMMIT" --draft --title "$tag" --notes "$notes"

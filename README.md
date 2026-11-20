@@ -35,10 +35,15 @@ Use clean **Debian 13 amd64** with sudo, network access to Debian repositories,
 after APT installs the packages. Allow inbound HTTPS on port 443 or the port
 printed by the installer.
 
-1. Get `sli-debian-beta-kit.tar.gz` through your beta provider's authenticated
-   delivery channel and unpack it on Debian. The complete Debian 13 amd64
-   kit contains the SLI packages and pinned vendor packages, including
-   PostgreSQL 18. Compare the kit checksums with those supplied by your provider.
+1. Download `sli-debian-beta-kit.tar.gz` and `SHA256SUMS` from the same
+   `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
+   The release notes link to the GitHub Actions run and identify its source commit.
+   In the download directory, verify the archive before extracting it.
+
+   ```sh
+   sha256sum --check SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
+   ```
+
 2. From the directory where you unpacked the archive, run:
 
    ```sh
@@ -179,8 +184,8 @@ For development, use the separate [dev container workflow](CONTRIBUTING.md).
 
 ## Upgrade
 
-For an installed beta, obtain the new complete kit described above and verify
-`SHA256SUMS` through the trusted delivery channel. In its `.deb` directory run:
+For an installed beta, download and verify the new kit as in step 1 above.
+In its `.deb` directory run:
 
 ```sh
 bash ./install-beta-kit
@@ -265,6 +270,3 @@ SLI Platform and its agent are licensed under [Apache-2.0](LICENSE).
 Separately licensed dependencies and Sigma content are listed in [NOTICE](NOTICE).
 Public source snapshots start a new migration checksum lineage and are intended
 for fresh installations. Do not use one to update a private-lineage database.
-The public beta download channel and private security reporting channel must be
-confirmed by the repository owner before publication; no public kit URL is
-asserted here.
