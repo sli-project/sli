@@ -46,7 +46,12 @@ public static class AttackPrecursors
     public static (string Rule,string Reason)? EventReason(DetectionRow row,PrecursorPolicy policy,IEnumerable<string>? agentServices=null)
     {
         agentServices??=AgentServices;int eid=row.EventId;
-        if(eid==1102||eid==104&&row.Channel=="System"&&row.Provider=="Microsoft-Windows-Eventlog")return(Rules[1],"security_log_cleared");if(eid==4719&&Match(row.Get("AuditPolicyChanges"),@"%%(?:8448|8450)\b"))return(Rules[2],"audit_removed");
+        // Event 104 is written to System regardless of which log was cleared.
+        if (eid == 1102 || eid == 104 && row.Channel == "System" && row.Provider == "Microsoft-Windows-Eventlog" &&
+            row.Get("Channel").Equals("Security", StringComparison.OrdinalIgnoreCase))
+            return (Rules[1], "security_log_cleared");
+        if (eid == 4719 && Match(row.Get("AuditPolicyChanges"), @"%%(?:8448|8450)\b"))
+            return (Rules[2], "audit_removed");
         string service=row.Get("ServiceName");if(service==""&&eid==7040)service=row.Get("param4");if(service=="")service=row.Get("param1");service=UnicodeCaseFold.Fold(service);
         if(agentServices.Select(UnicodeCaseFold.Fold).Contains(service)){
             string state=Normalize(row.Get("param2") is {Length:>0} stateValue ? stateValue : row.Get("State")),start=row.Get("StartType");if(start=="")start=row.Get("param3");if(start=="")start=row.Get("NewStartType");start=Normalize(start);

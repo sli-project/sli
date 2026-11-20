@@ -58,7 +58,10 @@ public sealed class AgentStopDetectionTests
     public void Missing_initiator_omits_only_the_initiator_clause(string language, string what)
     {
         var finding = new JsonObject { ["rule_code"] = "semantic.qw.agent-tamper", ["target"] = "dc.example.test", ["last_seen_utc"] = "2026-11-13T10:00:00Z", ["evidence_count"] = 1 };
-        Assert.Equal(what, HomePresentation.Finding(finding, language)["what"]!.ToString());
+        var view = HomePresentation.Finding(finding, language);
+        Assert.Equal(what, view["what"]!.ToString());
+        Assert.Contains("SLIAgentNet", view["next_step"]!.ToString());
+        Assert.Contains(language == "en" ? "Domain changes" : "Изменения в домене", view["next_step"]!.ToString());
     }
 
     [Fact]
