@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -32,14 +33,7 @@ RECEIPT_STEPS = {
 }
 NATIVE_RESTORE_TEST = "tests/migrations/test_qw_restore_context_migration.py"
 NATIVE_RESTORE_RUN = f"python -m pytest -q {NATIVE_RESTORE_TEST} -m postgres_integration"
-# --ignore does not drop explicitly listed files, so the shipped list is filtered.
-POSTGRES_SUITE_RUN = (
-    "# --ignore does not drop a file passed explicitly, so the three files run\n"
-    "# in their own steps above are removed from the shipped list here.\n"
-    f"grep -vxF -e {NATIVE_RESTORE_TEST} -e {COLLECTION_EXPERIMENT_TEST} "
-    f"-e {RECEIPT_EXPERIMENT_TEST} .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt\n"
-    'python -m pytest -v -m "postgres_integration and not e2e" @.ci-shipped-postgres-tests.txt\n'
-)
+POSTGRES_SUITE_STEP = "Remaining PostgreSQL integration tests"
 
 
 def workflow(name: str) -> dict:
@@ -110,24 +104,22 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert postgres["env"]["ADLOG_TEST_PG_EMPTY_DSN"].endswith("/sli_test_empty_ci")
     assert postgres["env"]["ADLOG_TEST_PG_EMPTY_DSN"] != postgres["env"]["ADLOG_TEST_PG_DSN"]
     runs = [step.get("run", "") for step in postgres["steps"]]
-    assert runs[-3] == NATIVE_RESTORE_RUN
-    assert runs[-2] == POSTGRES_SUITE_RUN
-    assert runs.count(NATIVE_RESTORE_RUN) == runs.count(POSTGRES_SUITE_RUN) == 1
+    assert runs.count(NATIVE_RESTORE_RUN) == 1
     packet_report, = [step for step in postgres["steps"]
                       if step.get("name") == "Signed AD packet reaches the journal on current PostgreSQL"]
     assert packet_report["shell"] == "bash"
-    assert "if" not in packet_report and "continue-on-error" not in packet_report
+    assert "continue-on-error" not in packet_report
     assert "--no-build -- -class Sli.Server.Tests.Agents.AgentPacketReportPostgresTests -failSkips" in packet_report["run"]
     assert '-result-xml "$result"' in packet_report["run"]
     assert not any("python -m pytest -q tests/e2e -m e2e" in run for run in runs)
     assert not any("docker" in run or "PG_CONTAINER" in run for run in runs)
     steps = {step.get("name"): step for step in postgres["steps"] if "name" in step}
     experiment = steps["Measure synthetic collection aggregation equivalence"]
-    assert experiment == {"name": "Measure synthetic collection aggregation equivalence", "run": COLLECTION_EXPERIMENT_RUN}
+    assert experiment["run"] == COLLECTION_EXPERIMENT_RUN
     assert runs.count(COLLECTION_EXPERIMENT_RUN) == 1
     assert runs.index(COLLECTION_EXPERIMENT_RUN) < runs.index(NATIVE_RESTORE_RUN)
     receipt_step = RECEIPT_STEPS[name]
-    assert steps[receipt_step["name"]] == receipt_step
+    assert steps[receipt_step["name"]]["run"] == receipt_step["run"]
     receipt_run = receipt_step["run"]
     assert runs.count(receipt_run) == 1
     assert runs.index(COLLECTION_EXPERIMENT_RUN) < runs.index(receipt_run)
@@ -137,12 +129,29 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         assert RECEIPT_EXPERIMENT_RUN not in runs
         assert "Measure synthetic plugin receipt plans" not in steps
     native_restore = steps["Verify full-schema ACL directory backup and parallel restore"]
-    assert native_restore == {
-        "name": "Verify full-schema ACL directory backup and parallel restore",
-        "run": NATIVE_RESTORE_RUN,
-    }  # No conditional skip, continue-on-error or fallback may hide this gate.
+    assert native_restore["run"] == NATIVE_RESTORE_RUN
     assert runs.index(steps["Bootstrap baseline and migrations"]["run"]) < runs.index(NATIVE_RESTORE_RUN)
-    assert runs.index(NATIVE_RESTORE_RUN) < runs.index(POSTGRES_SUITE_RUN)
+    suite = steps[POSTGRES_SUITE_STEP]
+    assert runs.index(NATIVE_RESTORE_RUN) < runs.index(suite["run"])
+    filter_files, pytest_run = [
+        shlex.split(line) for line in suite["run"].replace("\\\n", "").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert filter_files == [
+        "grep", "-vxF", "-e", NATIVE_RESTORE_TEST, "-e", COLLECTION_EXPERIMENT_TEST,
+        "-e", RECEIPT_EXPERIMENT_TEST, ".ci-shipped-python-tests.txt", ">", ".ci-shipped-postgres-tests.txt",
+    ]
+    pytest_options = []
+    if name == "pr-gate.yml":
+        assert suite["env"] == {"SHARD": "${{ matrix.shard }}", "SHARD_COUNT": "${{ strategy.job-total }}"}
+        pytest_options = [
+            "-p", "scripts.ci.postgres_test_shard", "--postgres-shard", "$SHARD", "$SHARD_COUNT",
+            "-o", "junit_family=xunit1", "--junitxml=postgres-test-results.xml",
+        ]
+    assert pytest_run == [
+        "python", "-m", "pytest", "-v", "-m", "postgres_integration and not e2e",
+        *pytest_options, "@.ci-shipped-postgres-tests.txt",
+    ]
     install = steps["Ensure PostgreSQL 18 binaries"]["run"]
     assert 'if [ ! -d /usr/lib/postgresql/18/bin ]; then' in install
     assert "https://apt.postgresql.org/pub/repos/apt" in install
@@ -197,32 +206,54 @@ def test_failed_jobs_fetch_pinned_setup_actions_over_git(job_name, action, revis
 
 
 def test_disposable_postgres_jobs_keep_shared_gates() -> None:
-    jobs = []
-    for name in WORKFLOWS:
-        job = workflow(name)["jobs"]["postgres"]
-        # pr-gate skips postgres for UI-only changes; the job body stays identical.
-        job.pop("needs", None)
-        job.pop("if", None)
-        # Assert the exact allowed difference, including absence of skip/failure
-        # bypasses, then compare every other setting and ordered step unchanged.
-        receipt_step = RECEIPT_STEPS[name]
-        assert job["steps"].count(receipt_step) == 1
-        job["steps"] = [
-            {"name": "receipt diagnostic scope"} if step == receipt_step else step
-            for step in job["steps"]
-        ]
+    pr, manual = (workflow(name)["jobs"]["postgres"] for name in WORKFLOWS)
+    assert pr.pop("needs") == "changes"
+    assert pr.pop("if") == "${{ needs.changes.outputs.python == 'true' }}"
+    pr.pop("name")
+    strategy = pr.pop("strategy")
+    shards = strategy["matrix"]["shard"]
+    assert shards == list(range(1, len(shards) + 1)) and len(shards) > 1
+    assert strategy == {"fail-fast": False, "matrix": {"shard": shards}}
+
+    pr_steps = {step.get("name"): step for step in pr["steps"] if "name" in step}
+    upgrade_name = "Verify migrations and backup recovery on private PostgreSQL 18"
+    once_per_matrix = (
+        upgrade_name,
+        "Signed AD packet reaches the journal on current PostgreSQL",
+        "T002 actual PostgreSQL context at synthetic enterprise scale",
+        "T051 bounded synthetic context plans and typed timeout",
+        "Measure synthetic collection aggregation equivalence",
+        RECEIPT_STEPS["pr-gate.yml"]["name"],
+        "Verify full-schema ACL directory backup and parallel restore",
+    )
+    for step_name in once_per_matrix:
+        step = pr_steps[step_name]
+        assert step.pop("if") in {f"matrix.shard == {shard}" for shard in shards}
+        assert "continue-on-error" not in step
+
+    upgrade = pr_steps[upgrade_name]
+    assert "tests/unit/test_linux_install_upgrade_checks.py" in upgrade["run"]
+    assert "tests/unit/test_linux_native_pg_migrate.py" in upgrade["run"]
+    pr["steps"].remove(upgrade)
+    pr["steps"].remove(pr_steps["Preserve per-case PostgreSQL test results"])
+
+    # Compare all shared gates after accounting for the verified selection differences.
+    for name, job in zip(WORKFLOWS, (pr, manual), strict=True):
+        receipt = RECEIPT_STEPS[name]
+        assert job["steps"].count(receipt) == 1
+        job["steps"][job["steps"].index(receipt)] = {"name": "Check plugin receipt facts"}
+        suite, = [step for step in job["steps"] if step.get("name") == POSTGRES_SUITE_STEP]
+        assert "if" not in suite and "continue-on-error" not in suite
         if name == "pr-gate.yml":
-            # The PR gate also verifies native package upgrade and recovery.
-            upgrade = [step for step in job["steps"]
-                       if step.get("name") == "Verify migrations and backup recovery on private PostgreSQL 18"]
-            assert len(upgrade) == 1
-            assert "if" not in upgrade[0] and "continue-on-error" not in upgrade[0]
-            job["steps"].remove(upgrade[0])
-        jobs.append(job)
-    assert jobs[0] == jobs[1]
+            suite.pop("env")
+        suite.pop("run")
 
-
-
+    # Both the SDK and the server build must be available before every Python shard runs.
+    sdk, = setup_steps(pr, "setup-dotnet")
+    build = pr_steps["Build shipped server and packet report test"]
+    assert all("if" not in step and "continue-on-error" not in step for step in (sdk, build))
+    assert pr["steps"].index(sdk) < pr["steps"].index(build) < pr["steps"].index(pr_steps[POSTGRES_SUITE_STEP])
+    assert pr == manual
 
 @pytest.mark.parametrize("name", WORKFLOWS)
 @pytest.mark.parametrize("failure", [None, "sql", "ledger", "version"])

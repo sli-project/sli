@@ -64,6 +64,7 @@ function rowFor(columns: ReportColumnDto[], index: number): Record<string, unkno
 
 function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto {
   const items = Array.from({ length: count }, (_, index) => ({ ...rowFor(definition.columns, index),
+    ...(definition.key === 'security.problems' ? { allowed_statuses: ['new', 'active', 'false_positive', 'closed'] } : {}),
     ...(definition.key === 'ad.computers.v6' && index % 2 === 0
       ? { status: 'checked', status_text: 'Проверено', total: 2, new_count: 0 } : {}),
   }));
@@ -96,9 +97,9 @@ async function installStandardFixtures(page: Page, count = 60) {
     let body: unknown;
     let status = 200;
     if (pathname === '/api/v1/ui/bootstrap') body = { api_version: 'v1', effective_role: 'admin',
-      principal: { username: 'synthetic.operator', role: 'admin' }, capabilities: ['operations.view'], navigation: [] };
+      principal: { username: 'synthetic.operator', role: 'admin' }, capabilities: ['operations.view', 'investigations.manage'], navigation: [] };
     else if (pathname === '/api/v1/access/effective') body = { subject: { type: 'user', id: 1, username: 'synthetic.operator' },
-      platform_owner: false, capabilities: ['operations.view', 'problem.view'],
+      platform_owner: false, capabilities: ['operations.view', 'problem.view', 'investigations.manage'],
       reports: [...screens.map(({ key }) => ({ report_key: key, allowed: true })), { report_key: 'ad.computer-logons', allowed: true }] };
     else if (pathname === '/api/v2/reports') body = { contract_id: 'sli.report-catalog.v2', navigation, items: [] };
     else if (pathname === '/api/v1/overview') body = { collection_freshness: { state: 'partial' } };
@@ -187,6 +188,8 @@ for (const screen of screens) {
     // AD checks have hidden object-preview tables inside each closed row.
     const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr';
     await expect(page.locator('main').locator(rows)).toHaveCount(60);
+    if (screen.key === 'security.problems')
+      await expect(page.locator('main tbody tr').first().getByRole('button', { name: 'Решено' })).toBeVisible();
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));

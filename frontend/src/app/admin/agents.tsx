@@ -72,7 +72,7 @@ function AgentsContent() {
     }
   }, [agentId, inventory.data]);
   const [adding, setAdding] = useState(() => new URLSearchParams(window.location.search).get("register") === "1");
-  const [enrollment, setEnrollment] = useState<"group" | "manual">("group");
+  const [enrollment, setEnrollment] = useState<"group" | "manual">(access?.platform_owner ? "group" : "manual");
   const [filter, setFilter] = useState<AgentFilter>(() => {
     const value = new URLSearchParams(window.location.search).get("filter");
     return value === "silent" || value === "auditOff" || value === "disabled" ? value : "all";

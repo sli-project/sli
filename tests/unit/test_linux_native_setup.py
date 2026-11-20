@@ -269,6 +269,7 @@ def setup_host(tmp_path, monkeypatch):
         (state / 'host-prepared.json').write_text(json.dumps({'uuid': uuid, 'directory': directory}))
     check_setup_units = setup.host.Host(tmp_path / 'host').check_setup_units
     machine = SimpleNamespace(write=write, prepare=prepare, receipt=lambda: calls.append('receipt'),
+                              select_database_directory=lambda **kwargs: '/var/lib/sli-db',
                               check_setup_units=check_setup_units)
     monkeypatch.setattr(setup.host, 'Host', lambda: machine)
     monkeypatch.setattr(setup, 'check_port', lambda site, *, saved: calls.append('check-port'))
@@ -286,12 +287,68 @@ def setup_host(tmp_path, monkeypatch):
     return setup, args, calls, state, site_path
 
 
+@pytest.mark.parametrize('dns', ['local', 'loopback', 'unresolved'])
+def test_setup_without_arguments_selects_address_and_never_prompts(setup_host, monkeypatch, capsys, dns):
+    setup, args, calls, _, path = setup_host
+    args.server, args.non_interactive = None, False
+    monkeypatch.setattr(setup.socket, 'getfqdn', lambda: 'sli.example.test')
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
+    addresses = {'local': {'192.0.2.10'}, 'loopback': {'127.0.1.1'}, 'unresolved': set()}
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: addresses[dns])
+
+    setup.configure(args)
+
+    site = ch.parse_site(path.read_text())
+    address = 'sli.example.test' if dns == 'local' else '192.0.2.10'
+    assert site['server_name'] == address and site['https_port'] == 443
+    assert ('prepare', None, '/var/lib/sli-db') in calls
+    output = capsys.readouterr().out
+    assert f"Start-Process 'https://{address}/api/auth/bootstrap'" in output
+    assert ('using 192.0.2.10.' in output) == (dns != 'local')
+
+
+def test_setup_uses_available_port_if_443_busy(setup_host, monkeypatch, capsys):
+    setup, args, _, _, path = setup_host
+    def check_port(site, *, saved=False):
+        if site['https_port'] == 443:
+            try:
+                raise OSError(setup.errno.EADDRINUSE, 'synthetic occupied port')
+            except OSError:
+                raise setup.host.GuardError('native_setup_port_busy', 'HTTPS port 443', 'cannot bind', '') from None
+        assert site['https_port'] == 0
+        return 49152
+    monkeypatch.setattr(setup, 'check_port', check_port)
+
+    setup.configure(args)
+
+    assert ch.parse_site(path.read_text())['https_port'] == 49152
+    assert 'https://192.0.2.10:49152/api/auth/bootstrap' in capsys.readouterr().out
+
+
+def test_unresolved_explicit_name_falls_back_and_can_be_retried(setup_host, monkeypatch):
+    setup, args, calls, _, path = setup_host
+    args.server = 'sli.example.test'
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: set())
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
+
+    setup.configure(args)
+    calls.clear()
+    setup.configure(args)
+
+    assert ch.parse_site(path.read_text())['server_name'] == '192.0.2.10'
+    assert 'write-site' not in calls
+
+
 @pytest.mark.parametrize('bind', [None, '192.0.2.10'])
-def test_unresolved_server_refuses_before_writes_then_setup_accepts_ip(setup_host, monkeypatch, capsys, bind):
+def test_dns_failure_during_tls_preflight_refuses_writes_then_setup_accepts_ip(setup_host, monkeypatch, capsys, bind):
     setup, args, calls, state, site = setup_host
     args.server, args.bind = 'sli.example.test', bind
 
+    resolved = iter([True, False])
+
     def unresolved(*args, **kwargs):
+        if next(resolved):
+            return [(2, 1, 6, '', ('192.0.2.10', 443))]
         raise setup.socket.gaierror('synthetic resolver output')
 
     monkeypatch.setattr(setup.socket, 'getaddrinfo', unresolved)
@@ -560,13 +617,12 @@ def test_setup_changed_address_or_port_fails_before_any_mutation(setup_host, opt
 
 def test_setup_dns_generates_tls_for_server_name_and_local_ip(setup_host, monkeypatch):
     setup, args, calls, _, _ = setup_host
-    args.server, args.bind = 'sli.example.invalid', '192.0.2.10'
-    monkeypatch.setattr(setup.socket, 'getaddrinfo', lambda *args, **kwargs: [
-        (2, 1, 6, '', ('192.0.2.10', 443))])
+    args.server, args.bind = 'sli.example.test', '192.0.2.10'
+    monkeypatch.setattr(setup, 'resolved_addresses', lambda *args: {'192.0.2.10'})
     setup.configure(args)
     provision = next(call for call in calls if isinstance(call, list) and 'deploy.linux.sli_secrets' in call)
     names = [provision[i + 1] for i, arg in enumerate(provision) if arg == '--tls-name']
-    assert names == ['sli.example.invalid', '192.0.2.10']
+    assert names == ['sli.example.test', '192.0.2.10']
 
 
 def test_setup_does_not_select_clickhouse_for_new_install(setup_host):
@@ -854,13 +910,15 @@ def test_staged_package_needs_one_setup_command_and_prints_owner_code_once(setup
     assert not site.exists()
     assert install.main(['stage', 'beta']) == 0
     assert not site.exists()  # Package installation only stages the release.
-    assert setup.main(['--non-interactive', '--server', '192.0.2.10']) == 0
+    monkeypatch.setattr(setup.socket, 'getfqdn', lambda: 'debian')
+    monkeypatch.setattr(setup.host, 'run', lambda argv: '192.0.2.10\n')
+    assert setup.main([]) == 0
     output = capsys.readouterr().out
     assert 'https://192.0.2.10/app' in output
     assert 'One-time code / Одноразовый код: ' + secret.read_text() in output
     original = site.read_bytes()
     calls.clear()
-    assert setup.main(['--non-interactive', '--server', '192.0.2.10']) == 0
+    assert setup.main([]) == 0
     assert 'One-time code / Одноразовый код:' not in capsys.readouterr().out
     assert site.read_bytes() == original
     assert not owner['updates']  # Repeating setup cannot reset the owner's credential.

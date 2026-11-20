@@ -177,6 +177,7 @@ COMPONENTS: dict[str, tuple[str, ...]] = {
     ),
     "разработка_и_приёмка": (
         "scripts/ci/server_dotnet_shard.py",
+        "scripts/ci/server_test_durations.py",
         "scripts/ci/t002_clickhouse.py",
         "scripts/ci/shipped_python_tests.py",
         "scripts/maintenance/watchdog/tests/repair-identity.test.ps1",

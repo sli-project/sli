@@ -38,7 +38,7 @@ MESSAGES = {
     'native_root_required': 'Run this command with sudo.',
     'native_debian13_amd64_required': 'SLI beta requires Debian 13 on amd64. Use a clean supported server.',
     'native_existing_database': 'Existing database files were found. Use a clean server; SLI will not adopt or erase another database.',
-    'native_database_directory_invalid': 'Choose a dedicated directory under /var/lib, /srv or /mnt (for example /var/lib/sli-db).',
+    'native_database_directory_invalid': 'Choose a dedicated directory under /var/lib, /srv or /mnt, or sli-db at the root of a dedicated mounted volume.',
     'native_database_filesystem_unsupported': 'Database storage must use a local ext4 or XFS filesystem. Network, temporary and overlay filesystems are unsupported.',
     'native_database_filesystem_readonly': 'The database filesystem is read-only. Mount it read-write before retrying.',
     'native_database_space_insufficient': 'At least 20 GiB must be free for the databases. Free space or choose a larger disk.',
@@ -49,7 +49,7 @@ MESSAGES = {
     'native_site_port_invalid': 'The HTTPS port must be an integer from 1 to 65535.',
     'native_site_server_name_invalid': 'Enter a DNS hostname or IP address, without https://, port or path.',
     'native_setup_dns_failed': 'The server name cannot be resolved. Correct DNS or supply its local IP with --server.',
-    'native_setup_server_required': 'Non-interactive setup requires --server with a hostname or IP address.',
+    'native_setup_server_required': 'No usable server address was found. Configure a local IP address or specify the reachable address with --server.',
     'native_setup_mode_mismatch': 'The selected ClickHouse mode differs from the installed package set. Install a matching beta kit; do not switch an existing database mode.',
     'native_setup_configuration_conflict': 'SLI is already configured differently. Rerun without changed flags; use the reconfiguration procedure for an installed server.',
     'native_setup_storage_conflict': 'The requested storage differs from the prepared volume. Rerun with the original storage settings.',
@@ -84,6 +84,12 @@ def log_code(code):
 
 def failure(error, *, default='native_setup_failed'):
     candidate = str(error) if isinstance(error, (RuntimeError, ValueError)) else ''
+    space = re.fullmatch(r'native_database_space_insufficient:([0-9]{1,20})', candidate)
+    if space:
+        log_code('native_database_space_insufficient')
+        print(f'Database storage needs 20 GiB free. Available: {int(space[1]) / 1024**3:.1f} GiB. '
+              'Free space or mount another disk.', file=sys.stderr)
+        return
     if candidate == 'native_command_failed':
         command = 'native_command_failed: ' + (getattr(error, 'command', None) or '')
         unit = getattr(error, 'unit', None)

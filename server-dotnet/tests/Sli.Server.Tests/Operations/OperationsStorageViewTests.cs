@@ -64,7 +64,7 @@ public sealed class OperationsStorageViewTests
             {"components":[{"key":"postgres_database","human":"9 GB","bytes":9000},
              {"key":"clickhouse_volume_history","human":"11 GB","bytes":11000},
              {"key":"project_root","human":"3 GB"}],
-             "backups":{"last_backup_at_utc":"2026-11-13T10:00:00Z","capacity_days":7}}
+             "backups":{"last_backup_at_utc":"2026-11-13T10:00:00Z","capacity_days":7,"same_disk_as_postgres":true}}
             """)!.AsObject();
         var timer = Stopwatch.StartNew();
         var response = await app.Client.GetAsync("/api/v1/operations/overview?view=storage", TestContext.Current.CancellationToken);
@@ -74,6 +74,7 @@ public sealed class OperationsStorageViewTests
         Assert.Equal("9 GB", (string?)body["storage"]?["footprint"]?["components"]?[0]?["human"]);
         Assert.Equal(1000000000000L, (long?)body["storage"]?["disk_pressure"]?["disk"]?["free_bytes"]);
         Assert.Equal("2026-11-13T10:00:00Z", (string?)body["storage"]?["footprint"]?["backups"]?["last_backup_at_utc"]);
+        Assert.True((bool?)body["storage"]?["footprint"]?["backups"]?["same_disk_as_postgres"]);
         Assert.Null(body["collector_health"]); Assert.Null(body["workers"]); Assert.Null(body["plugin_pilots"]);
         Assert.Equal(0, app.Queries.Reads); Assert.Equal(0, app.Files.Scans); Assert.Equal(0, app.Files.Inventories);
         Assert.Equal(0, app.Files.RuntimeStorageReads);

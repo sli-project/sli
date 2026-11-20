@@ -11,6 +11,7 @@ import { t } from "../../i18n";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { useEffectiveAccess, useTimeZone } from "../App";
+import { canResolveProblem, queueStatus, ResolveProblem, statusLabel } from "../problem-lifecycle";
 import {
   apiParams, applyPreset, columnValue, defaultValues, fillTemplate, filterFields, isPresetActive,
   primaryFilterKeys, searchFromValues, valuesFromSearch, valuesReady, visiblePresets, vpnViewBranchKey,
@@ -88,7 +89,19 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
 }
 
 function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAdditionalTab }: { definition: ReportDefinitionDto } & AdditionalTabs) {
-  const definition = useMemo(() => sourceDefinition.key === "ad.gpo.v2" ? gpoReportDefinition(sourceDefinition) : sourceDefinition, [sourceDefinition]);
+  const definition = useMemo(() => {
+    if (sourceDefinition.key === "ad.gpo.v2") return gpoReportDefinition(sourceDefinition);
+    if (sourceDefinition.key !== "security.problems") return sourceDefinition;
+    return {
+      ...sourceDefinition,
+      params: sourceDefinition.params.map((param) => param.key === "status" && param.options
+        ? { ...param, options: param.options.filter(({ value }) => queueStatus(value) === value).map(({ value }) => ({ value, label: statusLabel(value) })) }
+        : param),
+      columns: sourceDefinition.columns.map((column) => column.key === "status" && column.labels
+        ? { ...column, labels: Object.fromEntries(Object.keys(column.labels).map((value) => [value, statusLabel(queueStatus(value))])) }
+        : column),
+    };
+  }, [sourceDefinition]);
   const { formatCell, formatDateTime } = useDateFormatters();
   const { timeZone } = useTimeZone();
   const access = useEffectiveAccess();
@@ -97,11 +110,13 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   const gpoReport = definition.key === "ad.gpo.v2";
   const infrastructure = definition.key === "ad.infrastructure";
   const problemQueue = definition.key === "security.problems";
+  const canManageProblems = problemQueue && Boolean(access?.capabilities.includes("investigations.manage"));
   const eventsJournal = definition.key === "events.journal";
   const domainEvents = definition.key === "security.events.chains";
   const [values, setValues] = useState<FilterValues>(() => {
     const search = new URLSearchParams(window.location.search);
     const initial = valuesFromSearch(definition, search);
+    if (problemQueue && typeof initial.status === "string") initial.status = queueStatus(initial.status);
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
     return initial;
   });
@@ -261,7 +276,11 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
       definition.key === "security.problems" && column.key === "title"
         ? { ...column, minWidth: "var(--sli-field-max-width)" } : column), [definition, independentUsers, view.key, timeZone, rows]);
 
-  const columns = eventsJournal ? journalColumns(declaredColumns, rows) : declaredColumns;
+  const columns = eventsJournal ? journalColumns(declaredColumns, rows) : canManageProblems ? declaredColumns.map((column) =>
+    column.key === "status" ? { ...column, render: (row: Row) => <>
+      {statusLabel(queueStatus(String(row.status ?? "")))}
+      {canResolveProblem(row) ? <> <ResolveProblem row={row} compact/></> : null}
+    </> } : column) : declaredColumns;
 
   let state: ResultState = "ok";
   let stateDetail: string | undefined;
@@ -411,6 +430,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
     drawer={<DetailDrawer open={selected !== null} title={selected ? independentUsers ? String(selected.sam ?? selected.display_name ?? t("reports.metrics.no_data")) : problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
       footer={selected ? <>
+        {canManageProblems && canResolveProblem(selected) ? <ResolveProblem key={String(selected.id)} row={selected} onResolved={() => setSelected(null)}/> : null}
         {definition.row_links.map((link) => {
           const href = fillTemplate(link.href, selected);
           return href ? <a key={link.label} className="sli-ds-button" data-variant="primary" href={withReturnTo(href, `${window.location.pathname}${window.location.search}`)}>{link.label}</a> : null;

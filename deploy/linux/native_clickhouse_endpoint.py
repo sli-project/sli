@@ -176,7 +176,7 @@ def server_name(value):
         require(all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
                     for label in value.split(".")), "native_site_server_name_invalid")
     else:
-        require(not address.is_unspecified and not address.is_multicast and str(address) == value,
+        require(not address.is_unspecified and not address.is_multicast and '%' not in value and str(address) == value,
                 "native_site_server_name_invalid")
     return value
 
@@ -184,6 +184,18 @@ def server_name(value):
 def site_configuration(root=Path("/")):
     site = root / "etc/sli/site.toml"
     return parse_site(trusted_text(site) if site.exists() or site.is_symlink() else "")
+
+
+def database_directory_path(value):
+    require(isinstance(value, str)
+            and (re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
+                 or re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)+sli-db', value))
+            and not value.startswith(('/srv/sli-db/', '/var/lib/sli/', '/var/lib/postgresql/',
+                                      '/var/lib/clickhouse/', '/var/backups/sli/', '/opt/sli/',
+                                      '/home/', '/root/', '/run/', '/tmp/', '/var/tmp/'))
+            and value not in {'/srv/sli-db', '/var/lib/sli', '/var/lib/postgresql', '/var/lib/clickhouse'},
+            'native_database_directory_invalid')
+    return value
 
 
 def database_directory(root=Path('/')):
@@ -194,11 +206,7 @@ def database_directory(root=Path('/')):
     saved = json.loads(trusted_text(receipt))
     if saved.get('storage_mode', 'uuid') != 'directory':
         return None
-    value = saved.get('directory')
-    require(isinstance(value, str) and re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
-            and value not in {'/srv/sli-db', '/var/lib/sli', '/var/lib/postgresql', '/var/lib/clickhouse'},
-            'native_database_directory_invalid')
-    return value
+    return database_directory_path(saved.get('directory'))
 
 
 def configured_mode(root=Path("/")):
