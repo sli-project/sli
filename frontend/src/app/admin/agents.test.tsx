@@ -250,6 +250,20 @@ it("opens a deep-linked computer directly in its card", async () => {
   mount(); expect(await screen.findByRole("dialog", { name: agent.host_name! })).toBeTruthy();
 });
 
+it("opens the domain form for the linked domain controller", async () => {
+  state.list.mockResolvedValue({ items: [{ ...agent,
+    assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }],
+    password_detection_domain: { status: "unconfigured", domain_id: null, domain_fqdn: null },
+  }] });
+  window.history.replaceState(null, "", `/app/agents?agent_id=${agent.id}&configure=password-domain`);
+  mount();
+  const card = within(await screen.findByRole("dialog", { name: agent.host_name! }));
+  const domain = card.getByRole("textbox", { name: t("agents.passwordDomain.fqdn") });
+  expect(domain.closest("details")).toHaveProperty("open", true);
+  fireEvent.change(domain, { target: { value: "example.test" } });
+  expect(card.getByRole("button", { name: t("agents.passwordDomain.save") })).toHaveProperty("disabled", false);
+});
+
 it("offers registration in the add panel and hides file audit", async () => {
   mount(); await screen.findByText(agent.host_name!);
   expect(state.deploymentDirectory).not.toHaveBeenCalled();

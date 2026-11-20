@@ -123,10 +123,14 @@ it.each(["ru", "en"] as const)("shows an unresolved password detection domain wi
   vi.mocked(api.setupStatus).mockResolvedValue(setup([{ ...agent, password_domain_required: true }]));
   renderPage();
   const line = await screen.findByText(t("systemStatus.passwordDomainRequired", { name: agent.name }));
-  expect(line.closest("tr")).toBeTruthy();
+  const row = line.closest("tr")!;
   expect(line.textContent).toContain("LAB-DC01");
-  expect(line.textContent).toContain(locale === "ru" ? "проверьте домен контроллера" : "check the controller’s domain");
   expect(line.closest(".sli-ds-state--banner, details")).toBeNull();
+  expect(within(row).getByRole("link", { name: t("systemStatus.setPasswordDomain") }).getAttribute("href"))
+    .toBe(`/app/agents?agent_id=${agent.id}&configure=password-domain`);
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["setup-status"] });
+  await waitFor(() => expect(screen.queryByRole("link", { name: t("systemStatus.setPasswordDomain") })).toBeNull());
 });
 
 beforeEach(() => {

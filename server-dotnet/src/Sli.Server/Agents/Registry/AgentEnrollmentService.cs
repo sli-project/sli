@@ -118,6 +118,11 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             q.Parameters.AddWithValue("id", tokenId);
             if ((bool)(await q.ExecuteScalarAsync(ct) ?? false) == false) throw RejectToken();
         }
+        // Only the administrator's console grant may bootstrap DC inventory.
+        // Group and replacement enrollment retain their existing enrollment scopes.
+        if (dc is null && consoleToken is not null && role == "domain_controller" && hostName is { Length: <=128 } &&
+            HostName(StringValue(body, "domain_dns")) is { } domainDns && HostName(StringValue(body, "forest_dns")) is { } forestDns)
+            dc = await RegisterConsoleDcAsync(connection, transaction, hostName, domainDns.ToLowerInvariant(), forestDns.ToLowerInvariant(), ct);
         var agentId = Guid.NewGuid();
         using var cert = ca.Issue(csr, agentId, hostId);
         int rate = role == "domain_controller" ? AdDcConfig.DefaultRateLimitPerMinute : 120;
@@ -386,6 +391,65 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if(!await reader.ReadAsync(ct))return null;
         var result=(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?(long?)null:reader.GetInt64(3));
         return await reader.ReadAsync(ct) ? null : result;
+    }
+    private static async Task<(long Server,string Name,long Domain,long? Site)?> RegisterConsoleDcAsync(
+        NpgsqlConnection db, NpgsqlTransaction tx, string host, string domain, string forest, CancellationToken ct)
+    {
+        // Enrollment holds the registration lock. Do not promote or reassign
+        // existing inventory, including inactive hosts and ambiguous names.
+        await using (var check = new NpgsqlCommand("""
+            select exists(select 1 from servers where lower(@host) in (lower(hostname),lower(fqdn))
+                or (strpos(@host,'.')=0 and lower(@host)=split_part(lower(coalesce(nullif(fqdn,''),hostname)),'.',1))
+                or (strpos(coalesce(nullif(fqdn,''),hostname),'.')=0 and lower(hostname)=split_part(lower(@host),'.',1)))
+            """, db, tx))
+        {
+            check.Parameters.AddWithValue("host", host);
+            if (await check.ExecuteScalarAsync(ct) is true) return null;
+        }
+        // A matching DNS registry entry is reusable only if it identifies one
+        // domain and agrees with the reported forest.
+        long? domainId = null;
+        await using (var find = new NpgsqlCommand("""
+            select d.id, lower(f.name)=@forest from domains d join forests f on f.id=d.forest_id
+            where lower(d.fqdn)=@domain limit 2
+            """, db, tx))
+        {
+            find.Parameters.AddWithValue("domain", domain);
+            find.Parameters.AddWithValue("forest", forest);
+            await using var rows = await find.ExecuteReaderAsync(ct);
+            if (await rows.ReadAsync(ct))
+            {
+                if (!rows.GetBoolean(1)) return null;
+                domainId = rows.GetInt64(0);
+                if (await rows.ReadAsync(ct)) return null;
+            }
+        }
+        if (domainId is null)
+        {
+            await using var create = new NpgsqlCommand("""
+                with known_forest as materialized (select id from forests where lower(name)=@forest),
+                     new_forest as (
+                         insert into forests(name) select @forest where not exists(select 1 from known_forest)
+                         on conflict(name) do update set name=excluded.name returning id
+                     )
+                insert into domains(forest_id,fqdn)
+                select id,@domain from new_forest
+                union all select id,@domain from known_forest where (select count(*) from known_forest)=1
+                on conflict(forest_id,fqdn) do update set fqdn=excluded.fqdn returning id
+                """, db, tx);
+            create.Parameters.AddWithValue("domain", domain);
+            create.Parameters.AddWithValue("forest", forest);
+            domainId = await create.ExecuteScalarAsync(ct) as long?;
+            if (domainId is null) return null;
+        }
+        await using var insert = new NpgsqlCommand("""
+            insert into servers(domain_id,hostname,fqdn,role)
+            values(@domain,@host,case when strpos(@host,'.')>0 then @host end,'domain_controller')
+            on conflict(domain_id,hostname) do nothing returning id
+            """, db, tx);
+        insert.Parameters.AddWithValue("domain", domainId.Value);
+        insert.Parameters.AddWithValue("host", host);
+        return await insert.ExecuteScalarAsync(ct) is long server ? (server, host, domainId.Value, null) : null;
     }
     private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server,Version? version,bool consoleEnrollment)
     {

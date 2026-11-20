@@ -85,7 +85,9 @@ function AgentsContent() {
   const access = useEffectiveAccess();
   const { timeZone } = useTimeZone();
   const client = useQueryClient();
-  const agentId = new URLSearchParams(window.location.search).get("agent_id") ?? undefined;
+  const params = new URLSearchParams(window.location.search);
+  const agentId = params.get("agent_id") ?? undefined;
+  const openPasswordDomain = params.get("configure") === "password-domain";
   const inventory = useQuery({ queryKey: agentId ? ["admin-agents", agentId] : ["admin-agents"], queryFn: () => api.agents(agentId), refetchInterval: 15_000 });
   const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, retry: false, refetchInterval: 30_000 });
   const health = !setup.isError && !setup.data?.agent_collection?.diagnostics ? setup.data?.agent_collection : null;
@@ -180,7 +182,8 @@ function AgentsContent() {
         {modules.map((module) => typeof module === "string" ? null : <section key={module.module_id}>
           <label><input type="checkbox" checked={module.enabled} disabled={selected.status !== "active" || action.isPending || !["sli.workstations", "sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(module.module_id)}
             onChange={() => action.mutate({ kind: "modules", body: { agent_id: selected.id, module_id: module.module_id, enabled: !module.enabled, config: module.config, expected_revision: selected.policy_revision } })}/>{agentModuleName(module.module_id)}</label>
-          <AgentModuleControls key={`${selected.id}:${module.module_id}:${selected.policy_revision}`} agent={selected} module={module} busy={action.isPending} change={changePolicy}/>
+          <AgentModuleControls key={`${selected.id}:${module.module_id}:${selected.policy_revision}`} agent={selected}
+            module={module} busy={action.isPending} change={changePolicy} openPasswordDomain={selected.id === agentId && openPasswordDomain}/>
         </section>)}
         {selected.eventlog_diagnostics?.items.length ? <AgentEventlogDiagnostics agent={selected} timeZone={timeZone}/> : null}
         {selected.delivery_diagnostics ? <AgentDeliveryDiagnostics agent={selected} timeZone={timeZone} recoveryAvailable={Boolean(access?.platform_owner)}/> : null}

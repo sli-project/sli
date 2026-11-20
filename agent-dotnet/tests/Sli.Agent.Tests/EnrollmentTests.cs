@@ -40,20 +40,24 @@ public sealed class EnrollmentTests : IDisposable
     }
 
     [Theory]
-    [InlineData("WinNT", "workstation")]
-    [InlineData("ServerNT", "workstation")]
-    [InlineData("LanmanNT", "domain_controller")]
-    [InlineData(null, "workstation")]
-    public async Task EnrollmentReportsTheLocalWindowsRole(string? productType, string role)
+    [InlineData("WinNT", "workstation", true)]
+    [InlineData("ServerNT", "workstation", true)]
+    [InlineData("LanmanNT", "domain_controller", true)]
+    [InlineData("LanmanNT", "domain_controller", false)]
+    [InlineData(null, "workstation", false)]
+    public async Task EnrollmentReportsDirectoryDnsNamesOnlyForADomainController(string? productType, string role, bool hasDomain)
     {
         Store.Prepare();
         var transport = new Transport((path, body) =>
         {
             Assert.Equal("/api/v1/agent/enroll", path);
             Assert.Equal(role, body["machine_role"]!.GetValue<string>());
+            Assert.Equal(role == "domain_controller" && hasDomain ? "child.example.test" : null, (string?)body["domain_dns"]);
+            Assert.Equal(role == "domain_controller" && hasDomain ? "example.test" : null, (string?)body["forest_dns"]);
             return _ca.Issue(Store);
         });
-        using var identity = await new Enrollment(Store, transport, _clock, () => productType)
+        using var identity = await new Enrollment(Store, transport, _clock, () => productType,
+                () => hasDomain ? ("child.example.test", "example.test") : null)
             .EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
     }
