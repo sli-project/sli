@@ -51,7 +51,6 @@ public sealed class InboxPayloadRetentionPostgresTests
         await using var fixture=new SqlPostgresFixture(); await fixture.StartAsync(ct);
         await using var db=new NpgsqlConnection(fixture.Pg.ConnectionString); await db.OpenAsync(ct);
         await Seed(db,1,10,ct);
-        await PostCollectionPostgres.Sql(db,ReceiptRetentionPostgresTests.Schema,ct);
         await using(var absent=new NpgsqlCommand("select to_regclass('events_v2_core') is null and to_regclass('event_facts_v2') is null",db))
             Assert.Equal(true,await absent.ExecuteScalarAsync(ct));
         using var state=new StorageLifecycleTests.State(); await using var deletion=Deletion(fixture);
