@@ -9,6 +9,11 @@ from pathlib import Path
 import subprocess
 import xml.etree.ElementTree as ET
 
+if __package__:
+    from .shard_balance import balance, estimated_weights, read_durations
+else:
+    from shard_balance import balance, estimated_weights, read_durations
+
 
 def read_rules(path: Path) -> list[list[str]]:
     return [
@@ -56,7 +61,10 @@ def plan_profiles(cases: list[dict], exclusions: list[list[str]], rules: list[li
     }
 
 
-def shard_methods(methods: Counter, shard: int, count: int, *, keep_classes: bool = True) -> set[str]:
+def shard_methods(
+    methods: Counter, shard: int, count: int, *,
+    keep_classes: bool = True, durations: dict[str, float] | None = None,
+) -> set[str]:
     groups: dict[str, set[str]] = defaultdict(set)
     weights: Counter = Counter()
     for method in methods:
@@ -65,16 +73,12 @@ def shard_methods(methods: Counter, shard: int, count: int, *, keep_classes: boo
         groups[group].add(method)
         database = any(word in name for word in ("Postgres", "Database", "Benchmark"))
         weights[group] += methods[method] * (4 if database else 1)
-    if not 1 <= shard <= count <= len(groups):
+    if not 1 <= shard <= count:
         raise ValueError("invalid shard count")
-
-    loads = [0] * count
-    shards: list[set[str]] = [set() for _ in range(count)]
-    for group in sorted(groups, key=lambda name: (-weights[name], name)):
-        target = min(range(count), key=loads.__getitem__)
-        shards[target].update(groups[group])
-        loads[target] += weights[group]
-    return shards[shard - 1]
+    if keep_classes and durations:
+        weights = estimated_weights(groups, durations)
+    selected_groups = balance(weights, count)[shard - 1]
+    return {method for group in selected_groups for method in groups[group]}
 
 
 def verify_results(results: Path, selected: set[str]) -> None:
@@ -118,17 +122,19 @@ def main() -> None:
         read_rules(directory / "server_dotnet_ci_profiles.txt"),
     )
     methods = profiles[args.profile]
-    # Pushes and nightly runs may use shared runners. Keep native tests that
-    # bind fixed loopback ports in the same xUnit class on a single runner.
+    # Keep tests from the same xUnit class together unless explicitly split.
     keep_classes = not args.split_classes
-    selected = shard_methods(methods, args.shard, args.count, keep_classes=keep_classes)
+    durations = read_durations(directory / "server_test_durations.json") if args.profile == "pr" else {}
+    if args.profile == "pr" and keep_classes and not durations:
+        print("No historical server durations available; using discovery weights", flush=True)
+    selected = shard_methods(methods, args.shard, args.count, keep_classes=keep_classes, durations=durations)
     if args.describe:
         for label in ("nightly-only", "security"):
             classes = {method.rsplit(".", 1)[0] for method in profiles[label]}
             print(f"{label} ({len(classes)} classes):")
             print(*sorted(classes), sep="\n")
         for shard in range(1, args.count + 1):
-            names = shard_methods(methods, shard, args.count, keep_classes=keep_classes)
+            names = shard_methods(methods, shard, args.count, keep_classes=keep_classes, durations=durations)
             print(f"{args.profile} shard {shard}/{args.count}: {len(names)} methods, "
                   f"{sum(methods[name] for name in names)} discovered cases")
         return
