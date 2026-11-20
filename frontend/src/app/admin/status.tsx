@@ -52,6 +52,7 @@ export function SystemStatusPage() {
   const workers = operations.data?.workers;
   const services = statusServices(workers?.items ?? [], timeZone);
   const disk = storage.data?.storage.disk_pressure?.disk;
+  const backup = storage.data?.storage.footprint?.backups;
   const bytes = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0
     ? `${formatNumber(value / 1024 ** 3, { maximumFractionDigits: 1 })} ${t("operations.source.unit_gb")}` : EMPTY_VALUE;
   const diskRows = disk ? [{
@@ -129,6 +130,10 @@ export function SystemStatusPage() {
       : diskRows.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2><DataTable columns={[
         { key: "used", label: t("systemStatus.used") }, { key: "free", label: t("systemStatus.free") },
       ]} rows={diskRows} rowKey={() => "disk"} caption={t("systemStatus.disk")} showFooter={false}/></> : null}
+    {backup && !storage.isError ? <p>{t(backup.same_disk_as_postgres === true && backup.last_backup_at_utc
+      ? "systemStatus.lastBackupSameDisk" : "systemStatus.lastBackup", {
+      time: backup.last_backup_at_utc ? formatDateTime(backup.last_backup_at_utc, timeZone) : EMPTY_VALUE,
+    })}</p> : null}
     {storage.data?.storage.agent_inbox_capacity === "full" ? <p>{t("systemStatus.inboxDiskFull")}</p> : null}
     {storage.data?.storage.agent_inbox_capacity === "unavailable" ? <p>{t("systemStatus.inboxDiskUnavailable")}</p> : null}
   </section>;
