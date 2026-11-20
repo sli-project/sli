@@ -29,24 +29,32 @@ for operator deployment instead of using the development stack as a server.
 
 ## Checks
 
-Choose the checks that match your change.
+Run focused checks locally. Before merge, GitHub Actions must pass the required
+checks for every affected area.
 
-| Tier | Change | Targeted checks inside the dev container |
-| --- | --- | --- |
-| 0 | Documentation, comments, typos | Markdown lint if configured; no tests or builds |
-| 1 | UI, styles, isolated component | `npm --prefix frontend run lint` and the affected component's Vitest file |
-| 2 | Backend/service business logic | `/opt/venv/bin/python -m ruff check --config .github/ruff-ci.toml <files>` and `/opt/venv/bin/python -m pytest -q tests/unit/test_<name>.py` |
-| 3 | DB schema, authorization, API contracts | Targeted contract and migration tests; apply SQL only to an authorized disposable database |
-| 4 | Release or merge to main | Full quality gate in GitHub Actions |
+| Change | Required checks before merge |
+| --- | --- |
+| Documentation, comments, typos | Markdown lint if configured |
+| Isolated UI or styles | `npm --prefix frontend run lint` and targeted Vitest component tests |
+| Linux installer | Targeted installer checks for the affected installation or update paths |
+| .NET module | Build the .NET solution and run the affected module's tests |
+| Authorization, mTLS or permissions | Targeted security and contract tests for allowed and denied operations |
+| Database schema, storage or recovery | Targeted migration, storage or recovery tests on an authorized disposable database |
+| Shared dependencies, CI or unclear scope | Broad CI profile |
+| Release preparation | Install the release bundle on clean Debian 13 and verify an update to that bundle |
 
-For Vitest, select files explicitly, for example
-`npm --prefix frontend exec -- vitest run src/app/report-v2/ReportRenderer.dom.test.tsx`.
-Do not run the full pytest/Vitest suite, E2E, Playwright, builds or historical
-visual-parity gates for a local scoped task. For a task that explicitly includes
-documentation tooling checks, select only the link-checking file:
-`/opt/venv/bin/python -m pytest -q tests/tooling/test_bilingual_documentation_links.py`.
-Record commands, results and anything unverified; focused checks do not establish
-release or installed-runtime acceptance.
+Full suites run nightly and on manual dispatch. Record the local commands,
+results and anything still unverified.
+
+### Test rules
+
+1. Test observable behavior or data integrity when adding logic.
+2. Add a regression test for a bug fix if existing tests do not cover the failure.
+3. Run existing tests for a refactor that preserves behavior.
+4. Documentation-only changes require no new tests.
+5. Explain why any checks beyond the affected area are needed.
+6. Avoid assertions on source text, migration numbers, or counts of migrations,
+   keys or list items. Security tests may assert these details where required.
 
 ## PostgreSQL migrations
 
@@ -70,11 +78,11 @@ for fork pull requests. Keep credentials out of your changes and report security
 issues privately as described in the [security policy](SECURITY.md).
 
 Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md). Keep a PR
-focused on one coherent change. Describe the problem, resulting behavior, changed scope, risk and exact
-verification results. Update affected documentation and add/update focused unit
-tests for code fixes. User-visible changes belong in [CHANGELOG.md](CHANGELOG.md).
-Use the repository's required CI gate before merge; do not push directly to main
-or rewrite reviewed history without authorization.
+focused on one coherent change. Describe the problem, resulting behavior, scope,
+risk and exact verification results. Update affected documentation and follow the
+[test rules](#test-rules). User-visible changes belong in [CHANGELOG.md](CHANGELOG.md).
+Pass the [required checks for the affected areas](#checks) before merging. Do not
+push directly to main or rewrite reviewed history without authorization.
 
 Include `Co-authored-by` trailers only for actual contributors using attribution
 they have approved. Do not put personal data or credentials in documentation
