@@ -14,10 +14,12 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     host_name: `dc${index + 1}.example.test`, status: index === 19 ? 'disabled' : 'active', last_seen: observed,
     assigned_modules: [{ module_id: 'sli.windows.ad-dc', enabled: true, config: { channels: { Security: true } } }],
     policy_revision: 2, applied_policy_revision: 2, applied_collection_state: 'active',
-    collection_policy: { state: 'active', interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864 },
+    collection_policy: { state: 'active', interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true },
     certificates: [{ serial: `fixture-${index}`, not_after: '2030-01-01T00:00:00Z', revoked_at: null }], rights_probe: {},
-    windows_audit: { policy_revision: 2, reported_at: observed, command_line_enabled: true, management_state: 'applied',
-      families: { logons: { state: 'ok', required: [{ guid: 'fixture-logon', subcategory: 'logon', success: true, failure: true, actual_success: true, actual_failure: true }], non_security_channels: [] } } },
+    windows_audit: { policy_revision: 2, reported_at: observed, command_line_enabled: false, management_state: index === 0 ? 'blocked' : 'applied',
+      families: { domain_controller: { state: index === 0 ? 'managed_by_gpo' : 'ok', required: [{ guid: 'fixture-logon', subcategory: 'logon',
+        state: index === 0 ? 'managed_by_gpo' : 'ok', success: true, failure: true, actual_success: index !== 0, actual_failure: index !== 0,
+        policy_name: index === 0 ? 'Audit Policy' : null }], non_security_channels: [] } } },
     policy_audit: [{ id: index + 1, action: 'policy_ack', actor: 'fixture-admin', occurred_at: observed, details: {} }],
   }));
   await page.addInitScript(() => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', 'light'); });
@@ -36,6 +38,9 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   await page.goto('/app/agents');
   const table = page.getByRole('table', { name: 'Агенты' });
   await expect(table.getByText('dc1.example.test', { exact: true })).toBeVisible({ timeout: 20000 });
+  const auditIssue = table.getByText('Аудит блокирует GPO — настройте её', { exact: true });
+  await expect(auditIssue).toBeVisible();
+  expect(await auditIssue.evaluate(cell => cell.scrollWidth <= cell.clientWidth)).toBe(true);
   await expect(table.locator('tbody details')).toHaveCount(0);
   const measurements = await table.evaluate(table => {
     const rows = [...table.querySelectorAll('tbody tr')];
@@ -59,6 +64,7 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   await table.getByText('dc1.example.test', { exact: true }).click();
   const card = page.getByRole('dialog', { name: 'dc1.example.test' });
   for (const name of ['Сбор событий', 'Аудит Windows', 'Сертификат', 'История настроек', 'Действия']) await expect(card.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect(card.getByRole('checkbox', { name: 'Настраивать аудит автоматически' })).toBeChecked();
   await page.screenshot({ path: testInfo.outputPath('agents-card.png') });
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Отключённые · 1', exact: true }).click();
@@ -71,6 +77,7 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   const create = panel.getByRole('button', { name: 'Создать команду', exact: true });
   await expect(limit).toHaveValue('1');
   await expect(create).toBeVisible();
+  await expect(panel.getByRole('checkbox', { name: 'Настраивать аудит на контроллере домена' })).toBeChecked();
   await expect(panel.getByRole('link', { name: 'Скачать пакет' })).toHaveAttribute('href', '/api/v1/agent/installer/SliAgent.msi');
   const inputBox = (await limit.boundingBox())!;
   const buttonBox = (await create.boundingBox())!;

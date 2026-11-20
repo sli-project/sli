@@ -14,7 +14,7 @@ vi.mock("../../api/client", async (original) => ({ ...await original<typeof impo
   agentTemplates: () => state.deploymentTemplates(), agentGroupTokens: () => state.deploymentTokens(),
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
   agents: () => state.list(), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
-  createAgentConsoleToken: (limit: number) => state.issueCommand(limit), agentConsoleTokens: () => state.consoleTokens(),
+  createAgentConsoleToken: (limit: number, audit: boolean) => state.issueCommand(limit, audit), agentConsoleTokens: () => state.consoleTokens(),
   revokeAgentConsoleToken: (id: string) => state.revokeConsoleToken(id),
 } }));
 import { AgentsPage } from "./agents";
@@ -159,6 +159,44 @@ it("does not claim audit configuration for an unreported audit", async () => {
   expect(within(drawer).queryByRole("heading", { name: t("agents.audit") })).toBeNull();
 });
 
+it.each([["managed_by_gpo", "agents.auditBlockedByPolicy"], ["unknown", "agents.auditApplyFailed"]] as const)(
+  "gives an action for a DC audit failure reported as %s", async (auditState, message) => {
+    const controller: AgentItem = { ...agent, last_seen: new Date().toISOString(),
+      assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }],
+      collection_policy: { state: "active", interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true },
+      windows_audit: { policy_revision: 2, reported_at: "2026-11-20T00:00:00Z", management_state: "blocked", command_line_enabled: null,
+        families: { domain_controller: { state: auditState, non_security_channels: [], required: [{
+          guid: "fixture-logon", subcategory: "logon", state: auditState, success: true, failure: true,
+          actual_success: false, actual_failure: false,
+        }] } } },
+    };
+    state.list.mockResolvedValue({ items: [controller] });
+    mount();
+    const row = (await screen.findByText(controller.host_name!)).closest("tr")!;
+    expect(within(row).getByText(t(message))).toBeTruthy();
+    expect(within(row).queryByText(t("agents.auditOffStatus", { count: 1 }))).toBeNull();
+  });
+
+it("reads back the saved DC audit setting in the card", async () => {
+  const control = { state: "active" as const, interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864 };
+  const controller: AgentItem = { ...agent, assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }],
+    collection_policy: { ...control, manage_windows_audit: false } };
+  state.list.mockResolvedValue({ items: [controller] });
+  state.action.mockImplementationOnce(async () => {
+    state.list.mockResolvedValue({ items: [{ ...controller, policy_revision: 3, collection_policy: { ...control, manage_windows_audit: true } }] });
+    return {};
+  });
+  mount();
+  const card = within(await openCard());
+  const audit = () => card.getByRole("checkbox", { name: t("agents.manageWindowsAudit") });
+  expect(audit()).toHaveProperty("checked", false);
+  fireEvent.click(audit());
+  fireEvent.click(card.getByRole("button", { name: t("agents.saveAudit") }));
+  expect(await card.findByText(/^Сохранено в \d{2}:\d{2}$/)).toBeTruthy();
+  await waitFor(() => expect(card.getByRole("button", { name: t("agents.saveAudit") })).toHaveProperty("disabled", true));
+  expect(audit()).toHaveProperty("checked", true);
+});
+
 it("renders one row per computer using its active registration", async () => {
   state.list.mockResolvedValue({ items: [agent, { ...agent, id: "old-registration", status: "disabled", host_name: "old.example.test" }] });
   mount(); await screen.findByText(agent.host_name!);
@@ -191,7 +229,7 @@ it("names the next step and opens the add panel from an empty list", async () =>
   expect(state.issueCommand).not.toHaveBeenCalled();
 });
 
-it.each(["", "3"])("creates a command only on explicit submission with computer count %j", async (limit) => {
+it.each([["", true], ["3", false]] as const)("creates a command with computer count %j and audit setting %s", async (limit, auditEnabled) => {
   const copy = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
   const { client } = mount();
@@ -207,10 +245,13 @@ it.each(["", "3"])("creates a command only on explicit submission with computer 
 
   const count = panel.getByLabelText(t("agents.console.hostLimit"));
   expect(count).toHaveProperty("value", "1");
+  const audit = panel.getByRole("checkbox", { name: t("agents.console.manageWindowsAudit") });
+  expect(audit).toHaveProperty("checked", true);
+  if (!auditEnabled) fireEvent.click(audit);
   fireEvent.change(count, { target: { value: limit } });
   fireEvent.click(panel.getByRole("button", { name: t("agents.console.issue") }));
   expect(await panel.findByLabelText(t("agents.console.powerShell"))).toHaveProperty("value", "& { 'synthetic-command' }");
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1));
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1), auditEnabled);
   fireEvent.click(panel.getByRole("button", { name: t("agents.copy") }));
   await waitFor(() => expect(copy).toHaveBeenCalledWith("& { 'synthetic-command' }"));
   expect(JSON.stringify(client.getQueryCache().getAll().map((item) => item.state.data))).not.toContain("synthetic-command");

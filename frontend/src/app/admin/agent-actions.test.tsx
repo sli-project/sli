@@ -167,6 +167,14 @@ it("prefers provided host names and keeps unknown names honest", () => {
   expect(agentHostName({ ...agent, host_name: agent.host_id })).toBe(t("agents.unknownHost"));
 });
 
+it("keeps the DC audit setting out of the actions menu", async () => {
+  const controller = { ...agent, assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }] };
+  render(<AgentActions agent={controller} busy={false} change={change}/>);
+  const menu = await openMenu();
+  expect(within(menu).queryByRole("menuitem", { name: t("agents.auditEnable") })).toBeNull();
+  expect(within(menu).queryByRole("menuitem", { name: t("agents.auditDisable") })).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("requires confirmation to enable audit management in %s with command lines off by default", async (locale) => {
   setLocale(locale);
   render(<AgentActions agent={agent} busy={false} change={change}/>);

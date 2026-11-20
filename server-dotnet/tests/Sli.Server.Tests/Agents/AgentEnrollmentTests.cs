@@ -9,6 +9,7 @@ using Xunit;
 using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.ClientControl;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,11 +56,13 @@ public class AgentEnrollmentTests
         await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await db.OpenAsync(ct);
 
-        async Task<(Guid Id, string Token)> Issue(int count)
+        async Task<(Guid Id, string Token)> Issue(int count, bool? manageWindowsAudit = null)
         {
+            var payload = new JsonObject { ["host_limit"] = count };
+            if (manageWindowsAudit is { } enabled) payload["manage_windows_audit"] = enabled;
             await using var tx = await db.BeginTransactionAsync(ct);
             var issued = await management.CreateConsoleTokenAsync(db, tx,
-                JsonSerializer.SerializeToElement(new { host_limit = count }), "synthetic", context, ct);
+                JsonSerializer.SerializeToElement(payload), "synthetic", context, ct);
             await tx.CommitAsync(ct);
             var command = issued.GetProperty("command").GetString()!;
             Assert.Contains("https://sli.example.test/", command);
@@ -80,6 +83,12 @@ public class AgentEnrollmentTests
         }
         async Task Reject(string token, string csr, string hostName = "fixture.example.test", string role = "workstation") =>
             Assert.Equal("enrollment_token_rejected", (await Assert.ThrowsAsync<AgentCertificateException>(() => Enroll(token, csr, hostName, role))).Code);
+        async Task<JsonObject> CheckIn(JsonObject enrolled)
+        {
+            await using var query = new NpgsqlCommand("select to_jsonb(a) from sli_agents a where id=@id", db);
+            query.Parameters.AddWithValue("id", Guid.Parse((string)enrolled["agent_id"]!));
+            return AgentClientPolicy.CheckIn(JsonNode.Parse((string)(await query.ExecuteScalarAsync(ct))!)!.AsObject(), false);
+        }
 
         using var key1 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var key2 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -90,19 +99,37 @@ public class AgentEnrollmentTests
         var single = await Issue(1);
         var first = await Enroll(single.Token, csr1, "fixture.example.test", "domain_controller");
         Assert.NotNull(first["certificate_pem"]);
+        var automatic = (await CheckIn(first))["collection_policy"]!.AsObject();
+        Assert.True((bool)automatic["manage_windows_audit"]!);
+        Assert.False((bool)automatic["audit_process_command_line"]!);
+        Assert.Null(automatic["manage_domain_root_sacl"]);
         await Reject(single.Token, csr1);
         await Reject(single.Token, csr2);
 
-        var batch = await Issue(2);
+        var batch = await Issue(2, manageWindowsAudit: false);
         var second = await Enroll(batch.Token, csr2, "FIXTURE", "domain_controller");
+        var optedOut = await CheckIn(second);
+        Assert.Null(optedOut["collection_policy"]!["manage_windows_audit"]);
         await Reject(batch.Token, Csr(Guid.NewGuid(), key2), "other.example.test");
         await Reject(batch.Token, Csr(host2, key3), "other.example.test");
         await Reject(batch.Token, csr3, "fixture.example.test", "domain_controller");
-        await Enroll(batch.Token, csr3, "other.example.test");
+        var workstation = await Enroll(batch.Token, csr3, "other.example.test");
+        Assert.True((bool)(await CheckIn(workstation))["collection_policy"]!["manage_windows_audit"]!);
         await Reject(batch.Token, Csr(Guid.NewGuid(), key3));
 
         var oldId = Guid.Parse((string)first["agent_id"]!);
         var newId = Guid.Parse((string)second["agent_id"]!);
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            await new AgentPolicyService(new AgentControlAudit()).UpdateControlAsync(db, tx, JsonSerializer.SerializeToElement(new
+            {
+                agent_id = newId,
+                expected_revision = optedOut["policy_revision"]!.GetValue<long>(),
+                collection_policy = new { manage_windows_audit = true },
+            }), "synthetic", ct);
+            await tx.CommitAsync(ct);
+        }
+        Assert.True((bool)(await CheckIn(second))["collection_policy"]!["manage_windows_audit"]!);
         await using (var tx = await db.BeginTransactionAsync(ct))
         {
             var inventory = await management.ListAgentsAsync(db, tx, null, "synthetic", ct);

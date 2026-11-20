@@ -14,6 +14,8 @@ export const agentHostName = (agent: AgentItem) => [agent.host_name, agent.hostn
 export const agentModuleName = (module: string) => module === "sli.workstations" ? t("agents.moduleWorkstations") : module === "sli.windows.ad-dc" ? t("agents.moduleDc")
   : module === "sli.windows.ad-dc-history" ? t("agents.moduleDcHistory")
   : module === "sli.ad-snapshot" ? t("agents.moduleAdSnapshot") : module === "sli.gpo-snapshot" ? t("agents.moduleGpoSnapshot") : module;
+export const agentHasDcAudit = (agent: AgentItem) => agent.assigned_modules.some((module) =>
+  typeof module === "string" ? module === "sli.windows.ad-dc" : module.module_id === "sli.windows.ad-dc" && module.enabled);
 
 export function AgentActions({ agent, busy, change, canRemove = false }: { agent: AgentItem; busy: boolean; canRemove?: boolean; change: (kind: ActionKind, body: Record<string, unknown>) => void }) {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -45,14 +47,14 @@ export function AgentActions({ agent, busy, change, canRemove = false }: { agent
             <MenuItem id="collection" isDisabled={!active || busy} onAction={() => confirmPolicy(collecting ? "paused" : "active")}>{t(collecting ? "agents.pause" : "agents.resume")}</MenuItem>
             {collecting ? <MenuItem id="drain" isDisabled={!active || busy} onAction={() => confirmPolicy("drain")}>{t("agents.drain")}</MenuItem> : null}
             <MenuItem id="probe" isDisabled={!active || busy || Boolean(agent.rights_probe.pending)} onAction={() => change("rights-probe", { agent_id: agent.id })}>{t("agents.checkAccess")}</MenuItem>
-            <MenuItem id="windows-audit" isDisabled={!active || busy} onAction={() => {
+            {!agentHasDcAudit(agent) ? <MenuItem id="windows-audit" isDisabled={!active || busy} onAction={() => {
               const enable = !agent.collection_policy?.manage_windows_audit;
               setCommandLine(Boolean(agent.collection_policy?.audit_process_command_line));
               setConfirmation({ title: t(enable ? "agents.auditEnable" : "agents.auditDisable"),
                 message: enable ? "agents.auditConfirmEnable" : "agents.auditConfirmDisable", kind: "policy", auditEnable: enable,
                 body: { agent_id: agent.id, expected_revision: agent.policy_revision,
                   collection_policy: { manage_windows_audit: enable } } });
-            }}>{t(agent.collection_policy?.manage_windows_audit ? "agents.auditDisable" : "agents.auditEnable")}</MenuItem>
+            }}>{t(agent.collection_policy?.manage_windows_audit ? "agents.auditDisable" : "agents.auditEnable")}</MenuItem> : null}
           </MenuSection>
           {!workstation || !dc ? <MenuSection>
             <Header>{t("agents.modules")}</Header>

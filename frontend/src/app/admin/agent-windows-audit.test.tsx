@@ -17,6 +17,8 @@ const observation: AgentWindowsAudit = {
     actual_success: false, actual_failure: false, state: "missing", detections: [1, 2, 5], domain_changes: false, enabled_at: null, policy_name: null,
   }] } },
 };
+const managedAgent: AgentItem = { ...agent, collection_policy: { state: "active", interval_seconds: 60, batch_size: 32,
+  rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true } };
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale("ru"); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 it.each(["ru", "en"] as const)("names rare-event audit requirements and their journal screen in %s", (locale) => {
@@ -36,16 +38,14 @@ it.each(["ru", "en"] as const)("names rare-event audit requirements and their jo
   }
 });
 it.each(["ru", "en"] as const)("shows DC requirements and dependencies without GUID or old GPO instructions in %s", (locale) => {
-  setLocale(locale); const change = vi.fn();
-  const { container } = render(<AgentWindowsAuditStatus agent={{ ...agent, windows_audit: observation }} change={change}/>);
+  setLocale(locale);
+  const { container } = render(<AgentWindowsAuditStatus agent={{ ...agent, windows_audit: observation }}/>);
   const table = screen.getByRole("table");
   expect(within(table).getByRole("columnheader", { name: locale === "ru" ? "Зачем" : "Why" })).toBeTruthy();
   expect(table.textContent).toContain(`1. ${t("security.problems.presentation.qw.password-brute-force.title")}`);
   expect(table.textContent).toContain(`2. ${t("security.problems.presentation.qw.password-spray.title")}`);
   expect(table.textContent).toContain(`5. ${t("security.problems.presentation.asrep_title")}`);
   expect(container.innerHTML).not.toMatch(/0cce9242|69ae-11d9|Примените GPO|gpupdate/);
-  fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Включить" : "Enable" }));
-  expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 3, collection_policy: { manage_windows_audit: true } });
 });
 it.each(["ru", "en"] as const)("shows confirmed time per setting in %s", (locale) => {
   setLocale(locale);
@@ -69,12 +69,14 @@ it("names the policy and copies a command without exposing GUIDs", async () => {
 });
 it("asks for confirmation with the computer name before restore", () => {
   const change = vi.fn();
-  render(<AgentWindowsAuditStatus agent={{ ...agent, windows_audit: observation }} change={change}/>);
-  fireEvent.click(screen.getByRole("button", { name: "Вернуть как было" }));
+  render(<AgentWindowsAuditStatus agent={{ ...managedAgent, windows_audit: observation }} change={change}/>);
+  fireEvent.click(screen.getByRole("checkbox", { name: t("agents.manageWindowsAudit") }));
+  fireEvent.click(screen.getByRole("button", { name: t("agents.saveAudit") }));
   expect(change).not.toHaveBeenCalled();
   expect(screen.getByRole("dialog").textContent).toContain("LAB-DC01");
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Вернуть как было" }));
-  expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 3, collection_policy: { manage_windows_audit: false, audit_process_command_line: false } });
+  expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 3,
+    collection_policy: { manage_windows_audit: false, audit_process_command_line: false, manage_domain_root_sacl: false } });
 });
 it("names the audit command when clipboard access is unavailable", async () => {
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
@@ -93,11 +95,11 @@ it.each(["ru", "en"] as const)("requires separate AD consent before enabling dom
   setLocale(locale);
   const change = vi.fn();
   const row = { ...observation.families.domain_controller!.required[0]!, subcategory: "domain_root_sacl", guid: "domain_root_sacl", state: "missing" as const, detections: [], domain_changes: true };
-  render(<AgentWindowsAuditStatus agent={{ ...agent, windows_audit: { ...observation, families: {
+  render(<AgentWindowsAuditStatus agent={{ ...managedAgent, windows_audit: { ...observation, families: {
     domain_controller: { state: "missing", required: [row], non_security_channels: [] },
   } } }} change={change}/>);
   expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Запись аудита на корне домена" : "Domain root audit entry");
-  fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Включить" : "Enable" }));
+  fireEvent.click(screen.getByRole("button", { name: t("agents.auditSubcategory.domain_root_sacl") }));
   expect(change).not.toHaveBeenCalled();
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("LAB-DC01");
@@ -118,24 +120,27 @@ it.each(["ok", "missing", "restored"] as const)("shows the domain-root result %s
   if (state === "ok") expect(table.textContent).toContain("Включено в 01:18");
   expect(within(table).queryByText(/auditpol/)).toBeNull();
 });
-it("can cancel AD consent or enable subcategories without granting AD writes", () => {
+it("enables Windows audit through one setting without granting AD or command line changes", () => {
   const change = vi.fn();
   const row = { ...observation.families.domain_controller!.required[0]!, subcategory: "domain_root_sacl", guid: "domain_root_sacl" };
   render(<AgentWindowsAuditStatus agent={{ ...agent, windows_audit: { ...observation, families: {
     domain_controller: { state: "missing", required: [row], non_security_channels: [] },
   } } }} change={change}/>);
-  fireEvent.click(screen.getByRole("button", { name: "Включить" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Отмена" }));
+  const save = screen.getByRole("button", { name: t("agents.saveAudit") });
+  expect(save).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("checkbox", { name: t("agents.manageWindowsAudit") }));
   expect(change).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Включить" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Только подкатегории" }));
-  expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 3, collection_policy: { manage_windows_audit: true } });
+  fireEvent.click(save);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(change).toHaveBeenCalledWith("policy", { agent_id: agent.id, expected_revision: 3,
+    collection_policy: { manage_windows_audit: true, audit_process_command_line: false, manage_domain_root_sacl: false } });
 });
 it("keeps AD restore confirmation when the latest report has not arrived", () => {
   const change = vi.fn();
   render(<AgentWindowsAuditStatus agent={{ ...agent, collection_policy: { state: "active", interval_seconds: 60, batch_size: 32,
     rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true, manage_domain_root_sacl: true } }} change={change}/>);
-  fireEvent.click(screen.getByRole("button", { name: "Вернуть как было" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: t("agents.manageWindowsAudit") }));
+  fireEvent.click(screen.getByRole("button", { name: t("agents.saveAudit") }));
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("изменение в Active Directory");
   expect(change).not.toHaveBeenCalled();

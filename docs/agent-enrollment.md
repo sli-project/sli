@@ -249,13 +249,11 @@ HTTPS URL и публичный CA bundle, не получает доступ к
    выключает назначение без отзыва сертификатов. Агент получает назначение по
    mTLS `/api/v1/agent/identity`; без него собирается только heartbeat.
 
-### Ожидаемые Windows audit settings
+### Аудит Windows
 
-Владелец проверяет эти настройки отдельно в Advanced Audit Policy Configuration;
-helper ничего не включает и не меняет. Повышение прав даёт возможность читать
-журнал, но не гарантирует, что Windows генерирует нужные события.
+На контроллере домена агент автоматически включает нужные подкатегории аудита Windows и сохраняет прежние значения для отката. Настройку можно выключить при создании команды установки или в карточке агента.
 
-| Наблюдение | Настройка / журнал |
+| Наблюдение модуля рабочих станций | Настройка / журнал |
 | --- | --- |
 | Logon 4624 / 4625 | Logon/Logoff → Audit Logon, Success и Failure, журнал Security |
 | Process creation 4688 | Detailed Tracking → Audit Process Creation, Success; command line — отдельная opt-in политика Administrative Templates → System → Audit Process Creation → Include command line in process creation events |

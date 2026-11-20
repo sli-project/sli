@@ -40,9 +40,10 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 replacement = reader.IsDBNull(4) ? null : reader.GetGuid(4);
             }
         }
-        Guid? consoleToken = keyFingerprint is null
+        (Guid Id, bool ManageWindowsAudit)? consoleGrant = keyFingerprint is null
             ? await LockConsoleTokenAsync(connection, transaction, digest, ct)
             : null;
+        Guid? consoleToken = consoleGrant?.Id;
         ValidateInstance(instance);
         var requestedInstance = StringValue(body, "instance_name");
         if (body["instance_name"] is not null && requestedInstance is null) throw new AgentCertificateException("invalid_agent_instance_name");
@@ -120,7 +121,16 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var agentId = Guid.NewGuid();
         using var cert = ca.Issue(csr, agentId, hostId);
         int rate = role == "domain_controller" ? AdDcConfig.DefaultRateLimitPerMinute : 120;
-        var control = "{\"state\":\"" + (replacement is null ? "active" : "drain") + "\",\"interval_seconds\":60,\"batch_size\":32,\"rate_limit_per_minute\":" + rate + ",\"spool_max_bytes\":67108864,\"manage_windows_audit\":true,\"audit_process_command_line\":false}";
+        var control = new JsonObject
+        {
+            ["state"] = replacement is null ? "active" : "drain",
+            ["interval_seconds"] = 60,
+            ["batch_size"] = 32,
+            ["rate_limit_per_minute"] = rate,
+            ["spool_max_bytes"] = 67108864,
+            ["manage_windows_audit"] = role != "domain_controller" || consoleGrant?.ManageWindowsAudit != false,
+            ["audit_process_command_line"] = false,
+        }.ToJsonString();
         await using (var q = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint,instance_name,registration_host_name,collection_policy,last_seen) values(@id,@host,@key,@instance,@name,@control::jsonb,clock_timestamp())", connection, transaction))
         {
             q.Parameters.AddWithValue("id", agentId); q.Parameters.AddWithValue("host", hostId); q.Parameters.AddWithValue("key", keyFingerprint);
@@ -161,15 +171,20 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         return CertificateResponse(cert, agentId, serial);
     }
 
-    private static async Task<Guid> LockConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, string digest, CancellationToken ct)
+    private static async Task<(Guid Id, bool ManageWindowsAudit)> LockConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, string digest, CancellationToken ct)
     {
+        // The grant and its issuance details are committed together. Older grants omit the setting.
         await using var query = new NpgsqlCommand("""
-            select id from sli_agent_console_tokens
-            where token_hash=@hash and remaining>0 and revoked_at is null and expires_at>clock_timestamp()
+            select t.id, coalesce((select a.details->'manage_windows_audit' <> 'false'::jsonb
+                from sli_agent_audit a where a.target=t.id::text and a.action='token_create' order by a.id desc limit 1), true)
+            from sli_agent_console_tokens t
+            where t.token_hash=@hash and t.remaining>0 and t.revoked_at is null and t.expires_at>clock_timestamp()
             for update
             """, db, tx);
         query.Parameters.AddWithValue("hash", digest);
-        return await query.ExecuteScalarAsync(ct) as Guid? ?? throw RejectToken();
+        await using var reader = await query.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw RejectToken();
+        return (reader.GetGuid(0), reader.GetBoolean(1));
     }
 
     private static async Task ConsumeConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid grant,

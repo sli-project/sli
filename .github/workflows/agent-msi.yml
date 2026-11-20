@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   msi:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -55,10 +55,10 @@ jobs:
               break
             }
           }
-          if (-not $msvc) { throw 'Required MSVC 14.44.35207 is missing from windows-latest; update the runner/toolchain explicitly.' }
+          if (-not $msvc) { throw 'Required MSVC 14.44.35207 is missing from windows-2025; update the runner/toolchain explicitly.' }
           $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
           if (-not (Test-Path -LiteralPath (Join-Path $sdk 'Include/10.0.26100.0/um/Windows.h'))) {
-            throw 'Required Windows SDK 10.0.26100.0 is missing from windows-latest.'
+            throw 'Required Windows SDK 10.0.26100.0 is missing from windows-2025.'
           }
           "SLI_MSVC_ROOT=$msvc" >> $env:GITHUB_ENV
           "SLI_WINDOWS_SDK_ROOT=$sdk" >> $env:GITHUB_ENV

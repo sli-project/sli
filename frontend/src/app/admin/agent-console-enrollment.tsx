@@ -7,6 +7,7 @@ type IssuedCommand = Awaited<ReturnType<typeof api.createAgentConsoleToken>>;
 
 export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
   const [hostLimit, setHostLimit] = useState("1");
+  const [manageWindowsAudit, setManageWindowsAudit] = useState(true);
   const [issued, setIssued] = useState<IssuedCommand>();
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -25,7 +26,7 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(undefined);
     try {
-      setIssued(await api.createAgentConsoleToken(Number(hostLimit || 1)));
+      setIssued(await api.createAgentConsoleToken(Number(hostLimit || 1), manageWindowsAudit));
     } catch (failure) {
       setError(failure instanceof ApiResponseError && failure.code === "agent_console_package_unavailable" ? "package" : "issue");
     } finally {
@@ -53,14 +54,18 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
             <div>
               <button className="sli-ds-button" data-variant="primary" type="button" onClick={() => { void copy(issued.command); }}>{t("agents.copy")}</button>
             </div>
-          </div> : <div className="sli-ds-filters__fields">
-            <div className="sli-ds-field">
-              <label htmlFor="agent-console-limit">{t("agents.console.hostLimit")}</label>
-              <input id="agent-console-limit" type="number" min={1} max={100} value={hostLimit}
-                style={{ boxSizing: "border-box" }} disabled={busy} onChange={(event) => setHostLimit(event.target.value)}/>
+          </div> : <>
+            <div className="sli-ds-filters__fields">
+              <div className="sli-ds-field">
+                <label htmlFor="agent-console-limit">{t("agents.console.hostLimit")}</label>
+                <input id="agent-console-limit" type="number" min={1} max={100} value={hostLimit}
+                  style={{ boxSizing: "border-box" }} disabled={busy} onChange={(event) => setHostLimit(event.target.value)}/>
+              </div>
+              <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy}>{t("agents.console.issue")}</button>
             </div>
-            <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy}>{t("agents.console.issue")}</button>
-          </div>}
+            <label><input type="checkbox" checked={manageWindowsAudit} disabled={busy}
+              onChange={(event) => setManageWindowsAudit(event.target.checked)}/>{t("agents.console.manageWindowsAudit")}</label>
+          </>}
           {copied && <span role="status">{t("agents.copied")}</span>}
           {error && <span role="alert">{t(error === "copy" ? "agents.copyError" : error === "package" ? "agents.console.packageError" : "agents.console.issueError")}</span>}
         </div>
