@@ -81,6 +81,72 @@ RunCase SLIAgentNet $false @(0)
     ]
 
 
+@pytest.mark.parametrize('shell', ['pwsh', 'powershell'])
+def test_installer_archives_unsafe_legacy_directory_without_moving_dotnet_state(tmp_path, shell):
+    executable = shutil.which(shell)
+    if executable is None:
+        pytest.skip(f'{shell} is unavailable')
+    for case in ('legacy', 'dotnet', 'private', 'file'):
+        (tmp_path / case).mkdir()
+    legacy = tmp_path / 'legacy' / 'SLI'
+    legacy.mkdir()
+    (legacy / 'legacy.txt').write_text('previous state', encoding='ascii')
+    dotnet = tmp_path / 'dotnet' / 'SLI' / 'AgentNet' / 'state'
+    dotnet.mkdir(parents=True)
+    (dotnet / 'current.txt').write_text('current state', encoding='ascii')
+    private = tmp_path / 'private' / 'SLI'
+    private.mkdir()
+    (private / 'keep.txt').touch()
+    (tmp_path / 'file' / 'SLI').touch()
+    harness = tmp_path / 'data-directory.ps1'
+    harness.write_text(r'''
+param($Installer)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$errors)
+if ($errors) { throw ($errors | Out-String) }
+foreach ($definition in $ast.FindAll({param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @(
+        'Get-PrivateDirectoryPermissionError', 'Assert-PrivateDirectory', 'Initialize-SliRoot')
+}, $false)) {
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+# Simulate Windows ACLs on both CI platforms while using the real filesystem for the rename.
+$privatePaths = @{ (Join-Path $PSScriptRoot 'private/SLI') = $true }
+function New-PrivateDirectory($Path) {
+    [IO.Directory]::CreateDirectory($Path) | Out-Null
+    $privatePaths[$Path] = $true
+}
+function Get-Acl($LiteralPath) {
+    $acl = [pscustomobject]@{ Private = $privatePaths.ContainsKey($LiteralPath) }
+    $acl | Add-Member ScriptMethod GetOwner { @{ Value = 'S-1-5-32-544' } }
+    $acl | Add-Member ScriptMethod GetAccessRules {
+        if (!$this.Private) {
+            @{ AccessControlType = 'Allow'; IdentityReference = @{ Value = 'S-1-5-32-545' }; FileSystemRights = 2 }
+        }
+    }
+    return $acl
+}
+Initialize-SliRoot (Join-Path $PSScriptRoot 'legacy/SLI')
+Initialize-SliRoot (Join-Path $PSScriptRoot 'private/SLI')
+foreach ($case in 'dotnet', 'file') {
+    try { Initialize-SliRoot (Join-Path $PSScriptRoot "$case/SLI"); 'unexpected success' }
+    catch { $_.Exception.Message }
+}
+''', encoding='ascii')
+    result = subprocess.run([executable, '-NoProfile', '-File', str(harness), str(INSTALLER)],
+                            capture_output=True, text=True, timeout=45, check=True)
+    assert result.stdout.splitlines() == ['Unsafe SLI data directory permissions.', 'Unsafe SLI data directory.']
+    archive, = legacy.parent.glob('SLI.old-*')
+    assert (archive / 'legacy.txt').read_text(encoding='ascii') == 'previous state'
+    assert legacy.is_dir() and not list(legacy.iterdir())
+    assert (dotnet / 'current.txt').read_text(encoding='ascii') == 'current state'
+    assert (private / 'keep.txt').is_file()
+    for case in ('dotnet', 'private', 'file'):
+        assert not list((tmp_path / case).glob('SLI.old-*'))
+
+
 def certificate(name, issuer=None, issuer_key=None, *, expired=False):
     now = datetime.now(timezone.utc)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
