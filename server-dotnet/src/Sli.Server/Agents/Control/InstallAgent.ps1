@@ -12,7 +12,7 @@ function New-PrivateDirectory($Path) {
     }
 }
 
-function Assert-PrivateDirectory($Path) {
+function Get-PrivateDirectoryPermissionError($Path) {
     $item = Get-Item -LiteralPath $Path -Force
     if (!$item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Unsafe SLI data directory.'
@@ -20,14 +20,32 @@ function Assert-PrivateDirectory($Path) {
     $acl = Get-Acl -LiteralPath $Path
     $trusted = 'S-1-5-18', 'S-1-5-32-544'
     if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {
-        throw 'Unsafe SLI data directory owner.'
+        return 'Unsafe SLI data directory owner.'
     }
     foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
         if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin $trusted -and
             ($rule.FileSystemRights -band 0xD0156)) {
-            throw 'Unsafe SLI data directory permissions.'
+            return 'Unsafe SLI data directory permissions.'
         }
     }
+}
+
+function Assert-PrivateDirectory($Path) {
+    $violation = Get-PrivateDirectoryPermissionError $Path
+    if ($violation) { throw $violation }
+}
+
+function Initialize-SliRoot($Path) {
+    if (Test-Path -LiteralPath $Path) {
+        $violation = Get-PrivateDirectoryPermissionError $Path
+        if (!$violation) { return }
+        # Treat any AgentNet entry as current state. Inspect the name without traversing it.
+        if (Get-ChildItem -LiteralPath $Path -Force -Filter 'AgentNet') { throw $violation }
+        $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmssfffffffZ', [Globalization.CultureInfo]::InvariantCulture)
+        [IO.Directory]::Move($Path, "$Path.old-$stamp")
+    }
+    New-PrivateDirectory $Path
+    Assert-PrivateDirectory $Path
 }
 
 function Get-InstalledAgentProducts {
@@ -168,21 +186,28 @@ Initialize-SliAgentPinnedPackage
 $programData = [Environment]::GetFolderPath('CommonApplicationData')
 $sliRoot = Join-Path $programData 'SLI'
 $data = Join-Path $sliRoot 'AgentNet'
-foreach ($directory in @($sliRoot, $data)) {
-    if (!(Test-Path -LiteralPath $directory)) { New-PrivateDirectory $directory }
-    Assert-PrivateDirectory $directory
+$state = Join-Path $data 'state'
+$registration = 'SOFTWARE\SLI\AgentNet'
+# A custom state directory can be under SLI without an AgentNet entry.
+$current = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registration)
+if ($current) {
+    try {
+        $configuredState = $current.GetValue('StateDirectory')
+        if ($configuredState -and $configuredState -ne $state) { throw 'SLI Agent has a custom state directory.' }
+    } finally { $current.Dispose() }
 }
+Initialize-SliRoot $sliRoot
+if (!(Test-Path -LiteralPath $data)) { New-PrivateDirectory $data }
+Assert-PrivateDirectory $data
 # The .NET uninstaller cleans its own data directory, including its install lock
 # and old downloads. Keep the new verified MSI and the lock outside that tree.
 $work = Join-Path $sliRoot ('install-agent-' + [guid]::NewGuid().ToString('N'))
 New-PrivateDirectory $work
 $msi = Join-Path $work 'SliAgent.msi'
-$state = Join-Path $data 'state'
 $id = [guid]::NewGuid().ToString('N')
 $backup = Join-Path $data ('previous-' + $id)
 $caPath = Join-Path $data ('ca-' + $id + '.crt')
 $keyPath = Join-Path $state ('enroll-' + $id + '.txt')
-$registration = 'SOFTWARE\SLI\AgentNet'
 $settings = 'ServerUrl', 'CaBundle', 'CaFingerprint', 'TokenFile', 'InstanceName', 'EnrollmentToken'
 $registry = $null
 $prior = @{}
@@ -213,13 +238,6 @@ try {
     $products = @(Get-InstalledAgentProducts)
     if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
     if (Test-Path -LiteralPath (Join-Path $data 'agent.json')) { throw 'SLI Agent has custom machine settings.' }
-    $current = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registration)
-    if ($current) {
-        try {
-            $configuredState = $current.GetValue('StateDirectory')
-            if ($configuredState -and $configuredState -ne $state) { throw 'SLI Agent has a custom state directory.' }
-        } finally { $current.Dispose() }
-    }
     foreach ($product in $products) {
         Write-Host 'Removing previous SLI Agent...'
         Remove-InstalledAgentMsi $product
