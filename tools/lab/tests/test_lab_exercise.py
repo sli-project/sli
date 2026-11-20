@@ -176,17 +176,46 @@ def test_cleanup_failure_stops_following_attacks(responses, monkeypatch):
     assert not restored and row["reason"] == "cleanup_unverified"
 
 
-def test_quiet_only_does_not_execute_any_process_or_read_inventory(responses, monkeypatch, tmp_path):
+@pytest.mark.parametrize(("state", "total", "within_ten", "exit_code"), [
+    ("empty", 0, True, 0),
+    ("ok", 10, True, 0),
+    ("ok", 11, False, 1),
+    ("partial", 7, None, 1),
+    ("stale", 7, None, 1),
+    ("denied", None, None, 1),
+    ("error", None, None, 1),
+])
+def test_quiet_only_uses_domain_home_total_without_running_attacks(
+        state, total, within_ten, exit_code, monkeypatch, tmp_path, capsys):
     api = Mock()
-    api.get.return_value = responses["home"]
+    api.get.return_value = {"contract_id": "sli.home-summary.v3", "state": state,
+                            "total": total, "groups": [], "remaining_problems": total}
     monkeypatch.setattr(lab, "Api", Mock(return_value=api))
     monkeypatch.setenv("SLI_OPERATOR_TOKEN", "synthetic-token")
     attack = Mock(side_effect=AssertionError("attack must not run"))
     monkeypatch.setattr(lab, "run_attack", attack)
-    assert lab.main(["--api-url", "https://example.test", "--domain-id", "7", "--results", str(tmp_path), "--quiet-only"]) == 0
+    assert lab.main(["--api-url", "https://example.test", "--domain-id", "7",
+                     "--results", str(tmp_path), "--quiet-only"]) == exit_code
+    api.get.assert_called_once_with("/api/v1/home/summary", {"contract": "v3", "domain_id": 7, "tz": "UTC"})
     attack.assert_not_called()
     report = json.loads((tmp_path / "lab-exercise.json").read_text("utf-8"))
-    assert report["quiet"]["problem_count"] == 7 and report["attacks"] == []
+    assert report["quiet"]["problem_count"] == total
+    assert report["quiet"]["within_ten"] is within_ten
+    assert report["attacks"] == []
+    printed_total = "—" if total is None else str(total)
+    assert f"проблем на главной — {printed_total}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [
+    {"state": "ok", "total": True},
+    {"state": "ok", "total": -1},
+    {"state": "ok", "total": None},
+    {"state": "empty", "total": 1},
+    {"state": "partial"},
+])
+def test_quiet_only_rejects_malformed_home_total(payload):
+    with pytest.raises(lab.ExerciseError, match="^api_contract_invalid$"):
+        lab.quiet_home_snapshot({"contract_id": "sli.home-summary.v3", **payload}, START.isoformat())
 
 
 def test_markdown_json_escape_untrusted_titles_and_exclude_raw_responses(responses, tmp_path):
