@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-worker-boundaries.v1",
+  "status": "prepared_source_contract_with_external_blockers",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "plugin_id": "sli.remote-access",
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "source_contact_allowed": false,
+  "production_configuration_changed": false,
+  "isolation_model": {
+    "one_windows_service_per_execution_cell": true,
+    "distinct_windows_principal_per_execution_cell": true,
+    "distinct_service_sid_per_execution_cell": true,
+    "default_deny_outbound_network": true,
+    "admin_postgres_environment_forbidden": true,
+    "shared_working_directory_forbidden": true
+  },
+  "execution_cells": [
+    {
+      "cell_id": "radius-acquisition",
+      "component_id": "radius-acquisition",
+      "handler_id": "stage9-radius-manual-worker",
+      "runtime_argv": ["--internal"],
+      "windows_boundary": {
+        "principal_kind": "domain_gmsa",
+        "exact_principal": null,
+        "windows_service_name": null,
+        "service_sid": null,
+        "provisioning_state": "unprovisioned",
+        "must_be_distinct_from": "radius-session-observation"
+      },
+      "filesystem_boundary": {
+        "dedicated_working_directory": null,
+        "working_directory_acl_proven": false,
+        "project_tree_write_allowed": false,
+        "shared_plugin_working_directory_allowed": false
+      },
+      "network_boundary": {
+        "default_deny": true,
+        "allowed_capabilities": [
+          "radius_accounting_read_endpoint",
+          "plugin_postgres_exact_endpoint"
+        ],
+        "source_endpoint": "192.0.2.15",
+        "source_transport": "dedicated_read_only_smb_share",
+        "administrative_share_allowed": false,
+        "remote_registry_allowed": false,
+        "firewall_rules_proven": false
+      },
+      "postgres_boundary": {
+        "membership_role": "adlog_radius_accounting_worker",
+        "login_role": null,
+        "credential_scope": "plugin_postgres",
+        "credential_materialization": "SLI_PLUGIN_PG_DSN",
+        "admin_environment_allowed": false,
+        "runtime_login_proven": false
+      },
+      "process_boundary": {
+        "job_object_required": true,
+        "normal_resource_profile_id": null,
+        "normal_resource_profile_proven": false
+      },
+      "source_preconditions": {
+        "dedicated_read_only_share_configured": true,
+        "static_timezone_descriptor_replaces_remote_registry": true,
+        "timezone_drift_check_accepted": false,
+        "timezone_owner_assumption_active": true
+      }
+    },
+    {
+      "cell_id": "radius-session-observation",
+      "component_id": "radius-session-observation",
+      "handler_id": "stage9-radius-session-consumer-manual",
+      "runtime_argv": ["--internal"],
+      "windows_boundary": {
+        "principal_kind": "domain_gmsa",
+        "exact_principal": null,
+        "windows_service_name": null,
+        "service_sid": null,
+        "provisioning_state": "unprovisioned",
+        "must_be_distinct_from": "radius-acquisition"
+      },
+      "filesystem_boundary": {
+        "dedicated_working_directory": null,
+        "working_directory_acl_proven": false,
+        "project_tree_write_allowed": false,
+        "shared_plugin_working_directory_allowed": false
+      },
+      "network_boundary": {
+        "default_deny": true,
+        "allowed_capabilities": ["plugin_postgres_exact_endpoint"],
+        "source_endpoint": null,
+        "source_transport": "none",
+        "administrative_share_allowed": false,
+        "remote_registry_allowed": false,
+        "firewall_rules_proven": false
+      },
+      "postgres_boundary": {
+        "membership_role": "adlog_radius_session_consumer",
+        "login_role": null,
+        "credential_scope": "plugin_postgres",
+        "credential_materialization": "SLI_PLUGIN_PG_DSN",
+        "admin_environment_allowed": false,
+        "runtime_login_proven": false
+      },
+      "process_boundary": {
+        "job_object_required": true,
+        "normal_resource_profile_id": null,
+        "normal_resource_profile_proven": false
+      },
+      "source_preconditions": {}
+    }
+  ],
+  "prohibited_environment_names": [
+    "ADLOG_PG_DSN",
+    "ADLOG_PG_ADMIN_USER",
+    "ADLOG_PG_ADMIN_PASSWORD"
+  ],
+  "blockers": [
+    "two_domain_gmsa_principals_not_provisioned",
+    "two_manual_start_windows_services_not_provisioned",
+    "service_sid_firewall_policy_not_proven",
+    "dedicated_working_directory_acl_not_proven",
+    "component_postgres_login_roles_not_provisioned",
+    "normal_resource_profiles_not_defined"
+  ],
+  "explicitly_out_of_scope": [
+    "ad_or_gmsa_mutation",
+    "windows_service_creation",
+    "filesystem_acl_change",
+    "windows_firewall_change",
+    "postgres_role_or_schema_change",
+    "source_system_change",
+    "source_contact",
+    "runtime_activation",
+    "autostart"
+  ]
+}

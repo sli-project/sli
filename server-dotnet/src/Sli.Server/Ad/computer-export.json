@@ -1,0 +1,38 @@
+{
+  "COMPUTERS_V6_EXPORT_COLUMNS": [
+    "display_name",
+    "dns_host_name",
+    "account_state",
+    "computer_type",
+    "operating_system",
+    "operating_system_version",
+    "ou_path",
+    "canonical_name",
+    "ip_addresses",
+    "ad_site",
+    "location",
+    "managed_by",
+    "last_logon_utc",
+    "reasons",
+    "quality_issues",
+    "observed_at_utc"
+  ],
+  "COMPUTERS_V6_EXPORT_LABELS": {
+    "display_name": "Компьютер",
+    "dns_host_name": "DNS-имя",
+    "account_state": "Состояние AD",
+    "computer_type": "Тип",
+    "operating_system": "ОС",
+    "operating_system_version": "Версия ОС",
+    "ou_path": "OU",
+    "canonical_name": "CanonicalName",
+    "ip_addresses": "IP-адреса",
+    "ad_site": "AD Site",
+    "location": "Location",
+    "managed_by": "ManagedBy",
+    "last_logon_utc": "Последняя активность UTC",
+    "reasons": "Причины внимания",
+    "quality_issues": "Качество данных",
+    "observed_at_utc": "Наблюдалось UTC"
+  }
+}

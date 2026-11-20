@@ -1,0 +1,4439 @@
+{
+  "version": 1,
+  "common": {
+    "max_length": 256,
+    "actor_fields": [
+      "SubjectUserSid",
+      "SubjectUserName",
+      "UserSid",
+      "UserName"
+    ],
+    "actor_domain_fields": [
+      "SubjectDomainName"
+    ],
+    "target_fields": [
+      "TargetSid",
+      "TargetUserSid",
+      "TargetUserName",
+      "ObjectGUID",
+      "ObjectDN",
+      "ObjectName"
+    ],
+    "target_domain_fields": [
+      "TargetDomainName"
+    ],
+    "source_fields": [
+      "IpAddress",
+      "ClientAddress",
+      "WorkstationName",
+      "Workstation",
+      "CallerComputerName",
+      "ClientIP"
+    ],
+    "method_fields": [
+      "LogonType",
+      "AuthenticationPackageName",
+      "PackageName",
+      "PreAuthType",
+      "TicketEncryptionType"
+    ],
+    "outcome_fields": [
+      "Status",
+      "SubStatus",
+      "FailureCode",
+      "ResultCode",
+      "ExitStatus",
+      "ErrorCode"
+    ]
+  },
+  "events": [
+    {
+      "event_id": 3,
+      "channel": "System",
+      "provider": "Microsoft-Windows-Security-Kerberos",
+      "kind": "Kerberos системное событие 3",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TargetName",
+          "sources": [
+            "TargetName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ClientAddress",
+          "sources": [
+            "ClientAddress"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AccountName",
+          "sources": [
+            "AccountName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 33,
+      "channel": "System",
+      "provider": "volsnap",
+      "kind": "VolSnap событие 33",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 100,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача запущена",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 101,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача не запущена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 101,
+      "channel": "System",
+      "provider": "Application Management Group Policy",
+      "kind": "Ошибка Group Policy / Software Installation",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ApplicationName",
+          "sources": [
+            "ApplicationName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PackagePath",
+          "sources": [
+            "PackagePath"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "GPOName",
+          "sources": [
+            "GPOName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 102,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача завершена",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 103,
+      "channel": "System",
+      "provider": "Application Management Group Policy",
+      "kind": "Ошибка Group Policy / Software Installation",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ApplicationName",
+          "sources": [
+            "ApplicationName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PackagePath",
+          "sources": [
+            "PackagePath"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "GPOName",
+          "sources": [
+            "GPOName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 104,
+      "channel": "System",
+      "provider": "Microsoft-Windows-Eventlog",
+      "kind": "Windows event log cleared",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "Channel",
+          "sources": [
+            "Channel"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "BackupPath",
+          "sources": [
+            "BackupPath"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 106,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача зарегистрирована",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 107,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача вызвана триггером",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 108,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача запущена планировщиком",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 108,
+      "channel": "System",
+      "provider": "Application Management Group Policy",
+      "kind": "Ошибка применения Group Policy",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "GPOName",
+          "sources": [
+            "GPOName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ExtensionName",
+          "sources": [
+            "ExtensionName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorDescription",
+          "sources": [
+            "ErrorDescription"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 110,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача запущена пользователем или службой",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 118,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача пропущена или не выполнена по условию",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 119,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача не запущена по условию или ограничению",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 129,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: процесс задачи создан",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 139,
+      "channel": "System",
+      "provider": "Microsoft-Windows-Time-Service",
+      "kind": "Windows Time Service событие 139",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача изменена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 142,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: задача отключена или изменено состояние",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 142,
+      "channel": "System",
+      "provider": "Microsoft-Windows-Time-Service",
+      "kind": "Windows Time Service событие 142",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 200,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: action запущен",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 201,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: action завершен",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 301,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие выполнения 301",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 301,
+      "channel": "System",
+      "provider": "Application Management Group Policy",
+      "kind": "Application Management Group Policy событие 301",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ApplicationName",
+          "sources": [
+            "ApplicationName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PackagePath",
+          "sources": [
+            "PackagePath"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "GPOName",
+          "sources": [
+            "GPOName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 310,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 310",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 311,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 311",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 314,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 314",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 317,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 317",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 318,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 318",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 319,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие задачи 319",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 324,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 324",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 325,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 325",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 329,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 329",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 332,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 332",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 700,
+      "channel": "Directory Service",
+      "provider": "NTDS ISAM",
+      "kind": "NTDS ISAM service event 700",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 701,
+      "channel": "Directory Service",
+      "provider": "NTDS ISAM",
+      "kind": "NTDS ISAM service event 701",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 706,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 706",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 709,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider": "Microsoft-Windows-TaskScheduler",
+      "kind": "Task Scheduler: служебное событие 709",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserContext",
+          "sources": [
+            "UserContext"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ResultCode",
+          "sources": [
+            "ResultCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ActionName",
+          "sources": [
+            "ActionName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "UserContext",
+        "UserName",
+        "SubjectUserName"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 1102,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Eventlog",
+      "kind": "Security log очищен",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "channel",
+          "sources": [
+            "$channel"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 1112,
+      "channel": "System",
+      "provider": "Microsoft-Windows-GroupPolicy",
+      "kind": "Group Policy требует повторной обработки",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "CSEExtensionName",
+          "sources": [
+            "CSEExtensionName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "CSEExtensionId",
+          "sources": [
+            "CSEExtensionId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorDescription",
+          "sources": [
+            "ErrorDescription"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 1162,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS служебное событие 1162",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 1502,
+      "channel": "System",
+      "provider": "Microsoft-Windows-GroupPolicy",
+      "kind": "Group Policy событие 1502",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "DCName",
+          "sources": [
+            "DCName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessingMode",
+          "sources": [
+            "ProcessingMode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorDescription",
+          "sources": [
+            "ErrorDescription"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 1955,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS operational event 1955",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectDN",
+          "sources": [
+            "ObjectDN"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceDsa",
+          "sources": [
+            "SourceDsa"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "InvocationId",
+          "sources": [
+            "InvocationId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 2001,
+      "channel": "Directory Service",
+      "provider": "NTDS ISAM",
+      "kind": "NTDS ISAM service event 2001",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 2041,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS operational event 2041",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectDN",
+          "sources": [
+            "ObjectDN"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceDsa",
+          "sources": [
+            "SourceDsa"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Operation",
+          "sources": [
+            "Operation"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 2887,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS LDAP bind warning",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "UnsignedLDAPBinds",
+          "sources": [
+            "UnsignedLDAPBinds"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SimpleBinds",
+          "sources": [
+            "SimpleBinds"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "BindType",
+          "sources": [
+            "BindType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 2974,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS operational event 2974",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectDN",
+          "sources": [
+            "ObjectDN"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Operation",
+          "sources": [
+            "Operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceDsa",
+          "sources": [
+            "SourceDsa"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 3040,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS LDAP/channel binding diagnostic event",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ClientIP",
+          "sources": [
+            "ClientIP"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AccountName",
+          "sources": [
+            "AccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "BindType",
+          "sources": [
+            "BindType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ChannelBinding",
+          "sources": [
+            "ChannelBinding"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 3041,
+      "channel": "Directory Service",
+      "provider": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "kind": "AD DS LDAP/channel binding diagnostic event",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ClientIP",
+          "sources": [
+            "ClientIP"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AccountName",
+          "sources": [
+            "AccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "BindType",
+          "sources": [
+            "BindType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ChannelBinding",
+          "sources": [
+            "ChannelBinding"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4016,
+      "channel": "DNS Server",
+      "provider": "Microsoft-Windows-DNS-Server-Service",
+      "kind": "DNS: тайм-аут операции с Active Directory",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "Zone",
+          "sources": [
+            "Zone"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "QueryName",
+          "sources": [
+            "QueryName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ClientIP",
+          "sources": [
+            "ClientIP"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4100,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell engine lifecycle / error event",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "HostApplication",
+          "sources": [
+            "HostApplication"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "RunspaceId",
+          "sources": [
+            "RunspaceId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessId",
+          "sources": [
+            "ProcessId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4103,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell module command observed",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ScriptBlockText",
+          "sources": [
+            "ScriptBlockText",
+            "Payload"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "CommandName",
+          "sources": [
+            "CommandName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User",
+            "ConnectedUser"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Path",
+          "sources": [
+            "Path"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "$user_id",
+        "SubjectUserSid",
+        "SubjectUserName",
+        "User",
+        "ConnectedUser"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4104,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell script block observed",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ScriptBlockText",
+          "sources": [
+            "ScriptBlockText",
+            "Payload"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "CommandName",
+          "sources": [
+            "CommandName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User",
+            "ConnectedUser"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Path",
+          "sources": [
+            "Path"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "$user_id",
+        "SubjectUserSid",
+        "SubjectUserName",
+        "User",
+        "ConnectedUser"
+      ],
+      "actor_domain_fields": [],
+      "target_fields": [],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4608,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Windows Security audit boot boundary",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4624,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Успешный вход",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "LogonType",
+          "sources": [
+            "LogonType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AuthenticationPackageName",
+          "sources": [
+            "AuthenticationPackageName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TargetLogonId",
+          "sources": [
+            "TargetLogonId",
+            "LogonId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessName",
+          "sources": [
+            "ProcessName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Неуспешный вход",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "LogonType",
+          "sources": [
+            "LogonType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AuthenticationPackageName",
+          "sources": [
+            "AuthenticationPackageName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SubStatus",
+          "sources": [
+            "SubStatus"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4634,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Выход из системы",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 4647,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Выход по инициативе пользователя",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "LogonId",
+          "sources": [
+            "SubjectLogonId",
+            "TargetLogonId",
+            "LogonId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "LogonType",
+          "sources": [
+            "LogonType"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "SubjectUserSid",
+        "SubjectUserName",
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "target_fields": [
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4648,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Использованы явные учетные данные",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TargetServerName",
+          "sources": [
+            "TargetServerName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessName",
+          "sources": [
+            "ProcessName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SubjectLogonId",
+          "sources": [
+            "SubjectLogonId",
+            "LogonId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TargetLogonId",
+          "sources": [
+            "TargetLogonId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4656,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "File action",
+      "layer": "not_collected",
+      "operations": {
+        "access_denied": "hot"
+      },
+      "fields": [
+        {
+          "name": "path",
+          "sources": [
+            "path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "operation",
+          "sources": [
+            "operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "old_path",
+          "sources": [
+            "old_path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "aggregate",
+          "sources": [
+            "aggregate"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4660,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "File action",
+      "layer": "not_collected",
+      "operations": {
+        "delete": "fact"
+      },
+      "fields": [
+        {
+          "name": "path",
+          "sources": [
+            "path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "operation",
+          "sources": [
+            "operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "old_path",
+          "sources": [
+            "old_path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "aggregate",
+          "sources": [
+            "aggregate"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4662,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Запрос репликации каталога",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectType",
+          "sources": [
+            "ObjectType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AccessMask",
+          "sources": [
+            "AccessMask"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "replication_rights",
+          "sources": [
+            "$replication_rights"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ObjectGUID",
+        "ObjectDN",
+        "ObjectName"
+      ],
+      "target_domain_fields": [],
+      "replication_rights": [
+        "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2",
+        "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2",
+        "89e95b76-444d-4c62-991a-0facbeda640c"
+      ]
+    },
+    {
+      "event_id": 4663,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "File action",
+      "layer": "not_collected",
+      "operations": {
+        "read": "summary",
+        "write": "summary",
+        "rename": "fact"
+      },
+      "fields": [
+        {
+          "name": "path",
+          "sources": [
+            "path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "operation",
+          "sources": [
+            "operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "old_path",
+          "sources": [
+            "old_path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "aggregate",
+          "sources": [
+            "aggregate"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4670,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "File action",
+      "layer": "not_collected",
+      "operations": {
+        "permissions": "fact"
+      },
+      "fields": [
+        {
+          "name": "path",
+          "sources": [
+            "path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "operation",
+          "sources": [
+            "operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "old_path",
+          "sources": [
+            "old_path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "aggregate",
+          "sources": [
+            "aggregate"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4672,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Наблюдается сессия со специальными привилегиями",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "SubjectLogonId",
+          "sources": [
+            "SubjectLogonId",
+            "LogonId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PrivilegeList",
+          "sources": [
+            "PrivilegeList"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "SubjectUserSid",
+        "SubjectUserName",
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "target_fields": [
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4688,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Process created",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "NewProcessName",
+          "sources": [
+            "NewProcessName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewProcessId",
+          "sources": [
+            "NewProcessId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "CreatorProcessId",
+          "sources": [
+            "CreatorProcessId",
+            "ProcessId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "CommandLine",
+          "sources": [
+            "CommandLine"
+          ],
+          "max_length": 1024
+        }
+      ]
+    },
+    {
+      "event_id": 4689,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Process ended",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ProcessName",
+          "sources": [
+            "ProcessName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessId",
+          "sources": [
+            "ProcessId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ExitStatus",
+          "sources": [
+            "ExitStatus"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SubjectLogonId",
+          "sources": [
+            "SubjectLogonId",
+            "LogonId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4697,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Service installed",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ServiceFileName",
+          "sources": [
+            "ServiceFileName"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "ServiceAccount",
+          "sources": [
+            "ServiceAccount"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ServiceStartType",
+          "sources": [
+            "ServiceStartType"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ServiceName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4698,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Scheduled task created",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "task_command",
+          "sources": [
+            "$task_command"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "task_arguments",
+          "sources": [
+            "$task_arguments"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "task_user",
+          "sources": [
+            "$task_user"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4699,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Scheduled task deleted",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4700,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Scheduled task enabled",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4701,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Scheduled task disabled",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4702,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Scheduled task updated",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TaskName",
+          "sources": [
+            "TaskName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "task_command",
+          "sources": [
+            "$task_command"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "task_arguments",
+          "sources": [
+            "$task_arguments"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "task_user",
+          "sources": [
+            "$task_user"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "TaskName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4706,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Создано доверие",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TargetName",
+          "sources": [
+            "TargetName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustType",
+          "sources": [
+            "TrustType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustDirection",
+          "sources": [
+            "TrustDirection"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustAttributes",
+          "sources": [
+            "TrustAttributes"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4707,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удалено доверие",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TargetName",
+          "sources": [
+            "TargetName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustType",
+          "sources": [
+            "TrustType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustDirection",
+          "sources": [
+            "TrustDirection"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustAttributes",
+          "sources": [
+            "TrustAttributes"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4713,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменена политика Kerberos",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "KerberosPolicyChange",
+          "sources": [
+            "KerberosPolicyChange"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4716,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменено доверие",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "TargetName",
+          "sources": [
+            "TargetName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustType",
+          "sources": [
+            "TrustType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustDirection",
+          "sources": [
+            "TrustDirection"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TrustAttributes",
+          "sources": [
+            "TrustAttributes"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4719,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменена политика аудита",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SubcategoryGuid",
+          "sources": [
+            "SubcategoryGuid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "CategoryId",
+          "sources": [
+            "CategoryId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AuditPolicyChanges",
+          "sources": [
+            "AuditPolicyChanges"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SubcategoryId",
+          "sources": [
+            "SubcategoryId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4720,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Создан пользователь",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserAccountControl",
+          "sources": [
+            "UserAccountControl"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PrimaryGroupId",
+          "sources": [
+            "PrimaryGroupId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4722,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Включена учетная запись",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4723,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Попытка смены собственного пароля",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4724,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Попытка сброса пароля",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4725,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Учетная запись отключена",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4726,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Учетная запись удалена",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4727,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Глобальная группа безопасности создана",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4728,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Добавление участника в глобальную группу",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4729,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удаление участника из глобальной группы",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4730,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Глобальная группа безопасности удалена",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4731,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Локальная группа безопасности создана",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4732,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Добавление участника в локальную группу",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4733,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удаление участника из локальной группы",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4734,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Локальная группа безопасности удалена",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4735,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Локальная группа безопасности изменена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PrivilegeList",
+          "sources": [
+            "PrivilegeList"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserAccountControl",
+          "sources": [
+            "UserAccountControl"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4737,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Глобальная группа безопасности изменена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PrivilegeList",
+          "sources": [
+            "PrivilegeList"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserAccountControl",
+          "sources": [
+            "UserAccountControl"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4738,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменена учетная запись",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "OldUacValue",
+          "sources": [
+            "OldUacValue"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewUacValue",
+          "sources": [
+            "NewUacValue"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4739,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменена политика домена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MinPasswordLength",
+          "sources": [
+            "MinPasswordLength"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PasswordHistoryLength",
+          "sources": [
+            "PasswordHistoryLength"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "LockoutThreshold",
+          "sources": [
+            "LockoutThreshold"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PasswordProperties",
+          "sources": [
+            "PasswordProperties"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4740,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Блокировка учетной записи",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "CallerComputerName",
+          "sources": [
+            "CallerComputerName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4741,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Учётная запись компьютера создана",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "DnsHostName",
+          "sources": [
+            "DnsHostName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ServicePrincipalNames",
+          "sources": [
+            "ServicePrincipalNames"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserAccountControl",
+          "sources": [
+            "UserAccountControl"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4742,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Учётная запись компьютера изменена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "DnsHostName",
+          "sources": [
+            "DnsHostName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ServicePrincipalNames",
+          "sources": [
+            "ServicePrincipalNames"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "OldUacValue",
+          "sources": [
+            "OldUacValue"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewUacValue",
+          "sources": [
+            "NewUacValue"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4743,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удалена учётная запись компьютера",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4754,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Универсальная группа безопасности создана",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4755,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Универсальная группа безопасности изменена",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SamAccountName",
+          "sources": [
+            "SamAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PrivilegeList",
+          "sources": [
+            "PrivilegeList"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "UserAccountControl",
+          "sources": [
+            "UserAccountControl"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4756,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Добавление участника в универсальную группу",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4757,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удаление участника из универсальной группы",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "MemberSid",
+          "sources": [
+            "MemberSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "MemberName",
+          "sources": [
+            "MemberName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4758,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Универсальная группа безопасности удалена",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4764,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Тип группы изменён",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "OldGroupType",
+          "sources": [
+            "OldGroupType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewGroupType",
+          "sources": [
+            "NewGroupType"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4765,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Добавлена история SID",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SourceSid",
+          "sources": [
+            "SourceSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceAccountName",
+          "sources": [
+            "SourceAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceAccountDomain",
+          "sources": [
+            "SourceAccountDomain"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SidHistory",
+          "sources": [
+            "SidHistory"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4766,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Ошибка добавления истории SID",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "SourceSid",
+          "sources": [
+            "SourceSid"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceAccountName",
+          "sources": [
+            "SourceAccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "SourceAccountDomain",
+          "sources": [
+            "SourceAccountDomain"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4767,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Учетная запись разблокирована",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 4768,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Kerberos AS request",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "TicketEncryptionType",
+          "sources": [
+            "TicketEncryptionType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PreAuthType",
+          "sources": [
+            "PreAuthType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketOptions",
+          "sources": [
+            "TicketOptions"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4769,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Kerberos service ticket",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketEncryptionType",
+          "sources": [
+            "TicketEncryptionType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketOptions",
+          "sources": [
+            "TicketOptions"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4770,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Обновлен Kerberos service ticket",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketEncryptionType",
+          "sources": [
+            "TicketEncryptionType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketOptions",
+          "sources": [
+            "TicketOptions"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4771,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Kerberos pre-authentication failed",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "Status",
+          "sources": [
+            "Status",
+            "FailureCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "PreAuthType",
+          "sources": [
+            "PreAuthType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketOptions",
+          "sources": [
+            "TicketOptions"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4772,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Зарезервированный идентификатор проверки Kerberos ticket",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 4773,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Ошибка запроса Kerberos service ticket",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status",
+            "FailureCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "TicketOptions",
+          "sources": [
+            "TicketOptions"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4776,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Проверка учетных данных",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "PackageName",
+          "sources": [
+            "PackageName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        }
+      ],
+      "actor_fields": [
+        "TargetUserSid",
+        "TargetUserName"
+      ],
+      "actor_domain_fields": [
+        "TargetDomainName"
+      ],
+      "target_fields": [
+        "TargetServerName",
+        "ServiceName",
+        "$computer"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 4781,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Переименована учетная запись",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "OldTargetUserName",
+          "sources": [
+            "OldTargetUserName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewTargetUserName",
+          "sources": [
+            "NewTargetUserName"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 4794,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Попытка задать пароль DSRM",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "Workstation",
+          "sources": [
+            "Workstation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Status",
+          "sources": [
+            "Status"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 5136,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Изменён атрибут объекта каталога",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "AttributeLDAPDisplayName",
+          "sources": [
+            "AttributeLDAPDisplayName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "OperationType",
+          "sources": [
+            "OperationType"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "AttributeValue",
+          "sources": [
+            "AttributeValue"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "OpCorrelationID",
+          "sources": [
+            "OpCorrelationID"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ObjectGUID",
+        "ObjectDN",
+        "ObjectName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 5137,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Создан объект каталога",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectClass",
+          "sources": [
+            "ObjectClass"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "OpCorrelationID",
+          "sources": [
+            "OpCorrelationID"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ObjectGUID",
+        "ObjectDN",
+        "ObjectName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 5141,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "Удалён объект каталога",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ObjectClass",
+          "sources": [
+            "ObjectClass"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "OpCorrelationID",
+          "sources": [
+            "OpCorrelationID"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ObjectGUID",
+        "ObjectDN",
+        "ObjectName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 5145,
+      "channel": "Security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "kind": "File action",
+      "layer": "not_collected",
+      "operations": {
+        "access_denied": "hot"
+      },
+      "fields": [
+        {
+          "name": "path",
+          "sources": [
+            "path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "operation",
+          "sources": [
+            "operation"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "old_path",
+          "sources": [
+            "old_path"
+          ],
+          "max_length": 4096
+        },
+        {
+          "name": "aggregate",
+          "sources": [
+            "aggregate"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 5504,
+      "channel": "DNS Server",
+      "provider": "Microsoft-Windows-DNS-Server-Service",
+      "kind": "DNS Server событие 5504",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "Zone",
+          "sources": [
+            "Zone"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "QueryName",
+          "sources": [
+            "QueryName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ClientIP",
+          "sources": [
+            "ClientIP"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ErrorCode",
+          "sources": [
+            "ErrorCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 5721,
+      "channel": "System",
+      "provider": "NETLOGON",
+      "kind": "NETLOGON событие 5721",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ComputerName",
+          "sources": [
+            "ComputerName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Domain",
+          "sources": [
+            "Domain"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "StatusCode",
+          "sources": [
+            "StatusCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 5723,
+      "channel": "System",
+      "provider": "NETLOGON",
+      "kind": "NETLOGON: ошибка аутентификации компьютера",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ComputerName",
+          "sources": [
+            "ComputerName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Domain",
+          "sources": [
+            "Domain"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "StatusCode",
+          "sources": [
+            "StatusCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 5805,
+      "channel": "System",
+      "provider": "NETLOGON",
+      "kind": "NETLOGON: отказ session setup",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ComputerName",
+          "sources": [
+            "ComputerName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Domain",
+          "sources": [
+            "Domain"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "StatusCode",
+          "sources": [
+            "StatusCode"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 6013,
+      "channel": "System",
+      "provider": "EventLog",
+      "kind": "System uptime event",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 7036,
+      "channel": "System",
+      "provider": "Service Control Manager",
+      "kind": "Изменение состояния службы",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName",
+            "param1"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "State",
+          "sources": [
+            "State",
+            "param2"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 7040,
+      "channel": "System",
+      "provider": "Service Control Manager",
+      "kind": "Изменен тип запуска службы",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName",
+            "param4",
+            "param1"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "OldStartType",
+          "sources": [
+            "OldStartType",
+            "param2"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "NewStartType",
+          "sources": [
+            "NewStartType",
+            "param3",
+            "StartType"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 7045,
+      "channel": "System",
+      "provider": "Service Control Manager",
+      "kind": "Service installed",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "ServiceName",
+          "sources": [
+            "ServiceName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ImagePath",
+          "sources": [
+            "ImagePath"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "AccountName",
+          "sources": [
+            "AccountName"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "StartType",
+          "sources": [
+            "StartType"
+          ],
+          "max_length": 256
+        }
+      ],
+      "target_fields": [
+        "ServiceName"
+      ],
+      "target_domain_fields": []
+    },
+    {
+      "event_id": 14554,
+      "channel": "System",
+      "provider": "Microsoft-Windows-DfsSvc",
+      "kind": "DFS Service событие 14554",
+      "layer": "not_collected",
+      "fields": []
+    },
+    {
+      "event_id": 36887,
+      "channel": "System",
+      "provider": "Schannel",
+      "kind": "Schannel TLS fatal alert",
+      "layer": "fact",
+      "fields": [
+        {
+          "name": "AlertDesc",
+          "sources": [
+            "AlertDesc",
+            "AlertCode"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "RemoteAddress",
+          "sources": [
+            "RemoteAddress"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessID",
+          "sources": [
+            "ProcessID"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "Protocol",
+          "sources": [
+            "Protocol"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 40961,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell operational event 40961",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "HostApplication",
+          "sources": [
+            "HostApplication"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "RunspaceId",
+          "sources": [
+            "RunspaceId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessId",
+          "sources": [
+            "ProcessId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 40962,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell operational event 40962",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "HostApplication",
+          "sources": [
+            "HostApplication"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "RunspaceId",
+          "sources": [
+            "RunspaceId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessId",
+          "sources": [
+            "ProcessId"
+          ],
+          "max_length": 256
+        }
+      ]
+    },
+    {
+      "event_id": 53504,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider": "Microsoft-Windows-PowerShell",
+      "kind": "PowerShell operational event 53504",
+      "layer": "summary",
+      "fields": [
+        {
+          "name": "HostApplication",
+          "sources": [
+            "HostApplication"
+          ],
+          "max_length": 1024
+        },
+        {
+          "name": "User",
+          "sources": [
+            "User"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "RunspaceId",
+          "sources": [
+            "RunspaceId"
+          ],
+          "max_length": 256
+        },
+        {
+          "name": "ProcessId",
+          "sources": [
+            "ProcessId"
+          ],
+          "max_length": 256
+        }
+      ]
+    }
+  ]
+}

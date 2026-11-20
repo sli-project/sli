@@ -1,0 +1,60 @@
+{
+  "fixture_id": "continuous-transport-declaration",
+  "archetype": "unique_continuous_transport_declaration",
+  "runtime_enabled": false,
+  "package": {
+    "plugin_id": "sli.fixture.continuous",
+    "plugin_version": "1.0.0-fixture",
+    "delivery": "bundled_reviewed",
+    "handler_id": "continuous-fixture-handler"
+  },
+  "transport": {
+    "component_type": "continuous_daemon",
+    "source_instance_id": "source-fixture-continuous",
+    "offset_semantics": "monotonic_sequence",
+    "gap_semantics": "explicit_gap_marker",
+    "replay_semantics": "bounded_offset_range",
+    "source_contact": false
+  },
+  "worker": {
+    "worker_instance_id": "worker-fixture-continuous-v1",
+    "component_id": "continuous-reader",
+    "component_version": "1.0.0-fixture",
+    "source_instance_id": "source-fixture-continuous",
+    "process_generation": 1,
+    "host_class": "separate_continuous_daemon",
+    "boundaries": [
+      "windows_identity",
+      "job_object",
+      "working_directory_acl",
+      "network_policy",
+      "component_secret_handle",
+      "allowlisted_handler",
+      "postgres_role",
+      "db_timeouts",
+      "runtime_identity"
+    ],
+    "network_capability": "declared_but_not_enabled"
+  },
+  "states": {
+    "package_lifecycle": "registered",
+    "desired_activation": "disabled",
+    "observed_health": "unknown",
+    "component_runtime": "stopped",
+    "migration_state": "not_required",
+    "source_state": "fixture_only",
+    "queue_state": "empty",
+    "dataset_state": "not_materialized"
+  },
+  "storage": {
+    "raw_owner": "core",
+    "canonical_evidence_owner": "core",
+    "derived_backend": "postgresql"
+  },
+  "detach_reader": {
+    "kind": "reviewed_read_only_compatibility_reader",
+    "source_contact": false,
+    "jobs_enabled": false,
+    "write_rights": false
+  }
+}

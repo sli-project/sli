@@ -1,0 +1,1077 @@
+[
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "events-restart-filter",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"64908d7ff858fb19db9c21b3fdd9ec39aee79ac97009e9e32f8c07991ba63975\",\"bookmark\":\"bookmark-0-3\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":4}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":4},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":4},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4663,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4663</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":1},{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4656,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":2,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4656</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>2</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":2},{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4660,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":3,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4660</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>3</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":3},{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4670,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":4,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4670</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>4</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":4}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-1",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4656</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>2</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-2",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4660</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>3</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-3",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4670</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>4</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   },
+   {
+    "continuity_state": "filtered",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"b14e63a46f9e70caf20ce110b224f713823425d5fbdb99d774c897416675902d\",\"bookmark\":\"bookmark-1-1\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":6}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"64908d7ff858fb19db9c21b3fdd9ec39aee79ac97009e9e32f8c07991ba63975\",\"bookmark\":\"bookmark-0-3\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":4}"
+    },
+    "filtered_count": 1,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:01+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":1,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":4,\"last_record_id\":6},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:01+00:00\",\"record_id_range\":{\"first\":6,\"last\":6},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4624,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"3\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":6,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4624</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>6</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"LogonType\\\">3</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":6}]}",
+    "progress": {
+     "anchor_sha256": "64908d7ff858fb19db9c21b3fdd9ec39aee79ac97009e9e32f8c07991ba63975",
+     "bookmark": "bookmark-0-3",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": 4
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-1-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4624</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>5</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='LogonType'>2</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-1-1",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4624</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>6</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>"
+     }
+    ]
+   },
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"b14e63a46f9e70caf20ce110b224f713823425d5fbdb99d774c897416675902d\",\"bookmark\":\"bookmark-1-1\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":6}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"b14e63a46f9e70caf20ce110b224f713823425d5fbdb99d774c897416675902d\",\"bookmark\":\"bookmark-1-1\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":6}"
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:02+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":6,\"last_record_id\":6},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:02+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "anchor_sha256": "b14e63a46f9e70caf20ce110b224f713823425d5fbdb99d774c897416675902d",
+     "bookmark": "bookmark-1-1",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": 6
+    },
+    "rows": []
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "handle-negative-evidence",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"e0b17c08ba88aaf9fa44904feafde69fbbde13e111a086bb745bdeedf5d4a10b\",\"bookmark\":\"bookmark-0-0\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":1}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":1},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":1},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4656,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4656</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":1}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4656</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\outside\\private</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": ""
+    }
+   ],
+   "source_kind": "workstation"
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "workstation-accounts",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": ""
+    }
+   ],
+   "service_account_exclusions": [],
+   "source_kind": "workstation",
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1
+  },
+  "steps": [
+   {
+    "continuity_state": "filtered",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"73ed7eabc90d51fac098723b2c0e71ae5a82373a41739be4efab5ef83c9fb279\",\"bookmark\":\"bookmark-0-1\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":2}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 1,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":1,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":2},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":1},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4663,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4663</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":1}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-1",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>2</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-18</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "initial_read_hours": 2,
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "initial-bound",
+  "normalized": {
+   "initial_read_hours": 2,
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"bookmark\":\"\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":null,\"since_utc\":\"2026-10-07T10:00:00+00:00\"}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":null},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null,
+     "since_utc": "2026-10-07T10:00:00+00:00"
+    },
+    "rows": []
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "read-error",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "gap",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": null,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":null,\"policy_revision\":\"1\",\"read_error\":\"file_audit_read_failed\"},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":null},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": null
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "path-unavailable",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "gap",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"7b1cbc3efb0377708f5891520c118aa4be9ca2d7fec3605d32192b535b584603\",\"bookmark\":\"bookmark-0-0\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":1}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 1,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":1,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":1},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "clear-event",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "gap",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"7dd9b5c735e47660a405532ade661351563f6c652fb510d9af8d328f0deedb80\",\"bookmark\":\"bookmark-0-0\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":1}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": null,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":null,\"policy_revision\":\"1\",\"read_error\":\"file_audit_journal_gap\"},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":1},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":1},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":1102,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[],\"provider_name\":\"Microsoft-Windows-Eventlog\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Eventlog\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>1102</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData /></ns0:Event>\"},\"record_id\":1}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Eventlog' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>1102</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData></EventData></Event>"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "xml-whitespace-privacy",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"9c3b048b90cd4c087fe48d5c400e0ab91872e0c731b1390eba7d39b96c3e9999\",\"bookmark\":\"bookmark-0-0\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":1}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":1},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":1},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4663,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4663</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData>\\n  <ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data>\\n  <ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data>\\n  <ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data>\\n  <ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data>\\n  <ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data>\\n  <ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data>\\n  </ns0:EventData></ns0:Event>\"},\"record_id\":1}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData>\n  <Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data>\n  <Data Name='SubjectUserName'>private-account</Data>\n  <Data Name='ObjectName'>C:\\synthetic\\item</Data>\n  <Data Name='ObjectType'>File</Data>\n  <Data Name='HandleId'>0x44</Data>\n  <Data Name='ProcessId'>0x10</Data>\n  <Data Name='AccessMask'>0x10000</Data>\n  <Data Name='Password'>private-secret</Data>\n  </EventData></Event>"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852038,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "journal-gap",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": false,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": false,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 2
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"7b1cbc3efb0377708f5891520c118aa4be9ca2d7fec3605d32192b535b584603\",\"bookmark\":\"bookmark-0-0\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":1}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":1},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":1},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4663,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4663</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":1}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4663</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   },
+   {
+    "continuity_state": "gap",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"bookmark\":\"\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001\",\"record_id\":null}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": null,
+    "now": "2026-10-07T12:00:01+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":null,\"policy_revision\":\"1\",\"read_error\":\"file_audit_journal_gap\"},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":null},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001\",\"observed_at_utc\":\"2026-10-07T12:00:01+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "anchor_sha256": "7b1cbc3efb0377708f5891520c118aa4be9ca2d7fec3605d32192b535b584603",
+     "bookmark": "bookmark-0-0",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": 1
+    },
+    "rows": "gap"
+   },
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"bookmark\":\"\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001\",\"record_id\":null}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": "{\"bookmark\":\"\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001\",\"record_id\":null}"
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:02+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":null},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001\",\"observed_at_utc\":\"2026-10-07T12:00:02+00:00\",\"record_id_range\":{\"first\":null,\"last\":null},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f:00000000-0000-4000-8000-000000000001",
+     "record_id": null
+    },
+    "rows": []
+   }
+  ]
+ },
+ {
+  "aces": [
+   {
+    "flags": 67,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   },
+   {
+    "flags": 131,
+    "mask": 852039,
+    "sid": "S-1-1-0"
+   }
+  ],
+  "config": {
+   "optional_events": true,
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": true,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ]
+  },
+  "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+  "name": "important-optional",
+  "normalized": {
+   "inventory_depth": 16,
+   "inventory_objects": 10000,
+   "mass_operation_files": 100,
+   "mass_operation_seconds": 300,
+   "max_bytes": 1048576,
+   "max_events": 1000,
+   "optional_events": true,
+   "policy_revision": "1",
+   "roots": [
+    {
+     "collection_scope_id": "scope:one",
+     "important": true,
+     "path": "C:\\synthetic",
+     "sacl": {
+      "inherit_directories": true,
+      "inherit_files": true,
+      "trustee_sids": [
+       "S-1-1-0"
+      ]
+     },
+     "share_name": "synthetic"
+    }
+   ],
+   "service_account_exclusions": [],
+   "spool_bytes": 268435456,
+   "wall_seconds": 30
+  },
+  "required_masks": {
+   "0cce9215-69ae-11d9-bed3-505054503030": 3,
+   "0cce921d-69ae-11d9-bed3-505054503030": 3,
+   "0cce9223-69ae-11d9-bed3-505054503030": 1,
+   "0cce9224-69ae-11d9-bed3-505054503030": 3,
+   "0cce922f-69ae-11d9-bed3-505054503030": 1,
+   "0cce9244-69ae-11d9-bed3-505054503030": 3
+  },
+  "steps": [
+   {
+    "continuity_state": "not_proven",
+    "cursor_after": {
+     "strategy": "bookmark",
+     "token": "{\"anchor_sha256\":\"26e781ae9421ac5e7eb1f622694d41d7509a0ffc1790643d0d868b41559a5dbf\",\"bookmark\":\"bookmark-0-2\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":3}"
+    },
+    "cursor_before": {
+     "strategy": "bookmark",
+     "token": ""
+    },
+    "filtered_count": 0,
+    "lost_count": 0,
+    "now": "2026-10-07T12:00:00+00:00",
+    "payload_canonical": "{\"context\":{\"filtered_count\":0,\"lost_count\":0,\"policy_revision\":\"1\",\"read_error\":null},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":3},\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":1,\"last\":3},\"source\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4658,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":1,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4658</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>1</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":1},{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":4664,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":2,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>4664</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>2</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":2},{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"connect_address\":\"localhost\",\"event_id\":5145,\"keywords\":\"0x8020000000000000\",\"level\":0,\"machine_name\":\"dc1.example.test\",\"message\":null,\"opcode\":0,\"properties\":[\"S-1-5-21-100000001-200000002-300000003-1000\",\"C:\\\\synthetic\\\\item\",\"File\",\"0x44\",\"0x10\",\"0x10000\"],\"provider_name\":\"Microsoft-Windows-Security-Auditing\",\"record_id\":3,\"task\":12544,\"time_created\":\"2026-10-07T00:00:00.1234567Z\",\"user_id\":\"S-1-5-18\",\"version\":2,\"xml\":\"<ns0:Event xmlns:ns0=\\\"http://schemas.microsoft.com/win/2004/08/events/event\\\"><ns0:System><ns0:Provider Name=\\\"Microsoft-Windows-Security-Auditing\\\" Guid=\\\"{54849625-5478-4994-a5ba-3e3b0328c30d}\\\" /><ns0:EventID>5145</ns0:EventID><ns0:Version>2</ns0:Version><ns0:Level>0</ns0:Level><ns0:Task>12544</ns0:Task><ns0:Opcode>0</ns0:Opcode><ns0:Keywords>0x8020000000000000</ns0:Keywords><ns0:TimeCreated SystemTime=\\\"2026-10-07T00:00:00.1234567Z\\\" /><ns0:EventRecordID>3</ns0:EventRecordID><ns0:Channel>Security</ns0:Channel><ns0:Computer>dc1.example.test</ns0:Computer><ns0:Security UserID=\\\"S-1-5-18\\\" /></ns0:System><ns0:EventData><ns0:Data Name=\\\"SubjectUserSid\\\">S-1-5-21-100000001-200000002-300000003-1000</ns0:Data><ns0:Data Name=\\\"ObjectName\\\">C:\\\\synthetic\\\\item</ns0:Data><ns0:Data Name=\\\"ObjectType\\\">File</ns0:Data><ns0:Data Name=\\\"HandleId\\\">0x44</ns0:Data><ns0:Data Name=\\\"ProcessId\\\">0x10</ns0:Data><ns0:Data Name=\\\"AccessMask\\\">0x10000</ns0:Data></ns0:EventData></ns0:Event>\"},\"record_id\":3}]}",
+    "progress": {
+     "bookmark": "",
+     "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+     "record_id": null
+    },
+    "rows": [
+     {
+      "bookmark": "bookmark-0-0",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4658</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-1",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4664</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>2</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     },
+     {
+      "bookmark": "bookmark-0-2",
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>5145</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>3</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-100000001-200000002-300000003-1000</Data><Data Name='SubjectUserName'>private-account</Data><Data Name='ObjectName'>C:\\synthetic\\item</Data><Data Name='ObjectType'>File</Data><Data Name='HandleId'>0x44</Data><Data Name='ProcessId'>0x10</Data><Data Name='AccessMask'>0x10000</Data><Data Name='Password'>private-secret</Data></EventData></Event>"
+     }
+    ]
+   }
+  ]
+ }
+]

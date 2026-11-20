@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.administrative-activity.v1",
+  "required_migration": 66,
+  "runtime_write_enabled": false,
+  "runtime_read_enabled": false,
+  "source_contact_allowed": false,
+  "maximum_detail_bytes": 8192,
+  "details_shape": "flat_scalar_object_only",
+  "categories": [
+    "authentication",
+    "plugin_lifecycle",
+    "source_configuration",
+    "access_management",
+    "report_publication",
+    "manual_operation"
+  ],
+  "outcomes": [
+    "started",
+    "succeeded",
+    "failed",
+    "denied",
+    "stopped",
+    "cancelled"
+  ],
+  "prohibited_detail_key_fragments": [
+    "password",
+    "secret",
+    "token",
+    "dsn",
+    "credential",
+    "payload",
+    "raw"
+  ],
+  "integrity": {
+    "content_hash": "sha256_canonical_flat_record",
+    "record_hash": "sha256_previous_hash_plus_content_hash",
+    "concurrency": "postgres_advisory_xact_lock",
+    "idempotency": "event_uid_same_content_only",
+    "mutation": "runtime_execute_only_and_reject_trigger"
+  },
+  "prepared_reader": {
+    "required_migration": 72,
+    "capability": "administrative.activity.view",
+    "access_package": "access_admin",
+    "endpoint": "/api/v1/operations/administrative-activity",
+    "database_function": "read_administrative_activity_v1",
+    "pagination": "reverse_activity_id_keyset",
+    "default_limit": 50,
+    "maximum_limit": 200,
+    "direct_table_select": false
+  },
+  "planned_producers_not_yet_connected": [
+    "plugin_install_upgrade_enable_disable",
+    "source_configuration_change",
+    "manual_operational_action"
+  ],
+  "prepared_producers": {
+    "auth_audit": {
+      "source_table": "auth_audit",
+      "source_actions": [
+        "login",
+        "logout",
+        "initial_owner_claimed",
+        "user_created",
+        "user_updated",
+        "user_password_reset",
+        "api_key_issued",
+        "api_key_revoked"
+      ],
+      "atomic_cursor_bridge": true,
+      "runtime_enabled": false,
+      "raw_username_or_key_prefix_copied": false
+    },
+    "access_audit_v4": {
+      "source_table": "access_audit_v4",
+      "source_actions": [
+        "report_assignment_created",
+        "package_assignment_created",
+        "vpn_session_evidence_grant_created",
+        "report_access_requested",
+        "report_access_request_rejected",
+        "report_access_request_approved",
+        "report_published",
+        "report_draft_created",
+        "report_version_promoted",
+        "report_retired",
+        "report_visibility_changed"
+      ],
+      "excluded_actions": [
+        "report_preference_updated"
+      ],
+      "atomic_cursor_bridge": true,
+      "runtime_enabled": false,
+      "raw_reason_or_details_copied": false
+    }
+  },
+  "explicitly_out_of_scope": [
+    "existing_auth_or_access_audit_backfill",
+    "runtime_dual_write",
+    "telegram_notification",
+    "source_contact",
+    "autostart"
+  ]
+}

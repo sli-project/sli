@@ -1,0 +1,7 @@
+{
+  "plugin_id": "sli.remote-access",
+  "ui_api": "sli.plugin-ui.v1",
+  "version": "1.0.0",
+  "routes": ["/extensions/sli.remote-access/accounts"],
+  "required_capabilities": ["reports.catalog"]
+}

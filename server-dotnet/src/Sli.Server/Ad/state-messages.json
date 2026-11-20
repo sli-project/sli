@@ -1,0 +1,42 @@
+{
+  "ok": {
+    "code": "reports.state.ok",
+    "params": {},
+    "text": "Данные доступны"
+  },
+  "empty": {
+    "code": "reports.state.empty",
+    "params": {},
+    "text": "Ничего не найдено"
+  },
+  "denied": {
+    "code": "reports.state.denied",
+    "params": {},
+    "text": "Нет доступа"
+  },
+  "not_collected": {
+    "code": "reports.state.not_collected",
+    "params": {},
+    "text": "Данные не собраны"
+  },
+  "partial": {
+    "code": "reports.state.partial",
+    "params": {},
+    "text": "Данные неполные"
+  },
+  "processing": {
+    "code": "reports.state.processing",
+    "params": {},
+    "text": "Данные обрабатываются"
+  },
+  "stale": {
+    "code": "reports.state.stale",
+    "params": {},
+    "text": "Данные устарели"
+  },
+  "error": {
+    "code": "reports.state.error",
+    "params": {},
+    "text": "Ошибка получения данных"
+  }
+}

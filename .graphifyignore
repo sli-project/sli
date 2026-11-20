@@ -1,0 +1,24 @@
+# Generated UI bundles, local data, and runtime outputs are not code sources.
+/web/app/react/
+/frontend/.sli-v4-*/
+/data/
+/artifacts/
+/backups/
+/archive/
+/runtime/
+/logs/
+/raw/
+/evidence/
+/handoff/
+/exports/
+/node_modules/
+/.venv/
+/.worktrees/
+/graphify-out/
+
+# Local acceptance and test scratch; permanent tests remain indexed.
+/.pt-*/
+/.testtmp/
+/.tmp-*/
+/.pytest-*/
+/test-results/

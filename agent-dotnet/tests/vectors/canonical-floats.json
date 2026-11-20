@@ -1,0 +1,169 @@
+{
+  "cases": [
+    {
+      "raw": "1.5",
+      "expected": "1.5"
+    },
+    {
+      "raw": "-0.0",
+      "expected": "-0.0"
+    },
+    {
+      "raw": "0.0",
+      "expected": "0.0"
+    },
+    {
+      "raw": "1.0",
+      "expected": "1.0"
+    },
+    {
+      "raw": "1e-4",
+      "expected": "0.0001"
+    },
+    {
+      "raw": "1e-5",
+      "expected": "1e-05"
+    },
+    {
+      "raw": "1e-6",
+      "expected": "1e-06"
+    },
+    {
+      "raw": "1e-7",
+      "expected": "1e-07"
+    },
+    {
+      "raw": "1e15",
+      "expected": "1000000000000000.0"
+    },
+    {
+      "raw": "1e16",
+      "expected": "1e+16"
+    },
+    {
+      "raw": "1e20",
+      "expected": "1e+20"
+    },
+    {
+      "raw": "1e23",
+      "expected": "1e+23"
+    },
+    {
+      "raw": "1.2345678901234567",
+      "expected": "1.2345678901234567"
+    },
+    {
+      "raw": "5e-324",
+      "expected": "5e-324"
+    },
+    {
+      "raw": "2.2250738585072014e-308",
+      "expected": "2.2250738585072014e-308"
+    },
+    {
+      "raw": "1.7976931348623157e308",
+      "expected": "1.7976931348623157e+308"
+    },
+    {
+      "raw": "9007199254740993",
+      "expected": "9007199254740993"
+    },
+    {
+      "raw": "922337203685477580812345",
+      "expected": "922337203685477580812345"
+    },
+    {
+      "raw": "-0",
+      "expected": "0"
+    },
+    {
+      "raw": "{\"\u03bb\":1.5,\"\ud83d\ude00\":-0.0}",
+      "expected": "{\"\\u03bb\":1.5,\"\\ud83d\\ude00\":-0.0}"
+    },
+    {
+      "raw": "{\"\\ue000\":1,\"\\ud800\\udc00\":2}",
+      "expected": "{\"\\ue000\":1,\"\\ud800\\udc00\":2}"
+    },
+    {
+      "raw": "{\"\\u2028\":\"\\u2029\",\"control\":\"\\u0000\\n\\t\",\"accent\":\"\\u00e9\"}",
+      "expected": "{\"accent\":\"\\u00e9\",\"control\":\"\\u0000\\n\\t\",\"\\u2028\":\"\\u2029\"}"
+    }
+  ],
+  "nonfinite_raw": [
+    "NaN",
+    "Infinity",
+    "-Infinity",
+    "1e400"
+  ],
+  "public_spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8maEw9gJ+fuUdtD7RUtj8U0hxLlFi2FAwIT6Ev5ev63CKPVJFNM+HSIe2yJSNA3YGlK8AJJjTRK0ozaQCyXK2w==",
+  "packet": {
+    "envelope": {
+      "contract_id": "sli.agent-envelope.v1",
+      "packet_id": "e5ce204c-0420-46f4-b0fe-192143cf8037",
+      "agent_id": "ebbac001-1111-4111-8111-111111111111",
+      "source_instance_id": "abfac001-1111-4111-8111-111111111111",
+      "module_id": "sli.windows-eventlog",
+      "module_version": "1.0.0",
+      "policy_revision": "1",
+      "channel": "Security",
+      "generation": "gen",
+      "sequence": 1,
+      "cursor_before": {
+        "strategy": "record_id",
+        "token": ""
+      },
+      "cursor_after": {
+        "strategy": "record_id",
+        "token": "5"
+      },
+      "payload_contract": "sli.collection-packet.v1",
+      "payload_sha256": "cd0b846adf96199c4237b9ddf88b957817e5385f43fef9a072f96e1c77d25e56",
+      "record_count": 1,
+      "payload_bytes": 554,
+      "observed_at_utc": "2026-10-07T12:00:00+00:00",
+      "continuity_state": "not_proven",
+      "filtered_count": 0,
+      "lost_count": null
+    },
+    "payload": {
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "source": "synthetic.invalid",
+        "channel": "Security",
+        "generation": "gen",
+        "record_id_range": {
+          "first": 5,
+          "last": 5
+        },
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 5
+        },
+        "observed_at_utc": "2026-10-07T12:00:00+00:00"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "record_id": 5,
+          "payload": {
+            "record_id": 5,
+            "computer_name": "synthetic.invalid",
+            "channel": "Security",
+            "xml": "<Event />",
+            "measurement": 1.5,
+            "signed_zero": -0.0,
+            "large_integer": 922337203685477580812345,
+            "unicode": "\u03bb"
+          }
+        }
+      ],
+      "continuity": {
+        "status": "not_proven"
+      },
+      "context": {}
+    },
+    "signature": "MEUCIQC+WMq8WCRdMRBQFCVYxY4nw53gkCiWySY0Co/R/Zi2fAIgLaF1PxV/9YZinC8g3ZKvesrVzQV5vCH882awY3EGWQo="
+  },
+  "payload_canonical": "{\"context\":{},\"continuity\":{\"status\":\"not_proven\"},\"contract\":\"sli.collection-packet.v1\",\"header\":{\"channel\":\"Security\",\"cursor\":{\"after_record_id\":null,\"last_record_id\":5},\"generation\":\"gen\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"record_id_range\":{\"first\":5,\"last\":5},\"source\":\"synthetic.invalid\"},\"records\":[{\"format\":\"event_xml\",\"payload\":{\"channel\":\"Security\",\"computer_name\":\"synthetic.invalid\",\"large_integer\":922337203685477580812345,\"measurement\":1.5,\"record_id\":5,\"signed_zero\":-0.0,\"unicode\":\"\\u03bb\",\"xml\":\"<Event />\"},\"record_id\":5}]}",
+  "envelope_canonical": "{\"agent_id\":\"ebbac001-1111-4111-8111-111111111111\",\"channel\":\"Security\",\"continuity_state\":\"not_proven\",\"contract_id\":\"sli.agent-envelope.v1\",\"cursor_after\":{\"strategy\":\"record_id\",\"token\":\"5\"},\"cursor_before\":{\"strategy\":\"record_id\",\"token\":\"\"},\"filtered_count\":0,\"generation\":\"gen\",\"lost_count\":null,\"module_id\":\"sli.windows-eventlog\",\"module_version\":\"1.0.0\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"packet_id\":\"e5ce204c-0420-46f4-b0fe-192143cf8037\",\"payload_bytes\":554,\"payload_contract\":\"sli.collection-packet.v1\",\"payload_sha256\":\"cd0b846adf96199c4237b9ddf88b957817e5385f43fef9a072f96e1c77d25e56\",\"policy_revision\":\"1\",\"record_count\":1,\"sequence\":1,\"source_instance_id\":\"abfac001-1111-4111-8111-111111111111\"}"
+}

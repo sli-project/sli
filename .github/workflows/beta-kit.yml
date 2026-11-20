@@ -1,0 +1,81 @@
+name: Debian beta kit
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Full SHA on main (default is the dispatched main commit)'
+        required: false
+        type: string
+      upload_artifact:
+        description: 'Upload the finished kit to GitHub Actions'
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.SLI_BETA_KIT_RUNNER || 'ubuntu-latest' }}
+    env:
+      KIT_DEBS: ${{ vars.SLI_BETA_KIT_DEBS_DIR }}
+      KIT_OUTPUT: ${{ vars.SLI_BETA_KIT_OUTPUT_DIR }}
+      KIT_COMMIT: ${{ inputs.commit || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the source commit
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$KIT_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          git merge-base --is-ancestor "$KIT_COMMIT" "$GITHUB_SHA"
+          global_json="$RUNNER_TEMP/sli-beta-global-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
+          git show "$KIT_COMMIT:server-dotnet/global.json" > "$global_json"
+          printf 'global_json=%s\n' "$global_json" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14.6'
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: ${{ steps.source.outputs.global_json }}
+      - name: Build and verify the Debian kit
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${KIT_DEBS:?Configure SLI_BETA_KIT_DEBS_DIR on the runner}"
+          kit_root="${KIT_OUTPUT:-$RUNNER_TOOL_CACHE/sli-beta-kits}"
+          mkdir -p "$kit_root"
+          kit="$kit_root/$KIT_COMMIT-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          requirements="$RUNNER_TEMP/sli-beta-wheels-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.txt"
+          git show "$KIT_COMMIT:deploy/linux/native_pins.json" | python -c \
+            'import json, sys; from deploy.linux.native_runtime_build import wheel_lock; print(wheel_lock(json.load(sys.stdin)["runtime_build"]), end="")' \
+            > "$requirements"
+          python -m venv "$RUNNER_TEMP/sli-beta-venv"
+          py="$RUNNER_TEMP/sli-beta-venv/bin/python"
+          "$py" -m pip install --require-hashes --no-deps -r "$requirements"
+          "$py" -m pip install 'pytest==9.0.3'
+          "$py" -m pytest tests/unit/test_linux_beta_kit.py -q
+          "$py" -m deploy.linux.build_beta_kit --commit "$KIT_COMMIT" --debs "$KIT_DEBS" --output "$kit"
+          (cd "$kit" && sha256sum --check SHA256SUMS)
+          printf 'path=%s\n' "$kit" >> "$GITHUB_OUTPUT"
+          printf 'Runner `%s` (container hostname `%s`)\n\n' "$RUNNER_NAME" "$(hostname)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Runner kit directory `%s`\n' "$kit" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the optional kit artifact
+        if: inputs.upload_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sli-debian-beta-kit-${{ env.KIT_COMMIT }}
+          path: ${{ steps.build.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7

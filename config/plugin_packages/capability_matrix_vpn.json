@@ -1,0 +1,1469 @@
+{
+  "schema_version": 1,
+  "matrix_id": "sli.vpn-capability-matrix.v1",
+  "snapshot_date": "2026-10-07",
+  "snapshot_head": "12e84ebe78697c3d56fbe0041e345c16817acf57",
+  "plugin_id": "sli.remote-access",
+  "trace": {
+    "requirement": "UI01",
+    "source": "Stage 10 VPN capability review",
+    "origin": "2026-09-28 P28 architecture:48",
+    "target": [
+      "VP06",
+      "VP07"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "vpn-route-dispatch",
+      "capability": "Регистрация VPN-маршрутов через plugin registry",
+      "report_keys": [],
+      "routes": [
+        "GET /api/v1/reports/vpn.*"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:try_handle_get",
+        "server/sli/plugins/registry.py:plugin_installed/call_plugin",
+        "server/sli/plugins/remote_access/registration.py:register/_deferred"
+      ],
+      "rights": [
+        "core authentication",
+        "endpoint-specific capabilities remain unchanged"
+      ],
+      "scope": "Префикс /api/v1/reports/vpn.; domain-scoped права проверяются конкретными endpoint-ами",
+      "data": [
+        "config/plugin_packages/v3/sli.remote-access.json",
+        "plugin registry contributions; dispatch does not read VPN tables"
+      ],
+      "owner_today": "shared_core + plugin_in_core_bundle",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06: core route adapter и reviewed loader; VP07: VPN readers в отдельном пакете",
+      "tests": [
+        "tests/unit/test_core_without_vpn.py",
+        "tests/tooling/test_core_does_not_import_vpn.py",
+        "tests/ops/test_route_registry.py"
+      ],
+      "features": "Wildcard сохраняет not_installed при отсутствии пакета; конкретные VPN URLs и права описаны отдельными строками",
+      "sources": [
+        "server/api/routes/reports.py",
+        "server/sli/plugins/registry.py",
+        "server/sli/plugins/remote_access/registration.py"
+      ]
+    },
+    {
+      "id": "accounts",
+      "capability": "VPN-доступ и актуальность владельцев",
+      "report_keys": [
+        "vpn.accounts",
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*",
+        "GET /api/v1/reports/{}/data",
+        "GET /api/v1/reports/{}/export.csv",
+        "GET /api/v1/reports/catalog",
+        "GET /api/v1/reports/definitions",
+        "GET /api/v1/reports/datasets"
+      ],
+      "handlers": [
+        "server/sli/plugins/remote_access/reports/vpn_audit.py:_query/_export",
+        "server/sli/reporting/reporting_v4.py:execute_report",
+        "server/sli/plugins/remote_access/reports/accounts_dataset.py:read_accounts",
+        "server/sli/plugins/remote_access/reports/accounts_dataset.py:_vpn_account_summary"
+      ],
+      "rights": [
+        "vpn.audit",
+        "report action view/export",
+        "field categories",
+        "reports.export (export)"
+      ],
+      "scope": "Делегированная область объектов AD; только разрешённые категории полей",
+      "data": [
+        "public.entities_v2",
+        "public.ad_context_relation_versions",
+        "public.ad_context_entity_versions",
+        "public.ad_context_runs",
+        "public.report_registry_v4",
+        "public.report_datasets_v4"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: перенесены executor, dataset query и summary; directory producer и общая report policy остаются core",
+      "tests": [
+        "tests/reporting/test_vpn_accounts_v2.py",
+        "tests/reports/test_vpn_audit_metrics.py",
+        "tests/migrations/test_sli_v4_report_execution.py"
+      ],
+      "features": "q/activity, inactive/disabled presets, unknown поля, keyset object_id asc, filtered_count/has_more/next_cursor, CSV, карточка пользователя; total/active/inactive/disabled/privileged-overlap metrics и legacy dashboard metadata",
+      "sources": [
+        "config/plugin_packages/v3/sli.remote-access.json"
+      ]
+    },
+    {
+      "id": "connections",
+      "capability": "Сотрудники, дни, подразделения и доступы VPN",
+      "report_keys": [
+        "vpn.connections",
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v2/reports",
+        "GET /api/v2/reports/*"
+      ],
+      "handlers": [
+        "server/sli/plugins/remote_access/reports/vpn_connections.py:_query",
+        "server/sli/plugins/remote_access/reports/vpn_connections_reporting.py:get_vpn_connections_report"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view"
+      ],
+      "scope": "Точный domain_id и UTC-период; Accounting, directory и NPS проверяются независимо",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1",
+        "public.entities_v2",
+        "public.ad_context_entity_versions",
+        "public.ad_context_relation_versions"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: перенесены report definition/query, bounded datasets и VPN-агрегаты",
+      "tests": [
+        "tests/reporting/test_vpn_connections_reporting.py"
+      ],
+      "features": "employees/daily/departments/entitlements, domain/period/q/department/status, offset cursor, clipping/union времени; открытые сессии не получают выдуманную длительность",
+      "sources": []
+    },
+    {
+      "id": "overlaps",
+      "capability": "Перекрывающиеся Accounting-сессии (#408)",
+      "report_keys": [
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*"
+      ],
+      "handlers": [
+        "server/sli/plugins/remote_access/reports/vpn_connections.py:_overlap_query",
+        "server/sli/plugins/remote_access/session_overlap.py:get_overlaps/analyze"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view",
+        "vpn.session.evidence.read (переход к evidence)"
+      ],
+      "scope": "Один домен и аккаунт, поколения каждой сессии сохраняются; окно до 31 дня",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: report-композиция и VPN-агрегаты внутри пакета; UI host остаётся отдельным этапом",
+      "tests": [
+        "tests/unit/test_plugin_snapshot_analytics.py",
+        "frontend/src/i18n/plugin-snapshot-analytics.test.ts"
+      ],
+      "features": "session_overlap; overlap_account/overlap_min_seconds/overlap_complete; пары confirmed/observed, лимиты 5000 сессий/пар, truncated подавляет totals",
+      "sources": []
+    },
+    {
+      "id": "nps-authorizations",
+      "capability": "Решения NPS и временная шкала 6272/6273",
+      "report_keys": [
+        "vpn.audit",
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v1/reports/vpn.audit/authorizations"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:_handle_vpn_authorization_timeline_api",
+        "server/sli/plugins/remote_access/reports/vpn_connections_reporting_timeline.py:get_vpn_authorization_timeline",
+        "server/sli/plugins/remote_access/reports/vpn_connections.py:_authorizations"
+      ],
+      "rights": [
+        "vpn.audit",
+        "events.view"
+      ],
+      "scope": "Пересечение grants vpn.audit и events.view для одного домена; bounded UTC-период",
+      "data": [
+        "public.normalized_events",
+        "public.events_v2_core",
+        "public.entities_v2",
+        "public.ad_context_entity_aliases"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: NPS report reader и timeline в пакете; общий event/history reader остаётся core",
+      "tests": [
+        "tests/reporting/test_vpn_connections_reporting.py",
+        "tests/reports/test_vpn_authorization_timeline_syntax.py"
+      ],
+      "features": "authorizations, время/decision/identity/reason/correlation/event link; unresolved идентичность сохранена; NPS не доказывает VPN-сессию",
+      "sources": []
+    },
+    {
+      "id": "nps-failures",
+      "capability": "Отказы NPS и серия отказов",
+      "report_keys": [
+        "vpn.audit",
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v1/reports/vpn.audit/failed-authorizations/series"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:_handle_vpn_failed_authorization_series_api",
+        "server/sli/plugins/remote_access/reports/vpn_connections_reporting_failed.py:get_vpn_failed_authorization_series",
+        "server/sli/plugins/remote_access/reports/vpn_connections.py:_authorizations"
+      ],
+      "rights": [
+        "vpn.audit",
+        "events.view"
+      ],
+      "scope": "Один разрешённый домен, bounded период; NPS читается при открытии вкладки",
+      "data": [
+        "public.normalized_events",
+        "public.events_v2_core",
+        "public.ad_context_entity_aliases"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: NPS report reader и series в пакете; collection handlers остаются отдельным этапом",
+      "tests": [
+        "tests/reporting/test_vpn_connections_reporting.py"
+      ],
+      "features": "failed tab, 6273 reason и event link, серия по времени; отсутствие подтверждённого сбора не превращается в ноль",
+      "sources": []
+    },
+    {
+      "id": "nps-policy",
+      "capability": "Политики, причины и рост отказов NPS (#407)",
+      "report_keys": [
+        "vpn.policy-denials",
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*"
+      ],
+      "handlers": [
+        "server/sli/plugins/remote_access/reports/nps_policy_denials.py:query_tabs/domain_options",
+        "server/sli/plugins/remote_access/reports/nps_policy_denials_reporting.py:get_policy_denials"
+      ],
+      "rights": [
+        "vpn.audit",
+        "events.view"
+      ],
+      "scope": "Один домен, текущее и предыдущее равные окна до 31 дня; без Accounting grants",
+      "data": [
+        "public.normalized_events",
+        "public.domains"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: перенесены вкладки, агрегаты и параметры отчёта; общий event reader остаётся core",
+      "tests": [
+        "tests/reporting/test_nps_policy_denials_reporting.py"
+      ],
+      "features": "policy_denials/policy_denials_growth/policy_denials_events; policy/nas/reason/method/min_decisions/min_growth; policy/NAS/reason/provider группы, доля отказов, distinct resolved accounts, 10000 decisions/window и 500 groups/events; truncation => рост неизвестен",
+      "sources": []
+    },
+    {
+      "id": "windows-auth",
+      "capability": "Windows-аутентификация и день × час",
+      "report_keys": [
+        "vpn.audit",
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v1/reports/vpn.audit/windows-authentication",
+        "GET /api/v1/reports/vpn.audit/windows-authentication-sources"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:_handle_windows_authentication_report_api/_handle_windows_authentication_sources_api",
+        "server/sli/reports/windows_authentication_reporting.py:get_windows_authentication_report/get_windows_authentication_failure_grid",
+        "server/sli/plugins/remote_access/reports/vpn_connections.py:_windows/_failure_grid"
+      ],
+      "rights": [
+        "vpn.audit",
+        "events.view"
+      ],
+      "scope": "Один домен, отдельная ветка Windows, окно до 31 дня; heatmap в timezone пользователя",
+      "data": [
+        "public.events_v2_core",
+        "public.normalized_events",
+        "public.domains"
+      ],
+      "owner_today": "shared_core + plugin",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP07: VPN-композиция перенесена в пакет; общие Windows readers и UI host остаются вне этого этапа",
+      "tests": [
+        "tests/reports/test_windows_authentication_reporting.py",
+        "tests/reporting/test_vpn_connections_reporting.py"
+      ],
+      "features": "windows/windows_heatmap, source discovery, outcome native codes, earlier failures/manual-review signals; без восстановления Windows-сессии",
+      "sources": []
+    },
+    {
+      "id": "sessions-api",
+      "capability": "Legacy сессии и доступные источники",
+      "report_keys": [
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v1/reports/vpn.audit/session-sources",
+        "GET /api/v1/reports/vpn.audit/sessions"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:_handle_vpn_session_sources_api/_handle_vpn_session_report_api",
+        "server/sli/plugins/remote_access/reports/vpn_session_reporting.py:get_vpn_session_sources/get_vpn_session_report"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view",
+        "reports.export (action=export)"
+      ],
+      "scope": "Точный source_domain_id, time_from/time_to/timezone, bounded limit/offset; источники фильтруются до выдачи",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1",
+        "public.domains"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: VPN session reader в пакете; URLs и domain-scoped права сохранены registry adapter",
+      "tests": [
+        "tests/reports/test_vpn_session_reporting.py",
+        "tests/reports/test_vpn_report_composition.py"
+      ],
+      "features": "coverage processing/identity_incomplete/not_collected/not_authorized; historical unresolved corpus не выдаётся за пустой",
+      "sources": []
+    },
+    {
+      "id": "session-evidence",
+      "capability": "Accounting evidence сессии",
+      "report_keys": [
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v1/reports/vpn.audit/sessions/evidence"
+      ],
+      "handlers": [
+        "server/api/routes/reports.py:_handle_vpn_session_evidence_api",
+        "server/sli/plugins/remote_access/reports/vpn_session_reporting.py:get_vpn_session_evidence"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.session.evidence.read"
+      ],
+      "scope": "Точный domain_id + session_row_id, отдельное evidence-разрешение",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_evidence_observations_v1",
+        "public.core_evidence_manifests"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: VPN evidence reader в пакете; общий evidence lifecycle и UI host остаются вне этого этапа",
+      "tests": [
+        "tests/reports/test_vpn_session_reporting.py",
+        "frontend/src/app/vpn-session-evidence.test.ts",
+        "frontend/src/app/vpn-evidence-view.test.tsx"
+      ],
+      "features": "Start/Interim/Stop observations, Class/identity/provenance, полнота и expired payload; evidence не выдаётся по одному sessions.view",
+      "sources": []
+    },
+    {
+      "id": "entity-context",
+      "capability": "VPN в карточке сущности",
+      "report_keys": [
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v1/entities/{}/vpn-sessions"
+      ],
+      "handlers": [
+        "server/api/routes/entities.py:_handle_v1_entity_vpn_sessions_api",
+        "server/sli/plugins/remote_access/reports/entity_vpn_reporting.py:get_entity_vpn_sessions",
+        "frontend/src/app/entity-card.tsx:VPN context",
+        "frontend/src/app/entity-vpn.ts:VPN presentation"
+      ],
+      "rights": [
+        "objects.view",
+        "vpn.audit",
+        "vpn.sessions.view"
+      ],
+      "scope": "Trusted entity preflight: entity_id/domain_id, interval до 31 дней; точная область объекта",
+      "data": [
+        "public.entities_v2",
+        "public.radius_vpn_session_rows_v1"
+      ],
+      "owner_today": "plugin",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: entity VPN reader в пакете; trusted entity preflight остаётся core; UI host отдельным этапом",
+      "tests": [
+        "tests/entities/test_entity_vpn_reporting.py",
+        "frontend/src/app/entity-vpn.test.ts",
+        "frontend/src/app/entity-card-tabs.test.tsx"
+      ],
+      "features": "session lifecycle/completeness, окно сущности, ссылки evidence, denied без чтения DB",
+      "sources": []
+    },
+    {
+      "id": "investigation",
+      "capability": "Accounting evidence в расследованиях",
+      "report_keys": [
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v1/investigations/*",
+        "POST /api/v1/investigations/*"
+      ],
+      "handlers": [
+        "server/api/routes/investigations.py:get_vpn_session_evidence integration",
+        "server/sli/semantic/investigation_cases.py:_vpn_session_exists"
+      ],
+      "rights": [
+        "investigations.view",
+        "investigations.work",
+        "vpn.audit",
+        "vpn.session.evidence.read"
+      ],
+      "scope": "Domain-scoped typed reference vpn_accounting_session; права чтения кейса и evidence независимо",
+      "data": [
+        "public.investigations",
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_evidence_observations_v1",
+        "public.investigation_evidence_refs"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06/VP07: plugin typed-evidence resolver/validator; generic cases/audit оставить core",
+      "tests": [
+        "tests/migrations/test_investigation_cases.py"
+      ],
+      "features": "Прикрепление/повторное чтение/сокрытие typed evidence, source_domain_id/session_row_id; проверка чужого домена",
+      "sources": []
+    },
+    {
+      "id": "revocation",
+      "capability": "VPN-продолжение после отключения аккаунта",
+      "report_keys": [
+        "security.events.chains"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*"
+      ],
+      "handlers": [
+        "server/sli/reporting/v2/reports/security_events.py:revocation view",
+        "server/sli/reports/account_revocation_reporting.py:Accounting continuation"
+      ],
+      "rights": [
+        "security.events.chains",
+        "events.view",
+        "required security field categories",
+        "reports.export (export)"
+      ],
+      "scope": "Domain-scoped identity anchors и окно после 4725/4726; NPS, Windows и прежняя Accounting-сессия раздельно",
+      "data": [
+        "public.normalized_events",
+        "public.ad_context_entity_aliases",
+        "public.radius_vpn_session_rows_v1"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06: убрать прямой SQL к VPN из shared report; получать продолжение через plugin contract",
+      "tests": [
+        "tests/reporting/test_account_revocation_reporting.py"
+      ],
+      "features": "revocation вкладка, logon/nps_allow/vpn_continuation/insufficient; кандидат обхода, не вердикт; текущий get_account_revocation не вызывает vpn_report_composition_decision: отдельный VPN capability gate здесь не обнаружен, это граница для последующего решения",
+      "sources": []
+    },
+    {
+      "id": "vpn-ui",
+      "capability": "Навигация, старые URL, фильтры и закладки",
+      "report_keys": [
+        "vpn.connections",
+        "vpn.accounts",
+        "vpn.audit"
+      ],
+      "routes": [
+        "UI /report/vpn.connections",
+        "UI /report/vpn.accounts",
+        "UI /vpn-connections",
+        "UI /vpn-report",
+        "UI /admin/plugins/sli.remote-access",
+        "UI /app/vpn-connections",
+        "UI /app/vpn-report",
+        "GET /api/v1/reports/{}/access-summary",
+        "GET /api/v1/reports/{}/access-trace",
+        "POST /api/v1/reports/{}/preference"
+      ],
+      "handlers": [
+        "frontend/src/product-main.tsx:retiredRedirect",
+        "frontend/src/app/report-v2/ReportRenderer.tsx:ReportRenderer",
+        "server/api/routes/static.py:SPA_TOP_LEVEL_ROUTES",
+        "server/sli/reporting/navigation_registry.py:navigation"
+      ],
+      "rights": [
+        "vpn.audit",
+        "report grants",
+        "plugin enabled state (visibility only)"
+      ],
+      "scope": "Пользователь/его report scope; UI не расширяет серверные grants",
+      "data": [
+        "config/navigation_v3.json",
+        "config/plugin_packages/v3/sli.remote-access.json",
+        "public.user_report_preferences"
+      ],
+      "owner_today": "plugin_declaration_core_implementation",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP07: VPN descriptors/widgets в plugin; router/shell/bookmarks/общие controls остаются core",
+      "tests": [
+        "tests/reporting/test_navigation_registry.py",
+        "tests/ops/test_route_registry.py",
+        "frontend/src/app/navigation.test.ts",
+        "frontend/src/app/report-v2/report-v2.test.ts",
+        "frontend/src/app/report-v2/ReportRenderer.dom.test.tsx",
+        "frontend/src/app/app-shell.dom.test.tsx"
+      ],
+      "features": "menu vpn-connections/vpn-access, shared tabs/search/sort/page/detail/columns/presets, URL query/bookmarks/preferences, roles ИБ/ИТ/руководитель через shared shell (отдельный VPN role mode не реализован)",
+      "sources": [
+        "server/sli/reporting/ui_route_parity.py"
+      ]
+    },
+    {
+      "id": "vpn-day-ui",
+      "capability": "Активность по дням, drawer и детализация",
+      "report_keys": [
+        "vpn.connections"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*"
+      ],
+      "handlers": [
+        "frontend/src/app/vpn-activity-strip.tsx:VpnActivityStrip",
+        "frontend/src/app/vpn-day-drawer.tsx:VpnDayDrawer",
+        "frontend/src/app/vpn-session-evidence.tsx:VpnConnectionSessionEvidence",
+        "frontend/src/app/vpn-evidence-view.tsx:VpnEvidenceView",
+        "frontend/src/app/report-v2/custom.tsx:custom component maps"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view",
+        "vpn.session.evidence.read"
+      ],
+      "scope": "Разрешённые сессии сотрудника, единое UTC-окно и timezone; evidence отдельным запросом",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_evidence_observations_v1"
+      ],
+      "owner_today": "core",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP06/VP07: widgets и регистрация через plugin UI host",
+      "tests": [
+        "frontend/src/app/vpn-activity-strip.test.tsx",
+        "frontend/src/app/vpn-session-evidence.test.ts",
+        "frontend/src/app/vpn-evidence-view.test.tsx",
+        "frontend/src/app/vpn-session-text.test.ts"
+      ],
+      "features": "vpn.activity-strip/vpn.session-evidence, выбор дня, открытые/неполные интервалы, request cancellation и ошибки evidence",
+      "sources": [
+        "frontend/src/app/vpn-session-text.ts",
+        "frontend/src/app/entity-window.ts"
+      ]
+    },
+    {
+      "id": "print-export",
+      "capability": "Печатный лист и граница экспорта",
+      "report_keys": [
+        "vpn.connections",
+        "vpn.accounts",
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v2/reports/*",
+        "GET /api/v1/reports/{}/export.csv"
+      ],
+      "handlers": [
+        "frontend/src/app/vpn-print-sheet.tsx:VpnPrintSheet",
+        "server/sli/plugins/remote_access/reports/vpn_audit.py:_export",
+        "server/sli/plugins/remote_access/reports/vpn_report_composition.py:vpn_report_composition_decision"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view (session data)",
+        "reports.export + report action export (server export)"
+      ],
+      "scope": "Печать только уже загруженных/выбранных строк; CSV AD в разрешённой области",
+      "data": [
+        "public.radius_vpn_session_rows_v1",
+        "public.entities_v2",
+        "public.ad_context_relation_versions"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP07: VPN print widget/CSV executor; generic export authorization остаётся core",
+      "tests": [
+        "frontend/src/app/vpn-print-sheet.test.tsx",
+        "tests/reporting/test_vpn_accounts_v2.py",
+        "tests/reports/test_vpn_report_composition.py"
+      ],
+      "features": "vpn.print-sheet, выбрать всё/часть/снять выбор, период/timezone; print не требует отдельного HTTP export; vpn.connections не объявляет export_csv, detail inline, /rows/.../detail для него не реализован",
+      "sources": []
+    },
+    {
+      "id": "source-settings",
+      "capability": "Настройка Accounting/NPS и credentials",
+      "report_keys": [],
+      "routes": [
+        "GET /api/v1/source-packs",
+        "GET /api/v1/source-adapters",
+        "GET /api/v1/platform-settings",
+        "POST /api/v1/platform-settings/*"
+      ],
+      "handlers": [
+        "server/source_packs/radius/collection_routes.py:load_radius_collection_routes",
+        "server/sli/sources/vpn_source_auth.py:configured credentials",
+        "server/source_packs/radius/accounting_registration.py:registration",
+        "server/sli/core/platform_settings.py:shared settings"
+      ],
+      "rights": [
+        "operations.view (source catalog)",
+        "access.manage + admin (platform settings)",
+        "protected source credentials / worker identity"
+      ],
+      "scope": "Source identity и owner-confirmed configuration; accounting_share/eventlog_host route; без вывода секретов",
+      "data": [
+        "public.acquisition_source_instances",
+        "public.acquisition_consumer_subscriptions",
+        "config/stage10_radius_collection_routes_v1.json",
+        "config/stage9_radius_registration_v1.json",
+        "config/stage9_radius_runtime_contract_v1.json"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP07: VPN validators/settings/credential selection в plugin; secret store и shared settings host остаются core",
+      "tests": [
+        "tests/sources/test_radius_collection_routes.py",
+        "tests/sources/test_stage9_radius_registration_apply.py",
+        "tests/sources/test_vpn_source_auth.py",
+        "tests/core/test_platform_settings.py"
+      ],
+      "features": "Accounting/NPS endpoints раздельно; accounting_ready; registration hash/source_instance_id; managed protected path; VPN-specific UI platform settings не обнаружены; shared source-onboarding/preflight реализует DC, не VPN; platform-settings API не является редактором RADIUS routes",
+      "sources": [
+        "config/source_packs/radius.json",
+        "server/sli/sources/source_onboarding.py"
+      ]
+    },
+    {
+      "id": "acquisition-host",
+      "capability": "Bounded RADIUS acquisition: supervised host",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "scripts/runtime/remote_access_plugin_host.py:radius-acquisition",
+        "server/sli/sources/radius_plugin_runtime.py:run_acquisition_cycle",
+        "server/source_packs/radius/accounting_tail.py:read_bounded_tail",
+        "server/source_packs/radius/accounting_postgres.py:transactional acquisition",
+        "sli_collect/radius.py:collect_radius_packet"
+      ],
+      "rights": [
+        "ephemeral acquisition role/lease",
+        "Windows identity / Job Object / source credential"
+      ],
+      "scope": "Один source_instance_id/stream_id/transport_binding; snapshot route до source contact",
+      "data": [
+        "public.acquisition_source_instances",
+        "public.acquisition_stream_cursors",
+        "public.acquisition_consumer_subscriptions",
+        "public.core_evidence_manifests",
+        "public.acquisition_delivery_outbox",
+        "public.radius_accounting_session_observations",
+        "public.radius_accounting_class_cache"
+      ],
+      "owner_today": "plugin_declaration_core_implementation",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: acquisition handler/normalizer; VP06: общий pool/lease/evidence/cursor оставить core",
+      "tests": [
+        "tests/tooling/test_remote_access_plugin_host.py",
+        "tests/sources/test_stage9_radius_manual_worker.py",
+        "tests/sources/test_radius_accounting_tail.py",
+        "tests/sources/test_radius_accounting_postgres.py"
+      ],
+      "features": "plugin_radius_acquisition; bounded child every cycle, source admission/hash, cursor CAS, manifest/delivery atomicity, no reimport",
+      "sources": [
+        "server/sli/ops/runtime_component_registry.py",
+        "scripts/maintenance/stage9_radius_manual_worker.py",
+        "config/stage9_radius_manual_control_v1.json",
+        "sli_collect/radius_accounting.py",
+        "sli_collect/radius_tail.py",
+        "sli_collect/radius_contract.py"
+      ]
+    },
+    {
+      "id": "consumer-host",
+      "capability": "RADIUS sessions projection: supervised host",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "scripts/runtime/remote_access_plugin_host.py:radius-session-observation",
+        "server/sli/sources/radius_plugin_runtime.py:run_consumer_cycle",
+        "server/source_packs/radius/session_consumer.py:process_radius_delivery",
+        "server/source_packs/radius/session_read_model.py:session lifecycle"
+      ],
+      "rights": [
+        "ephemeral consumer role/lease",
+        "registered subscription/admission"
+      ],
+      "scope": "Одна зарегистрированная subscription; independent delivery cursor и exactly-once receipts",
+      "data": [
+        "public.acquisition_delivery_outbox",
+        "public.radius_session_projection_receipts",
+        "public.radius_accounting_session_observations",
+        "public.radius_vpn_session_projection"
+      ],
+      "owner_today": "plugin_declaration_core_implementation",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: lifecycle/projection; core transport/outbox/lease остаются общими",
+      "tests": [
+        "tests/tooling/test_remote_access_plugin_host.py",
+        "tests/sources/test_radius_session_consumer.py",
+        "tests/sources/test_radius_session_read_model.py",
+        "tests/tooling/test_stage9_radius_session_consumer_manual.py"
+      ],
+      "features": "plugin_radius_session_observation, Start/Interim/Stop/generation/duplicates/unresolved; старый host нельзя считать уже заменённым core jobs",
+      "sources": [
+        "scripts/maintenance/stage9_radius_session_consumer_manual.py",
+        "config/stage9_radius_session_consumer_v1.json"
+      ]
+    },
+    {
+      "id": "core-jobs",
+      "capability": "RADIUS core-job pilot (#402)",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "server/sli/core/job_registry.py:pilot_registry",
+        "server/sli/core/job_executor.py:stage_radius/apply_radius",
+        "config/plugin_packages/sli.remote-access.jobs-v3.json:radius-acquisition/radius-session-observation"
+      ],
+      "rights": [
+        "vpn-read rights_profile",
+        "sli_job_executor_light / sli_job_publisher_light",
+        "pinned source/subscription + fencing"
+      ],
+      "scope": "Opt-in SLI_CORE_JOB_RADIUS_PILOT и точный source_instance_id; max_inflight=1",
+      "data": [
+        "sli_jobs.jobs",
+        "public.acquisition_delivery_outbox",
+        "public.radius_session_projection_receipts",
+        "public.radius_vpn_session_projection",
+        "public.read_radius_job_input_v1",
+        "public.read_radius_job_source_v1",
+        "sli_jobs.audit"
+      ],
+      "owner_today": "plugin_declaration_core_implementation",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06/VP07: stage/apply/scheduling VPN через plugin handler registry; core queue/pools/fence остаются core",
+      "tests": [
+        "tests/unit/test_core_job_queue.py",
+        "tests/migrations/test_core_job_queue_migration154.py"
+      ],
+      "features": "light/vpn-read, pinned ids/input hash, publisher transaction fence, retries/quarantine/budgets; acquisition returns blocked/acquisition_disabled; host lease предотвращает второго consumer",
+      "sources": []
+    },
+    {
+      "id": "nps-collection",
+      "capability": "NPS EventLog collection и cursor admission",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "scripts/runtime/collection_worker.py:run_nps_stage",
+        "server/source_packs/nps_eventlog_runtime.py:resolve_nps_eventlog_endpoint/validate_continuous_nps_admission",
+        "server/source_packs/windows_nps_radius.py:NPS source pack"
+      ],
+      "rights": [
+        "configured source admission",
+        "collection worker identity",
+        "protected endpoint credential"
+      ],
+      "scope": "NPS endpoint отдельно от DC и Accounting; Security stream cursor, generation и exact 6272/6273 pilot contract",
+      "data": [
+        "public.acquisition_stream_cursors",
+        "public.core_evidence_manifests",
+        "public.acquisition_delivery_outbox",
+        "public.events_v2_core"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06/VP07: source selection/NPS stage в plugin; generic EventLog transport/cursors/import остаются core",
+      "tests": [
+        "tests/core/test_nps_worker_stage.py",
+        "tests/core/test_nps_pipeline_runtime.py",
+        "tests/sources/test_nps_eventlog_runtime.py",
+        "tests/sources/test_nps_eventlog_transport.py"
+      ],
+      "features": "ADLOG_NPS_EVENTLOG_ENABLED opt-in, heartbeat, failure/partial отдельно от DC, endpoint overlap blocked",
+      "sources": [
+        "scripts/collect/collect_windows_events.py"
+      ]
+    },
+    {
+      "id": "normalization",
+      "capability": "RADIUS/NPS source normalization и semantic facts",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "server/source_packs/windows_nps_radius.py:NPS normalizer",
+        "server/source_packs/normalizers.py:built-in normalizer imports",
+        "server/source_packs/radius/accounting.py:Accounting adapter",
+        "server/sli/semantic/semantic_processing.py:source-normalizer dispatch"
+      ],
+      "rights": [
+        "source-pack allowlist",
+        "semantic worker restricted DB role"
+      ],
+      "scope": "Provider/channel/event identity; NPS native fields и Accounting observations раздельно",
+      "data": [
+        "public.normalized_events",
+        "public.radius_accounting_session_observations",
+        "config/radius_event_catalog.json"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06/VP07: VPN normalizer declarations/implementation; generic semantic dispatch оставляется core",
+      "tests": [
+        "tests/events/test_windows_nps_radius_normalization.py",
+        "tests/semantic/test_stage7_auth_vpn_semantic.py",
+        "tests/sources/test_radius_accounting_contract.py"
+      ],
+      "features": "Class/account identity, allowed/denied/reason/policy/NAS; generic normalized facts/retained history не переносятся как приватная VPN БД",
+      "sources": [
+        "server/source_packs/registry.py"
+      ]
+    },
+    {
+      "id": "reconciliation",
+      "capability": "Identity resolver, overlays, reconciliation и rebind",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "server/source_packs/radius/accounting_identity.py:resolve_radius_principal",
+        "server/source_packs/radius/session_reconciliation_production.py:controlled reconciliation",
+        "server/source_packs/radius/session_rebind.py:identity rebind",
+        "scripts/maintenance/radius_session_v2_identity_rebind.py:control"
+      ],
+      "rights": [
+        "resolver owner role",
+        "bounded reconciliation writer / explicit control admission"
+      ],
+      "scope": "Точный domain/source/session generation; canonical entity identity, ambiguity fail closed",
+      "data": [
+        "public.radius_accounting_class_cache",
+        "public.radius_session_reconciliation_attempts",
+        "public.radius_session_identity_overlays",
+        "public.radius_vpn_session_projection",
+        "public.ad_context_entity_aliases",
+        "public.entities_v2"
+      ],
+      "owner_today": "core",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: VPN resolver/cache/overlays/writer; directory identity API и core audit остаются shared",
+      "tests": [
+        "tests/sources/test_radius_accounting_identity.py",
+        "tests/sources/test_radius_session_reconciliation.py",
+        "tests/sources/test_radius_session_reconciliation_postgres.py",
+        "tests/sources/test_radius_session_reconciliation_production.py",
+        "tests/sources/test_radius_session_v2_identity_rebind.py",
+        "tests/tooling/test_radius_session_v2_identity_rebind_control.py"
+      ],
+      "features": "reconciliation не переписывает исходное evidence/курсор; rollback/control/preflight и canonical session_row_id",
+      "sources": [
+        "scripts/maintenance/stage9_radius_identity_owner_migrate.py",
+        "scripts/maintenance/stage10_radius_session_reconciliation_production_control.py"
+      ]
+    },
+    {
+      "id": "operations",
+      "capability": "Operations, source status и diagnostics",
+      "report_keys": [],
+      "routes": [
+        "GET /api/v1/operations/overview",
+        "GET /api/v1/operations/plugins",
+        "GET /api/v1/operations/plugins/*",
+        "GET /api/v1/operations/sources/*"
+      ],
+      "handlers": [
+        "server/sli/reporting/ui_operations.py:get_radius_vpn_operations integration",
+        "server/sli/sources/radius_vpn_operations.py:get_radius_vpn_operations",
+        "server/sli/core/setup_status.py:pack branches",
+        "server/sli/sources/plugin_management.py:VPN operations integration"
+      ],
+      "rights": [
+        "operations visibility / configured source scope",
+        "operations read role"
+      ],
+      "scope": "Source/subscription/component observations; source status не выдаётся за установленную acceptance",
+      "data": [
+        "public.radius_vpn_operations_v1",
+        "public.radius_vpn_session_evidence_observations_v1",
+        "public.acquisition_source_instances"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06/VP07: VPN status provider через registry, operations host остаётся core",
+      "tests": [
+        "tests/sources/test_radius_vpn_operations.py",
+        "tests/ops/test_runtime_component_registry.py",
+        "tests/ops/test_runtime_worker_registry_parity.py"
+      ],
+      "features": "Acquisition/consumer heartbeat, coverage/outbox/source health, configured/receiving_data раздельно",
+      "sources": []
+    },
+    {
+      "id": "lifecycle",
+      "capability": "Plugin install/configure/enable/disable/drain",
+      "report_keys": [],
+      "routes": [
+        "GET /api/v1/plugins",
+        "POST /api/v1/plugins/*"
+      ],
+      "handlers": [
+        "server/sli/sources/plugin_state.py:list_plugin_states/set_plugin_enabled/remote_access_configured",
+        "server/sli/sources/plugin_lifecycle.py:shared lifecycle",
+        "frontend/src/app/admin/plugins.tsx:PluginsPage"
+      ],
+      "rights": [
+        "operations.view (catalog)",
+        "plugins.manage + admin or platform_owner",
+        "runtime admission / worker boundaries"
+      ],
+      "scope": "sli.remote-access revision CAS; отдельные installed/configured/enabled/receiving_data axes",
+      "data": [
+        "public.plugin_installations_v1",
+        "public.plugin_component_admission_v1",
+        "public.administrative_activity_v1",
+        "public.read_plugin_states_v1",
+        "public.set_plugin_enabled_v1",
+        "public.plugin_state_v1",
+        "public.plugin_lifecycle_operations_v1",
+        "public.plugin_component_leases_v1"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP06: убрать hardcoded VPN config import из lifecycle host; VP07: plugin configuration/probes",
+      "tests": [
+        "tests/access/test_plugin_state.py",
+        "tests/migrations/test_plugin_state_migration152.py",
+        "frontend/src/app/admin/plugins.test.tsx",
+        "tests/tooling/test_remote_access_plugin_host.py"
+      ],
+      "features": "Drain/disable без удаления истории/grants; no autogrant/new external collection; independent install/update остаются explicitly_not_proven",
+      "sources": [
+        "config/plugin_packages/sli.remote-access.json",
+        "config/stage10_plugin_management_v1.json"
+      ]
+    },
+    {
+      "id": "authorization",
+      "capability": "VPN access composition и audited evidence grant",
+      "report_keys": [
+        "vpn.audit"
+      ],
+      "routes": [
+        "GET /api/v1/reports/{}/access-summary",
+        "GET /api/v1/reports/{}/access-trace"
+      ],
+      "handlers": [
+        "server/sli/plugins/remote_access/reports/vpn_report_composition.py:vpn_report_composition_decision",
+        "server/sli/access/access_control_v4.py:capability_decision_for_resource_groups/report_action_decision",
+        "server/sli/access/access_control_v4_admin.py:grant_vpn_session_evidence_allow_with_cursor",
+        "scripts/maintenance/vpn_evidence_grant_control.py:explicit grant control"
+      ],
+      "rights": [
+        "vpn.audit",
+        "vpn.sessions.view",
+        "vpn.session.evidence.read",
+        "reports.export",
+        "field categories"
+      ],
+      "scope": "Точные resource_groups/domain, deny precedence, report actions и capability scopes независимо",
+      "data": [
+        "public.access_capabilities",
+        "public.access_capability_assignments",
+        "public.access_report_assignments",
+        "public.access_package_reports",
+        "public.administrative_activity_v1"
+      ],
+      "owner_today": "core",
+      "owner_target": "shared_core + sli.remote-access",
+      "transfer": "VP07: composition/declarations/control VPN в plugin; RBAC/scopes/audit enforcement остаются core",
+      "tests": [
+        "tests/reports/test_vpn_report_composition.py",
+        "tests/access/test_vpn_evidence_grant_control.py"
+      ],
+      "features": "Никаких новых grants или расширения scopes; evidence capability не выводится из session-view; access trace сохраняется",
+      "sources": []
+    },
+    {
+      "id": "entitlements-contract",
+      "capability": "Directory VPN entitlements contract",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "scripts/runtime/ad_context_snapshot_worker.py:vpn_membership",
+        "server/sli/plugins/remote_access/entitlements.py:read_entitlements",
+        "server/sli/sources/plugin_contract_v1.py:fixture contract model"
+      ],
+      "rights": [
+        "directory.vpn_entitlements.v1 required dependency",
+        "vpn.audit + field categories (consumer)"
+      ],
+      "scope": "Directory partition/domain/group references; latest canonical snapshot; immutable typed exchange в manifest",
+      "data": [
+        "public.entities_v2",
+        "public.ad_context_entity_versions",
+        "public.ad_context_relation_versions",
+        "public.ad_context_runs"
+      ],
+      "owner_today": "directory producer + plugin consumer",
+      "owner_target": "directory producer + sli.remote-access consumer",
+      "transfer": "VP07: typed compatibility adapter directory.vpn_entitlements.v1 и recorded fixture; AD producer и applied migrations остаются на месте",
+      "tests": [
+        "tests/sources/test_plugin_contract_v1.py",
+        "tests/unit/test_vpn_entitlements_contract.py",
+        "tests/tooling/test_ad_context_snapshot_worker.py",
+        "tests/reporting/test_vpn_accounts_v2.py"
+      ],
+      "features": "Сохранён ID v1, bounded directory SQL и legacy report bytes зафиксированы synthetic fixture. Отдельный production directory producer endpoint по-прежнему не доказан",
+      "sources": [
+        "config/plugin_packages/sli.remote-access.json"
+      ]
+    },
+    {
+      "id": "vpn-storage",
+      "capability": "VPN-owned tables, read views и migration ownership",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "server/source_packs/radius/accounting_postgres.py:observations/class cache",
+        "server/source_packs/radius/session_consumer.py:projection",
+        "server/source_packs/radius/session_reconciliation_postgres.py:overlays",
+        "config/postgres_migrations/067_plugin_remote_access_namespace.sql:prepared namespace"
+      ],
+      "rights": [
+        "adlog_radius_* roles",
+        "VPN session/evidence readers",
+        "core migrator"
+      ],
+      "scope": "VPN-specific persisted data/derived reads; прежние IDs/history/applied checksums сохраняются",
+      "data": [
+        "public.radius_accounting_session_observations",
+        "public.radius_accounting_class_cache",
+        "public.radius_session_projection_receipts",
+        "public.radius_vpn_session_projection",
+        "public.radius_session_reconciliation_attempts",
+        "public.radius_session_identity_overlays",
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1",
+        "public.radius_vpn_operations_v1",
+        "public.radius_vpn_session_evidence_observations_v1",
+        "sli_plugin_remote_access.plugin_namespace_contract_v1"
+      ],
+      "owner_today": "core",
+      "owner_target": "sli.remote-access",
+      "transfer": "VP07: data/migration ownership; existing SQL immutable, новые migrations через core migrator; namespace не означает текущий cutover",
+      "tests": [
+        "tests/sources/test_radius_accounting_postgres.py",
+        "tests/sources/test_radius_session_consumer.py",
+        "tests/migrations/test_radius_identity_resolver_owner_migration.py",
+        "tests/migrations/test_radius_event_catalog_revision_registration.py",
+        "tests/migrations/test_vpn_session_reader_domains_grant.py",
+        "tests/migrations/test_organization_neutral_radius_access.py"
+      ],
+      "features": "058-065/067/080/082/083/098/148/151; реальные VPN rows всё ещё public, manifest v3 existing_tables/migrations пусты",
+      "sources": []
+    },
+    {
+      "id": "shared-foundation",
+      "capability": "Общие evidence, транспорт, идентичность, история и поставка",
+      "report_keys": [],
+      "routes": [],
+      "handlers": [
+        "server/sli/core/job_queue.py:shared fenced queue",
+        "server/source_packs/registry.py:declarative source dispatch",
+        "server/sli/sources/plugin_management.py:shared package host"
+      ],
+      "rights": [
+        "core RBAC/roles/contracts",
+        "signed bundled package admission"
+      ],
+      "scope": "Consumer-neutral acquisition identity/stream cursor/outbox; source/raw and derived retention раздельно",
+      "data": [
+        "public.acquisition_source_instances",
+        "public.acquisition_stream_cursors",
+        "public.acquisition_consumer_subscriptions",
+        "public.core_evidence_manifests",
+        "public.acquisition_delivery_outbox",
+        "public.entities_v2",
+        "public.ad_context_entity_aliases",
+        "public.normalized_events"
+      ],
+      "owner_today": "shared_core",
+      "owner_target": "shared_core",
+      "transfer": "Оставить core; VPN-specific code только через публичные contracts/registry",
+      "tests": [
+        "tests/unit/test_core_job_queue.py",
+        "tests/sources/test_plugin_contract_v1.py",
+        "tests/sources/test_radius_accounting_cursor_bootstrap.py"
+      ],
+      "features": "Auth/audit, canonical evidence, generic workers/pools/time contracts, PostgreSQL runtime/ClickHouse retained readers, package coordinator/UI shell не становятся VPN private",
+      "sources": []
+    }
+  ],
+  "core_imports": [
+    {
+      "source": "server/sli/plugins/remote_access/registration.py",
+      "modules": [
+        "server.sli.plugins.remote_access.reports.vpn_audit",
+        "server.sli.plugins.remote_access.reports.vpn_connections",
+        "server.sli.plugins.remote_access.reports.vpn_report_composition",
+        "server.source_packs.nps_eventlog_runtime",
+        "server.source_packs.radius.collection_routes"
+      ]
+    },
+    {
+      "source": "server/sli/plugins/remote_access/jobs.py",
+      "modules": [
+        "server.source_packs.radius.session_consumer"
+      ]
+    },
+    {
+      "source": "server/sli/plugins/remote_access/normalizers.py",
+      "modules": [
+        "server.source_packs.windows_nps_radius"
+      ]
+    },
+    {
+      "source": "server/sli/plugins/remote_access/reports/vpn_connections.py",
+      "modules": [
+        "server.sli.plugins.remote_access.session_overlap",
+        "server.sli.plugins.remote_access.reports.nps_policy_denials",
+        "server.sli.plugins.remote_access.reports.vpn_connections_reporting",
+        "server.sli.plugins.remote_access.reports.vpn_session_reporting"
+      ]
+    },
+    {
+      "source": "server/sli/plugins/remote_access/reports/nps_policy_denials.py",
+      "modules": [
+        "server.sli.plugins.remote_access.reports.nps_policy_denials_reporting"
+      ]
+    },
+    {
+      "source": "server/sli/plugins/remote_access/reports/vpn_session_reporting.py",
+      "modules": [
+        "server.source_packs.radius.session_read_model"
+      ]
+    }
+  ],
+  "migration_inventory": [
+    {
+      "file": "config/postgres_migrations/036_ad_audit_vpn_gpo_source.sql",
+      "ownership": "directory/shared + VPN report declaration",
+      "objects": [
+        "dataset ad.accounts.vpn",
+        "report vpn.audit"
+      ],
+      "target": "Directory producer остаётся вне VPN; report declaration/executor в plugin"
+    },
+    {
+      "file": "config/postgres_migrations/041_stage6_report_workspaces.sql",
+      "ownership": "shared report registry",
+      "objects": [
+        "dataset ad.accounts.vpn",
+        "report vpn.audit workspace"
+      ],
+      "target": "Core framework; VPN-specific workspace metadata в plugin"
+    },
+    {
+      "file": "config/postgres_migrations/058_radius_accounting_transaction_foundation.sql",
+      "ownership": "shared core + VPN-specific public tables",
+      "objects": [
+        "public.radius_accounting_session_observations",
+        "public.radius_accounting_class_cache",
+        "public.acquisition_source_instances",
+        "public.acquisition_stream_cursors",
+        "public.acquisition_consumer_subscriptions",
+        "public.core_evidence_manifests",
+        "public.acquisition_delivery_outbox"
+      ],
+      "target": "Только observations/class cache — VPN; transport/evidence/cursors/outbox — core"
+    },
+    {
+      "file": "config/postgres_migrations/059_radius_identity_spine_resolver.sql",
+      "ownership": "VPN resolver + shared directory identity",
+      "objects": [
+        "public.sli_radius_resolve_principal_key"
+      ],
+      "target": "VPN adapter поверх directory identity contract"
+    },
+    {
+      "file": "config/postgres_migrations/060_radius_identity_resolver_owner.sql",
+      "ownership": "VPN resolver owner/grants",
+      "objects": [
+        "public.sli_radius_resolve_principal_key"
+      ],
+      "target": "Plugin least-privilege resolver declaration"
+    },
+    {
+      "file": "config/postgres_migrations/061_radius_session_consumer_projection.sql",
+      "ownership": "VPN-specific public tables",
+      "objects": [
+        "public.radius_session_projection_receipts",
+        "public.radius_vpn_session_projection"
+      ],
+      "target": "Plugin projection/receipts + core delivery contract"
+    },
+    {
+      "file": "config/postgres_migrations/062_vpn_session_report_read_boundary.sql",
+      "ownership": "VPN read views/grants",
+      "objects": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1"
+      ],
+      "target": "Plugin read boundary"
+    },
+    {
+      "file": "config/postgres_migrations/063_radius_vpn_operations_read_boundary.sql",
+      "ownership": "VPN operations view",
+      "objects": [
+        "public.radius_vpn_operations_v1"
+      ],
+      "target": "Plugin status provider"
+    },
+    {
+      "file": "config/postgres_migrations/064_vpn_session_canonical_identity_read_boundary.sql",
+      "ownership": "VPN read views + shared canonical identity",
+      "objects": [
+        "public.radius_vpn_session_rows_v1",
+        "public.radius_vpn_session_coverage_v1"
+      ],
+      "target": "Plugin views consume directory identity"
+    },
+    {
+      "file": "config/postgres_migrations/065_radius_session_reconciliation_overlay.sql",
+      "ownership": "VPN reconciliation tables",
+      "objects": [
+        "public.radius_session_reconciliation_attempts",
+        "public.radius_session_identity_overlays"
+      ],
+      "target": "Plugin bounded reconciliation"
+    },
+    {
+      "file": "config/postgres_migrations/067_plugin_remote_access_namespace.sql",
+      "ownership": "prepared plugin namespace only",
+      "objects": [
+        "sli_plugin_remote_access",
+        "sli_plugin_remote_access.plugin_namespace_contract_v1"
+      ],
+      "target": "Не считать переносом существующих public таблиц"
+    },
+    {
+      "file": "config/postgres_migrations/080_radius_session_reconciliation_projection.sql",
+      "ownership": "VPN consumer overlay read grant",
+      "objects": [
+        "public.radius_session_identity_overlays"
+      ],
+      "target": "Plugin consumer access to exact immutable identity overlays"
+    },
+    {
+      "file": "config/postgres_migrations/082_radius_event_catalog_revision_registration.sql",
+      "ownership": "VPN catalog revision registration",
+      "objects": [
+        "public.acquisition_source_instances",
+        "public.acquisition_consumer_subscriptions"
+      ],
+      "target": "Plugin catalog/registration metadata; shared tables core"
+    },
+    {
+      "file": "config/postgres_migrations/083_vpn_session_evidence_read_boundary.sql",
+      "ownership": "VPN evidence view + capability",
+      "objects": [
+        "public.radius_vpn_session_evidence_observations_v1",
+        "vpn.session.evidence.read"
+      ],
+      "target": "Plugin reader; core enforces declared capability"
+    },
+    {
+      "file": "config/postgres_migrations/098_radius_session_consumer_manifest_hash.sql",
+      "ownership": "VPN manifest binding",
+      "objects": [
+        "public.acquisition_consumer_subscriptions"
+      ],
+      "target": "Plugin contract binding; shared subscriptions core"
+    },
+    {
+      "file": "config/postgres_migrations/119_retire_vpn_and_privileged_reports.sql",
+      "ownership": "VPN report visibility/access anchor",
+      "objects": [
+        "report vpn.audit"
+      ],
+      "target": "Не удалять сохранённый grant anchor/legacy URL"
+    },
+    {
+      "file": "config/postgres_migrations/148_vpn_session_reader_domains_grant.sql",
+      "ownership": "VPN reader privilege",
+      "objects": [
+        "public.domains"
+      ],
+      "target": "Directory lookup through scoped contract"
+    },
+    {
+      "file": "config/postgres_migrations/151_organization_neutral_radius_access.sql",
+      "ownership": "VPN role/registration/evidence boundary",
+      "objects": [
+        "public.radius_vpn_session_evidence_observations_v1",
+        "public.acquisition_source_instances"
+      ],
+      "target": "Plugin generic configured-source access without organization data"
+    },
+    {
+      "file": "config/postgres_migrations/073_plugin_lifecycle_registry.sql",
+      "ownership": "shared lifecycle",
+      "objects": [
+        "public.plugin_installations_v1",
+        "public.plugin_lifecycle_operations_v1"
+      ],
+      "target": "Оставить core"
+    },
+    {
+      "file": "config/postgres_migrations/075_plugin_component_admission.sql",
+      "ownership": "shared admission/leases",
+      "objects": [
+        "public.plugin_component_admission_v1",
+        "public.plugin_component_leases_v1"
+      ],
+      "target": "Оставить core"
+    },
+    {
+      "file": "config/postgres_migrations/076_plugin_runtime_activation_executor.sql",
+      "ownership": "shared activation",
+      "objects": [
+        "plugin component activation functions"
+      ],
+      "target": "Оставить core; убрать VPN hardcoding через contracts"
+    },
+    {
+      "file": "config/postgres_migrations/078_plugin_runtime_guard_read_boundary.sql",
+      "ownership": "shared runtime guard",
+      "objects": [
+        "plugin runtime guard functions"
+      ],
+      "target": "Оставить core"
+    },
+    {
+      "file": "config/postgres_migrations/136_investigation_typed_evidence_refs.sql",
+      "ownership": "shared typed evidence references",
+      "objects": [
+        "public.investigation_evidence_refs"
+      ],
+      "target": "Core case storage + plugin VPN validator"
+    },
+    {
+      "file": "config/postgres_migrations/152_plugin_state.sql",
+      "ownership": "shared lifecycle + VPN adapters",
+      "objects": [
+        "public.plugin_state_v1",
+        "public.read_plugin_states_v1",
+        "public.set_plugin_enabled_v1"
+      ],
+      "target": "Core state host + plugin configured/health provider"
+    },
+    {
+      "file": "config/postgres_migrations/154_core_job_queue.sql",
+      "ownership": "shared queue + RADIUS pilot adapters",
+      "objects": [
+        "sli_jobs.jobs",
+        "sli_jobs.audit",
+        "public.read_radius_job_input_v1",
+        "public.read_radius_job_source_v1"
+      ],
+      "target": "Core queue/pools; VPN stage/apply/input adapters in plugin"
+    },
+    {
+      "file": "config/postgres_migrations/039_stage6_dashboard_metrics.sql",
+      "ownership": "VPN legacy report/dashboard metadata",
+      "objects": [
+        "report vpn.audit",
+        "ad.vpn_disabled_accounts"
+      ],
+      "target": "Plugin report metadata, shared dashboard host"
+    },
+    {
+      "file": "config/postgres_migrations/040_stage6_report_access_requests.sql",
+      "ownership": "shared report access requests",
+      "objects": [
+        "dataset ad.accounts.vpn",
+        "public.report_access_requests_v4"
+      ],
+      "target": "Core requests/scopes with plugin report declarations"
+    },
+    {
+      "file": "config/postgres_migrations/042_stage6_report_workspace_routes.sql",
+      "ownership": "VPN legacy route metadata",
+      "objects": [
+        "report vpn.audit",
+        "/vpn-report"
+      ],
+      "target": "Preserve stable route/redirect"
+    },
+    {
+      "file": "config/postgres_migrations/081_g11a3_preflight_read_boundary.sql",
+      "ownership": "VPN acquisition diagnostics read functions",
+      "objects": [
+        "public.sli_g11a3_preflight_state_v1"
+      ],
+      "target": "Plugin diagnostics provider; core read contract"
+    },
+    {
+      "file": "config/postgres_migrations/121_ad_snapshot_manifest_foundation.sql",
+      "ownership": "directory snapshot manifest",
+      "objects": [
+        "ad_vpn_membership"
+      ],
+      "target": "Directory producer; preserve VPN entitlement consumer contract"
+    },
+    {
+      "file": "config/postgres_migrations/158_ad_gpo_core_jobs.sql",
+      "ownership": "shared core-job admission composition",
+      "objects": [
+        "public.core_job_admitted_radius_v1"
+      ],
+      "target": "Core admission dispatch + plugin VPN binding adapter"
+    },
+    {
+      "file": "config/postgres_migrations/230_nps_threshold.sql",
+      "ownership": "NPS threshold checkpoint and scoped evidence readers",
+      "objects": [
+        "public.semantic_nps_threshold_state",
+        "public.nps_threshold_watermark",
+        "public.read_nps_threshold_events",
+        "public.nps_threshold_window_quality"
+      ],
+      "target": "NPS evaluator state/reader in plugin; shared QW admission and delivery in core"
+    },
+    {
+      "file": "config/postgres_migrations/326_nps_threshold_paths.sql",
+      "ownership": "NPS threshold migration rollback snapshot; storage owner only",
+      "objects": [
+        "public.nps_threshold_definitions326",
+        "public.nps_threshold_watermark",
+        "public.nps_threshold_window_quality"
+      ],
+      "target": "Saved predecessor definitions/catalog for exact rollback; no PUBLIC, runtime or semantic-worker access; receipt-led readers reuse existing indexes"
+    }
+  ]
+}

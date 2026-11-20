@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "pack_id": "sli.windows.ad-context",
+  "version": "0.10.0",
+  "display_name": "Active Directory Context",
+  "source_kind": "context",
+  "sections": [
+    "privileged_membership",
+    "directory_accounts",
+    "directory_group_graph",
+    "directory_exact_logon",
+    "vpn_membership",
+    "gpo_governance",
+    "domain_posture",
+    "domain_health"
+  ],
+  "adapters": [
+    "ad-context-powershell"
+  ],
+  "collection_profiles": {
+    "ad_snapshot_base_v1": {
+      "sections": [
+        "directory_accounts",
+        "directory_group_graph",
+        "directory_exact_logon"
+      ],
+      "full_domain_user_enumerations": 1,
+      "full_domain_computer_enumerations": 1,
+      "coordinator_only": true,
+      "fallback": "standalone_section_collectors"
+    }
+  },
+  "entity_contract": "stable-directory-aliases-v1",
+  "analysis_contract": "directory-security-context-v1"
+}

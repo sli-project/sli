@@ -1,0 +1,1090 @@
+{
+  "declaration": {
+    "key": "ad.gpo.v2",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/policies",
+    "title": "Групповые политики",
+    "description": "Групповые политики домена по последнему снимку: что требует ручной проверки, связи, настройки, права и WMI-фильтры.",
+    "archetype": "inventory-status",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Group Policy reviewer",
+      "question": "Какие групповые политики требуют ручной проверки в выбранном домене?",
+      "action": "Inspect links, settings and permissions before a manual policy review decision.",
+      "scope": "Latest GPO snapshot in server-authorized domains; optional previous snapshot for changes.",
+      "exclusions": "Snapshot settings do not prove client application, compromise or organization compliance.",
+      "sources": [
+        "Canonical: GPO governance snapshot, links, permissions and settings in granted domains.",
+        "Supplemental: previous retained GPO snapshot for deterministic comparison."
+      ],
+      "freshness_expectation": "Время последнего подтверждённого снимка GPO; отсутствие предыдущего снимка явно указано.",
+      "rights": "ad.gpo.v2 view grant with identity_basic, technical, security and privilege in server domain scope; export separately granted.",
+      "field_classes": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "coverage": "GPO object, link, setting and permission sections observed in the authorized domains.",
+      "completeness": "Source-confirmed GPO objects/section pairs divided by expected objects/section pairs in the snapshot scope; missing links, settings or permissions remain unknown. No ratio without the expected population.",
+      "denominator": "Ожидаемые GPO и разделы связей, настроек и прав в разрешённых доменах; частичный снимок не доказывает полный состав.",
+      "retention": "Derived GPO facts follow the storage policy; changes require a retained comparison snapshot.",
+      "provenance": "GPO entity, snapshot observation times and source-backed links, settings and permissions.",
+      "primary_archetype": "list",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Compare retained GPO snapshots and bounded membership/DACL paths; effective rights and review-risk rules do not prove client application.",
+      "result_limits": "Snapshot/history pages and graph traversal are bounded; freshness threshold is 36 hours; WMI and SYSVOL limits remain explicit.",
+      "fallback": "Missing prior snapshot disables comparison; incomplete ACL or membership paths remain unknown; stale snapshot stays stale.",
+      "acceptance_lanes": {
+        "product_user": "Links, settings, permissions and changes support a manual GPO review.",
+        "authorization": "ad.gpo.v2 grant and identity, technical, security and privilege scope constrain all views and export.",
+        "deterministic_interpretation": "Snapshot comparison and DACL precedence preserve unknown paths and existing review-risk rules.",
+        "api_view_model": "Collections and export preserve declared row caps, graph truncation and source times.",
+        "ui_honest_states": "No previous snapshot, partial ACL, stale and unavailable history remain explicit.",
+        "evidence_audit": "GPO identity, source ACE and membership paths link to the retained snapshot."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "measured",
+        "definition": "Existing broad_edit, non_admin_group_edit, direct_principal_edit and unknown_trustee_edit review rules; no organization risk score."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 3650
+      },
+      {
+        "key": "view",
+        "label": "Политики",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "attention",
+            "label": "Подтверждённые отклонения"
+          },
+          {
+            "value": "unverified",
+            "label": "Непроверенные сведения"
+          },
+          {
+            "value": "assignment",
+            "label": "Вопросы назначения"
+          },
+          {
+            "value": "all",
+            "label": "Все политики"
+          },
+          {
+            "value": "linked",
+            "label": "Со связями"
+          },
+          {
+            "value": "unlinked",
+            "label": "Без связей"
+          }
+        ],
+        "default": "attention"
+      },
+      {
+        "key": "q",
+        "label": "Поиск",
+        "kind": "text"
+      }
+    ],
+    "columns": [
+      {
+        "key": "name",
+        "label": "Политика",
+        "kind": "text",
+        "path": "display_name",
+        "sortable": true
+      },
+      {
+        "key": "status",
+        "label": "Состояние GPO",
+        "kind": "state",
+        "path": "gpo_status",
+        "labels": {
+          "AllSettingsEnabled": "Включена полностью",
+          "AllSettingsDisabled": "Отключена полностью",
+          "UserSettingsDisabled": "Пользовательская часть отключена",
+          "ComputerSettingsDisabled": "Компьютерная часть отключена"
+        }
+      },
+      {
+        "key": "reasons",
+        "label": "Требует внимания",
+        "kind": "text",
+        "path": "reason_titles"
+      },
+      {
+        "key": "unverified",
+        "label": "Непроверенные сведения",
+        "kind": "text",
+        "path": "unverified_titles"
+      },
+      {
+        "key": "assignment",
+        "label": "Вопросы назначения",
+        "kind": "text",
+        "path": "assignment_titles"
+      },
+      {
+        "key": "priority",
+        "label": "Приоритет проверки",
+        "kind": "state",
+        "path": "priority",
+        "labels": {
+          "high": "Высокий",
+          "medium": "Проверить сведения",
+          "low": "Уточнить назначение",
+          "none": "Нет оснований проверки"
+        }
+      },
+      {
+        "key": "next_step",
+        "label": "Следующий шаг",
+        "kind": "text",
+        "path": "next_step"
+      },
+      {
+        "key": "links",
+        "label": "Связей",
+        "kind": "number",
+        "path": "link_count",
+        "sortable": true
+      },
+      {
+        "key": "settings",
+        "label": "Настроек",
+        "kind": "number",
+        "path": "setting_count",
+        "sortable": true
+      },
+      {
+        "key": "modified",
+        "label": "Изменена",
+        "kind": "datetime",
+        "path": "modification_time",
+        "sortable": true
+      },
+      {
+        "key": "owner",
+        "label": "Владелец",
+        "kind": "text",
+        "path": "owner",
+        "hidden_by_default": true
+      },
+      {
+        "key": "permissions",
+        "label": "Прав",
+        "kind": "number",
+        "path": "permission_count",
+        "hidden_by_default": true
+      },
+      {
+        "key": "created",
+        "label": "Создана",
+        "kind": "datetime",
+        "path": "creation_time",
+        "hidden_by_default": true
+      },
+      {
+        "key": "guid",
+        "label": "GUID",
+        "kind": "code",
+        "path": "guid",
+        "hidden_by_default": true
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "gpos",
+        "source": "items",
+        "title": "Политики"
+      },
+      {
+        "kind": "table",
+        "key": "filtering",
+        "source": "filtering",
+        "title": "Эффективная фильтрация",
+        "note": "Read и Apply Group Policy через вложенные security-группы; неизвестные данные не означают отсутствие прав.",
+        "columns": [
+          {
+            "key": "gpo",
+            "label": "Политика",
+            "kind": "text",
+            "path": "gpo_name"
+          },
+          {
+            "key": "principal",
+            "label": "Эффективный субъект",
+            "kind": "text",
+            "path": "principal"
+          },
+          {
+            "key": "type",
+            "label": "Тип субъекта",
+            "kind": "state",
+            "path": "principal_type",
+            "labels": {
+              "ad_user": "Пользователь",
+              "ad_computer": "Компьютер"
+            }
+          },
+          {
+            "key": "right",
+            "label": "Право",
+            "kind": "state",
+            "path": "right",
+            "labels": {
+              "apply": "Apply Group Policy",
+              "edit": "Изменение настроек",
+              "modify_permissions": "Изменение разрешений",
+              "modify_owner": "Изменение владельца"
+            }
+          },
+          {
+            "key": "outcome",
+            "label": "Результат DACL",
+            "kind": "state",
+            "path": "outcome",
+            "labels": {
+              "allowed": "Разрешено DACL",
+              "denied": "Не разрешено DACL",
+              "unknown": "Не определено",
+              "not_collected": "Не собиралось"
+            }
+          },
+          {
+            "key": "path",
+            "label": "Путь членства → GPO ACE",
+            "kind": "text",
+            "path": "path"
+          },
+          {
+            "key": "trustee",
+            "label": "SID доверителя",
+            "kind": "code",
+            "path": "trustee_sid"
+          },
+          {
+            "key": "inherited",
+            "label": "ACE унаследован",
+            "kind": "boolean",
+            "path": "inherited"
+          },
+          {
+            "key": "graph_time",
+            "label": "Снимок членства",
+            "kind": "datetime",
+            "path": "graph_observed_at"
+          },
+          {
+            "key": "wmi",
+            "label": "WMI-фильтр",
+            "kind": "code",
+            "path": "wmi_filter_id"
+          },
+          {
+            "key": "read_aces",
+            "label": "ACE чтения",
+            "kind": "list",
+            "path": "read_ace_ids",
+            "hidden_by_default": true
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "delegation",
+        "source": "delegation",
+        "title": "Эффективное делегирование",
+        "note": "Изменение настроек, DACL и владельца через вложенные группы. Правило риска использует SID, а не название группы.",
+        "columns": [
+          {
+            "key": "gpo",
+            "label": "Политика",
+            "kind": "text",
+            "path": "gpo_name"
+          },
+          {
+            "key": "principal",
+            "label": "Эффективный субъект",
+            "kind": "text",
+            "path": "principal"
+          },
+          {
+            "key": "type",
+            "label": "Тип субъекта",
+            "kind": "state",
+            "path": "principal_type",
+            "labels": {
+              "ad_user": "Пользователь",
+              "ad_computer": "Компьютер"
+            }
+          },
+          {
+            "key": "right",
+            "label": "Право",
+            "kind": "state",
+            "path": "right",
+            "labels": {
+              "apply": "Apply Group Policy",
+              "edit": "Изменение настроек",
+              "modify_permissions": "Изменение разрешений",
+              "modify_owner": "Изменение владельца"
+            }
+          },
+          {
+            "key": "outcome",
+            "label": "Результат DACL",
+            "kind": "state",
+            "path": "outcome",
+            "labels": {
+              "allowed": "Разрешено DACL",
+              "denied": "Не разрешено DACL",
+              "unknown": "Не определено",
+              "not_collected": "Не собиралось"
+            }
+          },
+          {
+            "key": "path",
+            "label": "Путь членства → GPO ACE",
+            "kind": "text",
+            "path": "path"
+          },
+          {
+            "key": "trustee",
+            "label": "SID доверителя",
+            "kind": "code",
+            "path": "trustee_sid"
+          },
+          {
+            "key": "inherited",
+            "label": "ACE унаследован",
+            "kind": "boolean",
+            "path": "inherited"
+          },
+          {
+            "key": "graph_time",
+            "label": "Снимок членства",
+            "kind": "datetime",
+            "path": "graph_observed_at"
+          },
+          {
+            "key": "wmi",
+            "label": "WMI-фильтр",
+            "kind": "code",
+            "path": "wmi_filter_id"
+          },
+          {
+            "key": "risk",
+            "label": "Проверка делегирования",
+            "kind": "state",
+            "path": "risk",
+            "labels": {
+              "broad_edit": "Риск: широкая группа с правом изменения",
+              "non_admin_group_edit": "Риск: группа вне административных SID",
+              "direct_principal_edit": "Проверить: прямое делегирование субъекту",
+              "unknown_trustee_edit": "Проверить: неизвестный доверитель",
+              "admin_edit": "Административный доверитель",
+              "none": "Нет правила риска"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "linked_scopes",
+        "source": "linked_scopes",
+        "title": "Связи и наследование",
+        "columns": [
+          {
+            "key": "gpo",
+            "label": "Политика",
+            "kind": "text",
+            "path": "gpo_name"
+          },
+          {
+            "key": "scope",
+            "label": "Область",
+            "kind": "text",
+            "path": "scope_name"
+          },
+          {
+            "key": "type",
+            "label": "Тип",
+            "kind": "state",
+            "path": "scope_type",
+            "labels": {
+              "domain": "Домен",
+              "ou": "OU",
+              "site": "Сайт"
+            }
+          },
+          {
+            "key": "enabled",
+            "label": "Связь включена",
+            "kind": "boolean",
+            "path": "enabled"
+          },
+          {
+            "key": "enforced",
+            "label": "Принудительная",
+            "kind": "boolean",
+            "path": "enforced"
+          },
+          {
+            "key": "inherited",
+            "label": "Унаследованная связь",
+            "kind": "boolean",
+            "path": "inherited"
+          },
+          {
+            "key": "blocked",
+            "label": "Наследование заблокировано",
+            "kind": "boolean",
+            "path": "inheritance_blocked"
+          },
+          {
+            "key": "outcome",
+            "label": "Состояние связи",
+            "kind": "state",
+            "path": "outcome",
+            "labels": {
+              "linked": "Связь действует",
+              "blocked": "Заблокирована",
+              "disabled": "Отключена",
+              "unknown": "Не определено"
+            }
+          },
+          {
+            "key": "path",
+            "label": "Путь наследования",
+            "kind": "text",
+            "path": "path"
+          },
+          {
+            "key": "order",
+            "label": "Порядок",
+            "kind": "number",
+            "path": "order"
+          },
+          {
+            "key": "wmi",
+            "label": "WMI-фильтр",
+            "kind": "text",
+            "path": "wmi_name"
+          },
+          {
+            "key": "wmi_id",
+            "label": "ID WMI",
+            "kind": "code",
+            "path": "wmi_filter_id"
+          },
+          {
+            "key": "wmi_queries",
+            "label": "Запросы WMI",
+            "kind": "list",
+            "path": "wmi_queries"
+          },
+          {
+            "key": "wmi_state",
+            "label": "Состояние WMI",
+            "kind": "state",
+            "path": "wmi_state",
+            "labels": {
+              "observed": "Наблюдалось",
+              "partial": "Частично",
+              "failed": "Ошибка",
+              "access_denied": "Нет доступа",
+              "parse_error": "Ошибка разбора",
+              "not_evaluated": "Не оценивалось",
+              "not_collected": "Не собиралось",
+              "not_applicable": "Не задан",
+              "no_record": "Не найден"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "changes",
+        "source": "changes",
+        "title": "Изменения GPO",
+        "note": "Изменения за выбранный период. Значения атрибутов представлены отпечатками; неполное покрытие отмечается явно.",
+        "columns": [
+          {
+            "key": "observed_at",
+            "label": "Снимок",
+            "kind": "datetime",
+            "path": "observed_at"
+          },
+          {
+            "key": "object_type",
+            "label": "Тип объекта",
+            "kind": "code",
+            "path": "object_type"
+          },
+          {
+            "key": "object_id",
+            "label": "Объект",
+            "kind": "code",
+            "path": "object_id"
+          },
+          {
+            "key": "related_object_id",
+            "label": "Связанный объект",
+            "kind": "code",
+            "path": "related_object_id"
+          },
+          {
+            "key": "kind",
+            "label": "Изменение",
+            "kind": "state",
+            "path": "kind",
+            "labels": {
+              "object_added": "Объект добавлен",
+              "object_removed": "Объект удалён",
+              "attribute_changed": "Атрибут изменён",
+              "membership_added": "Членство добавлено",
+              "membership_removed": "Членство удалено"
+            }
+          },
+          {
+            "key": "field",
+            "label": "Поле",
+            "kind": "code",
+            "path": "field"
+          },
+          {
+            "key": "before_sha256",
+            "label": "Прежний отпечаток",
+            "kind": "code",
+            "path": "before_sha256"
+          },
+          {
+            "key": "after_sha256",
+            "label": "Новый отпечаток",
+            "kind": "code",
+            "path": "after_sha256"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "scopes",
+        "source": "scopes",
+        "title": "Области применения",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Контейнер",
+            "kind": "text",
+            "path": "name"
+          },
+          {
+            "key": "type",
+            "label": "Тип",
+            "kind": "state",
+            "path": "scope_type",
+            "labels": {
+              "domain": "Домен",
+              "ou": "OU",
+              "site": "Сайт"
+            }
+          },
+          {
+            "key": "links",
+            "label": "Связей",
+            "kind": "number",
+            "path": "link_count"
+          },
+          {
+            "key": "blocked",
+            "label": "Наследование заблокировано",
+            "kind": "boolean",
+            "path": "gpo_inheritance_blocked"
+          },
+          {
+            "key": "path",
+            "label": "Путь",
+            "kind": "text",
+            "path": "canonical_path"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "settings",
+        "source": "settings",
+        "title": "Настройки",
+        "columns": [
+          {
+            "key": "gpo",
+            "label": "Политика",
+            "kind": "text",
+            "path": "gpo_name"
+          },
+          {
+            "key": "side",
+            "label": "Часть",
+            "kind": "state",
+            "path": "side",
+            "labels": {
+              "computer": "Компьютер",
+              "user": "Пользователь"
+            }
+          },
+          {
+            "key": "category",
+            "label": "Категория",
+            "kind": "text",
+            "path": "category"
+          },
+          {
+            "key": "name",
+            "label": "Настройка",
+            "kind": "text",
+            "path": "setting_name"
+          },
+          {
+            "key": "value",
+            "label": "Значение",
+            "kind": "text",
+            "path": "value_display"
+          },
+          {
+            "key": "path",
+            "label": "Путь",
+            "kind": "text",
+            "path": "path"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "permissions",
+        "source": "permissions",
+        "title": "Права",
+        "columns": [
+          {
+            "key": "gpo",
+            "label": "Политика",
+            "kind": "text",
+            "path": "gpo_name"
+          },
+          {
+            "key": "trustee",
+            "label": "Кому",
+            "kind": "text",
+            "path": "trustee"
+          },
+          {
+            "key": "permission",
+            "label": "Право",
+            "kind": "text",
+            "path": "permission"
+          },
+          {
+            "key": "inherited",
+            "label": "Унаследовано",
+            "kind": "boolean",
+            "path": "inherited"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "wmi",
+        "source": "wmi",
+        "title": "WMI-фильтры",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Фильтр",
+            "kind": "text",
+            "path": "name"
+          },
+          {
+            "key": "used",
+            "label": "Используют политик",
+            "kind": "number",
+            "path": "used_by"
+          },
+          {
+            "key": "author",
+            "label": "Автор",
+            "kind": "text",
+            "path": "author"
+          },
+          {
+            "key": "modified",
+            "label": "Изменён",
+            "kind": "datetime",
+            "path": "modification_time"
+          }
+        ]
+      },
+      {
+        "kind": "table",
+        "key": "quality",
+        "source": "quality",
+        "title": "Качество сбора",
+        "note": "Что источник действительно наблюдал; частичный сбор не означает отсутствие объектов.",
+        "columns": [
+          {
+            "key": "entity",
+            "label": "Объект",
+            "kind": "text",
+            "path": "entity_name"
+          },
+          {
+            "key": "source",
+            "label": "Источник",
+            "kind": "text",
+            "path": "source",
+            "labels": {
+              "sysvol_gpt": "SYSVOL / GPT.INI"
+            }
+          },
+          {
+            "key": "status",
+            "label": "Состояние",
+            "kind": "state",
+            "path": "status",
+            "labels": {
+              "observed": "Наблюдалось",
+              "partial": "Частично",
+              "failed": "Ошибка",
+              "access_denied": "Нет доступа",
+              "parse_error": "Ошибка разбора",
+              "not_evaluated": "Не оценивалось"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Подробности",
+            "kind": "text",
+            "path": "detail"
+          }
+        ]
+      }
+    ],
+    "row_key": "id",
+    "detail": {
+      "kind": "inline",
+      "title": "Основания проверки политики",
+      "key": "id",
+      "inline": "reasons",
+      "row_component": null,
+      "actions": null,
+      "columns": [
+        {
+          "key": "category",
+          "label": "Основание",
+          "kind": "state",
+          "path": "category",
+          "labels": {
+            "deviation": "Подтверждённое отклонение",
+            "unverified": "Непроверенные сведения",
+            "assignment": "Вопрос назначения"
+          }
+        },
+        {
+          "key": "priority",
+          "label": "Приоритет проверки",
+          "kind": "state",
+          "path": "priority",
+          "labels": {
+            "high": "Высокий",
+            "medium": "Проверить сведения",
+            "low": "Уточнить назначение"
+          }
+        },
+        {
+          "key": "title",
+          "label": "Причина",
+          "kind": "text",
+          "path": "title"
+        },
+        {
+          "key": "fact",
+          "label": "Наблюдалось",
+          "kind": "text",
+          "path": "fact"
+        },
+        {
+          "key": "condition",
+          "label": "Условие",
+          "kind": "text",
+          "path": "condition"
+        },
+        {
+          "key": "qualification",
+          "label": "Квалификация",
+          "kind": "text",
+          "path": "qualification"
+        },
+        {
+          "key": "limitation",
+          "label": "Ограничение",
+          "kind": "text",
+          "path": "limitation"
+        },
+        {
+          "key": "next",
+          "label": "Безопасный следующий шаг",
+          "kind": "text",
+          "path": "next"
+        }
+      ],
+      "row_links": []
+    },
+    "export": true,
+    "limits": {
+      "default": 500,
+      "max": 10000
+    },
+    "page_actions": null,
+    "presets": [
+      {
+        "label": "Требуют внимания",
+        "params": {
+          "view": "attention"
+        }
+      },
+      {
+        "label": "Без связей",
+        "params": {
+          "view": "unlinked"
+        }
+      }
+    ],
+    "row_links": [
+      {
+        "label": "Настройки политики",
+        "href": "/app/report/ad.gpo.v2?tab=settings&q={display_name}"
+      }
+    ]
+  },
+  "reasons": {
+    "source_failed": {
+      "condition": "Хотя бы один обязательный источник завершился failed/access_denied/parse_error",
+      "qualification": "Часть сведений по GPO не подтверждена источником",
+      "limitation": "Это не доказывает неисправность или неприменимость самой политики",
+      "next": "Проверить ошибку конкретного источника и повторить только чтение",
+      "title": "Ошибка обязательного источника",
+      "rank": 1,
+      "category": "unverified"
+    },
+    "source_unverified": {
+      "condition": "Обязательный источник не дал полного наблюдения",
+      "qualification": "Часть сведений по GPO не подтверждена источником",
+      "limitation": "Это не доказывает отклонение в самой политике",
+      "next": "Проверить полноту и область сбора указанных источников",
+      "title": "Обязательный источник не подтверждён",
+      "rank": 2,
+      "category": "unverified"
+    },
+    "version_mismatch": {
+      "condition": "Наблюдаемые версии одной стороны различаются",
+      "qualification": "На опрошенном DC/UNC есть расхождение версии GPC и GPT",
+      "limitation": "Без опроса всех DC нельзя локализовать репликацию и определить глобальное состояние",
+      "next": "Сверить ту же GPO на других DC и состояние AD/DFSR репликации",
+      "title": "Версии AD/SYSVOL различаются",
+      "rank": 3,
+      "category": "deviation"
+    },
+    "gpt_unavailable": {
+      "condition": "Каталог GPT или GPT.INI не удалось прочитать",
+      "qualification": "SYSVOL-часть GPO не подтверждена текущим снимком",
+      "limitation": "Это не доказывает отсутствие GPT на других DC",
+      "next": "Проверить gPCFileSysPath и доступность пути на выбранном DC",
+      "title": "GPT недоступен",
+      "rank": 4,
+      "category": "unverified"
+    },
+    "unresolved_link": {
+      "condition": "gPLink содержит ссылку, которую не удалось связать с собранным GPO",
+      "qualification": "Топология ссылок содержит неразрешённую запись",
+      "limitation": "Причина может быть в неполном сборе, репликации или устаревшей ссылке",
+      "next": "Проверить raw gPLink и наличие GPC DN",
+      "title": "Ссылка не разрешена",
+      "rank": 5,
+      "category": "unverified"
+    },
+    "unresolved_wmi": {
+      "condition": "gPCWQLFilter задан, но объект фильтра не разрешён",
+      "qualification": "Условие WMI для этой GPO не подтверждено",
+      "limitation": "Нельзя вычислить применимость политики к клиенту",
+      "next": "Проверить объект msWMI-Som и значение gPCWQLFilter",
+      "title": "WMI-фильтр не разрешён",
+      "rank": 6,
+      "category": "unverified"
+    },
+    "all_settings_disabled": {
+      "condition": "Компьютерная и пользовательская части отключены",
+      "qualification": "Содержимое GPO не обрабатывается как обычная включённая политика",
+      "limitation": "Ссылки и ACL при этом могут сохраняться",
+      "next": "Подтвердить, что отключение обеих частей является ожидаемым решением владельца",
+      "title": "Обе части GPO отключены",
+      "rank": 7,
+      "category": "assignment"
+    },
+    "unlinked": {
+      "condition": "Ни одна поддерживаемая site/domain/OU ссылка не связана с GPO",
+      "qualification": "GPO не имеет наблюдаемых доменных ссылок в снимке",
+      "limitation": "Это не проверяет локальные GPO, Starter GPO и внешние домены",
+      "next": "Подтвердить назначение GPO и необходимость хранения",
+      "title": "Связи не наблюдались",
+      "rank": 8,
+      "category": "assignment"
+    },
+    "empty_enabled_side": {
+      "condition": "Включённая часть не содержит записей после успешной нормализации XML",
+      "qualification": "Включённая часть выглядит пустой в поддерживаемом каталоге настроек",
+      "limitation": "Некоторые расширения могут не нормализоваться универсальным парсером",
+      "next": "Открыть исходный XML Get-GPOReport и проверить расширения",
+      "title": "Включённая часть без настроек",
+      "rank": 9,
+      "category": "assignment"
+    },
+    "stale_modified": {
+      "condition": "",
+      "qualification": "GPO попала в пользовательский временной срез",
+      "limitation": "Возраст изменения не является нормативом, риском или доказательством неиспользования",
+      "next": "Проверить назначение, ссылки и фактические процессы изменения",
+      "title": "Изменена ранее выбранного срока",
+      "rank": 10,
+      "category": "assignment"
+    }
+  },
+  "messages": {
+    "ru": {
+      "reports.state.ok": {
+        "code": "reports.state.ok",
+        "params": {},
+        "text": "Данные доступны"
+      },
+      "reports.state.empty": {
+        "code": "reports.state.empty",
+        "params": {},
+        "text": "Ничего не найдено"
+      },
+      "reports.state.denied": {
+        "code": "reports.state.denied",
+        "params": {},
+        "text": "Нет доступа"
+      },
+      "reports.state.not_collected": {
+        "code": "reports.state.not_collected",
+        "params": {},
+        "text": "Данные не собраны"
+      },
+      "reports.state.partial": {
+        "code": "reports.state.partial",
+        "params": {},
+        "text": "Данные неполные"
+      },
+      "reports.state.processing": {
+        "code": "reports.state.processing",
+        "params": {},
+        "text": "Данные обрабатываются"
+      },
+      "reports.state.stale": {
+        "code": "reports.state.stale",
+        "params": {},
+        "text": "Данные устарели"
+      },
+      "reports.state.error": {
+        "code": "reports.state.error",
+        "params": {},
+        "text": "Ошибка получения данных"
+      },
+      "reports.renderer.error_gpo_snapshot": {
+        "code": "reports.renderer.error_gpo_snapshot",
+        "params": {},
+        "text": "Сохранённый снимок групповых политик недоступен или повреждён. Необходимо проверить источник и повторить сбор снимка."
+      }
+    },
+    "en": {
+      "reports.state.ok": {
+        "code": "reports.state.ok",
+        "params": {},
+        "text": "Data available"
+      },
+      "reports.state.empty": {
+        "code": "reports.state.empty",
+        "params": {},
+        "text": "Nothing found"
+      },
+      "reports.state.denied": {
+        "code": "reports.state.denied",
+        "params": {},
+        "text": "No access"
+      },
+      "reports.state.not_collected": {
+        "code": "reports.state.not_collected",
+        "params": {},
+        "text": "Data not collected"
+      },
+      "reports.state.partial": {
+        "code": "reports.state.partial",
+        "params": {},
+        "text": "Data is incomplete"
+      },
+      "reports.state.processing": {
+        "code": "reports.state.processing",
+        "params": {},
+        "text": "Data is processing"
+      },
+      "reports.state.stale": {
+        "code": "reports.state.stale",
+        "params": {},
+        "text": "Data is stale"
+      },
+      "reports.state.error": {
+        "code": "reports.state.error",
+        "params": {},
+        "text": "Data retrieval error"
+      },
+      "reports.renderer.error_gpo_snapshot": {
+        "code": "reports.renderer.error_gpo_snapshot",
+        "params": {},
+        "text": "The saved Group Policy snapshot is unavailable or damaged. Check the source and collect the snapshot again."
+      }
+    }
+  }
+}

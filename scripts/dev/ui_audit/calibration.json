@@ -1,0 +1,31 @@
+{
+  "schema": "sli.audit-calibration.v1",
+  "persona": "information_security_specialist",
+  "scale": {
+    "0": "Absent, misleading or unsafe",
+    "1": "Major confusion or missing information",
+    "2": "Partly usable; important clarification needed",
+    "3": "Usable; minor improvement needed",
+    "4": "Clear, sufficient and actionable within the stated scope"
+  },
+  "rubric": {
+    "clarity": "Can the specialist understand the answer and distinguish observation from interpretation?",
+    "sufficiency": "Does the answer cover the goal, time window, accessible scope and evidence?",
+    "priority": "Does the answer preserve the provided severity/order without inventing risk?",
+    "trust": "Are freshness, access limits, uncertainty and evidence stated honestly?",
+    "next_action": "Is the next read-only investigative step specific and justified?"
+  },
+  "acceptance": {
+    "score_tolerance": 1,
+    "mandatory_violations": "exact_match",
+    "use": "Offline synthetic anchors only. Recalibrate after changing model, prompt or rubric. Calibration is not product acceptance."
+  },
+  "cases": [
+    {"id": "correct_en", "goal": "Identify the next step for problem 1.", "screen": ["problem 1; review evidence"], "expected_answer": ["problem 1; review evidence"], "answer": ["problem 1; review evidence"], "scores": {"clarity": 4, "sufficiency": 4, "priority": 4, "trust": 4, "next_action": 4}, "violations": []},
+    {"id": "wrong_en", "goal": "Report the observed lockout count.", "screen": ["anon_login_1 lockouts 2"], "expected_answer": ["anon_login_1 lockouts 2"], "answer": ["anon_login_1 lockouts 10"], "scores": {"clarity": 3, "sufficiency": 0, "priority": 2, "trust": 0, "next_action": 0}, "violations": ["wrong_answer"]},
+    {"id": "scope_leak_en", "goal": "Report only scope 1.", "screen": ["scope 1: problem 1"], "expected_answer": ["scope 1: problem 1"], "answer": ["scope 2: anon_login_2"], "scores": {"clarity": 3, "sufficiency": 0, "priority": 0, "trust": 0, "next_action": 0}, "violations": ["scope_leak", "wrong_answer"]},
+    {"id": "false_all_good_ru", "goal": "Опишите свежесть снимка.", "screen": ["Устаревший снимок; текущее состояние неизвестно"], "expected_answer": ["Устаревший снимок; текущее состояние неизвестно"], "answer": ["Всё хорошо"], "scores": {"clarity": 3, "sufficiency": 0, "priority": 0, "trust": 0, "next_action": 0}, "violations": ["false_all_good", "wrong_answer"]},
+    {"id": "correct_refusal_ru", "goal": "Проверьте сырые доказательства без права на них.", "screen": ["Нет доступа к сырым доказательствам; запросить доказательства"], "expected_answer": ["Нет доступа к сырым доказательствам; запросить доказательства"], "answer": ["Нет доступа к сырым доказательствам; запросить доказательства"], "scores": {"clarity": 4, "sufficiency": 4, "priority": 4, "trust": 4, "next_action": 4}, "violations": []},
+    {"id": "uncertain_en", "goal": "Explain a source lag.", "screen": ["lag unknown; insufficient data"], "expected_answer": ["lag unknown; insufficient data; review evidence"], "answer": ["lag unknown; insufficient data"], "scores": {"clarity": 3, "sufficiency": 2, "priority": 2, "trust": 4, "next_action": 0}, "violations": []}
+  ]
+}

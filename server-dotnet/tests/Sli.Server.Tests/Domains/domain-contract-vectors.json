@@ -1,0 +1,155 @@
+{
+  "source": "server/api/routes/workspace.py; server/sli/access/domain_scope.py; urllib.parse.parse_qs",
+  "queries": [
+    {
+      "raw": "",
+      "rejected": false
+    },
+    {
+      "raw": "?",
+      "rejected": false
+    },
+    {
+      "raw": "?x",
+      "rejected": false
+    },
+    {
+      "raw": "?x=",
+      "rejected": false
+    },
+    {
+      "raw": "?x=&x=",
+      "rejected": false
+    },
+    {
+      "raw": "?&&",
+      "rejected": false
+    },
+    {
+      "raw": "?x=&y",
+      "rejected": false
+    },
+    {
+      "raw": "?x=&x=1",
+      "rejected": true
+    },
+    {
+      "raw": "?x=+",
+      "rejected": true
+    },
+    {
+      "raw": "?x=%20",
+      "rejected": true
+    },
+    {
+      "raw": "?x=%ZZ",
+      "rejected": true
+    },
+    {
+      "raw": "?x=%00",
+      "rejected": true
+    },
+    {
+      "raw": "?=1",
+      "rejected": true
+    },
+    {
+      "raw": "?x=1;y=2",
+      "rejected": true
+    },
+    {
+      "raw": "?x=;y",
+      "rejected": true
+    },
+    {
+      "raw": "?x=%26",
+      "rejected": true
+    },
+    {
+      "raw": "?x=%3D",
+      "rejected": true
+    },
+    {
+      "raw": "?%78=",
+      "rejected": false
+    },
+    {
+      "raw": "?%78=1",
+      "rejected": true
+    },
+    {
+      "raw": "?x&x=0",
+      "rejected": true
+    }
+  ],
+  "responses": [
+    {
+      "name": "empty",
+      "rows": [],
+      "expected": {
+        "items": []
+      }
+    },
+    {
+      "name": "nullable-and-archived",
+      "rows": [
+        {
+          "id": 1,
+          "display_name": "example.test",
+          "is_archived": false,
+          "snapshot_at_utc": null,
+          "published_at_utc": null,
+          "snapshot_state": null,
+          "observed_at_utc": null,
+          "default_observed_at_utc": null,
+          "event_at_utc": null,
+          "last_successful_collection_utc": null
+        },
+        {
+          "id": 9223372036854775807,
+          "display_name": "архив.example.test",
+          "is_archived": true,
+          "snapshot_at_utc": "2026-11-01T00:00:00+00:00",
+          "published_at_utc": "2026-11-01T00:00:01.123456+00:00",
+          "snapshot_state": "complete",
+          "observed_at_utc": "2026-10-31T23:59:59+00:00",
+          "default_observed_at_utc": null,
+          "event_at_utc": "2026-11-01T01:00:00Z",
+          "last_successful_collection_utc": "2026-11-01T01:01:00+00:00"
+        }
+      ],
+      "expected": {
+        "items": [
+          {
+            "id": 1,
+            "display_name": "example.test",
+            "is_archived": false,
+            "freshness": {
+              "snapshot_at_utc": null,
+              "published_at_utc": null,
+              "snapshot_state": null,
+              "observed_at_utc": null,
+              "default_observed_at_utc": null,
+              "event_at_utc": null,
+              "last_successful_collection_utc": null
+            }
+          },
+          {
+            "id": 9223372036854775807,
+            "display_name": "архив.example.test",
+            "is_archived": true,
+            "freshness": {
+              "snapshot_at_utc": "2026-11-01T00:00:00+00:00",
+              "published_at_utc": "2026-11-01T00:00:01.123456+00:00",
+              "snapshot_state": "complete",
+              "observed_at_utc": "2026-10-31T23:59:59+00:00",
+              "default_observed_at_utc": null,
+              "event_at_utc": "2026-11-01T01:00:00Z",
+              "last_successful_collection_utc": "2026-11-01T01:01:00+00:00"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

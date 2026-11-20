@@ -1,0 +1,105 @@
+{
+  "packet": {
+    "contract": "sli.collection-packet.v1",
+    "header": {
+      "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "channel": "Security",
+      "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "record_id_range": {
+        "first": 7,
+        "last": 7
+      },
+      "cursor": {
+        "after_record_id": null,
+        "last_record_id": 7
+      },
+      "observed_at_utc": "2026-10-07T12:35:00+00:00"
+    },
+    "records": [
+      {
+        "format": "event_xml",
+        "record_id": 7,
+        "payload": {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Eventlog",
+          "event_id": 1102,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 7,
+          "time_created": "2026-10-07T12:34:56.1234567Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "true"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Eventlog'/><EventID>1102</EventID><EventRecordID>7</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56.1234567Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name='CollectionFieldsTruncated'>true</Data></EventData></Event>"
+        }
+      }
+    ],
+    "continuity": {
+      "status": "not_proven"
+    },
+    "context": {}
+  },
+  "rows": [
+    {
+      "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "connect_address": "",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Eventlog",
+      "event_id": 1102,
+      "version": null,
+      "level": null,
+      "task": null,
+      "opcode": null,
+      "keywords": null,
+      "record_id": 7,
+      "time_created": "2026-10-07T12:34:56.1234567Z",
+      "machine_name": "synthetic.example",
+      "user_id": null,
+      "message": null,
+      "properties": [
+        "true"
+      ],
+      "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Eventlog'/><EventID>1102</EventID><EventRecordID>7</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56.1234567Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name='CollectionFieldsTruncated'>true</Data></EventData></Event>"
+    }
+  ],
+  "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "entity_id": 23,
+  "ad_computer_id": null,
+  "observation_id": "1be7eb1dbe614bdb7e91c7aec542b84b5b4bf6d7f948ca247308aa54ebcab82c",
+  "observation": {
+    "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "entity_id": 23,
+    "ad_computer_id": null,
+    "family": "protection",
+    "semantic_type": "security.audit.cleared",
+    "roles": {
+      "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    "facts": {
+      "log_cleared": true
+    },
+    "quality": {
+      "raw_event_mutated": true,
+      "observation_only": false,
+      "ad_enrichment": "not_collected",
+      "coverage": "not_proven"
+    },
+    "event_id": 1102,
+    "channel": "Security",
+    "provider_name": "Microsoft-Windows-Eventlog",
+    "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "record_id": 7,
+    "observed_at": "2026-10-07T12:34:56.123456+00:00",
+    "keywords": null,
+    "source_sha256": "df06b8c1196aad790af38ae6fd2c4526a0617aa806582b5e7c951fe68dbcb055"
+  },
+  "observation_sha256": "1660156e3a2f46db16eca246528b40658192442cd9867d37bb673702eaf85731"
+}

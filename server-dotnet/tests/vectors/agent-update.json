@@ -1,0 +1,226 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "python": "3.14.6",
+  "reports": [
+    {
+      "name": "success",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": null
+    },
+    {
+      "name": "msi client result",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"rejected\", \"reason\": \"agent_update_msi_required\", \"version\": \"1.2.3\"}",
+      "error": null
+    },
+    {
+      "name": "rolled back",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"rolled_back\", \"reason\": \"agent_update_start_failed\", \"version\": \"1.2.3\"}",
+      "error": null
+    },
+    {
+      "name": "leading zeros",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": \"001.02.3\"}",
+      "error": null
+    },
+    {
+      "name": "last member",
+      "raw": "{\"sha256\":\"wrong\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"status\":\"rejected\",\"reason\":\"agent_update_msi_required\",\"version\":\"1.0.0\"}",
+      "error": null
+    },
+    {
+      "name": "uppercase digest",
+      "raw": "{\"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": "agent_package_invalid"
+    },
+    {
+      "name": "bad digest type",
+      "raw": "{\"sha256\": true, \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": "agent_package_invalid"
+    },
+    {
+      "name": "digest newline",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n\", \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": "agent_package_invalid"
+    },
+    {
+      "name": "status numeric",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": 1, \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "unknown reason",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"rejected\", \"reason\": \"synthetic-secret\", \"version\": \"1.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "success with reason",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": \"agent_update_timeout\", \"version\": \"1.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "failure no reason",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"rejected\", \"reason\": null, \"version\": \"1.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "bool reason",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"rejected\", \"reason\": true, \"version\": \"1.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "bad version",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\\n\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "unicode digits",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": \"\\uff11.2.3\"}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "version numeric",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": 1}",
+      "error": "agent_update_result_invalid"
+    },
+    {
+      "name": "extra identity",
+      "raw": "{\"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"status\": \"updated\", \"reason\": null, \"version\": \"1.2.3\", \"agent_id\": \"other\"}",
+      "error": "agent_update_result_invalid"
+    }
+  ],
+  "waves": [
+    {
+      "name": "wait",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "pending",
+          "had_error": false,
+          "agent_status": "active"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 0,
+      "errors": 0,
+      "action": "wait",
+      "reason": null
+    },
+    {
+      "name": "complete",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "updated",
+          "had_error": false,
+          "agent_status": "active"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 0,
+      "errors": 0,
+      "action": "completed",
+      "reason": null
+    },
+    {
+      "name": "issue",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "updated",
+          "had_error": false,
+          "agent_status": "active"
+        },
+        {
+          "batch_number": 2,
+          "state": "queued",
+          "had_error": false,
+          "agent_status": "active"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 0,
+      "errors": 0,
+      "action": "issue",
+      "reason": null
+    },
+    {
+      "name": "threshold first",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "pending",
+          "had_error": true,
+          "agent_status": "disabled"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 0,
+      "errors": 1,
+      "action": "stopped",
+      "reason": "agent_update_error_threshold_exceeded"
+    },
+    {
+      "name": "inactive",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "pending",
+          "had_error": false,
+          "agent_status": "disabled"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 2,
+      "errors": 0,
+      "action": "stopped",
+      "reason": "agent_update_agent_inactive"
+    },
+    {
+      "name": "threshold equal",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "pending",
+          "had_error": true,
+          "agent_status": "active"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 1,
+      "errors": 1,
+      "action": "wait",
+      "reason": null
+    },
+    {
+      "name": "past failed",
+      "members": [
+        {
+          "batch_number": 1,
+          "state": "failed",
+          "had_error": true,
+          "agent_status": "active"
+        },
+        {
+          "batch_number": 2,
+          "state": "queued",
+          "had_error": false,
+          "agent_status": "active"
+        }
+      ],
+      "current_batch": 1,
+      "error_threshold": 2,
+      "errors": 1,
+      "action": "wait",
+      "reason": null
+    },
+    {
+      "name": "empty source all",
+      "members": [],
+      "current_batch": 0,
+      "error_threshold": 0,
+      "errors": 0,
+      "action": "completed",
+      "reason": null
+    }
+  ]
+}

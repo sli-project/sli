@@ -1,0 +1,505 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "composition": "frozen built-in registered_reports at source_commit; dynamic activation remains GAP-007",
+  "registered_reports": [
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.state",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "scope": "domain"
+      },
+      "key": "ad.infrastructure",
+      "section": "reports/identity"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.computer-logons",
+        "required_capabilities": [],
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "scope": "delegated"
+      },
+      "key": "ad.computer-logons",
+      "section": "reports/computers"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.computers.v6",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "scope": "domain"
+      },
+      "key": "ad.computers.v6",
+      "section": "reports/computers"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "events.explorer",
+        "required_capabilities": [],
+        "required_fields": [],
+        "scope": "delegated"
+      },
+      "key": "events.journal",
+      "section": "investigation"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.gpo.v2",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "domain"
+      },
+      "key": "ad.gpo.v2",
+      "section": "reports/policies"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.computer-logons",
+        "required_capabilities": [],
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "scope": "delegated"
+      },
+      "key": "ad.new-logon-pairs",
+      "section": "reports/computers"
+    },
+    {
+      "access": {
+        "access_key": "notifications.channels",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": true,
+        "kind": "AccessRequirement",
+        "report_key": "notifications.channels",
+        "required_capabilities": [
+          "access.manage"
+        ],
+        "required_fields": [
+          "technical"
+        ],
+        "required_role": "admin",
+        "scope": "generic"
+      },
+      "key": "notifications.channels",
+      "section": "admin"
+    },
+    {
+      "access": {
+        "access_key": "notifications.deliveries",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": true,
+        "kind": "AccessRequirement",
+        "report_key": "notifications.deliveries",
+        "required_capabilities": [
+          "access.manage"
+        ],
+        "required_fields": [
+          "technical"
+        ],
+        "required_role": "admin",
+        "scope": "generic"
+      },
+      "key": "notifications.deliveries",
+      "section": "admin"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "security.queue",
+        "required_capabilities": [
+          "semantic.review"
+        ],
+        "required_fields": [
+          "security"
+        ],
+        "scope": "domain"
+      },
+      "key": "security.rule-quality",
+      "section": "investigation"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "security.events.chains",
+        "required_capabilities": [],
+        "required_fields": [
+          "raw_evidence",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "security.events.chains",
+      "section": "investigation"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "security.queue",
+        "required_capabilities": [],
+        "required_fields": [
+          "security"
+        ],
+        "scope": "domain"
+      },
+      "key": "security.problems",
+      "section": "investigation"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "ad.users.v2",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic"
+        ],
+        "scope": "domain"
+      },
+      "key": "ad.users.v2",
+      "section": "reports/identity"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "vpn.audit",
+        "required_capabilities": [],
+        "required_fields": [],
+        "scope": "delegated"
+      },
+      "key": "vpn.accounts",
+      "section": "reports/remote-access"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": false,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "vpn.audit",
+        "required_capabilities": [],
+        "required_fields": [],
+        "scope": "delegated"
+      },
+      "key": "vpn.connections",
+      "section": "reports/remote-access"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.overview",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.overview",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.overview",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.actions",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.actions",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.actions",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.mass-operations",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.mass-operations",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.mass-operations",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.permission-changes",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.permission-changes",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.permission-changes",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.access-denials",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.access-denials",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.access-denials",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.out-of-hours",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.out-of-hours",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.out-of-hours",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.permissions",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.permissions",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.permissions",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "access_key": "file-audit.audit-state",
+        "action": "view",
+        "export_action": "export",
+        "global_scope_only": false,
+        "kind": "AccessRequirement",
+        "report_key": "file-audit.audit-state",
+        "required_capabilities": [
+          "file-audit.view"
+        ],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "required_role": null,
+        "scope": "generic"
+      },
+      "key": "file-audit.audit-state",
+      "section": "reports/file-audit"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": true,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "workstations.logons",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "workstations.logons",
+      "section": "reports/workstations"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": true,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "workstations.processes",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "workstations.processes",
+      "section": "reports/workstations"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": true,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "workstations.usb",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "workstations.usb",
+      "section": "reports/workstations"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": true,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "workstations.protection",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "workstations.protection",
+      "section": "reports/workstations"
+    },
+    {
+      "access": {
+        "accepts_generic_scope": true,
+        "export_action": "export",
+        "kind": "AccessRule",
+        "report_key": "workstations.overview",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "scope": "delegated"
+      },
+      "key": "workstations.overview",
+      "section": "reports/workstations"
+    }
+  ]
+}

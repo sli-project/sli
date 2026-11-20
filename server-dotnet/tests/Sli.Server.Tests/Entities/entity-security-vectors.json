@@ -1,0 +1,2724 @@
+{
+  "source": "server/sli/reports/security_event_reporting.py and source-owned account/catalog helpers",
+  "cases": [
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 1102,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 1102,
+        "event_family": "audit_configuration",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "security_log_cleared"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4624,
+        "event_family": "authentication",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "success",
+          "basis": "event_id"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "unknown",
+          "reason": "source_change_not_established"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4625,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4625,
+        "event_family": "authentication",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "failure",
+          "basis": "event_id"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "unknown",
+          "reason": "source_change_not_established"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4719,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4719,
+        "event_family": "audit_configuration",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "audit_policy_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "audit_policy_fields_not_present"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4720,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4720,
+        "event_family": "account_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "created"
+        },
+        "account_change": {
+          "change": {
+            "kind": "created"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "present"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4722,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4722,
+        "event_family": "account_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "enabled"
+        },
+        "account_change": {
+          "change": {
+            "kind": "enabled"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "enabled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4723,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4723,
+        "event_family": "password_operation",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "password_change_attempt"
+        },
+        "account_change": {
+          "change": {
+            "kind": "password_change_attempt"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4723,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "audit_keywords": "Audit Success",
+        "result_code": "0"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4723,
+        "event_family": "password_operation",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "success",
+          "basis": "audit_keywords",
+          "result_code": "0"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "password_change_attempt",
+          "result": {
+            "state": "observed",
+            "value": "0"
+          }
+        },
+        "account_change": {
+          "change": {
+            "kind": "password_change_attempt",
+            "result": {
+              "state": "observed",
+              "value": "0"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4724,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4724,
+        "event_family": "password_operation",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "password_reset_attempt"
+        },
+        "account_change": {
+          "change": {
+            "kind": "password_reset_attempt"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4724,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "audit_keywords": "Audit Success",
+        "result_code": "0"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4724,
+        "event_family": "password_operation",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "success",
+          "basis": "audit_keywords",
+          "result_code": "0"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "password_reset_attempt",
+          "result": {
+            "state": "observed",
+            "value": "0"
+          }
+        },
+        "account_change": {
+          "change": {
+            "kind": "password_reset_attempt",
+            "result": {
+              "state": "observed",
+              "value": "0"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4725,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4725,
+        "event_family": "account_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "disabled"
+        },
+        "account_change": {
+          "change": {
+            "kind": "disabled"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "disabled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4726,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4726,
+        "event_family": "account_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "deleted"
+        },
+        "account_change": {
+          "change": {
+            "kind": "deleted"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "deleted"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4727,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4727,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_created"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4728,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4728,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_added"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4729,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4729,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_removed"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4730,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4730,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_deleted"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4731,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4731,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_created"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4732,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4732,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_added"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4733,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4733,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_removed"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4734,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4734,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_deleted"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4735,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4735,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "group_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "group_change_attributes_not_present"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4737,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4737,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "group_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "group_change_attributes_not_present"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4738,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4738,
+        "event_family": "account_change",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "attributes_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "account_attributes_not_present"
+          }
+        },
+        "account_change": {
+          "change": {
+            "kind": "attributes_changed",
+            "detail": {
+              "state": "unknown",
+              "reason": "changed_attribute_fields_not_in_warm_contract"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4740,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4740,
+        "event_family": "account_lock",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "locked"
+        },
+        "caller_computer": {
+          "state": "unknown"
+        },
+        "account_change": {
+          "change": {
+            "kind": "locked"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "locked"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4754,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4754,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_created"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4755,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4755,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_deleted"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4756,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4756,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_added"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4757,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4757,
+        "event_family": "group_membership",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "member_removed"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4758,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4758,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "group_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "group_change_attributes_not_present"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4764,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4764,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "partial",
+          "kind": "group_type_changed",
+          "detail": {
+            "state": "unknown",
+            "reason": "group_type_values_not_present"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4767,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4767,
+        "event_family": "account_lock",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "unlocked"
+        },
+        "account_change": {
+          "change": {
+            "kind": "unlocked"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "unlocked"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4771,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4771,
+        "event_family": "authentication",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "failure",
+          "basis": "event_id"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "unknown",
+          "reason": "source_change_not_established"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4776,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4776,
+        "event_family": "authentication",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "unknown",
+          "reason": "source_change_not_established"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4776,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "audit_keywords": "Audit Success",
+        "result_code": "0"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4776,
+        "event_family": "authentication",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "observed",
+          "value": "success",
+          "basis": "audit_keywords",
+          "result_code": "0"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "unknown",
+          "reason": "source_change_not_established"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4781,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "account_name_before": "Old",
+        "account_name_after": "New"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4781,
+        "event_family": "account_change",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "renamed"
+        },
+        "account_change": {
+          "change": {
+            "kind": "renamed"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "observed",
+              "value": "Old"
+            },
+            "after": {
+              "state": "observed",
+              "value": "New"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4738,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "source_native_change": {
+          "state": "observed",
+          "kind": "attributes_changed",
+          "attributes": {
+            "display_name": "Account"
+          }
+        }
+      },
+      "event_data": {
+        "DisplayName": "Account"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4738,
+        "event_family": "account_change",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "attributes_changed",
+          "attributes": {
+            "display_name": "Account"
+          }
+        },
+        "account_change": {
+          "change": {
+            "kind": "attributes_changed",
+            "detail": {
+              "state": "unknown",
+              "reason": "changed_attribute_fields_not_in_warm_contract"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4735,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "source_native_change": {
+          "state": "observed",
+          "kind": "group_changed",
+          "attributes": {
+            "description": "Observed"
+          }
+        }
+      },
+      "event_data": {
+        "Description": "Observed"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4735,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_changed",
+          "attributes": {
+            "description": "Observed"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4764,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "source_native_change": {
+          "state": "observed",
+          "kind": "group_type_changed",
+          "old_group_type": "1",
+          "new_group_type": "2"
+        }
+      },
+      "event_data": {
+        "OldGroupType": "1",
+        "NewGroupType": "2"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4764,
+        "event_family": "group_lifecycle",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "unknown"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "group_type_changed",
+          "old_group_type": "1",
+          "new_group_type": "2"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 4719,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "source_native_change": {
+          "state": "observed",
+          "kind": "audit_policy_changed",
+          "observed_value": "Success"
+        }
+      },
+      "event_data": {
+        "AuditPolicyChanges": "Success"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 4719,
+        "event_family": "audit_configuration",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "audit_policy_changed",
+          "observed_value": "Success"
+        }
+      }
+    },
+    {
+      "input": {
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "domain_id": 1,
+        "event_id": 1102,
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-4",
+        "subject_user_name": "Actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-5",
+        "target_user_name": "Target",
+        "source_host": "dc",
+        "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+        "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "source_native_change": {
+          "state": "observed",
+          "kind": "security_log_cleared",
+          "observed_value": "Security"
+        }
+      },
+      "event_data": {
+        "Channel": "Security"
+      },
+      "expected": {
+        "domain_id": 1,
+        "event_db_id": 10,
+        "event_record_id": 20,
+        "event_id": 1102,
+        "event_family": "audit_configuration",
+        "time_created_utc": "2026-01-01T00:00:00Z",
+        "actor": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-4",
+          "name": "Actor"
+        },
+        "affected_account": {
+          "state": "observed",
+          "sid": "S-1-5-21-100000001-200000002-300000003-5",
+          "name": "Target"
+        },
+        "member": {
+          "state": "unknown"
+        },
+        "group": {
+          "state": "unknown"
+        },
+        "source_host": {
+          "state": "observed",
+          "hostname": "dc"
+        },
+        "outcome": {
+          "state": "unknown",
+          "reason": "event_outcome_not_proven_by_scoped_contract"
+        },
+        "evidence": {
+          "state": "complete",
+          "missing_fields": [],
+          "event_db_id": 10,
+          "event_record_id": 20,
+          "source_core_sha256": "abababababababababababababababababababababababababababababababab",
+          "source_facts_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "change": {
+          "state": "observed",
+          "kind": "security_log_cleared",
+          "observed_value": "Security"
+        }
+      }
+    }
+  ]
+}

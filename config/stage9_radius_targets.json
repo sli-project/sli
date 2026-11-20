@@ -1,0 +1,10 @@
+{
+  "description": "Current owner-confirmed RADIUS/NPS target for the disabled Stage 10 registration; FQDN is the route identity and IPv4 is a verification fact.",
+  "targets": [
+    {
+      "source_name": "radius01.example.test",
+      "connect_address": "radius01.example.test",
+      "owner_confirmed_ip": "198.51.100.23"
+    }
+  ]
+}

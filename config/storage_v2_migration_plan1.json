@@ -1,0 +1,433 @@
+{
+  "schema_version": 1,
+  "plan_id": "storage-v2-migration-plan1-20260713",
+  "stage": "STORAGE-V2-MIGRATION-PLAN-1",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "status": "accepted_design_contract",
+  "production_change_authorized": false,
+  "source_design": {
+    "stage": "STORAGE-V2-DESIGN-R3",
+    "evidence_name": "STORAGE_V2_DESIGN_R3_REPORT_20260713_160650_INTEGRATOR.json",
+    "sha256": "BC11DD77A677F2B62C70973F5014B7BDD217B7ECC4E9B5AC9B1D6DB03AC92E25",
+    "managed_reduction_ratio": 2.605726,
+    "archive_lookup_p95_ms": 13.32857,
+    "target_ratio": 2.5,
+    "production_change_authorized": false
+  },
+  "target_contract": {
+    "model": "archive_first",
+    "canonical_source_after_final_cutover": "events_v2_core plus verified canonical archives",
+    "persistent_payload_duplicate": false,
+    "legacy_v1_retained_until_separate_decommission_gate": true,
+    "query_contracts": [
+      "latest_events",
+      "event_id_time",
+      "server_time",
+      "channel_event_time",
+      "subject_account_time",
+      "target_account_time",
+      "ip_time",
+      "logon_id_time",
+      "entity_timeline",
+      "event_detail_archive_lookup"
+    ],
+    "semantic_contracts": [
+      "events.id remains stable",
+      "source dedup key remains stable",
+      "collector cursor advances only after canonical write durability",
+      "findings and evidence keep stable event/entity identifiers",
+      "full source event is recoverable with exact SHA-256 round-trip",
+      "no event payload is stored in acceptance evidence"
+    ]
+  },
+  "future_schema_contract": {
+    "current_schema_migration_version": 8,
+    "reserved_migrations": [
+      {
+        "version": 9,
+        "name": "storage_v2_foundation",
+        "purpose": "dark V2 schema, archive manifest and checkpoint tables"
+      },
+      {
+        "version": 10,
+        "name": "storage_v2_backfill_support",
+        "purpose": "transactional outbox, comparison and progress state"
+      },
+      {
+        "version": 11,
+        "name": "storage_v2_runtime_routing",
+        "purpose": "feature flags and grants for controlled read/write transition"
+      }
+    ],
+    "objects": [
+      "storage_v2_provider",
+      "storage_v2_channel",
+      "storage_v2_computer",
+      "storage_v2_keywords",
+      "storage_v2_domain_name",
+      "storage_v2_role",
+      "storage_v2_extracted_from",
+      "storage_v2_entity_type",
+      "events_v2_core",
+      "entities_v2",
+      "entity_details_v2",
+      "event_entity_links_v2",
+      "storage_v2_archive_sets",
+      "storage_v2_archive_blocks",
+      "storage_v2_backfill_checkpoints",
+      "storage_v2_outbox",
+      "storage_v2_shadow_results",
+      "storage_v2_cutover_state"
+    ],
+    "forbidden_in_plan_stage": [
+      "production DDL",
+      "production DML",
+      "schema migration execution",
+      "trigger installation"
+    ]
+  },
+  "archive_contract": {
+    "format_version": 1,
+    "event_codec": "deterministic gzip JSONL canonical event rows",
+    "link_detail_codec": "deterministic gzip JSONL canonical link details",
+    "block_key": "events.id",
+    "block_rows_initial": 1000,
+    "required_manifest_fields": [
+      "archive_set_id",
+      "archive_kind",
+      "format_version",
+      "block_index",
+      "first_event_id",
+      "last_event_id",
+      "row_count",
+      "raw_bytes",
+      "compressed_bytes",
+      "raw_sha256",
+      "archive_sha256",
+      "object_location",
+      "state",
+      "created_at",
+      "published_at"
+    ],
+    "states": [
+      "staging",
+      "verified",
+      "published",
+      "quarantined"
+    ],
+    "atomic_publish": [
+      "write block to same-volume .partial path",
+      "flush and close",
+      "verify compressed and raw SHA-256",
+      "write manifest record in staging state",
+      "atomic rename .partial to immutable final name",
+      "mark manifest published in a separate idempotent transaction"
+    ],
+    "read_rule": "only published blocks are readable",
+    "failure_rule": "staging or hash-mismatched blocks are never served and are retried or quarantined",
+    "security": [
+      "archive ACL limited to service identity, administrators and authorized information-security operators",
+      "archive paths and event content are never persisted in acceptance evidence"
+    ]
+  },
+  "roles": {
+    "runtime_role": {
+      "name": "adlog_user",
+      "must_remain_superuser": false,
+      "must_remain_createdb": false,
+      "elevation_forbidden": true
+    },
+    "object_owner": {
+      "name": "adlog_storage_owner",
+      "login": false,
+      "purpose": "owns V2 schema objects"
+    },
+    "migration_role": {
+      "name": "adlog_storage_migrator",
+      "login": true,
+      "temporary_membership_in_owner": true,
+      "superuser": false,
+      "createdb": false,
+      "bypassrls": false,
+      "revoke_after_stage": true
+    },
+    "drill_role": {
+      "name": "adlog_storage_drill",
+      "superuser": false,
+      "createdb": true,
+      "purpose": "isolated temporary database acceptance only"
+    }
+  },
+  "capacity_contract": {
+    "reference_database_bytes": 40593782463,
+    "measured_managed_reduction_ratio": 2.605726,
+    "projected_v2_managed_bytes": 15578684199,
+    "projected_v2_database_bytes": 14222964149,
+    "projected_archive_bytes": 1355720926,
+    "minimum_free_space_formula": "max(1.10 * current_database_bytes, projected_v2_database_bytes + projected_archive_bytes + latest_verified_dump_bytes + 0.35 * current_database_bytes)",
+    "minimum_free_space_reference_bytes": 44653160709,
+    "free_space_gate_is_blocking": true,
+    "wal_gate": "implementation benchmark must measure WAL per migrated event and prove max_wal_size/checkpoint headroom before live backfill",
+    "external_copy_gate": "verified off-host or off-volume copy of the latest production dump and manifest is mandatory before live migration"
+  },
+  "feature_flags": {
+    "ADLOG_STORAGE_READ_MODE": [
+      "v1",
+      "shadow",
+      "v2"
+    ],
+    "ADLOG_STORAGE_WRITE_MODE": [
+      "v1",
+      "v1_outbox",
+      "v2_primary_compat",
+      "v2"
+    ],
+    "ADLOG_STORAGE_V2_SHADOW_SAMPLE_RATE": "bounded 0..1",
+    "default_before_implementation": {
+      "ADLOG_STORAGE_READ_MODE": "v1",
+      "ADLOG_STORAGE_WRITE_MODE": "v1"
+    }
+  },
+  "phases": [
+    {
+      "id": "MP0",
+      "name": "preflight_and_recovery_boundary",
+      "package": "STORAGE-V2-IMPLEMENTATION-1",
+      "production_actions": [],
+      "required_gates": [
+        "pinned R3 evidence",
+        "runtime role not elevated",
+        "external backup copy verified",
+        "free-space formula passed",
+        "archive ACL and location approved",
+        "rollback owner named"
+      ],
+      "rollback": "no production change; reject implementation package"
+    },
+    {
+      "id": "MP1",
+      "name": "dark_schema_install",
+      "package": "STORAGE-V2-SCHEMA-CANARY-1",
+      "production_actions": [
+        "apply only versioned migrations 9-10",
+        "create dark V2 objects and grants",
+        "leave runtime read/write modes at v1"
+      ],
+      "required_gates": [
+        "migration dry-run",
+        "migration idempotency",
+        "schema guard",
+        "no event rows modified",
+        "rollback SQL tested on disposable database"
+      ],
+      "rollback": "drop only empty V2 objects through versioned rollback before any backfill"
+    },
+    {
+      "id": "MP2",
+      "name": "bounded_backfill",
+      "package": "STORAGE-V2-BACKFILL-CANARY-1",
+      "production_actions": [
+        "capture immutable high watermark H0=max(events.id)",
+        "backfill id ranges in restartable chunks",
+        "publish verified archive blocks",
+        "checkpoint every committed chunk"
+      ],
+      "chunk_contract": {
+        "initial_events": 25000,
+        "minimum_events": 5000,
+        "maximum_events": 50000,
+        "target_chunk_seconds": 30,
+        "adaptive": true
+      },
+      "idempotency": [
+        "events_v2_core primary key events.id",
+        "source unique key preserved",
+        "links composite uniqueness",
+        "archive_set/block uniqueness",
+        "checkpoint compare-and-set"
+      ],
+      "required_gates": [
+        "source/target counts per chunk",
+        "canonical hash probes",
+        "archive manifest hash",
+        "WAL and duration metrics",
+        "zero V1 mutation",
+        "restart from last verified checkpoint"
+      ],
+      "rollback": "stop worker; keep V1 authoritative; remove only unpublished/quarantined V2 artifacts through separate cleanup gate"
+    },
+    {
+      "id": "MP3",
+      "name": "transactional_outbox_and_tail_catchup",
+      "package": "STORAGE-V2-DUAL-WRITE-CANARY-1",
+      "production_actions": [
+        "atomically commit V1 batch and storage_v2_outbox identity",
+        "advance collector cursor after V1 plus outbox commit",
+        "asynchronously build V2/archive idempotently",
+        "tail backfill H0+1 through activation watermark H1"
+      ],
+      "required_gates": [
+        "no missing outbox ranges",
+        "V2 lag p95 within 300 seconds",
+        "outbox retry has bounded backoff",
+        "collection remains bounded",
+        "dedup/cursor semantics unchanged"
+      ],
+      "rollback": "disable outbox flag; continue V1 collection; retain queued identities for later replay"
+    },
+    {
+      "id": "MP4",
+      "name": "shadow_dual_read",
+      "package": "STORAGE-V2-DUAL-READ-1",
+      "production_actions": [
+        "serve V1 responses",
+        "run bounded shadow V2 queries",
+        "compare semantic hashes and latency without returning V2 to user"
+      ],
+      "required_gates": [
+        "zero identity/count mismatches",
+        "all query contracts exercised",
+        "core query p95 no more than 20 percent slower than V1",
+        "warm archive lookup p95 <=25 ms",
+        "cold archive lookup p95 <=250 ms",
+        "minimum 24-hour observation or approved equivalent deterministic workload"
+      ],
+      "rollback": "set read mode v1; shadow state may be discarded"
+    },
+    {
+      "id": "MP5",
+      "name": "v2_read_cutover",
+      "package": "STORAGE-V2-READ-CUTOVER-1",
+      "production_actions": [
+        "switch read mode from shadow to v2",
+        "keep V1 authoritative write plus outbox",
+        "monitor findings, reports, timelines and detail lookup"
+      ],
+      "required_gates": [
+        "pre-cutover checkpoint",
+        "API/HTML/report smoke",
+        "findings and evidence references stable",
+        "no archive corruption",
+        "rollback switch tested"
+      ],
+      "rollback": "single flag returns reads to V1; no data conversion required"
+    },
+    {
+      "id": "MP6",
+      "name": "v2_primary_write_canary",
+      "package": "STORAGE-V2-WRITE-CUTOVER-1",
+      "production_actions": [
+        "publish archive and V2 core as canonical batch",
+        "advance cursor only after V2 durability",
+        "maintain bounded V1 compatibility mirror during rollback window"
+      ],
+      "required_gates": [
+        "archive publish retry proof",
+        "compatibility mirror parity",
+        "cursor continuity",
+        "bounded collection latency",
+        "zero lost event ids",
+        "72-hour stabilization"
+      ],
+      "rollback": "return to V1 only while compatibility parity is complete; otherwise stop collection and replay immutable archive/raw spool into V1"
+    },
+    {
+      "id": "MP7",
+      "name": "dr_and_decommission_gate",
+      "package": "STORAGE-V2-DR-AND-DECOMMISSION-1",
+      "production_actions": [
+        "perform V2 database plus archive restore drill",
+        "freeze V1 after rollback window",
+        "decommission only through a separate destructive approval"
+      ],
+      "required_gates": [
+        "new RTO/RPO measured",
+        "archive plus DB manifest restored",
+        "external copy verified",
+        "retention approved",
+        "rollback window expired",
+        "explicit destructive approval"
+      ],
+      "rollback": "no automatic DROP; preserve verified V1 backup and frozen schema until decommission acceptance"
+    }
+  ],
+  "global_stop_conditions": [
+    "production fingerprint changes outside approved objects",
+    "any missing or duplicated event id",
+    "semantic hash mismatch",
+    "archive SHA mismatch or unpublished block served",
+    "collector cursor discontinuity",
+    "V2 lag exceeds gate",
+    "free space below blocking threshold",
+    "WAL/checkpoint saturation",
+    "runtime role privilege elevation",
+    "unbounded query or collection latency",
+    "temporary/admin credential leak"
+  ],
+  "rollback_matrix": [
+    {
+      "boundary": "before MP2",
+      "read": "v1",
+      "write": "v1",
+      "action": "versioned rollback of empty V2 schema"
+    },
+    {
+      "boundary": "MP2-MP4",
+      "read": "v1",
+      "write": "v1 or v1_outbox",
+      "action": "stop V2 workers; V1 remains authoritative"
+    },
+    {
+      "boundary": "after MP5 before MP6",
+      "read": "switch to v1",
+      "write": "v1_outbox",
+      "action": "instant read rollback"
+    },
+    {
+      "boundary": "during MP6",
+      "read": "v1 or v2",
+      "write": "v2_primary_compat",
+      "action": "rollback only with complete V1 mirror parity, else stop and replay"
+    },
+    {
+      "boundary": "after MP7 decommission",
+      "read": "v2",
+      "write": "v2",
+      "action": "restore verified V1 backup only through disaster-recovery procedure"
+    }
+  ],
+  "acceptance_evidence_contract": {
+    "one_json_per_stage": true,
+    "no_event_payload": true,
+    "no_credentials": true,
+    "required_common_fields": [
+      "stage",
+      "status",
+      "critical_failures",
+      "warnings",
+      "source_fingerprint",
+      "target_fingerprint",
+      "safety",
+      "checks",
+      "rollback_state",
+      "next_stage"
+    ],
+    "persistent_evidence_location": "ProjectRoot/artifacts",
+    "detailed_logs": "temporary and referenced by hashes only"
+  },
+  "implementation_sequence": [
+    "STORAGE-V2-IMPLEMENTATION-1",
+    "STORAGE-V2-SCHEMA-CANARY-1",
+    "STORAGE-V2-BACKFILL-CANARY-1",
+    "STORAGE-V2-DUAL-WRITE-CANARY-1",
+    "STORAGE-V2-DUAL-READ-1",
+    "STORAGE-V2-READ-CUTOVER-1",
+    "STORAGE-V2-WRITE-CUTOVER-1",
+    "STORAGE-V2-DR-AND-DECOMMISSION-1"
+  ],
+  "preserved_backlog": [
+    "SEARCH-CASEFOLD-1",
+    "REPORT-DATETIME-UI-1"
+  ],
+  "next_stage": "STORAGE-V2-IMPLEMENTATION-1"
+}

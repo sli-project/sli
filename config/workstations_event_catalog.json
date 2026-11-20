@@ -1,0 +1,226 @@
+{
+  "schema_version": 2,
+  "version": "1.0.0",
+  "entries": [
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Security",
+      "stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "event_id": 6416,
+      "event_key": "6416",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "stream": "Microsoft-Windows-Windows Defender/Operational",
+      "provider_name": "Microsoft-Windows-Windows Defender",
+      "event_id": 5001,
+      "event_key": "5001",
+      "title": "Protection disabled",
+      "severity": "medium",
+      "base_risk": "medium",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "protection",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "stream": "Microsoft-Windows-Windows Defender/Operational",
+      "provider_name": "Microsoft-Windows-Windows Defender",
+      "event_id": 5010,
+      "event_key": "5010",
+      "title": "Protection disabled",
+      "severity": "medium",
+      "base_risk": "medium",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "protection",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "stream": "Microsoft-Windows-Windows Defender/Operational",
+      "provider_name": "Microsoft-Windows-Windows Defender",
+      "event_id": 5012,
+      "event_key": "5012",
+      "title": "Protection disabled",
+      "severity": "medium",
+      "base_risk": "medium",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "protection",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "stream": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "provider_name": "Microsoft-Windows-Kernel-PnP",
+      "event_id": 400,
+      "event_key": "400",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "stream": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "provider_name": "Microsoft-Windows-Kernel-PnP",
+      "event_id": 410,
+      "event_key": "410",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "stream": "Microsoft-Windows-Kernel-PnP/Configuration",
+      "provider_name": "Microsoft-Windows-Kernel-PnP",
+      "event_id": 420,
+      "event_key": "420",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "stream": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+      "event_id": 2003,
+      "event_key": "2003",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "stream": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+      "event_id": 2100,
+      "event_key": "2100",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    },
+    {
+      "source": "sli.windows.workstations",
+      "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "stream": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+      "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+      "event_id": 2101,
+      "event_key": "2101",
+      "title": "External device observed",
+      "severity": "info",
+      "base_risk": "info",
+      "noise_class": "signal",
+      "purpose_tier": "important",
+      "category": "usb",
+      "why": "Source-native observation; completeness is not inferred.",
+      "fix": "Check native evidence and collection policy.",
+      "lifecycle": {
+        "raw_payload_days": 90,
+        "record_days": 90,
+        "warm_record_days": 365,
+        "rollup": null
+      }
+    }
+  ]
+}

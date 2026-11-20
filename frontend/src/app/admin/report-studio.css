@@ -1,0 +1,19 @@
+/* «Студия отчётов»: реестр слева, карточка выбранного отчёта справа. Цвета и отступы — только токены дизайн-системы. */
+.sli-studio { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sli-space-4); align-items: start; min-width: 0; }
+.sli-studio[data-detail="open"] { grid-template-columns: minmax(280px, 0.7fr) minmax(0, 1.3fr); }
+.sli-studio__registry { display: grid; gap: var(--sli-space-3); min-width: 0; }
+.sli-studio__detail { position: sticky; top: var(--sli-space-3); max-height: calc(100vh - 2 * var(--sli-space-3)); overflow-y: auto; display: grid; gap: var(--sli-space-3); min-width: 0; padding: var(--sli-space-4); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-lg); background: var(--sli-surface-1); }
+.sli-studio__detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sli-space-3); }
+.sli-studio__detail-head h2 { margin: 0; font-size: var(--sli-text-lg); overflow-wrap: anywhere; }
+.sli-studio__detail-head p { margin: 0; overflow-wrap: anywhere; }
+.sli-studio__tab { display: grid; gap: var(--sli-space-3); min-width: 0; }
+.sli-studio__form { display: grid; gap: var(--sli-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.sli-studio__form legend { padding: 0; }
+.sli-studio__row { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sli-space-2) var(--sli-space-3); }
+.sli-studio__caps { display: grid; gap: var(--sli-space-2); margin: 0; padding: 0; list-style: none; }
+.sli-studio__caps li { display: flex; align-items: center; justify-content: space-between; gap: var(--sli-space-3); padding: var(--sli-space-2) var(--sli-space-3); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-md); background: var(--sli-surface-2); font-size: var(--sli-text-sm); }
+.sli-studio__validation { display: grid; gap: var(--sli-space-3); }
+@media (max-width: 1100px) {
+  .sli-studio[data-detail="open"] { grid-template-columns: minmax(0, 1fr); }
+}
+.sli-studio__nowrap, .sli-studio__nowrap .sli-ds-badge { white-space: nowrap; }

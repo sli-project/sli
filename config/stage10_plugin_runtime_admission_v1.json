@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-runtime-admission.v1",
+  "status": "source_contract_runtime_disabled",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "plugin_id": "sli.remote-access",
+  "components": {
+    "radius-acquisition": {
+      "source_contact": true,
+      "normal_mode": "open",
+      "drain_mode": "closed"
+    },
+    "radius-session-observation": {
+      "source_contact": false,
+      "normal_mode": "open",
+      "drain_mode": "drain_only"
+    }
+  },
+  "admission_modes": [
+    "closed",
+    "open",
+    "drain_only"
+  ],
+  "drain_sequence": [
+    "close_new_acquisition_admission",
+    "keep_consumer_drain_only",
+    "wait_active_acquisition_leases_zero",
+    "wait_queue_nonterminal_zero",
+    "wait_active_consumer_leases_zero",
+    "close_consumer_admission",
+    "mark_plugin_stopped_drained"
+  ],
+  "queue_nonterminal_states": [
+    "queued",
+    "leased",
+    "failed",
+    "quarantined"
+  ],
+  "required_atomicity": [
+    "admission_check_and_lease_create",
+    "close_acquisition_and_enter_draining",
+    "drain_completion_readback_and_state_commit"
+  ],
+  "lease_required_before": [
+    "source_contact",
+    "delivery_claim"
+  ],
+  "limits": {
+    "maximum_component_lease_seconds": 120,
+    "maximum_queue_readback_rows": 1,
+    "maximum_components": 2
+  },
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "database_mutation_enabled": false,
+  "source_contact_allowed": false,
+  "process_control_allowed": false,
+  "explicitly_not_proven": [
+    "durable_component_admission_registry",
+    "database_admission_lease_executor",
+    "live_process_supervisor",
+    "live_queue_drain"
+  ]
+}

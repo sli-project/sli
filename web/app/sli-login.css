@@ -1,0 +1,695 @@
+:root {
+  color-scheme: dark;
+  --sli-cyan-300: #75e9ff;
+  --sli-cyan-400: #27d7ff;
+  --sli-cyan-500: #06c7ff;
+  --sli-blue-400: #168dff;
+  --sli-blue-500: #0866ff;
+  --sli-blue-600: #0647f5;
+  --sli-blue-700: #082bbb;
+  --sli-bg-950: #01030d;
+  --sli-bg-900: #020719;
+  --sli-bg-850: #04102a;
+  --sli-panel: rgba(3, 12, 34, 0.92);
+  --sli-panel-strong: rgba(2, 8, 26, 0.97);
+  --sli-field: rgba(5, 16, 43, 0.86);
+  --sli-text: #f7f9fd;
+  --sli-text-secondary: #c8cdd7;
+  --sli-text-muted: #8d96a9;
+  --sli-error: #ff91a8;
+  --sli-success: #63e6b5;
+  --sli-border: rgba(20, 131, 255, 0.74);
+  --sli-border-soft: rgba(73, 125, 204, 0.36);
+  --sli-divider: rgba(102, 136, 183, 0.22);
+  --sli-card-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.44),
+    0 0 32px rgba(0, 105, 255, 0.16);
+  --sli-focus-ring: 0 0 0 3px rgba(39, 215, 255, 0.20);
+  --sli-radius-card: 22px;
+  --sli-radius-field: 9px;
+  --sli-radius-button: 8px;
+  --sli-font:
+    Inter, Manrope, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sli-motion-fast: 160ms;
+  --sli-motion-medium: 3.4s;
+  --sli-motion-slow: 9s;
+  --sli-page-end: #010312;
+  --sli-field-focus: rgba(7, 22, 57, 0.94);
+  --sli-field-icon: #a9b2c5;
+  --sli-scene-opacity: 1;
+  --sli-brand-filter: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--sli-text);
+  background: var(--sli-bg-950);
+  font-family: var(--sli-font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.sli-page {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 54% 43%, rgba(0, 67, 192, 0.18), transparent 34%),
+    radial-gradient(circle at 12% 10%, rgba(0, 106, 255, 0.08), transparent 26%),
+    linear-gradient(145deg, var(--sli-bg-950), var(--sli-bg-900) 58%, var(--sli-page-end));
+}
+
+.sli-page::before {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  content: "";
+  opacity: 0.42;
+  background-image:
+    radial-gradient(circle, rgba(31, 119, 255, 0.12) 0 1px, transparent 1.5px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(to bottom, black, transparent 62%);
+}
+
+.sli-page::after {
+  position: absolute;
+  z-index: -1;
+  right: -10%;
+  bottom: -25%;
+  left: -10%;
+  height: 46vh;
+  content: "";
+  opacity: 0.40;
+  background:
+    linear-gradient(rgba(18, 107, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 107, 255, 0.18) 1px, transparent 1px);
+  background-size: 62px 62px;
+  transform: perspective(460px) rotateX(62deg) scale(1.18);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, black, transparent 88%);
+}
+
+/*
+ * Shell width follows the viewport instead of stopping at a fixed cap. On a
+ * 2560x1080 panel the old min(1500px, ...) left roughly 530px of empty
+ * background on each side, so the composition read as a small centred column
+ * rather than the full-frame render. Everything inside the scene is now
+ * proportional, so widening the shell scales the whole composition.
+ */
+.sli-shell {
+  position: relative;
+  width: min(1880px, calc(100% - 60px));
+  min-height: 100svh;
+  margin: 0 auto;
+  padding: clamp(56px, 7vh, 78px) 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 462px;
+  grid-template-rows: auto 1fr;
+  column-gap: 42px;
+  align-items: start;
+}
+
+.sli-brand {
+  position: relative;
+  z-index: 20;
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  width: min(658px, 70%);
+  height: auto;
+  filter: var(--sli-brand-filter);
+}
+
+.sli-features {
+  position: relative;
+  z-index: 20;
+  grid-column: 1;
+  grid-row: 2;
+  width: 300px;
+  margin: 62px 0 0 20px;
+  padding: 0;
+  display: grid;
+  gap: 42px;
+  align-content: start;
+  list-style: none;
+}
+
+.sli-feature {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+/* 64px against the 1672 reference frame, scaled to the 1880 shell. */
+.sli-feature img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+.sli-feature strong,
+.sli-feature small {
+  display: block;
+}
+
+.sli-feature strong {
+  margin-bottom: 6px;
+  color: var(--sli-text);
+  font-size: 24px;
+  font-weight: 660;
+  line-height: 1.1;
+}
+
+.sli-feature small {
+  color: var(--sli-text-secondary);
+  font-size: 17px;
+  line-height: 1.38;
+}
+
+/*
+ * The scene now spans the whole shell and every child is placed as a percentage
+ * of it, measured off the approved 1672x941 render. Fixed pixel offsets tied the
+ * composition to one viewport width; percentages keep the same proportions from
+ * a laptop up to an ultra-wide panel.
+ *
+ * Children use the standalone `translate` property for centring, so the pulse
+ * keyframes remain free to drive `transform` without the two fighting.
+ */
+/*
+ * The scene keeps the proportions of the approved 1672x941 frame.
+ *
+ * With `inset: 0` it took the shape of the shell, which on a 1920 viewport is
+ * 1860x941 — wider in aspect than the render. Percentages of width and of
+ * height then scaled by different factors: the rays, sized by width alone, kept
+ * their own aspect, while the badges drifted vertically by up to 35px, so some
+ * touched their ray and others plainly missed. Fixing each badge by hand would
+ * have held only at that one window size.
+ *
+ * Locking the aspect makes both axes scale together, so every percentage below
+ * maps to the render exactly, at any viewport.
+ */
+.sli-scene {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  height: 100%;
+  aspect-ratio: 1672 / 941;
+  pointer-events: none;
+  opacity: var(--sli-scene-opacity);
+}
+
+/*
+ * Single-image scene, test variant.
+ *
+ * The illustration comes as one flat composition, so rays, collector and badges
+ * are already in register and none of them needs placing. Its own background is
+ * a dark blue gradient close to the page, and the edges are dissolved by a mask
+ * rather than by keying: the artwork never reaches black, so an alpha key left
+ * 98% of the frame standing and produced a visible rectangle anyway.
+ *
+ * Colour rides in a JPEG — 205 KB against 1913 KB for the keyed PNG — because
+ * the mask, not the alpha channel, carries the fade.
+ */
+.sli-scene__single {
+  position: absolute;
+  top: 51%;
+  left: 52%;
+  /*
+   * Purely proportional: no pixel bounds. The scene is already locked to the
+   * render aspect and driven by viewport height, so a plain percentage keeps the
+   * illustration at a fixed share of the composition everywhere. The earlier
+   * clamp() pinned it to absolute sizes at both ends of the range, which broke
+   * that relationship on small and very wide screens alike.
+   */
+  width: 61.2%;
+  height: auto;
+  translate: -50% -50%;
+  user-select: none;
+  /*
+   * Rectangular fade, not a radial one. An ellipse over a 16:9 picture draws an
+   * egg: its corners fall outside the oval and get erased, so the artwork looked
+   * cropped no matter how the radius was tuned. Two linear gradients intersected
+   * fade only the outer band on each side and leave the composition rectangular.
+   */
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%),
+    linear-gradient(to bottom, transparent 0, #000 9%, #000 91%, transparent 100%);
+  mask-image:
+    linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%),
+    linear-gradient(to bottom, transparent 0, #000 9%, #000 91%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/*
+ * Rays. Position and size come from placement.json shipped with the asset,
+ * which was cut from the approved render rather than redrawn: the crop sits at
+ * x 624, y 222 and measures 465x573 on the 1672x941 reference canvas. Earlier
+ * values were fitted by eye against a differently shaped donor fan and were
+ * more than twice too wide.
+ */
+.sli-login-card {
+  position: relative;
+  z-index: 30;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 100%;
+  min-height: 734px;
+  margin-top: 38px;
+  padding: 54px 42px 36px;
+  border: 1px solid var(--sli-border);
+  border-radius: var(--sli-radius-card);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(21, 73, 150, 0.14), transparent 31%),
+    linear-gradient(180deg, var(--sli-panel), var(--sli-panel-strong));
+  box-shadow: var(--sli-card-shadow);
+}
+
+.sli-login-card::before {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 178px;
+  height: 2px;
+  content: "";
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, #65caff, transparent);
+  box-shadow: 0 0 11px rgba(58, 194, 255, 0.92);
+}
+
+.sli-eyebrow {
+  margin: 0 0 13px;
+  color: var(--sli-cyan-500);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.sli-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  color: var(--sli-text-secondary);
+  font-size: 14px;
+}
+
+.sli-preferences label {
+  display: grid;
+  flex: 1 1 130px;
+  min-width: 0;
+  gap: 6px;
+}
+
+.sli-preferences select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--sli-border-soft);
+  border-radius: var(--sli-radius-field);
+  color: var(--sli-text);
+  background: var(--sli-field);
+  font: inherit;
+}
+
+.sli-title {
+  margin: 0;
+  font-size: 38px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.sli-description {
+  max-width: 365px;
+  margin: 20px 0 36px;
+  color: var(--sli-text-secondary);
+  font-size: 19px;
+  line-height: 1.48;
+}
+
+.sli-form {
+  display: grid;
+}
+
+.sli-label {
+  margin: 0 0 10px;
+  color: var(--sli-text);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.sli-field {
+  min-height: 60px;
+  margin-bottom: 26px;
+  padding: 0 13px 0 16px;
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  border: 1px solid var(--sli-border-soft);
+  border-radius: var(--sli-radius-field);
+  background: var(--sli-field);
+  transition:
+    border-color var(--sli-motion-fast) ease,
+    box-shadow var(--sli-motion-fast) ease,
+    background var(--sli-motion-fast) ease;
+}
+
+.sli-field:focus-within {
+  border-color: var(--sli-cyan-500);
+  background: var(--sli-field-focus);
+  box-shadow: var(--sli-focus-ring);
+}
+
+.sli-field > svg,
+.sli-password-toggle svg,
+.sli-submit svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sli-field > svg {
+  color: var(--sli-field-icon);
+}
+
+.sli-input {
+  width: 100%;
+  min-width: 0;
+  height: 58px;
+  border: 0;
+  outline: 0;
+  color: var(--sli-text);
+  background: transparent;
+}
+
+.sli-input::placeholder {
+  color: var(--sli-text-muted);
+}
+
+.sli-password-toggle {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  display: grid;
+  place-items: center;
+  color: var(--sli-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.sli-password-toggle:hover {
+  color: var(--sli-cyan-300);
+}
+
+.sli-password-toggle:focus-visible,
+.sli-preferences select:focus-visible,
+.sli-submit:focus-visible,
+.sli-remember input:focus-visible {
+  outline: 3px solid var(--sli-cyan-300);
+  outline-offset: 3px;
+}
+
+.sli-remember {
+  width: max-content;
+  margin: -1px 0 31px;
+  display: inline-flex;
+  gap: 11px;
+  align-items: center;
+  color: var(--sli-text-secondary);
+  cursor: pointer;
+}
+
+.sli-remember input {
+  width: 21px;
+  height: 21px;
+  margin: 0;
+  accent-color: var(--sli-blue-500);
+}
+
+.sli-form-message {
+  min-height: 20px;
+  margin: -18px 0 17px;
+  color: var(--sli-error);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.sli-form-message[data-state="success"] {
+  color: var(--sli-success);
+}
+
+.sli-submit {
+  min-height: 64px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: var(--sli-radius-button);
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: linear-gradient(100deg, #073bff 0%, #128fff 100%);
+  box-shadow:
+    0 13px 30px rgba(0, 66, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 600;
+  transition:
+    transform var(--sli-motion-fast) ease,
+    filter var(--sli-motion-fast) ease,
+    opacity var(--sli-motion-fast) ease;
+}
+
+.sli-submit:hover:not(:disabled) {
+  filter: brightness(1.10);
+  transform: translateY(-1px);
+}
+
+.sli-submit:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.sli-tls-note {
+  margin-top: 28px;
+  padding-top: 25px;
+  border-top: 1px solid var(--sli-divider);
+  display: grid;
+  grid-template-columns: 43px 1fr;
+  gap: 15px;
+  align-items: center;
+  color: var(--sli-text-secondary);
+  font-size: 14px;
+  line-height: 1.44;
+}
+
+.sli-tls-note img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+@media (max-width: 1510px) {
+  .sli-shell {
+    width: min(1320px, calc(100% - 42px));
+    grid-template-columns: minmax(0, 1fr) 440px;
+    column-gap: 24px;
+  }
+
+  .sli-brand {
+    width: min(600px, 72%);
+  }
+
+  .sli-features {
+    margin-top: 48px;
+  }
+
+  .sli-login-card {
+    padding-inline: 36px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .sli-shell {
+    width: min(1060px, calc(100% - 36px));
+    grid-template-columns: minmax(0, 1fr) 410px;
+  }
+
+  .sli-brand {
+    width: min(520px, 78%);
+  }
+
+  .sli-features {
+    gap: 30px;
+  }
+
+  .sli-feature {
+    grid-template-columns: 54px 1fr;
+  }
+
+  .sli-feature img {
+    width: 50px;
+    height: 50px;
+  }
+
+  .sli-feature strong {
+    font-size: 21px;
+  }
+
+  .sli-feature small {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sli-page {
+    padding: 22px 12px;
+    overflow: auto;
+  }
+
+  .sli-page::before {
+    opacity: 0.26;
+  }
+
+  .sli-page::after {
+    height: 31vh;
+    opacity: 0.20;
+  }
+
+  .sli-shell {
+    width: min(100%, 420px);
+    min-height: auto;
+    padding: 29px 24px 26px;
+    display: block;
+    border: 1px solid var(--sli-border);
+    border-radius: 26px;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(20, 79, 164, 0.14), transparent 30%),
+      linear-gradient(180deg, var(--sli-panel), var(--sli-panel-strong));
+    box-shadow: var(--sli-card-shadow);
+  }
+
+  .sli-brand {
+    width: min(100%, 330px);
+    margin: 0 auto 29px;
+  }
+
+  .sli-features,
+  .sli-scene {
+    display: none;
+  }
+
+  .sli-login-card {
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .sli-login-card::before {
+    display: none;
+  }
+
+  .sli-eyebrow {
+    font-size: 16px;
+  }
+
+  .sli-title {
+    font-size: clamp(30px, 9vw, 38px);
+  }
+
+  .sli-description {
+    margin-bottom: 27px;
+    font-size: 17px;
+  }
+
+  .sli-field {
+    min-height: 56px;
+    margin-bottom: 21px;
+  }
+
+  .sli-input {
+    height: 54px;
+  }
+
+  .sli-remember {
+    margin-bottom: 25px;
+  }
+
+  .sli-submit {
+    min-height: 58px;
+  }
+
+  .sli-tls-note {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 380px) {
+  .sli-page {
+    padding-inline: 8px;
+  }
+
+  .sli-shell {
+    width: 100%;
+    padding-inline: 19px;
+  }
+
+  .sli-brand {
+    width: 100%;
+  }
+
+  .sli-title {
+    font-size: 31px;
+  }
+
+  .sli-description {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sli-scene__single {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

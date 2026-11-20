@@ -1,0 +1,32 @@
+SLI Platform
+
+The SLI Platform application and Windows agent are licensed under Apache-2.0;
+see LICENSE and sli_agent/LICENSE. Preserve applicable upstream copyright,
+attribution and license notices. This notice does not relicense third-party work.
+
+Separately licensed dependencies and rule content:
+
+* psycopg and psycopg-binary (Psycopg 3): GNU Lesser General Public License v3.
+  Source and license: https://github.com/psycopg/psycopg
+  https://github.com/psycopg/psycopg/blob/master/LICENSE.txt
+  Keep the library separately replaceable. Binary distribution must include
+  applicable LGPL/GPL license texts, copyright notices, corresponding library
+  source or another compliant source provision, and notices/licenses for bundled
+  libpq and other native libraries. A source snapshot with dependency pins is
+  not a complete binary-distribution license bundle.
+
+* pySigma 1.3.3: LGPL-2.1-only, used for separate offline Sigma validation.
+  Source: https://github.com/SigmaHQ/pySigma/tree/v1.3.3
+  License text: config/sigma/licenses/LGPL-2.1.txt
+
+* SigmaHQ detection rules: Detection Rule License (DRL) 1.1.
+  Rules are obtained separately using config/sigma/lock.json; they are not
+  relicensed as Apache-2.0. Preserve original rule bytes, attribution metadata,
+  links, and DRL notices when distributing rules or rule-derived messages.
+  License text: config/sigma/licenses/DRL-1.1.txt
+  Source: https://github.com/SigmaHQ/sigma
+
+See config/sigma/NOTICE and config/sigma/software-manifest.json for the pinned
+offline validation dependencies, sources, hashes and individual licenses.
+Frontend dependencies and generated bundles retain their upstream license
+comments; binary release kits need their own complete third-party notice bundle.

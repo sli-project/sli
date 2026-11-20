@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title data-i18n="login.documentTitle">SLI — Вход в систему</title>
+  <!-- Versioned so a stylesheet change is never served from a stale tab cache. -->
+  <link rel="stylesheet" href="/sli-login.css?v=25">
+</head>
+<body>
+  <main class="sli-page">
+    <section class="sli-shell" aria-label="Авторизация SLI" data-i18n-aria-label="login.aria.authorization">
+      <img
+        class="sli-brand"
+        src="/assets/sli-login/sli-logo.svg"
+        alt="SLI — Security Log Intelligence"
+      >
+
+      <ul class="sli-features" aria-label="Возможности SLI" data-i18n-aria-label="login.aria.features">
+        <li class="sli-feature">
+          <img src="/assets/sli-login/feature-eye.svg" alt="" aria-hidden="true">
+          <span>
+            <strong data-i18n="login.feature.visibility">Видимость</strong>
+            <small data-i18n="login.feature.visibility.description">Полная картина событий</small>
+          </span>
+        </li>
+        <li class="sli-feature">
+          <img src="/assets/sli-login/feature-brain.svg" alt="" aria-hidden="true">
+          <span>
+            <strong data-i18n="login.feature.intelligence">Интеллект</strong>
+            <small data-i18n="login.feature.intelligence.description">Аналитика и корреляция</small>
+          </span>
+        </li>
+        <li class="sli-feature">
+          <img src="/assets/sli-login/feature-shield.svg" alt="" aria-hidden="true">
+          <span>
+            <strong data-i18n="login.feature.protection">Защита</strong>
+            <small data-i18n="login.feature.protection.description">Безопасность и соответствие</small>
+          </span>
+        </li>
+      </ul>
+
+      <!--
+        The illustration is one flat composition. The earlier assembled scene —
+        separate rays, collector and four badges, plus a background map layer —
+        is in archive/obsolete-repository-20260728. It was kept here for a while
+        behind display:none, which turned out to cost about 1.3 MB per page load:
+        a hidden <img> is still fetched.
+      -->
+      <div class="sli-scene" aria-hidden="true">
+        <img class="sli-scene__single" src="/assets/sli-login/collector-server.svg?v=15" alt="">
+      </div>
+
+      <section class="sli-login-card">
+        <div class="sli-preferences">
+          <label for="sli-locale">
+            <span data-i18n="login.language">Язык</span>
+            <select id="sli-locale">
+              <option value="ru" lang="ru" data-i18n="login.language.ru">Русский</option>
+              <option value="en" lang="en" data-i18n="login.language.en">English</option>
+            </select>
+          </label>
+        </div>
+        <p class="sli-eyebrow" data-i18n="login.welcome">Добро пожаловать</p>
+        <h1 class="sli-title" data-i18n="login.title">Вход в систему</h1>
+        <p class="sli-description" data-i18n="login.description">
+          Введите данные учётной записи администратора или сотрудника.
+        </p>
+
+        <form class="sli-form" id="sli-login-form" novalidate>
+          <label class="sli-label" for="username" data-i18n="login.username">Логин</label>
+          <div class="sli-field">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="12" cy="8" r="4"></circle>
+              <path d="M4.5 21c.6-4.5 3.2-7 7.5-7s6.9 2.5 7.5 7"></path>
+            </svg>
+            <input
+              class="sli-input"
+              id="username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              placeholder="Введите логин"
+              data-i18n-placeholder="login.username.placeholder"
+              aria-describedby="sli-login-message"
+              required
+              autofocus
+            >
+          </div>
+
+          <label class="sli-label" for="password" data-i18n="login.password">Пароль</label>
+          <div class="sli-field">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="11" rx="2"></rect>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+            </svg>
+            <input
+              class="sli-input"
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Введите пароль"
+              data-i18n-placeholder="login.password.placeholder"
+              aria-describedby="sli-login-message"
+              required
+            >
+            <button
+              class="sli-password-toggle"
+              type="button"
+              aria-label="Показать пароль"
+              data-i18n-aria-label="login.password.show"
+              aria-pressed="false"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"></path>
+                <circle cx="12" cy="12" r="2.5"></circle>
+              </svg>
+            </button>
+          </div>
+
+          <details>
+            <summary data-i18n="login.recovery.title">Аварийный вход владельца</summary>
+            <p data-i18n="login.recovery.description">Получите одноразовый код у администратора консоли сервера. Код действует 10 минут; пароль также обязателен.</p>
+            <label class="sli-label" for="recovery-code" data-i18n="login.recovery.code">Код восстановления</label>
+            <input class="sli-input" id="recovery-code" name="recovery_code" type="password" autocomplete="off" maxlength="128" spellcheck="false">
+          </details>
+
+          <label class="sli-remember">
+            <input name="remember" type="checkbox" checked>
+            <span data-i18n="login.remember">Запомнить меня</span>
+          </label>
+
+          <p
+            class="sli-form-message"
+            id="sli-login-message"
+            role="alert"
+            aria-live="polite"
+          ></p>
+
+          <button class="sli-submit" id="sli-login-submit" type="submit">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="11" rx="2"></rect>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+            </svg>
+            <span data-i18n="login.submit">Войти</span>
+          </button>
+        </form>
+
+        <div class="sli-tls-note">
+          <img src="/assets/sli-login/feature-shield.svg" alt="" aria-hidden="true">
+          <span id="sli-transport-note">
+            Подключение защищено с использованием шифрования TLS 1.2+.
+          </span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/sli-login.js" defer></script>
+</body>
+</html>

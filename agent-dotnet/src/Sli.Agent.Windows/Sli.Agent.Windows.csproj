@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Sli.Agent.Windows</RootNamespace>
+    <AssemblyName>Sli.Agent.Windows</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Sli.Agent.Core\Sli.Agent.Core.csproj" />
+    <PackageReference Include="System.Diagnostics.EventLog" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\sli_agent\ad_snapshot.ps1" LogicalName="ad_snapshot.ps1" />
+    <EmbeddedResource Include="..\..\..\sli_agent\gpo_snapshot.ps1" LogicalName="gpo_snapshot.ps1" />
+    <EmbeddedResource Include="..\..\..\scripts\ad_context\GpoReportContract.psm1" LogicalName="GpoReportContract.psm1" />
+    <EmbeddedResource Include="..\..\tests\vectors\ad-schema.json" LogicalName="ad-schema.json" />
+  </ItemGroup>
+</Project>

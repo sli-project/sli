@@ -1,0 +1,610 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
+import fixture from "../../../config/navigation_v3.json";
+import type { AgentCollectionHealth, OverviewWorkspace } from "../api/client";
+import type { NavigationEntryDto } from "../api/report-v2-types";
+
+const registryState = vi.hoisted(() => ({ disabled: [] as string[] }));
+
+const state = vi.hoisted(() => ({
+  overview: { collection_freshness: { state: "current", label: "", collection_error: false } } as Partial<OverviewWorkspace>,
+  access: {
+    subject: { username: "test.operator" },
+    capabilities: ["problem.view"],
+    reports: [{ report_key: "ad.users.v2", allowed: true }, { report_key: "vpn.audit", allowed: false }],
+  },
+}));
+
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client")>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      bootstrap: vi.fn().mockResolvedValue({ capabilities: [], principal: { username: "test.operator" } }),
+      v4Access: vi.fn().mockImplementation(async () => state.access),
+      reportsV2Catalog: vi.fn().mockImplementation(async () => ({
+        contract_id: "sli.report-catalog.v2", items: [],
+        navigation: { ...fixture, enabled_plugins: fixture.enabled_plugins.filter((id) => !registryState.disabled.includes(id)) },
+      })),
+      agentCollection: vi.fn().mockImplementation(async () => state.overview),
+      plugins: vi.fn().mockResolvedValue({ items: [], can_manage: false }),
+      setupStatus: vi.fn().mockResolvedValue({ sources: [], domains: [], domain_controllers: [] }),
+      agents: vi.fn().mockResolvedValue({ items: [] }),
+      logout: vi.fn().mockResolvedValue({}),
+    },
+  };
+});
+
+import { AppShell, useTimeZone } from "./App";
+import { useDateFormatters } from "../design-system/useDateFormatters";
+import { navigationBeforeLoad } from "./navigation";
+import { createAdminPlaceholderRoutes } from "./admin/navigation-pages";
+import { localeRuntime, setLocale, t } from "../i18n";
+
+function TimeZoneProbe() {
+  const { timeZone } = useTimeZone();
+  const { formatDateTime } = useDateFormatters();
+  return <output aria-label="Display time zone">{timeZone} · {formatDateTime("2026-11-14T00:00:00Z")}</output>;
+}
+
+async function renderShell(initialPath = "/", showTimeZone = false) {
+  const root = createRootRoute({ component: AppShell, beforeLoad: ({ location }) => navigationBeforeLoad(location) });
+  const page = (path: string) => createRoute({ getParentRoute: () => root, path, component: () => <><h1 data-page-heading tabIndex={-1}>Главная страница</h1>{showTimeZone ? <TimeZoneProbe/> : null}</> });
+  const search = createRoute({ getParentRoute: () => root, path: "/search", component: () => <h1 data-page-heading>Результаты поиска</h1> });
+  const routes = [page("/"), page("/plugins"), page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), ...createAdminPlaceholderRoutes(root), search];
+  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }) });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
+  await waitFor(() => expect(document.querySelector("[data-page-heading]")).not.toBeNull());
+  return client;
+}
+
+window.scrollTo = () => undefined;
+const adminAccess = {
+  subject: { username: "admin.user" },
+  capabilities: ["access.manage", "operations.view"],
+  reports: [{ report_key: "ad.users.v2", allowed: true }],
+};
+const userAccess = state.access;
+const fixtureAgent: AgentCollectionHealth["items"][number] = {
+  id: "00000000-0000-4000-8000-000000000001", host_id: "00000000-0000-4000-8000-000000000002", name: "fixture-host", domains: ["example.test"],
+  state: "error", connection: "never_seen", last_seen: null, last_packet_at: null,
+  policy_revision: 1, applied_policy_revision: 1, modules: [],
+  href: "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001",
+};
+function setLocaleQuiet(locale: "ru" | "en") {
+  const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
+  setLocale(locale);
+  reload.mockRestore();
+}
+afterEach(() => {
+  cleanup();
+  state.access = userAccess;
+  state.overview = { collection_freshness: { state: "current", label: "", collection_error: false } };
+  registryState.disabled = [];
+  localStorage.clear();
+  document.documentElement.removeAttribute("data-theme");
+  setLocaleQuiet("ru");
+  vi.useRealTimers();
+});
+
+describe("AppShell", () => {
+  it.each(["browser", "Asia/Vladivostok", "Europe/Berlin"])("restores the saved %s time zone after reload", async (zone) => {
+    localStorage.setItem("sli.timeZone", zone);
+    await renderShell("/settings", true);
+    const expected = new Date("2026-11-14T00:00:00Z").toLocaleString("ru-RU", {
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: zone === "browser" ? undefined : zone,
+    });
+    expect(screen.getByLabelText("Display time zone").textContent).toBe(`${zone} · ${expected}`);
+  });
+
+  it.each(["ru", "en"] as const)("shows the eight beta work destinations in order in %s", async (locale) => {
+    setLocaleQuiet(locale);
+    const entries = fixture.sections.flatMap((section) => section.groups.flatMap<NavigationEntryDto>((group) => group.entries));
+    state.access = { ...adminAccess,
+      reports: entries.flatMap((entry) => entry.reports ?? []).map((report_key) => ({ report_key, allowed: true })),
+      capabilities: entries.flatMap((entry) => entry.capabilities ?? []),
+    };
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
+    await within(nav).findByRole("link", { name: locale === "ru" ? "Администрирование" : "Administration" });
+    const regions = within(nav).getAllByRole("region");
+    expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
+      "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
+      "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
+    ]);
+    expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
+    expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
+  });
+
+  it.each([
+    "/admin/plugins/sli.workstations", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
+    "/admin/update", "/admin/activity", "/report-studio", "/plugins",
+  ])("opens home for hidden %s for both scoped users and administrators", async (path) => {
+    for (const grants of [userAccess, adminAccess]) {
+      state.access = grants;
+      const client = await renderShell(path);
+      const nav = screen.getByRole("navigation", { name: "Разделы" });
+      await waitFor(() => expect(within(nav).getByRole("link", { name: "Главная" }).getAttribute("aria-current")).toBe("page"));
+      expect(screen.queryByRole("tab")).toBeNull();
+      expect(within(screen.getByRole("main")).getByRole("heading", { name: "Главная страница" })).toBeTruthy();
+      cleanup();
+      client.clear();
+    }
+  });
+
+  const placeholderPages = [
+    ["/admin/language-time", "Язык и время", "Language & time"],
+  ];
+  it.each((["ru", "en"] as const).flatMap((locale) => placeholderPages.map(([path, ru, en]) => [locale, path, locale === "ru" ? ru : en] as const)))("shows an honest development placeholder in %s on %s", async (locale, path, title) => {
+    setLocaleQuiet(locale);
+    state.access = adminAccess;
+    await renderShell(path);
+    const main = screen.getByRole("main");
+    expect(await within(main).findByText(locale === "ru" ? "В разработке" : "In development")).toBeTruthy();
+    expect(within(main).getByRole("heading", { name: title })).toBeTruthy();
+    expect(within(main).queryByRole("table")).toBeNull();
+    expect(within(main).queryByRole("alert")).toBeNull();
+    expect(within(main).queryByRole("button")).toBeNull();
+    const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
+    expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual([path.startsWith("/admin/plugins/") ? path : "/settings"]);
+  });
+
+  it.each([...placeholderPages, ["/admin/status"]])("keeps a direct visit to %s denied without admin grants", async (path) => {
+    await renderShell(path);
+    const main = screen.getByRole("main");
+    await waitFor(() => expect(main.querySelector('[data-state="denied"]')).not.toBeNull());
+    expect(within(main).queryByText("В разработке")).toBeNull();
+  });
+
+  it.each(["sli.ad", "sli.gpo"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
+    const path = `/admin/plugins/${id}`;
+    await renderShell(path);
+    await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());
+    expect(screen.queryByRole("tab")).toBeNull();
+    cleanup();
+    state.access = adminAccess;
+    await renderShell(path);
+    expect(await screen.findByRole("tab", { name: "Подключение" })).toBeTruthy();
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(within(screen.getByRole("main")).queryByText("В разработке")).toBeNull();
+  });
+
+  it("keeps the old setup, readiness and platform settings reachable from Status", async () => {
+    state.access = { ...adminAccess, reports: [{ report_key: "operations.readiness", allowed: true }] };
+    await renderShell("/admin/status");
+    const main = screen.getByRole("main");
+    fireEvent.click(await within(main).findByText("Другие экраны"));
+    expect(within(main).getByRole("link", { name: "Первичная настройка" }).getAttribute("href")).toBe("/setup");
+    expect(within(main).getByRole("link", { name: "Готовность платформы" }).getAttribute("href")).toBe("/project-readiness");
+    expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
+    fireEvent.click(within(main).getByRole("link", { name: "Первичная настройка" }));
+    await screen.findByRole("heading", { name: "Главная страница" });
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    expect(within(nav).getByRole("link", { name: "Состояние системы" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("preserves scoped platform settings access without exposing other admin destinations", async () => {
+    state.access = { ...userAccess, capabilities: [], reports: [{ report_key: "decoys.registry", allowed: true }] };
+    await renderShell("/admin/status");
+    const main = screen.getByRole("main");
+    expect(await within(main).findByRole("heading", { name: "Состояние системы" })).toBeTruthy();
+    fireEvent.click(within(main).getByText("Другие экраны"));
+    expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
+  });
+
+  it.each([
+    ["/access", ["/access-requests", "/admin"]],
+    ["/admin/language-time", ["/settings"]],
+  ] as const)("keeps related old pages reachable from %s", async (path, destinations) => {
+    state.access = adminAccess;
+    await renderShell(path);
+    const main = screen.getByRole("main");
+    fireEvent.click(await within(main).findByText("Другие экраны"));
+    expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
+  });
+
+  it("refreshes collection status after a transient unavailable read without navigation", async () => {
+    state.overview = { agent_collection: { state: "unavailable", checked_at_utc: "2026-10-13T00:00:00Z", items: [], active_agents: 0, current_agents: 0 } };
+    const client = await renderShell();
+    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+    vi.useFakeTimers();
+    await act(async () => { await client.invalidateQueries({ queryKey: ["overview", "shell"] }); });
+    state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-13T00:00:30Z", active_agents: 1, current_agents: 0,
+      items: [{ ...fixtureAgent, state: "lagging", connection: "online" }] } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_010); });
+    expect(within(screen.getByRole("banner")).getByRole("status").textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" }));
+    state.overview = { agent_collection: { state: "current", checked_at_utc: "2026-10-13T00:01:00Z", active_agents: 1, current_agents: 1,
+      items: [{ ...fixtureAgent, state: "current", connection: "online" }] } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_010); });
+    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+  });
+
+  it("names the unregistered agent by host and domain with UUIDs only in its tooltip", async () => {
+    state.access = adminAccess;
+    state.overview = { agent_collection: { state: "error", checked_at_utc: "2026-10-10T12:00:00Z",
+      items: [fixtureAgent], active_agents: 1, current_agents: 0 } };
+    await renderShell();
+    const status = await within(screen.getByRole("banner")).findByRole("status");
+    await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
+    fireEvent.click(within(status).getByRole("button"));
+    const drawer = screen.getByRole("dialog");
+    expect(drawer.textContent).toContain("Агент fixture-host · example.test: агент не зарегистрирован");
+    expect(drawer.textContent).toContain("Сбор нарушен");
+    const link = within(drawer).getByRole("link", { name: t("operations.agent_collection.open") });
+    expect(link.getAttribute("href")).toBe(fixtureAgent.href);
+    expect(link.getAttribute("title")).toContain(fixtureAgent.id);
+    expect(link.getAttribute("title")).toContain(fixtureAgent.host_id);
+    expect(status.textContent).not.toContain(fixtureAgent.id);
+    expect(status.textContent).toContain("fixture-host");
+  });
+
+  it("keeps the data failure message after an agent has contacted the platform", async () => {
+    state.access = adminAccess;
+    state.overview = { agent_collection: { state: "error", checked_at_utc: "2026-10-10T12:00:00Z",
+      items: [{ ...fixtureAgent, connection: "offline", last_seen: "2026-10-09T12:00:00Z" }], active_agents: 1, current_agents: 0 } };
+    await renderShell();
+    const status = await within(screen.getByRole("banner")).findByRole("status");
+    await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
+    fireEvent.click(within(status).getByRole("button"));
+    const drawer = screen.getByRole("dialog");
+    expect(drawer.textContent).toContain("Агент fixture-host · example.test: нет данных или импорта");
+    expect(drawer.textContent).not.toContain("агент не зарегистрирован");
+  });
+
+  it("does not make an undated summary confirmation green", async () => {
+    await renderShell();
+    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+  });
+
+  it("keeps confirmed collection when a module is paused in a healthy agent policy", async () => {
+    state.overview = { agent_collection: { state: "current", checked_at_utc: "2026-10-10T12:00:00Z",
+      items: [{ ...fixtureAgent, state: "current", connection: "online", modules: [
+        { module_id: "sli.vpn-nps", channels: [{ channel: "Security", state: "paused",
+          last_packet_at: null, last_import_at: null, import_lag_seconds: null, budget_seconds: 900 }] },
+        { module_id: "sli.workstations", channels: [{ channel: "Security", state: "current",
+          last_packet_at: "2026-10-10T12:00:00Z", last_import_at: "2026-10-10T12:00:00Z",
+          import_lag_seconds: 0, budget_seconds: 900 }] },
+      ] }], active_agents: 1, current_agents: 1 } };
+    await renderShell();
+    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+  });
+  it("exposes the search icon as a visible keyboard submit action", async () => {
+    await renderShell();
+    const search = screen.getByRole("search");
+    const submit = within(search).getByRole("button", { name: "Выполнить поиск" });
+    expect(submit.getAttribute("type")).toBe("submit");
+    expect(submit.classList.contains("sli-ds-sr-only")).toBe(false);
+    expect(submit.classList.contains("sli-ds-shell__search-submit")).toBe(true);
+    submit.focus();
+    expect(document.activeElement).toBe(submit);
+  });
+
+  it.each(["current", "paused", "disabled"] as const)("ignores retired channel failures with %s agents", async (agentState) => {
+    state.overview = {
+      collection_freshness: { state: "error", label: "", collection_error: true },
+      collection_progress: { status: "blocked", block_reason: "windows_event_log_access_denied" },
+      sources: [{ hostname: "fixture-retired", collection_state: "error" }],
+      agent_collection: { state: agentState === "current" ? "current" : "unknown", checked_at_utc: "2026-10-10T12:00:00Z",
+        items: [{ ...fixtureAgent, state: agentState }], active_agents: agentState === "current" ? 1 : 0,
+        current_agents: agentState === "current" ? 1 : 0 },
+    };
+    await renderShell();
+    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+  });
+
+  it("renders the GPO section separately and removes it when GPO is disabled", async () => {
+    state.access = { ...userAccess, reports: [...userAccess.reports, { report_key: "ad.gpo.v2", allowed: true }] };
+    const client = await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    const gpo = await within(nav).findByRole("region", { name: "Групповые политики" });
+    expect(within(gpo).getByRole("link", { name: "Групповые политики" }).getAttribute("href")).toBe("/report/ad.gpo.v2");
+    const ad = within(nav).getByRole("region", { name: "Active Directory" });
+    expect(within(ad).queryByRole("link", { name: "Групповые политики" })).toBeNull();
+    registryState.disabled = ["sli.gpo"];
+    await client.invalidateQueries({ queryKey: ["report-v2"] });
+    await waitFor(() => expect(within(nav).queryByRole("region", { name: "Групповые политики" })).toBeNull());
+    expect(within(nav).getByRole("link", { name: "Пользователи" })).toBeTruthy();
+  });
+  it("updates menu visibility when the shared report catalog is invalidated", async () => {
+    const client = await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Пользователи" })).toBeTruthy());
+    registryState.disabled = ["sli.ad"];
+    await client.invalidateQueries({ queryKey: ["report-v2"] });
+    await waitFor(() => expect(within(nav).queryByRole("link", { name: "Пользователи" })).toBeNull());
+    expect(within(nav).getByRole("link", { name: "Проблемы" })).toBeTruthy();
+  });
+  it("hides the disabled AD section while keeping permitted core navigation", async () => {
+    registryState.disabled = ["sli.ad"];
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Проблемы" })).toBeTruthy());
+    expect(within(nav).queryByRole("link", { name: "Пользователи" })).toBeNull();
+    expect(within(nav).queryByText("Active Directory")).toBeNull();
+  });
+
+  it("builds navigation only from sections the access allows and marks the active item", async () => {
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Пользователи" })).toBeTruthy());
+    expect(within(nav).getByRole("link", { name: "Главная" }).getAttribute("aria-current")).toBe("page");
+    expect(within(nav).getByRole("link", { name: "Проблемы" })).toBeTruthy();
+    expect(within(nav).queryByRole("link", { name: "VPN-подключения" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Доступ" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Администрирование/ })).toBeNull();
+  });
+
+  it("keeps landmarks, skip link and global search", async () => {
+    await renderShell();
+    expect(screen.getByRole("link", { name: "К основному содержимому" }).getAttribute("href")).toBe("#main");
+    expect(screen.getByRole("main")).toBeTruthy();
+    expect(screen.getByRole("search")).toBeTruthy();
+    expect(screen.getByRole("searchbox", { name: "Глобальный поиск" })).toBeTruthy();
+  });
+
+  it.each(["Enter", "submit"])("opens global results from the top search using %s without a separate objects entry", async (method) => {
+    state.access = { ...userAccess, capabilities: ["problem.view", "entity.view", "objects.view"] };
+    await renderShell();
+    const input = screen.getByRole("searchbox", { name: "Глобальный поиск" });
+    fireEvent.change(input, { target: { value: "synthetic" } });
+    if (method === "Enter") fireEvent.keyDown(input, { key: "Enter" });
+    else fireEvent.submit(screen.getByRole("search"));
+    expect(await screen.findByRole("heading", { name: "Результаты поиска" })).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    expect(within(nav).queryByRole("link", { name: "Объекты и сущности" })).toBeNull();
+  });
+
+  it("opens the navigation from the mobile toggle and closes it on Escape", async () => {
+    await renderShell();
+    const shell = document.querySelector("[data-sli-shell]") as HTMLElement;
+    const toggle = screen.getByRole("button", { name: "Открыть меню" });
+    expect(shell.dataset.menuOpen).toBe("false");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(shell.dataset.menuOpen).toBe("true");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(shell.dataset.menuOpen).toBe("false");
+  });
+
+  it("shows the profile menu with logout", async () => {
+    await renderShell();
+    const profile = await screen.findByRole("button", { name: /test\.operator/ });
+    fireEvent.click(profile);
+    expect(screen.getByRole("menuitem", { name: "Выйти из системы" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("sets the theme from the profile menu and remembers it", async () => {
+    await renderShell();
+    fireEvent.click(await screen.findByRole("button", { name: /test\.operator/ }));
+    expect(screen.getByRole("menuitemradio", { name: "Как в системе" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Тёмная" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(localStorage.getItem("sli.theme")).toBe("dark");
+    expect(screen.getByRole("menuitemradio", { name: "Тёмная" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Светлая" }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(localStorage.getItem("sli.theme")).toBe("light");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Как в системе" }));
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(localStorage.getItem("sli.theme")).toBeNull();
+  });
+
+  it("switches the interface language and stores it", async () => {
+    const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
+    await renderShell();
+    fireEvent.click(await screen.findByRole("button", { name: /test\.operator/ }));
+    expect(screen.getByRole("menuitemradio", { name: "Русский" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
+    expect(localStorage.getItem("sli.locale")).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
+    expect(reload).toHaveBeenCalledOnce();
+    reload.mockRestore();
+  });
+
+  it("renders the shell in English when the locale is en", async () => {
+    setLocaleQuiet("en");
+    state.access = { ...userAccess, reports: [...userAccess.reports, { report_key: "ad.gpo.v2", allowed: true }] };
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Sections" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Users" })).toBeTruthy());
+    expect(within(nav).getByText("Active Directory")).toBeTruthy();
+    const gpo = within(nav).getByRole("region", { name: "Group policies" });
+    expect(within(gpo).getByRole("link", { name: "Group policies" }).getAttribute("href")).toBe("/report/ad.gpo.v2");
+    expect(within(nav).getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.getByRole("searchbox", { name: "Global search" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /test\.operator/ }));
+    expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
+  });
+
+  it.each(["ru", "en"] as const)("opens all permitted admin groups from the work sidebar and returns on mobile in %s", async (locale) => {
+    setLocaleQuiet(locale);
+    state.access = { ...adminAccess, capabilities: [...adminAccess.capabilities, "reports.design"],
+      reports: [...adminAccess.reports, { report_key: "operations.readiness", allowed: true }] };
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
+    const entry = await within(nav).findByRole("link", { name: locale === "ru" ? "Администрирование" : "Administration" });
+    expect(entry.getAttribute("href")).toBe("/admin/status");
+    fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Открыть меню" : "Open menu" }));
+    fireEvent.click(entry);
+    const titles = locale === "ru" ? ["База"] : ["Core"];
+    for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
+    expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
+    ]);
+    expect(within(nav).getAllByRole("link").slice(1).map((link) => link.textContent)).toEqual(locale === "ru" ? [
+      "Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время",
+    ] : [
+      "System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time",
+    ]);
+    expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual(["/admin/status"]);
+    expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Открыть меню" : "Open menu" }));
+    fireEvent.click(within(nav).getByRole("link", { name: locale === "ru" ? /К работе/ : /Back to work/ }));
+    await within(nav).findByRole("link", { name: locale === "ru" ? "Администрирование" : "Administration" });
+    expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");
+  });
+
+  it("links scoped notification readers only to their permitted admin destination", async () => {
+    state.access = { ...userAccess, capabilities: [], reports: [{ report_key: "notifications.deliveries", allowed: true }] };
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    const entry = await within(nav).findByRole("link", { name: "Администрирование" });
+    expect(entry.getAttribute("href")).toBe("/notifications");
+    fireEvent.click(entry);
+    await within(nav).findByRole("link", { name: /К работе/ });
+    expect(within(nav).getAllByRole("group").map((group) => group.getAttribute("aria-label"))).toEqual(["База"]);
+    expect(within(nav).queryByRole("link", { name: "Доступ" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Агенты" })).toBeNull();
+  });
+
+  it("keeps notification settings in the admin zone and gear for admins", async () => {
+    state.access = adminAccess;
+    await renderShell();
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Пользователи" })).toBeTruthy());
+    expect(within(nav).queryByRole("link", { name: "Доступ" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Настройки платформы" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Сбор и хранилище" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Каталог отчётов" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: /К работе/ })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "Оповещения" })).toBeNull();
+    const gear = await screen.findByRole("button", { name: "Администрирование" });
+    expect(gear.getAttribute("title")).toBe("Администрирование");
+    expect(gear.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByText("Пользовательский вид")).toBeNull();
+  });
+
+  it("opens the admin zone sidebar from the gear", async () => {
+    state.access = adminAccess;
+    await renderShell();
+    fireEvent.click(await screen.findByRole("button", { name: "Администрирование" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Администрирование" }));
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: /К работе/ })).toBeTruthy());
+    expect(within(nav).getByRole("link", { name: "Хранение" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Администрирование" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it.each(["ru", "en"] as const)("opens notifications from the settings gear in %s", async (locale) => {
+    setLocaleQuiet(locale);
+    state.access = adminAccess;
+    await renderShell();
+    const gear = await screen.findByRole("button", { name: locale === "ru" ? "Администрирование" : "Administration" });
+    fireEvent.click(gear);
+    const link = screen.getByRole("menuitem", { name: locale === "ru" ? "Оповещения" : "Notifications" });
+    expect(link.getAttribute("href")).toBe("/notifications");
+    fireEvent.click(link);
+    await waitFor(() => expect(gear.getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.queryByRole("menu")).toBeNull();
+    const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
+    const links = within(nav).getAllByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("aria-current")).toBe("page");
+  });
+
+  it("closes the settings menu with Escape or an outside click", async () => {
+    state.access = adminAccess;
+    await renderShell();
+    const gear = await screen.findByRole("button", { name: "Администрирование" });
+    fireEvent.click(gear);
+    expect(gear.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(gear);
+    fireEvent.mouseDown(screen.getByRole("main"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  for (const path of ["/access", "/access/42", "/access-requests", "/admin", "/platform-settings", "/settings", "/setup", "/project-readiness", "/notifications"]) {
+    it(`renders the admin sidebar with the way back on ${path}`, async () => {
+      state.access = { ...adminAccess, reports: [...adminAccess.reports, { report_key: "operations.readiness", allowed: true }] };
+      await renderShell(path);
+      const nav = screen.getByRole("navigation", { name: "Разделы" });
+      await waitFor(() => expect(within(nav).getByRole("link", { name: "Состояние системы" })).toBeTruthy());
+      expect(within(nav).getByRole("link", { name: /К работе/ }).getAttribute("href")).toBe("/");
+      expect(within(nav).getByRole("link", { name: "Пользователи и роли" })).toBeTruthy();
+      const activeHref = ["/access", "/access/42", "/admin", "/access-requests"].includes(path) ? "/access" : path === "/settings" ? "/settings" : ["/setup", "/platform-settings", "/project-readiness"].includes(path) ? "/admin/status" : path;
+      expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual([activeHref]);
+      expect(within(nav).queryByRole("link", { name: "Главная" })).toBeNull();
+      expect(within(nav).queryByRole("link", { name: "Пользователи" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Администрирование" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByText("администрирование")).toBeTruthy();
+    });
+  }
+
+  it("keeps pages outside the navigation in the work zone", async () => {
+    state.access = adminAccess;
+    await renderShell("/objects");
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: "Главная" })).toBeTruthy());
+    expect(within(nav).queryByRole("link", { name: /К работе/ })).toBeNull();
+    expect(screen.getByText("рабочее пространство")).toBeTruthy();
+  });
+
+  it("hides the gear from users without administration entries", async () => {
+    await renderShell();
+    await screen.findByRole("button", { name: /test\.operator/ });
+    expect(screen.queryByRole("button", { name: "Администрирование" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Администрирование" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Оповещения" })).toBeNull();
+  });
+
+  it("shows the zone sidebar in the mobile menu", async () => {
+    state.access = adminAccess;
+    await renderShell("/access");
+    fireEvent.click(screen.getByRole("button", { name: "Открыть меню" }));
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name: /К работе/ })).toBeTruthy());
+  });
+});
+
+
+
+it.each(["error", "lagging"] as const)("never links %s collection status to agents for operations-only access", async (agentState) => {
+  state.access = { ...userAccess, capabilities: ["operations.view"] };
+  state.overview = { agent_collection: { state: agentState === "error" ? "error" : "partial", checked_at_utc: "2026-10-10T12:00:00Z", items: [{ ...fixtureAgent, state: agentState }], active_agents: 1, current_agents: 0 } };
+  await renderShell();
+  const status = await within(screen.getByRole("banner")).findByRole("status");
+  await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
+  fireEvent.click(within(status).getByRole("button"));
+  const drawer = screen.getByRole("dialog");
+  expect(drawer.textContent).toContain("fixture-host");
+  expect(within(drawer).queryByRole("link")).toBeNull();
+});
+
+it("links collection status for a platform owner without access.manage", async () => {
+  state.access = Object.assign({ ...userAccess, capabilities: [] }, { platform_owner: true });
+  state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-10T12:00:00Z", items: [{ ...fixtureAgent, state: "lagging" }], active_agents: 1, current_agents: 0 } };
+  await renderShell();
+  const status = await within(screen.getByRole("banner")).findByRole("status");
+  await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
+  fireEvent.click(within(status).getByRole("button"));
+  const drawer = screen.getByRole("dialog");
+  expect(drawer.textContent).toContain("fixture-host");
+  expect(within(drawer).getByRole("link", { name: t("operations.agent_collection.open") }).getAttribute("href")).toBe(fixtureAgent.href);
+});
+
+
+it("counts several silent sources in the shell and opens their list", async () => {
+  state.access = adminAccess;
+  state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-13T00:00:00Z", active_agents: 3, current_agents: 1,
+    items: [{ ...fixtureAgent, state: "lagging" }, { ...fixtureAgent, id: "second-agent", name: "second-host", state: "unknown" },
+      { ...fixtureAgent, id: "healthy-agent", name: "healthy-host", state: "current" }] } };
+  await renderShell();
+  const status = await within(screen.getByRole("banner")).findByRole("status");
+  expect(status.textContent).toBe(t("shell.collection.silent_many", { count: 2 }));
+  fireEvent.click(within(status).getByRole("button"));
+  const drawer = screen.getByRole("dialog");
+  expect(within(drawer).getByRole("heading", { name: "fixture-host" })).toBeTruthy();
+  expect(within(drawer).getByRole("heading", { name: "second-host" })).toBeTruthy();
+  expect(drawer.textContent).not.toContain("healthy-host");
+});
+

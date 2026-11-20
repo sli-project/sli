@@ -1,0 +1,281 @@
+[
+  {
+    "input": {
+      "name": "owner",
+      "owner": true
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "viewer",
+      "role": "viewer"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "operator",
+      "role": "operator"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "admin",
+      "role": "admin"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "anonymous",
+      "role": null
+    },
+    "status": 401,
+    "body": {
+      "error": "authentication_required"
+    },
+    "access_reads": 0,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "unknown_role",
+      "role": "report_reader"
+    },
+    "status": 403,
+    "body": {
+      "error": "insufficient_permissions"
+    },
+    "access_reads": 0,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "missing_capability",
+      "grant": false
+    },
+    "status": 403,
+    "body": {
+      "error": "insufficient_capability",
+      "required_capability": "workspace.view"
+    },
+    "access_reads": 1,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "explicit_deny",
+      "effect": "deny"
+    },
+    "status": 403,
+    "body": {
+      "error": "explicit_deny",
+      "required_capability": "workspace.view"
+    },
+    "access_reads": 1,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "scoped_allow",
+      "scope": {
+        "kind": "domain",
+        "ids": [
+          1
+        ]
+      }
+    },
+    "status": 403,
+    "body": {
+      "error": "resource_context_required",
+      "required_capability": "workspace.view"
+    },
+    "access_reads": 1,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "scoped_deny",
+      "effect": "deny",
+      "scope": {
+        "kind": "domain",
+        "ids": [
+          1
+        ]
+      }
+    },
+    "status": 403,
+    "body": {
+      "error": "resource_context_required",
+      "required_capability": "workspace.view"
+    },
+    "access_reads": 1,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "insecure_transport",
+      "secure": false
+    },
+    "status": 403,
+    "body": {
+      "error": "secure_transport_required"
+    },
+    "access_reads": 0,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "auth_disabled",
+      "auth_required": false,
+      "owner": true
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "auth_disabled_denied",
+      "auth_required": false,
+      "grant": false
+    },
+    "status": 403,
+    "body": {
+      "error": "insufficient_capability",
+      "required_capability": "workspace.view"
+    },
+    "access_reads": 1,
+    "errors": []
+  },
+  {
+    "input": {
+      "name": "query_0",
+      "query": "?refresh=1"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "query_1",
+      "query": "?refresh=true&force=yes"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "query_2",
+      "query": "?refresh=&refresh=1"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "query_3",
+      "query": "?view=security&limit=-1"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "query_4",
+      "query": "?view=%3Cscript%3E&unknown=x"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  },
+  {
+    "input": {
+      "name": "query_5",
+      "query": "?format=html"
+    },
+    "status": 500,
+    "body": {
+      "error": "internal_server_error",
+      "internal_error_id": "reference-error-id"
+    },
+    "access_reads": 1,
+    "errors": [
+      "storage_v2_role_views_requires_preloaded_snapshot"
+    ]
+  }
+]

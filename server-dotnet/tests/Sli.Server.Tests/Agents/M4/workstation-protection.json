@@ -1,0 +1,341 @@
+{
+  "positive": [
+    {
+      "name": "state-only",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "available",
+              "components": {
+                "antivirus_enabled": true,
+                "real_time_protection_enabled": false,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": true,
+                "nis_enabled": null,
+                "tamper_protected": false
+              }
+            }
+          }
+        }
+      },
+      "rows": [],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "result": {
+        "observed": 0,
+        "inserted": 0,
+        "ignored": 0
+      },
+      "observations": [],
+      "state_id": "7fd4e8a4a32c53429aa56478e78c7322c9e06ce2d9bb50f3514378e24d9078f9",
+      "state_hash": "78a78c4403ddb1f099c139fecffd554fe658c93b6ce93c02f0a21256c0d3efdc"
+    },
+    {
+      "name": "mixed",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 1
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 1
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Microsoft-Windows-Windows Defender/Operational",
+              "provider_name": "Microsoft-Windows-Windows Defender",
+              "event_id": 5001,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Windows Defender'/><EventID>5001</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Windows Defender/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData/></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "unavailable",
+              "components": {
+                "antivirus_enabled": null,
+                "real_time_protection_enabled": null,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": null,
+                "nis_enabled": null,
+                "tamper_protected": null
+              }
+            }
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "provider_name": "Microsoft-Windows-Windows Defender",
+          "event_id": 5001,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Windows Defender'/><EventID>5001</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Windows Defender/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData/></Event>"
+        }
+      ],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "result": {
+        "observed": 1,
+        "inserted": 1,
+        "ignored": 0
+      },
+      "observations": [
+        {
+          "id": "9a3d55ef7bd683d6d300c85776791476fbc578a26148a41e8b7b9cb7daeff638",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "protection",
+            "semantic_type": "security.protection.disabled",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            },
+            "facts": {
+              "protection_component": "real_time"
+            },
+            "quality": {
+              "raw_event_mutated": false,
+              "observation_only": false,
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 5001,
+            "channel": "Microsoft-Windows-Windows Defender/Operational",
+            "provider_name": "Microsoft-Windows-Windows Defender",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 1,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "0caf792493580a960a5fee3cd667a3242e96fa596dd3a3423e86d45184c686d5"
+          },
+          "hash": "45912fd625f71432128cd2ada67a0390b2fb7e3ec811632cff7c76c0d79a42de"
+        }
+      ],
+      "state_id": "7fd4e8a4a32c53429aa56478e78c7322c9e06ce2d9bb50f3514378e24d9078f9",
+      "state_hash": "0a282d16e2fca5dc46468b246a0ea6212bb4e1c20892061122199a3ba86c2b76"
+    }
+  ],
+  "negative": [
+    {
+      "name": "wrong-channel",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "available",
+              "components": {
+                "antivirus_enabled": true,
+                "real_time_protection_enabled": false,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": true,
+                "nis_enabled": null,
+                "tamper_protected": false
+              }
+            }
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "numeric-bool",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "available",
+              "components": {
+                "antivirus_enabled": 1,
+                "real_time_protection_enabled": false,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": true,
+                "nis_enabled": null,
+                "tamper_protected": false
+              }
+            }
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "extra",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "available",
+              "components": {
+                "antivirus_enabled": true,
+                "real_time_protection_enabled": false,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": true,
+                "nis_enabled": null,
+                "tamper_protected": false,
+                "extra": null
+              }
+            }
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "unavailable-true",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Microsoft-Windows-Windows Defender/Operational",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "protection_state": {
+              "state": "unavailable",
+              "components": {
+                "antivirus_enabled": true,
+                "real_time_protection_enabled": false,
+                "behavior_monitor_enabled": null,
+                "ioav_protection_enabled": true,
+                "nis_enabled": null,
+                "tamper_protected": false
+              }
+            }
+          }
+        }
+      },
+      "accepted": false
+    }
+  ]
+}

@@ -1,0 +1,2968 @@
+[
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "средняя",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "Не удалось определить"
+        ],
+        [
+          "Кто выполнил изменение",
+          "Не удалось определить"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Изменение задания планировщика на контроллере домена требует проверки, если задание неизвестно, создано недавно, запускает нестандартный файл или изменено обычной пользовательской/административной учётной записью.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "Не извлечены обязательные роли карточки: object, initiator.",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "medium",
+      "classification_origin": "catalog_base",
+      "card_completeness": "partial",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "expected_role_missing:object",
+        "expected_role_missing:initiator"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "medium",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "средняя"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "fixture-initiator",
+        "TaskName": "fixture-object",
+        "RunAs": "fixture-account",
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "high",
+      "tier": "critical",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.0",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "fixture-object"
+        ],
+        [
+          "Кто выполнил изменение",
+          "fixture-initiator"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Высокий риск: задача на контроллере домена связана с признаками запуска кода из PowerShell, cmd, скрипта, временного, пользовательского или сетевого каталога.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "critical",
+      "base_risk": "medium",
+      "final_security_severity": "high",
+      "assessment_confidence": "high",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:0"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName",
+        "server",
+        "event_data"
+      ],
+      "final_risk": "high",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "fixture-initiator",
+        "TaskName": "fixture-object",
+        "RunAs": "fixture-account",
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "high",
+      "tier": "critical",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.0",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "fixture-object"
+        ],
+        [
+          "Кто выполнил изменение",
+          "fixture-initiator"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Высокий риск: задача на контроллере домена связана с признаками запуска кода из PowerShell, cmd, скрипта, временного, пользовательского или сетевого каталога.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "critical",
+      "base_risk": "medium",
+      "final_security_severity": "high",
+      "assessment_confidence": "high",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:0"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName",
+        "server",
+        "event_data"
+      ],
+      "final_risk": "high",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "SYSTEM",
+        "TaskName": "\\Microsoft\\Windows\\Test",
+        "RunAs": "SYSTEM"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.1",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "низкая",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "\\Microsoft\\Windows\\Test"
+        ],
+        [
+          "Кто выполнил изменение",
+          "SYSTEM"
+        ],
+        [
+          "Учётная запись",
+          "SYSTEM"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Имя находится в пространстве Microsoft\\\\Windows и инициатор похож на SYSTEM/машинную учётную запись, но штатность требует проверки XML, action, автора и подписи запускаемого файла.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "low",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:1"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName"
+      ],
+      "final_risk": "medium",
+      "confidence": "low",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "низкая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 5136,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменён атрибут объекта каталога",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменён атрибут объекта каталога"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+      "checks": [
+        "Проверить инициатора, ObjectGUID, имя атрибута, операцию и исходное событие."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:5136.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "policy_change",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 5136,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {}
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменён атрибут объекта каталога",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменён атрибут объекта каталога"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+      "checks": [
+        "Проверить инициатора, ObjectGUID, имя атрибута, операцию и исходное событие."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:5136.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "policy_change",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {}
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 106,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Task Scheduler: задача зарегистрирована",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Task Scheduler: задача зарегистрирована"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+      "checks": [
+        "Проверить автора, action, RunAs и легитимность создания задачи."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 106,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Task Scheduler: задача зарегистрирована",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Task Scheduler: задача зарегистрирована"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+      "checks": [
+        "Проверить автора, action, RunAs и легитимность создания задачи."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 106,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Task Scheduler: задача зарегистрирована",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Task Scheduler: задача зарегистрирована"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+      "checks": [
+        "Проверить автора, action, RunAs и легитимность создания задачи."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 106,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {}
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Task Scheduler: задача зарегистрирована",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Task Scheduler: задача зарегистрирована"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+      "checks": [
+        "Проверить автора, action, RunAs и легитимность создания задачи."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "средняя",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "Не удалось определить"
+        ],
+        [
+          "Кто выполнил изменение",
+          "Не удалось определить"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Изменение задания планировщика на контроллере домена требует проверки, если задание неизвестно, создано недавно, запускает нестандартный файл или изменено обычной пользовательской/административной учётной записью.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "Не извлечены обязательные роли карточки: object, initiator.",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "medium",
+      "classification_origin": "catalog_base",
+      "card_completeness": "partial",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "expected_role_missing:object",
+        "expected_role_missing:initiator"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "medium",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "средняя"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "fixture-initiator",
+        "TaskName": "fixture-object",
+        "RunAs": "fixture-account",
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "high",
+      "tier": "critical",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.0",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "fixture-object"
+        ],
+        [
+          "Кто выполнил изменение",
+          "fixture-initiator"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Высокий риск: задача на контроллере домена связана с признаками запуска кода из PowerShell, cmd, скрипта, временного, пользовательского или сетевого каталога.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "critical",
+      "base_risk": "medium",
+      "final_security_severity": "high",
+      "assessment_confidence": "high",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:0"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName",
+        "server",
+        "event_data"
+      ],
+      "final_risk": "high",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "fixture-initiator",
+        "TaskName": "fixture-object",
+        "RunAs": "fixture-account",
+        "Command": "powershell.exe"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "high",
+      "tier": "critical",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.0",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "fixture-object"
+        ],
+        [
+          "Кто выполнил изменение",
+          "fixture-initiator"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Высокий риск: задача на контроллере домена связана с признаками запуска кода из PowerShell, cmd, скрипта, временного, пользовательского или сетевого каталога.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "critical",
+      "base_risk": "medium",
+      "final_security_severity": "high",
+      "assessment_confidence": "high",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:0"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName",
+        "server",
+        "event_data"
+      ],
+      "final_risk": "high",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 140,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "server": "dc-fixture",
+      "event_data": {
+        "UserName": "SYSTEM",
+        "TaskName": "\\Microsoft\\Windows\\Test",
+        "RunAs": "SYSTEM"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Изменено задание планировщика Windows",
+      "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.title",
+      "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.summary.rule.1",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "низкая",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Изменено задание планировщика Windows"
+        ],
+        [
+          "Задание",
+          "\\Microsoft\\Windows\\Test"
+        ],
+        [
+          "Кто выполнил изменение",
+          "SYSTEM"
+        ],
+        [
+          "Учётная запись",
+          "SYSTEM"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "Регистрация задания успешно обновлена"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.object_label",
+        "facts.initiator",
+        "facts.account",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Имя находится в пространстве Microsoft\\\\Windows и инициатор похож на SYSTEM/машинную учётную запись, но штатность требует проверки XML, action, автора и подписи запускаемого файла.",
+      "checks": [
+        "Открыть текущее определение задания и посмотреть запускаемую команду.",
+        "Проверить путь и цифровую подпись запускаемого файла.",
+        "Найти события создания, удаления, включения и отключения этого же задания.",
+        "Показать изменения этого задания за выбранный период.",
+        "Проверить другие события той же учётной записи около указанного времени."
+      ],
+      "check_codes": [
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.0",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.1",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.2",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.3",
+        "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:140.checks.4"
+      ],
+      "related_event_ids": [
+        100,
+        102,
+        106,
+        129,
+        140,
+        200,
+        201
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "service_task",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "low",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:1"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath",
+        "RunAs",
+        "TaskUserName"
+      ],
+      "final_risk": "medium",
+      "confidence": "low",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "низкая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4656,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "info",
+      "tier": "technical",
+      "title": "File audit evidence 4656",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4656.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4656.summary",
+      "risk": "Информация",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Событие",
+          "File audit evidence 4656"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Source-native file-server evidence",
+      "checks": [
+        "Verify related evidence and coverage before interpreting an operation"
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4656.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.file-audit",
+        "version": "1.0.0",
+        "display_name": "Microsoft file-server audit",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [],
+        "entity_contract": "file-audit.evidence.v1",
+        "analysis_contract": "file-audit.observation.v1",
+        "normalizer": "windows-file-audit-v1",
+        "manifest_sha256": "6d2697a8b6a17896d485dbf66d3ce51facbe1f1e0219d0cedea37e18ad690019",
+        "capabilities": [
+          "file-audit.evidence"
+        ]
+      },
+      "category": "other",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_security_severity": "info",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4656,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {}
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "info",
+      "tier": "technical",
+      "title": "File audit evidence 4656",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4656.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4656.summary",
+      "risk": "Информация",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Событие",
+          "File audit evidence 4656"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Source-native file-server evidence",
+      "checks": [
+        "Verify related evidence and coverage before interpreting an operation"
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4656.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.file-audit",
+        "version": "1.0.0",
+        "display_name": "Microsoft file-server audit",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [],
+        "entity_contract": "file-audit.evidence.v1",
+        "analysis_contract": "file-audit.observation.v1",
+        "normalizer": "windows-file-audit-v1",
+        "manifest_sha256": "6d2697a8b6a17896d485dbf66d3ce51facbe1f1e0219d0cedea37e18ad690019",
+        "capabilities": [
+          "file-audit.evidence"
+        ]
+      },
+      "category": "other",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_security_severity": "info",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6272,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "low",
+      "tier": "technical",
+      "title": "NPS разрешил запрос доступа",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6272.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6272.summary",
+      "risk": "Низкий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-low",
+      "facts": [
+        [
+          "Событие",
+          "NPS разрешил запрос доступа"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Событие подтверждает решение NPS об успешной аутентификации, но само по себе не доказывает начало или длительность VPN-сессии.",
+      "checks": [
+        "Рассматривать это событие как самостоятельный факт авторизации, а не как часть жизненного цикла сессии: единственным источником жизненного цикла VPN-сессии остаётся RADIUS Accounting. Событие можно показывать рядом с Accounting для контекста идентичности и времени, но точную связь 1:1 или отношение RESULT_OF нельзя утверждать без отдельно доказанного source-native моста между NPS и Accounting."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6272.checks.0"
+      ],
+      "related_event_ids": [
+        6273
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.vpn-radius",
+        "version": "0.1.0",
+        "display_name": "Windows NPS and VPN/RADIUS",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "identity-ladder-v1",
+        "analysis_contract": "radius-authentication-observation-v1",
+        "normalizer": "windows-nps-radius-v1",
+        "manifest_sha256": "a1ea9bb4690ca9344ee8c3b4f022b60b5fbecdf5b445c6b43e4def061f11f301"
+      },
+      "category": "authentication",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_security_severity": "low",
+      "assessment_confidence": "high",
+      "classification_origin": "catalog_base",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "low",
+      "confidence": "high",
+      "noise_class": "context",
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6272,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {
+        "SubjectUserName": "fixture-initiator",
+        "NetworkPolicyName": "fixture-object",
+        "FullyQualifiedSubjectUserName": "fixture-account",
+        "LoggingResult": "fixture-result"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "low",
+      "tier": "technical",
+      "title": "NPS разрешил запрос доступа",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6272.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6272.summary",
+      "risk": "Низкий риск",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-low",
+      "facts": [
+        [
+          "Событие",
+          "NPS разрешил запрос доступа"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Объект изменения",
+          "fixture-object"
+        ],
+        [
+          "Результат",
+          "fixture-result"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "fixture-result"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.account",
+        "Security:Microsoft-Windows-Security-Auditing:6272.object_label",
+        "facts.result",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Событие подтверждает решение NPS об успешной аутентификации, но само по себе не доказывает начало или длительность VPN-сессии.",
+      "checks": [
+        "Рассматривать это событие как самостоятельный факт авторизации, а не как часть жизненного цикла сессии: единственным источником жизненного цикла VPN-сессии остаётся RADIUS Accounting. Событие можно показывать рядом с Accounting для контекста идентичности и времени, но точную связь 1:1 или отношение RESULT_OF нельзя утверждать без отдельно доказанного source-native моста между NPS и Accounting."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6272.checks.0"
+      ],
+      "related_event_ids": [
+        6273
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.vpn-radius",
+        "version": "0.1.0",
+        "display_name": "Windows NPS and VPN/RADIUS",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "identity-ladder-v1",
+        "analysis_contract": "radius-authentication-observation-v1",
+        "normalizer": "windows-nps-radius-v1",
+        "manifest_sha256": "a1ea9bb4690ca9344ee8c3b4f022b60b5fbecdf5b445c6b43e4def061f11f301"
+      },
+      "category": "authentication",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_security_severity": "low",
+      "assessment_confidence": "high",
+      "classification_origin": "catalog_base",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [
+        "SubjectUserName",
+        "NetworkPolicyName",
+        "NASIdentifier",
+        "FullyQualifiedSubjectUserName",
+        "SubjectMachineName",
+        "LoggingResult"
+      ],
+      "final_risk": "low",
+      "confidence": "high",
+      "noise_class": "context",
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6273,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "NPS отклонил запрос доступа",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6273.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6273.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "NPS отклонил запрос доступа"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Отказ NPS важен для расследования ошибок удалённого доступа и серий неуспешной аутентификации, но один отказ не доказывает атаку.",
+      "checks": [
+        "Проверить ReasonCode, политику, учётную запись, NAS и соседние решения; повышать риск только по подтверждённой серии или контексту."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6273.checks.0"
+      ],
+      "related_event_ids": [
+        6272
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.vpn-radius",
+        "version": "0.1.0",
+        "display_name": "Windows NPS and VPN/RADIUS",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "identity-ladder-v1",
+        "analysis_contract": "radius-authentication-observation-v1",
+        "normalizer": "windows-nps-radius-v1",
+        "manifest_sha256": "a1ea9bb4690ca9344ee8c3b4f022b60b5fbecdf5b445c6b43e4def061f11f301"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "high",
+      "classification_origin": "catalog_base",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6273,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {
+        "SubjectUserName": "fixture-initiator",
+        "NetworkPolicyName": "fixture-object",
+        "FullyQualifiedSubjectUserName": "fixture-account",
+        "ReasonCode": "fixture-result"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": true,
+      "severity": "medium",
+      "tier": "important",
+      "title": "NPS отклонил запрос доступа",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6273.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6273.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "высокая",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "NPS отклонил запрос доступа"
+        ],
+        [
+          "Учётная запись",
+          "fixture-account"
+        ],
+        [
+          "Объект изменения",
+          "fixture-object"
+        ],
+        [
+          "Результат",
+          "fixture-result"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ],
+        [
+          "Результат",
+          "fixture-result"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.account",
+        "Security:Microsoft-Windows-Security-Auditing:6273.object_label",
+        "facts.result",
+        "facts.server",
+        "facts.result"
+      ],
+      "summary": "Отказ NPS важен для расследования ошибок удалённого доступа и серий неуспешной аутентификации, но один отказ не доказывает атаку.",
+      "checks": [
+        "Проверить ReasonCode, политику, учётную запись, NAS и соседние решения; повышать риск только по подтверждённой серии или контексту."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6273.checks.0"
+      ],
+      "related_event_ids": [
+        6272
+      ],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.vpn-radius",
+        "version": "0.1.0",
+        "display_name": "Windows NPS and VPN/RADIUS",
+        "source_kind": "event",
+        "channels": [
+          "Security"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "identity-ladder-v1",
+        "analysis_contract": "radius-authentication-observation-v1",
+        "normalizer": "windows-nps-radius-v1",
+        "manifest_sha256": "a1ea9bb4690ca9344ee8c3b4f022b60b5fbecdf5b445c6b43e4def061f11f301"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "high",
+      "classification_origin": "catalog_base",
+      "card_completeness": "complete",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [
+        "SubjectUserName",
+        "NetworkPolicyName",
+        "NASIdentifier",
+        "FullyQualifiedSubjectUserName",
+        "SubjectMachineName",
+        "ReasonCode",
+        "Reason"
+      ],
+      "final_risk": "medium",
+      "confidence": "high",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "высокая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6416,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture"
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "info",
+      "tier": "technical",
+      "title": "External device observed",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6416.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6416.summary",
+      "risk": "Информация",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Событие",
+          "External device observed"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Source-native observation; completeness is not inferred.",
+      "checks": [
+        "Check native evidence and collection policy."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6416.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.workstations",
+        "version": "1.0.0",
+        "display_name": "Windows workstation security",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "Microsoft-Windows-Windows Defender/Operational",
+          "Microsoft-Windows-Kernel-PnP/Configuration",
+          "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "workstations.agent-key.v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-workstations-v1",
+        "manifest_sha256": "a09e4e087061ea112d4d37b8e4b910e345978a387802812a05354d46adb2849d",
+        "capabilities": [
+          "workstations.usb",
+          "workstations.protection"
+        ]
+      },
+      "category": "other",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_security_severity": "info",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 6416,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "server": "dc-fixture",
+      "event_data": {}
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "info",
+      "tier": "technical",
+      "title": "External device observed",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:6416.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:6416.summary",
+      "risk": "Информация",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Событие",
+          "External device observed"
+        ],
+        [
+          "Сервер",
+          "dc-fixture"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Source-native observation; completeness is not inferred.",
+      "checks": [
+        "Check native evidence and collection policy."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:6416.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.workstations",
+        "version": "1.0.0",
+        "display_name": "Windows workstation security",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "Microsoft-Windows-Windows Defender/Operational",
+          "Microsoft-Windows-Kernel-PnP/Configuration",
+          "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "workstations.agent-key.v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-workstations-v1",
+        "manifest_sha256": "a09e4e087061ea112d4d37b8e4b910e345978a387802812a05354d46adb2849d",
+        "capabilities": [
+          "workstations.usb",
+          "workstations.protection"
+        ]
+      },
+      "category": "other",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_security_severity": "info",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 999999,
+      "channel": "Unknown",
+      "server": "fixture"
+    },
+    "expected": {
+      "known": false,
+      "has_card": false,
+      "title": "Событие пока не расшифровано каталогом",
+      "title_code": "uncatalogued.title",
+      "summary_code": "uncatalogued.summary",
+      "severity": "unknown",
+      "tier": "technical",
+      "risk": "Оценка ИБ не определена",
+      "assessment_confidence_label": "низкая",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Сервер",
+          "fixture"
+        ],
+        [
+          "Журнал",
+          "Unknown"
+        ]
+      ],
+      "summary": "Каталог не содержит правила для этого Provider, Channel и Event ID. Ни действие, ни результат не интерпретируются автоматически.",
+      "checks": [
+        "Открыть технические данные и сообщение Windows.",
+        "Добавить проверенное правило в каталог события, если оно повторяется."
+      ],
+      "related_event_ids": [],
+      "technical_reason": "Не найдено правило по ключу Provider + Channel + Event ID.",
+      "source_pack": null,
+      "category": "unknown",
+      "purpose_tier": "technical",
+      "base_risk": "unknown",
+      "final_security_severity": "unknown",
+      "assessment_confidence": "low",
+      "classification_origin": "unavailable",
+      "card_completeness": "not_applicable",
+      "catalog_match": false,
+      "reasons": [
+        "catalog_rule_missing"
+      ],
+      "evidence_fields": [],
+      "final_risk": "unknown",
+      "confidence": "low",
+      "noise_class": "unknown",
+      "display_labels": {
+        "risk": "Оценка ИБ не определена",
+        "confidence": "низкая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Unknown",
+      "provider_name": "unknown"
+    },
+    "expected": {
+      "known": false,
+      "has_card": false,
+      "title": "Событие пока не расшифровано каталогом",
+      "title_code": "uncatalogued.title",
+      "summary_code": "uncatalogued.summary",
+      "severity": "unknown",
+      "tier": "technical",
+      "risk": "Оценка ИБ не определена",
+      "assessment_confidence_label": "низкая",
+      "risk_class": "risk-info",
+      "facts": [
+        [
+          "Журнал",
+          "Unknown"
+        ]
+      ],
+      "summary": "Каталог не содержит правила для этого Provider, Channel и Event ID. Ни действие, ни результат не интерпретируются автоматически.",
+      "checks": [
+        "Открыть технические данные и сообщение Windows.",
+        "Добавить проверенное правило в каталог события, если оно повторяется."
+      ],
+      "related_event_ids": [],
+      "technical_reason": "Не найдено правило по ключу Provider + Channel + Event ID.",
+      "source_pack": null,
+      "category": "unknown",
+      "purpose_tier": "technical",
+      "base_risk": "unknown",
+      "final_security_severity": "unknown",
+      "assessment_confidence": "low",
+      "classification_origin": "unavailable",
+      "card_completeness": "not_applicable",
+      "catalog_match": false,
+      "reasons": [
+        "catalog_rule_missing"
+      ],
+      "evidence_fields": [],
+      "final_risk": "unknown",
+      "confidence": "low",
+      "noise_class": "unknown",
+      "display_labels": {
+        "risk": "Оценка ИБ не определена",
+        "confidence": "низкая"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "info",
+        "effective_severity": "low"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "low",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Низкий риск",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-low",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "Не удалось определить"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "info",
+      "final_security_severity": "low",
+      "assessment_confidence": "unknown",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "watch"
+      ],
+      "evidence_fields": [],
+      "final_risk": "low",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "info",
+        "effective_severity": "low"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "medium",
+        "effective_severity": "high"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "high",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "Не удалось определить"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "high",
+      "assessment_confidence": "unknown",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "watch"
+      ],
+      "evidence_fields": [],
+      "final_risk": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "medium",
+        "effective_severity": "high"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "critical",
+        "effective_severity": "critical"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "critical",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Высокий риск",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-high",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "Не удалось определить"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "critical",
+      "final_security_severity": "critical",
+      "assessment_confidence": "unknown",
+      "classification_origin": "contextual_rule",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "watch"
+      ],
+      "evidence_fields": [],
+      "final_risk": "critical",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "critical",
+        "effective_severity": "critical"
+      }
+    }
+  },
+  {
+    "item": {
+      "event_id": 4625,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "watch_priority": {
+        "reason": "watch",
+        "base_severity": "low",
+        "effective_severity": "critical"
+      }
+    },
+    "expected": {
+      "known": true,
+      "has_card": false,
+      "severity": "medium",
+      "tier": "important",
+      "title": "Неуспешный вход",
+      "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+      "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+      "risk": "Требует проверки",
+      "assessment_confidence_label": "unknown",
+      "risk_class": "risk-medium",
+      "facts": [
+        [
+          "Событие",
+          "Неуспешный вход"
+        ],
+        [
+          "Сервер",
+          "Не удалось определить"
+        ]
+      ],
+      "fact_label_codes": [
+        "facts.event",
+        "facts.server"
+      ],
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+      "checks": [
+        "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+      ],
+      "check_codes": [
+        "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+      ],
+      "related_event_ids": [],
+      "technical_reason": "",
+      "source_pack": {
+        "pack_id": "sli.windows.ad-dc",
+        "version": "1.4.0",
+        "display_name": "Windows Active Directory Domain Controller",
+        "source_kind": "event",
+        "channels": [
+          "Security",
+          "System",
+          "Directory Service",
+          "DNS Server",
+          "Microsoft-Windows-PowerShell/Operational",
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ],
+        "sections": [],
+        "adapters": [
+          "windows-eventlog-pywin32",
+          "windows-eventlog-powershell"
+        ],
+        "entity_contract": "catalog-field-roles-v1",
+        "analysis_contract": "catalog-semantics-v1",
+        "normalizer": "windows-ad-dc-v1",
+        "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+      },
+      "category": "authentication",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_security_severity": "medium",
+      "assessment_confidence": "unknown",
+      "classification_origin": "catalog_base",
+      "card_completeness": "not_applicable",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "final_risk": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      }
+    }
+  }
+]

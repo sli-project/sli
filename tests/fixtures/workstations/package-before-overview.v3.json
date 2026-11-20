@@ -1,0 +1,213 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.workstations",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [
+    "workstations.security.v1"
+  ],
+  "dependencies": [
+    {
+      "contract_id": "core.identity.agent-key.v1",
+      "versions": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "required": true,
+      "exchange": "immutable_typed_result"
+    },
+    {
+      "contract_id": "core.history.evidence.v1",
+      "versions": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "required": false,
+      "exchange": "immutable_typed_result"
+    }
+  ],
+  "sources": [
+    {
+      "pack_id": "sli.windows.workstations",
+      "pack_version": "1.0.0",
+      "normalizer_id": "windows-workstations-v1",
+      "normalizer_version": "1.0.0",
+      "input_contract": "sli.collection-packet.v1",
+      "catalog_ref": "workstations.event-catalog.v1",
+      "collection_policy_schema_ref": "workstations.collection-policy.v1"
+    }
+  ],
+  "agent_modules": [],
+  "handlers": [
+    {
+      "handler_id": "workstations.evidence-retention",
+      "handler_version": "1.0.0",
+      "kind": "reconcile",
+      "input_contract": "workstations.retention-policy.v1",
+      "result_contract": "sli.core-job-result.v1",
+      "resource_profile": "workstations.retention.bounded",
+      "rights_profile": "workstations.retention.history-verified",
+      "budget": {
+        "wall_seconds": 30,
+        "cpu_seconds": 10,
+        "memory_bytes": 268435456,
+        "max_records": 50,
+        "max_result_bytes": 65536,
+        "max_db_connections": 1,
+        "statement_timeout_ms": 5000,
+        "lock_timeout_ms": 1000
+      },
+      "max_attempts": 3
+    }
+  ],
+  "schedules": [
+    {
+      "schedule_id": "workstations.evidence-retention.daily",
+      "handler_id": "workstations.evidence-retention",
+      "trigger": "interval",
+      "interval_seconds": 86400,
+      "calendar": null,
+      "timezone": "UTC",
+      "max_inflight_per_source": 1
+    }
+  ],
+  "datasets": [
+    {
+      "dataset_id": "workstations.logons",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.logons",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.processes",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.processes",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.usb",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.usb",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.protection",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.protection",
+      "capabilities": []
+    }
+  ],
+  "reports": [
+    {
+      "report_key": "workstations.logons",
+      "access_key": "workstations.logons",
+      "dataset_id": "workstations.logons",
+      "definition_id": "workstations.logons",
+      "section_id": "workstations",
+      "title_key": "workstations.logons.title",
+      "routes": [
+        "/report/workstations.logons"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.logons"
+    },
+    {
+      "report_key": "workstations.processes",
+      "access_key": "workstations.processes",
+      "dataset_id": "workstations.processes",
+      "definition_id": "workstations.processes",
+      "section_id": "workstations",
+      "title_key": "workstations.processes.title",
+      "routes": [
+        "/report/workstations.processes"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.processes"
+    },
+    {
+      "report_key": "workstations.usb",
+      "access_key": "workstations.usb",
+      "dataset_id": "workstations.usb",
+      "definition_id": "workstations.usb",
+      "section_id": "workstations",
+      "title_key": "workstations.usb.title",
+      "routes": [
+        "/report/workstations.usb"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.usb"
+    },
+    {
+      "report_key": "workstations.protection",
+      "access_key": "workstations.protection",
+      "dataset_id": "workstations.protection",
+      "definition_id": "workstations.protection",
+      "section_id": "workstations",
+      "title_key": "workstations.protection.title",
+      "routes": [
+        "/report/workstations.protection"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.protection"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "workstations",
+      "title_key": "shell.section.workstations",
+      "icon_id": "report",
+      "order": 60,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_workstations",
+    "existing_tables": [],
+    "migrations": [
+      {
+        "version": 159,
+        "name": "workstation_security",
+        "path": "config/postgres_migrations/159_workstation_security.sql",
+        "sha256": "c8e6ffbe4707611038740c67c7dbc52c4589c62edc5ac943052787e46dcbeba0",
+        "core_prerequisites": [
+          158
+        ]
+      }
+    ]
+  }
+}

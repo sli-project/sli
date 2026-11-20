@@ -1,0 +1,43 @@
+name: UI standard
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'config/i18n/**'
+      - 'server-dotnet/src/Sli.Server/**/report-definitions.json'
+      - '.github/workflows/ui-standard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-standard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  geometry:
+    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run lint
+      - run: npx playwright install chromium
+      - name: Check UI standard with synthetic partial results
+        run: npx playwright test --config frontend/tests/geometry.config.ts standard.spec.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        # A full artifact quota must not turn a passed geometry check red.
+        continue-on-error: true
+        with:
+          name: ui-standard
+          path: artifacts/ui02/
+          retention-days: 3

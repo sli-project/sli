@@ -1,0 +1,87 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.remote-access",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [
+    {
+      "dataset_id": "vpn.policy-denials",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "vpn.policy-denials",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "vpn.connections",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "vpn.connections",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "vpn.accounts",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "vpn.accounts",
+      "capabilities": []
+    }
+  ],
+  "reports": [
+    {
+      "report_key": "vpn.connections",
+      "access_key": "vpn.audit",
+      "dataset_id": "vpn.connections",
+      "definition_id": "vpn.connections",
+      "section_id": "remote-access",
+      "title_key": "shell.nav.vpn-connections",
+      "routes": [
+        "/report/vpn.connections"
+      ],
+      "required_fields": [],
+      "capabilities": [],
+      "history_reader_id": "vpn.connections"
+    },
+    {
+      "report_key": "vpn.accounts",
+      "access_key": "vpn.audit",
+      "dataset_id": "vpn.accounts",
+      "definition_id": "vpn.accounts",
+      "section_id": "remote-access",
+      "title_key": "shell.nav.vpn-access",
+      "routes": [
+        "/report/vpn.accounts"
+      ],
+      "required_fields": [],
+      "capabilities": [],
+      "history_reader_id": "vpn.accounts"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "remote-access",
+      "title_key": "shell.section.remote-access",
+      "icon_id": "lock",
+      "order": 40,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_remote_access",
+    "existing_tables": [],
+    "migrations": []
+  }
+}
+

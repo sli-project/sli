@@ -1,0 +1,40 @@
+{
+  "python": {
+    "version": "3.13.16",
+    "filename": "python-3.13.16-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-embed-amd64.zip",
+    "sha256": "97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297",
+    "provenance": "https://www.python.org/downloads/release/python-31316/"
+  },
+  "wix": {
+    "version": "3.14.1.8722",
+    "filename": "wix314-binaries.zip",
+    "url": "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip",
+    "sha256": "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31",
+    "provenance": "https://git.zx2c4.com/wireguard-windows/tree/installer/build.bat?id=ad0df6df37b4ecb7957cddd2ba01e1efcc39d538"
+  },
+  "msvc_tools_version": "14.44.35207",
+  "windows_sdk_version": "10.0.26100.0",
+  "wheels": [
+    {
+      "filename": "cryptography-50.0.1-cp311-abi3-win_amd64.whl",
+      "sha256": "aed8db4f6d71c51efb89530e12d9464e7bf2923d46c3205dc794a2a93f8c0648",
+      "provenance": "https://pypi.org/project/cryptography/50.0.1/"
+    },
+    {
+      "filename": "pywin32-311-cp313-cp313-win_amd64.whl",
+      "sha256": "718a38f7e5b058e76aee1c56ddd06908116d35147e133427e59a3983f703a20d",
+      "provenance": "https://pypi.org/project/pywin32/311/"
+    },
+    {
+      "filename": "cffi-2.0.0-cp313-cp313-win_amd64.whl",
+      "sha256": "19f705ada2530c1167abacb171925dd886168931e0a7b78f5bffcae5c6b5be75",
+      "provenance": "https://pypi.org/project/cffi/2.0.0/"
+    },
+    {
+      "filename": "pycparser-2.23-py3-none-any.whl",
+      "sha256": "e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934",
+      "provenance": "https://pypi.org/project/pycparser/2.23/"
+    }
+  ]
+}

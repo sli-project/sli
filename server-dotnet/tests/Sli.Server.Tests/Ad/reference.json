@@ -1,0 +1,1254 @@
+[
+  {
+    "kind": "account",
+    "events": [
+      {
+        "event_db_id": 1,
+        "event_record_id": 100,
+        "event_id": 4720,
+        "time_created_utc": "2026-11-01T01:00:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 2,
+        "event_record_id": 101,
+        "event_id": 4722,
+        "time_created_utc": "2026-11-01T01:01:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 3,
+        "event_record_id": 102,
+        "event_id": 4725,
+        "time_created_utc": "2026-11-01T01:02:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 4,
+        "event_record_id": 103,
+        "event_id": 4726,
+        "time_created_utc": "2026-11-01T01:03:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 5,
+        "event_record_id": 104,
+        "event_id": 4738,
+        "time_created_utc": "2026-11-01T01:04:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 6,
+        "event_record_id": 105,
+        "event_id": 4740,
+        "time_created_utc": "2026-11-01T01:05:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 7,
+        "event_record_id": 106,
+        "event_id": 4767,
+        "time_created_utc": "2026-11-01T01:06:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": null
+      },
+      {
+        "event_db_id": 8,
+        "event_record_id": 107,
+        "event_id": 4781,
+        "time_created_utc": "2026-11-01T01:07:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": "old",
+        "account_name_after": "new",
+        "result_code": null
+      },
+      {
+        "event_db_id": 9,
+        "event_record_id": 108,
+        "event_id": 4723,
+        "time_created_utc": "2026-11-01T01:08:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": "0x0"
+      },
+      {
+        "event_db_id": 10,
+        "event_record_id": 109,
+        "event_id": 4724,
+        "time_created_utc": "2026-11-01T01:09:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "account_name_before": null,
+        "account_name_after": null,
+        "result_code": "0x0"
+      }
+    ],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.ad-account-change-history.v1",
+      "report_key": "ad.state.account_changes",
+      "source_domain_id": 1,
+      "state": "available",
+      "history_state": "partial",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "event_db_id": 1,
+          "event_record_id": 100,
+          "event_id": 4720,
+          "time_created_utc": "2026-11-01T01:00:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "created"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "observed",
+              "value": "present"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 1,
+            "event_record_id": 100,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 2,
+          "event_record_id": 101,
+          "event_id": 4722,
+          "time_created_utc": "2026-11-01T01:01:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "enabled"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "partial",
+              "last_observed": {
+                "value": "present",
+                "event_db_id": 1,
+                "time_created_utc": "2026-11-01T01:00:00Z"
+              },
+              "reason": "intervening_account_state_not_proven"
+            },
+            "after": {
+              "state": "observed",
+              "value": "enabled"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 2,
+            "event_record_id": 101,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 3,
+          "event_record_id": 102,
+          "event_id": 4725,
+          "time_created_utc": "2026-11-01T01:02:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "disabled"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "partial",
+              "last_observed": {
+                "value": "enabled",
+                "event_db_id": 2,
+                "time_created_utc": "2026-11-01T01:01:00Z"
+              },
+              "reason": "intervening_account_state_not_proven"
+            },
+            "after": {
+              "state": "observed",
+              "value": "disabled"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 3,
+            "event_record_id": 102,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 4,
+          "event_record_id": 103,
+          "event_id": 4726,
+          "time_created_utc": "2026-11-01T01:03:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "deleted"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "partial",
+              "last_observed": {
+                "value": "disabled",
+                "event_db_id": 3,
+                "time_created_utc": "2026-11-01T01:02:00Z"
+              },
+              "reason": "intervening_account_state_not_proven"
+            },
+            "after": {
+              "state": "observed",
+              "value": "deleted"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 4,
+            "event_record_id": 103,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 5,
+          "event_record_id": 104,
+          "event_id": 4738,
+          "time_created_utc": "2026-11-01T01:04:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "attributes_changed",
+            "detail": {
+              "state": "unknown",
+              "reason": "changed_attribute_fields_not_in_warm_contract"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 5,
+            "event_record_id": 104,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 6,
+          "event_record_id": 105,
+          "event_id": 4740,
+          "time_created_utc": "2026-11-01T01:05:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "locked"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "partial",
+              "last_observed": {
+                "value": "deleted",
+                "event_db_id": 4,
+                "time_created_utc": "2026-11-01T01:03:00Z"
+              },
+              "reason": "intervening_account_state_not_proven"
+            },
+            "after": {
+              "state": "observed",
+              "value": "locked"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 6,
+            "event_record_id": 105,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 7,
+          "event_record_id": 106,
+          "event_id": 4767,
+          "time_created_utc": "2026-11-01T01:06:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "unlocked"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "partial",
+              "last_observed": {
+                "value": "locked",
+                "event_db_id": 6,
+                "time_created_utc": "2026-11-01T01:05:00Z"
+              },
+              "reason": "intervening_account_state_not_proven"
+            },
+            "after": {
+              "state": "observed",
+              "value": "unlocked"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 7,
+            "event_record_id": 106,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 8,
+          "event_record_id": 107,
+          "event_id": 4781,
+          "time_created_utc": "2026-11-01T01:07:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "renamed"
+          },
+          "observed_transition": {
+            "before": {
+              "state": "observed",
+              "value": "old"
+            },
+            "after": {
+              "state": "observed",
+              "value": "new"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 8,
+            "event_record_id": 107,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 9,
+          "event_record_id": 108,
+          "event_id": 4723,
+          "time_created_utc": "2026-11-01T01:08:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "password_change_attempt",
+            "result": {
+              "state": "observed",
+              "value": "0x0"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 9,
+            "event_record_id": 108,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 10,
+          "event_record_id": 109,
+          "event_id": 4724,
+          "time_created_utc": "2026-11-01T01:09:00Z",
+          "domain_controller": "dc.example.test",
+          "account": {
+            "state": "observed",
+            "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "target_user_name": "target"
+          },
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "change": {
+            "kind": "password_reset_attempt",
+            "result": {
+              "state": "observed",
+              "value": "0x0"
+            }
+          },
+          "observed_transition": {
+            "before": {
+              "state": "unknown",
+              "reason": "prior_account_state_not_observed"
+            },
+            "after": {
+              "state": "unknown",
+              "reason": "event_does_not_prove_account_state"
+            }
+          },
+          "evidence": {
+            "state": "complete",
+            "missing_fields": [],
+            "event_db_id": 10,
+            "event_record_id": 109,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are source-event observations, not a reconstructed current AD account status.",
+        "A prior account state remains unknown unless the same source event supplies it.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "account",
+    "events": [],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.ad-account-change-history.v1",
+      "report_key": "ad.state.account_changes",
+      "source_domain_id": 1,
+      "state": "empty_unverified",
+      "history_state": "unknown",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "empty_unverified",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are source-event observations, not a reconstructed current AD account status.",
+        "A prior account state remains unknown unless the same source event supplies it.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "account",
+    "events": [],
+    "history": false,
+    "expected": {
+      "contract_id": "sli.ad-account-change-history.v1",
+      "report_key": "ad.state.account_changes",
+      "source_domain_id": 1,
+      "state": "not_collected",
+      "history_state": "unknown",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "not_collected",
+        "history_event_present": false,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are source-event observations, not a reconstructed current AD account status.",
+        "A prior account state remains unknown unless the same source event supplies it.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "membership",
+    "events": [
+      {
+        "event_db_id": 1,
+        "event_record_id": 100,
+        "event_id": 4728,
+        "time_created_utc": "2026-11-01T01:00:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "membership_member_sid": "S-1-5-21-100000001-200000002-300000003-3",
+        "membership_member_name": "member",
+        "controlled_group_context_evidence_id": 23,
+        "controlled_group_context_observed_at_utc": "2026-11-01T00:00:00Z"
+      },
+      {
+        "event_db_id": 2,
+        "event_record_id": 101,
+        "event_id": 4729,
+        "time_created_utc": "2026-11-01T01:01:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "membership_member_sid": "S-1-5-21-100000001-200000002-300000003-3",
+        "membership_member_name": "member",
+        "controlled_group_context_evidence_id": 23,
+        "controlled_group_context_observed_at_utc": "2026-11-01T00:00:00Z"
+      },
+      {
+        "event_db_id": 3,
+        "event_record_id": 102,
+        "event_id": 4732,
+        "time_created_utc": "2026-11-01T01:02:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "membership_member_sid": "S-1-5-21-100000001-200000002-300000003-3",
+        "membership_member_name": "member",
+        "controlled_group_context_evidence_id": 23,
+        "controlled_group_context_observed_at_utc": "2026-11-01T00:00:00Z"
+      },
+      {
+        "event_db_id": 4,
+        "event_record_id": 103,
+        "event_id": 4756,
+        "time_created_utc": "2026-11-01T01:03:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "membership_member_sid": "S-1-5-21-100000001-200000002-300000003-3",
+        "membership_member_name": "member",
+        "controlled_group_context_evidence_id": 23,
+        "controlled_group_context_observed_at_utc": "2026-11-01T00:00:00Z"
+      },
+      {
+        "event_db_id": 5,
+        "event_record_id": 104,
+        "event_id": 4757,
+        "time_created_utc": "2026-11-01T01:04:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "membership_member_sid": "S-1-5-21-100000001-200000002-300000003-3",
+        "membership_member_name": "member",
+        "controlled_group_context_evidence_id": 23,
+        "controlled_group_context_observed_at_utc": "2026-11-01T00:00:00Z"
+      }
+    ],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.ad-group-membership-history.v1",
+      "report_key": "ad.groups.membership_changes",
+      "source_domain_id": 1,
+      "state": "available",
+      "history_state": "partial",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "event_db_id": 1,
+          "event_record_id": 100,
+          "event_id": 4728,
+          "time_created_utc": "2026-11-01T01:00:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "name": "actor"
+          },
+          "member": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-3",
+            "name": "member"
+          },
+          "group": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "name": "target"
+          },
+          "change": {
+            "operation": "added",
+            "group_scope": "global"
+          },
+          "controlled_group": {
+            "state": "observed",
+            "basis": "exact_group_sid_in_persisted_controlled_scope",
+            "context_evidence_id": 23,
+            "context_observed_at_utc": "2026-11-01T00:00:00Z"
+          },
+          "membership_interval": {
+            "state": "partial",
+            "reason": "multiple_exact_membership_boundaries_unpairable"
+          },
+          "evidence": {
+            "event_db_id": 1,
+            "event_record_id": 100,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 2,
+          "event_record_id": 101,
+          "event_id": 4729,
+          "time_created_utc": "2026-11-01T01:01:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "name": "actor"
+          },
+          "member": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-3",
+            "name": "member"
+          },
+          "group": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "name": "target"
+          },
+          "change": {
+            "operation": "removed",
+            "group_scope": "global"
+          },
+          "controlled_group": {
+            "state": "observed",
+            "basis": "exact_group_sid_in_persisted_controlled_scope",
+            "context_evidence_id": 23,
+            "context_observed_at_utc": "2026-11-01T00:00:00Z"
+          },
+          "membership_interval": {
+            "state": "partial",
+            "reason": "multiple_exact_membership_boundaries_unpairable"
+          },
+          "evidence": {
+            "event_db_id": 2,
+            "event_record_id": 101,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 3,
+          "event_record_id": 102,
+          "event_id": 4732,
+          "time_created_utc": "2026-11-01T01:02:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "name": "actor"
+          },
+          "member": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-3",
+            "name": "member"
+          },
+          "group": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "name": "target"
+          },
+          "change": {
+            "operation": "added",
+            "group_scope": "local"
+          },
+          "controlled_group": {
+            "state": "observed",
+            "basis": "exact_group_sid_in_persisted_controlled_scope",
+            "context_evidence_id": 23,
+            "context_observed_at_utc": "2026-11-01T00:00:00Z"
+          },
+          "membership_interval": {
+            "state": "partial",
+            "reason": "multiple_exact_membership_boundaries_unpairable"
+          },
+          "evidence": {
+            "event_db_id": 3,
+            "event_record_id": 102,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 4,
+          "event_record_id": 103,
+          "event_id": 4756,
+          "time_created_utc": "2026-11-01T01:03:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "name": "actor"
+          },
+          "member": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-3",
+            "name": "member"
+          },
+          "group": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "name": "target"
+          },
+          "change": {
+            "operation": "added",
+            "group_scope": "universal"
+          },
+          "controlled_group": {
+            "state": "observed",
+            "basis": "exact_group_sid_in_persisted_controlled_scope",
+            "context_evidence_id": 23,
+            "context_observed_at_utc": "2026-11-01T00:00:00Z"
+          },
+          "membership_interval": {
+            "state": "partial",
+            "reason": "multiple_exact_membership_boundaries_unpairable"
+          },
+          "evidence": {
+            "event_db_id": 4,
+            "event_record_id": 103,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 5,
+          "event_record_id": 104,
+          "event_id": 4757,
+          "time_created_utc": "2026-11-01T01:04:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "name": "actor"
+          },
+          "member": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-3",
+            "name": "member"
+          },
+          "group": {
+            "state": "observed",
+            "sid": "S-1-5-21-100000001-200000002-300000003-2",
+            "name": "target"
+          },
+          "change": {
+            "operation": "removed",
+            "group_scope": "universal"
+          },
+          "controlled_group": {
+            "state": "observed",
+            "basis": "exact_group_sid_in_persisted_controlled_scope",
+            "context_evidence_id": 23,
+            "context_observed_at_utc": "2026-11-01T00:00:00Z"
+          },
+          "membership_interval": {
+            "state": "partial",
+            "reason": "multiple_exact_membership_boundaries_unpairable"
+          },
+          "evidence": {
+            "event_db_id": 5,
+            "event_record_id": 104,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are membership-change observations, not a reconstructed current group roster.",
+        "A closed interval requires exactly one exact observed MemberSid and TargetSid add-before-remove pair; repeated or out-of-order boundaries remain unpaired partial observations.",
+        "Controlled-group scope is observed separately and does not prove event-time rights or their use.",
+        "Older facts without source-native MemberSid remain unknown; this reader does not backfill them.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "membership",
+    "events": [],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.ad-group-membership-history.v1",
+      "report_key": "ad.groups.membership_changes",
+      "source_domain_id": 1,
+      "state": "empty_unverified",
+      "history_state": "unknown",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "empty_unverified",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are membership-change observations, not a reconstructed current group roster.",
+        "A closed interval requires exactly one exact observed MemberSid and TargetSid add-before-remove pair; repeated or out-of-order boundaries remain unpaired partial observations.",
+        "Controlled-group scope is observed separately and does not prove event-time rights or their use.",
+        "Older facts without source-native MemberSid remain unknown; this reader does not backfill them.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "membership",
+    "events": [],
+    "history": false,
+    "expected": {
+      "contract_id": "sli.ad-group-membership-history.v1",
+      "report_key": "ad.groups.membership_changes",
+      "source_domain_id": 1,
+      "state": "not_collected",
+      "history_state": "unknown",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "not_collected",
+        "history_event_present": false,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "max_period_days": 31,
+        "row_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "Rows are membership-change observations, not a reconstructed current group roster.",
+        "A closed interval requires exactly one exact observed MemberSid and TargetSid add-before-remove pair; repeated or out-of-order boundaries remain unpaired partial observations.",
+        "Controlled-group scope is observed separately and does not prove event-time rights or their use.",
+        "Older facts without source-native MemberSid remain unknown; this reader does not backfill them.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "powershell",
+    "events": [
+      {
+        "event_db_id": 1,
+        "event_record_id": 100,
+        "event_id": 4103,
+        "time_created_utc": "2026-11-01T01:00:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "powershell_command_name": "Get-Process",
+        "powershell_script_block_text": null
+      },
+      {
+        "event_db_id": 2,
+        "event_record_id": 101,
+        "event_id": 4104,
+        "time_created_utc": "2026-11-01T01:01:00Z",
+        "domain_controller": "dc.example.test",
+        "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+        "subject_user_name": "actor",
+        "target_user_sid": "S-1-5-21-100000001-200000002-300000003-2",
+        "target_user_name": "target",
+        "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "powershell_command_name": null,
+        "powershell_script_block_text": "=synthetic"
+      }
+    ],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.dc-powershell-activity.v1",
+      "report_key": "dc.powershell.activity",
+      "source_domain_id": 1,
+      "state": "available",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "event_db_id": 1,
+          "event_record_id": 100,
+          "event_id": 4103,
+          "time_created_utc": "2026-11-01T01:00:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "activity": {
+            "state": "observed",
+            "kind": "command",
+            "command_name": "Get-Process"
+          },
+          "origin": {
+            "state": "unknown",
+            "reason": "no_complete_native_origin_chain"
+          },
+          "evidence": {
+            "event_db_id": 1,
+            "event_record_id": 100,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        {
+          "event_db_id": 2,
+          "event_record_id": 101,
+          "event_id": 4104,
+          "time_created_utc": "2026-11-01T01:01:00Z",
+          "domain_controller": "dc.example.test",
+          "actor": {
+            "state": "observed",
+            "subject_user_sid": "S-1-5-21-100000001-200000002-300000003-1",
+            "subject_user_name": "actor"
+          },
+          "activity": {
+            "state": "restricted",
+            "kind": "script_block"
+          },
+          "origin": {
+            "state": "unknown",
+            "reason": "no_complete_native_origin_chain"
+          },
+          "evidence": {
+            "event_db_id": 2,
+            "event_record_id": 101,
+            "source_core_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_facts_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "input_event_limit": 500,
+        "origin_context_days": 31,
+        "bounded": true
+      },
+      "limitations": [
+        "PowerShell 4103/4104 are evidence facts, not process sessions.",
+        "Origin remains unknown unless one complete source-native process and LogonId chain is present.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "powershell",
+    "events": [],
+    "history": true,
+    "expected": {
+      "contract_id": "sli.dc-powershell-activity.v1",
+      "report_key": "dc.powershell.activity",
+      "source_domain_id": 1,
+      "state": "coverage_unverified",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "coverage_unverified",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "input_event_limit": 500,
+        "origin_context_days": 31,
+        "bounded": true
+      },
+      "limitations": [
+        "PowerShell 4103/4104 are evidence facts, not process sessions.",
+        "Origin remains unknown unless one complete source-native process and LogonId chain is present.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  },
+  {
+    "kind": "powershell",
+    "events": [],
+    "history": false,
+    "expected": {
+      "contract_id": "sli.dc-powershell-activity.v1",
+      "report_key": "dc.powershell.activity",
+      "source_domain_id": 1,
+      "state": "not_collected",
+      "time_bounds": {
+        "from_utc": "2026-11-01T00:00:00Z",
+        "to_utc_exclusive": "2026-11-02T00:00:00Z"
+      },
+      "items": [],
+      "collection_coverage": {
+        "state": "not_collected",
+        "history_event_present": false,
+        "source_completeness": "not_proven"
+      },
+      "limits": {
+        "input_event_limit": 500,
+        "origin_context_days": 31,
+        "bounded": true
+      },
+      "limitations": [
+        "PowerShell 4103/4104 are evidence facts, not process sessions.",
+        "Origin remains unknown unless one complete source-native process and LogonId chain is present.",
+        "An empty window does not prove complete source coverage."
+      ]
+    }
+  }
+]

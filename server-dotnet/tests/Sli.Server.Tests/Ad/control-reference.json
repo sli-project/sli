@@ -1,0 +1,2405 @@
+{
+  "entities": [
+    {
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "ad_computer",
+      "display_name": "Example domain_controller",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "record": "{\"attributes\": {\"advertising_state\": \"passed\", \"connectivity_state\": \"passed\", \"services_state\": \"passed\", \"sysvol_state\": \"passed\", \"netlogon_state\": \"passed\", \"dns_state\": \"passed\", \"operating_system\": true, \"operating_system_version\": true, \"dns_host_name\": \"dc.example.test\", \"distinguished_name\": \"DC=example,DC=test\", \"infrastructure_role\": \"domain_controller\"}}"
+    },
+    {
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "display_name": "Example domain",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "record": "{\"attributes\": {\"domain_mode\": true, \"forest_mode\": true, \"recycle_bin_enabled\": true, \"machine_account_quota\": true, \"ldap_signing_requirement\": \"unknown\", \"ldap_channel_binding_requirement\": \"unknown\", \"dns_host_name\": \"dc.example.test\", \"distinguished_name\": \"DC=example,DC=test\"}}"
+    },
+    {
+      "entity_id": 102,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "replication_link",
+      "display_name": "Example replication_link",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "record": "{\"attributes\": {\"replication_state\": \"passed\", \"last_replication_result\": 0, \"consecutive_failure_count\": 0, \"last_replication_success_utc\": \"2026-11-01T01:00:00Z\", \"dns_host_name\": \"dc.example.test\", \"distinguished_name\": \"DC=example,DC=test\"}}"
+    },
+    {
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "display_name": "Example password_policy",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "record": "{\"attributes\": {\"password_min_length\": true, \"password_history_length\": true, \"password_min_age\": true, \"password_max_age\": true, \"password_properties\": true, \"lockout_threshold\": true, \"lockout_duration\": true, \"lockout_observation_window\": true, \"dns_host_name\": \"dc.example.test\", \"distinguished_name\": \"DC=example,DC=test\"}}"
+    },
+    {
+      "entity_id": 104,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_trust",
+      "display_name": "Example domain_trust",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "record": "{\"attributes\": {\"trust_direction\": true, \"trust_type\": true, \"trust_attributes\": true, \"dns_host_name\": \"dc.example.test\", \"distinguished_name\": \"DC=example,DC=test\"}}"
+    }
+  ],
+  "rows": [
+    {
+      "control_id": "domain.ldap_channel_binding",
+      "category": "policies",
+      "label": "Требование LDAP channel binding",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "unknown",
+      "expected_condition": "Правило отчёта v1: значение не должно быть Never",
+      "qualification": "not_evaluated",
+      "authority": "report_rule_v1",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:domain.ldap_channel_binding",
+      "actual_text": "Неизвестно",
+      "authority_text": "Правило отчёта v1",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.ldap_channel_binding.label",
+          "params": {},
+          "text": "Требование LDAP channel binding"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.ldap_channel_binding.expected",
+          "params": {},
+          "text": "Правило отчёта v1: значение не должно быть Never"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.report_rule_v1",
+          "params": {},
+          "text": "Правило отчёта v1"
+        },
+        "actual_text": {
+          "code": "reports.values.unknown",
+          "params": {},
+          "text": "Неизвестно"
+        }
+      }
+    },
+    {
+      "control_id": "domain.ldap_signing",
+      "category": "policies",
+      "label": "Требование подписывания LDAP",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "unknown",
+      "expected_condition": "Правило отчёта v1: подписывание LDAP должно быть обязательным",
+      "qualification": "not_evaluated",
+      "authority": "report_rule_v1",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:domain.ldap_signing",
+      "actual_text": "Неизвестно",
+      "authority_text": "Правило отчёта v1",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.ldap_signing.label",
+          "params": {},
+          "text": "Требование подписывания LDAP"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.ldap_signing.expected",
+          "params": {},
+          "text": "Правило отчёта v1: подписывание LDAP должно быть обязательным"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.report_rule_v1",
+          "params": {},
+          "text": "Правило отчёта v1"
+        },
+        "actual_text": {
+          "code": "reports.values.unknown",
+          "params": {},
+          "text": "Неизвестно"
+        }
+      }
+    },
+    {
+      "control_id": "domain.recycle_bin",
+      "category": "policies",
+      "label": "Active Directory Recycle Bin",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:domain.recycle_bin",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.recycle_bin.label",
+          "params": {},
+          "text": "Active Directory Recycle Bin"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "domain.machine_account_quota",
+      "category": "policies",
+      "label": "MachineAccountQuota",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:domain.machine_account_quota",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.machine_account_quota.label",
+          "params": {},
+          "text": "MachineAccountQuota"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "domain.functional_level",
+      "category": "policies",
+      "label": "Функциональный уровень домена",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:domain.functional_level",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.domain.functional_level.label",
+          "params": {},
+          "text": "Функциональный уровень домена"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "forest.functional_level",
+      "category": "policies",
+      "label": "Функциональный уровень леса",
+      "entity_id": 101,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain",
+      "entity_name": "Example domain",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "101:forest.functional_level",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.forest.functional_level.label",
+          "params": {},
+          "text": "Функциональный уровень леса"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "dc.operating_system_version",
+      "category": "domain_controllers",
+      "label": "Версия операционной системы",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.operating_system_version",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.operating_system_version.label",
+          "params": {},
+          "text": "Версия операционной системы"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "dc.operating_system",
+      "category": "domain_controllers",
+      "label": "Операционная система контроллера",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.operating_system",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.operating_system.label",
+          "params": {},
+          "text": "Операционная система контроллера"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "trust.attributes",
+      "category": "trusts",
+      "label": "Атрибуты доверия",
+      "entity_id": 104,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_trust",
+      "entity_name": "Example domain_trust",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "104:trust.attributes",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.trust.attributes.label",
+          "params": {},
+          "text": "Атрибуты доверия"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "trust.direction",
+      "category": "trusts",
+      "label": "Направление доверия",
+      "entity_id": 104,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_trust",
+      "entity_name": "Example domain_trust",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "104:trust.direction",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.trust.direction.label",
+          "params": {},
+          "text": "Направление доверия"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "trust.type",
+      "category": "trusts",
+      "label": "Тип доверия",
+      "entity_id": 104,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_trust",
+      "entity_name": "Example domain_trust",
+      "object_context": {
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "104:trust.type",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.trust.type.label",
+          "params": {},
+          "text": "Тип доверия"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.lockout_duration",
+      "category": "policies",
+      "label": "Длительность блокировки",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.lockout_duration",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.lockout_duration.label",
+          "params": {},
+          "text": "Длительность блокировки"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.history_length",
+      "category": "policies",
+      "label": "История паролей",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.history_length",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.history_length.label",
+          "params": {},
+          "text": "История паролей"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.maximum_age",
+      "category": "policies",
+      "label": "Максимальный возраст пароля",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.maximum_age",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.maximum_age.label",
+          "params": {},
+          "text": "Максимальный возраст пароля"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.minimum_length",
+      "category": "policies",
+      "label": "Минимальная длина пароля",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.minimum_length",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.minimum_length.label",
+          "params": {},
+          "text": "Минимальная длина пароля"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.minimum_age",
+      "category": "policies",
+      "label": "Минимальный возраст пароля",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.minimum_age",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.minimum_age.label",
+          "params": {},
+          "text": "Минимальный возраст пароля"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.lockout_observation_window",
+      "category": "policies",
+      "label": "Окно наблюдения блокировки",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.lockout_observation_window",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.lockout_observation_window.label",
+          "params": {},
+          "text": "Окно наблюдения блокировки"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.lockout_threshold",
+      "category": "policies",
+      "label": "Порог блокировки",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.lockout_threshold",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.lockout_threshold.label",
+          "params": {},
+          "text": "Порог блокировки"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "password.properties",
+      "category": "policies",
+      "label": "Свойства парольной политики",
+      "entity_id": 103,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "password_policy",
+      "entity_name": "Example password_policy",
+      "object_context": {},
+      "actual_value": true,
+      "expected_condition": "Требование организации не задано",
+      "qualification": "policy_not_defined",
+      "authority": "not_defined",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "103:password.properties",
+      "actual_text": "Да",
+      "authority_text": "Политика организации не задана",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.password.properties.label",
+          "params": {},
+          "text": "Свойства парольной политики"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.policy_unset",
+          "params": {},
+          "text": "Требование организации не задано"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.not_defined",
+          "params": {},
+          "text": "Политика организации не задана"
+        },
+        "actual_text": {
+          "code": "reports.boolean.yes",
+          "params": {},
+          "text": "Да"
+        }
+      }
+    },
+    {
+      "control_id": "dc.advertising",
+      "category": "domain_controllers",
+      "label": "Advertising контроллера домена",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag Advertising должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.advertising",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.advertising.label",
+          "params": {},
+          "text": "Advertising контроллера домена"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.advertising.expected",
+          "params": {},
+          "text": "Проверка доступности контроллера домена должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "dc.dns",
+      "category": "dns",
+      "label": "DNS контроллера домена",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag DNS должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.dns",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.dns.label",
+          "params": {},
+          "text": "DNS контроллера домена"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.dns.expected",
+          "params": {},
+          "text": "Проверка разрешения доменных имён должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "dc.netlogon",
+      "category": "domain_controllers",
+      "label": "Доступность NETLOGON",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag NetLogons должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.netlogon",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.netlogon.label",
+          "params": {},
+          "text": "Доступность NETLOGON"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.netlogon.expected",
+          "params": {},
+          "text": "Проверка службы входа в домен должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "dc.sysvol",
+      "category": "domain_controllers",
+      "label": "Доступность SYSVOL",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag SysVolCheck должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.sysvol",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.sysvol.label",
+          "params": {},
+          "text": "Доступность SYSVOL"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.sysvol.expected",
+          "params": {},
+          "text": "Проверка общей папки политик домена должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "dc.services",
+      "category": "domain_controllers",
+      "label": "Обязательные службы контроллера домена",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag Services должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.services",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.services.label",
+          "params": {},
+          "text": "Обязательные службы контроллера домена"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.services.expected",
+          "params": {},
+          "text": "Проверка служб контроллера домена должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "dc.connectivity",
+      "category": "domain_controllers",
+      "label": "Связность контроллера домена",
+      "entity_id": 100,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "domain_controller",
+      "entity_name": "Example domain_controller",
+      "object_context": {
+        "dns_host_name": "dc.example.test",
+        "distinguished_name": "DC=example,DC=test"
+      },
+      "actual_value": "passed",
+      "expected_condition": "DCDiag Connectivity должен завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "100:dc.connectivity",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [
+        {
+          "code": "dns_host_name",
+          "label": "DNS",
+          "value": "dc.example.test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.dns_host_name",
+              "params": {},
+              "text": "DNS"
+            }
+          }
+        },
+        {
+          "code": "distinguished_name",
+          "label": "DN",
+          "value": "DC=example,DC=test",
+          "presentation_messages": {
+            "label": {
+              "code": "reports.v2.ad.infrastructure.context_labels.distinguished_name",
+              "params": {},
+              "text": "DN"
+            }
+          }
+        }
+      ],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.connectivity.label",
+          "params": {},
+          "text": "Связность контроллера домена"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.dc.connectivity.expected",
+          "params": {},
+          "text": "Проверка связи с контроллером домена должна пройти успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    },
+    {
+      "control_id": "replication.result_code",
+      "category": "replication",
+      "label": "Код последней репликации",
+      "entity_id": 102,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "replication_link",
+      "entity_name": "Example replication_link",
+      "object_context": {},
+      "actual_value": 0,
+      "expected_condition": "Значение должно быть равно 0",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "102:replication.result_code",
+      "actual_text": "0",
+      "authority_text": "Диагностика сборщика",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.result_code.label",
+          "params": {},
+          "text": "Код последней репликации"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.zero.expected",
+          "params": {},
+          "text": "Значение должно быть равно 0"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        }
+      }
+    },
+    {
+      "control_id": "replication.consecutive_failures",
+      "category": "replication",
+      "label": "Последовательные ошибки репликации",
+      "entity_id": 102,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "replication_link",
+      "entity_name": "Example replication_link",
+      "object_context": {},
+      "actual_value": 0,
+      "expected_condition": "Значение должно быть равно 0",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "102:replication.consecutive_failures",
+      "actual_text": "0",
+      "authority_text": "Диагностика сборщика",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.consecutive_failures.label",
+          "params": {},
+          "text": "Последовательные ошибки репликации"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.zero.expected",
+          "params": {},
+          "text": "Значение должно быть равно 0"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        }
+      }
+    },
+    {
+      "control_id": "replication.last_success_freshness",
+      "category": "replication",
+      "label": "Свежесть успешной репликации",
+      "entity_id": 102,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "replication_link",
+      "entity_name": "Example replication_link",
+      "object_context": {},
+      "actual_value": "2026-11-01T01:00:00Z",
+      "expected_condition": "Правило отчёта v1: успешная репликация не старше 24 часов",
+      "qualification": "passed",
+      "authority": "report_rule_v1",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "102:replication.last_success_freshness",
+      "actual_text": "2026-11-01T01:00:00Z",
+      "authority_text": "Правило отчёта v1",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.last_success_freshness.label",
+          "params": {},
+          "text": "Свежесть успешной репликации"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.last_success_freshness.expected",
+          "params": {},
+          "text": "Правило отчёта v1: успешная репликация не старше 24 часов"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.report_rule_v1",
+          "params": {},
+          "text": "Правило отчёта v1"
+        }
+      }
+    },
+    {
+      "control_id": "replication.state",
+      "category": "replication",
+      "label": "Состояние репликации",
+      "entity_id": 102,
+      "domain_id": 7,
+      "domain_name": "example.test",
+      "entity_type": "replication_link",
+      "entity_name": "Example replication_link",
+      "object_context": {},
+      "actual_value": "passed",
+      "expected_condition": "Проверка репликации должна завершиться успешно",
+      "qualification": "passed",
+      "authority": "collector_diagnostic",
+      "source_section": "domain_health",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "row_id": "102:replication.state",
+      "actual_text": "Пройдено",
+      "authority_text": "Диагностика сборщика",
+      "context": [],
+      "presentation_messages": {
+        "label": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.state.label",
+          "params": {},
+          "text": "Состояние репликации"
+        },
+        "expected_condition": {
+          "code": "reports.v2.ad.infrastructure.controls.replication.state.expected",
+          "params": {},
+          "text": "Проверка репликации должна завершиться успешно"
+        },
+        "authority_text": {
+          "code": "reports.v2.ad.infrastructure.authority.collector_diagnostic",
+          "params": {},
+          "text": "Диагностика сборщика"
+        },
+        "actual_text": {
+          "code": "reports.values.passed",
+          "params": {},
+          "text": "Пройдено"
+        }
+      }
+    }
+  ],
+  "checks": [
+    {
+      "user": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "at": "2026-11-01T12:00:00Z",
+      "previous": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "previous_complete": true,
+      "result": {
+        "disabled_logon": false,
+        "new_privileged": false,
+        "reversible_password": null,
+        "inactive_privileged": false,
+        "spn_privileged": false,
+        "privileged_password_never_expires": false,
+        "locked_out": null,
+        "service_interactive_logon": null,
+        "kerberos_no_preauth": null,
+        "inactive_enabled": false,
+        "old_password": false,
+        "password_never_expires": null
+      }
+    },
+    {
+      "user": {},
+      "at": "2026-11-01T12:00:00Z",
+      "previous": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "previous_complete": true,
+      "result": {
+        "disabled_logon": null,
+        "new_privileged": null,
+        "reversible_password": null,
+        "inactive_privileged": null,
+        "spn_privileged": null,
+        "privileged_password_never_expires": null,
+        "locked_out": null,
+        "service_interactive_logon": null,
+        "kerberos_no_preauth": null,
+        "inactive_enabled": null,
+        "old_password": null,
+        "password_never_expires": null
+      }
+    },
+    {
+      "user": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2024-01-01T00:00:00Z",
+        "lastLogonTimestamp": "2024-01-01T00:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "partial",
+          "unresolved": [
+            "unknown"
+          ],
+          "effective": [
+            {
+              "id": "group:1",
+              "name": "Example watch",
+              "watchGroup": true,
+              "relation": "nested"
+            }
+          ]
+        },
+        "lockedOut": true,
+        "passwordExpired": true,
+        "accountExpirationDate": "2026-01-01T00:00:00Z",
+        "userAccountControl": 4260000,
+        "trustedForDelegation": true,
+        "trustedToAuthForDelegation": true,
+        "useDesKeyOnly": true,
+        "servicePrincipalNames": [
+          "HTTP/service.example.test"
+        ]
+      },
+      "at": "2026-11-01T12:00:00Z",
+      "previous": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "previous_complete": true,
+      "result": {
+        "disabled_logon": false,
+        "new_privileged": true,
+        "reversible_password": true,
+        "inactive_privileged": true,
+        "spn_privileged": true,
+        "privileged_password_never_expires": true,
+        "locked_out": true,
+        "service_interactive_logon": null,
+        "kerberos_no_preauth": true,
+        "inactive_enabled": true,
+        "old_password": true,
+        "password_never_expires": true
+      }
+    },
+    {
+      "user": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2027-01-01T00:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "partial"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "at": "2026-11-01T12:00:00Z",
+      "previous": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "previous_complete": true,
+      "result": {
+        "disabled_logon": false,
+        "new_privileged": false,
+        "reversible_password": null,
+        "inactive_privileged": false,
+        "spn_privileged": false,
+        "privileged_password_never_expires": false,
+        "locked_out": null,
+        "service_interactive_logon": null,
+        "kerberos_no_preauth": null,
+        "inactive_enabled": false,
+        "old_password": null,
+        "password_never_expires": null
+      }
+    },
+    {
+      "user": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "exact_last_logon": {
+            "status": "partial"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        },
+        "exactLastLogon": "2026-11-01T01:00:00Z"
+      },
+      "at": "2026-11-01T12:00:00Z",
+      "previous": {
+        "id": "user:11",
+        "entityId": 11,
+        "objectGuid": "00000000-0000-0000-0000-000000000011",
+        "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+        "displayName": "Example user",
+        "samAccountName": "example",
+        "userPrincipalName": "example@example.test",
+        "enabled": true,
+        "passwordLastSet": "2026-10-31T12:00:00Z",
+        "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+        "sourceStates": {
+          "directory": {
+            "status": "observed",
+            "observed_at": "2026-11-01T12:00:00Z"
+          }
+        },
+        "memberships": {
+          "status": "observed",
+          "direct": [],
+          "effective": [],
+          "paths": [],
+          "unresolved": []
+        }
+      },
+      "previous_complete": true,
+      "result": {
+        "disabled_logon": false,
+        "new_privileged": false,
+        "reversible_password": null,
+        "inactive_privileged": false,
+        "spn_privileged": false,
+        "privileged_password_never_expires": false,
+        "locked_out": null,
+        "service_interactive_logon": null,
+        "kerberos_no_preauth": null,
+        "inactive_enabled": false,
+        "old_password": false,
+        "password_never_expires": null
+      }
+    }
+  ],
+  "results": [
+    {
+      "coverage": {},
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "ok",
+        "state_message": {
+          "code": "reports.state.ok",
+          "params": {},
+          "text": "Данные доступны"
+        },
+        "state_details": {
+          "reason": "query_completed",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {},
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "completeness": "not_proven"
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "partial",
+        "state_message": {
+          "code": "reports.state.partial",
+          "params": {},
+          "text": "Данные неполные"
+        },
+        "state_details": {
+          "reason": "coverage_incomplete",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "completeness": "not_proven"
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "state": "unavailable"
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "error",
+        "state_message": {
+          "code": "reports.state.error",
+          "params": {},
+          "text": "Ошибка получения данных"
+        },
+        "state_details": {
+          "reason": "source_or_storage_error",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "state": "unavailable"
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "state": "not_collected"
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "not_collected",
+        "state_message": {
+          "code": "reports.state.not_collected",
+          "params": {},
+          "text": "Данные не собраны"
+        },
+        "state_details": {
+          "reason": "collection_not_confirmed",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "state": "not_collected"
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "state": "processing"
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "processing",
+        "state_message": {
+          "code": "reports.state.processing",
+          "params": {},
+          "text": "Данные обрабатываются"
+        },
+        "state_details": {
+          "reason": "import_or_projection_pending",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "state": "processing"
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "observed_at_utc": "2000-01-01T00:00:00Z",
+        "freshness_threshold_seconds": 86400
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "stale",
+        "state_message": {
+          "code": "reports.state.stale",
+          "params": {},
+          "text": "Данные устарели"
+        },
+        "state_details": {
+          "reason": "freshness_exceeded",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": "2000-01-01T00:00:00Z",
+          "stale_since_utc": "2000-01-02T00:00:00+00:00",
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "observed_at_utc": "2000-01-01T00:00:00Z",
+          "freshness_threshold_seconds": 86400
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "domains": [
+          {
+            "domain_id": 7,
+            "domain_name": "example.test",
+            "section_name": "directory_accounts",
+            "section_status": "failed"
+          }
+        ]
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "partial",
+        "state_message": {
+          "code": "reports.state.partial",
+          "params": {},
+          "text": "Данные неполные"
+        },
+        "state_details": {
+          "reason": "coverage_incomplete",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [
+            "directory_accounts"
+          ],
+          "missing_domains": [
+            7
+          ],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": [
+            {
+              "source": "7:directory_accounts",
+              "source_name": "example.test",
+              "reason": "source_failed",
+              "since_utc": null
+            }
+          ]
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "domains": [
+            {
+              "domain_id": 7,
+              "domain_name": "example.test",
+              "section_name": "directory_accounts",
+              "section_status": "failed"
+            }
+          ]
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    },
+    {
+      "coverage": {
+        "state": "partial",
+        "truncated": true
+      },
+      "result": {
+        "contract_id": "sli.report-result.v2",
+        "report_key": "ad.users.v2",
+        "state": "partial",
+        "state_message": {
+          "code": "reports.state.partial",
+          "params": {},
+          "text": "Данные неполные"
+        },
+        "state_details": {
+          "reason": "result_truncated",
+          "source": null,
+          "stage": "query",
+          "limitations": [],
+          "missing_sources": [],
+          "missing_domains": [],
+          "observed_at_utc": null,
+          "stale_since_utc": null,
+          "source_issues": []
+        },
+        "items": [],
+        "has_more": false,
+        "next_cursor": null,
+        "filtered_count": null,
+        "metrics": [],
+        "series": {},
+        "coverage": {
+          "state": "partial",
+          "truncated": true
+        },
+        "filter_options": {},
+        "limitations": [],
+        "window": {},
+        "collections": {}
+      }
+    }
+  ],
+  "spn_inputs": [
+    {
+      "entity_id": 11,
+      "entity_type": "ad_user",
+      "domain_id": 7,
+      "run_id": "00000000-0000-0000-0000-000000000001",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "attributes_json": "{\"identity\": {\"object_guid\": \"00000000-0000-0000-0000-000000000011\"}, \"attributes\": {\"enabled\": true, \"trusted_for_delegation\": false, \"trusted_to_auth_for_delegation\": false, \"does_not_require_preauth\": false, \"msds_supported_encryption_types\": 28, \"password_last_set_utc\": \"2026-10-01T12:00:00Z\", \"service_principal_names\": [\"HTTP/service.example.test\"]}}"
+    },
+    {
+      "entity_id": 12,
+      "entity_type": "ad_user",
+      "domain_id": 7,
+      "run_id": "00000000-0000-0000-0000-000000000001",
+      "observed_at_utc": "2026-11-01T12:00:00Z",
+      "attributes_json": "{\"identity\": {\"object_guid\": \"00000000-0000-0000-0000-000000000012\"}, \"attributes\": {\"enabled\": false, \"trusted_for_delegation\": true, \"trusted_to_auth_for_delegation\": false, \"does_not_require_preauth\": false, \"msds_supported_encryption_types\": 28, \"password_last_set_utc\": \"2026-10-01T12:00:00Z\", \"service_principal_names\": [\"http/service.example.test\"]}}"
+    }
+  ],
+  "spn_result": {
+    "items": [
+      {
+        "entity_id": 11,
+        "entity_type": "ad_user",
+        "domain_id": 7,
+        "run_id": "00000000-0000-0000-0000-000000000001",
+        "password_last_set_utc": "2026-10-01T12:00:00Z",
+        "password_age_days": 31,
+        "enabled": true,
+        "trusted_for_delegation": false,
+        "trusted_to_auth_for_delegation": false,
+        "does_not_require_preauth": false,
+        "msds_supported_encryption_types": 28,
+        "observed_at_utc": "2026-11-01T12:00:00Z",
+        "source_freshness": "fresh",
+        "owner_quality": "known",
+        "spn": "HTTP/service.example.test",
+        "owner_count": 2,
+        "normalized_spn": "http/service.example.test",
+        "row_id": "7:00000000-0000-0000-0000-000000000001:http/service.example.test:11"
+      },
+      {
+        "entity_id": 12,
+        "entity_type": "ad_user",
+        "domain_id": 7,
+        "run_id": "00000000-0000-0000-0000-000000000001",
+        "password_last_set_utc": "2026-10-01T12:00:00Z",
+        "password_age_days": 31,
+        "enabled": false,
+        "trusted_for_delegation": true,
+        "trusted_to_auth_for_delegation": false,
+        "does_not_require_preauth": false,
+        "msds_supported_encryption_types": 28,
+        "observed_at_utc": "2026-11-01T12:00:00Z",
+        "source_freshness": "fresh",
+        "owner_quality": "known",
+        "spn": "http/service.example.test",
+        "owner_count": 2,
+        "normalized_spn": "http/service.example.test",
+        "row_id": "7:00000000-0000-0000-0000-000000000001:http/service.example.test:12"
+      }
+    ],
+    "metrics": {
+      "collisions": 1,
+      "disabled_owners": 1,
+      "flagged_owners": 1,
+      "unknown_owners": 0
+    },
+    "unknown_identity_count": 0,
+    "unknown_spn_count": 0,
+    "truncated": false
+  },
+  "cursor_context": {
+    "domain": 7,
+    "q": "пример",
+    "period": "7d",
+    "baseline_days": 30,
+    "user": ""
+  },
+  "cursor_position": {
+    "first_seen": "2026-11-01T12:00:00Z",
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "start": "2026-11-01T12:00:00Z",
+    "end": "2026-11-02T12:00:00Z"
+  },
+  "cursor": "eyJiaW5kaW5nIjoiZjIyZGVhZmVkM2M5NDEwOGVlMWNkNjg1NjljNTEzM2ZjMTBiODg0MDcwNWE5MWJlN2IxZDJjZjFiMzIyZWY0YyIsInBvc2l0aW9uIjp7ImZpcnN0X3NlZW4iOiIyMDI2LTExLTAxVDEyOjAwOjAwWiIsImlkIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInN0YXJ0IjoiMjAyNi0xMS0wMVQxMjowMDowMFoiLCJlbmQiOiIyMDI2LTExLTAyVDEyOjAwOjAwWiJ9fQ"
+}

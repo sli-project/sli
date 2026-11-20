@@ -1,0 +1,5549 @@
+# OpenAPI 3.1 description of the SLI server API (task T088, part 1).
+# Completeness is enforced by tests/unit/test_openapi_completeness.py.
+openapi: 3.1.0
+info:
+  title: SLI Platform API
+  version: 0.1.0-part1
+  description: 'Description of every HTTP route of the SLI server so that the server can be reimplemented in any
+    language without changing the interface or the agents (task T088). Part 1: all routes with method, path, path
+    and known query parameters and a summary; request and response schemas are complete for the agent protocol (tag
+    agent-protocol, see agent-dotnet/PROTOCOL.md). Other operation contracts are incomplete; unfilled contracts
+    are marked ''TODO schema''.
+
+
+    Routes registered as a prefix (x-sli-route-match: prefix) are listed once with a {path} or {name} parameter
+    until later parts split them into concrete paths. Errors are JSON of the form {"error": "<code>"}.'
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+- url: /
+security:
+- sessionCookie: []
+- bearerApiKey: []
+- headerApiKey: []
+tags:
+- name: agent-protocol
+  description: Endpoints used by the SLI agent (mTLS or enrollment TLS).
+- name: agents-admin
+  description: Agent administration for the platform owner.
+- name: ui-and-service
+  description: Sign-in page, health probes, React shell and static pages.
+paths:
+  /api/plugins/{id}/settings:
+    get:
+      operationId: get_plugin_settings
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [sli.ad, sli.gpo, sli.workstations, sli.file-audit, sli.remote-access, sli.sigma]
+      summary: Read a plugin's settings schema and current values.
+      description: >-
+        Requires the existing access.manage capability. Reads the canonical legacy
+        platform_settings keys without rewriting values or timestamps. Unconfigured
+        values are null; environment and default fallback retain their legacy semantics.
+        Shared core keys are references in schema.x-core-settings, not plugin-owned values.
+        Secret-marked declarations are not served by this non-secret settings endpoint.
+      responses:
+        '200':
+          description: Validated JSON Schema and typed values for this plugin only.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plugin_id, schema, values, sources]
+                additionalProperties: false
+                properties:
+                  plugin_id: {type: string}
+                  schema: {type: object}
+                  values:
+                    type: object
+                    additionalProperties: true
+                  sources:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [database, environment, default, not_configured]
+        '401': {description: Authentication required.}
+        '403': {description: Existing access.manage capability required.}
+        '404': {description: Plugin is not a bundled settings owner.}
+        '503': {description: Settings declaration or stored value is unavailable.}
+    put:
+      operationId: put_plugin_setting
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [sli.ad, sli.gpo, sli.workstations, sli.file-audit, sli.remote-access, sli.sigma]
+      summary: Update one declared plugin setting with an atomic audit record.
+      description: >-
+        Requires the existing admin role and access.manage capability, HTTPS and
+        the same-origin mutation check. A single key is updated per request;
+        other plugin and core keys are rejected. The typed value must satisfy
+        the returned JSON Schema and existing storage/domain/policy validation.
+        The existing platform_settings transaction preserves exception attribution
+        and workstation policy version checks. No key migration or reset occurs.
+        Audit contains the plugin and key, never submitted or previous values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              additionalProperties: false
+              properties:
+                key: {type: string, minLength: 1}
+                value:
+                  description: Typed value validated against this plugin's settings schema.
+      responses:
+        '200':
+          description: The setting and its audit record were committed together.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plugin_id, key, value]
+                additionalProperties: false
+                properties:
+                  plugin_id: {type: string}
+                  key: {type: string}
+                  value:
+                    description: Persisted value, including server-managed attribution.
+        '400': {description: Invalid key, value or policy update; no write committed.}
+        '401': {description: Authentication required.}
+        '403': {description: Admin role, access.manage or same-origin check denied.}
+        '404': {description: Plugin is not a bundled settings owner.}
+        '500': {description: Storage or audit transaction failed.}
+  /:
+    get:
+      operationId: get
+      tags:
+      - ui-and-service
+      summary: 'Read: home'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /ad-accounts:
+    get:
+      operationId: get_ad_accounts
+      tags:
+      - ui-and-service
+      summary: 'Read: ad accounts'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/ai/prompt-preview:
+    get:
+      operationId: get_api_ai_prompt_preview
+      tags:
+      - ai
+      summary: 'Read: ai prompt preview'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/ai/redaction-preview:
+    get:
+      operationId: get_api_ai_redaction_preview
+      tags:
+      - ai
+      summary: 'Read: ai redaction preview'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/ai/runs:
+    get:
+      operationId: get_api_ai_runs
+      tags:
+      - ai
+      summary: 'Read: ai runs'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/auth/api-keys:
+    get:
+      operationId: get_api_auth_api_keys
+      tags:
+      - auth
+      summary: 'Read: auth api keys'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_auth_api_keys
+      tags:
+      - auth
+      summary: 'Change: auth api keys'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/auth/api-keys/{key_id}/revoke:
+    post:
+      operationId: post_api_auth_api_keys_key_id_revoke
+      tags:
+      - auth
+      summary: 'Change: auth api keys key id revoke'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: access.manage
+      x-sli-route-match: template
+  /api/auth/bootstrap:
+    get:
+      operationId: get_api_auth_bootstrap
+      tags:
+      - auth
+      summary: 'Read: one-time owner activation form (native install)'
+      responses:
+        '200':
+          description: HTML form; 404 unless owner setup is enabled
+      security: []
+    post:
+      operationId: post_api_auth_bootstrap
+      tags:
+      - auth
+      summary: 'Change: claim the initial owner with the one-time setup code'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+      security: []
+  /api/auth/login:
+    post:
+      operationId: post_api_auth_login
+      tags:
+      - auth
+      summary: 'Change: auth login'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+      security: []
+  /api/auth/logout:
+    post:
+      operationId: post_api_auth_logout
+      tags:
+      - auth
+      summary: 'Change: auth logout'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/auth/me:
+    get:
+      operationId: get_api_auth_me
+      tags:
+      - auth
+      summary: 'Read: auth me'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/auth/users:
+    get:
+      operationId: get_api_auth_users
+      tags:
+      - auth
+      summary: 'Read: auth users'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_auth_users
+      tags:
+      - auth
+      summary: 'Change: auth users'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/auth/users/{path}:
+    post:
+      operationId: post_api_auth_users_path
+      tags:
+      - auth
+      summary: 'Change: auth users path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/auth/users/{user_id}/password:
+    post:
+      operationId: post_api_auth_users_user_id_password
+      tags:
+      - auth
+      summary: 'Change: auth users user id password'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: access.manage
+      x-sli-route-match: template
+  /api/autocollection/status:
+    get:
+      operationId: get_api_autocollection_status
+      tags:
+      - autocollection
+      summary: 'Read: autocollection status'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/collector/health:
+    get:
+      operationId: get_api_collector_health
+      tags:
+      - collector
+      summary: 'Read: collector health'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/dashboard/snapshot:
+    get:
+      operationId: get_api_dashboard_snapshot
+      tags:
+      - dashboard
+      summary: 'Read: dashboard snapshot'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/db/status:
+    get:
+      operationId: get_api_db_status
+      tags:
+      - db
+      summary: 'Read: db status'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/diagnostics/overview:
+    get:
+      operationId: get_api_diagnostics_overview
+      tags:
+      - diagnostics
+      summary: 'Read: diagnostics overview'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/domain-controllers:
+    get:
+      operationId: get_api_domain_controllers
+      tags:
+      - domain-controllers
+      summary: 'Read: domain controllers'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/entities/details:
+    get:
+      operationId: get_api_entities_details
+      tags:
+      - entities
+      summary: 'Read: entities details'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: objects.view
+  /api/entities/summary:
+    get:
+      operationId: get_api_entities_summary
+      tags:
+      - entities
+      summary: 'Read: entities summary'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: objects.view
+  /api/events/details:
+    get:
+      operationId: get_api_events_details
+      tags:
+      - events
+      summary: 'Read: events details'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: evidence.exact
+  /api/events/search:
+    get:
+      operationId: get_api_events_search
+      tags:
+      - events
+      summary: 'Read: events search'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/events/search/deep:
+    get:
+      operationId: get_api_events_search_deep
+      tags:
+      - events
+      summary: 'Read: events search deep'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/events/summary:
+    get:
+      operationId: get_api_events_summary
+      tags:
+      - events
+      summary: 'Read: events summary'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/events/timeline:
+    get:
+      operationId: get_api_events_timeline
+      tags:
+      - events
+      summary: 'Read: events timeline'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/findings:
+    get:
+      operationId: get_api_findings
+      tags:
+      - findings
+      summary: 'Read: findings'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+  /api/findings/risk-responsibles:
+    get:
+      operationId: get_api_findings_risk_responsibles
+      tags:
+      - findings
+      summary: 'Read: findings risk responsibles'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+  /api/findings/{finding_id}/risk-acceptance:
+    post:
+      operationId: post_api_findings_finding_id_risk_acceptance
+      tags:
+      - findings
+      summary: 'Change: findings finding id risk acceptance'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: finding_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: investigations.view
+      x-sli-route-match: template
+  /api/findings/{finding_id}/risk-audit:
+    get:
+      operationId: get_api_findings_finding_id_risk_audit
+      tags:
+      - findings
+      summary: 'Read: findings finding id risk audit'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: finding_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: investigations.view
+      x-sli-route-match: template
+  /api/findings/{finding_id}/status:
+    post:
+      operationId: post_api_findings_finding_id_status
+      tags:
+      - findings
+      summary: 'Change: findings finding id status'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: finding_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: investigations.view
+      x-sli-route-match: template
+  /api/health:
+    get:
+      operationId: get_api_health
+      tags:
+      - ui-and-service
+      summary: 'Read: health'
+      responses:
+        '200':
+          description: TODO schema
+      security: []
+  /api/health/details:
+    get:
+      operationId: get_api_health_details
+      tags:
+      - ui-and-service
+      summary: 'Read: health details'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/health/live:
+    get:
+      operationId: get_api_health_live
+      tags:
+      - ui-and-service
+      summary: 'Read: health live'
+      responses:
+        '200':
+          description: TODO schema
+      security: []
+  /api/health/ready:
+    get:
+      operationId: get_api_health_ready
+      tags:
+      - ui-and-service
+      summary: 'Read: health ready'
+      responses:
+        '200':
+          description: TODO schema
+      security: []
+  /api/investigation/workspace:
+    get:
+      operationId: get_api_investigation_workspace
+      tags:
+      - investigation
+      summary: 'Read: investigation workspace'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+  /api/jobs:
+    get:
+      operationId: get_api_jobs
+      tags:
+      - jobs
+      summary: 'Read: jobs'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/jobs/analyze:
+    post:
+      operationId: post_api_jobs_analyze
+      tags:
+      - jobs
+      summary: 'Change: jobs analyze'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/jobs/collect:
+    post:
+      operationId: post_api_jobs_collect
+      tags:
+      - jobs
+      summary: 'Change: jobs collect'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/jobs/{path}:
+    get:
+      operationId: get_api_jobs_path
+      tags:
+      - jobs
+      summary: 'Read: jobs path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: operations.view
+      x-sli-route-match: prefix
+  /api/logs/tail:
+    get:
+      operationId: get_api_logs_tail
+      tags:
+      - logs
+      summary: 'Read: logs tail'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/reports:
+    get:
+      operationId: get_api_reports
+      tags:
+      - reports
+      summary: 'Read: reports'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/role-views:
+    get:
+      operationId: get_api_role_views
+      tags:
+      - role-views
+      summary: 'Read: role views'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/runtime/status:
+    get:
+      operationId: get_api_runtime_status
+      tags:
+      - runtime
+      summary: 'Read: runtime status'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/security/events-monitor:
+    get:
+      operationId: get_api_security_events_monitor
+      tags:
+      - security
+      summary: 'Read: security events monitor'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/sources:
+    get:
+      operationId: get_api_sources
+      tags:
+      - sources
+      summary: 'Read: sources'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/storage/health:
+    get:
+      operationId: get_api_storage_health
+      tags:
+      - storage
+      summary: 'Read: storage health'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/storage/lifecycle:
+    get:
+      operationId: get_api_storage_lifecycle
+      tags:
+      - storage
+      summary: 'Read: storage lifecycle'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/system/health:
+    get:
+      operationId: get_api_system_health
+      tags:
+      - system
+      summary: 'Read: system health'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/test/sli-v4/session:
+    post:
+      operationId: post_api_test_sli_v4_session
+      tags:
+      - test
+      summary: 'Change: test sli v4 session'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/ui/navigation:
+    get:
+      operationId: get_api_ui_navigation
+      tags:
+      - ui
+      summary: 'Read: ui navigation'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/access/assignments:
+    post:
+      operationId: post_api_v1_access_assignments
+      tags:
+      - access
+      summary: 'Change: access assignments'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.assign
+  /api/v1/access/audit:
+    get:
+      operationId: get_api_v1_access_audit
+      tags:
+      - access
+      summary: 'Read: access audit'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/access/effective:
+    get:
+      operationId: get_api_v1_access_effective
+      tags:
+      - access
+      summary: 'Read: access effective'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/access/grant-options:
+    get:
+      operationId: get_api_v1_access_grant_options
+      tags:
+      - access
+      summary: 'Read: access grant options'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.assign
+  /api/v1/access/package-assignments:
+    post:
+      operationId: post_api_v1_access_package_assignments
+      tags:
+      - access
+      summary: 'Change: access package assignments'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/access/report-requests:
+    get:
+      operationId: get_api_v1_access_report_requests
+      tags:
+      - access
+      summary: 'Read: access report requests'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+    post:
+      operationId: post_api_v1_access_report_requests
+      tags:
+      - access
+      summary: 'Change: access report requests'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/access/report-requests/{request_id}/decision:
+    post:
+      operationId: post_api_v1_access_report_requests_request_id_decision
+      tags:
+      - access
+      summary: 'Change: access report requests request id decision'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.catalog
+      x-sli-route-match: template
+  /api/v1/access/subjects:
+    get:
+      operationId: get_api_v1_access_subjects
+      tags:
+      - access
+      summary: 'Read: access subjects'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/ad-operation-credentials:
+    get:
+      operationId: get_api_v1_ad_operation_credentials
+      tags:
+      - ad-operation-credentials
+      summary: 'Read: ad operation credentials'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: post_api_v1_ad_operation_credentials
+      tags:
+      - ad-operation-credentials
+      summary: 'Change: ad operation credentials'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ad-operation-credentials/check:
+    post:
+      operationId: post_api_v1_ad_operation_credentials_check
+      tags:
+      - ad-operation-credentials
+      summary: 'Change: ad operation credentials check'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ad-operation-credentials/delete:
+    post:
+      operationId: post_api_v1_ad_operation_credentials_delete
+      tags:
+      - ad-operation-credentials
+      summary: 'Change: ad operation credentials delete'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ad-operation-credentials/replace-password:
+    post:
+      operationId: post_api_v1_ad_operation_credentials_replace_password
+      tags:
+      - ad-operation-credentials
+      summary: 'Change: ad operation credentials replace password'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/agent-deployment-directory:
+    post:
+      operationId: post_api_v1_admin_agent_deployment_directory
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent deployment directory'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-group-requests:
+    post:
+      operationId: post_api_v1_admin_agent_group_requests
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent group requests'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-group-requests/approve:
+    post:
+      operationId: post_api_v1_admin_agent_group_requests_approve
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent group requests approve'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-group-tokens:
+    get:
+      operationId: get_api_v1_admin_agent_group_tokens
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent group tokens'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agent_group_tokens
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent group tokens'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-group-tokens/revoke:
+    post:
+      operationId: post_api_v1_admin_agent_group_tokens_revoke
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent group tokens revoke'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-onboarding:
+    get:
+      operationId: get_api_v1_admin_agent_onboarding
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent onboarding'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: token_id
+        in: query
+        required: true
+        schema:
+          type: string
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-onboarding/approve:
+    post:
+      operationId: post_api_v1_admin_agent_onboarding_approve
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent onboarding approve'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-packages:
+    get:
+      operationId: get_api_v1_admin_agent_packages
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent packages'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agent_packages
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent packages'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-templates:
+    get:
+      operationId: get_api_v1_admin_agent_templates
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent templates'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agent_templates
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent templates'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-tokens:
+    get:
+      operationId: get_api_v1_admin_agent_tokens
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent tokens'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agent_tokens
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent tokens'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-tokens/revoke:
+    post:
+      operationId: post_api_v1_admin_agent_tokens_revoke
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent tokens revoke'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-update-waves:
+    get:
+      operationId: get_api_v1_admin_agent_update_waves
+      tags:
+      - agents-admin
+      summary: 'Read: admin agent update waves'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: wave_id
+        in: query
+        required: false
+        schema:
+          type: string
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agent_update_waves
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent update waves'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agent-update-waves/stop:
+    post:
+      operationId: post_api_v1_admin_agent_update_waves_stop
+      tags:
+      - agents-admin
+      summary: 'Change: admin agent update waves stop'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents:
+    get:
+      operationId: get_api_v1_admin_agents
+      tags:
+      - agents-admin
+      summary: 'Read: admin agents'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: agent_id
+        in: query
+        required: false
+        schema:
+          type: string
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/disable:
+    post:
+      operationId: post_api_v1_admin_agents_disable
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents disable'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/file-audit:
+    get:
+      operationId: get_api_v1_admin_agents_file_audit
+      tags:
+      - agents-admin
+      summary: 'Read: admin agents file audit'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agents_file_audit
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents file audit'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/modules:
+    post:
+      operationId: post_api_v1_admin_agents_modules
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents modules'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/policy:
+    post:
+      operationId: post_api_v1_admin_agents_policy
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents policy'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/remove:
+    post:
+      operationId: post_api_v1_admin_agents_remove
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents remove'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/replace:
+    post:
+      operationId: post_api_v1_admin_agents_replace
+      tags:
+      - agents-admin
+      summary: Prepare or complete an explicitly confirmed agent replacement.
+      description: >-
+        Requires an authenticated platform owner or access.manage capability
+        and the existing same-origin mutation check. The new agent must have
+        enrolled with a key-bound token authorizing replacement of the old agent.
+        Prepare drains the old runtime; complete transfers it after readiness checks.
+        The response is sent after the transaction commits, with Cache-Control no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [old_agent_id, new_agent_id, phase, confirm]
+              properties:
+                old_agent_id:
+                  type: string
+                  format: uuid
+                new_agent_id:
+                  type: string
+                  format: uuid
+                  description: Must differ from old_agent_id.
+                phase:
+                  type: string
+                  enum: [prepare, complete]
+                confirm:
+                  type: boolean
+                  const: true
+      responses:
+        '200':
+          description: Replacement phase committed; repeated completion is idempotent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, old_agent_id, new_agent_id]
+                properties:
+                  state:
+                    type: string
+                    enum: [draining, completed]
+                  old_agent_id:
+                    type: string
+                    format: uuid
+                  new_agent_id:
+                    type: string
+                    format: uuid
+                  policy_revision:
+                    type: integer
+                    description: Returned when completing the transfer for the first time.
+        '400':
+          description: Invalid replacement request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Replacement preconditions or readiness checks failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Agent service unavailable; internal diagnostics are not exposed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/revoke:
+    post:
+      operationId: post_api_v1_admin_agents_revoke
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents revoke'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/rights-probe:
+    post:
+      operationId: post_api_v1_admin_agents_rights_probe
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents rights probe'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/sequence-recovery:
+    get:
+      operationId: get_api_v1_admin_agents_sequence_recovery
+      tags:
+      - agents-admin
+      summary: 'Read: admin agents sequence recovery'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: agent_id
+        in: query
+        required: true
+        schema:
+          type: string
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_admin_agents_sequence_recovery
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents sequence recovery'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/admin/agents/update-policy:
+    post:
+      operationId: post_api_v1_admin_agents_update_policy
+      tags:
+      - agents-admin
+      summary: 'Change: admin agents update policy'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/agent-deployment/gpo/cancel:
+    post:
+      operationId: post_api_v1_agent_deployment_gpo_cancel
+      tags:
+      - agents-admin
+      summary: 'Change: agent deployment gpo cancel'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/agent-deployment/gpo/confirm:
+    post:
+      operationId: post_api_v1_agent_deployment_gpo_confirm
+      tags:
+      - agents-admin
+      summary: 'Change: agent deployment gpo confirm'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/agent-deployment/gpo/credentials:
+    post:
+      operationId: post_api_v1_agent_deployment_gpo_credentials
+      tags:
+      - agents-admin
+      summary: 'Change: agent deployment gpo credentials'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/agent-deployment/gpo/preview:
+    post:
+      operationId: post_api_v1_agent_deployment_gpo_preview
+      tags:
+      - agents-admin
+      summary: 'Change: agent deployment gpo preview'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/agent/enroll:
+    post:
+      operationId: post_api_v1_agent_enroll
+      tags:
+      - agent-protocol
+      summary: 'Agent enrollment: one-time token and CSR in, client certificate out'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+      responses:
+        '200':
+          description: Certificate issued (committed before the response).
+          headers: &id001
+            Cache-Control:
+              description: no-store
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '401':
+          description: enrollment_token_rejected and other enrollment errors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: agent_host_already_enrolled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security: []
+  /api/v1/agent/file-audit-report:
+    post:
+      operationId: post_api_v1_agent_file_audit_report
+      tags:
+      - agent-protocol
+      summary: 'Change: agent file audit report'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/group-enroll:
+    post:
+      operationId: post_api_v1_agent_group_enroll
+      tags:
+      - agent-protocol
+      summary: Agent group enrollment request (pending, then approved with a one-time token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupEnrollRequest'
+      responses:
+        '200':
+          description: Pending or approved.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnrollResponse'
+        '401':
+          description: group_enrollment_rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security: []
+  /api/v1/agent/identity:
+    get:
+      operationId: get_api_v1_agent_identity
+      tags:
+      - agent-protocol
+      summary: 'Agent check-in: assigned modules, collection policy, update offer, or removal command'
+      responses:
+        '200':
+          description: Policy for an active agent, or a removal command for a disabled one.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInResponse'
+        '401':
+          description: agent_certificate_rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/package:
+    get:
+      operationId: get_api_v1_agent_package
+      tags:
+      - agent-protocol
+      summary: Agent downloads the update package assigned to it (ZIP, at most 256 MiB, verified by SHA-256)
+      parameters:
+      - name: sha256
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+      responses:
+        '200':
+          description: ZIP archive.
+          headers: *id001
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: agent_package_not_assigned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: agent_certificate_rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/packets:
+    post:
+      operationId: post_api_v1_agent_packets
+      tags:
+      - agent-protocol
+      summary: Agent delivers a signed collection packet; the receipt is returned after commit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentPacket'
+      responses:
+        '200':
+          description: Receipt. Status committed, duplicate, rejected or retry_later; rejection is a receipt, not
+            an HTTP error.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentReceipt'
+        '400':
+          description: agent_packet_invalid, agent_packet_size_limit, agent_payload_hash_mismatch, agent_signature_invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: agent_authentication_failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/policy-report:
+    post:
+      operationId: post_api_v1_agent_policy_report
+      tags:
+      - agent-protocol
+      summary: Agent reports the applied policy revision and collection state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyReportRequest'
+      responses:
+        '200':
+          description: Applied state.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyReportResponse'
+        '400':
+          description: invalid_agent_policy_report, invalid_agent_policy_revision, invalid_agent_collection_state
+            and similar.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: agent_certificate_rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/removal-result:
+    post:
+      operationId: post_api_v1_agent_removal_result
+      tags:
+      - agent-protocol
+      summary: Agent reports the result of a removal command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemovalResultRequest'
+      responses:
+        '200':
+          description: State recorded.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalResultResponse'
+        '400':
+          description: agent_removal_result_invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: agent_removal_replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/renew:
+    post:
+      operationId: post_api_v1_agent_renew
+      tags:
+      - agent-protocol
+      summary: Agent certificate renewal (same key, new CSR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenewRequest'
+      responses:
+        '200':
+          description: New certificate.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '401':
+          description: Certificate rejected or expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: agent_service_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/revocations:
+    get:
+      operationId: get_api_v1_agent_revocations
+      tags:
+      - agent-protocol
+      summary: Feed of revoked agent certificates (no authentication)
+      parameters:
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+        description: 'Feed cursor: only entries with id greater than this are returned (at most 500).'
+      responses:
+        '200':
+          description: Revocations and the next cursor.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevocationFeed'
+        '400':
+          description: invalid_revocation_cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security: []
+  /api/v1/agent/uninstall:
+    post:
+      operationId: post_api_v1_agent_uninstall
+      tags:
+      - agent-protocol
+      summary: Agent asks the server for a removal command (body is an empty object)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Removal command.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalCommand'
+        '401':
+          description: agent_certificate_rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/update-result:
+    post:
+      operationId: post_api_v1_agent_update_result
+      tags:
+      - agent-protocol
+      summary: Agent reports the result of an update attempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateResultRequest'
+      responses:
+        '200':
+          description: Recorded.
+          headers: *id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateResultResponse'
+        '400':
+          description: agent_update_result_invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: agent_package_not_assigned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+      - agentMutualTls: []
+  /api/v1/agent/windows-audit-report:
+    post:
+      operationId: post_api_v1_agent_windows_audit_report
+      tags:
+      - agent-protocol
+      summary: 'Change: agent windows audit report'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - agentMutualTls: []
+  /api/v1/decoys:
+    get:
+      operationId: get_api_v1_decoys
+      tags:
+      - decoys
+      summary: 'Read: decoys'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+    post:
+      operationId: post_api_v1_decoys
+      tags:
+      - decoys
+      summary: 'Change: decoys'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/decoys/{path}:
+    post:
+      operationId: post_api_v1_decoys_path
+      tags:
+      - decoys
+      summary: 'Change: decoys path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.catalog
+      x-sli-route-match: prefix
+  /api/v1/domains:
+    get:
+      operationId: get_api_v1_domains
+      tags:
+      - domains
+      summary: Read the union of domains accessible through readable domain reports.
+      description: >-
+        No request DTO, pagination or domain selector. The body of GET is not read.
+        An empty grant returns {"items": []}, never null. Archived domains are included.
+        All seven freshness fields are present; unavailable observations are JSON null.
+        Rows are ordered by registered FQDN, then id. This is a read without collection side effects.
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+      - headerApiKey: []
+      x-sli-auth:
+        roles: [viewer, operator, admin]
+        capability: workspace.view
+        report-subject-keys: denied with report_key_route_denied
+        credential-order: bearer API key, header API key, then session cookie
+        transport: HTTPS required when trusted proxies are configured; only trusted peers may supply X-Forwarded-Proto.
+      x-sli-scope: >-
+        Union of view grants on domain-scoped reports with the required field categories.
+        A global grant selects all registered domains. No executable grant selects none.
+        Source/entity/device/plugin restrictions cannot be widened into whole-domain access.
+      x-sli-limits:
+        query: No parsed parameter with a nonempty value is accepted.
+        pagination: none
+        response-items: No route-level cap; return the complete authorized domain set.
+        scope-composition: At most 100 distinct collection scopes in a merged per-report clause; overflow returns 400.
+        ingress: Existing configured shared request admission can return 429; this contract adds no limits.
+      x-sli-raw-http:
+        query-parser: urllib.parse.parse_qs with keep_blank_values=False and ampersand separator
+        blank-query: '?x, ?x=, repeated empty values and empty segments are ignored.'
+        nonblank-query: '?x=+, ?x=%20, ?x=%ZZ, ?=1 and a nonblank duplicate return 400.'
+        precedence: Transport, authentication, viewer role and capability/scope composition precede query validation in .NET.
+        path: Exact GET /api/v1/domains; the .NET raw-target guard rejects case, escaping or trailing-slash variants with 501.
+      x-sli-contract-tests:
+      - tests/unit/test_openapi_completeness.py
+      - server-dotnet/tests/Sli.Server.Tests/Domains/DomainContractTests.cs
+      x-sli-verification: >-
+        Shared source-derived DTO/query vectors and isolated HTTP tests, without PostgreSQL.
+        Actual SQL/ACL, real ingress, credential lookup, and unlisted raw HTTP combinations remain unknown.
+        This operation's description does not assert global migration parity.
+      responses:
+        '200':
+          description: Accessible domains, including an empty array when the grant or registry is empty.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+        '400':
+          description: Nonblank query parameters or invalid per-report domain-scope composition.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error: {const: domain_parameters_invalid}
+        '401':
+          description: No authenticated principal. Localized message follows Accept-Language (Russian fallback).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainAuthenticationError'
+        '403':
+          description: Transport, report-key restriction, viewer role, or workspace capability denied.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/DomainCapabilityError'
+                - $ref: '#/components/schemas/DomainTransportError'
+                - type: object
+                  additionalProperties: false
+                  required: [error]
+                  properties:
+                    error:
+                      type: string
+                      enum: [insufficient_permissions, report_key_route_denied, workspace_view_required]
+        '429':
+          description: Existing shared concurrency or per-client rolling-minute admission rejected the request.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error: {type: string, enum: [server_busy, rate_limit_exceeded]}
+        '500':
+          description: Unexpected failure; only a correlation id is exposed, never SQL or exception text.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error, internal_error_id]
+                properties:
+                  error: {const: internal_server_error}
+                  internal_error_id: {type: string, format: uuid}
+        '501':
+          description: The .NET exact raw-target guard rejects a noncanonical spelling or method; not a missing canonical GET.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error: {const: not_implemented}
+        '503':
+          description: Existing read cancellation reported as an unavailable read, without partial items.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error, state]
+                properties:
+                  error: {const: report_read_timeout}
+                  state: {const: unavailable}
+      x-sli-capability: workspace.view
+  /api/v1/entities:
+    get:
+      operationId: get_api_v1_entities
+      tags:
+      - entities
+      summary: 'Read: entities'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: objects.view
+  /api/v1/entities/{entity_id}/vpn-sessions:
+    get:
+      operationId: get_api_v1_entities_entity_id_vpn_sessions
+      tags:
+      - entities
+      summary: 'Read: entities entity id vpn sessions'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: entity_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: objects.view
+      x-sli-route-match: template
+  /api/v1/entities/{path}:
+    get:
+      operationId: get_api_v1_entities_path
+      tags:
+      - entities
+      summary: 'Read: entities path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: objects.view
+      x-sli-route-match: prefix
+  /api/v1/event-search/members:
+    post:
+      operationId: post_api_v1_event_search_members
+      tags:
+      - event-search
+      summary: 'Change: event search members'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/v1/event-search/page:
+    post:
+      operationId: post_api_v1_event_search_page
+      tags:
+      - event-search
+      summary: 'Change: event search page'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/v1/event-search/query:
+    post:
+      operationId: post_api_v1_event_search_query
+      tags:
+      - event-search
+      summary: 'Change: event search query'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/v1/events:
+    get:
+      operationId: get_api_v1_events
+      tags:
+      - events
+      summary: 'Read: events'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: events.view
+  /api/v1/events/batch:
+    get:
+      operationId: get_api_v1_events_batch
+      tags:
+      - events
+      summary: 'Read: events batch'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: evidence.exact
+  /api/v1/events/{event_id}/entities:
+    get:
+      operationId: get_api_v1_events_event_id_entities
+      tags:
+      - events
+      summary: 'Read: events event id entities'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: evidence.exact
+      x-sli-route-match: template
+  /api/v1/events/{event_id}/relations:
+    get:
+      operationId: get_api_v1_events_event_id_relations
+      tags:
+      - events
+      summary: 'Read: events event id relations'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: evidence.exact
+      x-sli-route-match: template
+  /api/v1/events/{path}:
+    get:
+      operationId: get_api_v1_events_path
+      tags:
+      - events
+      summary: 'Read: events path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: evidence.exact
+      x-sli-route-match: prefix
+  /api/v1/home/summary:
+    get:
+      operationId: get_api_v1_home_summary
+      tags:
+      - home
+      summary: 'Read: home summary'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/investigation-cases:
+    get:
+      operationId: get_api_v1_investigation_cases
+      tags:
+      - investigation-cases
+      summary: 'Read: investigation cases'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+  /api/v1/investigations:
+    get:
+      operationId: get_api_v1_investigations
+      tags:
+      - investigations
+      summary: 'Read: investigations'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+    post:
+      operationId: post_api_v1_investigations
+      tags:
+      - investigations
+      summary: 'Change: investigations'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: investigations.view
+  /api/v1/investigations/{path}:
+    get:
+      operationId: get_api_v1_investigations_path
+      tags:
+      - investigations
+      summary: 'Read: investigations path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: investigations.view
+      x-sli-route-match: prefix
+    post:
+      operationId: post_api_v1_investigations_path
+      tags:
+      - investigations
+      summary: 'Change: investigations path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: investigations.view
+      x-sli-route-match: prefix
+  /api/v1/notification-channels:
+    get:
+      operationId: get_api_v1_notification_channels
+      tags:
+      - notification-channels
+      summary: 'Read: notification channels'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/notification-channels/smtp/setup/{path}:
+    post:
+      operationId: post_api_v1_notification_channels_smtp_setup_path
+      tags:
+      - notification-channels
+      summary: Read or save SMTP settings through the isolated writer
+      description: Admin session and CSRF required. Password is write-only; blank preserves a verified saved password. No mail is sent by these operations.
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [status, save]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+                additionalProperties: false
+                description: Empty status request.
+              - type: object
+                additionalProperties: false
+                required: [host, port, tls_mode, username, password, sender, recipients, enabled, revision]
+                properties:
+                  host:
+                    type: string
+                    maxLength: 253
+                  port:
+                    type: integer
+                    minimum: 1
+                    maximum: 65535
+                  tls_mode:
+                    type: string
+                    enum: [tls, starttls]
+                  username:
+                    type: string
+                    minLength: 1
+                    maxLength: 1024
+                  password:
+                    type: string
+                    writeOnly: true
+                    maxLength: 65536
+                  sender:
+                    type: string
+                    format: email
+                  recipients:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [user_id, mailbox]
+                      properties:
+                        user_id:
+                          type: integer
+                          minimum: 1
+                          description: Existing bound identity or the authenticated user; not a new address-only recipient.
+                        mailbox:
+                          type: string
+                          maxLength: 1024
+                  enabled:
+                    type: boolean
+                  revision:
+                    type: integer
+                    minimum: 1
+      responses:
+        '200':
+          description: Safe settings status or save receipt. Never returns a password, digest or private path.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret_set, needs_save, revision]
+                properties:
+                  secret_set:
+                    type: boolean
+                  needs_save:
+                    type: boolean
+                  revision:
+                    type: integer
+                  self_user_id:
+                    type: integer
+        '400':
+          description: Invalid settings or recipient mapping.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Settings changed; reload before saving.
+        '503':
+          description: Settings unavailable; no provider response or secret is returned.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/notification-channels/telegram/setup/{path}:
+    post:
+      operationId: post_api_v1_notification_channels_telegram_setup_path
+      tags:
+      - notification-channels
+      summary: 'Change: notification channels telegram setup path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/notification-channels/workspace:
+    get:
+      operationId: get_api_v1_notification_channels_workspace
+      tags:
+      - notification-channels
+      summary: 'Read: notification channels workspace'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/notification-channels/{path}:
+    post:
+      operationId: post_api_v1_notification_channels_path
+      tags:
+      - notification-channels
+      summary: 'Change: notification channels path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/notification-subscriptions:
+    get:
+      operationId: get_api_v1_notification_subscriptions
+      tags:
+      - notification-subscriptions
+      summary: 'Read: notification subscriptions'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_notification_subscriptions
+      tags:
+      - notification-subscriptions
+      summary: 'Change: notification subscriptions'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/notification-subscriptions/runs:
+    get:
+      operationId: get_api_v1_notification_subscriptions_runs
+      tags:
+      - notification-subscriptions
+      summary: 'Read: notification subscriptions runs'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/notification-subscriptions/schedules:
+    get:
+      operationId: get_api_v1_notification_subscriptions_schedules
+      tags:
+      - notification-subscriptions
+      summary: 'Read: notification subscriptions schedules'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/notification-subscriptions/{path}:
+    post:
+      operationId: post_api_v1_notification_subscriptions_path
+      tags:
+      - notification-subscriptions
+      summary: 'Change: notification subscriptions path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/objects:
+    get:
+      operationId: get_api_v1_objects
+      tags:
+      - objects
+      summary: 'Read: objects'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: objects.view
+  /api/v1/objects/{path}:
+    get:
+      operationId: get_api_v1_objects_path
+      tags:
+      - objects
+      summary: 'Read: objects path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: objects.view
+      x-sli-route-match: prefix
+  /api/v1/operations/administrative-activity:
+    get:
+      operationId: get_api_v1_operations_administrative_activity
+      tags:
+      - operations
+      summary: 'Read: operations administrative activity'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: administrative.activity.view
+  /api/v1/operations/overview:
+    get:
+      operationId: get_api_v1_operations_overview
+      tags:
+      - operations
+      summary: 'Read: operations overview'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/operations/plugins:
+    get:
+      operationId: get_api_v1_operations_plugins
+      tags:
+      - operations
+      summary: 'Read: operations plugins'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/operations/plugins/{path}:
+    get:
+      operationId: get_api_v1_operations_plugins_path
+      tags:
+      - operations
+      summary: 'Read: operations plugins path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: operations.view
+      x-sli-route-match: prefix
+  /api/v1/operations/sources/{path}:
+    get:
+      operationId: get_api_v1_operations_sources_path
+      tags:
+      - operations
+      summary: 'Read: operations sources path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: operations.view
+      x-sli-route-match: prefix
+  /api/v1/overview:
+    get:
+      operationId: get_api_v1_overview
+      tags:
+      - overview
+      summary: 'Read: overview'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/platform-settings:
+    get:
+      operationId: get_api_v1_platform_settings
+      tags:
+      - platform-settings
+      summary: 'Read: platform settings'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/platform-settings/semantic-control:
+    get:
+      operationId: get_api_v1_platform_settings_semantic_control
+      tags:
+      - platform-settings
+      summary: 'Read: platform settings semantic control'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_platform_settings_semantic_control
+      tags:
+      - platform-settings
+      summary: 'Change: platform settings semantic control'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/platform-settings/{path}:
+    post:
+      operationId: post_api_v1_platform_settings_path
+      tags:
+      - platform-settings
+      summary: 'Change: platform settings path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/plugins:
+    get:
+      operationId: get_api_v1_plugins
+      tags:
+      - plugins
+      summary: 'Read: plugins'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/plugins/{path}:
+    post:
+      operationId: post_api_v1_plugins_path
+      tags:
+      - plugins
+      summary: 'Change: plugins path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: operations.view
+      x-sli-route-match: prefix
+  /api/v1/reports/ad.groups/membership-changes:
+    get:
+      operationId: get_api_v1_reports_ad_groups_membership_changes
+      tags:
+      - reports
+      summary: 'Read: reports ad.groups membership changes'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/ad.state/account-change-sources:
+    get:
+      operationId: get_api_v1_reports_ad_state_account_change_sources
+      tags:
+      - reports
+      summary: 'Read: reports ad.state account change sources'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/ad.state/account-changes:
+    get:
+      operationId: get_api_v1_reports_ad_state_account_changes
+      tags:
+      - reports
+      summary: 'Read: reports ad.state account changes'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/ad.state/security-event-sources:
+    get:
+      operationId: get_api_v1_reports_ad_state_security_event_sources
+      tags:
+      - reports
+      summary: 'Read: reports ad.state security event sources'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/ad.state/security-events:
+    get:
+      operationId: get_api_v1_reports_ad_state_security_events
+      tags:
+      - reports
+      summary: 'Read: reports ad.state security events'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/ad.state/security-events.csv:
+    get:
+      operationId: get_api_v1_reports_ad_state_security_events_csv
+      tags:
+      - reports
+      summary: 'Read: reports ad.state security events.csv'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/builder/preview:
+    post:
+      operationId: post_api_v1_reports_builder_preview
+      tags:
+      - reports
+      summary: 'Change: reports builder preview'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.design
+  /api/v1/reports/catalog:
+    get:
+      operationId: get_api_v1_reports_catalog
+      tags:
+      - reports
+      summary: 'Read: reports catalog'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/datasets:
+    get:
+      operationId: get_api_v1_reports_datasets
+      tags:
+      - reports
+      summary: 'Read: reports datasets'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.design
+  /api/v1/reports/dc.powershell/activity:
+    get:
+      operationId: get_api_v1_reports_dc_powershell_activity
+      tags:
+      - reports
+      summary: 'Read: reports dc.powershell activity'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/definitions:
+    get:
+      operationId: get_api_v1_reports_definitions
+      tags:
+      - reports
+      summary: 'Read: reports definitions'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.design
+    post:
+      operationId: post_api_v1_reports_definitions
+      tags:
+      - reports
+      summary: 'Change: reports definitions'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.design
+  /api/v1/reports/definitions/{path}:
+    get:
+      operationId: get_api_v1_reports_definitions_path
+      tags:
+      - reports
+      summary: 'Read: reports definitions path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.design
+      x-sli-route-match: prefix
+    post:
+      operationId: post_api_v1_reports_definitions_path
+      tags:
+      - reports
+      summary: 'Change: reports definitions path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.design
+      x-sli-route-match: prefix
+  /api/v1/reports/vpn.audit/authorizations:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_authorizations
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit authorizations'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/failed-authorizations/series:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_failed_authorizations_series
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit failed authorizations series'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/session-sources:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_session_sources
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit session sources'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/sessions:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_sessions
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit sessions'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/sessions/evidence:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_sessions_evidence
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit sessions evidence'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/windows-authentication:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_windows_authentication
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit windows authentication'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.audit/windows-authentication-sources:
+    get:
+      operationId: get_api_v1_reports_vpn_audit_windows_authentication_sources
+      tags:
+      - reports
+      summary: 'Read: reports vpn.audit windows authentication sources'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/reports/vpn.{name}:
+    get:
+      operationId: get_api_v1_reports_vpn_name
+      tags:
+      - reports
+      summary: 'Read: reports vpn.name'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.catalog
+      x-sli-route-match: prefix
+  /api/v1/reports/{report_id}/access-summary:
+    get:
+      operationId: get_api_v1_reports_report_id_access_summary
+      tags:
+      - reports
+      summary: 'Read: reports report id access summary'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.assign
+      x-sli-route-match: template
+  /api/v1/reports/{report_id}/access-trace:
+    get:
+      operationId: get_api_v1_reports_report_id_access_trace
+      tags:
+      - reports
+      summary: 'Read: reports report id access trace'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.catalog
+      x-sli-route-match: template
+  /api/v1/reports/{report_id}/data:
+    get:
+      operationId: get_api_v1_reports_report_id_data
+      tags:
+      - reports
+      summary: 'Read: reports report id data'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.catalog
+      x-sli-route-match: template
+  /api/v1/reports/{report_id}/export.csv:
+    get:
+      operationId: get_api_v1_reports_report_id_export_csv
+      tags:
+      - reports
+      summary: 'Read: reports report id export.csv'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.catalog
+      x-sli-route-match: template
+  /api/v1/reports/{report_id}/preference:
+    post:
+      operationId: post_api_v1_reports_report_id_preference
+      tags:
+      - reports
+      summary: 'Change: reports report id preference'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: reports.catalog
+      x-sli-route-match: template
+  /api/v1/semantic/actions:
+    get:
+      operationId: get_api_v1_semantic_actions
+      tags:
+      - semantic
+      summary: 'Read: semantic actions'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/attack-coverage:
+    get:
+      operationId: get_api_v1_semantic_attack_coverage
+      tags:
+      - semantic
+      summary: 'Read: semantic attack coverage'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/sigma-rules:
+    get:
+      operationId: get_api_v1_semantic_sigma_rules
+      tags: [semantic]
+      summary: Discover authorized Sigma sources or read exact revision and policy bindings
+      description: >-
+        No query discovers RLS-visible, resource-authorized scopes. Supply all five
+        scope parameters to read registered revisions in the latest retained TEST
+        interval (at most 31 days). No catalog SHA is required. Current admission
+        is returned only to platform owners, joined by the complete execution pin.
+        Rule title/description are bounded strings read through the exact-revision
+        scoped label function; unavailable or malformed metadata stays null.
+        TEST counts and enabled/shadow/test detection inputs are separate; missing
+        history leaves the interval and runtime counts unmeasured. This GET never
+        changes admission; the existing owner-only semantic-control POST is used.
+      parameters:
+      - {in: query, name: installation_id, schema: {type: string, format: uuid}}
+      - {in: query, name: plugin_id, schema: {type: string}}
+      - {in: query, name: source_instance_id, schema: {type: string}}
+      - {in: query, name: source_generation, schema: {type: string}}
+      - {in: query, name: collection_scope_id, schema: {type: string}}
+      responses:
+        '200':
+          description: sli.sigma.rules.v1 read-only projection; unavailable is never an empty measured result
+        '400':
+          description: Partial, duplicate, unknown or invalid scope filters
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/calibration:
+    get:
+      operationId: get_api_v1_semantic_calibration
+      tags:
+      - semantic
+      summary: 'Read: semantic calibration'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/relations:
+    get:
+      operationId: get_api_v1_semantic_relations
+      tags:
+      - semantic
+      summary: 'Read: semantic relations'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/scenarios:
+    get:
+      operationId: get_api_v1_semantic_scenarios
+      tags:
+      - semantic
+      summary: 'Read: semantic scenarios'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: semantic.review
+  /api/v1/semantic/scenarios/{scenario_id}/review:
+    post:
+      operationId: post_api_v1_semantic_scenarios_scenario_id_review
+      tags:
+      - semantic
+      summary: 'Change: semantic scenarios scenario id review'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: scenario_id
+        in: path
+        required: true
+        schema:
+          type: string
+      x-sli-capability: semantic.review
+      x-sli-route-match: template
+  /api/v1/setup/domain-controllers:
+    get:
+      operationId: get_api_v1_setup_domain_controllers
+      tags:
+      - setup
+      summary: 'Read: setup domain controllers'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_setup_domain_controllers
+      tags:
+      - setup
+      summary: 'Change: setup domain controllers'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/setup/domain-controllers/{path}:
+    post:
+      operationId: post_api_v1_setup_domain_controllers_path
+      tags:
+      - setup
+      summary: 'Change: setup domain controllers path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/setup/domains:
+    get:
+      operationId: get_api_v1_setup_domains
+      tags:
+      - setup
+      summary: 'Read: setup domains'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+    post:
+      operationId: post_api_v1_setup_domains
+      tags:
+      - setup
+      summary: 'Change: setup domains'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/setup/domains/{path}:
+    post:
+      operationId: post_api_v1_setup_domains_path
+      tags:
+      - setup
+      summary: 'Change: setup domains path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: access.manage
+      x-sli-route-match: prefix
+  /api/v1/setup/status:
+    get:
+      operationId: get_api_v1_setup_status
+      tags:
+      - setup
+      summary: 'Read: setup status'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: access.manage
+  /api/v1/source-adapters:
+    get:
+      operationId: get_api_v1_source_adapters
+      tags:
+      - source-adapters
+      summary: 'Read: source adapters'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/source-onboarding/preflight:
+    post:
+      operationId: post_api_v1_source_onboarding_preflight
+      tags:
+      - source-onboarding
+      summary: 'Change: source onboarding preflight'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/source-packs:
+    get:
+      operationId: get_api_v1_source_packs
+      tags:
+      - source-packs
+      summary: 'Read: source packs'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: operations.view
+  /api/v1/ui/bootstrap:
+    get:
+      operationId: get_api_v1_ui_bootstrap
+      tags:
+      - ui
+      summary: 'Read: ui bootstrap'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/ui/plugins/{path}:
+    get:
+      operationId: get_api_v1_ui_plugins_path
+      tags:
+      - ui
+      summary: 'Read: ui plugins path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: workspace.view
+      x-sli-route-match: prefix
+  /api/v1/ui/route-parity:
+    get:
+      operationId: get_api_v1_ui_route_parity
+      tags:
+      - ui
+      summary: 'Read: ui route parity'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/watch:
+    get:
+      operationId: get_api_v1_watch
+      tags:
+      - watch
+      summary: 'Read: watch'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+    post:
+      operationId: post_api_v1_watch
+      tags:
+      - watch
+      summary: 'Change: watch'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v1/watch/{path}:
+    post:
+      operationId: post_api_v1_watch_path
+      tags:
+      - watch
+      summary: 'Change: watch path'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: TODO schema
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.catalog
+      x-sli-route-match: prefix
+  /api/v1/workspace:
+    get:
+      operationId: get_api_v1_workspace
+      tags:
+      - workspace
+      summary: 'Read: workspace'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: workspace.view
+  /api/v1/workstations/agents:
+    get:
+      operationId: get_api_v1_workstations_agents
+      tags:
+      - agents-admin
+      summary: 'Read: workstations agents'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v2/reports:
+    get:
+      operationId: get_api_v2_reports
+      tags:
+      - reports
+      summary: 'Read: reports'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-sli-capability: reports.catalog
+  /api/v2/reports/{path}:
+    get:
+      operationId: get_api_v2_reports_path
+      tags:
+      - reports
+      summary: 'Read: reports path'
+      responses:
+        '200':
+          description: TODO schema
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-capability: reports.catalog
+      x-sli-route-match: prefix
+  /app:
+    get:
+      operationId: get_app
+      tags:
+      - ui-and-service
+      summary: 'Read: app'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /app/:
+    get:
+      operationId: get_app_slash
+      tags:
+      - ui-and-service
+      summary: 'Read: app'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /app/{path}:
+    get:
+      operationId: get_app_path
+      tags:
+      - ui-and-service
+      summary: 'Read: app path'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-route-match: prefix
+  /assets/sli-login/collector-server.svg:
+    get:
+      operationId: get_assets_sli_login_collector_server_svg
+      tags:
+      - ui-and-service
+      summary: 'Read: assets sli login collector server.svg'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /assets/sli-login/feature-brain.svg:
+    get:
+      operationId: get_assets_sli_login_feature_brain_svg
+      tags:
+      - ui-and-service
+      summary: 'Read: assets sli login feature brain.svg'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /assets/sli-login/feature-eye.svg:
+    get:
+      operationId: get_assets_sli_login_feature_eye_svg
+      tags:
+      - ui-and-service
+      summary: 'Read: assets sli login feature eye.svg'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /assets/sli-login/feature-shield.svg:
+    get:
+      operationId: get_assets_sli_login_feature_shield_svg
+      tags:
+      - ui-and-service
+      summary: 'Read: assets sli login feature shield.svg'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /assets/sli-login/sli-logo.svg:
+    get:
+      operationId: get_assets_sli_login_sli_logo_svg
+      tags:
+      - ui-and-service
+      summary: 'Read: assets sli login sli logo.svg'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /events:
+    get:
+      operationId: get_events
+      tags:
+      - ui-and-service
+      summary: 'Read: events'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /events/{path}:
+    get:
+      operationId: get_events_path
+      tags:
+      - ui-and-service
+      summary: 'Read: events path'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-route-match: prefix
+  /investigations:
+    get:
+      operationId: get_investigations
+      tags:
+      - ui-and-service
+      summary: 'Read: investigations'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /login:
+    get:
+      operationId: get_login
+      tags:
+      - ui-and-service
+      summary: 'Read: login'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /reports/account-timeline.html:
+    get:
+      operationId: get_reports_account_timeline_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports account timeline.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/ai-analysis.html:
+    get:
+      operationId: get_reports_ai_analysis_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports ai analysis.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/ai-prompt-preview.html:
+    get:
+      operationId: get_reports_ai_prompt_preview_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports ai prompt preview.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/ai-redaction-preview.html:
+    get:
+      operationId: get_reports_ai_redaction_preview_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports ai redaction preview.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/ai-reports.html:
+    get:
+      operationId: get_reports_ai_reports_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports ai reports.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/autocollection.html:
+    get:
+      operationId: get_reports_autocollection_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports autocollection.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/collector-health.html:
+    get:
+      operationId: get_reports_collector_health_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports collector health.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/db-status.html:
+    get:
+      operationId: get_reports_db_status_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports db status.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/diagnostics.html:
+    get:
+      operationId: get_reports_diagnostics_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports diagnostics.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/domain-security-overview.html:
+    get:
+      operationId: get_reports_domain_security_overview_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports domain security overview.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/entity-details.html:
+    get:
+      operationId: get_reports_entity_details_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports entity details.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/event-details.html:
+    get:
+      operationId: get_reports_event_details_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports event details.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/findings.html:
+    get:
+      operationId: get_reports_findings_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports findings.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/investigation.html:
+    get:
+      operationId: get_reports_investigation_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports investigation.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/role-overview.html:
+    get:
+      operationId: get_reports_role_overview_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports role overview.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/search-deep.html:
+    get:
+      operationId: get_reports_search_deep_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports search deep.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/search.html:
+    get:
+      operationId: get_reports_search_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports search.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/security-events-monitor.csv:
+    get:
+      operationId: get_reports_security_events_monitor_csv
+      tags:
+      - ui-and-service
+      summary: 'Read: reports security events monitor.csv'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/security-events-monitor.html:
+    get:
+      operationId: get_reports_security_events_monitor_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports security events monitor.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/storage-health.html:
+    get:
+      operationId: get_reports_storage_health_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports storage health.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/system-health.html:
+    get:
+      operationId: get_reports_system_health_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports system health.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/ui-navigation.html:
+    get:
+      operationId: get_reports_ui_navigation_html
+      tags:
+      - ui-and-service
+      summary: 'Read: reports ui navigation.html'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /reports/{path}:
+    get:
+      operationId: get_reports_path
+      tags:
+      - ui-and-service
+      summary: 'Read: reports path'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-route-match: prefix
+  /settings:
+    get:
+      operationId: get_settings
+      tags:
+      - ui-and-service
+      summary: 'Read: settings'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+  /settings/{path}:
+    get:
+      operationId: get_settings_path
+      tags:
+      - ui-and-service
+      summary: 'Read: settings path'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the path after the prefix; may contain slashes.
+      x-sli-route-match: prefix
+  /sli-login.css:
+    get:
+      operationId: get_sli_login_css
+      tags:
+      - ui-and-service
+      summary: 'Read: sli login.css'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /sli-login.js:
+    get:
+      operationId: get_sli_login_js
+      tags:
+      - ui-and-service
+      summary: 'Read: sli login.js'
+      responses:
+        '200':
+          description: Page or static asset.
+          content:
+            text/html:
+              schema:
+                type: string
+      security: []
+  /workstations:
+    get:
+      operationId: get_workstations
+      tags:
+      - ui-and-service
+      summary: 'Redirect: workstations'
+      responses:
+        '302':
+          description: Redirect to the React base path, preserving the original query string.
+          headers:
+            Location:
+              description: /app/workstations with the original query string, if present.
+              schema:
+                type: string
+              example: /app/workstations?domain_id=11
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: adlog_session
+    bearerApiKey:
+      type: http
+      scheme: bearer
+    headerApiKey:
+      type: apiKey
+      in: header
+      name: X-ADLog-API-Key
+    agentMutualTls:
+      type: mutualTLS
+      description: Client certificate issued by the SLI agent CA.
+  responses:
+    Unauthorized:
+      description: authentication_required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: insufficient_permissions or capability_required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    DomainResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DomainItem'
+    DomainItem:
+      type: object
+      additionalProperties: false
+      required: [id, display_name, is_archived, freshness]
+      properties:
+        id: {type: integer, format: int64, minimum: 1, maximum: 9223372036854775807}
+        display_name: {type: string, description: 'Registered FQDN, not an invented display label.'}
+        is_archived: {type: boolean}
+        freshness:
+          $ref: '#/components/schemas/DomainFreshness'
+    DomainFreshness:
+      type: object
+      additionalProperties: false
+      required: [snapshot_at_utc, published_at_utc, snapshot_state, observed_at_utc, default_observed_at_utc, event_at_utc, last_successful_collection_utc]
+      properties:
+        snapshot_at_utc: {type: [string, 'null'], format: date-time}
+        published_at_utc: {type: [string, 'null'], format: date-time}
+        snapshot_state: {type: [string, 'null'], description: Stored coverage state; not synthesized from timestamps.}
+        observed_at_utc: {type: [string, 'null'], format: date-time}
+        default_observed_at_utc: {type: [string, 'null'], format: date-time}
+        event_at_utc: {type: [string, 'null']}
+        last_successful_collection_utc: {type: [string, 'null']}
+      description: >-
+        Snapshot/context timestamps use datetime.isoformat semantics (+00:00 and optional six-digit microseconds).
+        Event/collection cursor timestamps are preserved text, without a new date-time constraint.
+    DomainAuthenticationError:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error: {const: authentication_required}
+        message:
+          type: object
+          additionalProperties: false
+          required: [code, params, text]
+          properties:
+            code: {const: login.error.authenticationRequired}
+            params: {type: object, additionalProperties: false}
+            text: {type: string}
+    DomainTransportError:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error: {const: secure_transport_required}
+        message:
+          type: object
+          additionalProperties: false
+          required: [code, params, text]
+          properties:
+            code: {const: login.error.https}
+            params: {type: object, additionalProperties: false}
+            text: {type: string}
+    DomainCapabilityError:
+      type: object
+      additionalProperties: false
+      required: [error, required_capability]
+      properties:
+        error:
+          type: string
+          enum: [invalid_scope_policy, explicit_deny, resource_context_required, insufficient_capability]
+        required_capability: {const: workspace.view}
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+          description: Stable machine code.
+    EnrollRequest:
+      type: object
+      required:
+      - token
+      - csr_pem
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        csr_pem:
+          type: string
+          maxLength: 16384
+        instance_name:
+          type: string
+    CertificateResponse:
+      type: object
+      required:
+      - agent_id
+      - serial
+      - certificate_pem
+      - ca_chain_pem
+      - expires_at
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        serial:
+          type: string
+          description: Hexadecimal certificate serial.
+        certificate_pem:
+          type: string
+        ca_chain_pem:
+          type: string
+          description: Intermediate and root CA certificates.
+        expires_at:
+          type: string
+          format: date-time
+    GroupEnrollRequest:
+      type: object
+      required:
+      - token
+      - computer_entity_id
+      - host_id
+      - csr_pem
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+        computer_entity_id:
+          type: integer
+          minimum: 1
+        host_id:
+          type: string
+          format: uuid
+        csr_pem:
+          type: string
+          maxLength: 16384
+        instance_name:
+          type: string
+    GroupEnrollResponse:
+      type: object
+      required:
+      - request_id
+      - status
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - approved
+        token:
+          type: string
+          description: One-time enrollment token; only when approved.
+        expires_at:
+          type: string
+    RenewRequest:
+      type: object
+      required:
+      - csr_pem
+      additionalProperties: false
+      properties:
+        csr_pem:
+          type: string
+          maxLength: 16384
+    CollectionPolicy:
+      type: object
+      required:
+      - state
+      - interval_seconds
+      - batch_size
+      - rate_limit_per_minute
+      - spool_max_bytes
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum:
+          - active
+          - paused
+          - drain
+        interval_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 128
+        rate_limit_per_minute:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        spool_max_bytes:
+          type: integer
+          minimum: 65536
+          maximum: 1073741824
+        manage_windows_audit:
+          type: boolean
+        audit_process_command_line:
+          type: boolean
+    AssignedModule:
+      type: object
+      required:
+      - module_id
+      - enabled
+      - config
+      properties:
+        module_id:
+          type: string
+        enabled:
+          type: boolean
+        config:
+          type: object
+    AgentUpdateOffer:
+      type: object
+      required:
+      - sha256
+      - version
+      properties:
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        version:
+          type: string
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+    AgentCheckIn:
+      type: object
+      required:
+      - agent_id
+      - assigned_modules
+      - policy_revision
+      - rights_probe_request
+      - collection_policy
+      - eventlog_diagnostics_supported
+      - agent_update
+      properties:
+        agent_id:
+          type: string
+        assigned_modules:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/AssignedModule'
+        policy_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        rights_probe_request:
+          type:
+          - object
+          - 'null'
+        collection_policy:
+          $ref: '#/components/schemas/CollectionPolicy'
+        eventlog_diagnostics_supported:
+          type: boolean
+        delivery_diagnostics_supported:
+          type: boolean
+        file_audit:
+          type: object
+          description: Present only when a file audit request is pending.
+        agent_update:
+          oneOf:
+          - $ref: '#/components/schemas/AgentUpdateOffer'
+          - type: 'null'
+    RemovalCommand:
+      type: object
+      required:
+      - agent_id
+      - agent_removal
+      additionalProperties: false
+      properties:
+        agent_id:
+          type: string
+        agent_removal:
+          type: object
+          required:
+          - command_id
+          - action
+          additionalProperties: false
+          properties:
+            command_id:
+              type: string
+              format: uuid
+            action:
+              type: string
+              const: uninstall
+    CheckInResponse:
+      oneOf:
+      - $ref: '#/components/schemas/AgentCheckIn'
+      - $ref: '#/components/schemas/RemovalCommand'
+    PolicyReportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        applied_policy_revision:
+          type: integer
+          minimum: 0
+        collection_state:
+          type: string
+          enum:
+          - active
+          - paused
+        rights_probe:
+          type: object
+          required:
+          - request_id
+          - status
+          additionalProperties: false
+          properties:
+            request_id:
+              type: string
+            status:
+              type: string
+              enum:
+              - allowed
+              - denied
+              - unavailable
+        eventlog_diagnostics:
+          type: array
+          items:
+            type: object
+        delivery_diagnostics:
+          type: array
+          items:
+            type: object
+          description: Sent alone, without the other keys.
+    PolicyReportResponse:
+      type: object
+      properties:
+        applied_policy_revision:
+          type: integer
+          minimum: 0
+        rights_probe:
+          type: object
+        applied_collection_state:
+          type: string
+        delivery_diagnostics:
+          type: object
+    Cursor:
+      type: object
+      required:
+      - strategy
+      - token
+      additionalProperties: false
+      properties:
+        strategy:
+          type: string
+          enum:
+          - record_id
+          - bookmark
+          - file_offset
+          - snapshot
+        token:
+          type: string
+          maxLength: 4096
+    AgentEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+      - contract_id
+      - packet_id
+      - agent_id
+      - source_instance_id
+      - module_id
+      - module_version
+      - policy_revision
+      - channel
+      - generation
+      - sequence
+      - cursor_before
+      - cursor_after
+      - payload_contract
+      - payload_sha256
+      - record_count
+      - payload_bytes
+      - observed_at_utc
+      - continuity_state
+      - filtered_count
+      - lost_count
+      properties:
+        contract_id:
+          type: string
+          const: sli.agent-envelope.v1
+        packet_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        source_instance_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+        module_id:
+          type: string
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
+        module_version:
+          type: string
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+        policy_revision:
+          type: string
+          minLength: 1
+          maxLength: 512
+        channel:
+          type: string
+          minLength: 1
+          maxLength: 512
+        generation:
+          type: string
+          minLength: 1
+          maxLength: 512
+        sequence:
+          type: integer
+          minimum: 1
+        cursor_before:
+          $ref: '#/components/schemas/Cursor'
+        cursor_after:
+          $ref: '#/components/schemas/Cursor'
+        payload_contract:
+          type: string
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
+        payload_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        record_count:
+          type: integer
+          minimum: 0
+        payload_bytes:
+          type: integer
+          minimum: 0
+        observed_at_utc:
+          type: string
+          format: date-time
+        continuity_state:
+          type: string
+          enum:
+          - complete
+          - not_proven
+          - gap
+          - filtered
+        filtered_count:
+          type: integer
+          minimum: 0
+        lost_count:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+    AgentPacket:
+      type: object
+      required:
+      - envelope
+      - payload
+      - signature
+      additionalProperties: false
+      properties:
+        envelope:
+          $ref: '#/components/schemas/AgentEnvelope'
+        payload:
+          type: object
+          description: Module payload, e.g. sli.collection-packet.v1. Canonical size of the whole packet is at most
+            60 KiB.
+        signature:
+          type: string
+          description: Base64 signature over the canonical envelope (see agent-dotnet/PROTOCOL.md section 4.4).
+    AgentReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - contract_id
+      - packet_id
+      - payload_sha256
+      - status
+      - committed_cursor
+      - evidence_ref
+      - committed_at_utc
+      - error_code
+      properties:
+        contract_id:
+          type: string
+          const: sli.agent-receipt.v1
+        packet_id:
+          type: string
+          format: uuid
+        payload_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        status:
+          type: string
+          enum:
+          - committed
+          - duplicate
+          - rejected
+          - retry_later
+        committed_cursor:
+          oneOf:
+          - $ref: '#/components/schemas/Cursor'
+          - type: 'null'
+        evidence_ref:
+          type:
+          - string
+          - 'null'
+        committed_at_utc:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        error_code:
+          type:
+          - string
+          - 'null'
+    RevocationFeed:
+      type: object
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            required:
+            - id
+            - agent_id
+            - serial
+            - revoked_at
+            properties:
+              id:
+                type: integer
+              agent_id:
+                type: string
+              serial:
+                type:
+                - string
+                - 'null'
+              revoked_at:
+                type: string
+        next_cursor:
+          type: integer
+          minimum: 0
+    UpdateResultRequest:
+      type: object
+      required:
+      - sha256
+      - status
+      - reason
+      - version
+      additionalProperties: false
+      properties:
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        status:
+          type: string
+          enum:
+          - updated
+          - rejected
+          - rolled_back
+        reason:
+          type:
+          - string
+          - 'null'
+          description: null only when status is updated.
+        version:
+          type: string
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+    UpdateResultResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: recorded
+    RemovalResultRequest:
+      type: object
+      required:
+      - command_id
+      - state
+      - reason
+      additionalProperties: false
+      properties:
+        command_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+          - state_cleaned
+          - cleanup_failed
+        reason:
+          type:
+          - string
+          - 'null'
+          description: null for state_cleaned; a removal reason code for cleanup_failed.
+    RemovalResultResponse:
+      type: object
+      required:
+      - state
+      properties:
+        state:
+          type: string
+          enum:
+          - state_cleaned
+          - cleanup_failed
+

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "plan_id": "stage9-radius-join-shape-preflight-v1",
+  "status": "owner_authorized",
+  "purpose": "distinguish session identifier mismatch from NAS representation mismatch after the time-aligned exact join returned zero matches",
+  "authorization_basis": "owner explicitly allowed harmless bounded read-only checks and instructed Codex to continue Stage 9",
+  "base_plan": "config/stage9_radius_time_aligned_preflight.json",
+  "allowed_persisted_observations": [
+    "sample_counts",
+    "session_identifier_shape_counts",
+    "session_only_join_counts",
+    "session_plus_nas_join_counts",
+    "nas_agreement_counts_after_unique_session_match",
+    "cap_and_truncation_flags",
+    "classification"
+  ],
+  "prohibited_persistence": [
+    "event_xml",
+    "event_payload",
+    "event_timestamp_value",
+    "accounting_raw_line",
+    "accounting_timestamp_value",
+    "account_session_identifier",
+    "nas_identity",
+    "subject_sid",
+    "user_name",
+    "distinguished_name",
+    "ip_address",
+    "file_name",
+    "file_path",
+    "radius_client",
+    "radius_secret"
+  ],
+  "prohibited_actions": [
+    "audit_policy_change",
+    "nps_configuration_change",
+    "radius_accounting_enable",
+    "service_change",
+    "scheduled_task_change",
+    "firewall_change",
+    "postgresql_write",
+    "clickhouse_write",
+    "event_import",
+    "cursor_update",
+    "migration",
+    "source_instance_creation",
+    "descriptor_change",
+    "normalizer_change",
+    "worker_activation",
+    "autostart"
+  ],
+  "next_action": "one_bounded_read_only_join_shape_source_contact_then_owner_review"
+}

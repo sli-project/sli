@@ -1,0 +1,70 @@
+schema: sli.audit-scenarios.v1
+persona: information_security_specialist
+defaults:
+  start_page: /app/
+  locales: [ru, en]
+  time_zone: Asia/Bangkok
+  fixed_time: '2026-10-07T02:00:00Z'
+  data_snapshot_id: synthetic_l06_2:v1
+  allowed_actions: [goto, link, row, tab, answer]
+  max_steps: 8
+  max_seconds: 90
+  completion_criteria: [route_completed, answer_matches_allowed_slice, limitations_disclosed, no_scope_leak]
+access_levels:
+  full: {account: full}
+  limited-scope: {account: limited}
+  no-raw-evidence: {account: without_raw_evidence}
+scenarios:
+  - id: morning_decisions
+    goal:
+      ru: Что требует решения этим утром? Подготовьте короткое сообщение о состоянии наблюдения и проблемах в своей области.
+      en: What requires a decision this morning? Prepare a short status message about observation and problems in your scope.
+    expected_answer: {generator: morning_decisions, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: answer}
+  - id: privileged_membership_24h
+    goal:
+      ru: Найдите новое добавление в привилегированную группу за последние 24 часа. Укажите участника, группу и время; не подменяйте изменение текущим членством.
+      en: Find a new privileged-group addition in the last 24 hours. Identify member, group and time; distinguish the change from current membership.
+    expected_answer: {generator: privileged_membership_24h, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: goto, target: '/app/report/security.events?category=group_membership&from={window_start}&to={fixed_time}'}
+      - {action: answer}
+  - id: account_lockout
+    goal:
+      ru: Разберите блокировки учётной записи за последние 24 часа, наблюдаемые отказы и источник. Проверьте точное сырое доказательство либо честно объясните отказ в доступе; корреляция не доказывает причину.
+      en: Analyze account lockouts, observed failures and source in the last 24 hours. Check exact raw evidence or honestly explain access refusal; correlation does not prove cause.
+    expected_answer: {generator: account_lockout, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: goto, target: '/app/report/security.events?tab=lockout-recurring&from={window_start}&to={fixed_time}'}
+      - {action: link, selector: 'table tbody a[href^="/app/events/"]', index: 0}
+      - {action: answer}
+    route_overrides:
+      no-raw-evidence:
+        - {action: goto, target: '/app/report/security.events?tab=lockout-recurring&from={window_start}&to={fixed_time}'}
+        - {action: answer}
+  - id: problem_next_step
+    goal:
+      ru: Откройте первую требующую решения проблему с главной. Определите следующий шаг по доказательствам и ограничениям своего допуска, без изменения её состояния.
+      en: Open the first problem requiring a decision from home. Determine the next step from evidence and access limitations without changing its state.
+    expected_answer: {generator: problem_next_step, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: link, selector: 'section[aria-labelledby="home-actions"] li a[href]', index: 0}
+      - {action: row, index: 0}
+      - {action: answer}
+  - id: source_lag
+    goal:
+      ru: Почему отстаёт источник? Разделите границу сбора, доставку, импорт и обработку; возраст последнего события сам по себе не является задержкой.
+      en: Why is a source lagging? Separate collection, delivery, import and processing; last-event age alone is not lag.
+    expected_answer: {generator: source_lag, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: goto, target: /app/operations}
+      - {action: answer}
+  - id: stale_ad_snapshot
+    goal:
+      ru: Опишите состояние AD по доступному снимку. Укажите его время и свежесть; устаревший снимок не подтверждает текущее безопасное состояние.
+      en: Describe AD using the available snapshot. State its time and freshness; a stale snapshot cannot confirm current safety.
+    expected_answer: {generator: stale_ad_snapshot, slice: authorized_scope_and_fields, hidden: true}
+    route:
+      - {action: goto, target: /app/report/ad.infrastructure}
+      - {action: answer}

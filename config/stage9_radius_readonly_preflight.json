@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "plan_id": "stage9-radius-readonly-preflight-v1",
+  "status": "owner_authorized",
+  "authorization_date": "2026-07-30",
+  "authorization_basis": "explicit_owner_command_after_p0b_gate_and_exact_target_correction",
+  "targets_source": "config/stage9_radius_targets.json",
+  "expected_windows_account": "EXAMPLE\\operator",
+  "limits": {
+    "target_count": 1,
+    "window_hours": 168,
+    "event_ids": [
+      6272,
+      6273
+    ],
+    "events_per_target": 100,
+    "accounting_files_per_target": 20,
+    "target_timeout_seconds": 30,
+    "overall_timeout_seconds": 60
+  },
+  "allowed_observations": [
+    "local_payload_free_event_identity_counts",
+    "remote_security_event_system_metadata",
+    "remote_eventdata_field_names_without_values",
+    "remote_nps_service_presence_and_status",
+    "remote_default_accounting_file_metadata_without_names_or_contents"
+  ],
+  "prohibited_actions": [
+    "event_payload_persistence",
+    "accounting_file_content_read",
+    "audit_policy_change",
+    "nps_configuration_change",
+    "radius_accounting_enable",
+    "service_change",
+    "scheduled_task_change",
+    "firewall_change",
+    "postgresql_write",
+    "clickhouse_write",
+    "event_import",
+    "cursor_update",
+    "descriptor_addition",
+    "normalizer_addition",
+    "worker_activation",
+    "autostart"
+  ],
+  "completion_contract": {
+    "live_result": "observed_or_explicitly_not_observed_or_inaccessible",
+    "absence_scope": "bounded_window_and_default_accounting_path_only",
+    "next_gate": "review_live_preflight_before_descriptor_or_accounting_adapter"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "reports.v2.ad.computers.v6.security.unsupported_os.observed": {
+    "support_end_date": "date"
+  },
+  "reports.v2.ad.computers.v6.security.laps_expired.observed": {
+    "expiration_utc": "datetime"
+  },
+  "reports.v2.ad.computers.v6.security.stale_activity.observed": {
+    "last_logon_utc": "datetime"
+  },
+  "workstations.reasons.logon_outside_policy": {
+    "local_time": "local_datetime"
+  }
+}

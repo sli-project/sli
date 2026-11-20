@@ -1,0 +1,35 @@
+# Opt-in agent issuer and client trust. The offline root key is never mounted.
+services:
+  api:
+    environment:
+      SLI_AGENT_CA_ROOT_CERT_FILE: /run/secrets/agent_root_certificate
+      SLI_AGENT_CA_ISSUER_CERT_FILE: /run/secrets/agent_issuer_certificate
+      SLI_AGENT_CA_ISSUER_KEY_FILE: /run/secrets/agent_issuer_key
+      SLI_AGENT_MTLS_CA_FILE: /run/secrets/agent_mtls_ca
+    secrets:
+      - agent_root_certificate
+      - agent_issuer_certificate
+      - agent_issuer_key
+      - agent_mtls_ca
+
+  migrate:
+    environment:
+      SLI_AGENT_CA_ROOT_CERT_FILE: /run/secrets/agent_root_certificate
+      SLI_AGENT_CA_ISSUER_CERT_FILE: /run/secrets/agent_issuer_certificate
+      SLI_AGENT_CA_ISSUER_KEY_FILE: /run/secrets/agent_issuer_key
+      SLI_AGENT_MTLS_CA_FILE: /run/secrets/agent_mtls_ca
+    secrets:
+      - agent_root_certificate
+      - agent_issuer_certificate
+      - agent_issuer_key
+      - agent_mtls_ca
+
+secrets:
+  agent_root_certificate:
+    file: ${SLI_AGENT_CA_ROOT_CERT_FILE:-${SLI_SECRETS_DIR}/agent_root_certificate}
+  agent_issuer_certificate:
+    file: ${SLI_AGENT_CA_ISSUER_CERT_FILE:-${SLI_SECRETS_DIR}/agent_issuer_certificate}
+  agent_issuer_key:
+    file: ${SLI_AGENT_CA_ISSUER_KEY_FILE:-${SLI_SECRETS_DIR}/agent_issuer_key}
+  agent_mtls_ca:
+    file: ${SLI_AGENT_MTLS_CA_FILE:-${SLI_SECRETS_DIR}/agent_mtls_ca}

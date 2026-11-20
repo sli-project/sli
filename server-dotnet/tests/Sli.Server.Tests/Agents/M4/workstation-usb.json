@@ -1,0 +1,852 @@
+[
+  {
+    "name": "security",
+    "packet": {
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "channel": "Security",
+        "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "record_id_range": {
+          "first": 1,
+          "last": 2
+        },
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 2
+        },
+        "observed_at_utc": "2026-10-07T12:35:00+00:00"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "record_id": 1,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "event_id": 6416,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 1,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "keyboard"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>6416</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">keyboard</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 2,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "event_id": 6416,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 2,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "USBSTOR\\disk",
+              "DiskDrive"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>6416</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">USBSTOR\\disk</Data><Data Name=\"ClassName\">DiskDrive</Data></EventData></Event>"
+          }
+        }
+      ],
+      "continuity": {
+        "status": "not_proven"
+      },
+      "context": {}
+    },
+    "rows": [
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "event_id": 6416,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 1,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "keyboard"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>6416</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">keyboard</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "event_id": 6416,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 2,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "USBSTOR\\disk",
+          "DiskDrive"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>6416</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">USBSTOR\\disk</Data><Data Name=\"ClassName\">DiskDrive</Data></EventData></Event>"
+      }
+    ],
+    "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "entity_id": 23,
+    "ad_computer_id": null,
+    "expected_result": {
+      "observed": 2,
+      "inserted": 2,
+      "ignored": 0
+    },
+    "observations": [
+      {
+        "id": "7e1bf5fe0884fd57e21a099e604636ffeb0bedc041fa63371020346ea9968a1a",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_id": "keyboard",
+            "storage_evidence": false
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 6416,
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 1,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "4089201d61733fbe42e9ccff3d134220cee027117c477091a257a4920a3ff672"
+        },
+        "hash": "c477dee20c5a77bcd84b876e8504395323f8a13e02eda7cbef319ec858833683"
+      },
+      {
+        "id": "5d4a72d0d881b7e1abf73c90a7c9fc28d662994516f9ba42f60dda92e8d775be",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_id": "USBSTOR\\disk",
+            "device_class": "DiskDrive",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 6416,
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 2,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "75d6e240774a7d563fd9aeac108d79578fcd1001a4a8f696eb241aa013a21c1a"
+        },
+        "hash": "4c0335108d3c20efabf55ab27c5817ea466af5e56adbdd0670fa103e4c425f2c"
+      }
+    ]
+  },
+  {
+    "name": "pnp",
+    "packet": {
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "record_id_range": {
+          "first": 1,
+          "last": 4
+        },
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 4
+        },
+        "observed_at_utc": "2026-10-07T12:35:00+00:00"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "record_id": 1,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+            "provider_name": "Microsoft-Windows-Kernel-PnP",
+            "event_id": 400,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 1,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "U\u017fB\ufb05OR\\disk",
+              "synthetic"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>400</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceInstanceId\">U\u017fB\ufb05OR\\disk</Data><Data Name=\"DeviceName\">synthetic</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 2,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+            "provider_name": "Microsoft-Windows-Kernel-PnP",
+            "event_id": 410,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 2,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "U\u00dfBSTOR\\bad"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>410</EventID><EventRecordID>2</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">U\u00dfBSTOR\\bad</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 3,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+            "provider_name": "Microsoft-Windows-Kernel-PnP",
+            "event_id": 400,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 3,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "U\u017fB\ufb06OR\\second"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>400</EventID><EventRecordID>3</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">U\u017fB\ufb06OR\\second</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 4,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+            "provider_name": "Microsoft-Windows-Kernel-PnP",
+            "event_id": 420,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 4,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "DiSkDrIvE",
+              "true",
+              "front"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>420</EventID><EventRecordID>4</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassName\">DiSkDrIvE</Data><Data Name=\"IsRemovable\">true</Data><Data Name=\"Location\">front</Data></EventData></Event>"
+          }
+        }
+      ],
+      "continuity": {
+        "status": "not_proven"
+      },
+      "context": {}
+    },
+    "rows": [
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "provider_name": "Microsoft-Windows-Kernel-PnP",
+        "event_id": 400,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 1,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "U\u017fB\ufb05OR\\disk",
+          "synthetic"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>400</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceInstanceId\">U\u017fB\ufb05OR\\disk</Data><Data Name=\"DeviceName\">synthetic</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "provider_name": "Microsoft-Windows-Kernel-PnP",
+        "event_id": 410,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 2,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "U\u00dfBSTOR\\bad"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>410</EventID><EventRecordID>2</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">U\u00dfBSTOR\\bad</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "provider_name": "Microsoft-Windows-Kernel-PnP",
+        "event_id": 400,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 3,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "U\u017fB\ufb06OR\\second"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>400</EventID><EventRecordID>3</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">U\u017fB\ufb06OR\\second</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "provider_name": "Microsoft-Windows-Kernel-PnP",
+        "event_id": 420,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 4,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "DiSkDrIvE",
+          "true",
+          "front"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>420</EventID><EventRecordID>4</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassName\">DiSkDrIvE</Data><Data Name=\"IsRemovable\">true</Data><Data Name=\"Location\">front</Data></EventData></Event>"
+      }
+    ],
+    "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "entity_id": 23,
+    "ad_computer_id": null,
+    "expected_result": {
+      "observed": 3,
+      "inserted": 3,
+      "ignored": 1
+    },
+    "observations": [
+      {
+        "id": "7c41982c332a09bf2c8f07a490d442854bedfd8675ef156219bf74aeb6f589cf",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_id": "U\u017fB\ufb05OR\\disk",
+            "device_description": "synthetic",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 400,
+          "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+          "provider_name": "Microsoft-Windows-Kernel-PnP",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 1,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "9c47a452b44fd796e2cc7e0dae11241266bb50ddc6164872f1f5eff02e804f29"
+        },
+        "hash": "38da7858769ec15f8b50589556bfcad4429a28f9b2a2184c559399e46f2a882a"
+      },
+      {
+        "id": "833d7a4b4127e59af35380e0616e2306f2b1615332355349401685fa488bc2dd",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_id": "U\u017fB\ufb06OR\\second",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 400,
+          "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+          "provider_name": "Microsoft-Windows-Kernel-PnP",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 3,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "e322f8d138a9b57ccaa7e48d6c2ee6cda8266f653cb61b92768b294fe21837d5"
+        },
+        "hash": "af99a0bd2bd6d6a5cc8a2fc4585ddcde5af520b6c89c089feb92543ef93cd438"
+      },
+      {
+        "id": "4433839bae59a8264c32c2f403f933dcd057403cb357207ab13d2d420253a6b2",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_class": "DiSkDrIvE",
+            "device_location": "front",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 420,
+          "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+          "provider_name": "Microsoft-Windows-Kernel-PnP",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 4,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "263c71b2483b14795d447d519b4eb279d8008029fd9bc5f615bb29e973f1c6ca"
+        },
+        "hash": "ed2159dcdeab420f6bc7bf7e98d0b572d50c17ce4a8a73df049022bde8abe16b"
+      }
+    ]
+  },
+  {
+    "name": "driver",
+    "packet": {
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+        "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "record_id_range": {
+          "first": 1,
+          "last": 3
+        },
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 3
+        },
+        "observed_at_utc": "2026-10-07T12:35:00+00:00"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "record_id": 1,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+            "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+            "event_id": 2003,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 1,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "UASPSTOR\\disk"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2003</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">UASPSTOR\\disk</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 2,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+            "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+            "event_id": 2100,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 2,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "keyboard",
+              "1"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2100</EventID><EventRecordID>2</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassName\">keyboard</Data><Data Name=\"IsRemovable\">1</Data></EventData></Event>"
+          }
+        },
+        {
+          "format": "event_xml",
+          "record_id": 3,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+            "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+            "event_id": 2101,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 3,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "volume",
+              "1"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2101</EventID><EventRecordID>3</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassGuid\">volume</Data><Data Name=\"Removable\">1</Data></EventData></Event>"
+          }
+        }
+      ],
+      "continuity": {
+        "status": "not_proven"
+      },
+      "context": {}
+    },
+    "rows": [
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+        "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+        "event_id": 2003,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 1,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "UASPSTOR\\disk"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2003</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">UASPSTOR\\disk</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+        "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+        "event_id": 2100,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 2,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "keyboard",
+          "1"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2100</EventID><EventRecordID>2</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassName\">keyboard</Data><Data Name=\"IsRemovable\">1</Data></EventData></Event>"
+      },
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+        "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+        "event_id": 2101,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 3,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "volume",
+          "1"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-DriverFrameworks-UserMode'/><EventID>2101</EventID><EventRecordID>3</EventRecordID><Channel>Microsoft-Windows-DriverFrameworks-UserMode/Operational</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"ClassGuid\">volume</Data><Data Name=\"Removable\">1</Data></EventData></Event>"
+      }
+    ],
+    "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "entity_id": 23,
+    "ad_computer_id": null,
+    "expected_result": {
+      "observed": 2,
+      "inserted": 2,
+      "ignored": 1
+    },
+    "observations": [
+      {
+        "id": "40f4f0f4c4f58b3e70cd6a7f51a3d3861a2be350ecc92b006d88a8022b39f14d",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_id": "UASPSTOR\\disk",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 2003,
+          "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+          "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 1,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "dc62bc7a08e9a9500d7d3b45ecc57cb6b287b95b167da119ba3650f23e4ed359"
+        },
+        "hash": "e8b0615f0a0a1b52ca758b11c967bb8c190975c1cf390e24d239d38ff291fdae"
+      },
+      {
+        "id": "7974fa1d2f1c53858c87f9c1765e726572661bdaf21417708c51317c15931d0e",
+        "document": {
+          "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "entity_id": 23,
+          "ad_computer_id": null,
+          "family": "usb",
+          "semantic_type": "device.external.observed",
+          "roles": {
+            "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          },
+          "facts": {
+            "device_class": "volume",
+            "storage_evidence": true
+          },
+          "quality": {
+            "raw_event_mutated": false,
+            "observation_only": true,
+            "ad_enrichment": "not_collected",
+            "coverage": "not_proven"
+          },
+          "event_id": 2101,
+          "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+          "provider_name": "Microsoft-Windows-DriverFrameworks-UserMode",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id": 3,
+          "observed_at": "2026-10-07T12:34:56+00:00",
+          "keywords": null,
+          "source_sha256": "6d204e0d2322c5b62a655689e8c614d1737dc1d680037416b23492b26ae15cd1"
+        },
+        "hash": "47d8f6b8e642169ccb6a6a5d6dcd9ba5801763a77bc7f2765bd30457e2d79d11"
+      }
+    ]
+  },
+  {
+    "name": "all-ignored",
+    "packet": {
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "record_id_range": {
+          "first": 1,
+          "last": 1
+        },
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 1
+        },
+        "observed_at_utc": "2026-10-07T12:35:00+00:00"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "record_id": 1,
+          "payload": {
+            "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "connect_address": "",
+            "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+            "provider_name": "Microsoft-Windows-Kernel-PnP",
+            "event_id": 410,
+            "version": null,
+            "level": null,
+            "task": null,
+            "opcode": null,
+            "keywords": null,
+            "record_id": 1,
+            "time_created": "2026-10-07T12:34:56Z",
+            "machine_name": "synthetic.example",
+            "user_id": null,
+            "message": null,
+            "properties": [
+              "PCI\\device"
+            ],
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>410</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">PCI\\device</Data></EventData></Event>"
+          }
+        }
+      ],
+      "continuity": {
+        "status": "not_proven"
+      },
+      "context": {}
+    },
+    "rows": [
+      {
+        "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "connect_address": "",
+        "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
+        "provider_name": "Microsoft-Windows-Kernel-PnP",
+        "event_id": 410,
+        "version": null,
+        "level": null,
+        "task": null,
+        "opcode": null,
+        "keywords": null,
+        "record_id": 1,
+        "time_created": "2026-10-07T12:34:56Z",
+        "machine_name": "synthetic.example",
+        "user_id": null,
+        "message": null,
+        "properties": [
+          "PCI\\device"
+        ],
+        "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Kernel-PnP'/><EventID>410</EventID><EventRecordID>1</EventRecordID><Channel>Microsoft-Windows-Kernel-PnP/Configuration</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"DeviceId\">PCI\\device</Data></EventData></Event>"
+      }
+    ],
+    "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "entity_id": 23,
+    "ad_computer_id": null,
+    "expected_result": {
+      "observed": 0,
+      "inserted": 0,
+      "ignored": 1
+    },
+    "observations": []
+  }
+]

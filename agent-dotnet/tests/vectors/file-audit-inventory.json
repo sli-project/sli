@@ -1,0 +1,144 @@
+[
+ {
+  "name": "check",
+  "now": "2026-10-07T12:00:00+00:00",
+  "steps": [
+   {
+    "report_canonical": "{\"action\":\"check\",\"command_id\":\"inventory-check\",\"contract_id\":\"sli.file-audit.audit-result.v1\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"ownership_remaining\":false,\"policy_revision\":\"1\",\"scopes\":[{\"actual_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":3,\"0cce9244-69ae-11d9-bed3-505054503030\":3},\"collection_scope_id\":\"scope:one\",\"reason_code\":\"sacl_missing\",\"required_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":1,\"0cce9244-69ae-11d9-bed3-505054503030\":2},\"state\":\"partial\"}],\"snapshots\":[{\"collection_scope_id\":\"scope:one\",\"completeness\":\"complete\",\"contract_id\":\"sli.file-audit.inventory.v1\",\"has_more\":false,\"local_groups\":{\"complete\":true,\"groups\":[]},\"objects\":[{\"dacl\":\"D:(A;;FA;;;SY)\",\"object_id\":\"1:2:3\",\"object_type\":\"directory\",\"owner_sid\":\"S-1-5-18\",\"path\":\"C:\\\\synthetic\",\"sacl\":\"S:old\",\"sacl_missing\":true,\"sacl_protected\":false}],\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"page_number\":0,\"policy_revision\":\"1\",\"scan_id\":\"be402138-a0d9-57ec-8c8e-dcda68ba2d4c\",\"share\":{\"complete\":true,\"dacl\":\"D:(A;;FA;;;SY)\",\"name\":\"synthetic\",\"path\":\"C:\\\\synthetic\"},\"snapshot_id\":\"be189c9b-028e-51b1-a528-7bb42aea84a1\",\"snapshot_sha256\":\"065f53a27d394a69eecaf294301fd5c52e1a1d55b7a93bcab60b4ffae2703d1f\",\"unread_objects\":0}]}",
+    "request": {
+     "command": {
+      "action": "check",
+      "collection_scope_ids": [
+       "scope:one"
+      ],
+      "command_id": "inventory-check",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "policy_revision": "1"
+     },
+     "config": {
+      "roots": [
+       {
+        "collection_scope_id": "scope:one",
+        "important": false,
+        "path": "C:\\synthetic",
+        "sacl": {
+         "inherit_directories": true,
+         "inherit_files": true,
+         "trustee_sids": [
+          "S-1-1-0"
+         ]
+        },
+        "share_name": "synthetic"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "apply",
+  "now": "2026-10-07T12:00:00+00:00",
+  "steps": [
+   {
+    "report_canonical": "{\"action\":\"apply\",\"command_id\":\"inventory-apply\",\"contract_id\":\"sli.file-audit.audit-result.v1\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"ownership_remaining\":true,\"policy_revision\":\"1\",\"scopes\":[{\"actual_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":3,\"0cce9244-69ae-11d9-bed3-505054503030\":3},\"collection_scope_id\":\"scope:one\",\"reason_code\":\"ok\",\"required_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":1,\"0cce9244-69ae-11d9-bed3-505054503030\":2},\"state\":\"verified\"}],\"snapshots\":[{\"collection_scope_id\":\"scope:one\",\"completeness\":\"complete\",\"contract_id\":\"sli.file-audit.inventory.v1\",\"has_more\":false,\"local_groups\":{\"complete\":true,\"groups\":[]},\"objects\":[{\"dacl\":\"D:(A;;FA;;;SY)\",\"object_id\":\"1:2:3\",\"object_type\":\"directory\",\"owner_sid\":\"S-1-5-18\",\"path\":\"C:\\\\synthetic\",\"sacl\":\"S:exact-inheritance\",\"sacl_missing\":false,\"sacl_protected\":false}],\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"page_number\":0,\"policy_revision\":\"1\",\"scan_id\":\"8980cda6-caf3-54fa-be99-a1378eb5d4e4\",\"share\":{\"complete\":true,\"dacl\":\"D:(A;;FA;;;SY)\",\"name\":\"synthetic\",\"path\":\"C:\\\\synthetic\"},\"snapshot_id\":\"3833f752-f100-554c-8a8f-c6645724dedc\",\"snapshot_sha256\":\"91c99aaf127b065b375bb8f48a2816fb2263a818fa3841f17b49e5daa97b797e\",\"unread_objects\":0}]}",
+    "request": {
+     "command": {
+      "action": "apply",
+      "collection_scope_ids": [
+       "scope:one"
+      ],
+      "command_id": "inventory-apply",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "policy_revision": "1"
+     },
+     "config": {
+      "roots": [
+       {
+        "collection_scope_id": "scope:one",
+        "important": false,
+        "path": "C:\\synthetic",
+        "sacl": {
+         "inherit_directories": true,
+         "inherit_files": true,
+         "trustee_sids": [
+          "S-1-1-0"
+         ]
+        },
+        "share_name": "synthetic"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "name": "restore",
+  "now": "2026-10-07T12:00:00+00:00",
+  "steps": [
+   {
+    "report_canonical": "{\"action\":\"apply\",\"command_id\":\"inventory-apply\",\"contract_id\":\"sli.file-audit.audit-result.v1\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"ownership_remaining\":true,\"policy_revision\":\"1\",\"scopes\":[{\"actual_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":3,\"0cce9244-69ae-11d9-bed3-505054503030\":3},\"collection_scope_id\":\"scope:one\",\"reason_code\":\"ok\",\"required_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":1,\"0cce9244-69ae-11d9-bed3-505054503030\":2},\"state\":\"verified\"}],\"snapshots\":[{\"collection_scope_id\":\"scope:one\",\"completeness\":\"complete\",\"contract_id\":\"sli.file-audit.inventory.v1\",\"has_more\":false,\"local_groups\":{\"complete\":true,\"groups\":[]},\"objects\":[{\"dacl\":\"D:(A;;FA;;;SY)\",\"object_id\":\"1:2:3\",\"object_type\":\"directory\",\"owner_sid\":\"S-1-5-18\",\"path\":\"C:\\\\synthetic\",\"sacl\":\"S:exact-inheritance\",\"sacl_missing\":false,\"sacl_protected\":false}],\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"page_number\":0,\"policy_revision\":\"1\",\"scan_id\":\"8980cda6-caf3-54fa-be99-a1378eb5d4e4\",\"share\":{\"complete\":true,\"dacl\":\"D:(A;;FA;;;SY)\",\"name\":\"synthetic\",\"path\":\"C:\\\\synthetic\"},\"snapshot_id\":\"3833f752-f100-554c-8a8f-c6645724dedc\",\"snapshot_sha256\":\"91c99aaf127b065b375bb8f48a2816fb2263a818fa3841f17b49e5daa97b797e\",\"unread_objects\":0}]}",
+    "request": {
+     "command": {
+      "action": "apply",
+      "collection_scope_ids": [
+       "scope:one"
+      ],
+      "command_id": "inventory-apply",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "policy_revision": "1"
+     },
+     "config": {
+      "roots": [
+       {
+        "collection_scope_id": "scope:one",
+        "important": false,
+        "path": "C:\\synthetic",
+        "sacl": {
+         "inherit_directories": true,
+         "inherit_files": true,
+         "trustee_sids": [
+          "S-1-1-0"
+         ]
+        },
+        "share_name": "synthetic"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "report_canonical": "{\"action\":\"restore\",\"command_id\":\"inventory-restore\",\"contract_id\":\"sli.file-audit.audit-result.v1\",\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"ownership_remaining\":false,\"policy_revision\":\"1\",\"scopes\":[{\"actual_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":3,\"0cce9244-69ae-11d9-bed3-505054503030\":3},\"collection_scope_id\":\"scope:one\",\"reason_code\":\"ok\",\"required_masks\":{\"0cce9215-69ae-11d9-bed3-505054503030\":3,\"0cce921d-69ae-11d9-bed3-505054503030\":3,\"0cce9224-69ae-11d9-bed3-505054503030\":3,\"0cce922f-69ae-11d9-bed3-505054503030\":1,\"0cce9244-69ae-11d9-bed3-505054503030\":2},\"state\":\"verified\"}],\"snapshots\":[{\"collection_scope_id\":\"scope:one\",\"completeness\":\"complete\",\"contract_id\":\"sli.file-audit.inventory.v1\",\"has_more\":false,\"local_groups\":{\"complete\":true,\"groups\":[]},\"objects\":[{\"dacl\":\"D:(A;;FA;;;SY)\",\"object_id\":\"1:2:3\",\"object_type\":\"directory\",\"owner_sid\":\"S-1-5-18\",\"path\":\"C:\\\\synthetic\",\"sacl\":\"S:old\",\"sacl_missing\":true,\"sacl_protected\":false}],\"observed_at_utc\":\"2026-10-07T12:00:00+00:00\",\"page_number\":0,\"policy_revision\":\"1\",\"scan_id\":\"6fb3ae4b-2305-532d-b46d-575c0825970f\",\"share\":{\"complete\":true,\"dacl\":\"D:(A;;FA;;;SY)\",\"name\":\"synthetic\",\"path\":\"C:\\\\synthetic\"},\"snapshot_id\":\"c8c3c156-834c-5ff3-85cd-3cdfd5310c08\",\"snapshot_sha256\":\"f2428abbbd0193e6ecad87491b247bc460e1de6bfd1d45a819667f55cb7bec1e\",\"unread_objects\":0}]}",
+    "request": {
+     "command": {
+      "action": "restore",
+      "collection_scope_ids": [
+       "scope:one"
+      ],
+      "command_id": "inventory-restore",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "policy_revision": "1"
+     },
+     "config": {
+      "roots": [
+       {
+        "collection_scope_id": "scope:one",
+        "important": false,
+        "path": "C:\\synthetic",
+        "sacl": {
+         "inherit_directories": true,
+         "inherit_files": true,
+         "trustee_sids": [
+          "S-1-1-0"
+         ]
+        },
+        "share_name": "synthetic"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ }
+]

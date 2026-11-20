@@ -1,0 +1,104 @@
+name: Agent .NET MSI (unsigned, manual)
+
+# Manual beta build of the .NET agent; no signing or enrollment material.
+# Fail closed if the hosted image no longer contains the locked native toolchain.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-msi-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  msi:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: agent-dotnet/global.json
+      - name: Locate locked MSVC and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $installations = @(& $vswhere -all -products '*' -property installationPath)
+          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed' }
+          $msvc = $null
+          foreach ($installation in $installations) {
+            $candidate = Join-Path $installation 'VC/Tools/MSVC/14.44.35207'
+            if (Test-Path -LiteralPath (Join-Path $candidate 'bin/Hostx64/x64/cl.exe')) {
+              $msvc = $candidate
+              break
+            }
+          }
+          if (-not $msvc) { throw 'Required MSVC 14.44.35207 is missing from windows-2025; update the runner/toolchain explicitly.' }
+          $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
+          if (-not (Test-Path -LiteralPath (Join-Path $sdk 'Include/10.0.26100.0/um/Windows.h'))) {
+            throw 'Required Windows SDK 10.0.26100.0 is missing from windows-2025.'
+          }
+          "SLI_MSVC_ROOT=$msvc" >> $env:GITHUB_ENV
+          "SLI_WINDOWS_SDK_ROOT=$sdk" >> $env:GITHUB_ENV
+      - name: Build .NET MSI
+        shell: pwsh
+        working-directory: agent-dotnet
+        run: |
+          ./tools/Build-Msi.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'agent-dotnet') `
+            -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
+      - name: Verify MSI tables and complete payload
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet'
+          ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
+            -PublishDirectory (Join-Path $out 'publish')
+      - name: Build and verify higher version for lifecycle test
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade'
+          ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version 0.2.3 -NoRestore `
+            -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
+          ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
+            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion 0.2.3
+      - name: Exercise quiet install, upgrade, uninstall and retained registration
+        shell: pwsh
+        run: |
+          $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            Write-Warning 'No elevated installer access: MSI tables and action conditions verified; installation lifecycle NOT executed.'
+            exit 0
+          }
+          $env:SLI_AGENT_MSI_DISPOSABLE = '1'
+          $env:SLI_AGENT_MSI_BASELINE = Join-Path $env:RUNNER_TEMP 'agent-dotnet/SliAgent.msi'
+          $env:SLI_AGENT_MSI_UPGRADE = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade/SliAgent.msi'
+          dotnet test agent-dotnet/tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj -c Release `
+            --filter 'FullyQualifiedName~MsiLifecycleWindowsTests' --logger 'console;verbosity=normal'
+          if ($LASTEXITCODE -ne 0) { throw 'MSI lifecycle test failed' }
+      - name: Package MSI, portable publish and SHA256SUMS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet'
+          $dest = Join-Path $env:RUNNER_TEMP 'artifact'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          $publish = Join-Path $out 'publish'
+          if (-not (Test-Path -LiteralPath (Join-Path $publish 'SliAgent.exe') -PathType Leaf)) { throw 'SliAgent.exe is missing' }
+          Copy-Item -LiteralPath (Join-Path $out 'SliAgent.msi') -Destination $dest
+          Compress-Archive -Path (Join-Path $publish '*') -DestinationPath (Join-Path $dest 'SliAgent-publish-win-x64.zip')
+          $sums = foreach ($name in @('SliAgent.msi', 'SliAgent-publish-win-x64.zip')) {
+            $file = Join-Path $dest $name
+            if ((Get-Item -LiteralPath $file).Length -eq 0) { throw "Empty artifact: $name" }
+            "$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
+          }
+          $sums | Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS') -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sli-agent-dotnet-msi-${{ github.sha }}
+          path: ${{ runner.temp }}/artifact
+          if-no-files-found: error
+          retention-days: 14

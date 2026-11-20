@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "id": "history-25",
+  "upstream_commit": "7d8b152a5fc062ebd309f62ae4d8276aca2786af",
+  "purpose": "History TEST candidate selection after stage 09 review; no admission. Zero positive matches do not validate detection or noise.",
+  "rules": [
+    {
+      "id": "d99b79d2-0a6f-4f46-ad8b-260b6e17f982",
+      "priority": 1
+    },
+    {
+      "id": "ab4561b1-6c7e-48a7-ad08-087cfb9ce8f1",
+      "priority": 1
+    },
+    {
+      "id": "d04ae2b8-ad54-4de0-bd87-4bc1da66aa59",
+      "priority": 1
+    },
+    {
+      "id": "3e2f1b2c-4d5e-11ee-be56-0242ac120002",
+      "priority": 1
+    },
+    {
+      "id": "496a0e47-0a33-4dca-b009-9e6ca3591f39",
+      "priority": 2
+    },
+    {
+      "id": "9eb99343-d336-4020-a3cd-67f3819e68ee",
+      "priority": 2
+    },
+    {
+      "id": "192a0330-c20b-4356-90b6-7b7049ae0b87",
+      "priority": 2
+    },
+    {
+      "id": "8eef149c-bd26-49f2-9e5a-9b00e3af499b",
+      "priority": 2
+    },
+    {
+      "id": "749c9f5e-b353-4b90-a9c1-05243357ca4b",
+      "priority": 1
+    },
+    {
+      "id": "7b449a5e-1db5-4dd0-a2dc-4e3a67282538",
+      "priority": 2
+    },
+    {
+      "id": "cfeed607-6aa4-4bbd-9627-b637deb723c8",
+      "priority": 2
+    },
+    {
+      "id": "c265cf08-3f99-46c1-8d59-328247057d57",
+      "priority": 1
+    },
+    {
+      "id": "3a734d25-df5c-4b99-8034-af1ddb5883a4",
+      "priority": 1
+    },
+    {
+      "id": "614cf376-6651-47c4-9dcc-6b9527f749f4",
+      "priority": 1
+    },
+    {
+      "id": "2a926e6a-4b81-4011-8a96-e36cc8c04302",
+      "priority": 1
+    },
+    {
+      "id": "6fb63b40-e02a-403e-9ffd-3bcc1d749442",
+      "priority": 1
+    },
+    {
+      "id": "2afafd61-6aae-4df4-baed-139fa1f4c345",
+      "priority": 2
+    },
+    {
+      "id": "8bc64091-6875-4881-aaf9-7bd25b5dda08",
+      "priority": 1
+    },
+    {
+      "id": "5afee48e-67dd-4e03-a783-f74259dcf998",
+      "priority": 1
+    },
+    {
+      "id": "ffa6861c-4461-4f59-8a41-578c39f3f23e",
+      "priority": 2
+    },
+    {
+      "id": "89ca78fd-b37c-4310-b3d3-81a023f83936",
+      "priority": 2
+    },
+    {
+      "id": "39019a4e-317f-4ce3-ae63-309a8c6b53c5",
+      "priority": 2
+    },
+    {
+      "id": "02b64f1b-3f33-4e67-aede-ef3b0a5a8fcf",
+      "priority": 2
+    },
+    {
+      "id": "42c575ea-e41e-41f1-b248-8093c3e82a28",
+      "priority": 1
+    },
+    {
+      "id": "1d61f71d-59d2-479e-9562-4ff5f4ead16b",
+      "priority": 1
+    }
+  ],
+  "review": {
+    "stage": 9,
+    "decision_record": "docs/SIGMA_STAGE09_DECISIONS.json",
+    "decision_record_sha256": "dfd3a2e5c579db37ba7a3e04d3a907bc3f773d4d1aef28bacb5b30eab16d196f",
+    "mode": "test",
+    "admission": "blocked",
+    "reason": "no_positive_matches",
+    "selection": "retain_all_25",
+    "exclusions": []
+  }
+}

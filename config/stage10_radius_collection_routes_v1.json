@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-collection-routes.v1",
+  "source_instance_id": "radius01.example.test",
+  "source_name": "radius01.example.test",
+  "connect_address": "radius01.example.test",
+  "owner_confirmed_ip": "198.51.100.23",
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "event_log_route": {
+    "purpose": "nps_authorization_decisions",
+    "pack_id": "sli.windows.vpn-radius",
+    "channel": "Security",
+    "provider_name": "Microsoft-Windows-Security-Auditing",
+    "event_ids": [6272, 6273],
+    "primary_adapter": "windows-eventlog-pywin32",
+    "fallback_adapter": "windows-eventlog-powershell",
+    "transport": "windows_event_log_rpc",
+    "collection_entrypoint": "scripts/run_dc_log_pilot.py",
+    "activation_state": "prepared_existing_transport_not_activated"
+  },
+  "accounting_route": {
+    "purpose": "vpn_session_lifecycle",
+    "record_types": ["Start", "Interim", "Stop"],
+    "transport": "dedicated_read_only_smb_share",
+    "share_unc": "\\\\radius01.example.test\\SLI-RadiusAccounting$",
+    "administrative_shares_forbidden": ["c$", "admin$", "ipc$"],
+    "default_windows_logfiles_path_forbidden": true,
+    "activation_state": "configured_read_only_verified_not_activated",
+    "timezone_descriptor": {
+      "source": "static_accepted_evidence",
+      "timezone_id": "N. Central Asia Standard Time",
+      "utc_offset_minutes": 420,
+      "accepted_evidence": "artifacts/stage9/evidence/radius-manual-worker-run-003.json",
+      "remote_registry_allowed": false,
+      "drift_check_required_before_activation": false,
+      "drift_check_accepted": false,
+      "owner_assumption_active": true,
+      "owner_assumption_recorded_on": "2026-08-02"
+    }
+  },
+  "prohibited_fallbacks": [
+    "administrative_smb_share",
+    "remote_registry",
+    "event_log_authorization_events_as_accounting_session_lifecycle"
+  ]
+}

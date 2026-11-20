@@ -1,0 +1,141 @@
+{
+  "version": "2026-07-30-radius-descriptor-v1",
+  "schema_version": 2,
+  "description": "Source-only NPS Security descriptors accepted from bounded payload-free field evidence. They do not activate collection, Accounting or a plugin worker.",
+  "entries": [
+    {
+      "source": "sli.windows.vpn-radius",
+      "stream": "Security",
+      "event_key": "6272",
+      "event_id": 6272,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "severity": "low",
+      "base_risk": "low",
+      "purpose_tier": "technical",
+      "noise_class": "context",
+      "category": "authentication",
+      "title": "NPS разрешил запрос доступа",
+      "why": "Событие подтверждает решение NPS об успешной аутентификации, но само по себе не доказывает начало или длительность VPN-сессии.",
+      "fix": "Рассматривать это событие как самостоятельный факт авторизации, а не как часть жизненного цикла сессии: единственным источником жизненного цикла VPN-сессии остаётся RADIUS Accounting. Событие можно показывать рядом с Accounting для контекста идентичности и времени, но точную связь 1:1 или отношение RESULT_OF нельзя утверждать без отдельно доказанного source-native моста между NPS и Accounting.",
+      "missing": "Полный жизненный цикл сеанса находится в отдельном RADIUS Accounting источнике.",
+      "lifecycle": {
+        "raw_payload_days": 2,
+        "record_days": 7,
+        "warm_record_days": 365,
+        "rollup": "radius_authentication_decision"
+      },
+      "correlation": null,
+      "correlation_absent_reason": "NPS Security фиксирует решение авторизации; жизненный цикл сессии принадлежит отдельному Accounting потоку.",
+      "required_fields": [
+        "event_id",
+        "time_created_utc",
+        "server_id",
+        "event_record_id",
+        "subject_user_name",
+        "subject_user_sid",
+        "correlation_id",
+        "source_core_sha256",
+        "source_facts_sha256"
+      ],
+      "card": {
+        "action": "NPS разрешил запрос доступа",
+        "category": "authentication",
+        "noise_class": "context",
+        "purpose_tier": "technical",
+        "field_roles": {
+          "initiator": [
+            "SubjectUserName"
+          ],
+          "object": [
+            "NetworkPolicyName",
+            "NASIdentifier"
+          ],
+          "account": [
+            "FullyQualifiedSubjectUserName",
+            "SubjectMachineName"
+          ],
+          "result": [
+            "LoggingResult"
+          ]
+        },
+        "fact_order": [
+          "account",
+          "object",
+          "result"
+        ],
+        "related_event_ids": [
+          6273
+        ]
+      }
+    },
+    {
+      "source": "sli.windows.vpn-radius",
+      "stream": "Security",
+      "event_key": "6273",
+      "event_id": 6273,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "severity": "medium",
+      "base_risk": "medium",
+      "purpose_tier": "important",
+      "noise_class": "signal",
+      "category": "authentication",
+      "title": "NPS отклонил запрос доступа",
+      "why": "Отказ NPS важен для расследования ошибок удалённого доступа и серий неуспешной аутентификации, но один отказ не доказывает атаку.",
+      "fix": "Проверить ReasonCode, политику, учётную запись, NAS и соседние решения; повышать риск только по подтверждённой серии или контексту.",
+      "missing": "Один отказ не содержит полного жизненного цикла VPN-сессии.",
+      "lifecycle": {
+        "raw_payload_days": 2,
+        "record_days": 7,
+        "warm_record_days": 365,
+        "rollup": "radius_authentication_decision"
+      },
+      "correlation": null,
+      "correlation_absent_reason": "Отказ NPS является самостоятельным решением, а не открытием или закрытием Accounting-сессии.",
+      "required_fields": [
+        "event_id",
+        "time_created_utc",
+        "server_id",
+        "event_record_id",
+        "subject_user_name",
+        "subject_user_sid",
+        "correlation_id",
+        "result_code",
+        "source_core_sha256",
+        "source_facts_sha256"
+      ],
+      "card": {
+        "action": "NPS отклонил запрос доступа",
+        "category": "authentication",
+        "noise_class": "signal",
+        "purpose_tier": "important",
+        "field_roles": {
+          "initiator": [
+            "SubjectUserName"
+          ],
+          "object": [
+            "NetworkPolicyName",
+            "NASIdentifier"
+          ],
+          "account": [
+            "FullyQualifiedSubjectUserName",
+            "SubjectMachineName"
+          ],
+          "result": [
+            "ReasonCode",
+            "Reason"
+          ]
+        },
+        "fact_order": [
+          "account",
+          "object",
+          "result"
+        ],
+        "related_event_ids": [
+          6272
+        ]
+      }
+    }
+  ]
+}

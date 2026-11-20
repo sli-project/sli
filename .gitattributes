@@ -1,0 +1,54 @@
+tests/fixtures/ad_context_privileged_membership.json binary
+config/source_packs/*.json text eol=lf
+
+# These SQL files are byte-sealed by their migration controllers.
+config/postgres_migrations/252_workstation_overview_projections.sql text eol=lf
+config/postgres_migrations/254_workstation_projection_queue.sql text eol=lf
+config/postgres_migrations/255_workstation_protection_predecessor.sql text eol=lf
+config/postgres_migrations/128_ad_snapshot_v2_schedule.sql text eol=lf
+config/postgres_migrations/128_ad_snapshot_v2_schedule.rollback.sql text eol=lf
+config/postgres_migrations/129_ad_snapshot_projection_retention.sql text eol=lf
+config/postgres_migrations/129_ad_snapshot_projection_retention.rollback.sql text eol=lf
+config/postgres_migrations/131_ad_snapshot_seven_day_ring.sql text eol=lf
+config/postgres_migrations/131_ad_snapshot_seven_day_ring.rollback.sql text eol=lf
+config/postgres_migrations/132_ad_snapshot_delete_authorization.sql text eol=lf
+config/postgres_migrations/132_ad_snapshot_delete_authorization.rollback.sql text eol=lf
+
+# Keep historical Computers V6 migration and report sources in LF.
+config/postgres_migrations/101_computers_report_v1.sql text eol=lf
+config/postgres_migrations/101_computers_report_v1.rollback.sql text eol=lf
+config/postgres_migrations/106_computers_report_v2.sql text eol=lf
+config/postgres_migrations/106_computers_report_v2.rollback.sql text eol=lf
+config/postgres_migrations/107_computers_report_v4.sql text eol=lf
+config/postgres_migrations/107_computers_report_v4.rollback.sql text eol=lf
+config/postgres_migrations/108_computers_report_v5.sql text eol=lf
+config/postgres_migrations/108_computers_report_v5.rollback.sql text eol=lf
+config/postgres_migrations/109_computers_v5_snapshot_heartbeat.sql text eol=lf
+config/postgres_migrations/109_computers_v5_snapshot_heartbeat.rollback.sql text eol=lf
+server/app/computers_reporting.py text eol=lf
+server/app/computers_v5_reporting.py text eol=lf
+scripts/runtime/computers_report_v5_snapshot_worker.py text eol=lf
+frontend/src/api/computers-report-types.ts text eol=lf
+frontend/src/api/computers-v5-report-types.ts text eol=lf
+tests/migrations/test_computers_report.py text eol=lf
+tests/migrations/test_computers_v5_report.py text eol=lf
+tests/reports/test_computers_v5_comparison.py text eol=lf
+tests/migrations/test_computers_v5_snapshot_worker.py text eol=lf
+tests/test_computers_v5_reference_contract.py text eol=lf
+
+# The Computers V6 adapter verifies the collector's SHA-256 at runtime.
+scripts/ad_context/collect_ad_inventory_evidence.ps1 text eol=lf
+config/postgres_baseline/*.sql text eol=lf
+config/postgres_baseline/*.json text eol=lf
+deploy/dev/*.sh text eol=lf
+scripts/dev/ui_audit/*.sh text eol=lf
+
+# Sigma manifests seal exact bytes across Windows and Linux checkouts.
+config/sigma/*.json text eol=lf
+config/sigma/requirements.lock.txt text eol=lf
+config/sigma/licenses/* -text
+
+# Source vectors use their Git LF bytes on every platform.
+agent-dotnet/tests/vectors/file-audit-scenarios.json text eol=lf
+agent-dotnet/tests/vectors/nps-scenarios.json text eol=lf
+agent-dotnet/tests/vectors/workstations-scenarios.json text eol=lf

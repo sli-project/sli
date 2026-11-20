@@ -1,0 +1,15 @@
+pydantic>=2.8,<3
+PyYAML>=6.0,<7
+Jinja2>=3.1,<4
+pytest>=9.0.3,<10
+tzdata>=2025.2,<2027
+pywin32>=306; sys_platform == "win32"
+
+# PostgreSQL is the only supported runtime backend.
+psycopg[binary]>=3.2,<4
+
+# Local web authentication: Argon2id password hashes (never plaintext/SHA-256).
+argon2-cffi>=23.1,<26
+
+# Signed release verification (verification never executes package code).
+cryptography>=50.0.1,<51

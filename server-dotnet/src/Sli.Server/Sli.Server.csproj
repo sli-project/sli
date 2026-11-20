@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../../config/sigma/NOTICE" Link="notices/sigma/NOTICE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../../config/sigma/licenses/*.txt" Link="notices/sigma/licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../../config/stage9_radius_evidence_root_v*.json" LogicalName="Sli.Server.Storage.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/event_storage_meanings.json" LogicalName="Sli.Server.Storage.event_storage_meanings.json" />
+    <EmbeddedResource Include="../../../config/stage10_plugin_isolation_fixture_v1.json" LogicalName="Sli.Server.Sources.isolation-fixture.json" />
+    <EmbeddedResource Include="../../../config/stage10_radius_session_reconciliation_writer_v1.json" LogicalName="Sli.Server.Vpn.reconciliation-writer.json" />
+    <EmbeddedResource Include="../../../config/source_packs/examples/linux_auth*.json" LogicalName="Sli.Server.SourcePacks.Examples.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/plugin_architecture_v3.json" LogicalName="Sli.Server.Jobs.plugin_architecture_v3.json" />
+    <EmbeddedResource Include="../../../config/plugin_packages/*jobs-v3.json" LogicalName="Sli.Server.Jobs.%(Filename)%(Extension)" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <ProjectReference Include="../../../agent-dotnet/src/Sli.Agent.Protocol/Sli.Agent.Protocol.csproj" />
+    <ProjectReference Include="../../../agent-dotnet/src/Sli.Agent.Core/Sli.Agent.Core.csproj" />
+    <ProjectReference Include="../Sli.Gpo.SnapshotModel/Sli.Gpo.SnapshotModel.csproj" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Isopoh.Cryptography.Argon2" />
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="System.IO.Hashing" />
+    <EmbeddedResource Include="Access/frozen-report-rules.json" />
+    <EmbeddedResource Include="../../../server/sli/ops/version.py" LogicalName="Sli.Server.Hosting.release-version.py" />
+    <AssemblyMetadata Include="GitCommit" Value="$(SourceRevisionId)" Condition="'$(SourceRevisionId)' != ''" />
+    <AssemblyMetadata Include="GitCommit" Value="$(GITHUB_SHA)" Condition="'$(SourceRevisionId)' == '' and '$(GITHUB_SHA)' != ''" />
+    <EmbeddedResource Include="Installation/settings-catalog.json" LogicalName="Sli.Installation.settings-catalog.json" />
+    <EmbeddedResource Include="Installation/*.sql" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/stage9_ad_dc_dataset_report_parity_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/stage10_plugin_lifecycle_v1.json" LogicalName="Sli.Installation.stage10_plugin_lifecycle_v1.json" />
+    <EmbeddedResource Include="../../../config/plugin_packages/sli.remote-access.json" LogicalName="Sli.Installation.plugin_packages.sli.remote-access.json" />
+    <EmbeddedResource Include="../../../config/stage9_radius_manual_control_v1.json;../../../config/stage9_radius_session_consumer_v1.json" LogicalName="Sli.Server.Agents.Radius.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/source_packs/*.json" LogicalName="Sli.Installation.source_packs.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/plugin_settings_schema/*.json" LogicalName="Sli.Installation.plugin_settings_schema.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/plugin_packages/v3/*.json" LogicalName="Sli.Installation.plugin_packages.v3.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/stage9_radius_registration_v1.json;../../../config/stage10_plugin_postgresql_isolation_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../scripts/maintenance/stage9_radius_manual_worker.py;../../../scripts/maintenance/stage9_radius_session_consumer_manual.py" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/plugin_settings_schema_v1.json;../../../config/plugin_architecture_v3.json;../../../config/stage10_plugin_management_v1.json;../../../config/stage9_ad_dc_compatibility_registration_v1.json;../../../config/plugin_architecture_v2.json;../../../config/stage10_plugin_resource_profiles_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../config/source_packs/*.json" LogicalName="Sli.Server.Operations.Packs.%(Filename).json" />
+    <EmbeddedResource Include="../../../config/stage10_plugin_resource_profiles_v1.json" LogicalName="Sli.Server.Operations.resource-profiles.json" />
+    <EmbeddedResource Include="Reporting/V2/report-definitions.json" />
+    <EmbeddedResource Include="../../../config/stage11a_reporting_product_v1.json" LogicalName="Sli.Server.Reporting.stage11a_reporting_product_v1.json" />
+    <EmbeddedResource Include="Workspace/*.json" />
+    <EmbeddedResource Include="../../../config/navigation_v3.json" LogicalName="Sli.Server.Workspace.navigation_v3.json" />
+    <EmbeddedResource Include="Workspace/*.sql" />
+    <EmbeddedResource Include="Problems/*.sql" />
+    <EmbeddedResource Include="Ad/*.json" />
+    <EmbeddedResource Include="Compatibility/legacy-declarations.json" />
+    <EmbeddedResource Include="Compatibility/ai-preview.json" />
+    <EmbeddedResource Include="../../../config/file_audit_event_catalog.json" LogicalName="Sli.Server.Compatibility.file_audit_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/radius_event_catalog.json" LogicalName="Sli.Server.Compatibility.radius_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/stage9_radius_time_aligned_preflight.json" LogicalName="Sli.Server.Agents.Radius.time-aligned-preflight.json" />
+    <EmbeddedResource Include="../../../config/workstations_event_catalog.json" LogicalName="Sli.Server.Compatibility.workstations_event_catalog.json" />
+    <EmbeddedResource Include="Gpo/*.json" />
+    <EmbeddedResource Include="Workstations/*.json" />
+    <EmbeddedResource Include="Workstations/*.sql" />
+    <EmbeddedResource Include="../../../config/event_catalog.json" LogicalName="Sli.Server.Semantic.Risk.event_catalog.json" />
+    <EmbeddedResource Include="../../../config/file_audit_event_catalog.json" LogicalName="Sli.Server.Investigations.file_audit_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/radius_event_catalog.json" LogicalName="Sli.Server.Investigations.radius_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/workstations_event_catalog.json" LogicalName="Sli.Server.Investigations.workstations_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/file_audit_event_catalog.json" LogicalName="Sli.Server.Semantic.Risk.file_audit_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/radius_event_catalog.json" LogicalName="Sli.Server.Semantic.Risk.radius_event_catalog.json" />
+    <EmbeddedResource Include="../../../config/workstations_event_catalog.json" LogicalName="Sli.Server.Semantic.Risk.workstations_event_catalog.json" />
+    <EmbeddedResource Include="Legacy/report-template.html" />
+    <EmbeddedResource Include="../../../config/semantic_chain_pack_v1.json" LogicalName="Sli.Server.Semantic.chain_pack.json" />
+    <EmbeddedResource Include="../../../config/radius_event_catalog.json" LogicalName="Sli.Server.Semantic.radius_catalog.json" />
+    <EmbeddedResource Include="../../../config/stage10_administrative_activity_v1.json" LogicalName="Sli.Server.Auth.Lifecycle.Security.administrative-activity-v1.json" />
+    <EmbeddedResource Include="../../../config/i18n/server.ru.json" LogicalName="Sli.Server.Access.Administration.server.ru.json" WithCulture="false" />
+    <EmbeddedResource Include="../../../config/i18n/date-params.json" LogicalName="Sli.Server.Reporting.V2.date-params.json" />
+    <EmbeddedResource Include="../../../config/i18n/server.en.json" LogicalName="Sli.Server.Access.Administration.server.en.json" WithCulture="false" />
+  </ItemGroup>
+</Project>

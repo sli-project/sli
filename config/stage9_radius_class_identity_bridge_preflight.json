@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "plan_id": "stage9-radius-class-identity-bridge-preflight-v1",
+  "status": "owner_authorized",
+  "purpose": "prove the Microsoft-documented RADIUS Class bridge from Access-Accept to Accounting-Request and measure exact distinguished-name identity availability",
+  "authorization_basis": "owner explicitly allowed harmless bounded read-only checks and instructed Codex to continue Stage 9",
+  "targets_source": "config/stage9_radius_targets.json",
+  "expected_windows_account": "EXAMPLE\\operator",
+  "limits": {
+    "target_count": 1,
+    "accounting_files": 1,
+    "accounting_candidates": 20,
+    "accounting_records": 400,
+    "accounting_bytes": 262144,
+    "overall_timeout_seconds": 45
+  },
+  "allowed_persisted_observations": [
+    "packet_type_counts",
+    "field_presence_counts_by_packet_type",
+    "class_bridge_join_counts",
+    "exact_identity_availability_counts",
+    "cap_and_truncation_flags",
+    "classification"
+  ],
+  "prohibited_persistence": [
+    "accounting_raw_line",
+    "class_value",
+    "account_session_identifier",
+    "nas_identity",
+    "user_name",
+    "distinguished_name",
+    "ip_address",
+    "file_name",
+    "file_path",
+    "radius_client",
+    "radius_secret"
+  ],
+  "prohibited_actions": [
+    "nps_configuration_change",
+    "radius_accounting_enable",
+    "service_change",
+    "scheduled_task_change",
+    "firewall_change",
+    "postgresql_write",
+    "clickhouse_write",
+    "event_import",
+    "cursor_update",
+    "migration",
+    "source_instance_creation",
+    "descriptor_change",
+    "normalizer_change",
+    "worker_activation",
+    "autostart"
+  ],
+  "next_action": "one_bounded_read_only_accounting_class_bridge_source_contact_then_owner_review"
+}

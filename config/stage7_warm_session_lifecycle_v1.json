@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.warm-authentication-session-lifecycle.v1",
+  "status": "prepared_source_only",
+  "component_owner": "core_hosted_compatibility",
+  "open_event": {
+    "source_pack": "sli.windows.ad-dc",
+    "channel": "Security",
+    "event_key": "4624"
+  },
+  "close_event": {
+    "source_pack": "sli.windows.ad-dc",
+    "channel": "Security",
+    "event_key": "4634"
+  },
+  "exact_pair_fields": [
+    "server_id",
+    "channel_id",
+    "logon_id"
+  ],
+  "close_timeout_seconds": 86400,
+  "session_identity": "first_observed_boundary_source_event_id",
+  "storage_model": "append_only_hash_chained_revisions",
+  "reader_model": "latest_revision_per_session_uid",
+  "maximum_boundary_events_per_batch": 10000,
+  "allowed_states": [
+    "open",
+    "closed",
+    "orphan_logoff"
+  ],
+  "allowed_transitions": [
+    "none_to_open",
+    "none_to_orphan_logoff",
+    "open_to_closed",
+    "orphan_logoff_to_closed"
+  ],
+  "owner_policy": {
+    "hot_days": 7,
+    "warm_days": 365,
+    "archive_auto_delete_enabled": false
+  },
+  "production_clickhouse_schema_applied": false,
+  "production_routing_changed": false,
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "prohibited_actions": [
+    "update_or_delete_prior_revision",
+    "second_cursor_owner",
+    "source_contact",
+    "postgres_delete",
+    "clickhouse_mutation",
+    "routing_cutover",
+    "runtime_activation"
+  ]
+}

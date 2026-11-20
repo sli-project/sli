@@ -1,0 +1,71 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="SLI Agent .NET" Manufacturer="SLI" Version="$(var.ProductVersion)"
+           UpgradeCode="BE66EC86-AE25-4D3F-8C60-B191F3B0E20D" Scope="perMachine" InstallerVersion="500" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer SLI Agent .NET is already installed." Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <CustomActionRef Id="ChooseRegistrationFile" />
+    <Property Id="SERVER_URL" Secure="yes" />
+    <Property Id="ENROLL_TOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="TOKEN_FILE" Secure="yes" />
+    <Property Id="INSTANCE_NAME" Secure="yes" />
+    <Property Id="CA_FILE" Secure="yes" />
+    <Property Id="CA_FINGERPRINT" Secure="yes" />
+    <Property Id="SAVED_SERVER_URL" Secure="yes">
+      <RegistrySearch Id="SavedServerUrl" Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="ServerUrl" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR WIX_UPGRADE_DETECTED OR SAVED_SERVER_URL OR (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE))"
+            Message="Specify SERVER_URL and ENROLL_TOKEN (or TOKEN_FILE)." />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="SLIProgramFolder" Name="SLI">
+        <Directory Id="INSTALLFOLDER" Name="AgentNet">
+          <Component Id="AgentService" Guid="A5D66B73-3C10-4D4E-9C28-F8BC441686F1">
+            <File Id="AgentExe" Source="$(var.PublishDir)\SliAgent.exe" KeyPath="yes" />
+            <ServiceInstall Id="InstallService" Name="SLIAgentNet" DisplayName="SLI Agent .NET"
+                            Description="Collects assigned Windows security events for SLI."
+                            Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes">
+              <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart"
+                                  RestartServiceDelayInSeconds="60" ResetPeriodInDays="1" />
+            </ServiceInstall>
+            <!-- WiX Util 5 has no delayed-start or non-crash recovery attributes. -->
+            <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\SLIAgentNet" Name="DelayedAutoStart" Value="1" Type="integer" />
+            <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\SLIAgentNet" Name="FailureActionsOnNonCrashFailures" Value="1" Type="integer" />
+            <ServiceControl Id="ControlService" Name="SLIAgentNet" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          </Component>
+          <Component Id="ProductInfo" Guid="38FD3A96-2072-436F-A4AD-DDA29BC7E197">
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet\Product" Name="ProductCode" Value="[ProductCode]" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet\Product" Name="Version" Value="[ProductVersion]" Type="string" />
+          </Component>
+          <!-- Connection settings survive upgrade/uninstall; a new bootstrap is supplied independently. -->
+          <Component Id="Bootstrap" Guid="4BA7E9A9-FF66-49B7-90DC-989656A48B06" Permanent="yes" NeverOverwrite="yes">
+            <RegistryKey Root="HKLM" Key="SOFTWARE\SLI\AgentNet" ForceCreateOnInstall="yes">
+              <PermissionEx Sddl="D:P(A;;KA;;;SY)(A;;KA;;;BA)" />
+              <RegistryValue Name="ServerUrl" Value="[SERVER_URL]" Type="string" KeyPath="yes" />
+              <RegistryValue Name="CaBundle" Value="[CA_FILE]" Type="string" />
+              <RegistryValue Name="CaFingerprint" Value="[CA_FINGERPRINT]" Type="string" />
+            </RegistryKey>
+          </Component>
+          <!-- Only explicit bootstrap input replaces an old token, including after /x. Runtime removes it after persistence. -->
+          <Component Id="EnrollmentBootstrap" Guid="FB980F8D-5BC5-4CA3-AEA4-B3B880E5B205" Permanent="yes" Condition="ENROLL_TOKEN OR TOKEN_FILE">
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="EnrollmentToken" Value="[ENROLL_TOKEN]" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="TokenFile" Value="[TOKEN_FILE]" Type="string" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="InstanceName" Value="[INSTANCE_NAME]" Type="string" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="SLIDataFolder" Name="SLI">
+        <Directory Id="AgentDataFolder" Name="AgentNet">
+          <Component Id="PrivateState" Guid="257C41CA-98BF-4A90-BE2F-671E452EBF0A" Permanent="yes">
+            <CreateFolder><PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" /></CreateFolder>
+            <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="StateDirectory" Value="[AgentDataFolder]state" Type="string" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Agent" Level="1">
+      <ComponentRef Id="AgentService" /><ComponentRef Id="ProductInfo" /><ComponentRef Id="Bootstrap" /><ComponentRef Id="EnrollmentBootstrap" /><ComponentRef Id="PrivateState" />
+      <ComponentGroupRef Id="PublishedFiles" />
+    </Feature>
+  </Package>
+</Wix>

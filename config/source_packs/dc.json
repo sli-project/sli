@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "pack_id": "sli.windows.ad-dc",
+  "version": "1.4.0",
+  "display_name": "Windows Active Directory Domain Controller",
+  "channels": [
+    "Security",
+    "System",
+    "Directory Service",
+    "DNS Server",
+    "Microsoft-Windows-PowerShell/Operational",
+    "Microsoft-Windows-TaskScheduler/Operational"
+  ],
+  "adapters": [
+    "windows-eventlog-pywin32",
+    "windows-eventlog-powershell"
+  ],
+  "event_catalog": "event_catalog.json",
+  "normalizer": "windows-ad-dc-v1",
+  "entity_contract": "catalog-field-roles-v1",
+  "analysis_contract": "catalog-semantics-v1"
+}

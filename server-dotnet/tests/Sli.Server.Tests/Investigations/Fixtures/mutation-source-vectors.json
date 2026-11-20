@@ -1,0 +1,210 @@
+[
+  {
+    "old": "new",
+    "target": "new",
+    "status": "ok",
+    "replay": true,
+    "commands": []
+  },
+  {
+    "old": "new",
+    "target": "active",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "new",
+    "target": "review",
+    "status": "conflict",
+    "message": "Transition new -> review is not allowed",
+    "commands": []
+  },
+  {
+    "old": "new",
+    "target": "confirmed",
+    "status": "conflict",
+    "message": "Transition new -> confirmed is not allowed",
+    "commands": []
+  },
+  {
+    "old": "new",
+    "target": "closed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "active",
+    "target": "new",
+    "status": "conflict",
+    "message": "Transition active -> new is not allowed",
+    "commands": []
+  },
+  {
+    "old": "active",
+    "target": "active",
+    "status": "ok",
+    "replay": true,
+    "commands": []
+  },
+  {
+    "old": "active",
+    "target": "review",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "active",
+    "target": "confirmed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "active",
+    "target": "closed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "review",
+    "target": "new",
+    "status": "conflict",
+    "message": "Transition review -> new is not allowed",
+    "commands": []
+  },
+  {
+    "old": "review",
+    "target": "active",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "review",
+    "target": "review",
+    "status": "ok",
+    "replay": true,
+    "commands": []
+  },
+  {
+    "old": "review",
+    "target": "confirmed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "review",
+    "target": "closed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "confirmed",
+    "target": "new",
+    "status": "conflict",
+    "message": "Transition confirmed -> new is not allowed",
+    "commands": []
+  },
+  {
+    "old": "confirmed",
+    "target": "active",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "confirmed",
+    "target": "review",
+    "status": "conflict",
+    "message": "Transition confirmed -> review is not allowed",
+    "commands": []
+  },
+  {
+    "old": "confirmed",
+    "target": "confirmed",
+    "status": "ok",
+    "replay": true,
+    "commands": []
+  },
+  {
+    "old": "confirmed",
+    "target": "closed",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "closed",
+    "target": "new",
+    "status": "conflict",
+    "message": "Transition closed -> new is not allowed",
+    "commands": []
+  },
+  {
+    "old": "closed",
+    "target": "active",
+    "status": "ok",
+    "replay": false,
+    "commands": [
+      "update",
+      "audit"
+    ]
+  },
+  {
+    "old": "closed",
+    "target": "review",
+    "status": "conflict",
+    "message": "Transition closed -> review is not allowed",
+    "commands": []
+  },
+  {
+    "old": "closed",
+    "target": "confirmed",
+    "status": "conflict",
+    "message": "Transition closed -> confirmed is not allowed",
+    "commands": []
+  },
+  {
+    "old": "closed",
+    "target": "closed",
+    "status": "ok",
+    "replay": true,
+    "commands": []
+  }
+]

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-isolation-fixture.v1",
+  "status": "prepared_fixture_only",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "fixture_only": true,
+  "runtime_enabled": false,
+  "source_contact_allowed": false,
+  "database_access_allowed": false,
+  "process_control_allowed": false,
+  "autostart_enabled": false,
+  "production_read_path_cutover": false,
+  "core": {
+    "health": "healthy_fixture",
+    "runtime": "running_fixture"
+  },
+  "plugins": [
+    {
+      "plugin_id": "sli.remote-access",
+      "package_version": "1.0.0-fixture",
+      "package_lifecycle": "registered_fixture",
+      "desired_activation": "enabled_fixture",
+      "observed_health": "healthy_fixture",
+      "component_runtime": "running_fixture",
+      "queue_state": "drained_fixture",
+      "dataset_state": "available_fixture",
+      "detach_reader_ready": true,
+      "read_report_parity": true,
+      "immutable_evidence_refs": [
+        "fixture-evidence:remote-access:1"
+      ]
+    },
+    {
+      "plugin_id": "sli.windows.ad-dc",
+      "package_version": "1.4.0-fixture",
+      "package_lifecycle": "registered_fixture",
+      "desired_activation": "enabled_fixture",
+      "observed_health": "healthy_fixture",
+      "component_runtime": "running_fixture",
+      "queue_state": "drained_fixture",
+      "dataset_state": "available_fixture",
+      "detach_reader_ready": true,
+      "read_report_parity": true,
+      "immutable_evidence_refs": [
+        "fixture-evidence:ad-dc:1"
+      ]
+    }
+  ],
+  "required_scenarios": [
+    "independent_disable",
+    "failure_isolation",
+    "resource_exhaustion_isolation",
+    "independent_upgrade_and_rollback",
+    "detach_without_core_or_peer_outage",
+    "read_and_report_parity_before_ownership_cutover"
+  ],
+  "explicitly_not_proven": [
+    "windows_process_identity_and_job_object_enforcement",
+    "cpu_memory_pid_acl_and_network_enforcement",
+    "independent_postgresql_role_and_namespace",
+    "live_queue_drain_and_process_stop",
+    "live_package_upgrade_or_rollback",
+    "live_detach_reader",
+    "production_ownership_cutover"
+  ]
+}

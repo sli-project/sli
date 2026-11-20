@@ -1,0 +1,47 @@
+name: Windows audit diagnostics fixtures
+
+on:
+  pull_request:
+    paths:
+      - scripts/manual_dc_audit/Invoke-DcAuditLoggingSetup.ps1
+      - scripts/ad_context/ActiveDirectoryContext.psm1
+      - tests/unit/test_windows_audit_diagnostics_contracts.py
+      - tests/unit/test_windows_audit_diagnostics_native.py
+      - tests/fixtures/windows_audit_diagnostics.ps1
+      - .github/workflows/windows-audit-diagnostics.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-audit-diagnostics:
+    # Same Linux runner selection as Pull Request gate; no runner-policy changes.
+    # Preserve the check id, but success covers portable source contracts only.
+    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Source contracts (standard library only)
+        run: python3 -m unittest discover -s tests/unit -p test_windows_audit_diagnostics_contracts.py -v
+      - name: Record deferred WindowsOnly acceptance
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'WINDOWS_ACCEPTANCE'
+          ## WindowsOnly: deferred — not executed on Linux
+
+          This job checks portable source contracts, not Windows runtime behavior.
+          On an authorized Win10 test VM, from the same revision, run:
+
+          ```powershell
+          python tests/unit/test_windows_audit_diagnostics_native.py
+          ```
+
+          Both Windows PowerShell 5.1 and PowerShell 7 fixtures must pass without
+          skips. Python, both shells and the .NET Framework compiler must already
+          be present. The native CLI returns failure on missing prerequisites.
+          Deferred cases: concurrent stdout/stderr pressure, nonzero exit,
+          bounded timeout, UTF-8 byte limits and auditpol failure/partial application.
+          Linux success does not certify these native behaviors.
+          WINDOWS_ACCEPTANCE

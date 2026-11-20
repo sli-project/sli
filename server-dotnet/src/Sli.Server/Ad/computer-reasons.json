@@ -1,0 +1,124 @@
+{
+  "unsupported_os": {
+    "code": "unsupported_os",
+    "family": "unsupported_os",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "ОС без поддержки",
+    "condition": "Дата оценки позже даты окончания обычной расширенной поддержки Microsoft.",
+    "qualification": "ОС без поддержки Microsoft требует проверки и плана обновления.",
+    "limitation": "Строка ОС в AD не подтверждает патчи, редакцию или право на ESU; специальные редакции требуют отдельной оценки.",
+    "next_action": "Проверить редакцию и ESU; запланировать обновление или согласованное исключение."
+  },
+  "laps_expired": {
+    "code": "laps_expired",
+    "family": "laps_expired",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Срок метаданных LAPS истёк",
+    "condition": "Срок LAPS раньше времени снимка.",
+    "qualification": "Требуется проверить обработку политики LAPS.",
+    "limitation": "Метаданные не доказывают наличие пароля или успешную ротацию; пароль не читается.",
+    "next_action": "Проверить применение LAPS на компьютере и права чтения метаданных."
+  },
+  "unconstrained_delegation": {
+    "code": "unconstrained_delegation",
+    "family": "unconstrained_delegation",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Неограниченное делегирование",
+    "observed": "В userAccountControl установлен TRUSTED_FOR_DELEGATION.",
+    "condition": "Установлен бит 524288.",
+    "qualification": "Компьютеру разрешено неограниченное делегирование.",
+    "limitation": "Флаг не доказывает использование делегирования; для контроллеров домена может быть штатным.",
+    "next_action": "Проверить назначение и необходимость делегирования."
+  },
+  "source_error": {
+    "code": "source_error",
+    "family": "source_error",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Ошибка источника",
+    "observed": "Один или несколько обязательных атрибутов имеют состояние ошибки.",
+    "condition": "Хотя бы один фактически запрошенный источник имеет состояние failed, access_denied или parse_error.",
+    "qualification": "Данные объекта получены с явной ошибкой источника.",
+    "limitation": "Ошибка источника не доказывает неисправность или небезопасность устройства.",
+    "next_action": "Проверить указанный источник и повторить соответствующий этап сбора."
+  },
+  "unknown_type": {
+    "code": "unknown_type",
+    "family": "unknown_type",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Тип объекта не определён",
+    "observed": "Наблюдаемая ОС не позволяет определить тип.",
+    "condition": "Ни одно заданное правило не позволило однозначно отнести объект к ПК или серверу.",
+    "qualification": "Тип объекта определить нельзя.",
+    "limitation": "Это не означает, что объект не является реальным компьютером или сервером.",
+    "next_action": "Проверить ОС и классификационные evidence."
+  },
+  "stale_activity": {
+    "code": "stale_activity",
+    "family": "stale_activity",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "limitation": "lastLogonTimestamp является приблизительным реплицируемым атрибутом и не подтверждает физическое состояние устройства.",
+    "next_action": "Сопоставить с назначением объекта; решение об отключении или удалении принимает человек."
+  },
+  "unknown_os": {
+    "code": "unknown_os",
+    "family": "unknown_os",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Операционная система не определена",
+    "observed": "OperatingSystem отсутствует в текущем evidence.",
+    "condition": "Название ОС отсутствует либо источник поля не имеет наблюдаемого значения.",
+    "qualification": "Операционную систему по текущему снимку определить нельзя.",
+    "limitation": "Это не доказывает отсутствие ОС на устройстве.",
+    "next_action": "Проверить атрибут OperatingSystem и полноту directory_accounts."
+  },
+  "unavailable_activity": {
+    "code": "unavailable_activity",
+    "family": "unavailable_activity",
+    "rule_version": 1,
+    "source_sections": [
+      "directory_accounts"
+    ],
+    "threshold_days": null,
+    "requires_human_review": true,
+    "label": "Нет доступной даты активности",
+    "observed": "Доступная дата AD-наблюдения отсутствует.",
+    "condition": "Источник не дал дату наблюдения для включённой в AD учётной записи.",
+    "qualification": "Дату последней активности определить нельзя.",
+    "limitation": "Отсутствие даты не доказывает отсутствие активности устройства.",
+    "next_action": "Проверить полноту directory_accounts и источник LastLogonDate."
+  }
+}

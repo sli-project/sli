@@ -1,0 +1,171 @@
+"""Exact installed inventory shared by adoption, update and runtime readback."""
+from __future__ import annotations
+
+import hashlib
+import re
+from pathlib import Path
+
+from server.sli.release_package import PackageError, canonical_json
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def migration_checksum_variants(body):
+    """Accept only LF and CRLF bytes; preserve all other bytes, including lone CR."""
+    lf = body.replace(b"\r\n", b"\n")
+    return {hashlib.sha256(variant).hexdigest() for variant in (lf, lf.replace(b"\n", b"\r\n"))}
+
+
+def migration_checksums_match(path, source_checksum, ledger_checksum):
+    if source_checksum == ledger_checksum:
+        return True
+    # A digest alone cannot prove newline equivalence. Pin both variants to
+    # this exact inventory file, and fail closed if its bytes are unavailable.
+    if not re.fullmatch(r"config/postgres_migrations/\d+_[A-Za-z0-9_]+\.sql", path):
+        return False
+    try:
+        variants = migration_checksum_variants((ROOT / path).read_bytes())
+    except OSError:
+        return False
+    return source_checksum in variants and ledger_checksum in variants
+
+
+def require(condition, code):
+    if not condition:
+        raise PackageError(code)
+
+
+def ledger_matches(installed, observed):
+    expected = installed.get("migration_ledger")
+    actual = observed.get("migration_ledger")
+    require(isinstance(expected, list) and expected, "update_installed_ledger_required")
+    require(isinstance(actual, list) and all(isinstance(row, dict) and type(row.get("version")) is int
+            for row in actual), "update_migration_ledger_mismatch")
+    versions = []
+    inventory = {}
+    for path, checksum in installed.get("migrations", {}).items():
+        match = re.fullmatch(r"(\d+)_.*\.sql", Path(path).name)
+        if match and not re.search(r"(?:\.rollback|_rollback)\.sql$", path):
+            version = int(match[1])
+            require(version not in inventory, "update_migration_ledger_mismatch")
+            inventory[version] = (path, checksum)
+    for row in expected:
+        require(isinstance(row, dict) and set(row) == {"version", "name", "sha256"}
+                and type(row["version"]) is int and row["version"] > 0
+                and isinstance(row["name"], str) and row["name"]
+                and isinstance(row["sha256"], str) and re.fullmatch(r"[a-f0-9]{64}", row["sha256"]),
+                "update_migration_ledger_mismatch")
+        versions.append(row["version"])
+        require(row["version"] not in inventory or migration_checksums_match(
+                    *inventory[row["version"]], row["sha256"]),
+                "update_migration_ledger_mismatch")
+    legacy = (observed.get("installed_release_available") is False and 179 not in versions
+              and installed.get("ledger_source") == "deployed_image" and bool(installed.get("adoption")))
+    comparable = actual
+    if legacy:
+        hashes = {row["version"]: row["sha256"] for row in expected}
+        comparable = [{**row, "sha256": hashes.get(row["version"]) if row.get("sha256") is None else row["sha256"]}
+                      for row in actual]
+    require(versions == sorted(set(versions)) and set(inventory) <= set(versions)
+            and comparable == expected and type(observed.get("migration_ledger_max")) is int
+            and observed["migration_ledger_max"] == max(versions), "update_migration_ledger_mismatch")
+    return {"max_version": max(versions), "sha256": hashlib.sha256(canonical_json(actual)).hexdigest()}
+
+
+def inventory(installed):
+    keys = ("version", "image_tag", "image_digest", "build_id", "source_commit", "migrations", "migration_ledger")
+    return {**{key: installed.get(key) for key in keys}, "plugins": {
+        key: {field: value.get(field) for field in ("version", "generation", "migrations")}
+        for key, value in installed.get("plugins", {}).items()}}
+
+
+def installation_key(installed):
+    require(isinstance(installed.get("compose_project"), str) and installed["compose_project"]
+            and isinstance(installed.get("volumes"), dict),
+            "update_foreign_installation")
+    return hashlib.sha256(canonical_json({"project": installed["compose_project"], "volumes": installed["volumes"]})).hexdigest()
+
+
+def registry_matches(installed, observed):
+    registry = observed.get("installed_release")
+    if registry is not None:
+        require(registry.get("installation_key") == installation_key(installed), "update_foreign_installation")
+        require(registry.get("inventory") == inventory(installed), "update_installed_registry_mismatch")
+
+
+def plugins_match(installed, observed):
+    rows = observed.get("plugins", [])
+    active = {row["plugin_id"]: row for row in rows if row["installed"]}
+    require(len(active) == sum(bool(row["installed"]) for row in rows), "update_plugin_registry_mismatch")
+    expected = installed.get("plugins", {})
+    require(set(active) == set(expected) and all(active[key]["version"] == value["version"]
+            for key, value in expected.items()), "update_plugin_registry_mismatch")
+
+
+def pointers_match(runtime, installed):
+    from deploy.linux.plugin_update import validate_payload
+    from deploy.linux.sli_update import parse_json
+    for plugin_id, previous in installed.get("plugins", {}).items():
+        require(re.fullmatch(r"sli\.[a-z0-9-]+", plugin_id), "update_plugin_inventory_required")
+        directory = Path(runtime) / "plugins" / plugin_id
+        require(not any(path.is_symlink() for path in (Path(runtime) / "plugins", directory, directory / "versions")),
+                "update_plugin_pointer_mismatch")
+        pointer = directory / "active.json"
+        generation = previous.get("generation")
+        if generation is None:
+            require(not pointer.exists() and not pointer.is_symlink(), "update_plugin_pointer_mismatch")
+            continue
+        require(isinstance(generation, str) and re.fullmatch(r"[a-f0-9]{64}", generation)
+                and pointer.is_file() and not pointer.is_symlink(), "update_plugin_pointer_mismatch")
+        require(parse_json(pointer.read_bytes()) == {"generation": generation}, "update_plugin_pointer_mismatch")
+        release = directory / "versions" / generation
+        require(not release.is_symlink() and not (release / "release.json").is_symlink(),
+                "update_plugin_pointer_mismatch")
+        manifest = parse_json((release / "release.json").read_bytes())
+        require(manifest["plugin_id"] == plugin_id and manifest["plugin_version"] == previous["version"],
+                "update_plugin_pointer_mismatch")
+        validate_payload(release, manifest)
+
+
+def validate(installed, observed, runtime=None, *, registry=True):
+    ledger_matches(installed, observed)
+    require(observed.get("services") and all(
+        row["image_digest"] == installed["image_digest"] and row["image_tag"] == installed["image_tag"]
+        and (row["version"] == installed["version"] or (row["version"] is None
+             and installed.get("adoption") and installed["version"].startswith("adopted-")))
+        for row in observed["services"].values()), "update_running_version_mismatch")
+    plugins_match(installed, observed)
+    if registry:
+        registry_matches(installed, observed)
+    if runtime is not None:
+        pointers_match(runtime, installed)
+
+
+def observe_plugins(runtime, observed):
+    """Report selected immutable assets separately from the database's version."""
+    from deploy.linux.sli_update import parse_json, reason_code
+    result = []
+    for row in observed.get("plugins", []):
+        active = {**row, "registry_version": row["version"], "generation": None}
+        try:
+            plugin_id = row["plugin_id"]
+            require(re.fullmatch(r"sli\.[a-z0-9-]+", plugin_id), "update_plugin_pointer_mismatch")
+            directory = Path(runtime) / "plugins" / plugin_id
+            pointer = directory / "active.json"
+            active["draining"] = (directory / "draining.json").exists()
+            if pointer.exists():
+                require(not pointer.is_symlink() and not directory.is_symlink(), "update_plugin_pointer_mismatch")
+                generation = parse_json(pointer.read_bytes()).get("generation")
+                require(isinstance(generation, str) and re.fullmatch(r"[a-f0-9]{64}", generation),
+                        "update_plugin_pointer_mismatch")
+                release = directory / "versions" / generation
+                require(not release.is_symlink() and not (release / "release.json").is_symlink(),
+                        "update_plugin_pointer_mismatch")
+                manifest = parse_json((release / "release.json").read_bytes())
+                require(manifest["plugin_id"] == plugin_id, "update_plugin_pointer_mismatch")
+                active.update(version=manifest["plugin_version"], generation=generation,
+                              build_id=manifest["build_id"], source_commit=manifest["source_commit"])
+        except Exception as exc:
+            active.update(version=None, reason_code=reason_code(exc, "update_plugin_inventory_unavailable"))
+        result.append(active)
+    return result

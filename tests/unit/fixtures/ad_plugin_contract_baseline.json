@@ -1,0 +1,3998 @@
+{
+  "api": {
+    "add:dc01.example.invalid": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": [
+        {
+          "payload": {
+            "item": {
+              "connect_address": "dc01.example.invalid",
+              "dns_readback": true,
+              "domain": "example.invalid",
+              "enabled": true,
+              "hostname": "dc01.example.invalid",
+              "imported_from_file": 0,
+              "source": "db"
+            }
+          },
+          "status": 201
+        }
+      ]
+    },
+    "add:duplicate": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": [
+        {
+          "payload": {
+            "error": "domain_controller_already_exists"
+          },
+          "status": 409
+        }
+      ]
+    },
+    "add:invalid": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": [
+        {
+          "payload": {
+            "error": "connect_address_must_be_fqdn"
+          },
+          "status": 400
+        }
+      ]
+    },
+    "add:missing": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": [
+        {
+          "payload": {
+            "error": "domain_not_found"
+          },
+          "status": 404
+        }
+      ]
+    },
+    "audits": [
+      {
+        "action": "setup_dc_add",
+        "details": {
+          "connect_address": "dc01.example.invalid",
+          "dns_readback": true,
+          "domain": "example.invalid",
+          "enabled": true,
+          "imported_from_file": 0,
+          "source": "db"
+        },
+        "target_key": "dc01.example.invalid",
+        "target_type": "domain_controller"
+      },
+      {
+        "action": "setup_dc_update",
+        "details": {
+          "enabled": false,
+          "previous_enabled": true
+        },
+        "target_key": "dc01.example.invalid",
+        "target_type": "domain_controller"
+      }
+    ],
+    "capability_denied": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": []
+    },
+    "disable": {
+      "guards": [
+        "admin",
+        "access.manage"
+      ],
+      "sent": [
+        {
+          "payload": {
+            "item": {
+              "enabled": false,
+              "hostname": "dc01.example.invalid",
+              "previous_enabled": true
+            }
+          },
+          "status": 200
+        }
+      ]
+    },
+    "discovery": [
+      {
+        "payload": {
+          "items": [
+            "dc01.example.invalid"
+          ]
+        },
+        "status": 200
+      }
+    ],
+    "role_denied": {
+      "guards": [
+        "admin"
+      ],
+      "sent": []
+    },
+    "targets": [
+      {
+        "payload": {
+          "items": [
+            {
+              "connect_address": "dc01.example.invalid",
+              "dns_readback": true,
+              "domain": "example.invalid",
+              "enabled": true,
+              "hostname": "dc01.example.invalid",
+              "source": "db"
+            }
+          ],
+          "source": "db"
+        },
+        "status": 200
+      }
+    ]
+  },
+  "definitions": {
+    "ad.computer-logons": {
+      "access": {
+        "export_action": "export",
+        "report_key": "ad.computer-logons",
+        "required_capabilities": [],
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "scope": "delegated"
+      },
+      "definition": {
+        "archetype": "investigation-evidence",
+        "columns": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Компьютер",
+            "path": "display_name"
+          },
+          {
+            "key": "count",
+            "kind": "number",
+            "label": "Входов за период",
+            "path": "login_count"
+          },
+          {
+            "key": "last",
+            "kind": "datetime",
+            "label": "Последний вход",
+            "path": "last_observed_logon_at_utc"
+          },
+          {
+            "key": "state",
+            "kind": "state",
+            "label": "Наблюдения",
+            "labels": {
+              "empty_unverified": "Не наблюдались (полнота не доказана)",
+              "not_collected": "Данные не собраны",
+              "observed": "Входы наблюдались",
+              "partial": "Данные частичные"
+            },
+            "path": "observation_state"
+          }
+        ],
+        "description": "Кто и когда входил на рабочие станции: наблюдения успешных входов, а не длительность работы.",
+        "detail": {
+          "actions": null,
+          "columns": [
+            {
+              "key": "user",
+              "kind": "text",
+              "label": "Пользователь",
+              "path": "user_text"
+            },
+            {
+              "key": "time",
+              "kind": "datetime",
+              "label": "Время входа",
+              "path": "observed_at_utc"
+            },
+            {
+              "key": "event",
+              "kind": "code",
+              "label": "Исходное событие",
+              "link": "/app/events/{source_event_id}",
+              "path": "source_event_id"
+            }
+          ],
+          "inline": null,
+          "key": "entity_id",
+          "kind": "sub",
+          "row_component": null,
+          "row_links": [
+            {
+              "href": "/app/events/{source_event_id}",
+              "label": "Исходное событие"
+            }
+          ],
+          "title": "Входы на компьютер"
+        },
+        "export": false,
+        "intent": {
+          "action": "Inspect exact logon evidence and account context for an investigation.",
+          "completeness": "Duration of source-confirmed logon collection intervals divided by expected source-window duration; neither row count nor an empty result proves continuity. Currently not_proven without source evidence.",
+          "contract_id": "sli.report-intent.v1",
+          "coverage": "Inventory coverage and logon observation coverage are separate source dimensions.",
+          "denominator": "Ожидаемые источники входов выбранных компьютеров × период; без непрерывности сбора полнота не подтверждена.",
+          "exclusions": "Logons are not work duration; DC 4624 alone does not prove workstation interactive use.",
+          "field_classes": [
+            "computer_logon_observation"
+          ],
+          "freshness_expectation": "Свежесть наблюдений входов и снимка инвентаря проверяется раздельно.",
+          "primary_archetype": "timeline",
+          "provenance": "Computer entity, account identity, source event ID, domain and observation time.",
+          "question": "Какие входы на выбранные компьютеры наблюдались за период?",
+          "retention": "Derived logon observations follow the storage policy; exact source events may expire independently.",
+          "rights": "ad.computer-logons view grant with computer_logon_observation; engine enforces domain and event scope; export separately granted.",
+          "scope": "One server-resolved granted domain, selected computers and bounded observation window.",
+          "sources": [
+            "Canonical: successful computer-logon observations in the granted domain and window.",
+            "Supplemental: latest AD computer inventory for the same domain."
+          ],
+          "user_role": "Security investigator",
+          "version": 1
+        },
+        "key": "ad.computer-logons",
+        "limits": {
+          "default": 50,
+          "max": 200
+        },
+        "page_actions": null,
+        "params": [
+          {
+            "default": "30d",
+            "key": "period",
+            "kind": "period",
+            "label": "Период",
+            "max_days": 365,
+            "presets": [
+              "7d",
+              "30d",
+              "90d",
+              "custom"
+            ],
+            "required": true
+          },
+          {
+            "key": "q",
+            "kind": "text",
+            "label": "Компьютер"
+          },
+          {
+            "key": "user",
+            "kind": "text",
+            "label": "Пользователь"
+          },
+          {
+            "key": "with_logons",
+            "kind": "choice",
+            "label": "Показывать",
+            "options": [
+              {
+                "label": "Только ПК со входами",
+                "value": "yes"
+              }
+            ]
+          }
+        ],
+        "presets": [
+          {
+            "label": "Только ПК со входами",
+            "params": {
+              "with_logons": "yes"
+            }
+          }
+        ],
+        "result_states": [
+          "ok",
+          "empty",
+          "denied",
+          "not_collected",
+          "partial",
+          "processing",
+          "stale",
+          "error"
+        ],
+        "row_key": "entity_id",
+        "row_links": [
+          {
+            "href": "/app/entities/{entity_id}",
+            "label": "Карточка компьютера"
+          }
+        ],
+        "section": "reports/computers",
+        "title": "Входы на компьютеры",
+        "views": [
+          {
+            "key": "table",
+            "kind": "table",
+            "source": "items"
+          }
+        ]
+      },
+      "home_order": null,
+      "home_view": null,
+      "metric_categories": {},
+      "row_categories": {},
+      "series_categories": {}
+    },
+    "ad.computers.v6": {
+      "access": {
+        "export_action": "export",
+        "report_key": "ad.computers.v6",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "scope": "domain"
+      },
+      "definition": {
+        "archetype": "inventory-status",
+        "columns": [
+          {
+            "key": "display_name",
+            "kind": "text",
+            "label": "Компьютер",
+            "link": "/app/entities/{entity_id}",
+            "path": "display_name",
+            "sortable": true
+          },
+          {
+            "key": "computer_type",
+            "kind": "state",
+            "label": "Тип",
+            "labels": {
+              "server": "Сервер",
+              "unknown": "Не определён",
+              "workstation": "Рабочая станция"
+            },
+            "path": "computer_type",
+            "sortable": true
+          },
+          {
+            "key": "enabled",
+            "kind": "state",
+            "label": "Учётная запись",
+            "labels": {
+              "disabled": "Отключена",
+              "enabled": "Включена",
+              "unknown": "Не определено"
+            },
+            "path": "account_state",
+            "sortable": true
+          },
+          {
+            "key": "operating_system",
+            "kind": "text",
+            "label": "ОС",
+            "path": "operating_system",
+            "sortable": true
+          },
+          {
+            "key": "activity_state",
+            "kind": "state",
+            "label": "Активность",
+            "labels": {
+              "missing": "Нет данных",
+              "not_applicable": "Не оценивается",
+              "over_threshold": "Старше порога",
+              "recent": "Активен",
+              "stale": "Давно не входил",
+              "within_threshold": "В пределах порога"
+            },
+            "path": "activity_state",
+            "sortable": true
+          },
+          {
+            "key": "last_logon_utc",
+            "kind": "datetime",
+            "label": "Последний вход",
+            "path": "last_logon_utc",
+            "sortable": true
+          },
+          {
+            "key": "reason",
+            "kind": "text",
+            "label": "Требует внимания",
+            "path": "reason_text",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "ip_addresses",
+            "kind": "text",
+            "label": "IP-адреса",
+            "path": "ip_text",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "ou_path",
+            "kind": "text",
+            "label": "OU",
+            "path": "ou_path",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "quality",
+            "kind": "text",
+            "label": "Качество данных",
+            "path": "quality_text",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "age",
+            "kind": "number",
+            "label": "Дней без входа",
+            "path": "age_days"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "version",
+            "kind": "text",
+            "label": "Версия ОС",
+            "path": "operating_system_version"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "dns",
+            "kind": "text",
+            "label": "DNS-имя",
+            "path": "dns_host_name"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "description",
+            "kind": "text",
+            "label": "Описание",
+            "path": "description"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "site",
+            "kind": "text",
+            "label": "AD-сайт",
+            "path": "site_text"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "canonical_name",
+            "kind": "text",
+            "label": "Каноническое имя",
+            "path": "canonical_name"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "distinguished_name",
+            "kind": "code",
+            "label": "DN",
+            "path": "distinguished_name"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "managed_by",
+            "kind": "text",
+            "label": "Управляет",
+            "path": "managed_by"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "location",
+            "kind": "text",
+            "label": "Расположение",
+            "path": "location"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "created_utc",
+            "kind": "datetime",
+            "label": "Создан в AD",
+            "path": "created_utc"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "when_changed_utc",
+            "kind": "datetime",
+            "label": "Изменён в AD",
+            "path": "when_changed_utc"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "password_last_set_utc",
+            "kind": "datetime",
+            "label": "Пароль компьютера изменён",
+            "path": "password_last_set_utc"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "delegation",
+            "kind": "boolean",
+            "label": "Неограниченное делегирование",
+            "path": "trusted_for_delegation"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "delegation_auth",
+            "kind": "boolean",
+            "label": "Делегирование с проверкой подлинности",
+            "path": "trusted_to_auth_for_delegation"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "spn",
+            "kind": "list",
+            "label": "SPN",
+            "path": "service_principal_names"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "object_sid",
+            "kind": "code",
+            "label": "SID",
+            "path": "object_sid"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "object_guid",
+            "kind": "code",
+            "label": "GUID",
+            "path": "object_guid"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "observed",
+            "kind": "datetime",
+            "label": "Наблюдение снимка",
+            "path": "observed_at_utc"
+          }
+        ],
+        "description": "Инвентарь компьютеров домена по последнему снимку AD: тип, ОС, активность, адреса, причины внимания и качество данных.",
+        "detail": {
+          "actions": null,
+          "columns": [
+            {
+              "key": "label",
+              "kind": "text",
+              "label": "Причина",
+              "path": "label"
+            },
+            {
+              "key": "observed",
+              "kind": "text",
+              "label": "Наблюдалось",
+              "path": "observed"
+            },
+            {
+              "key": "condition",
+              "kind": "text",
+              "label": "Условие",
+              "path": "condition"
+            },
+            {
+              "key": "qualification",
+              "kind": "text",
+              "label": "Квалификация",
+              "path": "qualification"
+            },
+            {
+              "key": "limitation",
+              "kind": "text",
+              "label": "Ограничение",
+              "path": "limitation"
+            },
+            {
+              "key": "next",
+              "kind": "text",
+              "label": "Безопасный следующий шаг",
+              "path": "next_action"
+            }
+          ],
+          "inline": "reasons",
+          "key": "entity_id",
+          "kind": "inline",
+          "row_component": null,
+          "row_links": [],
+          "title": "Почему компьютер требует внимания"
+        },
+        "export": true,
+        "intent": {
+          "action": "Inspect activity, reasons and data quality before deciding on asset maintenance.",
+          "completeness": "Source-confirmed AD computer objects divided by expected computer objects in the selected scope before pagination; missing attributes are separate quality gaps. Unknown without a confirmed population.",
+          "contract_id": "sli.report-intent.v1",
+          "coverage": "Computer snapshot sections and field quality in the selected authorized scope.",
+          "denominator": "Ожидаемые объекты компьютеров AD в выбранном срезе; при неполном снимке состав не подтверждён.",
+          "exclusions": "No proof of absence from partial snapshots; no invented activity, IP address or physical asset census.",
+          "field_classes": [
+            "identity_basic",
+            "technical",
+            "security"
+          ],
+          "freshness_expectation": "Время последнего подтверждённого снимка компьютеров AD.",
+          "primary_archetype": "list",
+          "provenance": "Computer entity, AD snapshot identity and observation timestamp; reasons and quality issues retain their source.",
+          "question": "Какие компьютеры AD требуют внимания в выбранном срезе?",
+          "retention": "Derived computer facts follow the storage policy; retained snapshots bound exact source evidence.",
+          "rights": "ad.computers.v6 view grant; identity_basic, technical and security in server domain scope; export separately granted.",
+          "scope": "Latest computer snapshot in server-authorized domains; type, OS, OU and attention filters.",
+          "sources": [
+            "Canonical: AD computer snapshot within granted domains.",
+            "Supplemental: retained computer observations and server-defined attention reasons."
+          ],
+          "user_role": "AD asset reviewer",
+          "version": 1
+        },
+        "key": "ad.computers.v6",
+        "limits": {
+          "default": 50,
+          "max": 200
+        },
+        "page_actions": null,
+        "params": [
+          {
+            "hidden": true,
+            "key": "domain",
+            "kind": "domain",
+            "label": "Домен"
+          },
+          {
+            "default": "attention",
+            "key": "view",
+            "kind": "choice",
+            "label": "Срез",
+            "options": [
+              {
+                "label": "Требуют внимания",
+                "value": "attention"
+              },
+              {
+                "label": "Все компьютеры",
+                "value": "all"
+              },
+              {
+                "label": "Рабочие станции: включены",
+                "value": "workstation_enabled"
+              },
+              {
+                "label": "Рабочие станции: отключены",
+                "value": "workstation_disabled"
+              },
+              {
+                "label": "Серверы: включены",
+                "value": "server_enabled"
+              },
+              {
+                "label": "Серверы: отключены",
+                "value": "server_disabled"
+              },
+              {
+                "label": "Тип не определён",
+                "value": "unknown_type"
+              },
+              {
+                "label": "Качество данных",
+                "value": "data_quality"
+              },
+              {
+                "label": "Изменения",
+                "value": "changes"
+              },
+              {
+                "label": "Связанные находки",
+                "value": "semantic"
+              }
+            ]
+          },
+          {
+            "key": "q",
+            "kind": "text",
+            "label": "Поиск"
+          },
+          {
+            "key": "type",
+            "kind": "choice",
+            "label": "Тип",
+            "options": [
+              {
+                "label": "Рабочая станция",
+                "value": "workstation"
+              },
+              {
+                "label": "Сервер",
+                "value": "server"
+              },
+              {
+                "label": "Не определён",
+                "value": "unknown"
+              }
+            ]
+          },
+          {
+            "key": "enabled",
+            "kind": "choice",
+            "label": "Учётная запись",
+            "options": [
+              {
+                "label": "Включена",
+                "value": "enabled"
+              },
+              {
+                "label": "Отключена",
+                "value": "disabled"
+              },
+              {
+                "label": "Не определено",
+                "value": "unknown"
+              }
+            ]
+          },
+          {
+            "key": "activity",
+            "kind": "choice",
+            "label": "Активность",
+            "options": [
+              {
+                "label": "В пределах порога",
+                "value": "within_threshold"
+              },
+              {
+                "label": "Старше порога",
+                "value": "over_threshold"
+              },
+              {
+                "label": "Нет данных",
+                "value": "missing"
+              },
+              {
+                "label": "До 30 дней",
+                "value": "within_30_days"
+              },
+              {
+                "label": "31–90 дней",
+                "value": "days_31_to_90"
+              },
+              {
+                "label": "Более 60 дней",
+                "value": "over_60_days"
+              }
+            ]
+          },
+          {
+            "default": "60",
+            "key": "threshold_days",
+            "kind": "choice",
+            "label": "Порог давности",
+            "options": [
+              {
+                "label": "30 дней",
+                "value": "30"
+              },
+              {
+                "label": "60 дней",
+                "value": "60"
+              },
+              {
+                "label": "90 дней",
+                "value": "90"
+              },
+              {
+                "label": "180 дней",
+                "value": "180"
+              }
+            ]
+          },
+          {
+            "key": "os",
+            "kind": "choice",
+            "label": "ОС",
+            "options_from": "os"
+          },
+          {
+            "key": "os_family",
+            "kind": "choice",
+            "label": "Семейство ОС",
+            "options_from": "os_family"
+          },
+          {
+            "key": "os_version",
+            "kind": "choice",
+            "label": "Версия ОС",
+            "options_from": "os_version"
+          },
+          {
+            "key": "ou",
+            "kind": "choice",
+            "label": "OU",
+            "options_from": "ou"
+          },
+          {
+            "key": "ad_site",
+            "kind": "choice",
+            "label": "AD-сайт",
+            "options_from": "ad_site"
+          },
+          {
+            "hidden": true,
+            "key": "reason_code",
+            "kind": "text",
+            "label": "Причина"
+          },
+          {
+            "hidden": true,
+            "key": "quality_code",
+            "kind": "text",
+            "label": "Качество"
+          }
+        ],
+        "presets": [
+          {
+            "label": "Давно не входили",
+            "params": {
+              "reason_code": "stale_activity",
+              "view": "attention"
+            }
+          },
+          {
+            "label": "Серверы",
+            "params": {
+              "view": "server_enabled"
+            }
+          },
+          {
+            "label": "Тип не определён",
+            "params": {
+              "view": "unknown_type"
+            }
+          }
+        ],
+        "result_states": [
+          "ok",
+          "empty",
+          "denied",
+          "not_collected",
+          "partial",
+          "processing",
+          "stale",
+          "error"
+        ],
+        "row_key": "entity_id",
+        "row_links": [
+          {
+            "href": "/app/entities/{entity_id}",
+            "label": "Карточка компьютера"
+          }
+        ],
+        "section": "reports/computers",
+        "title": "Компьютеры",
+        "views": [
+          {
+            "key": "table",
+            "kind": "table",
+            "source": "items"
+          }
+        ]
+      },
+      "home_order": 40,
+      "home_view": null,
+      "metric_categories": {},
+      "row_categories": {},
+      "series_categories": {}
+    },
+    "ad.infrastructure": {
+      "access": {
+        "export_action": "export",
+        "report_key": "ad.state",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "scope": "domain"
+      },
+      "definition": {
+        "archetype": "inventory-status",
+        "columns": [
+          {
+            "key": "label",
+            "kind": "text",
+            "label": "Параметр",
+            "path": "label",
+            "sortable": true
+          },
+          {
+            "key": "entity_name",
+            "kind": "text",
+            "label": "Объект",
+            "link": "/app/entities/{entity_id}",
+            "path": "entity_name",
+            "sortable": true
+          },
+          {
+            "key": "entity_type",
+            "kind": "state",
+            "label": "Тип объекта",
+            "labels": {
+              "domain": "Домен",
+              "domain_controller": "Контроллер домена",
+              "domain_trust": "Доверие",
+              "password_policy": "Политика паролей",
+              "replication_link": "Связь репликации"
+            },
+            "path": "entity_type",
+            "sortable": true
+          },
+          {
+            "key": "actual",
+            "kind": "text",
+            "label": "Фактическое значение",
+            "path": "actual_text"
+          },
+          {
+            "key": "expected_condition",
+            "kind": "text",
+            "label": "Ожидаемое условие",
+            "path": "expected_condition"
+          },
+          {
+            "key": "qualification",
+            "kind": "state",
+            "label": "Результат",
+            "labels": {
+              "failed": "Не пройдено",
+              "not_evaluated": "Не оценено",
+              "passed": "Пройдено",
+              "policy_not_defined": "Требование не задано"
+            },
+            "path": "qualification",
+            "sortable": true
+          },
+          {
+            "key": "basis",
+            "kind": "text",
+            "label": "Основание",
+            "path": "basis"
+          },
+          {
+            "key": "observed_at_utc",
+            "kind": "datetime",
+            "label": "Наблюдалось",
+            "path": "observed_at_utc",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "authority",
+            "kind": "text",
+            "label": "Источник правила",
+            "path": "authority_text"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "source_section",
+            "kind": "code",
+            "label": "Секция сбора",
+            "path": "source_section"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "control_id",
+            "kind": "code",
+            "label": "Код параметра",
+            "path": "control_id"
+          }
+        ],
+        "description": "Фактические параметры домена, контроллеров, репликации, DNS, политик и доверий с явными условиями и основаниями оценки.",
+        "detail": {
+          "actions": null,
+          "columns": [
+            {
+              "key": "label",
+              "kind": "text",
+              "label": "Атрибут",
+              "path": "label"
+            },
+            {
+              "key": "value",
+              "kind": "text",
+              "label": "Значение",
+              "path": "value"
+            }
+          ],
+          "inline": "context",
+          "key": "row_id",
+          "kind": "inline",
+          "row_component": null,
+          "row_links": [],
+          "title": "Контекст объекта"
+        },
+        "export": true,
+        "intent": {
+          "action": "Review parameter evidence and the stated condition before an administrative decision.",
+          "completeness": "Source-confirmed object/parameter pairs divided by expected pairs in the authorized scope; passed conditions are not the numerator. Unknown when expected population is unconfirmed.",
+          "contract_id": "sli.report-intent.v1",
+          "coverage": "Observed AD sections compared with the expected sections per authorized domain.",
+          "denominator": "Ожидаемые разделы и объекты AD в разрешённых доменах; при неизвестном составе процент не вычисляется.",
+          "exclusions": "No organization compliance verdict without an accepted policy; no inferred client GPO application.",
+          "field_classes": [
+            "identity_basic",
+            "technical",
+            "security"
+          ],
+          "freshness_expectation": "Последнее подтверждённое наблюдение разделов AD; неизвестная свежесть сохраняется.",
+          "primary_archetype": "matrix",
+          "provenance": "Domain, object, source section, observation timestamp, condition and authority in the control ledger.",
+          "question": "Какие параметры AD требуют проверки в выбранных доменах?",
+          "retention": "Permanent derived AD facts follow the storage policy; exact snapshot evidence is available only while retained.",
+          "rights": "ad.state view grant; server-resolved domain scope; export requires its own action grant.",
+          "scope": "Server-authorized domains; latest domain, controller, replication, DNS, policy and trust observations.",
+          "sources": [
+            "Canonical: AD Context sectional snapshots and collector diagnostics within granted domains.",
+            "Supplemental: published deterministic findings and current AD SPN observations."
+          ],
+          "user_role": "AD administrator",
+          "version": 1
+        },
+        "key": "ad.infrastructure",
+        "limits": {
+          "default": 200,
+          "max": 200
+        },
+        "page_actions": null,
+        "params": [
+          {
+            "hidden": true,
+            "key": "domain",
+            "kind": "domain",
+            "label": "Домен"
+          },
+          {
+            "hidden": true,
+            "key": "row_id",
+            "kind": "text",
+            "label": "Параметр"
+          },
+          {
+            "default": "7d",
+            "key": "period",
+            "kind": "period",
+            "label": "Период",
+            "max_days": 3650,
+            "presets": [
+              "24h",
+              "7d",
+              "30d",
+              "90d",
+              "custom"
+            ],
+            "required": true
+          },
+          {
+            "default": "overview",
+            "key": "view",
+            "kind": "choice",
+            "label": "Раздел",
+            "options": [
+              {
+                "label": "Все параметры",
+                "value": "overview"
+              },
+              {
+                "label": "Контроллеры",
+                "value": "domain_controllers"
+              },
+              {
+                "label": "Репликация",
+                "value": "replication"
+              },
+              {
+                "label": "DNS",
+                "value": "dns"
+              },
+              {
+                "label": "Политики",
+                "value": "policies"
+              },
+              {
+                "label": "Доверия",
+                "value": "trusts"
+              },
+              {
+                "label": "Только непройденные",
+                "value": "risks"
+              }
+            ]
+          },
+          {
+            "key": "qualification",
+            "kind": "choice",
+            "label": "Результат",
+            "options": [
+              {
+                "label": "Не пройдено",
+                "value": "failed"
+              },
+              {
+                "label": "Не оценено",
+                "value": "not_evaluated"
+              },
+              {
+                "label": "Требование не задано",
+                "value": "policy_not_defined"
+              },
+              {
+                "label": "Пройдено",
+                "value": "passed"
+              }
+            ]
+          },
+          {
+            "key": "entity_type",
+            "kind": "choice",
+            "label": "Тип объекта",
+            "options": [
+              {
+                "label": "Домен",
+                "value": "domain"
+              },
+              {
+                "label": "Контроллер домена",
+                "value": "domain_controller"
+              },
+              {
+                "label": "Связь репликации",
+                "value": "replication_link"
+              },
+              {
+                "label": "Политика паролей",
+                "value": "password_policy"
+              },
+              {
+                "label": "Доверие",
+                "value": "domain_trust"
+              }
+            ]
+          },
+          {
+            "key": "q",
+            "kind": "text",
+            "label": "Поиск"
+          },
+          {
+            "key": "spn_domain",
+            "kind": "int",
+            "label": "Домен SPN (ID)"
+          },
+          {
+            "key": "spn_service",
+            "kind": "text",
+            "label": "Класс сервиса SPN"
+          },
+          {
+            "default": "true",
+            "key": "spn_collisions_only",
+            "kind": "choice",
+            "label": "Только коллизии SPN",
+            "options": [
+              {
+                "label": "Да",
+                "value": "true"
+              },
+              {
+                "label": "Нет",
+                "value": "false"
+              }
+            ]
+          },
+          {
+            "key": "spn_enabled",
+            "kind": "choice",
+            "label": "Владелец SPN включён",
+            "options": [
+              {
+                "label": "Да",
+                "value": "true"
+              },
+              {
+                "label": "Нет",
+                "value": "false"
+              }
+            ]
+          },
+          {
+            "key": "spn_delegation",
+            "kind": "choice",
+            "label": "Delegation/preauth-флаги SPN",
+            "options": [
+              {
+                "label": "Да",
+                "value": "true"
+              },
+              {
+                "label": "Нет",
+                "value": "false"
+              }
+            ]
+          },
+          {
+            "key": "spn_password_days",
+            "kind": "int",
+            "label": "Минимальный возраст пароля SPN, дней"
+          }
+        ],
+        "presets": [
+          {
+            "label": "Непройденные",
+            "params": {
+              "view": "risks"
+            }
+          },
+          {
+            "label": "Не оценено",
+            "params": {
+              "qualification": "not_evaluated"
+            }
+          },
+          {
+            "label": "Репликация",
+            "params": {
+              "view": "replication"
+            }
+          }
+        ],
+        "result_states": [
+          "ok",
+          "empty",
+          "denied",
+          "not_collected",
+          "partial",
+          "processing",
+          "stale",
+          "error"
+        ],
+        "row_key": "row_id",
+        "row_links": [
+          {
+            "href": "/app/entities/{entity_id}",
+            "label": "Карточка объекта"
+          }
+        ],
+        "section": "reports/identity",
+        "title": "Состояние Active Directory",
+        "views": [
+          {
+            "key": "controls",
+            "kind": "table",
+            "source": "items",
+            "title": "Параметры"
+          },
+          {
+            "columns": [
+              {
+                "key": "entity_id",
+                "kind": "number",
+                "label": "Участник (ID)",
+                "link": "/app/entities/{entity_id}",
+                "path": "entity_id"
+              },
+              {
+                "key": "group_id",
+                "kind": "number",
+                "label": "Группа (ID)",
+                "link": "/app/entities/{group_id}",
+                "path": "group_id"
+              },
+              {
+                "key": "kind",
+                "kind": "state",
+                "label": "Изменение",
+                "labels": {
+                  "added": "Добавление",
+                  "removed": "Удаление"
+                },
+                "path": "kind"
+              },
+              {
+                "key": "observed_at_utc",
+                "kind": "datetime",
+                "label": "Наблюдалось",
+                "path": "observed_at_utc"
+              }
+            ],
+            "key": "privileged_changes",
+            "kind": "table",
+            "source": "privileged_changes",
+            "title": "Изменения привилегированного членства"
+          },
+          {
+            "columns": [
+              {
+                "key": "observed_at",
+                "kind": "datetime",
+                "label": "Снимок",
+                "path": "observed_at"
+              },
+              {
+                "key": "object_type",
+                "kind": "code",
+                "label": "Тип объекта",
+                "path": "object_type"
+              },
+              {
+                "key": "object_id",
+                "kind": "code",
+                "label": "Объект",
+                "path": "object_id"
+              },
+              {
+                "key": "related_object_id",
+                "kind": "code",
+                "label": "Связанный объект",
+                "path": "related_object_id"
+              },
+              {
+                "key": "kind",
+                "kind": "state",
+                "label": "Изменение",
+                "labels": {
+                  "attribute_changed": "Атрибут изменён",
+                  "membership_added": "Членство добавлено",
+                  "membership_removed": "Членство удалено",
+                  "object_added": "Объект добавлен",
+                  "object_removed": "Объект удалён"
+                },
+                "path": "kind"
+              },
+              {
+                "key": "field",
+                "kind": "code",
+                "label": "Поле",
+                "path": "field"
+              },
+              {
+                "key": "before_sha256",
+                "kind": "code",
+                "label": "Прежний отпечаток",
+                "path": "before_sha256"
+              },
+              {
+                "key": "after_sha256",
+                "kind": "code",
+                "label": "Новый отпечаток",
+                "path": "after_sha256"
+              }
+            ],
+            "key": "changes",
+            "kind": "table",
+            "note": "Изменения за выбранный период. Значения атрибутов представлены отпечатками; неполное покрытие отмечается явно.",
+            "source": "changes",
+            "title": "Изменения AD"
+          },
+          {
+            "columns": [
+              {
+                "key": "spn",
+                "kind": "code",
+                "label": "SPN",
+                "path": "spn"
+              },
+              {
+                "key": "owner_count",
+                "kind": "number",
+                "label": "Владельцев",
+                "path": "owner_count"
+              },
+              {
+                "key": "domain_id",
+                "kind": "number",
+                "label": "Домен (ID)",
+                "path": "domain_id"
+              },
+              {
+                "key": "entity_id",
+                "kind": "number",
+                "label": "Владелец",
+                "link": "/app/entities/{entity_id}",
+                "path": "entity_id"
+              },
+              {
+                "key": "entity_type",
+                "kind": "state",
+                "label": "Тип объекта",
+                "labels": {
+                  "ad_computer": "Компьютер",
+                  "ad_user": "Пользователь"
+                },
+                "path": "entity_type"
+              },
+              {
+                "key": "enabled",
+                "kind": "boolean",
+                "label": "Включён",
+                "path": "enabled"
+              },
+              {
+                "key": "password_age_days",
+                "kind": "number",
+                "label": "Возраст пароля, дней",
+                "path": "password_age_days"
+              },
+              {
+                "key": "password_last_set_utc",
+                "kind": "datetime",
+                "label": "Пароль изменён",
+                "path": "password_last_set_utc"
+              },
+              {
+                "key": "trusted_for_delegation",
+                "kind": "boolean",
+                "label": "TrustedForDelegation",
+                "path": "trusted_for_delegation"
+              },
+              {
+                "key": "trusted_to_auth_for_delegation",
+                "kind": "boolean",
+                "label": "TrustedToAuthForDelegation",
+                "path": "trusted_to_auth_for_delegation"
+              },
+              {
+                "key": "does_not_require_preauth",
+                "kind": "boolean",
+                "label": "Без preauth",
+                "path": "does_not_require_preauth"
+              },
+              {
+                "key": "msds_supported_encryption_types",
+                "kind": "number",
+                "label": "Поддерживаемое шифрование (маска)",
+                "path": "msds_supported_encryption_types"
+              },
+              {
+                "key": "owner_quality",
+                "kind": "state",
+                "label": "Параметры владельца",
+                "labels": {
+                  "known": "Известны",
+                  "unknown": "Часть неизвестна"
+                },
+                "path": "owner_quality"
+              },
+              {
+                "key": "observed_at_utc",
+                "kind": "datetime",
+                "label": "Наблюдалось",
+                "path": "observed_at_utc"
+              },
+              {
+                "key": "source_freshness",
+                "kind": "state",
+                "label": "Свежесть источника",
+                "labels": {
+                  "fresh": "Свежий",
+                  "stale": "Устаревший",
+                  "unknown": "Неизвестна"
+                },
+                "path": "source_freshness"
+              },
+              {
+                "key": "run_id",
+                "kind": "code",
+                "label": "Снимок",
+                "path": "run_id"
+              }
+            ],
+            "key": "spn_collisions",
+            "kind": "table",
+            "note": "Одна строка на владельца SPN. Снимки старше 36 часов отмечаются как устаревшие; данные ограничены последними 31 сутками.",
+            "source": "spn_collisions",
+            "title": "Коллизии SPN"
+          },
+          {
+            "columns": [
+              {
+                "key": "title",
+                "kind": "text",
+                "label": "Находка",
+                "path": "title"
+              },
+              {
+                "key": "entity_name",
+                "kind": "text",
+                "label": "Объект",
+                "link": "/app/entities/{entity_id}",
+                "path": "entity_name"
+              },
+              {
+                "key": "severity",
+                "kind": "state",
+                "label": "Важность",
+                "path": "severity"
+              },
+              {
+                "key": "summary",
+                "kind": "text",
+                "label": "Описание",
+                "path": "summary"
+              },
+              {
+                "key": "why_it_matters",
+                "kind": "text",
+                "label": "Почему важно",
+                "path": "why_it_matters"
+              },
+              {
+                "key": "recommended_action",
+                "kind": "text",
+                "label": "Следующее действие",
+                "path": "recommended_action"
+              },
+              {
+                "key": "last_seen_utc",
+                "kind": "datetime",
+                "label": "Последнее наблюдение",
+                "path": "last_seen_utc"
+              }
+            ],
+            "key": "semantic",
+            "kind": "table",
+            "note": "Только опубликованные находки, точно связанные с инфраструктурной сущностью AD. Пустой список не доказывает отсутствие рисков.",
+            "source": "semantic",
+            "title": "Связанные находки"
+          }
+        ]
+      },
+      "home_order": 20,
+      "home_view": null,
+      "metric_categories": {},
+      "row_categories": {},
+      "series_categories": {}
+    },
+    "ad.new-logon-pairs": {
+      "access": {
+        "export_action": "export",
+        "report_key": "ad.computer-logons",
+        "required_capabilities": [],
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "scope": "delegated"
+      },
+      "definition": {
+        "archetype": "investigation-evidence",
+        "columns": [
+          {
+            "key": "user",
+            "kind": "text",
+            "label": "Пользователь",
+            "link": "/app/entities/{user_entity_id}",
+            "path": "user"
+          },
+          {
+            "key": "computer",
+            "kind": "text",
+            "label": "Компьютер",
+            "link": "/app/entities/{computer_entity_id}",
+            "path": "computer"
+          },
+          {
+            "key": "first_seen",
+            "kind": "datetime",
+            "label": "Первое наблюдение за период",
+            "path": "first_seen"
+          },
+          {
+            "key": "logon_types",
+            "kind": "list",
+            "label": "Тип входа",
+            "path": "logon_types"
+          },
+          {
+            "key": "sources",
+            "kind": "list",
+            "label": "Источник DC/агент",
+            "path": "sources"
+          },
+          {
+            "key": "count",
+            "kind": "number",
+            "label": "Входов за период",
+            "path": "count"
+          },
+          {
+            "key": "prior_user_logon",
+            "kind": "state",
+            "label": "Любой вход пользователя в базовом окне",
+            "labels": {
+              "no": "Нет",
+              "unknown": "Неизвестно",
+              "yes": "Да"
+            },
+            "path": "prior_user_logon"
+          },
+          {
+            "key": "novelty",
+            "kind": "state",
+            "label": "Сравнение",
+            "labels": {
+              "new_pair": "Новая пара",
+              "new_user": "Новый пользователь",
+              "no_baseline": "Новизна не определена"
+            },
+            "path": "novelty"
+          }
+        ],
+        "description": "Пары входов, впервые наблюдавшиеся в выбранном периоде относительно базового окна перед ним.",
+        "detail": "fields",
+        "export": false,
+        "intent": {
+          "action": "Inspect newly observed pairs and their exact logon evidence against the preceding baseline.",
+          "completeness": "Source-confirmed collection intervals divided by expected source-window duration across both windows; history bounds and pair counts do not prove continuity. Currently not_proven.",
+          "contract_id": "sli.report-intent.v1",
+          "coverage": "History bounds, baseline availability, truncation and current AD identity context are separate dimensions; baseline_covered does not prove collection continuity.",
+          "denominator": "Ожидаемые источники входов выбранного домена × выбранный период и базовое окно; границы истории не доказывают непрерывность сбора.",
+          "exclusions": "Observed novelty is not first-ever use or a risk verdict; missing baseline or identity context leaves novelty undetermined.",
+          "field_classes": [
+            "computer_logon_observation"
+          ],
+          "freshness_expectation": "Свежесть истории входов, базового окна и текущего AD-контекста проверяется раздельно.",
+          "primary_archetype": "list",
+          "provenance": "User SID, computer GUID, domain, DC source, first observed time and source event ID.",
+          "question": "Какие пары пользователь — компьютер впервые наблюдались за период относительно базового окна?",
+          "retention": "Published derived history follows the storage policy; exact source events may expire independently.",
+          "rights": "ad.computer-logons view grant with computer_logon_observation; server resolves the domain scope before reading history; export is unavailable.",
+          "scope": "One server-resolved granted domain, selected users and computers, bounded period and preceding baseline window.",
+          "sources": [
+            "Canonical: published permanent Security 4624 history for domain controllers in the granted domain and both windows.",
+            "Supplemental: current AD computer inventory, domain controller membership and service-account classification."
+          ],
+          "user_role": "Security investigator",
+          "version": 1
+        },
+        "key": "ad.new-logon-pairs",
+        "limits": {
+          "default": 50,
+          "max": 200
+        },
+        "page_actions": null,
+        "params": [
+          {
+            "default": "24h",
+            "key": "period",
+            "kind": "period",
+            "label": "Период",
+            "max_days": 365,
+            "presets": [
+              "24h",
+              "7d",
+              "custom"
+            ],
+            "required": true
+          },
+          {
+            "default": 30,
+            "key": "baseline_days",
+            "kind": "int",
+            "label": "Базовое окно, дней",
+            "required": true
+          },
+          {
+            "key": "q",
+            "kind": "text",
+            "label": "Компьютер"
+          },
+          {
+            "key": "user",
+            "kind": "text",
+            "label": "Пользователь"
+          }
+        ],
+        "presets": [],
+        "result_states": [
+          "ok",
+          "empty",
+          "denied",
+          "not_collected",
+          "partial",
+          "processing",
+          "stale",
+          "error"
+        ],
+        "row_key": "id",
+        "row_links": [
+          {
+            "href": "/app/events/{source_event_id}",
+            "label": "Исходное событие / расследование"
+          }
+        ],
+        "section": "reports/computers",
+        "title": "Новые пары пользователь — компьютер",
+        "views": [
+          {
+            "key": "table",
+            "kind": "table",
+            "source": "items"
+          }
+        ]
+      },
+      "home_order": null,
+      "home_view": null,
+      "metric_categories": {},
+      "row_categories": {},
+      "series_categories": {}
+    },
+    "ad.users.v2": {
+      "access": {
+        "export_action": "export",
+        "report_key": "ad.users.v2",
+        "required_capabilities": [],
+        "required_fields": [
+          "identity_basic"
+        ],
+        "scope": "domain"
+      },
+      "definition": {
+        "archetype": "inventory-status",
+        "columns": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Пользователь",
+            "link": "/app/entities/{entity_id}",
+            "path": "display_name",
+            "sortable": true
+          },
+          {
+            "key": "reason",
+            "kind": "text",
+            "label": "Требует внимания",
+            "path": "reason_text",
+            "sortable": true
+          },
+          {
+            "key": "information",
+            "kind": "text",
+            "label": "Ограничения сведений",
+            "path": "information_text"
+          },
+          {
+            "key": "state",
+            "kind": "boolean",
+            "label": "Включена",
+            "path": "enabled",
+            "sortable": true
+          },
+          {
+            "key": "department",
+            "kind": "text",
+            "label": "Подразделение",
+            "path": "department",
+            "sortable": true
+          },
+          {
+            "key": "title",
+            "kind": "text",
+            "label": "Должность",
+            "path": "title",
+            "sortable": true
+          },
+          {
+            "key": "activity",
+            "kind": "datetime",
+            "label": "Последняя активность",
+            "path": "activity_at",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": false,
+            "key": "sam",
+            "kind": "code",
+            "label": "Логин",
+            "path": "sam",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "groups",
+            "kind": "list",
+            "label": "Прямые группы",
+            "path": "direct_groups"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "effective",
+            "kind": "number",
+            "label": "Эффективных групп",
+            "path": "effective_count",
+            "sortable": true
+          },
+          {
+            "hidden_by_default": true,
+            "key": "watch",
+            "kind": "list",
+            "label": "Контрольные группы",
+            "path": "watch_groups"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "locked",
+            "kind": "boolean",
+            "label": "Заблокирована",
+            "path": "locked"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "upn",
+            "kind": "code",
+            "label": "UPN",
+            "path": "upn"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "mail",
+            "kind": "text",
+            "label": "Почта",
+            "path": "mail"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "phones",
+            "kind": "text",
+            "label": "Телефоны",
+            "path": "phones"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "company",
+            "kind": "text",
+            "label": "Компания",
+            "path": "company"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "manager",
+            "kind": "text",
+            "label": "Руководитель",
+            "path": "manager"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "ou",
+            "kind": "text",
+            "label": "OU",
+            "path": "ou"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "activity_source",
+            "kind": "text",
+            "label": "Источник активности",
+            "path": "activity_source"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "password_last_set",
+            "kind": "datetime",
+            "label": "Пароль изменён",
+            "path": "password_last_set"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "password_never_expires",
+            "kind": "boolean",
+            "label": "Пароль бессрочный",
+            "path": "password_never_expires"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "flags",
+            "kind": "list",
+            "label": "Security-флаги",
+            "path": "flags"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "spn",
+            "kind": "list",
+            "label": "SPN",
+            "path": "spn"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "created",
+            "kind": "datetime",
+            "label": "Создана",
+            "path": "created"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "changed",
+            "kind": "datetime",
+            "label": "Изменена",
+            "path": "changed"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "employee_id",
+            "kind": "text",
+            "label": "Табельный номер",
+            "path": "employee_id"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "description",
+            "kind": "text",
+            "label": "Описание",
+            "path": "description"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "dn",
+            "kind": "code",
+            "label": "DN",
+            "path": "dn"
+          },
+          {
+            "hidden_by_default": true,
+            "key": "sid",
+            "kind": "code",
+            "label": "SID",
+            "path": "sid"
+          },
+          {
+            "key": "privilege_basis",
+            "kind": "list",
+            "label": "Основание прямых привилегий",
+            "path": "privilege_basis"
+          },
+          {
+            "key": "nested_privilege_groups",
+            "kind": "list",
+            "label": "Известные вложенные привилегированные группы",
+            "path": "nested_privilege_groups"
+          },
+          {
+            "key": "password_age_policy",
+            "kind": "state",
+            "label": "Возраст пароля по политике",
+            "labels": {
+              "exceeded": "Порог превышен",
+              "unknown": "Неизвестно",
+              "within_policy": "В пределах политики"
+            },
+            "path": "password_age_policy"
+          },
+          {
+            "key": "inactivity_policy",
+            "kind": "state",
+            "label": "Неактивность по политике",
+            "labels": {
+              "exceeded": "Порог превышен",
+              "unknown": "Неизвестно",
+              "within_policy": "В пределах политики"
+            },
+            "path": "inactivity_policy"
+          },
+          {
+            "key": "finding_count",
+            "kind": "number",
+            "label": "Открытых находок",
+            "path": "finding_count"
+          },
+          {
+            "key": "queue",
+            "kind": "text",
+            "label": "Очередь проблем",
+            "link": "/app/report/security.problems?entity_id={queue_entity_id}",
+            "path": "queue_entity_id"
+          }
+        ],
+        "description": "Учётные записи пользователей домена по последнему снимку AD: причины внимания, состояние, организация, группы и активность.",
+        "detail": {
+          "actions": null,
+          "columns": [
+            {
+              "key": "category",
+              "kind": "state",
+              "label": "Основание",
+              "labels": {
+                "confirmed": "Подтверждённая причина",
+                "information": "Ограничение сведений"
+              },
+              "path": "category"
+            },
+            {
+              "key": "label",
+              "kind": "text",
+              "label": "Причина",
+              "path": "label"
+            },
+            {
+              "key": "observed",
+              "kind": "text",
+              "label": "Наблюдалось",
+              "path": "observed"
+            },
+            {
+              "key": "condition",
+              "kind": "text",
+              "label": "Условие",
+              "path": "condition"
+            },
+            {
+              "key": "qualification",
+              "kind": "text",
+              "label": "Квалификация",
+              "path": "qualification"
+            },
+            {
+              "key": "limitation",
+              "kind": "text",
+              "label": "Ограничение",
+              "path": "limitation"
+            },
+            {
+              "key": "next",
+              "kind": "text",
+              "label": "Безопасный следующий шаг",
+              "path": "next"
+            }
+          ],
+          "inline": "review_details",
+          "key": "id",
+          "kind": "inline",
+          "row_component": null,
+          "row_links": [],
+          "title": "Основания проверки и ограничения сведений"
+        },
+        "export": true,
+        "intent": {
+          "action": "Review account state, reasons and evidence before deciding on account maintenance.",
+          "completeness": "Source-confirmed AD accounts divided by expected accounts in the authorized snapshot population before pagination; missing attributes and event continuity are separate quality dimensions. Unknown without a confirmed population.",
+          "contract_id": "sli.report-intent.v1",
+          "coverage": "Snapshot source quality and available attributes for AD accounts; event coverage is separate.",
+          "denominator": "Все учётные записи AD ожидаемого снимка в разрешённом срезе; кадровый список не является знаменателем.",
+          "exclusions": "Not an HR person census; enabled does not prove activity; event gaps do not prove inactivity.",
+          "field_classes": [
+            "identity_basic",
+            "technical",
+            "security",
+            "privilege",
+            "hr",
+            "contact"
+          ],
+          "freshness_expectation": "Время последнего снимка AD; для активности — подтверждение источников выбранного окна.",
+          "primary_archetype": "list",
+          "provenance": "Snapshot pair, account identity and source timestamps; exact event IDs for activity; missing source attributes remain unknown.",
+          "question": "Какие учётные записи AD требуют внимания в выбранном срезе?",
+          "retention": "Derived account history follows the storage policy; snapshot and source-event evidence may expire independently.",
+          "rights": "ad.users.v2 view grant and server domain scope; optional categories checked atomically over the scope; export separately granted.",
+          "scope": "Server-authorized domains; one AD account per row in the latest snapshot; bounded comparison and activity tabs.",
+          "sources": [
+            "Canonical: current and optional previous AD user snapshots within granted domains.",
+            "Supplemental: current semantic account and group activity facts in the selected window."
+          ],
+          "user_role": "AD account reviewer",
+          "version": 1
+        },
+        "key": "ad.users.v2",
+        "limits": {
+          "default": 100,
+          "max": 500
+        },
+        "page_actions": null,
+        "params": [
+          {
+            "key": "q",
+            "kind": "text",
+            "label": "Поиск"
+          },
+          {
+            "key": "reason",
+            "kind": "choice",
+            "label": "Причина",
+            "options_from": "reason"
+          },
+          {
+            "key": "information",
+            "kind": "choice",
+            "label": "Ограничение сведений",
+            "options": [
+              {
+                "label": "Возраст пароля: неизвестно",
+                "value": "password_age_unknown"
+              },
+              {
+                "label": "Неактивность: неизвестно",
+                "value": "enabled_activity_unknown"
+              },
+              {
+                "label": "Не заполнен ключевой идентификатор",
+                "value": "identity_key_missing"
+              },
+              {
+                "label": "Граф групп собран частично",
+                "value": "group_graph_partial"
+              }
+            ]
+          },
+          {
+            "key": "department",
+            "kind": "choice",
+            "label": "Подразделение",
+            "options_from": "department"
+          },
+          {
+            "key": "company",
+            "kind": "choice",
+            "label": "Компания",
+            "options_from": "company"
+          },
+          {
+            "key": "ou",
+            "kind": "choice",
+            "label": "OU",
+            "options_from": "ou"
+          },
+          {
+            "key": "group",
+            "kind": "choice",
+            "label": "Группа",
+            "options_from": "group"
+          },
+          {
+            "default": "effective",
+            "key": "relation",
+            "kind": "choice",
+            "label": "Членство",
+            "options": [
+              {
+                "label": "Эффективное членство",
+                "value": "effective"
+              },
+              {
+                "label": "Прямое членство",
+                "value": "direct"
+              }
+            ]
+          }
+        ],
+        "presets": [],
+        "result_states": [
+          "ok",
+          "empty",
+          "denied",
+          "not_collected",
+          "partial",
+          "processing",
+          "stale",
+          "error"
+        ],
+        "row_key": "id",
+        "row_links": [
+          {
+            "href": "/app/entities/{entity_id}",
+            "label": "Карточка пользователя"
+          }
+        ],
+        "section": "reports/identity",
+        "title": "Пользователи",
+        "views": [
+          {
+            "key": "active",
+            "kind": "table",
+            "source": "items",
+            "title": "Активные"
+          },
+          {
+            "key": "disabled",
+            "kind": "table",
+            "source": "items",
+            "title": "Отключённые"
+          },
+          {
+            "key": "privileged",
+            "kind": "table",
+            "source": "items",
+            "title": "Привилегированные"
+          },
+          {
+            "key": "risk",
+            "kind": "table",
+            "source": "items",
+            "title": "Риск"
+          },
+          {
+            "key": "semantic",
+            "kind": "table",
+            "source": "items",
+            "title": "Семантика"
+          }
+        ]
+      },
+      "home_order": 30,
+      "home_view": null,
+      "metric_categories": {
+        "activity_accounts": [
+          "security",
+          "technical"
+        ],
+        "activity_ambiguous": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "activity_observations": [
+          "security",
+          "technical"
+        ],
+        "activity_repeated": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "activity_unknown": [
+          "security",
+          "technical"
+        ],
+        "attention": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "disabled": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "enabled": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "expired": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "information": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "locked": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "unknown": [
+          "security"
+        ]
+      },
+      "row_categories": {
+        "account_expired": [
+          "security"
+        ],
+        "activity_at": [
+          "security"
+        ],
+        "activity_source": [
+          "security"
+        ],
+        "changed": [
+          "technical"
+        ],
+        "company": [
+          "hr"
+        ],
+        "created": [
+          "technical"
+        ],
+        "department": [
+          "hr"
+        ],
+        "description": [
+          "technical"
+        ],
+        "direct_groups": [
+          "privilege"
+        ],
+        "dn": [
+          "technical"
+        ],
+        "effective_count": [
+          "privilege"
+        ],
+        "employee_id": [
+          "hr"
+        ],
+        "enabled": [
+          "security"
+        ],
+        "finding_count": [
+          "security"
+        ],
+        "flags": [
+          "security"
+        ],
+        "guid": [
+          "technical"
+        ],
+        "hygiene": [
+          "security"
+        ],
+        "inactivity_policy": [
+          "security"
+        ],
+        "information_keys": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "information_limitations": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "information_text": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "locked": [
+          "security"
+        ],
+        "mail": [
+          "contact"
+        ],
+        "manager": [
+          "hr"
+        ],
+        "nested_privilege_groups": [
+          "privilege"
+        ],
+        "ou": [
+          "technical"
+        ],
+        "password_age_policy": [
+          "security"
+        ],
+        "password_last_set": [
+          "security"
+        ],
+        "password_never_expires": [
+          "security"
+        ],
+        "phones": [
+          "contact"
+        ],
+        "privilege_basis": [
+          "privilege"
+        ],
+        "queue_entity_id": [
+          "security"
+        ],
+        "reason_keys": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "reason_text": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "reasons": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "review_details": [
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "sid": [
+          "technical"
+        ],
+        "spn": [
+          "technical"
+        ],
+        "title": [
+          "hr"
+        ],
+        "watch_groups": [
+          "privilege"
+        ]
+      },
+      "series_categories": {}
+    }
+  },
+  "manifest": {
+    "agent_modules": [],
+    "architecture_decision_id": "sli.plugin-architecture.v3",
+    "capabilities": [],
+    "core_api": {
+      "maximum_exclusive": "4.0.0",
+      "minimum": "3.0.0"
+    },
+    "data": {
+      "existing_tables": [],
+      "migrations": [],
+      "schema": "sli_plugin_ad"
+    },
+    "datasets": [
+      {
+        "capabilities": [],
+        "contract_id": "sli.report-result.v2",
+        "contract_version": "2.0.0",
+        "dataset_id": "ad.infrastructure",
+        "reader_id": "ad.infrastructure"
+      },
+      {
+        "capabilities": [],
+        "contract_id": "sli.report-result.v2",
+        "contract_version": "2.0.0",
+        "dataset_id": "ad.users.v2",
+        "reader_id": "ad.users.v2"
+      },
+      {
+        "capabilities": [],
+        "contract_id": "sli.report-result.v2",
+        "contract_version": "2.0.0",
+        "dataset_id": "ad.computers.v6",
+        "reader_id": "ad.computers.v6"
+      },
+      {
+        "capabilities": [],
+        "contract_id": "sli.report-result.v2",
+        "contract_version": "2.0.0",
+        "dataset_id": "ad.computer-logons",
+        "reader_id": "ad.computer-logons"
+      }
+    ],
+    "dependencies": [],
+    "handlers": [],
+    "home_widgets": [],
+    "navigation": [
+      {
+        "icon_id": "database",
+        "order": 30,
+        "parent_section_id": null,
+        "section_id": "active-directory",
+        "title_key": "shell.section.active-directory"
+      }
+    ],
+    "own_permanent_workers": false,
+    "plugin_id": "sli.ad",
+    "plugin_version": "1.0.0",
+    "reports": [
+      {
+        "access_key": "ad.computer-logons",
+        "capabilities": [],
+        "dataset_id": "ad.computer-logons",
+        "definition_id": "ad.new-logon-pairs",
+        "history_reader_id": "ad.computer-logons",
+        "report_key": "ad.new-logon-pairs",
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "routes": [
+          "/report/ad.new-logon-pairs"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.new-logon-pairs-report"
+      },
+      {
+        "access_key": "ad.state",
+        "capabilities": [],
+        "dataset_id": "ad.infrastructure",
+        "definition_id": "ad.infrastructure",
+        "history_reader_id": "ad.infrastructure",
+        "report_key": "ad.infrastructure",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/report/ad.infrastructure"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.ad-report"
+      },
+      {
+        "access_key": "ad.users.v2",
+        "capabilities": [],
+        "dataset_id": "ad.users.v2",
+        "definition_id": "ad.users.v2",
+        "history_reader_id": "ad.users.v2",
+        "report_key": "ad.users.v2",
+        "required_fields": [
+          "identity_basic"
+        ],
+        "routes": [
+          "/report/ad.users.v2"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.users-report"
+      },
+      {
+        "access_key": "ad.computers.v6",
+        "capabilities": [],
+        "dataset_id": "ad.computers.v6",
+        "definition_id": "ad.computers.v6",
+        "history_reader_id": "ad.computers.v6",
+        "report_key": "ad.computers.v6",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/report/ad.computers.v6"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.computers-report"
+      },
+      {
+        "access_key": "ad.computer-logons",
+        "capabilities": [],
+        "dataset_id": "ad.computer-logons",
+        "definition_id": "ad.computer-logons",
+        "history_reader_id": "ad.computer-logons",
+        "report_key": "ad.computer-logons",
+        "required_fields": [
+          "computer_logon_observation"
+        ],
+        "routes": [
+          "/report/ad.computer-logons"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.logons-report"
+      },
+      {
+        "access_key": "ad.privileged",
+        "capabilities": [],
+        "dataset_id": "ad.infrastructure",
+        "definition_id": "ad.privileged",
+        "history_reader_id": "ad.infrastructure",
+        "report_key": "ad.privileged",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/privileged-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.ad-report"
+      },
+      {
+        "access_key": "ad.users",
+        "capabilities": [],
+        "dataset_id": "ad.users.v2",
+        "definition_id": "ad.users",
+        "history_reader_id": "ad.users.v2",
+        "report_key": "ad.users",
+        "required_fields": [
+          "identity_basic"
+        ],
+        "routes": [
+          "/users-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.users-report"
+      },
+      {
+        "access_key": "ad.computers",
+        "capabilities": [],
+        "dataset_id": "ad.computers.v6",
+        "definition_id": "ad.computers",
+        "history_reader_id": "ad.computers.v6",
+        "report_key": "ad.computers",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/computers-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.computers-report"
+      },
+      {
+        "access_key": "ad.computers.v2",
+        "capabilities": [],
+        "dataset_id": "ad.computers.v6",
+        "definition_id": "ad.computers.v2",
+        "history_reader_id": "ad.computers.v6",
+        "report_key": "ad.computers.v2",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/computers-v2-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.computers-report"
+      },
+      {
+        "access_key": "ad.computers.v4",
+        "capabilities": [],
+        "dataset_id": "ad.computers.v6",
+        "definition_id": "ad.computers.v4",
+        "history_reader_id": "ad.computers.v6",
+        "report_key": "ad.computers.v4",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/computers-v4-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.computers-report"
+      },
+      {
+        "access_key": "ad.computers.v5",
+        "capabilities": [],
+        "dataset_id": "ad.computers.v6",
+        "definition_id": "ad.computers.v5",
+        "history_reader_id": "ad.computers.v6",
+        "report_key": "ad.computers.v5",
+        "required_fields": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "routes": [
+          "/computers-v5-report"
+        ],
+        "section_id": "active-directory",
+        "title_key": "shell.nav.computers-report"
+      }
+    ],
+    "schedules": [],
+    "schema_version": 3,
+    "sources": [],
+    "trust": "bundled_reviewed_only"
+  },
+  "navigation": {
+    "False": {
+      "contract_id": "sli.navigation.v3",
+      "enabled_plugins": [
+        "sli.gpo",
+        "sli.remote-access",
+        "sli.workstations"
+      ],
+      "global_search": {
+        "capabilities": [
+          "objects.view",
+          "entity.view"
+        ],
+        "path": "/search"
+      },
+      "redirects": [
+        {
+          "from": "/objects",
+          "to": "/search"
+        },
+        {
+          "from": "/entities",
+          "to": "/search"
+        },
+        {
+          "from": "/report/ad.computer-logons",
+          "to": "/report/ad.computers.v6",
+          "view": "logons"
+        },
+        {
+          "from": "/report/vpn.accounts",
+          "to": "/report/vpn.connections",
+          "view": "accounts"
+        },
+        {
+          "from": "/vpn-report",
+          "to": "/report/vpn.connections",
+          "view": "accounts"
+        },
+        {
+          "from": "/vpn-connections",
+          "to": "/report/vpn.connections",
+          "view": "connections"
+        }
+      ],
+      "sections": [
+        {
+          "groups": [
+            {
+              "entries": [
+                {
+                  "always": true,
+                  "icon": "grid",
+                  "id": "workspace",
+                  "label": "shell.nav.workspace",
+                  "path": "/"
+                }
+              ],
+              "id": "overview",
+              "title": ""
+            }
+          ],
+          "id": "overview",
+          "title": "shell.section.overview"
+        }
+      ]
+    },
+    "True": {
+      "contract_id": "sli.navigation.v3",
+      "enabled_plugins": [
+        "sli.ad",
+        "sli.gpo",
+        "sli.remote-access",
+        "sli.workstations"
+      ],
+      "global_search": {
+        "capabilities": [
+          "objects.view",
+          "entity.view"
+        ],
+        "path": "/search"
+      },
+      "redirects": [
+        {
+          "from": "/objects",
+          "to": "/search"
+        },
+        {
+          "from": "/entities",
+          "to": "/search"
+        },
+        {
+          "from": "/report/ad.computer-logons",
+          "to": "/report/ad.computers.v6",
+          "view": "logons"
+        },
+        {
+          "from": "/report/vpn.accounts",
+          "to": "/report/vpn.connections",
+          "view": "accounts"
+        },
+        {
+          "from": "/vpn-report",
+          "to": "/report/vpn.connections",
+          "view": "accounts"
+        },
+        {
+          "from": "/vpn-connections",
+          "to": "/report/vpn.connections",
+          "view": "connections"
+        }
+      ],
+      "sections": [
+        {
+          "groups": [
+            {
+              "entries": [
+                {
+                  "always": true,
+                  "icon": "grid",
+                  "id": "workspace",
+                  "label": "shell.nav.workspace",
+                  "path": "/"
+                }
+              ],
+              "id": "overview",
+              "title": ""
+            }
+          ],
+          "id": "overview",
+          "title": "shell.section.overview"
+        },
+        {
+          "groups": [
+            {
+              "entries": [
+                {
+                  "icon": "database",
+                  "id": "ad-report",
+                  "label": "shell.nav.ad-report",
+                  "path": "/report/ad.infrastructure",
+                  "plugin_id": "sli.ad",
+                  "reports": [
+                    "ad.state"
+                  ]
+                },
+                {
+                  "icon": "users",
+                  "id": "users-report",
+                  "label": "shell.nav.users-report",
+                  "path": "/report/ad.users.v2",
+                  "plugin_id": "sli.ad",
+                  "reports": [
+                    "ad.users.v2"
+                  ]
+                }
+              ],
+              "id": "identity",
+              "title": ""
+            },
+            {
+              "entries": [
+                {
+                  "icon": "database",
+                  "id": "computers-report",
+                  "label": "shell.nav.computers-report",
+                  "path": "/report/ad.computers.v6",
+                  "plugin_id": "sli.ad",
+                  "reports": [
+                    "ad.computers.v6",
+                    "ad.computer-logons"
+                  ],
+                  "views": [
+                    {
+                      "id": "computers",
+                      "label": "shell.nav.computers-report",
+                      "path": "/report/ad.computers.v6",
+                      "report_key": "ad.computers.v6",
+                      "reports": [
+                        "ad.computers.v6"
+                      ]
+                    },
+                    {
+                      "id": "logons",
+                      "label": "shell.nav.logons-report",
+                      "path": "/report/ad.computer-logons",
+                      "report_key": "ad.computer-logons",
+                      "reports": [
+                        "ad.computer-logons"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "icon": "report",
+                  "id": "new-logon-pairs-report",
+                  "label": "shell.nav.new-logon-pairs-report",
+                  "path": "/report/ad.new-logon-pairs",
+                  "plugin_id": "sli.ad",
+                  "reports": [
+                    "ad.computer-logons"
+                  ]
+                }
+              ],
+              "id": "computers",
+              "title": ""
+            }
+          ],
+          "id": "active-directory",
+          "title": "shell.section.active-directory"
+        }
+      ]
+    }
+  },
+  "report_payloads": {
+    "all": {
+      "csv": [
+        "Параметр;Объект;Тип объекта;Контекст;Фактическое значение;Ожидаемое условие;Результат;Основание;Источник правила;Секция;Наблюдалось\r\nСинтетическая проверка;dc01.example.invalid;domain_controller;\"{\"\"is_global_catalog\"\": true}\";True;Проверка репликации должна завершиться успешно;passed;;report_rule_v1;;\r\nСинтетическая проверка;dc01.example.invalid;domain_controller;\"{\"\"is_global_catalog\"\": true}\";False;Проверка репликации должна завершиться успешно;failed;;report_rule_v1;;\r\n",
+        {
+          "rows": 2,
+          "truncated": false
+        }
+      ],
+      "result": {
+        "collections": {},
+        "contract_id": "sli.report-result.v2",
+        "coverage": {
+          "freshness_threshold_seconds": 86400,
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "state": "available"
+        },
+        "filter_options": {},
+        "filtered_count": 2,
+        "has_more": false,
+        "items": [
+          {
+            "actual_text": "Нет",
+            "actual_value": false,
+            "authority": "report_rule_v1",
+            "authority_text": "Правило отчёта v1",
+            "context": [
+              {
+                "code": "is_global_catalog",
+                "label": "Global Catalog",
+                "value": "Да"
+              }
+            ],
+            "control_id": "synthetic-failed",
+            "entity_id": 1,
+            "entity_name": "dc01.example.invalid",
+            "entity_type": "domain_controller",
+            "expected_condition": "Проверка репликации должна завершиться успешно",
+            "label": "Синтетическая проверка",
+            "object_context": {
+              "is_global_catalog": true
+            },
+            "qualification": "failed",
+            "row_id": "1:synthetic-failed"
+          },
+          {
+            "actual_text": "Да",
+            "actual_value": true,
+            "authority": "report_rule_v1",
+            "authority_text": "Правило отчёта v1",
+            "context": [
+              {
+                "code": "is_global_catalog",
+                "label": "Global Catalog",
+                "value": "Да"
+              }
+            ],
+            "control_id": "synthetic-passed",
+            "entity_id": 1,
+            "entity_name": "dc01.example.invalid",
+            "entity_type": "domain_controller",
+            "expected_condition": "Проверка репликации должна завершиться успешно",
+            "label": "Синтетическая проверка",
+            "object_context": {
+              "is_global_catalog": true
+            },
+            "qualification": "passed",
+            "row_id": "1:synthetic-passed"
+          }
+        ],
+        "limitations": [
+          {
+            "code": "unknown_not_safe",
+            "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+          }
+        ],
+        "metrics": [
+          {
+            "filter": {
+              "qualification": "failed"
+            },
+            "key": "failed",
+            "label": "Не пройдено",
+            "tone": "danger",
+            "value": 1
+          },
+          {
+            "filter": {
+              "qualification": "not_evaluated"
+            },
+            "key": "not_evaluated",
+            "label": "Не оценено",
+            "tone": "neutral",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "policy_not_defined"
+            },
+            "key": "policy_not_defined",
+            "label": "Требование не задано",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "passed"
+            },
+            "key": "passed",
+            "label": "Пройдено",
+            "tone": "success",
+            "value": 1
+          }
+        ],
+        "next_cursor": null,
+        "report_key": "ad.infrastructure",
+        "series": {},
+        "state": "ok",
+        "state_details": {
+          "limitations": [
+            {
+              "code": "unknown_not_safe",
+              "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+            }
+          ],
+          "missing_domains": [],
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "reason": "query_completed",
+          "source": null,
+          "source_issues": [],
+          "stage": "query",
+          "stale_since_utc": null
+        },
+        "state_message": {
+          "code": "reports.state.ok",
+          "params": {},
+          "text": "Данные доступны"
+        },
+        "window": {}
+      }
+    },
+    "empty": {
+      "csv": [
+        "Параметр;Объект;Тип объекта;Контекст;Фактическое значение;Ожидаемое условие;Результат;Основание;Источник правила;Секция;Наблюдалось\r\n",
+        {
+          "rows": 0,
+          "truncated": false
+        }
+      ],
+      "result": {
+        "collections": {},
+        "contract_id": "sli.report-result.v2",
+        "coverage": {
+          "freshness_threshold_seconds": 86400,
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "state": "available"
+        },
+        "filter_options": {},
+        "filtered_count": 0,
+        "has_more": false,
+        "items": [],
+        "limitations": [
+          {
+            "code": "unknown_not_safe",
+            "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+          }
+        ],
+        "metrics": [
+          {
+            "filter": {
+              "qualification": "failed"
+            },
+            "key": "failed",
+            "label": "Не пройдено",
+            "tone": "danger",
+            "value": 1
+          },
+          {
+            "filter": {
+              "qualification": "not_evaluated"
+            },
+            "key": "not_evaluated",
+            "label": "Не оценено",
+            "tone": "neutral",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "policy_not_defined"
+            },
+            "key": "policy_not_defined",
+            "label": "Требование не задано",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "passed"
+            },
+            "key": "passed",
+            "label": "Пройдено",
+            "tone": "success",
+            "value": 1
+          }
+        ],
+        "next_cursor": null,
+        "report_key": "ad.infrastructure",
+        "series": {},
+        "state": "empty",
+        "state_details": {
+          "limitations": [
+            {
+              "code": "unknown_not_safe",
+              "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+            }
+          ],
+          "missing_domains": [],
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "reason": "query_completed_zero_rows",
+          "source": null,
+          "source_issues": [],
+          "stage": "query",
+          "stale_since_utc": null
+        },
+        "state_message": {
+          "code": "reports.state.empty",
+          "params": {},
+          "text": "Ничего не найдено"
+        },
+        "window": {}
+      }
+    },
+    "filtered": {
+      "csv": [
+        "Параметр;Объект;Тип объекта;Контекст;Фактическое значение;Ожидаемое условие;Результат;Основание;Источник правила;Секция;Наблюдалось\r\nСинтетическая проверка;dc01.example.invalid;domain_controller;\"{\"\"is_global_catalog\"\": true}\";False;Проверка репликации должна завершиться успешно;failed;;report_rule_v1;;\r\n",
+        {
+          "rows": 1,
+          "truncated": false
+        }
+      ],
+      "result": {
+        "collections": {},
+        "contract_id": "sli.report-result.v2",
+        "coverage": {
+          "freshness_threshold_seconds": 86400,
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "state": "available"
+        },
+        "filter_options": {},
+        "filtered_count": 1,
+        "has_more": false,
+        "items": [
+          {
+            "actual_text": "Нет",
+            "actual_value": false,
+            "authority": "report_rule_v1",
+            "authority_text": "Правило отчёта v1",
+            "context": [
+              {
+                "code": "is_global_catalog",
+                "label": "Global Catalog",
+                "value": "Да"
+              }
+            ],
+            "control_id": "synthetic-failed",
+            "entity_id": 1,
+            "entity_name": "dc01.example.invalid",
+            "entity_type": "domain_controller",
+            "expected_condition": "Проверка репликации должна завершиться успешно",
+            "label": "Синтетическая проверка",
+            "object_context": {
+              "is_global_catalog": true
+            },
+            "qualification": "failed",
+            "row_id": "1:synthetic-failed"
+          }
+        ],
+        "limitations": [
+          {
+            "code": "unknown_not_safe",
+            "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+          }
+        ],
+        "metrics": [
+          {
+            "filter": {
+              "qualification": "failed"
+            },
+            "key": "failed",
+            "label": "Не пройдено",
+            "tone": "danger",
+            "value": 1
+          },
+          {
+            "filter": {
+              "qualification": "not_evaluated"
+            },
+            "key": "not_evaluated",
+            "label": "Не оценено",
+            "tone": "neutral",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "policy_not_defined"
+            },
+            "key": "policy_not_defined",
+            "label": "Требование не задано",
+            "value": null
+          },
+          {
+            "filter": {
+              "qualification": "passed"
+            },
+            "key": "passed",
+            "label": "Пройдено",
+            "tone": "success",
+            "value": 1
+          }
+        ],
+        "next_cursor": null,
+        "report_key": "ad.infrastructure",
+        "series": {},
+        "state": "ok",
+        "state_details": {
+          "limitations": [
+            {
+              "code": "unknown_not_safe",
+              "text": "Отсутствующие и недоступные параметры не считаются безопасным нулём: «Не оценено» — не «Пройдено»."
+            }
+          ],
+          "missing_domains": [],
+          "missing_sources": [],
+          "observed_at_utc": null,
+          "reason": "query_completed",
+          "source": null,
+          "source_issues": [],
+          "stage": "query",
+          "stale_since_utc": null
+        },
+        "state_message": {
+          "code": "reports.state.ok",
+          "params": {},
+          "text": "Данные доступны"
+        },
+        "window": {}
+      }
+    }
+  },
+  "routes": [
+    [
+      "GET",
+      "/api/v1/setup/domain-controllers"
+    ],
+    [
+      "POST",
+      "/api/v1/setup/domain-controllers"
+    ],
+    [
+      "POST",
+      "/api/v1/setup/domain-controllers/*"
+    ],
+    [
+      "GET",
+      "/api/domain-controllers"
+    ]
+  ],
+  "source_states": {
+    "configured:None:2026-10-08T12:00:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": null,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:None:2026-10-09T11:59:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": null,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:None:None": {
+      "activation_state": "unavailable",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": null,
+          "last_data_utc": null,
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': False}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": false,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': False}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": false,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': False}:None": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": false,
+          "last_data_utc": null,
+          "next_action": "check_configuration",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': True}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "enabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": true,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": true,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "check_data",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': True}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "enabled",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": true,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": true,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": null,
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "configured:{'collection_enabled': True}:None": {
+      "activation_state": "enabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": true,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": true,
+          "last_data_utc": null,
+          "next_action": "collect",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "context:False": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 86430,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-context",
+      "source_kind": "context",
+      "version": "1.0.0"
+    },
+    "context:True": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 86430,
+      "installed": true,
+      "instances": [
+        {
+          "configured": null,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": null,
+          "last_data_utc": null,
+          "next_action": "check_configuration",
+          "source_instance_id": "example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-context",
+      "source_kind": "context",
+      "version": "1.0.0"
+    },
+    "disabled:None:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": false,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:None:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": false,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:None:None": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": false,
+          "last_data_utc": null,
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': False}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": false,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': False}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": false,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': False}:None": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": false,
+          "last_data_utc": null,
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': True}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "stale",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "stale",
+          "enabled": false,
+          "last_data_utc": "2026-10-08T12:00:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': True}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": true,
+      "data_state": "fresh",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": true,
+          "data_state": "fresh",
+          "enabled": false,
+          "last_data_utc": "2026-10-09T11:59:00+00:00",
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "disabled:{'collection_enabled': True}:None": {
+      "activation_state": "disabled",
+      "configured": true,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [
+        {
+          "configured": true,
+          "data_received": false,
+          "data_state": "never",
+          "enabled": false,
+          "last_data_utc": null,
+          "next_action": "enable",
+          "source_instance_id": "dc01.example.invalid"
+        }
+      ],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:None:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:None:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:None:None": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': False}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': False}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': False}:None": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': True}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': True}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unconfigured:{'collection_enabled': True}:None": {
+      "activation_state": "disabled",
+      "configured": false,
+      "data_received": false,
+      "data_state": "never",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:None:2026-10-08T12:00:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:None:2026-10-09T11:59:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:None:None": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': False}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': False}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': False}:None": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': True}:2026-10-08T12:00:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': True}:2026-10-09T11:59:00+00:00": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    },
+    "unknown:{'collection_enabled': True}:None": {
+      "activation_state": "unavailable",
+      "configured": null,
+      "data_received": null,
+      "data_state": "unavailable",
+      "display_name": "AD DC",
+      "enabled": false,
+      "freshness_seconds": 1230,
+      "installed": true,
+      "instances": [],
+      "pack_id": "sli.windows.ad-dc",
+      "source_kind": "event",
+      "version": "1.0.0"
+    }
+  }
+}

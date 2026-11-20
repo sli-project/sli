@@ -1,0 +1,426 @@
+[
+  {
+    "resolution": {
+      "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rollup": "authentication_session",
+      "rollup_role": "open",
+      "promotion": {
+        "archive_requirement": "no_archive",
+        "post_promotion_disposition": "delete_source",
+        "read_representation": "derived_only",
+        "executable_lifecycle": "existing_warm_then_retention_executor"
+      }
+    },
+    "evidence": {
+      "descriptor_lifecycle": {
+        "source": "sli.windows.ad-dc",
+        "stream": "Security",
+        "event_keys": [
+          "4624"
+        ],
+        "candidate_ids": [
+          10,
+          11
+        ],
+        "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+        "rollup": "authentication_session",
+        "archive_requirement": "no_archive",
+        "read_representation": "derived_only",
+        "post_promotion_disposition": "delete_source",
+        "executable_lifecycle": "existing_warm_then_retention_executor",
+        "descriptor_policies": [
+          {
+            "event_key": "4624",
+            "rollup_role": "open",
+            "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "policy_fingerprint": "0ce1d6415dbe12eb56df98336bfbc40df63de8d333c28fdfca442c6fba3ba7fc",
+        "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "declaration_progress": {
+          "contract": "sli.storage-lifecycle-declaration-progress.v1",
+          "declaration_ids": [
+            22
+          ],
+          "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+        }
+      },
+      "derived_publication": {
+        "batch_identity": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "source_references": [
+          {
+            "id": 10,
+            "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          {
+            "id": 11,
+            "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "derived": [
+          {
+            "session_uid": "session-1",
+            "state": "closed",
+            "quality_reason": "complete",
+            "logoff_time_utc": "2026-07-01T00:05:00+00:00",
+            "duration_seconds": 300,
+            "logoff_source_event_id": 11,
+            "logoff_normalized_hash": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "manifest": {
+          "source_reference_digest": "5da6c65cbf4eb946e671ce1df17deafd8b831c3d0ddbf43741f43110443d860a",
+          "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_fingerprint": "0ce1d6415dbe12eb56df98336bfbc40df63de8d333c28fdfca442c6fba3ba7fc",
+          "declaration_progress_digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37",
+          "manifest_digest": "f0f5d8c61422bf5064dd0d15eefce6fef3660eab2acafa8476d373cca3879e2f",
+          "contract": "sli.warm-derived-publication.v1",
+          "archive_requirement": "no_archive",
+          "read_representation": "derived_only",
+          "source_ids": [
+            10,
+            11
+          ],
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "readback_required": true
+        },
+        "descriptor_lifecycle": {
+          "source": "sli.windows.ad-dc",
+          "stream": "Security",
+          "event_keys": [
+            "4624"
+          ],
+          "candidate_ids": [
+            10,
+            11
+          ],
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "rollup": "authentication_session",
+          "archive_requirement": "no_archive",
+          "read_representation": "derived_only",
+          "post_promotion_disposition": "delete_source",
+          "executable_lifecycle": "existing_warm_then_retention_executor",
+          "descriptor_policies": [
+            {
+              "event_key": "4624",
+              "rollup_role": "open",
+              "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "policy_fingerprint": "0ce1d6415dbe12eb56df98336bfbc40df63de8d333c28fdfca442c6fba3ba7fc",
+          "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_progress": {
+            "contract": "sli.storage-lifecycle-declaration-progress.v1",
+            "declaration_ids": [
+              22
+            ],
+            "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+            "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+          }
+        }
+      },
+      "readback": {
+        "status": "verified_persisted_readback",
+        "verified": true,
+        "promotion_eligible": true,
+        "output_identity": "ea4f27b66d08eb3b6b7200a450dcc790ac0b892886ff1470853411e41fc89f16",
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "published_at_utc": "2026-08-24T10:00:00.000000+00:00"
+      }
+    },
+    "expected": {
+      "status": "ready_for_owner_authorization",
+      "candidate_ids": [
+        10,
+        11
+      ],
+      "candidate_references": [
+        {
+          "id": 10,
+          "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "id": 11,
+          "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+        }
+      ],
+      "blockers": [],
+      "promotion_gate": {
+        "contract": "sli.tier-retention-promotion-gate.v1",
+        "policy_fingerprint": "0ce1d6415dbe12eb56df98336bfbc40df63de8d333c28fdfca442c6fba3ba7fc",
+        "source": "sli.windows.ad-dc",
+        "stream": "Security",
+        "event_keys": [
+          "4624"
+        ],
+        "descriptor_policies": [
+          {
+            "event_key": "4624",
+            "rollup_role": "open",
+            "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "archive_requirement": "no_archive",
+        "read_representation": "derived_only",
+        "post_promotion_disposition": "delete_source",
+        "executable_lifecycle": "existing_warm_then_retention_executor",
+        "output_identity": "ea4f27b66d08eb3b6b7200a450dcc790ac0b892886ff1470853411e41fc89f16",
+        "batch_identity": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_reference_digest": "5da6c65cbf4eb946e671ce1df17deafd8b831c3d0ddbf43741f43110443d860a",
+        "manifest_digest": "f0f5d8c61422bf5064dd0d15eefce6fef3660eab2acafa8476d373cca3879e2f",
+        "source_count": 2,
+        "observation_count": 1,
+        "payload_json": "{\"continuity_declaration\":{\"declaration_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"scope_identity\":\"sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"contract\":\"sli.warm.authentication-session-output.v1\",\"derived\":[{\"duration_seconds\":300,\"logoff_normalized_hash\":\"0202020202020202020202020202020202020202020202020202020202020202\",\"logoff_source_event_id\":11,\"logoff_time_utc\":\"2026-07-01T00:05:00+00:00\",\"quality_reason\":\"complete\",\"session_uid\":\"session-1\",\"state\":\"closed\"}],\"source_references\":[{\"id\":10,\"sha256\":\"0101010101010101010101010101010101010101010101010101010101010101\"},{\"id\":11,\"sha256\":\"0202020202020202020202020202020202020202020202020202020202020202\"}]}",
+        "published_at_utc": "2026-08-24T10:00:00.000000+00:00",
+        "source_references": [
+          {
+            "id": 10,
+            "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          {
+            "id": 11,
+            "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_members": [],
+        "supplemental_context_ids": [],
+        "declaration_progress": {
+          "contract": "sli.storage-lifecycle-declaration-progress.v1",
+          "declaration_ids": [
+            22
+          ],
+          "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+        },
+        "declaration_progress_digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37",
+        "read_availability": "derived_only_available"
+      }
+    }
+  },
+  {
+    "resolution": {
+      "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rollup": "authentication_session",
+      "rollup_role": "open",
+      "promotion": {
+        "archive_requirement": "archive_required",
+        "post_promotion_disposition": "delete_source",
+        "read_representation": "archived_atomic",
+        "executable_lifecycle": "existing_warm_then_retention_executor"
+      }
+    },
+    "evidence": {
+      "descriptor_lifecycle": {
+        "source": "sli.windows.ad-dc",
+        "stream": "Security",
+        "event_keys": [
+          "4624"
+        ],
+        "candidate_ids": [
+          10,
+          11
+        ],
+        "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+        "rollup": "authentication_session",
+        "archive_requirement": "archive_required",
+        "read_representation": "archived_atomic",
+        "post_promotion_disposition": "delete_source",
+        "executable_lifecycle": "existing_warm_then_retention_executor",
+        "descriptor_policies": [
+          {
+            "event_key": "4624",
+            "rollup_role": "open",
+            "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "policy_fingerprint": "610cab155834bc1c897318bb9520d8baa287fbe618be2e994b398dd76f797b5b",
+        "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "declaration_progress": {
+          "contract": "sli.storage-lifecycle-declaration-progress.v1",
+          "declaration_ids": [
+            22
+          ],
+          "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+        }
+      },
+      "derived_publication": {
+        "batch_identity": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "source_references": [
+          {
+            "id": 10,
+            "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          {
+            "id": 11,
+            "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "derived": [
+          {
+            "session_uid": "session-1",
+            "state": "closed",
+            "quality_reason": "complete",
+            "logoff_time_utc": "2026-07-01T00:05:00+00:00",
+            "duration_seconds": 300,
+            "logoff_source_event_id": 11,
+            "logoff_normalized_hash": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "manifest": {
+          "source_reference_digest": "5da6c65cbf4eb946e671ce1df17deafd8b831c3d0ddbf43741f43110443d860a",
+          "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_fingerprint": "610cab155834bc1c897318bb9520d8baa287fbe618be2e994b398dd76f797b5b",
+          "declaration_progress_digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37",
+          "manifest_digest": "9378d55c8085151e6e817424904877e842e1dd1b927fef644f28ec94ceccf444",
+          "contract": "sli.warm-derived-publication.v1",
+          "archive_requirement": "archive_required",
+          "read_representation": "archived_atomic",
+          "source_ids": [
+            10,
+            11
+          ],
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "readback_required": true
+        },
+        "descriptor_lifecycle": {
+          "source": "sli.windows.ad-dc",
+          "stream": "Security",
+          "event_keys": [
+            "4624"
+          ],
+          "candidate_ids": [
+            10,
+            11
+          ],
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "rollup": "authentication_session",
+          "archive_requirement": "archive_required",
+          "read_representation": "archived_atomic",
+          "post_promotion_disposition": "delete_source",
+          "executable_lifecycle": "existing_warm_then_retention_executor",
+          "descriptor_policies": [
+            {
+              "event_key": "4624",
+              "rollup_role": "open",
+              "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "policy_fingerprint": "610cab155834bc1c897318bb9520d8baa287fbe618be2e994b398dd76f797b5b",
+          "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_progress": {
+            "contract": "sli.storage-lifecycle-declaration-progress.v1",
+            "declaration_ids": [
+              22
+            ],
+            "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+            "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+          }
+        }
+      },
+      "readback": {
+        "status": "verified_persisted_readback",
+        "verified": true,
+        "promotion_eligible": true,
+        "output_identity": "db2b825fd20f7320357ebf85e744bf1566e1467d670605ba299a3f41af14f09d",
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "published_at_utc": "2026-08-24T10:00:00.000000+00:00"
+      }
+    },
+    "expected": {
+      "status": "ready_for_owner_authorization",
+      "candidate_ids": [
+        10,
+        11
+      ],
+      "candidate_references": [
+        {
+          "id": 10,
+          "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "id": 11,
+          "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+        }
+      ],
+      "blockers": [],
+      "promotion_gate": {
+        "contract": "sli.tier-retention-promotion-gate.v1",
+        "policy_fingerprint": "610cab155834bc1c897318bb9520d8baa287fbe618be2e994b398dd76f797b5b",
+        "source": "sli.windows.ad-dc",
+        "stream": "Security",
+        "event_keys": [
+          "4624"
+        ],
+        "descriptor_policies": [
+          {
+            "event_key": "4624",
+            "rollup_role": "open",
+            "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "archive_requirement": "archive_required",
+        "read_representation": "archived_atomic",
+        "post_promotion_disposition": "delete_source",
+        "executable_lifecycle": "existing_warm_then_retention_executor",
+        "output_identity": "db2b825fd20f7320357ebf85e744bf1566e1467d670605ba299a3f41af14f09d",
+        "batch_identity": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+        "derived_output_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_reference_digest": "5da6c65cbf4eb946e671ce1df17deafd8b831c3d0ddbf43741f43110443d860a",
+        "manifest_digest": "9378d55c8085151e6e817424904877e842e1dd1b927fef644f28ec94ceccf444",
+        "source_count": 2,
+        "observation_count": 1,
+        "payload_json": "{\"continuity_declaration\":{\"declaration_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"scope_identity\":\"sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"contract\":\"sli.warm.authentication-session-output.v1\",\"derived\":[{\"duration_seconds\":300,\"logoff_normalized_hash\":\"0202020202020202020202020202020202020202020202020202020202020202\",\"logoff_source_event_id\":11,\"logoff_time_utc\":\"2026-07-01T00:05:00+00:00\",\"quality_reason\":\"complete\",\"session_uid\":\"session-1\",\"state\":\"closed\"}],\"source_references\":[{\"id\":10,\"sha256\":\"0101010101010101010101010101010101010101010101010101010101010101\"},{\"id\":11,\"sha256\":\"0202020202020202020202020202020202020202020202020202020202020202\"}]}",
+        "published_at_utc": "2026-08-24T10:00:00.000000+00:00",
+        "source_references": [
+          {
+            "id": 10,
+            "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+          },
+          {
+            "id": 11,
+            "sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+          }
+        ],
+        "continuity_declaration_scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "continuity_declaration_members": [],
+        "supplemental_context_ids": [],
+        "declaration_progress": {
+          "contract": "sli.storage-lifecycle-declaration-progress.v1",
+          "declaration_ids": [
+            22
+          ],
+          "scope_identity": "sli.source-capture-continuity.v1:22:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "declaration_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "candidate_identity_sha256": "43a2d66e5f850f64677fc2fae986fcdbdf190e6b6f026167f70b21d8860826b3",
+          "digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37"
+        },
+        "declaration_progress_digest": "4a69e43040891bab58a344ffd696ae46765ee36d08d4b9d2e3e673de13c69a37",
+        "read_availability": "source_archived"
+      }
+    }
+  }
+]

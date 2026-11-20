@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "pack_id": "sli.windows.file-audit",
+  "version": "1.0.0",
+  "display_name": "Microsoft file-server audit",
+  "channels": [
+    "Security"
+  ],
+  "adapters": [],
+  "event_catalog": "file_audit_event_catalog.json",
+  "normalizer": "windows-file-audit-v1",
+  "entity_contract": "file-audit.evidence.v1",
+  "analysis_contract": "file-audit.observation.v1",
+  "capabilities": [
+    "file-audit.evidence"
+  ]
+}

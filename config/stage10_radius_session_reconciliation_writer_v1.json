@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-session-reconciliation-writer.v1",
+  "status": "prepared_disabled_only",
+  "required_migration": 65,
+  "writer_role": "adlog_radius_session_reconciliation_writer",
+  "maximum_attempts_per_transaction": 50,
+  "source_contact_allowed": false,
+  "production_migration_applied": false,
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "immutable_inputs": [
+    "radius_accounting_session_observations",
+    "radius_session_projection_receipts",
+    "core_evidence_manifests"
+  ],
+  "append_only_outputs": [
+    "radius_session_reconciliation_attempts",
+    "radius_session_identity_overlays"
+  ]
+}

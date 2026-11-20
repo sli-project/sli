@@ -1,0 +1,3560 @@
+{
+  "policies": {
+    "default": {
+      "policy_revision": "1",
+      "batch_size": 32,
+      "channel_generations": {},
+      "source_name": "fixture-dc",
+      "connect_address": "fixture-endpoint",
+      "channels": {
+        "Security": true,
+        "System": true,
+        "Directory Service": true
+      },
+      "allow_event_ids": null
+    },
+    "filtered": {
+      "policy_revision": "1",
+      "batch_size": 32,
+      "channel_generations": {},
+      "source_name": "fixture-dc",
+      "connect_address": "fixture-endpoint",
+      "channels": {
+        "Security": true,
+        "System": false,
+        "Directory Service": true
+      },
+      "allow_event_ids": [
+        4624
+      ]
+    },
+    "disabled": {
+      "policy_revision": "1",
+      "batch_size": 32,
+      "channel_generations": {},
+      "source_name": "fixture-dc",
+      "connect_address": "fixture-endpoint",
+      "channels": {
+        "Security": false,
+        "System": false,
+        "Directory Service": false
+      },
+      "allow_event_ids": null
+    },
+    "revision": {
+      "policy_revision": "3",
+      "batch_size": 1,
+      "channel_generations": {},
+      "source_name": "fixture-dc",
+      "connect_address": "fixture-endpoint",
+      "channels": {
+        "Security": true,
+        "System": true,
+        "Directory Service": true
+      },
+      "allow_event_ids": null
+    },
+    "invalid": {
+      "error": "agent_ad_dc_config_invalid"
+    }
+  },
+  "packets": {
+    "events": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": null,
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "record_count": 2,
+            "payload_bytes": 2353,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "not_proven",
+            "filtered_count": 0,
+            "lost_count": 0
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": 1,
+                "last": 2
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": 2
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [
+              {
+                "format": "event_xml",
+                "record_id": 1,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4624,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 1,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              },
+              {
+                "format": "event_xml",
+                "record_id": 2,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4625,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 2,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              }
+            ],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 0,
+                "channel_reset": false,
+                "read_error": null
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "dae66eb0f20cbe24f8ce7e79794a40809dc37c8e6e6a244ff213f24f0a96e48d",
+          "rows": [
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            },
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          ]
+        }
+      ],
+      "history_reads": []
+    },
+    "zero": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "9394b3812d6bb8989f97d31a1b694068caa2f25aacb7a4359ca61b2631ad2baa",
+        "record_count": 0,
+        "payload_bytes": 475,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "9394b3812d6bb8989f97d31a1b694068caa2f25aacb7a4359ca61b2631ad2baa",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "9394b3812d6bb8989f97d31a1b694068caa2f25aacb7a4359ca61b2631ad2baa",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": null,
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "9394b3812d6bb8989f97d31a1b694068caa2f25aacb7a4359ca61b2631ad2baa",
+            "record_count": 0,
+            "payload_bytes": 475,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "not_proven",
+            "filtered_count": 0,
+            "lost_count": 0
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": null,
+                "last": null
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": null
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 0,
+                "channel_reset": false,
+                "read_error": null
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "9394b3812d6bb8989f97d31a1b694068caa2f25aacb7a4359ca61b2631ad2baa",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "55b24f76354cb16d1db1f06ca5097fd3e3f58946bb4bb8364563850b0c7ddadc",
+          "rows": []
+        }
+      ],
+      "history_reads": []
+    },
+    "partial": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "ecba54039dbc53ab65e927bf6a109f184b7b61a44f3716b01aec5b845d6a0255",
+        "record_count": 1,
+        "payload_bytes": 1409,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "filtered",
+        "filtered_count": 1,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 1
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 1,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "ecba54039dbc53ab65e927bf6a109f184b7b61a44f3716b01aec5b845d6a0255",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "ecba54039dbc53ab65e927bf6a109f184b7b61a44f3716b01aec5b845d6a0255",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": null,
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "ecba54039dbc53ab65e927bf6a109f184b7b61a44f3716b01aec5b845d6a0255",
+            "record_count": 1,
+            "payload_bytes": 1409,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "filtered",
+            "filtered_count": 1,
+            "lost_count": 0
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": 1,
+                "last": 1
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": 2
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [
+              {
+                "format": "event_xml",
+                "record_id": 1,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4624,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 1,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              }
+            ],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 1,
+                "channel_reset": false,
+                "read_error": null
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "ecba54039dbc53ab65e927bf6a109f184b7b61a44f3716b01aec5b845d6a0255",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "3e6b701aeebf8d4e5c881c1df4f9acda38be01ec08140bf78539fb264ec259c2",
+          "rows": [
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          ]
+        }
+      ],
+      "history_reads": []
+    },
+    "read_error": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "961cc910f89dfe1be3603aaacb3f277d8fe6a30bcc1e845a7a2fb39404805d3a",
+        "record_count": 0,
+        "payload_bytes": 496,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "gap",
+        "filtered_count": 0,
+        "lost_count": null
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": null,
+            "last": null
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": null
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": "agent_ad_dc_read_failed"
+          }
+        }
+      },
+      "validated": [],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "961cc910f89dfe1be3603aaacb3f277d8fe6a30bcc1e845a7a2fb39404805d3a",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "961cc910f89dfe1be3603aaacb3f277d8fe6a30bcc1e845a7a2fb39404805d3a",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": null,
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "961cc910f89dfe1be3603aaacb3f277d8fe6a30bcc1e845a7a2fb39404805d3a",
+            "record_count": 0,
+            "payload_bytes": 496,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "gap",
+            "filtered_count": 0,
+            "lost_count": null
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": null,
+                "last": null
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": null
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 0,
+                "channel_reset": false,
+                "read_error": "agent_ad_dc_read_failed"
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "961cc910f89dfe1be3603aaacb3f277d8fe6a30bcc1e845a7a2fb39404805d3a",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":null}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "1696afefec2f73ac13fccd726f0da1ecc7604c222d9d55f1766304df00a7cd4b",
+          "rows": []
+        }
+      ],
+      "history_reads": []
+    },
+    "old_revision": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": null,
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "record_count": 2,
+            "payload_bytes": 2353,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "not_proven",
+            "filtered_count": 0,
+            "lost_count": 0
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": 1,
+                "last": 2
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": 2
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [
+              {
+                "format": "event_xml",
+                "record_id": 1,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4624,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 1,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              },
+              {
+                "format": "event_xml",
+                "record_id": 2,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4625,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 2,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              }
+            ],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 0,
+                "channel_reset": false,
+                "read_error": null
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "dae66eb0f20cbe24f8ce7e79794a40809dc37c8e6e6a244ff213f24f0a96e48d",
+          "rows": [
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            },
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          ]
+        }
+      ],
+      "history_reads": [
+        [
+          "00000000-0000-4000-8000-000000000001",
+          "sli.windows.ad-dc",
+          "1"
+        ]
+      ]
+    },
+    "missing_revision": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_source_not_bound"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": [
+        [
+          "00000000-0000-4000-8000-000000000001",
+          "sli.windows.ad-dc",
+          "1"
+        ]
+      ]
+    },
+    "assignment": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_module_not_assigned"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "channel": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "Security",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": {
+        "error": "agent_collection_cursor_invalid"
+      },
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_source_not_bound"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "source": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": {
+        "error": "agent_collection_cursor_invalid"
+      },
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_source_not_bound"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "native_channel": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "cbe956ea3a788b0a48c63378e1339eb4f96c60e8441a6093b4f520dc5d76aa1a",
+        "record_count": 2,
+        "payload_bytes": 2351,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>System</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": {
+        "error": "agent_collection_cursor_invalid"
+      },
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "cbe956ea3a788b0a48c63378e1339eb4f96c60e8441a6093b4f520dc5d76aa1a",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_collection_packet_invalid"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "bad_signature": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "error": "agent_signature_invalid"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "replay": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_replay_window"
+      },
+      "duplicate": null,
+      "fork": null,
+      "entries": [],
+      "history_reads": []
+    },
+    "cursor_fork": {
+      "envelope": {
+        "contract_id": "sli.agent-envelope.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "source_instance_id": "00000000-0000-4000-8000-000000000002",
+        "module_id": "sli.windows.ad-dc",
+        "module_version": "1.0.0",
+        "policy_revision": "1",
+        "channel": "ad-dc",
+        "generation": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "cursor_before": {
+          "strategy": "bookmark",
+          "token": ""
+        },
+        "cursor_after": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "payload_contract": "sli.collection-packet.v1",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "record_count": 2,
+        "payload_bytes": 2353,
+        "observed_at_utc": "2026-10-09T12:00:00+00:00",
+        "continuity_state": "not_proven",
+        "filtered_count": 0,
+        "lost_count": 0
+      },
+      "payload": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "fixture-dc",
+          "channel": "Security",
+          "generation": "00000000-0000-4000-8000-000000000002",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-09T12:00:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "ad_dc": {
+            "pack_id": "sli.windows.ad-dc",
+            "policy_revision": "1",
+            "filtered_count": 0,
+            "channel_reset": false,
+            "read_error": null
+          }
+        }
+      },
+      "validated": [
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "fixture-dc",
+          "connect_address": "fixture-endpoint",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4625,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-09T12:00:00Z",
+          "machine_name": "fixture-dc",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "fixture-account",
+            "S-1-5-21-100-200-300-1001",
+            "3"
+          ],
+          "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+        }
+      ],
+      "receipt": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "committed",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "duplicate": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000003",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "duplicate",
+        "committed_cursor": {
+          "strategy": "bookmark",
+          "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+        },
+        "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+        "committed_at_utc": "2026-10-09T12:00:00+00:00",
+        "error_code": null
+      },
+      "fork": {
+        "contract_id": "sli.agent-receipt.v1",
+        "packet_id": "00000000-0000-4000-8000-000000000004",
+        "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+        "status": "rejected",
+        "committed_cursor": null,
+        "evidence_ref": null,
+        "committed_at_utc": null,
+        "error_code": "agent_cursor_mismatch"
+      },
+      "entries": [
+        {
+          "envelope": {
+            "contract_id": "sli.agent-envelope.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "agent_id": "00000000-0000-4000-8000-000000000001",
+            "source_instance_id": "00000000-0000-4000-8000-000000000002",
+            "module_id": "sli.windows.ad-dc",
+            "module_version": "1.0.0",
+            "policy_revision": "1",
+            "channel": "ad-dc",
+            "generation": "00000000-0000-4000-8000-000000000002",
+            "sequence": 1,
+            "cursor_before": {
+              "strategy": "bookmark",
+              "token": ""
+            },
+            "cursor_after": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "payload_contract": "sli.collection-packet.v1",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "record_count": 2,
+            "payload_bytes": 2353,
+            "observed_at_utc": "2026-10-09T12:00:00+00:00",
+            "continuity_state": "not_proven",
+            "filtered_count": 0,
+            "lost_count": 0
+          },
+          "payload": {
+            "contract": "sli.collection-packet.v1",
+            "header": {
+              "source": "fixture-dc",
+              "channel": "Security",
+              "generation": "00000000-0000-4000-8000-000000000002",
+              "record_id_range": {
+                "first": 1,
+                "last": 2
+              },
+              "cursor": {
+                "after_record_id": null,
+                "last_record_id": 2
+              },
+              "observed_at_utc": "2026-10-09T12:00:00+00:00"
+            },
+            "records": [
+              {
+                "format": "event_xml",
+                "record_id": 1,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4624,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 1,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              },
+              {
+                "format": "event_xml",
+                "record_id": 2,
+                "payload": {
+                  "computer_name": "fixture-dc",
+                  "connect_address": "fixture-endpoint",
+                  "channel": "Security",
+                  "provider_name": "Microsoft-Windows-Security-Auditing",
+                  "event_id": 4625,
+                  "version": null,
+                  "level": null,
+                  "task": null,
+                  "opcode": null,
+                  "keywords": null,
+                  "record_id": 2,
+                  "time_created": "2026-10-09T12:00:00Z",
+                  "machine_name": "fixture-dc",
+                  "user_id": null,
+                  "message": null,
+                  "properties": [
+                    "fixture-account",
+                    "S-1-5-21-100-200-300-1001",
+                    "3"
+                  ],
+                  "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+                }
+              }
+            ],
+            "continuity": {
+              "status": "not_proven"
+            },
+            "context": {
+              "ad_dc": {
+                "pack_id": "sli.windows.ad-dc",
+                "policy_revision": "1",
+                "filtered_count": 0,
+                "channel_reset": false,
+                "read_error": null
+              }
+            }
+          },
+          "receipt": {
+            "contract_id": "sli.agent-receipt.v1",
+            "packet_id": "00000000-0000-4000-8000-000000000003",
+            "payload_sha256": "26d371094aaac34663d5cf64d41374a1ee09046bbee350c2fb9f3bb4c493f1ba",
+            "status": "committed",
+            "committed_cursor": {
+              "strategy": "bookmark",
+              "token": "{\"channels\":{\"Security\":{\"bookmark\":\"fixture-bookmark-2\",\"generation\":\"00000000-0000-4000-8000-000000000002\",\"record_id\":2}},\"next\":1}"
+            },
+            "evidence_ref": "agent-packet:00000000-0000-4000-8000-000000000003",
+            "committed_at_utc": "2026-10-09T12:00:00+00:00",
+            "error_code": null
+          },
+          "envelope_sha256": "dae66eb0f20cbe24f8ce7e79794a40809dc37c8e6e6a244ff213f24f0a96e48d",
+          "rows": [
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4624</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            },
+            {
+              "computer_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4625,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-09T12:00:00Z",
+              "machine_name": "fixture-dc",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "fixture-account",
+                "S-1-5-21-100-200-300-1001",
+                "3"
+              ],
+              "xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\"/><EventID>4625</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><Computer>fixture-dc</Computer><TimeCreated SystemTime=\"2026-10-09T12:00:00Z\"/></System><EventData><Data Name=\"TargetUserName\">fixture-account</Data><Data Name=\"TargetUserSid\">S-1-5-21-100-200-300-1001</Data><Data Name=\"LogonType\">3</Data></EventData></Event>"
+            }
+          ]
+        }
+      ],
+      "history_reads": []
+    }
+  },
+  "normalization": {
+    "4624": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "authentication.session.created",
+        "roles": {
+          "source_host": "fixture-dc",
+          "affected_entity": "sid:S-1-5-21-100-200-300-1001"
+        },
+        "facts": {
+          "windows_event_id": 4624,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing",
+          "logon_type": "3",
+          "relation_account_sid": "S-1-5-21-100-200-300-1001"
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": true,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": false,
+          "semantic_mapping_status": "mapped",
+          "defined_but_not_emitted": false,
+          "relation_account_identity": {
+            "state": "exact",
+            "sid_field": "TargetUserSid"
+          },
+          "identity_roles": {
+            "affected_entity": {
+              "key": "sid:S-1-5-21-100-200-300-1001",
+              "state": "resolved",
+              "step": 1,
+              "provisional": false,
+              "confidence": 1.0,
+              "reason": null,
+              "aliases": [
+                "sam:?:fixture-account"
+              ],
+              "rule": "identity-ladder/v1"
+            }
+          },
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": null,
+      "labels": {
+        "ru": "Успешный вход",
+        "en": "Successful logon"
+      }
+    },
+    "4625": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "authentication.session.failed",
+        "roles": {
+          "source_host": "fixture-dc",
+          "affected_entity": "sid:S-1-5-21-100-200-300-1001"
+        },
+        "facts": {
+          "windows_event_id": 4625,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing",
+          "result_code_state": "unknown",
+          "result": "unknown"
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": true,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": false,
+          "semantic_mapping_status": "mapped",
+          "defined_but_not_emitted": false,
+          "identity_roles": {
+            "affected_entity": {
+              "key": "sid:S-1-5-21-100-200-300-1001",
+              "state": "resolved",
+              "step": 1,
+              "provisional": false,
+              "confidence": 1.0,
+              "reason": null,
+              "aliases": [
+                "sam:?:fixture-account"
+              ],
+              "rule": "identity-ladder/v1"
+            }
+          },
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": null,
+      "labels": {
+        "ru": "Ошибка входа",
+        "en": "Failed logon"
+      }
+    },
+    "4722": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "directory.account.enabled",
+        "roles": {
+          "source_host": "fixture-dc",
+          "affected_entity": "sid:S-1-5-21-100-200-300-1001"
+        },
+        "facts": {
+          "windows_event_id": 4722,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": true,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": false,
+          "semantic_mapping_status": "mapped",
+          "defined_but_not_emitted": false,
+          "identity_roles": {
+            "affected_entity": {
+              "key": "sid:S-1-5-21-100-200-300-1001",
+              "state": "resolved",
+              "step": 1,
+              "provisional": false,
+              "confidence": 1.0,
+              "reason": null,
+              "aliases": [
+                "sam:?:fixture-account"
+              ],
+              "rule": "identity-ladder/v1"
+            }
+          },
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": {
+        "rule_id": "account-enabled-4722",
+        "state_type": "account.access",
+        "status": "enabled"
+      },
+      "labels": {
+        "ru": "Учетная запись включена",
+        "en": "User account enabled"
+      }
+    },
+    "4725": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "directory.account.disabled",
+        "roles": {
+          "source_host": "fixture-dc",
+          "affected_entity": "sid:S-1-5-21-100-200-300-1001"
+        },
+        "facts": {
+          "windows_event_id": 4725,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": true,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": false,
+          "semantic_mapping_status": "mapped",
+          "defined_but_not_emitted": false,
+          "identity_roles": {
+            "affected_entity": {
+              "key": "sid:S-1-5-21-100-200-300-1001",
+              "state": "resolved",
+              "step": 1,
+              "provisional": false,
+              "confidence": 1.0,
+              "reason": null,
+              "aliases": [
+                "sam:?:fixture-account"
+              ],
+              "rule": "identity-ladder/v1"
+            }
+          },
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": null,
+      "labels": {
+        "ru": "Учетная запись отключена",
+        "en": "User account disabled"
+      }
+    },
+    "4740": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "authentication.account.locked",
+        "roles": {
+          "source_host": "fixture-dc",
+          "affected_entity": "sid:S-1-5-21-100-200-300-1001"
+        },
+        "facts": {
+          "windows_event_id": 4740,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": true,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": false,
+          "semantic_mapping_status": "mapped",
+          "defined_but_not_emitted": false,
+          "relation_account_identity": {
+            "state": "not_exact",
+            "sid_field": "TargetSid"
+          },
+          "identity_roles": {
+            "affected_entity": {
+              "key": "sid:S-1-5-21-100-200-300-1001",
+              "state": "resolved",
+              "step": 1,
+              "provisional": false,
+              "confidence": 1.0,
+              "reason": null,
+              "aliases": [
+                "sam:?:fixture-account"
+              ],
+              "rule": "identity-ladder/v1"
+            }
+          },
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": {
+        "rule_id": "account-locked-4740",
+        "state_type": "account.access",
+        "status": "locked"
+      },
+      "labels": {
+        "ru": "Учетная запись заблокирована",
+        "en": "Account locked out"
+      }
+    },
+    "65535": {
+      "facts": {
+        "process_name": null,
+        "process_id": null,
+        "target_server_name": null,
+        "service_name": null,
+        "task_name": null,
+        "task_action": null,
+        "task_author": null,
+        "run_as": null,
+        "logon_type": "3",
+        "result_code": null,
+        "object_name": null,
+        "share_name": null,
+        "message_sample": null,
+        "powershell_user_name": null,
+        "powershell_command_name": null,
+        "powershell_script_block_text": null,
+        "powershell_process_id": null,
+        "process_parent_id": null,
+        "process_command_line": null,
+        "process_user_sid": null,
+        "process_user_name": null,
+        "process_user_domain": null,
+        "process_logon_id": null,
+        "service_file": null,
+        "service_account": null,
+        "service_start_type": null,
+        "task_content": null,
+        "task_change": null,
+        "native_process_id": null
+      },
+      "semantic": {
+        "semantic_type": "event.unknown",
+        "roles": {
+          "source_host": "fixture-dc"
+        },
+        "facts": {
+          "windows_event_id": 65535,
+          "channel": "Security",
+          "provider": "Microsoft-Windows-Security-Auditing",
+          "correlation_id": null
+        },
+        "quality": {
+          "event_data_encoding": "named",
+          "catalog_independent": false,
+          "raw_event_mutated": false,
+          "missing_actor_sid": true,
+          "unresolved_actor": false,
+          "unresolved_target": false,
+          "missing_source_ip": true,
+          "unknown_event_mapping": true,
+          "semantic_mapping_status": "descriptor_identity_missing_or_mismatched",
+          "identity_roles": {},
+          "provisional_identity_roles": [],
+          "unresolved_identity_roles": []
+        }
+      },
+      "entities": {
+        "target_is_group": false,
+        "service_name_is_entity": false,
+        "target_server_is_entity": false
+      },
+      "state": null,
+      "labels": {
+        "ru": null,
+        "en": null
+      }
+    }
+  },
+  "assignment": {
+    "results": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "policy_revision": "2",
+              "batch_size": 32,
+              "channel_generations": {},
+              "source_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channels": {
+                "Security": true,
+                "System": true,
+                "Directory Service": true
+              },
+              "allow_event_ids": null
+            }
+          }
+        ],
+        "policy_revision": 2
+      },
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": false,
+            "config": {
+              "policy_revision": "3",
+              "batch_size": 32,
+              "channel_generations": {},
+              "source_name": "fixture-dc",
+              "connect_address": "fixture-endpoint",
+              "channels": {
+                "Security": true,
+                "System": true,
+                "Directory Service": true
+              },
+              "allow_event_ids": null
+            }
+          }
+        ],
+        "policy_revision": 3
+      }
+    ],
+    "calls": [
+      [
+        "select * from sli_agents where id=%s for update",
+        [
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      ],
+      [
+        "insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(%s,%s,%s::jsonb,%s::jsonb) on conflict(agent_id,revision) do nothing",
+        [
+          "00000000-0000-4000-8000-000000000001",
+          1,
+          "[]",
+          "{\"state\": \"active\", \"interval_seconds\": 60, \"batch_size\": 32, \"rate_limit_per_minute\": 120, \"spool_max_bytes\": 67108864, \"manage_windows_audit\": false, \"audit_process_command_line\": false}"
+        ]
+      ],
+      [
+        "insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(%s,%s,%s::jsonb,%s::jsonb) on conflict(agent_id,revision) do nothing",
+        [
+          "00000000-0000-4000-8000-000000000001",
+          2,
+          "[{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": true, \"config\": {\"policy_revision\": \"2\", \"batch_size\": 32, \"channel_generations\": {}, \"source_name\": \"fixture-dc\", \"connect_address\": \"fixture-endpoint\", \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"allow_event_ids\": null}}]",
+          "{\"state\": \"active\", \"interval_seconds\": 60, \"batch_size\": 32, \"rate_limit_per_minute\": 120, \"spool_max_bytes\": 67108864, \"manage_windows_audit\": false, \"audit_process_command_line\": false}"
+        ]
+      ],
+      [
+        "update sli_agents set assigned_modules=%s::jsonb,policy_revision=%s where id=%s",
+        [
+          "[{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": true, \"config\": {\"policy_revision\": \"2\", \"batch_size\": 32, \"channel_generations\": {}, \"source_name\": \"fixture-dc\", \"connect_address\": \"fixture-endpoint\", \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"allow_event_ids\": null}}]",
+          2,
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      ],
+      [
+        "insert into sli_agent_audit(action,actor,target,details) values(%s,%s,%s,%s::jsonb)",
+        [
+          "module_assign",
+          "session:1",
+          "00000000-0000-4000-8000-000000000001",
+          "{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": true, \"policy_sha256\": \"b4dd4028deecaf9037dce52e5dec5b57029178bfde90d3166851d7ff75347aca\", \"revision\": 2, \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"changed_fields\": [\"connect_address\", \"source_name\"]}"
+        ]
+      ],
+      [
+        "select * from sli_agents where id=%s for update",
+        [
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      ],
+      [
+        "insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(%s,%s,%s::jsonb,%s::jsonb) on conflict(agent_id,revision) do nothing",
+        [
+          "00000000-0000-4000-8000-000000000001",
+          2,
+          "[{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": true, \"config\": {\"policy_revision\": \"2\", \"batch_size\": 32, \"channel_generations\": {}, \"source_name\": \"fixture-dc\", \"connect_address\": \"fixture-endpoint\", \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"allow_event_ids\": null}}]",
+          "{\"state\": \"active\", \"interval_seconds\": 60, \"batch_size\": 32, \"rate_limit_per_minute\": 120, \"spool_max_bytes\": 67108864, \"manage_windows_audit\": false, \"audit_process_command_line\": false}"
+        ]
+      ],
+      [
+        "insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(%s,%s,%s::jsonb,%s::jsonb) on conflict(agent_id,revision) do nothing",
+        [
+          "00000000-0000-4000-8000-000000000001",
+          3,
+          "[{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": false, \"config\": {\"policy_revision\": \"3\", \"batch_size\": 32, \"channel_generations\": {}, \"source_name\": \"fixture-dc\", \"connect_address\": \"fixture-endpoint\", \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"allow_event_ids\": null}}]",
+          "{\"state\": \"active\", \"interval_seconds\": 60, \"batch_size\": 32, \"rate_limit_per_minute\": 120, \"spool_max_bytes\": 67108864, \"manage_windows_audit\": false, \"audit_process_command_line\": false}"
+        ]
+      ],
+      [
+        "update sli_agents set assigned_modules=%s::jsonb,policy_revision=%s where id=%s",
+        [
+          "[{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": false, \"config\": {\"policy_revision\": \"3\", \"batch_size\": 32, \"channel_generations\": {}, \"source_name\": \"fixture-dc\", \"connect_address\": \"fixture-endpoint\", \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"allow_event_ids\": null}}]",
+          3,
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      ],
+      [
+        "insert into sli_agent_audit(action,actor,target,details) values(%s,%s,%s,%s::jsonb)",
+        [
+          "module_assign",
+          "session:1",
+          "00000000-0000-4000-8000-000000000001",
+          "{\"module_id\": \"sli.windows.ad-dc\", \"enabled\": false, \"policy_sha256\": \"036252caf6f8c26e5946fb5a67aeebe483d58bf200ce8dcc724b0e38032aabe2\", \"revision\": 3, \"channels\": {\"Security\": true, \"System\": true, \"Directory Service\": true}, \"changed_fields\": [\"connect_address\", \"source_name\"]}"
+        ]
+      ]
+    ],
+    "agent": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "host_id": "00000000-0000-4000-8000-000000000002",
+      "status": "active",
+      "assigned_modules": [
+        {
+          "module_id": "sli.windows.ad-dc",
+          "enabled": false,
+          "config": {
+            "policy_revision": "3",
+            "batch_size": 32,
+            "channel_generations": {},
+            "source_name": "fixture-dc",
+            "connect_address": "fixture-endpoint",
+            "channels": {
+              "Security": true,
+              "System": true,
+              "Directory Service": true
+            },
+            "allow_event_ids": null
+          }
+        }
+      ],
+      "policy_revision": 3,
+      "applied_policy_revision": 0,
+      "rights_probe": {}
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "stage": "DB-STORAGE-OPT-1-FINALIZER",
+  "status": "source_ready_finalization_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "purpose": "Define the final acceptance gate for DB-STORAGE-OPT-1. This source-only finalizer does not close the storage optimization stage because live backfill, cutover, FK cutover and reclaim evidence are intentionally absent.",
+  "accepted_source_gates": [
+    "STORAGE-V2-CONTROLLED-PRODUCTION-PREP-1",
+    "STORAGE-V2-CONTROLLED-PRODUCTION-BACKFILL-1",
+    "STORAGE-V2-FUNCTIONAL-SHADOW-1",
+    "STORAGE-V2-READ-WRITE-CUTOVER-1",
+    "STORAGE-V2-EXTERNAL-FK-CUTOVER-1",
+    "STORAGE-V2-DR-RECLAIM-1"
+  ],
+  "required_live_evidence_before_final_acceptance": [
+    {
+      "id": "controlled_production_backfill",
+      "required_status": "backfill_completed_no_cutover",
+      "must_prove": ["data_loss=0", "V1 counts unchanged", "archive coverage 100", "checkpoint completed"]
+    },
+    {
+      "id": "functional_shadow",
+      "required_status": "shadow_completed_no_cutover",
+      "must_prove": ["all required surfaces covered", "identity mismatches=0", "unbounded archive scans=0"]
+    },
+    {
+      "id": "read_write_cutover",
+      "required_status": "cutover_completed_with_rollback_window",
+      "must_prove": ["read and write approvals separate", "rollback window retained", "outbox lag accepted"]
+    },
+    {
+      "id": "external_fk_cutover",
+      "required_status": "fk_cutover_completed_reversible",
+      "must_prove": ["migration 12 applied", "retained references validated", "rollback to V1 references still possible before reclaim"]
+    },
+    {
+      "id": "dr_reclaim",
+      "required_status": "reclaim_completed_with_verified_dr",
+      "must_prove": ["fresh external restore proof", "relations dropped exactly event_entity_links/events/observed_entities", "no dump/archive deletion", "owner irreversible approval"]
+    }
+  ],
+  "final_acceptance_measurements": [
+    "production_database_bytes_before_reclaim",
+    "production_database_bytes_after_reclaim",
+    "v2_archive_bytes",
+    "dump_bytes_after_reclaim",
+    "dump_duration_ms_after_reclaim",
+    "restore_duration_ms_after_reclaim",
+    "rto_seconds_after_reclaim",
+    "query_p95_fast_search",
+    "query_p95_deep_search_bounded",
+    "report_smoke_status",
+    "findings_evidence_smoke_status"
+  ],
+  "acceptance": {
+    "required_status": "db_storage_opt1_accepted",
+    "source_only_finalizer_status": "finalization_blocked_waiting_live_evidence",
+    "minimum_measured_ratio": 2.5,
+    "required_dropped_relations": ["event_entity_links", "events", "observed_entities"],
+    "data_loss": 0,
+    "unexplained_functional_mismatches": 0,
+    "backup_restore_required": true,
+    "finalizer_accepts_without_live_evidence": false
+  },
+  "strictly_forbidden": [
+    "mark DB-STORAGE-OPT-1 accepted from source-only gates",
+    "mark DB-STORAGE-OPT-1 accepted before live reclaim",
+    "mark DB-STORAGE-OPT-1 accepted without measured post-reclaim database size",
+    "mark DB-STORAGE-OPT-1 accepted if backups or archives were deleted",
+    "mark DB-STORAGE-OPT-1 accepted if SQL rollback is claimed after V1 drop"
+  ],
+  "next_stage_after_live_acceptance": {
+    "id": "SECURITY-PACKAGING-BOUNDARY-1",
+    "authorized_by_this_source_only_finalizer": false
+  }
+}

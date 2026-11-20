@@ -1,0 +1,360 @@
+[
+  {
+    "current": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2024-01-01T00:00:00Z",
+          "lastLogonTimestamp": "2024-01-01T00:00:00Z",
+          "sourceStates": {
+            "directory": {
+              "status": "observed",
+              "observed_at": "2026-11-01T12:00:00Z"
+            }
+          },
+          "memberships": {
+            "status": "partial",
+            "unresolved": [
+              "unknown"
+            ],
+            "effective": [
+              {
+                "id": "group:1",
+                "name": "Example watch",
+                "watchGroup": true,
+                "relation": "nested"
+              }
+            ]
+          },
+          "lockedOut": true,
+          "passwordExpired": true,
+          "accountExpirationDate": "2026-01-01T00:00:00Z",
+          "userAccountControl": 4260000,
+          "trustedForDelegation": true,
+          "trustedToAuthForDelegation": true,
+          "useDesKeyOnly": true,
+          "servicePrincipalNames": [
+            "HTTP/service.example.test"
+          ]
+        }
+      ]
+    },
+    "previous": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2026-10-31T12:00:00Z",
+          "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+          "sourceStates": {
+            "directory": {
+              "status": "observed",
+              "observed_at": "2026-11-01T12:00:00Z"
+            }
+          },
+          "memberships": {
+            "status": "observed",
+            "direct": [],
+            "effective": [],
+            "paths": [],
+            "unresolved": []
+          }
+        }
+      ]
+    },
+    "rows": [
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "locked_changed",
+        "label": "LockedOut: False → True",
+        "field": "lockedOut",
+        "before": "False",
+        "after": "True",
+        "change_group": "Пароль и вход",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "accountExpirationDate_changed",
+        "label": "Срок учётной записи",
+        "field": "accountExpirationDate",
+        "before": null,
+        "after": "2026-01-01T00:00:00Z",
+        "change_group": "Учётная запись",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "passwordLastSet_changed",
+        "label": "PasswordLastSet",
+        "field": "passwordLastSet",
+        "before": "2026-10-31T12:00:00Z",
+        "after": "2024-01-01T00:00:00Z",
+        "change_group": "Пароль и вход",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "passwordExpired_changed",
+        "label": "PasswordExpired",
+        "field": "passwordExpired",
+        "before": null,
+        "after": true,
+        "change_group": "Пароль и вход",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "trustedForDelegation_changed",
+        "label": "TrustedForDelegation",
+        "field": "trustedForDelegation",
+        "before": null,
+        "after": true,
+        "change_group": "Security-related",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "trustedToAuthForDelegation_changed",
+        "label": "TrustedToAuthForDelegation",
+        "field": "trustedToAuthForDelegation",
+        "before": null,
+        "after": true,
+        "change_group": "Security-related",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "useDesKeyOnly_changed",
+        "label": "UseDESKeyOnly",
+        "field": "useDesKeyOnly",
+        "before": null,
+        "after": true,
+        "change_group": "Security-related",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "effective_group_added",
+        "label": "Добавлено эффективное членство",
+        "field": "Example watch",
+        "before": null,
+        "after": "Example watch",
+        "change_group": "Членство",
+        "note": ""
+      }
+    ]
+  },
+  {
+    "current": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2026-10-31T12:00:00Z",
+          "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+          "sourceStates": {
+            "directory": {
+              "status": "observed",
+              "observed_at": "2026-11-01T12:00:00Z"
+            }
+          },
+          "memberships": {
+            "status": "observed",
+            "direct": [],
+            "effective": [],
+            "paths": [],
+            "unresolved": []
+          }
+        }
+      ]
+    },
+    "previous": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2027-01-01T00:00:00Z",
+          "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+          "sourceStates": {
+            "directory": {
+              "status": "partial"
+            }
+          },
+          "memberships": {
+            "status": "observed",
+            "direct": [],
+            "effective": [],
+            "paths": [],
+            "unresolved": []
+          }
+        }
+      ]
+    },
+    "rows": [
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "passwordLastSet_changed",
+        "label": "PasswordLastSet",
+        "field": "passwordLastSet",
+        "before": "2027-01-01T00:00:00Z",
+        "after": "2026-10-31T12:00:00Z",
+        "change_group": "Пароль и вход",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "source_status_changed",
+        "label": "Состояние источника",
+        "field": "directory",
+        "before": "partial",
+        "after": "observed",
+        "change_group": "Качество источников",
+        "note": ""
+      }
+    ]
+  },
+  {
+    "current": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2026-10-31T12:00:00Z",
+          "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+          "sourceStates": {
+            "exact_last_logon": {
+              "status": "partial"
+            }
+          },
+          "memberships": {
+            "status": "observed",
+            "direct": [],
+            "effective": [],
+            "paths": [],
+            "unresolved": []
+          },
+          "exactLastLogon": "2026-11-01T01:00:00Z"
+        }
+      ]
+    },
+    "previous": {
+      "users": [
+        {
+          "id": "user:11",
+          "entityId": 11,
+          "objectGuid": "00000000-0000-0000-0000-000000000011",
+          "sid": "S-1-5-21-100000001-200000002-300000003-1011",
+          "displayName": "Example user",
+          "samAccountName": "example",
+          "userPrincipalName": "example@example.test",
+          "enabled": true,
+          "passwordLastSet": "2026-10-31T12:00:00Z",
+          "lastLogonTimestamp": "2026-10-31T12:00:00Z",
+          "sourceStates": {
+            "directory": {
+              "status": "observed",
+              "observed_at": "2026-11-01T12:00:00Z"
+            }
+          },
+          "memberships": {
+            "status": "observed",
+            "direct": [],
+            "effective": [],
+            "paths": [],
+            "unresolved": []
+          }
+        }
+      ]
+    },
+    "rows": [
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "source_status_changed",
+        "label": "Состояние источника",
+        "field": "directory",
+        "before": "observed",
+        "after": null,
+        "change_group": "Качество источников",
+        "note": ""
+      },
+      {
+        "user_id": "user:11",
+        "entity_id": 11,
+        "display_name": "Example user",
+        "sam": "example",
+        "type": "source_status_changed",
+        "label": "Состояние источника",
+        "field": "exact_last_logon",
+        "before": null,
+        "after": "partial",
+        "change_group": "Качество источников",
+        "note": ""
+      }
+    ]
+  }
+]

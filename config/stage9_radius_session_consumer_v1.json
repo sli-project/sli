@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-session-consumer.v1",
+  "status": "prepared_disabled_only",
+  "required_migration": 61,
+  "subscription_id": "vpn-radius-session-observations-radius01-v1",
+  "consumer_role": "adlog_radius_session_consumer",
+  "read_model_contract_id": "sli.radius-session-read-model.v1",
+  "resource_group": "vpn.sessions",
+  "maximum_deliveries_per_claim": 50,
+  "maximum_observations_per_session_key": 10000,
+  "lease_seconds": 120,
+  "maximum_attempts": 5,
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "production_migration_applied": false,
+  "source_contact_allowed": false,
+  "outcomes": [
+    "projected",
+    "identity_unresolved",
+    "timestamp_unresolved"
+  ],
+  "prohibited_actions": [
+    "source_contact",
+    "runtime_start",
+    "autostart",
+    "production_apply_without_disposable_acceptance",
+    "observation_update",
+    "evidence_delete"
+  ]
+}

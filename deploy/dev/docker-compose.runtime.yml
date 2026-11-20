@@ -1,0 +1,11 @@
+# Include explicitly; the default stack does not require a runtime network.
+services:
+  dev:
+    networks: [default, runtime]
+  dev-docker:
+    networks: [default, runtime]
+
+networks:
+  runtime:
+    external: true
+    name: ${SLI_RUNTIME_NETWORK:?Set the existing runtime Compose network name}

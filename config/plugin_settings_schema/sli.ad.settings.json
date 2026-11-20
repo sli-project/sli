@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.ad",
+  "name": "plugins.sli.ad.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "reports.domain_fqdn": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "minLength": 1,
+        "maxLength": 253,
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+        "default": null,
+        "x-label": "plugins.sli.ad.settings.reports.domain_fqdn.label",
+        "x-help": "plugins.sli.ad.settings.reports.domain_fqdn.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "ad.snapshot_history_days": {
+        "type": "integer",
+        "minimum": 7,
+        "maximum": 3650,
+        "default": 365,
+        "x-label": "plugins.sli.ad.settings.ad.snapshot_history_days.label",
+        "x-help": "plugins.sli.ad.settings.ad.snapshot_history_days.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "ad.password_max_age_days": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3650,
+        "default": 365,
+        "x-label": "plugins.sli.ad.settings.ad.password_max_age_days.label",
+        "x-help": "plugins.sli.ad.settings.ad.password_max_age_days.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "ad.inactivity_days": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3650,
+        "default": 90,
+        "x-label": "plugins.sli.ad.settings.ad.inactivity_days.label",
+        "x-help": "plugins.sli.ad.settings.ad.inactivity_days.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "ad.service_account_exceptions": {
+        "type": "array",
+        "maxItems": 1000,
+        "items": {
+          "type": [
+            "string",
+            "object"
+          ],
+          "properties": {
+            "sid": {
+              "type": "string",
+              "maxLength": 184,
+              "pattern": "^S-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+$"
+            },
+            "excluded_by": {
+              "type": "string"
+            },
+            "excluded_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sid"
+          ],
+          "additionalProperties": false,
+          "pattern": "^S-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+$",
+          "maxLength": 184
+        },
+        "default": [],
+        "x-label": "plugins.sli.ad.settings.ad.service_account_exceptions.label",
+        "x-help": "plugins.sli.ad.settings.ad.service_account_exceptions.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "windows_auth.distributed_window_hours": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 744,
+        "default": 24,
+        "x-label": "plugins.sli.ad.settings.windows_auth.distributed_window_hours.label",
+        "x-help": "plugins.sli.ad.settings.windows_auth.distributed_window_hours.help",
+        "x-group": "advanced",
+        "x-secret": false
+      },
+      "windows_auth.distributed_min_accounts": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 744,
+        "default": 10,
+        "x-label": "plugins.sli.ad.settings.windows_auth.distributed_min_accounts.label",
+        "x-help": "plugins.sli.ad.settings.windows_auth.distributed_min_accounts.help",
+        "x-group": "advanced",
+        "x-secret": false
+      },
+      "windows_auth.distributed_min_sources": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 744,
+        "default": 5,
+        "x-label": "plugins.sli.ad.settings.windows_auth.distributed_min_sources.label",
+        "x-help": "plugins.sli.ad.settings.windows_auth.distributed_min_sources.help",
+        "x-group": "advanced",
+        "x-secret": false
+      },
+      "windows_auth.distributed_max_failures_per_account": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 744,
+        "default": 3,
+        "x-label": "plugins.sli.ad.settings.windows_auth.distributed_max_failures_per_account.label",
+        "x-help": "plugins.sli.ad.settings.windows_auth.distributed_max_failures_per_account.help",
+        "x-group": "advanced",
+        "x-secret": false
+      }
+    },
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": []
+  },
+  "rules": [
+    {
+      "rule_id": "password_age",
+      "name": "plugins.sli.ad.rules.password_age.name",
+      "settings": [
+        "ad.password_max_age_days",
+        "ad.service_account_exceptions"
+      ],
+      "core_settings": []
+    },
+    {
+      "rule_id": "inactivity",
+      "name": "plugins.sli.ad.rules.inactivity.name",
+      "settings": [
+        "ad.inactivity_days",
+        "ad.service_account_exceptions"
+      ],
+      "core_settings": []
+    }
+  ],
+  "permissions": [
+    "ad.computer-logons",
+    "ad.computers",
+    "ad.computers.v2",
+    "ad.computers.v4",
+    "ad.computers.v5",
+    "ad.computers.v6",
+    "ad.privileged",
+    "ad.state",
+    "ad.users",
+    "ad.users.v2"
+  ],
+  "migration_directory": "config/postgres_migrations"
+}

@@ -1,0 +1,1160 @@
+[
+  {
+    "case": "exact",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "observed",
+    "expected": [
+      {
+        "kind": "decoy",
+        "rule_id": "qw.account-decoy",
+        "rule_version": 1,
+        "rule_sha256": "22b95bf4518faf7f5c1599e02a3bb8f67ada796308dc972e120137f778a72768",
+        "policy_revision": 1,
+        "evaluation_mode": "enabled",
+        "entity_key": "aef1a9f8cfa445b2f2ca076a06261720d8364ab9637f373621d254382f7cd5ed",
+        "episode_key": "98d5afcc403d6af80ece28b03ff07b44957b78b1f5cd463cc543c46d64fcef9c",
+        "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+        "received_at_utc": "2026-01-02T00:00:00+00:00",
+        "evidence_refs": [
+          {
+            "storage_kind": "core_event",
+            "native_id": "7",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scope": {
+              "installation_id": "11111111-1111-1111-1111-111111111111",
+              "plugin_id": "sli.windows.ad-dc",
+              "source_instance_id": "synthetic",
+              "source_generation": "1",
+              "collection_scope_id": ""
+            }
+          }
+        ],
+        "base_severity": "high",
+        "effective_severity": "high",
+        "severity_reasons": [
+          "decoy_authentication"
+        ],
+        "quality": "good",
+        "conclusion_state": "observed",
+        "decoy_context": {
+          "label_id": "33333333-3333-3333-3333-333333333333",
+          "label_revision": 1,
+          "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+          "identity_sha256": "43e72dbbc5fe4bd5e13a5a702d19a2befe696702d21cf96fceaf774709c43dd0"
+        }
+      }
+    ]
+  },
+  {
+    "case": "ambiguous",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        },
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "requires_review",
+    "expected": []
+  },
+  {
+    "case": "expired",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": "2026-01-01T00:00:00+00:00",
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2026-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": "2026-01-01T00:00:00+00:00",
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2026-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "no_match",
+    "expected": []
+  },
+  {
+    "case": "future",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-03T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "not_applicable",
+    "expected": []
+  },
+  {
+    "case": "wrong_type",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.created",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "not_applicable",
+    "expected": []
+  },
+  {
+    "case": "provisional",
+    "watch": false,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sam:example.test\\synthetic"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sam:example.test\\synthetic",
+            "state": "provisional",
+            "provisional": true
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sam:example.test\\synthetic",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "observed",
+    "expected": [
+      {
+        "kind": "decoy",
+        "rule_id": "qw.account-decoy",
+        "rule_version": 1,
+        "rule_sha256": "22b95bf4518faf7f5c1599e02a3bb8f67ada796308dc972e120137f778a72768",
+        "policy_revision": 1,
+        "evaluation_mode": "enabled",
+        "entity_key": "aef1a9f8cfa445b2f2ca076a06261720d8364ab9637f373621d254382f7cd5ed",
+        "episode_key": "98d5afcc403d6af80ece28b03ff07b44957b78b1f5cd463cc543c46d64fcef9c",
+        "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+        "received_at_utc": "2026-01-02T00:00:00+00:00",
+        "evidence_refs": [
+          {
+            "storage_kind": "core_event",
+            "native_id": "7",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scope": {
+              "installation_id": "11111111-1111-1111-1111-111111111111",
+              "plugin_id": "sli.windows.ad-dc",
+              "source_instance_id": "synthetic",
+              "source_generation": "1",
+              "collection_scope_id": ""
+            }
+          }
+        ],
+        "base_severity": "high",
+        "effective_severity": "high",
+        "severity_reasons": [
+          "decoy_authentication"
+        ],
+        "quality": "good",
+        "conclusion_state": "observed",
+        "decoy_context": {
+          "label_id": "33333333-3333-3333-3333-333333333333",
+          "label_revision": 1,
+          "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+          "identity_sha256": "43e72dbbc5fe4bd5e13a5a702d19a2befe696702d21cf96fceaf774709c43dd0"
+        }
+      }
+    ]
+  },
+  {
+    "case": "exact",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "observed",
+    "expected": [
+      {
+        "kind": "watch",
+        "rule_id": "qw.account-watch",
+        "rule_version": 1,
+        "rule_sha256": "80df9e79b0d089c1b39cd0af5dba39179fafd81b3cbb0ac94ca1c15b85d61db8",
+        "policy_revision": 1,
+        "evaluation_mode": "enabled",
+        "entity_key": "aef1a9f8cfa445b2f2ca076a06261720d8364ab9637f373621d254382f7cd5ed",
+        "episode_key": "d0f18abc7d3b893ceaaea09c9d756667fd6216cc3e26a1a79eeb43d66523b299",
+        "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+        "received_at_utc": "2026-01-02T00:00:00+00:00",
+        "evidence_refs": [
+          {
+            "storage_kind": "core_event",
+            "native_id": "7",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scope": {
+              "installation_id": "11111111-1111-1111-1111-111111111111",
+              "plugin_id": "sli.windows.ad-dc",
+              "source_instance_id": "synthetic",
+              "source_generation": "1",
+              "collection_scope_id": ""
+            }
+          }
+        ],
+        "base_severity": "medium",
+        "effective_severity": "high",
+        "severity_reasons": [
+          "watch"
+        ],
+        "quality": "good",
+        "conclusion_state": "observed",
+        "watch_context": {
+          "entry_id": "33333333-3333-3333-3333-333333333333",
+          "entry_revision": 1,
+          "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+          "source_event_id": 7,
+          "identity_sha256": "43e72dbbc5fe4bd5e13a5a702d19a2befe696702d21cf96fceaf774709c43dd0",
+          "family": "authentication"
+        }
+      }
+    ]
+  },
+  {
+    "case": "ambiguous",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        },
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "no_match",
+    "expected": []
+  },
+  {
+    "case": "expired",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": "2026-01-01T00:00:00+00:00",
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2026-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": "2026-01-01T00:00:00+00:00",
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2026-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "no_match",
+    "expected": []
+  },
+  {
+    "case": "future",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-03T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "not_applicable",
+    "expected": []
+  },
+  {
+    "case": "wrong_type",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.created",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sid:S-1-5-21-100000001-200000002-300000003-1002"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+            "state": "resolved",
+            "provisional": false
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sid:S-1-5-21-100000001-200000002-300000003-1002",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "not_applicable",
+    "expected": []
+  },
+  {
+    "case": "provisional",
+    "watch": true,
+    "scope": {
+      "installation_id": "11111111-1111-1111-1111-111111111111",
+      "plugin_id": "sli.windows.ad-dc",
+      "source_instance_id": "synthetic",
+      "source_generation": "1",
+      "collection_scope_id": ""
+    },
+    "row": {
+      "event_id": 4625,
+      "semantic_type": "authentication.session.failed",
+      "source_event_id": 7,
+      "occurred_at_utc": "2026-01-01T00:00:00+00:00",
+      "normalized_event_id": "44444444-4444-4444-4444-444444444444",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "roles_json": {
+        "affected_entity": "sam:example.test\\synthetic"
+      },
+      "quality_json": {
+        "identity_roles": {
+          "affected_entity": {
+            "key": "sam:example.test\\synthetic",
+            "state": "provisional",
+            "provisional": true
+          }
+        }
+      },
+      "identities": [
+        {
+          "role": "affected_entity",
+          "key": "sam:example.test\\synthetic",
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      ],
+      "labels": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "entries": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "revision": 1,
+          "kind": "account",
+          "active": true,
+          "identity": {
+            "sid": "S-1-5-21-100000001-200000002-300000003-1002",
+            "guid": "22222222-2222-2222-2222-222222222222"
+          },
+          "active_from": "2025-01-01T00:00:00+00:00",
+          "active_to": null,
+          "valid_from": "2025-01-01T00:00:00+00:00",
+          "valid_to": null,
+          "expires_at": "2027-01-01T00:00:00+00:00"
+        }
+      ],
+      "event_item": {
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc.example.test",
+        "event_data": {}
+      }
+    },
+    "now": "2026-01-02T00:00:00+00:00",
+    "expected_state": "no_match",
+    "expected": []
+  }
+]

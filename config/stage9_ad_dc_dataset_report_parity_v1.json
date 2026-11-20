@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "parity_id": "sli.stage9.ad-dc.dataset-report-parity.v1",
+  "mode": "source_contract_only",
+  "registration_id": "sli.stage9.ad-dc.compatibility.v1",
+  "contracts": [
+    {
+      "primary_source_sections": ["directory_accounts"],
+      "enrichment_source_sections": [
+        "directory_group_graph",
+        "directory_exact_logon",
+        "domain_posture",
+        "domain_health"
+      ],
+      "dataset_key": "ad.audit.snapshot",
+      "dataset_version": 1,
+      "report_key": "ad.state",
+      "report_version": 1,
+      "target_path": "/ad-report",
+      "scope_kinds": ["all", "server", "domain"]
+    },
+    {
+      "primary_source_sections": ["privileged_membership"],
+      "enrichment_source_sections": ["directory_accounts"],
+      "dataset_key": "ad.accounts.privileged",
+      "dataset_version": 1,
+      "report_key": "ad.privileged",
+      "report_version": 1,
+      "target_path": "/privileged-report",
+      "scope_kinds": ["all", "server", "domain"]
+    },
+    {
+      "primary_source_sections": ["vpn_membership"],
+      "enrichment_source_sections": [
+        "directory_accounts",
+        "privileged_membership"
+      ],
+      "dataset_key": "ad.accounts.vpn",
+      "dataset_version": 1,
+      "report_key": "vpn.audit",
+      "report_version": 1,
+      "target_path": "/vpn-report",
+      "scope_kinds": ["all", "server", "domain"]
+    },
+    {
+      "primary_source_sections": ["gpo_governance"],
+      "enrichment_source_sections": [],
+      "dataset_key": "ad.gpo.governance",
+      "dataset_version": 1,
+      "report_key": "ad.gpo.review",
+      "report_version": 1,
+      "target_path": "/gpo-report",
+      "scope_kinds": ["all", "server", "domain"]
+    }
+  ],
+  "changes": {
+    "source_contact": false,
+    "database": false,
+    "migration": false,
+    "cursor": false,
+    "runtime_activation": false,
+    "autostart": false,
+    "access_assignment": false,
+    "dataset_contract": false,
+    "report_publication": false,
+    "frontend": false,
+    "read_path_cutover": false,
+    "product_runtime_ownership": false
+  },
+  "next_gate": "adapter_and_worker_parity_without_read_path_cutover"
+}

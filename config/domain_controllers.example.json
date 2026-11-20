@@ -1,0 +1,15 @@
+{
+  "description": "Runtime uses FQDN connect_address. owner_confirmed_ip is DNS/readback evidence and is never used as a connection endpoint.",
+  "domain_controllers": [
+    {
+      "hostname": "DC1",
+      "connect_address": "dc1.example.test",
+      "owner_confirmed_ip": "198.51.100.23"
+    },
+    {
+      "hostname": "DC2",
+      "connect_address": "dc2.example.test",
+      "owner_confirmed_ip": "198.51.100.24"
+    }
+  ]
+}

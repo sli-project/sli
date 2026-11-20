@@ -1,0 +1,91 @@
+{
+  "fixture_id": "shared-windows-security-pull",
+  "archetype": "shared_bounded_pull",
+  "runtime_enabled": false,
+  "package": {
+    "plugin_id": "sli.remote-access",
+    "plugin_version": "1.0.0-fixture",
+    "delivery": "bundled_reviewed",
+    "handler_id": "remote-access-fixture-handler"
+  },
+  "source_instance": {
+    "source_instance_id": "source-fixture-windows-dc",
+    "source_kind": "windows_event_log",
+    "endpoint_identity": "fixture:windows-endpoint-1"
+  },
+  "streams": [
+    {
+      "stream_id": "stream-fixture-security",
+      "stream": "Security",
+      "transport_binding": "windows-eventlog-readonly-v1",
+      "cursor_epoch": 1,
+      "collection_policy": "full_channel",
+      "history_available_from": "fixture-watermark-0"
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscription_id": "subscription-fixture-ad",
+      "plugin_id": "sli.windows.ad-dc",
+      "component_id": "ad-security-normalizer",
+      "component_version": "1.0.0-fixture",
+      "stream_id": "stream-fixture-security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "event_keys": ["4624", "4634"],
+      "schema_version": 1,
+      "delivery_position": 0
+    },
+    {
+      "subscription_id": "subscription-fixture-nps",
+      "plugin_id": "sli.remote-access",
+      "component_id": "nps-security-normalizer",
+      "component_version": "1.0.0-fixture",
+      "stream_id": "stream-fixture-security",
+      "provider": "Microsoft-Windows-Security-Auditing",
+      "event_keys": ["6272", "6273"],
+      "schema_version": 1,
+      "delivery_position": 0
+    }
+  ],
+  "worker": {
+    "worker_instance_id": "worker-fixture-remote-access-v1",
+    "component_id": "nps-security-normalizer",
+    "component_version": "1.0.0-fixture",
+    "source_instance_id": "source-fixture-windows-dc",
+    "process_generation": 1,
+    "host_class": "generic_process_and_db_isolated_host",
+    "boundaries": [
+      "windows_identity",
+      "job_object",
+      "working_directory_acl",
+      "network_policy",
+      "component_secret_handle",
+      "allowlisted_handler",
+      "postgres_role",
+      "db_timeouts",
+      "runtime_identity"
+    ],
+    "network_capability": "none"
+  },
+  "states": {
+    "package_lifecycle": "registered",
+    "desired_activation": "disabled",
+    "observed_health": "unknown",
+    "component_runtime": "stopped",
+    "migration_state": "not_required",
+    "source_state": "fixture_only",
+    "queue_state": "empty",
+    "dataset_state": "not_materialized"
+  },
+  "storage": {
+    "raw_owner": "core",
+    "canonical_evidence_owner": "core",
+    "derived_backend": "postgresql"
+  },
+  "detach_reader": {
+    "kind": "core_immutable_snapshot",
+    "source_contact": false,
+    "jobs_enabled": false,
+    "write_rights": false
+  }
+}

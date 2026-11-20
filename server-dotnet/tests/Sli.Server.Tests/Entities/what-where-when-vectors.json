@@ -1,0 +1,573 @@
+{
+  "source": "server/sli/entities/what_where_when_projection.py; server/sli/sources/computers_v6_source.py",
+  "computers": {
+    "objects": [
+      {
+        "objectGuid": "11111111-1111-1111-1111-111111111111",
+        "name": "PC1",
+        "dnsHostName": "pc1.example.test",
+        "deviceType": "workstation",
+        "ipv4s": [
+          "192.0.2.1"
+        ],
+        "ipv6s": [
+          "2001:db8::1"
+        ]
+      },
+      {
+        "objectGuid": "22222222-2222-2222-2222-222222222222",
+        "name": "PC2",
+        "deviceType": "desktop",
+        "ipv4s": [
+          "192.0.2.2"
+        ]
+      },
+      {
+        "objectGuid": "33333333-3333-3333-3333-333333333333",
+        "name": "SERVER",
+        "deviceType": "server",
+        "ipv4s": [
+          "192.0.2.3"
+        ]
+      }
+    ]
+  },
+  "classifications": {
+    "ivanov": false,
+    "svc.backup": true
+  },
+  "cases": [
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4625,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "not_successful_logon_event"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "user_missing"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "PC1$",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "machine_account"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "SYSTEM",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "system_account"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "unknown",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "classification_unknown"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "svc.backup",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "service_account"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3",
+        "target_user_sid": "S-1-5-18"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "system_account"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "12"
+      },
+      "expected": {
+        "status": "filtered",
+        "reason": "logon_type_not_user_success"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": " PC1. ",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "unknown",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.2",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "ambiguous",
+        "reason": "name_ip_conflict"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "unknown",
+        "ip_address": "127.0.0.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "unmatched",
+        "reason": "computer_not_resolved"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "unknown",
+        "ip_address": "::1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "unmatched",
+        "reason": "computer_not_resolved"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "unknown",
+        "ip_address": "::",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "unmatched",
+        "reason": "computer_not_resolved"
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "unknown",
+        "ip_address": "2001:db8::1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T03:45:00+03:00",
+        "target_user_name": "Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    },
+    {
+      "event": {
+        "source_event_id": 10,
+        "source_event_hash": "abababababababababababababababababababababababababababababababab",
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:45:00Z",
+        "target_user_name": "EXAMPLE\\Ivanov",
+        "target_domain_name": "EXAMPLE",
+        "workstation_name": "PC1",
+        "ip_address": "192.0.2.1",
+        "logon_type": "3"
+      },
+      "expected": {
+        "status": "observation",
+        "observation": {
+          "source_event_id": 10,
+          "source_event_hash": "abababababababababababababababababababababababababababababababab",
+          "computer_object_guid": "11111111-1111-1111-1111-111111111111",
+          "computer_name": "PC1",
+          "user_name": "EXAMPLE\\EXAMPLE\\Ivanov",
+          "observed_at_utc": "2026-01-01T00:45:00Z"
+        }
+      }
+    }
+  ],
+  "valid_snapshot": {
+    "schema_version": "2.0",
+    "metadata": {
+      "domain": "example.test",
+      "collection_status": "complete",
+      "collector_version": "v6",
+      "errors": [],
+      "query_dc": "dc",
+      "sources": [
+        {
+          "name": "ad",
+          "status": "observed",
+          "requested": true
+        },
+        {
+          "name": "last_logon_timestamp",
+          "status": "not_collected",
+          "requested": false
+        },
+        {
+          "name": "os",
+          "status": "not_collected",
+          "requested": false
+        },
+        {
+          "name": "site",
+          "status": "not_collected",
+          "requested": false
+        },
+        {
+          "name": "dc_events",
+          "status": "not_collected",
+          "requested": false
+        },
+        {
+          "name": "dns",
+          "status": "not_collected",
+          "requested": false
+        },
+        {
+          "name": "exact_last_logon",
+          "status": "not_collected",
+          "requested": false
+        }
+      ],
+      "completed_at": "2026-01-01T00:01:00Z",
+      "snapshot_id": "44444444-4444-4444-4444-444444444444",
+      "search_base": null,
+      "object_count": 1,
+      "label": "source",
+      "started_at": "2026-01-01T00:00:00Z"
+    },
+    "objects": [
+      {
+        "domain": null,
+        "osVersion": null,
+        "eventLastSeen": null,
+        "adSite": null,
+        "location": null,
+        "spns": null,
+        "trustedToAuthForDelegation": null,
+        "userAccountControl": null,
+        "deviceType": "workstation",
+        "whenChanged": null,
+        "trustedForDelegation": null,
+        "osFamily": null,
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "PC1",
+        "passwordLastSet": null,
+        "sid": null,
+        "enabled": null,
+        "managedBy": null,
+        "classification": null,
+        "distinguishedName": null,
+        "lastLogonTimestamp": null,
+        "description": null,
+        "objectGuid": "11111111-1111-1111-1111-111111111111",
+        "collectionErrors": null,
+        "osName": null,
+        "canonicalName": null,
+        "roleEvidence": null,
+        "exactLastLogon": null,
+        "servicePack": null,
+        "osBuild": null,
+        "queryDc": null,
+        "sources": {
+          "ad": {
+            "source": "ad",
+            "status": "observed",
+            "value": null,
+            "observed_at": "2026-01-01T00:00:00Z",
+            "error": null,
+            "details": null
+          },
+          "last_logon_timestamp": {
+            "source": "last_logon_timestamp",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          },
+          "os": {
+            "source": "os",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          },
+          "site": {
+            "source": "site",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          },
+          "dc_events": {
+            "source": "dc_events",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          },
+          "dns": {
+            "source": "dns",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          },
+          "exact_last_logon": {
+            "source": "exact_last_logon",
+            "status": "not_collected",
+            "value": null,
+            "observed_at": null,
+            "error": null,
+            "details": null
+          }
+        },
+        "ipv4s": [
+          "192.0.2.1"
+        ],
+        "roleHint": null,
+        "ipv6s": [
+          "2001:db8::1"
+        ],
+        "ou": null,
+        "collectorVersion": null,
+        "collectedAt": null,
+        "whenCreated": null,
+        "dnsHostName": "pc1.example.test"
+      }
+    ]
+  },
+  "snapshot_sha256": "4411700cccf40e75d42fad41260a4866ba32444cbb77c2400d0c23f9fbb530f4"
+}

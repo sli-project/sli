@@ -1,0 +1,32 @@
+# Opt in with docker-compose.yml and --profile core-jobs. Do not enable legacy-ad.
+# Drain core jobs before removing this override to restore the old coordinator.
+services:
+  migrate:
+    environment:
+      SLI_CORE_JOB_AD_GPO_PILOT: "1"
+      SLI_JOB_DISPATCHER_LIGHT_PASSWORD_FILE: /run/secrets/job_dispatcher_light
+      SLI_JOB_EXECUTOR_LIGHT_PASSWORD_FILE: /run/secrets/job_executor_light
+      SLI_JOB_PUBLISHER_LIGHT_PASSWORD_FILE: /run/secrets/job_publisher_light
+      SLI_JOB_DISPATCHER_HEAVY_PASSWORD_FILE: /run/secrets/job_dispatcher_heavy
+      SLI_JOB_EXECUTOR_HEAVY_PASSWORD_FILE: /run/secrets/job_executor_heavy
+      SLI_JOB_PUBLISHER_HEAVY_PASSWORD_FILE: /run/secrets/job_publisher_heavy
+      SLI_JOB_DISPATCHER_LONG_PASSWORD_FILE: /run/secrets/job_dispatcher_long
+      SLI_JOB_EXECUTOR_LONG_PASSWORD_FILE: /run/secrets/job_executor_long
+      SLI_JOB_PUBLISHER_LONG_PASSWORD_FILE: /run/secrets/job_publisher_long
+    secrets: [postgres_password, platform_owner_password, semantic_password, storage_password, context_password,
+      job_dispatcher_light, job_executor_light, job_publisher_light,
+      job_dispatcher_heavy, job_executor_heavy, job_publisher_heavy,
+      job_dispatcher_long, job_executor_long, job_publisher_long, history_password]
+  ad-snapshot-manifest-coordinator:
+    profiles: [legacy-ad]
+    environment:
+      SLI_CORE_JOB_AD_GPO_PILOT: "1"
+  executor-light:
+    environment:
+      SLI_CORE_JOB_AD_GPO_PILOT: "1"
+  executor-heavy:
+    environment:
+      SLI_CORE_JOB_AD_GPO_PILOT: "1"
+  executor-long:
+    environment:
+      SLI_CORE_JOB_AD_GPO_PILOT: "1"

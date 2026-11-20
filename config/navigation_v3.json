@@ -1,0 +1,632 @@
+{
+  "contract_id": "sli.navigation.v3",
+  "beta_entries": [
+    "workspace", "problems", "security-events", "events",
+    "ad-report", "users-report", "computers-report", "gpo-report",
+    "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale"
+  ],
+  "global_search": {
+    "path": "/search",
+    "capabilities": ["objects.view", "entity.view"]
+  },
+  "redirects": [
+    { "from": "/report/notifications.channels", "to": "/notifications", "view": "channels" },
+    { "from": "/report/notifications.deliveries", "to": "/notifications", "view": "journal" },
+    { "from": "/objects", "to": "/search" },
+    { "from": "/entities", "to": "/search" },
+    { "from": "/report/ad.computer-logons", "to": "/report/ad.computers.v6", "view": "logons" },
+    { "from": "/report/vpn.accounts", "to": "/report/vpn.connections", "view": "accounts" },
+    { "from": "/vpn-report", "to": "/report/vpn.connections", "view": "accounts" },
+    { "from": "/vpn-connections", "to": "/report/vpn.connections", "view": "connections" }
+  ],
+  "enabled_plugins": [
+    "sli.ad",
+    "sli.gpo",
+    "sli.remote-access",
+    "sli.workstations",
+    "sli.file-audit"
+  ],
+  "core_reports": {
+    "security.problems": "investigation",
+    "security.rule-quality": "investigation",
+    "security.events.chains": "investigation",
+    "events.journal": "investigation",
+    "investigations.workspace": "investigation",
+    "cases.workspace": "investigation",
+    "operations.readiness": "operations",
+    "access.center": "admin",
+    "notifications.channels": "admin",
+    "notifications.deliveries": "admin",
+    "decoys.registry": "admin",
+    "watch.registry": "admin",
+    "security.queue": "investigation",
+    "events.explorer": "investigation"
+  },
+  "sections": [
+    {
+      "id": "overview",
+      "title": "shell.section.overview",
+      "groups": [
+        {
+          "id": "overview",
+          "title": "",
+          "entries": [
+            {
+              "id": "workspace",
+              "label": "shell.nav.workspace",
+              "path": "/",
+              "icon": "grid",
+              "always": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "investigation",
+      "title": "shell.section.investigation",
+      "groups": [
+        {
+          "id": "investigation",
+          "title": "",
+          "entries": [
+            {
+              "id": "problems",
+              "label": "shell.nav.problems",
+              "path": "/report/security.problems",
+              "icon": "warning",
+              "reports": [
+                "security.queue"
+              ],
+              "capabilities": [
+                "problem.view"
+              ]
+            },
+            {
+              "id": "rule-quality",
+              "label": "reports.v2.security.rule-quality.title",
+              "path": "/report/security.rule-quality",
+              "icon": "shield",
+              "capabilities": ["semantic.review"]
+            },
+            {
+              "id": "security-events",
+              "label": "shell.nav.security-events",
+              "path": "/report/security.events.chains",
+              "icon": "shield",
+              "reports": [
+                "security.events.chains"
+              ]
+            },
+            {
+              "id": "events",
+              "label": "shell.nav.events",
+              "path": "/report/events.journal",
+              "icon": "events",
+              "reports": [
+                "events.explorer"
+              ],
+              "capabilities": [
+                "events.view",
+                "event.view"
+              ]
+            },
+            {
+              "id": "cases",
+              "label": "shell.nav.cases",
+              "path": "/investigations",
+              "icon": "case",
+              "reports": [
+                "investigations.workspace",
+                "cases.workspace"
+              ],
+              "capabilities": [
+                "investigations.view",
+                "case.view"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "active-directory",
+      "title": "shell.section.active-directory",
+      "groups": [
+        {
+          "id": "identity",
+          "title": "",
+          "entries": [
+            {
+              "id": "ad-report",
+              "label": "shell.nav.ad-report",
+              "path": "/report/ad.infrastructure",
+              "icon": "database",
+              "reports": [
+                "ad.state"
+              ],
+              "plugin_id": "sli.ad"
+            },
+            {
+              "id": "users-report",
+              "label": "shell.nav.users-report",
+              "path": "/report/ad.users.v2",
+              "icon": "users",
+              "reports": [
+                "ad.users.v2"
+              ],
+              "plugin_id": "sli.ad"
+            }
+          ]
+        },
+        {
+          "id": "computers",
+          "title": "",
+          "entries": [
+            {
+              "id": "computers-report",
+              "label": "shell.nav.computers-report",
+              "path": "/report/ad.computers.v6",
+              "icon": "database",
+              "reports": [
+                "ad.computers.v6",
+                "ad.computer-logons"
+              ],
+              "plugin_id": "sli.ad",
+              "views": [
+                { "id": "computers", "label": "shell.nav.computers-report", "path": "/report/ad.computers.v6", "report_key": "ad.computers.v6", "reports": ["ad.computers.v6"] },
+                { "id": "logons", "label": "shell.nav.logons-report", "path": "/report/ad.computer-logons", "report_key": "ad.computer-logons", "reports": ["ad.computer-logons"] }
+              ]
+            },
+            {
+              "id": "new-logon-pairs-report",
+              "label": "shell.nav.new-logon-pairs-report",
+              "path": "/report/ad.new-logon-pairs",
+              "icon": "report",
+              "reports": [
+                "ad.computer-logons"
+              ],
+              "plugin_id": "sli.ad"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "group-policies",
+      "title": "shell.section.group-policies",
+      "groups": [
+        {
+          "id": "policies",
+          "title": "",
+          "entries": [
+            {
+              "id": "gpo-report",
+              "label": "shell.nav.gpo-report",
+              "path": "/report/ad.gpo.v2",
+              "icon": "settings",
+              "reports": [
+                "ad.gpo.v2"
+              ],
+              "plugin_id": "sli.gpo"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote-access",
+      "title": "shell.section.remote-access",
+      "groups": [
+        {
+          "id": "remote-access",
+          "title": "",
+          "entries": [
+            {
+              "id": "vpn-connections",
+              "datasets": ["vpn.policy-denials"],
+              "label": "vpn.workspace.title",
+              "path": "/report/vpn.connections",
+              "icon": "lock",
+              "reports": [
+                "vpn.connections",
+                "vpn.audit"
+              ],
+              "plugin_id": "sli.remote-access",
+              "views": [
+                { "id": "connections", "label": "shell.nav.vpn-connections", "path": "/report/vpn.connections", "report_key": "vpn.connections", "reports": ["vpn.connections", "vpn.audit"] },
+                { "id": "accounts", "label": "shell.nav.vpn-access", "path": "/report/vpn.accounts", "report_key": "vpn.accounts", "reports": ["vpn.audit"] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workstations",
+      "title": "shell.section.workstations",
+      "groups": [
+        {
+          "id": "workstations",
+          "title": "",
+          "entries": [
+            {
+              "id": "workstations-overview",
+              "label": "workstations.overview.nav_title",
+              "path": "/workstations",
+              "icon": "report",
+              "plugin_id": "sli.workstations",
+              "reports": ["workstations.overview"]
+            },
+            {
+              "id": "workstations-logons",
+              "label": "workstations.logons.title",
+              "path": "/report/workstations.logons",
+              "icon": "report",
+              "plugin_id": "sli.workstations",
+              "reports": [
+                "workstations.logons"
+              ]
+            },
+            {
+              "id": "workstations-processes",
+              "label": "workstations.processes.title",
+              "path": "/report/workstations.processes",
+              "icon": "report",
+              "plugin_id": "sli.workstations",
+              "reports": [
+                "workstations.processes"
+              ]
+            },
+            {
+              "id": "workstations-usb",
+              "label": "workstations.usb.title",
+              "path": "/report/workstations.usb",
+              "icon": "report",
+              "plugin_id": "sli.workstations",
+              "reports": [
+                "workstations.usb"
+              ]
+            },
+            {
+              "id": "workstations-protection",
+              "label": "workstations.protection.title",
+              "path": "/report/workstations.protection",
+              "icon": "report",
+              "plugin_id": "sli.workstations",
+              "reports": [
+                "workstations.protection"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "file-audit",
+      "title": "file-audit.title",
+      "groups": [
+        {
+          "id": "file-audit",
+          "title": "",
+          "entries": [
+            {
+              "id": "file-audit",
+              "label": "file-audit.tabs.overview",
+              "path": "/report/file-audit.overview",
+              "icon": "report",
+              "plugin_id": "sli.file-audit",
+              "reports": [
+                "file-audit.overview",
+                "file-audit.actions",
+                "file-audit.mass-operations",
+                "file-audit.permission-changes",
+                "file-audit.access-denials",
+                "file-audit.out-of-hours",
+                "file-audit.permissions",
+                "file-audit.audit-state"
+              ],
+              "datasets": [
+                "file-audit.overview",
+                "file-audit.actions",
+                "file-audit.mass-operations",
+                "file-audit.permission-changes",
+                "file-audit.access-denials",
+                "file-audit.out-of-hours",
+                "file-audit.permissions",
+                "file-audit.audit-state"
+              ],
+              "views": [
+                {
+                  "id": "overview",
+                  "label": "file-audit.tabs.overview",
+                  "path": "/report/file-audit.overview",
+                  "report_key": "file-audit.overview",
+                  "reports": [
+                    "file-audit.overview"
+                  ]
+                },
+                {
+                  "id": "actions",
+                  "label": "file-audit.tabs.actions",
+                  "path": "/report/file-audit.actions",
+                  "report_key": "file-audit.actions",
+                  "reports": [
+                    "file-audit.actions"
+                  ]
+                },
+                {
+                  "id": "mass-operations",
+                  "label": "file-audit.tabs.mass-operations",
+                  "path": "/report/file-audit.mass-operations",
+                  "report_key": "file-audit.mass-operations",
+                  "reports": [
+                    "file-audit.mass-operations"
+                  ]
+                },
+                {
+                  "id": "permission-changes",
+                  "label": "file-audit.tabs.permission-changes",
+                  "path": "/report/file-audit.permission-changes",
+                  "report_key": "file-audit.permission-changes",
+                  "reports": [
+                    "file-audit.permission-changes"
+                  ]
+                },
+                {
+                  "id": "access-denials",
+                  "label": "file-audit.tabs.access-denials",
+                  "path": "/report/file-audit.access-denials",
+                  "report_key": "file-audit.access-denials",
+                  "reports": [
+                    "file-audit.access-denials"
+                  ]
+                },
+                {
+                  "id": "out-of-hours",
+                  "label": "file-audit.tabs.out-of-hours",
+                  "path": "/report/file-audit.out-of-hours",
+                  "report_key": "file-audit.out-of-hours",
+                  "reports": [
+                    "file-audit.out-of-hours"
+                  ]
+                },
+                {
+                  "id": "permissions",
+                  "label": "file-audit.tabs.permissions",
+                  "path": "/report/file-audit.permissions",
+                  "report_key": "file-audit.permissions",
+                  "reports": [
+                    "file-audit.permissions"
+                  ]
+                },
+                {
+                  "id": "audit-state",
+                  "label": "file-audit.tabs.audit-state",
+                  "path": "/report/file-audit.audit-state",
+                  "report_key": "file-audit.audit-state",
+                  "reports": [
+                    "file-audit.audit-state"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "title": "shell.section.operations",
+      "groups": []
+    },
+    {
+      "id": "admin",
+      "title": "shell.section.admin",
+      "groups": [
+        {
+          "id": "status",
+          "title": "",
+          "entries": [
+            {
+              "id": "admin-status",
+              "label": "shell.adminNav.status",
+              "path": "/admin/status",
+              "icon": "grid",
+              "capabilities": [
+                "operations.view",
+                "access.manage"
+              ],
+              "reports": [
+                "operations.readiness",
+                "decoys.registry",
+                "watch.registry"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "base",
+          "title": "shell.adminGroup.base",
+          "entries": [
+            {
+              "id": "agents",
+              "label": "shell.adminNav.computers",
+              "path": "/agents",
+              "icon": "settings",
+              "capabilities": [
+                "access.manage"
+              ]
+            },
+            {
+              "id": "access-center",
+              "label": "shell.adminNav.users",
+              "path": "/access",
+              "icon": "users",
+              "capabilities": [
+                "access.manage"
+              ]
+            },
+            {
+              "id": "notifications",
+              "label": "notify.title",
+              "path": "/notifications",
+              "icon": "settings",
+              "reports": [
+                "notifications.channels",
+                "notifications.deliveries"
+              ],
+              "capabilities": [
+                "access.manage"
+              ],
+              "views": [
+                {
+                  "id": "channels",
+                  "label": "notify.channels",
+                  "path": "/report/notifications.channels",
+                  "report_key": "notifications.channels",
+                  "reports": [
+                    "notifications.channels"
+                  ]
+                },
+                {
+                  "id": "journal",
+                  "label": "notify.journal",
+                  "path": "/report/notifications.deliveries",
+                  "report_key": "notifications.deliveries",
+                  "reports": [
+                    "notifications.deliveries"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "operations",
+              "label": "shell.adminNav.storage",
+              "path": "/operations",
+              "icon": "database",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-locale",
+              "label": "shell.adminNav.locale",
+              "path": "/admin/language-time",
+              "icon": "settings",
+              "capabilities": [
+                "access.manage"
+              ]
+            },
+            {
+              "id": "admin-update",
+              "label": "shell.adminNav.update",
+              "path": "/admin/update",
+              "icon": "settings",
+              "capabilities": [
+                "access.manage"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "plugins",
+          "title": "shell.adminGroup.plugins",
+          "entries": [
+            {
+              "id": "admin-plugin-ad",
+              "label": "plugins.ad",
+              "path": "/admin/plugins/sli.ad",
+              "icon": "database",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-plugin-gpo",
+              "label": "shell.adminNav.gpo",
+              "path": "/admin/plugins/sli.gpo",
+              "icon": "shield",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-plugin-workstations",
+              "label": "plugins.workstations",
+              "path": "/admin/plugins/sli.workstations",
+              "icon": "database",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-plugin-file-audit",
+              "label": "shell.adminNav.fileAudit",
+              "path": "/admin/plugins/sli.file-audit",
+              "icon": "events",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-plugin-remote-access",
+              "label": "shell.adminNav.vpn",
+              "path": "/admin/plugins/sli.remote-access",
+              "icon": "layers",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "admin-plugin-sigma",
+              "label": "shell.adminNav.sigma",
+              "path": "/admin/plugins/sli.sigma",
+              "icon": "shield",
+              "capabilities": [
+                "operations.view"
+              ]
+            },
+            {
+              "id": "plugins",
+              "label": "shell.adminNav.allPlugins",
+              "path": "/plugins",
+              "icon": "layers",
+              "capabilities": [
+                "operations.view"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "advanced",
+          "title": "shell.adminGroup.advanced",
+          "entries": [
+            {
+              "id": "report-studio",
+              "label": "shell.nav.report-studio",
+              "path": "/report-studio",
+              "icon": "report",
+              "capabilities": [
+                "reports.design",
+                "report.design",
+                "reports.publish",
+                "report.publish",
+                "reports.assign"
+              ]
+            },
+            {
+              "id": "admin-activity",
+              "label": "shell.adminNav.activity",
+              "path": "/admin/activity",
+              "icon": "events",
+              "capabilities": [
+                "access.manage"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

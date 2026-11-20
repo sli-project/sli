@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sli.Agent.Protocol/Sli.Agent.Protocol.csproj" />
+    <Project Path="src/Sli.Agent.Core/Sli.Agent.Core.csproj" />
+    <Project Path="src/Sli.Agent.Windows/Sli.Agent.Windows.csproj" />
+    <Project Path="src/Sli.Agent.Service/Sli.Agent.Service.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj" />
+  </Folder>
+</Solution>

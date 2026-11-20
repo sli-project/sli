@@ -1,0 +1,153 @@
+{
+  "givenName": [
+    "given_name"
+  ],
+  "surname": [
+    "surname"
+  ],
+  "userPrincipalName": [
+    "user_principal_name"
+  ],
+  "canonicalName": [
+    "canonical_name"
+  ],
+  "whenCreated": [
+    "when_created_utc"
+  ],
+  "whenChanged": [
+    "when_changed_utc",
+    "modified_utc"
+  ],
+  "department": [
+    "department"
+  ],
+  "title": [
+    "title"
+  ],
+  "company": [
+    "company"
+  ],
+  "office": [
+    "office"
+  ],
+  "description": [
+    "description"
+  ],
+  "employeeID": [
+    "employee_id"
+  ],
+  "employeeNumber": [
+    "employee_number"
+  ],
+  "mail": [
+    "mail",
+    "email"
+  ],
+  "proxyAddresses": [
+    "proxy_addresses"
+  ],
+  "telephoneNumber": [
+    "telephone_number"
+  ],
+  "otherTelephones": [
+    "other_telephones"
+  ],
+  "mobile": [
+    "mobile"
+  ],
+  "ipPhone": [
+    "ip_phone"
+  ],
+  "fax": [
+    "fax"
+  ],
+  "streetAddress": [
+    "street_address"
+  ],
+  "city": [
+    "city"
+  ],
+  "state": [
+    "state"
+  ],
+  "postalCode": [
+    "postal_code"
+  ],
+  "country": [
+    "country"
+  ],
+  "scriptPath": [
+    "script_path"
+  ],
+  "homeDirectory": [
+    "home_directory"
+  ],
+  "homeDrive": [
+    "home_drive"
+  ],
+  "profilePath": [
+    "profile_path"
+  ],
+  "passwordExpiry": [
+    "password_expiry_utc"
+  ],
+  "passwordExpired": [
+    "password_expired"
+  ],
+  "passwordNotRequired": [
+    "password_not_required"
+  ],
+  "cannotChangePassword": [
+    "cannot_change_password"
+  ],
+  "lastLogonTimestamp": [
+    "last_logon_timestamp_utc"
+  ],
+  "exactLastLogon": [
+    "exact_last_logon_utc"
+  ],
+  "lastBadPasswordAttempt": [
+    "last_bad_password_attempt_utc"
+  ],
+  "badPasswordCountAtQueryDc": [
+    "bad_password_count_at_query_dc",
+    "bad_password_count",
+    "bad_password_count_at_query_dc"
+  ],
+  "smartcardLogonRequired": [
+    "smartcard_logon_required"
+  ],
+  "accountNotDelegated": [
+    "account_not_delegated"
+  ],
+  "allowReversiblePasswordEncryption": [
+    "allow_reversible_password_encryption"
+  ],
+  "trustedForDelegation": [
+    "trusted_for_delegation"
+  ],
+  "trustedToAuthForDelegation": [
+    "trusted_to_auth_for_delegation"
+  ],
+  "doesNotRequirePreAuth": [
+    "does_not_require_preauth"
+  ],
+  "useDesKeyOnly": [
+    "use_des_key_only"
+  ],
+  "adminCount": [
+    "admin_count"
+  ],
+  "objectClasses": [
+    "object_classes"
+  ],
+  "servicePrincipalNames": [
+    "service_principal_names"
+  ],
+  "userAccountControl": [
+    "user_account_control"
+  ],
+  "msDSSupportedEncryptionTypes": [
+    "msds_supported_encryption_types"
+  ]
+}

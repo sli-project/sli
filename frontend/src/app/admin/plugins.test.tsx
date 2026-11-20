@@ -1,0 +1,182 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { ApiResponseError, type PluginState } from "../../api/client";
+
+const mocks = vi.hoisted(() => ({ list: vi.fn(), change: vi.fn() }));
+vi.mock("../../api/client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/client")>();
+  return { ...original, api: { ...original.api, plugins: () => mocks.list(), setPluginEnabled: (item: PluginState, enabled: boolean) => mocks.change(item, enabled) } };
+});
+import { setLocale, t } from "../../i18n";
+import { PluginsPage } from "./plugins";
+
+const item: PluginState = { plugin_id: "sli.remote-access", package_version: "0.1.0", installed: true,
+  configured: true, enabled: true, receiving_data: false, component_runtime: "running", queue_state: "drained", revision: 4, last_data_at_utc: null };
+
+function mount() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(<QueryClientProvider client={client}><PluginsPage/></QueryClientProvider>);
+}
+afterEach(() => { cleanup(); vi.resetAllMocks(); setLocale("ru"); });
+
+it("shows version, last receipt and runtime without inferring failure from no new events", async () => {
+  mocks.list.mockResolvedValue({ items: [{ ...item, last_data_at_utc: "2026-10-01T00:00:00Z" }], can_manage: false });
+  mount();
+  await screen.findByText("Версия");
+  expect(screen.getByText("0.1.0")).toBeTruthy();
+  expect(screen.getByText("Работает")).toBeTruthy();
+  expect(screen.getByText("Последнее зарегистрированное поступление")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Открыть диагностику" }).getAttribute("href")).toBe("/app/operations#runtime-workers");
+  expect(screen.queryByText("Ошибка сбора")).toBeNull();
+});
+
+it("shows independent axes and disables through the current revision then displays drain", async () => {
+  const drained = { ...item, enabled: false, component_runtime: "draining" };
+  mocks.list.mockResolvedValueOnce({ items: [item], can_manage: true }).mockResolvedValue({ items: [drained], can_manage: true });
+  mocks.change.mockResolvedValue({ item: drained });
+  mount();
+  await screen.findByText("Последнее зарегистрированное поступление");
+  expect(screen.getByText("—")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Выключить" }));
+  await waitFor(() => expect(mocks.change).toHaveBeenCalledWith(item, false));
+  expect((await screen.findByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("status").textContent).toContain("очередь дочитывается");
+});
+
+it("keeps delegated readers from mutating", async () => {
+  mocks.list.mockResolvedValue({ items: [item], can_manage: false });
+  mount();
+  await screen.findByText("Последнее зарегистрированное поступление");
+  expect(screen.queryByRole("button", { name: "Выключить" })).toBeNull();
+  expect(screen.getByRole("note").textContent).toContain("только владелец");
+});
+
+it("cannot enable an unconfigured plugin", async () => {
+  mocks.list.mockResolvedValue({ items: [{ ...item, enabled: false, configured: false, component_runtime: "stopped" }], can_manage: true });
+  mount();
+  expect((await screen.findByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("shows a rejected mutation without claiming a disabled plugin", async () => {
+  mocks.list.mockResolvedValue({ items: [item], can_manage: true });
+  mocks.change.mockRejectedValue(new Error("plugin_state_conflict"));
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Состояние не изменено");
+  expect(screen.queryByText("Плагин выключен")).toBeNull();
+});
+
+it("names workstations and enables then disables from the registered drained state", async () => {
+  const stopped = { ...item, plugin_id: "sli.workstations", enabled: false, component_runtime: "stopped", revision: 1 };
+  const running = { ...stopped, enabled: true, component_runtime: "running", revision: 2 };
+  const disabled = { ...stopped, revision: 3 };
+  let current = stopped;
+  mocks.list.mockImplementation(async () => ({ items: [current], can_manage: true }));
+  mocks.change.mockImplementation(async (_item: PluginState, enabled: boolean) => {
+    current = enabled ? running : disabled;
+    return { item: current };
+  });
+  mount();
+  expect((await screen.findByRole("heading", { level: 2 })).textContent).toContain("Рабочие станции");
+  fireEvent.click(screen.getByRole("button", { name: "Включить" }));
+  const disable = await screen.findByRole("button", { name: "Выключить" });
+  expect(mocks.change).toHaveBeenNthCalledWith(1, stopped, true);
+  await waitFor(() => expect((disable as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(disable);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(mocks.change).toHaveBeenNthCalledWith(2, running, false);
+  expect(screen.getByRole("status").textContent).toContain("Данные и права сохранены");
+});
+
+it.each([
+  ["plugin_management_owner_or_admin_required", "Изменять состояние может только владелец"],
+  ["plugin_not_found", "Плагин не найден"],
+  ["plugin_state_request_invalid", "Некорректный запрос"],
+  ["plugin_revision_conflict", "Состояние плагина изменилось"],
+  ["plugin_not_installed", "Плагин не зарегистрирован"],
+  ["plugin_not_configured", "Плагин не настроен"],
+  ["plugin_runtime_not_stopped", "Плагин ещё не остановлен"],
+  ["plugin_runtime_not_running", "Плагин не находится в рабочем состоянии"],
+  ["plugin_queue_not_drained", "Очередь плагина ещё не опустела"],
+  ["plugin_active_leases", "У плагина есть активные задания"],
+  ["plugin_runtime_transition_unsupported", "Управление этим плагином пока не поддерживается"],
+  ["plugin_runtime_precondition_failed", "Компоненты плагина не готовы"],
+  ["plugin_state_unavailable", "Состояние плагинов недоступно"],
+])("shows the safe translated server refusal %s", async (code, message) => {
+  mocks.list.mockResolvedValue({ items: [item], can_manage: true });
+  mocks.change.mockRejectedValue(new ApiResponseError(409, code, "private-marker"));
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(message);
+  expect(screen.getByRole("alert").textContent).not.toContain("private-marker");
+  expect(screen.queryByText("Плагин выключен")).toBeNull();
+});
+
+it("keeps unknown server details out of the fallback error", async () => {
+  mocks.list.mockResolvedValue({ items: [item], can_manage: true });
+  mocks.change.mockRejectedValue(new ApiResponseError(500, "unknown_reason", "private-marker"));
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Состояние не изменено");
+  expect(screen.getByRole("alert").textContent).not.toContain("private-marker");
+});
+
+
+
+it.each((["ru", "en"] as const).flatMap((locale) =>
+  [null, "2020-01-01T00:00:00Z", "2099-01-01T00:00:00Z", "invalid"].flatMap((stamp) =>
+    [true, false].map((enabled) => ({ locale, stamp, enabled })))))
+("separates recorded receipt from runtime and activation: $locale $stamp $enabled", async ({ locale, stamp, enabled }) => {
+  setLocale(locale);
+  mocks.list.mockResolvedValue({ items: [{ ...item, enabled, last_data_at_utc: stamp, receiving_data: true }], can_manage: false });
+  mount();
+  await screen.findByText(t("plugins.lastReceipt"));
+  expect(screen.queryByText(t("plugins.receiving"))).toBeNull();
+  expect(screen.getByText(t("plugins.runtime.running"))).toBeTruthy();
+  if (!stamp || stamp === "invalid") expect(screen.getByText("—")).toBeTruthy();
+  if (stamp && stamp !== "invalid") expect(screen.getByText(new RegExp(stamp.slice(0, 4)))).toBeTruthy();
+  expect(screen.getByText(t("plugins.receiptNote"))).toBeTruthy();
+  expect(screen.queryByText("Invalid Date")).toBeNull();
+  expect(mocks.change).not.toHaveBeenCalled();
+});
+
+it.each(["ru", "en"] as const)("describes bundled plugins and updates once in %s", async (locale) => {
+  setLocale(locale);
+  const ids = ["sli.ad", "sli.gpo", "sli.file-audit", "sli.workstations", "sli.remote-access", "sli.sigma", "sli.future"];
+  mocks.list.mockResolvedValue({ items: ids.map((plugin_id) => ({ ...item, plugin_id })), can_manage: false });
+  mount();
+  await screen.findByText(t("plugins.description.ad"));
+  for (const key of ["gpo", "fileAudit", "workstations", "remoteAccess", "sigma", "unknown"]) {
+    expect(screen.getByText(t(`plugins.description.${key}` as Parameters<typeof t>[0]))).toBeTruthy();
+  }
+  expect(screen.getAllByText(t("plugins.updateWithSli"))).toHaveLength(1);
+  expect(screen.getAllByText(t("plugins.receiptNote"))).toHaveLength(1);
+  expect(screen.getByRole("heading", { name: /sli.future/ })).toBeTruthy();
+  if (locale === "en") expect(document.body.textContent).not.toMatch(/[А-Яа-яЁё]/);
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+it.each(["ru", "en"] as const)("shows independent receipt, import and completed snapshot facts in %s", async (locale) => {
+  setLocale(locale);
+  mocks.list.mockResolvedValue({ items: [{ ...item, plugin_id: "sli.ad", enabled: false,
+    data_receipts: { state: "observed", last_received_at: "2026-01-01T00:00:00Z", last_imported_at: null,
+      last_snapshot_completed_at: "2026-01-02T00:00:00Z" } }], can_manage: false });
+  mount();
+  await screen.findByText(t("plugins.lastImport"));
+  expect(screen.getByText(t("plugins.lastSnapshotCompleted"))).toBeTruthy();
+  expect(screen.getByText("—")).toBeTruthy();
+  expect(screen.queryByText(t("plugins.receiptUnknown"))).toBeNull();
+  expect(screen.queryByText("Ошибка сбора")).toBeNull();
+  expect(mocks.change).not.toHaveBeenCalled();
+});
+
+it.each(["unavailable", "not_supported"] as const)("does not hide %s behind a legacy observation", async (state) => {
+  mocks.list.mockResolvedValue({ items: [{ ...item, last_data_at_utc: "2026-01-01T00:00:00Z",
+    data_receipts: { state, last_received_at: null, last_imported_at: null, last_snapshot_completed_at: null } }], can_manage: false });
+  mount();
+  await screen.findByText(t(state === "unavailable" ? "plugins.receiptUnavailable" : "plugins.receiptUnsupported"));
+  expect(screen.queryByText(t("plugins.receiptUnknown"))).toBeNull();
+});
+

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-EXTERNAL-FK-CUTOVER-1",
+  "status": "source_ready_fk_cutover_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "depends_on": {
+    "read_write_cutover_gate": "STORAGE-V2-READ-WRITE-CUTOVER-1",
+    "read_write_cutover_report": "STORAGE_V2_READ_WRITE_CUTOVER1_REPORT_20260714.json",
+    "read_write_cutover_status": "accepted_source_only_cutover_blocked",
+    "live_read_write_cutover_completed": false,
+    "migration_12_authorized_by_cutover_gate": false,
+    "v1_reclaim_authorized_by_cutover_gate": false
+  },
+  "purpose": "Define the external FK rebinding gate for migration 12 after accepted read/write stability, without applying migration 12 or reclaiming V1 data in this source-only stage.",
+  "authorization": {
+    "this_stage_authorizes_migration_12": false,
+    "requires_accepted_read_write_stability_report": true,
+    "requires_v2_read_and_v2_primary_write_routing": true,
+    "requires_v1_identity_tables_retained": true,
+    "v1_reclaim_authorized": false,
+    "required_operator_phrase": "AUTHORIZE_STORAGE_V2_EXTERNAL_FK_CUTOVER_20260714"
+  },
+  "retained_reference_tables": [
+    {
+      "table": "event_links",
+      "event_columns": ["source_event_id", "target_event_id"],
+      "entity_columns": []
+    },
+    {
+      "table": "entity_states",
+      "event_columns": ["evidence_event_id"],
+      "entity_columns": ["entity_id"]
+    },
+    {
+      "table": "detections",
+      "event_columns": ["primary_event_id"],
+      "entity_columns": []
+    },
+    {
+      "table": "finding_evidence",
+      "event_columns": ["event_id"],
+      "entity_columns": []
+    },
+    {
+      "table": "finding_entities",
+      "event_columns": [],
+      "entity_columns": ["entity_id"]
+    }
+  ],
+  "migration_12_contract": {
+    "forward_file": "config/postgres_migrations/012_storage_v2_external_reference_cutover.sql",
+    "rollback_file": "config/postgres_migrations/012_storage_v2_external_reference_cutover.rollback.sql",
+    "forward_requires": [
+      "schema_migrations version >= 11",
+      "storage_v2_cutover_state read_mode = v2",
+      "storage_v2_cutover_state write_mode in v2_primary_compat or v2",
+      "all backfill checkpoints completed",
+      "no active storage_v2_outbox work",
+      "all retained event references exist in events_v2_core",
+      "all retained entity references exist in entities_v2"
+    ],
+    "rollback_requires": [
+      "V1 events table still exists",
+      "V1 observed_entities table still exists",
+      "all V2 event identities still exist in V1 events",
+      "all V2 entity identities still exist in V1 observed_entities"
+    ],
+    "must_use_not_valid_then_validate": true,
+    "must_not_drop_v1_tables": true,
+    "must_not_delete_v1_rows": true
+  },
+  "acceptance": {
+    "required_status": "fk_cutover_plan_ready_no_live_migration",
+    "migration_12_executed": false,
+    "v1_reclaim_authorized_by_this_stage": false,
+    "required_forward_fk_count": 7,
+    "required_rollback_fk_count": 7,
+    "required_report_fields": [
+      "read_write_stability_report_sha256",
+      "operator_approval_fingerprint",
+      "production_identity_before",
+      "schema_version_before",
+      "routing_state_before",
+      "retained_reference_counts_before",
+      "missing_v2_event_references",
+      "missing_v2_entity_references",
+      "forward_constraint_results",
+      "rollback_preconditions",
+      "schema_version_after",
+      "routing_state_after",
+      "errors",
+      "stop_reason"
+    ]
+  },
+  "hard_stop_conditions": [
+    "accepted read/write stability report is missing",
+    "routing is not read_mode=v2 and write_mode in v2_primary_compat or v2",
+    "any backfill checkpoint is incomplete",
+    "storage_v2_outbox has active work",
+    "any retained event reference is absent from events_v2_core",
+    "any retained entity reference is absent from entities_v2",
+    "V1 events or observed_entities table is missing",
+    "rollback preconditions are not true",
+    "request attempts V1 reclaim",
+    "request attempts to delete old dumps or archives"
+  ],
+  "strictly_forbidden": [
+    "apply migration 12 from this source-only stage",
+    "drop, truncate, rewrite or VACUUM FULL events in this stage",
+    "drop, truncate, rewrite or VACUUM FULL event_entity_links in this stage",
+    "drop, truncate, rewrite or VACUUM FULL observed_entities in this stage",
+    "delete old dumps or V1 archives in this stage",
+    "accept FK cutover while rollback to V1 references is impossible",
+    "treat FK cutover as storage reclaim"
+  ],
+  "next_stage": {
+    "id": "STORAGE-V2-DR-RECLAIM-1",
+    "authorized_by_this_stage": false,
+    "purpose": "Prove DR and then approve or reject irreversible V1 storage reclaim separately."
+  }
+}

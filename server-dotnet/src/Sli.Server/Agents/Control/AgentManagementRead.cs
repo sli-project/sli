@@ -1,0 +1,99 @@
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Npgsql;
+
+namespace Sli.Server.Agents.Control;
+
+public sealed partial class AgentManagementService
+{
+    private static async Task<JsonObject[]> RowsAsync(NpgsqlConnection db, NpgsqlTransaction tx, string sql, CancellationToken ct, params NpgsqlParameter[] parameters)
+    {
+        await using var command = new NpgsqlCommand("select to_jsonb(r) from (" + sql + ") r", db, tx); command.Parameters.AddRange(parameters);
+        var rows = new List<JsonObject>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) rows.Add(AgentControlJson.Row(reader.GetString(0))); return rows.ToArray();
+    }
+
+    public async Task<JsonElement> ListAgentsAsync(NpgsqlConnection db, NpgsqlTransaction tx, string? rawId, string actor, CancellationToken ct)
+    {
+        string filter = rawId is not null ? "where id=@id" : """
+            where (status='replaced' or not (last_seen is null and created_at <= clock_timestamp()-interval '24 hours'))
+            and not exists(select 1 from sli_agent_removals r where r.agent_id=sli_agents.id)
+            and (status in ('active','replaced') or not exists(select 1 from sli_agent_audit retired where retired.target=sli_agents.id::text
+                and retired.action='disable' and retired.details->>'reason'='registration_replaced'))
+            """;
+        var parameters = rawId is null ? Array.Empty<NpgsqlParameter>() : [new NpgsqlParameter("id", AgentControlJson.Id(rawId))];
+        var agents = await RowsAsync(db, tx, """
+            select id,host_id,key_fingerprint,status,assigned_modules,last_seen,created_at,instance_name,policy_revision,
+                applied_policy_revision,rights_probe,collection_policy,applied_collection_state,windows_audit,
+                coalesce(rights_probe->>'agent_version',
+                    (select version from sli_agent_update_results v where v.agent_id=sli_agents.id order by observed_at desc limit 1),
+                    (select details->>'agent_version' from sli_agent_audit v where v.target=sli_agents.id::text and v.action='issue' order by id desc limit 1)) as agent_version
+            from sli_agents
+            """ + "\n" + filter + "\norder by created_at desc,id limit 100", ct, parameters);
+        var names = new Dictionary<Guid, (string? Name, string Source)>();
+        if (agents.Length > 0)
+        {
+            await using var query = new NpgsqlCommand("""
+                select a.id,a.assigned_modules,a.registration_host_name,enrolled.host_name as enrolled_name
+                from sli_agents a left join lateral (
+                    select coalesce(nullif(btrim(v.attributes_json->'attributes'->>'dns_host_name'),''),
+                        nullif(btrim(v.attributes_json->'attributes'->>'display_name'),'')) as host_name
+                    from sli_agent_audit issued
+                    join sli_agent_group_approval_links c on issued.actor='enrollment:'||c.enrollment_token_id::text
+                    join sli_agent_group_requests r on r.id=c.request_id
+                    join ad_context_entity_versions v on v.id=r.computer_version_id
+                    where issued.target=a.id::text and issued.action='issue' order by issued.id desc limit 1
+                ) enrolled on true where a.id=any(@ids)
+                """, db, tx);
+            query.Parameters.AddWithValue("ids", agents.Select(a => Guid.Parse(a["id"]!.GetValue<string>())).ToArray());
+            await using var reader = await query.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                string? name = AgentControlJson.HumanName(reader.IsDBNull(3) ? null : reader.GetString(3)); string source = name is null ? "unknown" : "ad_enrollment";
+                if (name is null) { name = AgentControlJson.ReportedName(reader.IsDBNull(2) ? null : reader.GetString(2)); if (name is not null) source = "agent_reported"; }
+                if (name is null)
+                {
+                    using var modules = JsonDocument.Parse(reader.GetString(1));
+                    var candidates = modules.RootElement.EnumerateArray().Where(m => AgentControlJson.String(AgentControlJson.Get(m, "module_id")) is "sli.windows.ad-dc" or "sli.workstations")
+                        .Select(m => AgentControlJson.HumanName(AgentControlJson.String(AgentControlJson.Get(AgentControlJson.Get(m, "config"), "source_name")))).Where(n => n is not null).Distinct().ToArray();
+                    if (candidates.Length == 1) { name = candidates[0]; source = "module_config"; }
+                }
+                names[reader.GetGuid(0)] = (name, source);
+            }
+        }
+        foreach (var agent in agents)
+        {
+            Guid id = Guid.Parse(agent["id"]!.GetValue<string>()); var name = names.GetValueOrDefault(id, (null, "unknown"));
+            agent["host_name"] = name.Item1; agent["host_name_source"] = name.Item2;
+            var domain = (await RowsAsync(db, tx, """
+                select b.password_detection_domain_id as domain_id,d.fqdn as domain_fqdn,b.source_name
+                from public.sli_agent_module_bindings b left join public.domains d on d.id=b.password_detection_domain_id
+                where b.agent_id=@id and b.module_id='sli.windows.ad-dc'
+                """, ct, new NpgsqlParameter("id", id))).FirstOrDefault();
+            agent["password_detection_domain"] = new JsonObject { ["status"] = domain?["domain_id"] is not null ? "configured" : "unconfigured", ["domain_id"] = domain?["domain_id"]?.DeepClone(), ["domain_fqdn"] = domain?["domain_fqdn"]?.DeepClone() };
+            if(domain?["source_name"]?.GetValue<string>() is {} source &&
+                await Registry.AgentEnrollmentService.ResolveDcAsync(db,tx,source,ct,id) is {} dc)
+            { agent["host_name"]=dc.Name; agent["server_id"]=dc.Server; }
+            var probe = agent["rights_probe"]!.AsObject();
+            agent["eventlog_diagnostics"] = probe["eventlog_diagnostics"]?.DeepClone(); probe.Remove("eventlog_diagnostics");
+            agent["certificate_reissue_required"] = probe["certificate_reissue_required"]?.DeepClone();
+            agent["delivery_diagnostics"] = probe["delivery_diagnostics"]?.DeepClone(); probe.Remove("delivery_diagnostics");
+            var removal = (await RowsAsync(db, tx, "select operation_id,command_id,state,reason,requested_at,reported_at from sli_agent_removals where agent_id=@id", ct, new NpgsqlParameter("id", id))).FirstOrDefault();
+            if (removal is not null) removal["connection"] = agent["last_seen"] is null ? "never_seen" : DateTimeOffset.Parse(agent["last_seen"]!.GetValue<string>(), CultureInfo.InvariantCulture) < AgentControlJson.Now().AddMinutes(-5) ? "offline" : "online";
+            agent["removal"] = removal;
+            var retired = (await RowsAsync(db, tx, "select details->>'reason' as reason from sli_agent_audit where target=@id and action='disable' order by id desc limit 1", ct, new NpgsqlParameter("id", id.ToString()))).FirstOrDefault();
+            agent["inventory_hidden_reason"] = removal is not null ? "administrator_removed" : agent["status"]?.GetValue<string>() is "active" or "replaced" ? null : retired?["reason"]?.GetValue<string>() == "registration_replaced" ? "registration_replaced"
+                : agent["last_seen"] is null && DateTimeOffset.Parse(agent["created_at"]!.GetValue<string>(), CultureInfo.InvariantCulture) <= AgentControlJson.Now().AddHours(-24) ? "never_seen_expired" : null;
+            agent["certificates"] = JsonSerializer.SerializeToNode(await RowsAsync(db, tx, "select serial,not_after,revoked_at from sli_agent_certificates where agent_id=@id order by id desc limit 100", ct, new NpgsqlParameter("id", id)));
+            agent["policy_audit"] = JsonSerializer.SerializeToNode(await RowsAsync(db, tx, "select id,action,actor,occurred_at,details from sli_agent_audit where target=@id and action in ('module_assign','policy_update','policy_ack') order by id desc limit 20", ct, new NpgsqlParameter("id", id.ToString())));
+        }
+        foreach(var agent in agents.Where(a=>a["status"]?.GetValue<string>()=="replaced" && a["server_id"] is not null))
+        {
+            var current=agents.Where(a=>a["status"]?.GetValue<string>()=="active" && JsonNode.DeepEquals(a["server_id"],agent["server_id"]))
+                .OrderByDescending(a=>Version.TryParse(a["agent_version"]?.GetValue<string>(),out var version) ? version : new Version(0,0,0)).FirstOrDefault();
+            agent["replaced_by"]=current?["id"]?.DeepClone(); agent["replacement_version"]=current?["agent_version"]?.DeepClone();
+        }
+        await audit.AppendAsync(db, tx, "agent_list", actor, "agents", new { }, ct); return JsonSerializer.SerializeToElement(new { items = agents });
+    }
+}

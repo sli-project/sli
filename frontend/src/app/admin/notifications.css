@@ -1,0 +1,17 @@
+.notify-channels .sli-ds-table td {
+  height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+  white-space: nowrap;
+}
+.notify-channels .sli-ds-button {
+  min-height: 24px;
+  height: 24px;
+  white-space: nowrap;
+}
+.notify-channel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-accounting-postgres.v1",
+  "status": "accepted_for_disposable_only",
+  "runtime_enabled": false,
+  "production_migration_applied": false,
+  "source_contact_allowed": false,
+  "migration_version": 58,
+  "required_schema_marker": 55,
+  "maximum_records_per_commit": 1000,
+  "maximum_evidence_object_bytes": 65536,
+  "commit_protocol": [
+    "verified_evidence_manifest",
+    "typed_session_observation",
+    "consumer_outbox",
+    "hashed_class_cache",
+    "cursor_compare_and_swap"
+  ],
+  "core_tables": [
+    "acquisition_source_instances",
+    "acquisition_stream_cursors",
+    "acquisition_consumer_subscriptions",
+    "core_evidence_manifests",
+    "acquisition_delivery_outbox"
+  ],
+  "source_specific_tables": [
+    "radius_accounting_session_observations",
+    "radius_accounting_class_cache"
+  ],
+  "forbidden_persisted_fields": [
+    "raw_record",
+    "class_attribute",
+    "distinguished_name",
+    "user_name",
+    "account_session_id",
+    "nas_identity"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "ad-context-bundle/v1",
+  "source_pack_id": "sli.windows.ad-context",
+  "source_pack_version": "0.1.0",
+  "run_id": "00000000-0000-4000-8000-000000000046",
+  "mode": "full",
+  "domain": {"sid": "S-1-5-21-111-222-333", "dns_name": "host13.example.invalid"},
+  "scope": {"search_base": "DC=example,DC=local", "privileged_group_sids": ["S-1-5-21-100000003-200000003-300000003-512"]},
+  "observed_at_utc": "2026-07-18T05:00:00Z",
+  "sections": [{"name": "privileged_membership", "status": "complete", "record_count": 3, "duration_ms": 42, "error_code": null}],
+  "records": [
+    {
+      "record_type": "entity", "record_key": "ad:s-1-5-21-111-222-333:00000000-0000-4000-8000-000000000042",
+      "section": "privileged_membership", "observed_at_utc": "2026-07-18T05:00:00Z",
+      "identity": {"kind": "ad_group", "domain_sid": "S-1-5-21-111-222-333", "object_guid": "00000000-0000-4000-8000-000000000042", "object_sid": "S-1-5-21-100000003-200000003-300000003-512"},
+      "attributes": {"display_name": "Domain Admins", "sam_account_name": "Domain Admins", "distinguished_name": "CN=Domain Admins,CN=Users,DC=example,DC=local", "enabled": null, "object_class": "group"}
+    },
+    {
+      "record_type": "entity", "record_key": "ad:s-1-5-21-111-222-333:00000000-0000-4000-8000-000000000045",
+      "section": "privileged_membership", "observed_at_utc": "2026-07-18T05:00:00Z",
+      "identity": {"kind": "ad_user", "domain_sid": "S-1-5-21-111-222-333", "object_guid": "00000000-0000-4000-8000-000000000045", "object_sid": "S-1-5-21-100000003-200000003-300000003-1105"},
+      "attributes": {"display_name": "Alice Admin", "sam_account_name": "alice", "distinguished_name": "CN=Alice Admin,CN=Users,DC=example,DC=local", "enabled": true, "object_class": "user"}
+    },
+    {
+      "record_type": "relation", "record_key": "member-of:alice:domain-admins",
+      "section": "privileged_membership", "observed_at_utc": "2026-07-18T05:00:00Z", "relation_kind": "member_of",
+      "source_record_key": "ad:s-1-5-21-111-222-333:00000000-0000-4000-8000-000000000045",
+      "target_record_key": "ad:s-1-5-21-111-222-333:00000000-0000-4000-8000-000000000042",
+      "attributes": {"membership_type": "direct", "source_section": "privileged_membership"}
+    }
+  ]
+}

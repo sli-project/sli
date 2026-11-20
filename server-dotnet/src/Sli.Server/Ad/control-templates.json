@@ -1,0 +1,205 @@
+{
+  "domain_controller:advertising_state": {
+    "control_id": "dc.advertising",
+    "category": "domain_controllers",
+    "label": "Advertising контроллера домена",
+    "expected_condition": "DCDiag Advertising должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:connectivity_state": {
+    "control_id": "dc.connectivity",
+    "category": "domain_controllers",
+    "label": "Связность контроллера домена",
+    "expected_condition": "DCDiag Connectivity должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:services_state": {
+    "control_id": "dc.services",
+    "category": "domain_controllers",
+    "label": "Обязательные службы контроллера домена",
+    "expected_condition": "DCDiag Services должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:sysvol_state": {
+    "control_id": "dc.sysvol",
+    "category": "domain_controllers",
+    "label": "Доступность SYSVOL",
+    "expected_condition": "DCDiag SysVolCheck должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:netlogon_state": {
+    "control_id": "dc.netlogon",
+    "category": "domain_controllers",
+    "label": "Доступность NETLOGON",
+    "expected_condition": "DCDiag NetLogons должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:dns_state": {
+    "control_id": "dc.dns",
+    "category": "dns",
+    "label": "DNS контроллера домена",
+    "expected_condition": "DCDiag DNS должен завершиться успешно",
+    "authority": "collector_diagnostic"
+  },
+  "domain_controller:operating_system": {
+    "control_id": "dc.operating_system",
+    "category": "domain_controllers",
+    "label": "Операционная система контроллера",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain_controller:operating_system_version": {
+    "control_id": "dc.operating_system_version",
+    "category": "domain_controllers",
+    "label": "Версия операционной системы",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain:domain_mode": {
+    "control_id": "domain.functional_level",
+    "category": "policies",
+    "label": "Функциональный уровень домена",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain:forest_mode": {
+    "control_id": "forest.functional_level",
+    "category": "policies",
+    "label": "Функциональный уровень леса",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain:recycle_bin_enabled": {
+    "control_id": "domain.recycle_bin",
+    "category": "policies",
+    "label": "Active Directory Recycle Bin",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain:machine_account_quota": {
+    "control_id": "domain.machine_account_quota",
+    "category": "policies",
+    "label": "MachineAccountQuota",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain:ldap_signing_requirement": {
+    "control_id": "domain.ldap_signing",
+    "category": "policies",
+    "label": "Требование подписывания LDAP",
+    "expected_condition": "Правило отчёта v1: подписывание LDAP должно быть обязательным",
+    "authority": "report_rule_v1"
+  },
+  "domain:ldap_channel_binding_requirement": {
+    "control_id": "domain.ldap_channel_binding",
+    "category": "policies",
+    "label": "Требование LDAP channel binding",
+    "expected_condition": "Правило отчёта v1: значение не должно быть Never",
+    "authority": "report_rule_v1"
+  },
+  "replication_link:replication_state": {
+    "control_id": "replication.state",
+    "category": "replication",
+    "label": "Состояние репликации",
+    "expected_condition": "Сборщик должен вернуть passed",
+    "authority": "collector_diagnostic"
+  },
+  "replication_link:last_replication_result": {
+    "control_id": "replication.result_code",
+    "category": "replication",
+    "label": "Код последней репликации",
+    "expected_condition": "Значение должно быть равно 0",
+    "authority": "collector_diagnostic"
+  },
+  "replication_link:consecutive_failure_count": {
+    "control_id": "replication.consecutive_failures",
+    "category": "replication",
+    "label": "Последовательные ошибки репликации",
+    "expected_condition": "Значение должно быть равно 0",
+    "authority": "collector_diagnostic"
+  },
+  "replication_link:last_replication_success_utc": {
+    "control_id": "replication.last_success_freshness",
+    "category": "replication",
+    "label": "Свежесть успешной репликации",
+    "expected_condition": "Правило отчёта v1: успешная репликация не старше 24 часов",
+    "authority": "report_rule_v1"
+  },
+  "password_policy:password_min_length": {
+    "control_id": "password.minimum_length",
+    "category": "policies",
+    "label": "Минимальная длина пароля",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:password_history_length": {
+    "control_id": "password.history_length",
+    "category": "policies",
+    "label": "История паролей",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:password_min_age": {
+    "control_id": "password.minimum_age",
+    "category": "policies",
+    "label": "Минимальный возраст пароля",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:password_max_age": {
+    "control_id": "password.maximum_age",
+    "category": "policies",
+    "label": "Максимальный возраст пароля",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:password_properties": {
+    "control_id": "password.properties",
+    "category": "policies",
+    "label": "Свойства парольной политики",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:lockout_threshold": {
+    "control_id": "password.lockout_threshold",
+    "category": "policies",
+    "label": "Порог блокировки",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:lockout_duration": {
+    "control_id": "password.lockout_duration",
+    "category": "policies",
+    "label": "Длительность блокировки",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "password_policy:lockout_observation_window": {
+    "control_id": "password.lockout_observation_window",
+    "category": "policies",
+    "label": "Окно наблюдения блокировки",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain_trust:trust_direction": {
+    "control_id": "trust.direction",
+    "category": "trusts",
+    "label": "Направление доверия",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain_trust:trust_type": {
+    "control_id": "trust.type",
+    "category": "trusts",
+    "label": "Тип доверия",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  },
+  "domain_trust:trust_attributes": {
+    "control_id": "trust.attributes",
+    "category": "trusts",
+    "label": "Атрибуты доверия",
+    "expected_condition": "Требование организации не задано",
+    "authority": "not_defined"
+  }
+}

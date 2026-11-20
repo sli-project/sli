@@ -1,0 +1,486 @@
+[
+  {
+    "name": "closed",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "interim_update",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:02:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-2",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:03:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "closed",
+        "completeness": "complete",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:03:00Z",
+        "stopped_at_utc": "2026-01-01T00:03:00Z",
+        "duration_seconds": 120,
+        "observation_count": 3,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0",
+          "observation-1",
+          "observation-2"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "restart",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:02:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-2",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:03:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:ce21acd99dd540e29794a72ea6bf0c0c256bf70bec9245d214ca2bc6560cdcc7",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 2,
+        "lifecycle_state": "closed",
+        "completeness": "complete",
+        "started_at_utc": "2026-01-01T00:02:00Z",
+        "last_observed_at_utc": "2026-01-01T00:03:00Z",
+        "stopped_at_utc": "2026-01-01T00:03:00Z",
+        "duration_seconds": 60,
+        "observation_count": 2,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-1",
+          "observation-2"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "open_observed",
+        "completeness": "missing_stop",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:01:00Z",
+        "stopped_at_utc": null,
+        "duration_seconds": null,
+        "observation_count": 1,
+        "anomalies": [
+          "start_before_stop"
+        ],
+        "observation_ids": [
+          "observation-0"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "middle",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "interim_update",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "partial_open",
+        "completeness": "middle_only",
+        "started_at_utc": null,
+        "last_observed_at_utc": "2026-01-01T00:01:00Z",
+        "stopped_at_utc": null,
+        "duration_seconds": null,
+        "observation_count": 1,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "stop-only",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "partial_closed",
+        "completeness": "missing_start",
+        "started_at_utc": null,
+        "last_observed_at_utc": "2026-01-01T00:01:00Z",
+        "stopped_at_utc": "2026-01-01T00:01:00Z",
+        "duration_seconds": null,
+        "observation_count": 1,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "open",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "interim_update",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:02:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "open_observed",
+        "completeness": "missing_stop",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:02:00Z",
+        "stopped_at_utc": null,
+        "duration_seconds": null,
+        "observation_count": 2,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0",
+          "observation-1"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "generations",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:02:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-2",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:03:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-3",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:04:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:0604e9ddae7e07e1ffd90b0cd5349b344c8cf13156a28b2eeb1cefbc47cfea90",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 2,
+        "lifecycle_state": "closed",
+        "completeness": "complete",
+        "started_at_utc": "2026-01-01T00:03:00Z",
+        "last_observed_at_utc": "2026-01-01T00:04:00Z",
+        "stopped_at_utc": "2026-01-01T00:04:00Z",
+        "duration_seconds": 60,
+        "observation_count": 2,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-2",
+          "observation-3"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "closed",
+        "completeness": "complete",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:02:00Z",
+        "stopped_at_utc": "2026-01-01T00:02:00Z",
+        "duration_seconds": 60,
+        "observation_count": 2,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0",
+          "observation-1"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "same-time",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:d9e1131a57b77aa394c422539f0a3c46646d5af75ced094ba58719ddfd6c5b6a",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "partial_closed",
+        "completeness": "missing_start",
+        "started_at_utc": null,
+        "last_observed_at_utc": "2026-01-01T00:01:00Z",
+        "stopped_at_utc": "2026-01-01T00:01:00Z",
+        "duration_seconds": null,
+        "observation_count": 1,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-0"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      {
+        "session_row_id": "radius-session-row:ce21acd99dd540e29794a72ea6bf0c0c256bf70bec9245d214ca2bc6560cdcc7",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 2,
+        "lifecycle_state": "open_observed",
+        "completeness": "missing_stop",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:01:00Z",
+        "stopped_at_utc": null,
+        "duration_seconds": null,
+        "observation_count": 1,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-1"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "unsorted",
+    "inputs": [
+      {
+        "observation_id": "observation-0",
+        "lifecycle_event": "stop",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:03:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-1",
+        "lifecycle_event": "interim_update",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:02:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "observation_id": "observation-2",
+        "lifecycle_event": "start",
+        "identity_state": "exact",
+        "timestamp_state": "ready",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "observed_at_utc": "2026-01-01T00:01:00Z",
+        "canonical_record_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "expected": [
+      {
+        "session_row_id": "radius-session-row:76bae5669bd3ac3d0189917962bb4cfa7f4f519a382d0efaeacfe45753035112",
+        "session_identity_key": "radius-session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exact_principal_key": "synthetic-principal",
+        "generation": 1,
+        "lifecycle_state": "closed",
+        "completeness": "complete",
+        "started_at_utc": "2026-01-01T00:01:00Z",
+        "last_observed_at_utc": "2026-01-01T00:03:00Z",
+        "stopped_at_utc": "2026-01-01T00:03:00Z",
+        "duration_seconds": 120,
+        "observation_count": 3,
+        "anomalies": [],
+        "observation_ids": [
+          "observation-2",
+          "observation-1",
+          "observation-0"
+        ],
+        "evidence_sha256s": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    ]
+  }
+]

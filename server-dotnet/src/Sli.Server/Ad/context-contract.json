@@ -1,0 +1,60 @@
+{
+  "ENTITY_KINDS": [
+    "ad_computer",
+    "ad_group",
+    "ad_user",
+    "domain",
+    "domain_controller",
+    "domain_trust",
+    "gpo",
+    "password_policy",
+    "replication_link",
+    "security_principal"
+  ],
+  "SECTION_PROFILES": {
+    "privileged_membership": "privileged_membership_v1",
+    "directory_accounts": "directory_security_v1",
+    "directory_group_graph": "directory_group_graph_v1",
+    "directory_exact_logon": "directory_exact_logon_v1",
+    "vpn_membership": "vpn_security_v1",
+    "gpo_governance": "gpo_governance_v2",
+    "domain_posture": "domain_posture_v1",
+    "domain_health": "domain_health_v1"
+  },
+  "COMPUTER_ATTRIBUTE_SOURCES": {
+    "enabled": "Enabled",
+    "last_logon_utc": "LastLogonDate",
+    "dns_host_name": "DNSHostName",
+    "operating_system": "OperatingSystem",
+    "operating_system_version": "OperatingSystemVersion"
+  },
+  "COMPUTER_REFERENCE_ATTRIBUTE_SOURCES": {
+    "enabled": "Enabled",
+    "last_logon_utc": "LastLogonDate",
+    "dns_host_name": "DNSHostName",
+    "operating_system": "OperatingSystem",
+    "operating_system_version": "OperatingSystemVersion",
+    "operating_system_service_pack": "OperatingSystemServicePack",
+    "canonical_name": "CanonicalName",
+    "description": "Description",
+    "location": "Location",
+    "managed_by": "ManagedBy",
+    "password_last_set_utc": "PasswordLastSet",
+    "created_utc": "whenCreated",
+    "when_changed_utc": "whenChanged",
+    "service_principal_names": "servicePrincipalName",
+    "trusted_for_delegation": "TrustedForDelegation",
+    "trusted_to_auth_for_delegation": "TrustedToAuthForDelegation",
+    "user_account_control": "userAccountControl"
+  },
+  "SUPPORTED_SECTIONS": [
+    "directory_accounts",
+    "directory_exact_logon",
+    "directory_group_graph",
+    "domain_health",
+    "domain_posture",
+    "gpo_governance",
+    "privileged_membership",
+    "vpn_membership"
+  ]
+}

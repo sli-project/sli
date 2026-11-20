@@ -1,0 +1,54 @@
+version = 1
+
+# Matching uses case-sensitive repository-relative POSIX paths; * includes /.
+exclude = [
+  ".claude/**", "CLAUDE.md", "LAST.md", "PUBLIC_SNAPSHOT.json",
+  "DEVELOPMENT_AGENT_POLICY.md", "PROJECT_MAP.md", "PROJECT_RULES.md",
+  "docs/AI_*.md", "docs/*HANDOFF*.md", "docs/*handoff*.md",
+  "docs/CURRENT_ROADMAP.md", "docs/CURRENT_BASELINE.md",
+  "docs/task-plans/**", "docs/superpowers/**", "docs/acceptance/**",
+  "docs/SLI_OUTPUT_AND_INTERFACE_REGISTER.md",
+  "docs/STAGE7_C_IDENTITY_SPINE.md", "docs/DOCUMENTATION_INDEX.md",
+  "design/designer_handoff/**",
+  "*.zip", "*.7z", "*.tar", "*.tar.gz", "*.rar",
+  "artifacts/**", "backups/**", "data/**", "downloads/**", "exports/**",
+  "logs/**", "raw/**", "runtime/**", "handoff/**", "evidence/**",
+  # Also reject retired internal paths when exporting older revisions.
+  ".autopilot/**", "design-reference/**", "parity/**", "runner/**", "deploy/ci-runner/**",
+  "docs/archive/**", "docs/audit/**", "docs/evidence/**", "docs/pr-evidence/**",
+  "docs/PUBLICATION_SENSITIVE_DATA_AUDIT.md", "PR*_DESCRIPTION.md", "PR_*.md",
+  "GPO_PR_DESCRIPTION.md", "UPDATE_REHEARSAL.md",
+]
+
+required = [
+  "LICENSE", "NOTICE", "README.md", "README.ru.md",
+  "config/postgres_baseline/baseline.sql", "config/postgres_baseline/roles.sql",
+  "config/postgres_baseline/manifest.json", "deploy/linux/native_pg_ledger.json",
+  "config/sigma/NOTICE", "config/sigma/licenses/DRL-1.1.txt", "config/sigma/licenses/LGPL-2.1.txt",
+]
+
+# Reviewed release assets are overlaid explicitly, including when rehearsing
+# against main before this tooling is merged. There is no implicit worktree copy.
+publish = [
+  "NOTICE", "README.md", "README.ru.md", "docs/release/PUBLIC_SNAPSHOT.md",
+  "scripts/release/make_public_snapshot.py", "config/release/public_snapshot.toml",
+  "scripts/maintenance/github_sanitary_check.py",
+  "tests/unit/test_public_snapshot.py", "tests/migrations/test_postgres_baseline.py",
+  "tests/tooling/test_github_sanitary_check.py",
+]
+
+# Private regex values come ONLY from --sensitive-values, never from this policy.
+[[replace]]
+paths = ["config/postgres_migrations/*.sql"]
+pattern_id = "legacy_domain"
+to = "example.local"
+
+[[replace]]
+paths = ["tests/reporting/test_vpn_connections_reporting.py"]
+pattern_id = "production_person"
+to = "Синтетический Пользователь 01"
+
+[[replace]]
+paths = ["tests/reporting/test_vpn_connections_reporting.py"]
+pattern_id = "production_account"
+to = "synthetic-user-01"

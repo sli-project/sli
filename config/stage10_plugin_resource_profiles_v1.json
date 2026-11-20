@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-resource-profiles.v1",
+  "status": "prepared_source_inventory",
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "source_contact_allowed": false,
+  "production_configuration_changed": false,
+  "profile_modes": {
+    "normal": "not_defined_for_long_lived_plugin_worker",
+    "diagnostic": "stage9-radius-manual-bounded-v1",
+    "emergency": "not_defined"
+  },
+  "profiles": [
+    {
+      "profile_id": "stage9-radius-manual-bounded-v1",
+      "plugin_id": "sli.remote-access",
+      "source_pack_id": "sli.windows.vpn-radius",
+      "component_id": "radius-acquisition",
+      "source_instance_id": "radius.radius01.example.invalid",
+      "mode": "diagnostic_manual",
+      "activation_state": "disabled",
+      "temporary_profile": true,
+      "effective_until_utc": null,
+      "reason_required_when_active": true,
+      "application_limits": [
+        {
+          "key": "runs_per_invocation",
+          "value": 1,
+          "unit": "runs",
+          "enforcement": "manual_control_contract",
+          "change_control": "contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "records_per_run",
+          "value": 1000,
+          "unit": "records",
+          "enforcement": "manual_control_and_tail_adapter",
+          "change_control": "contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "runtime_seconds",
+          "value": 120,
+          "unit": "seconds",
+          "enforcement": "child_process_timeout",
+          "change_control": "contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "candidate_files",
+          "value": 20,
+          "unit": "files",
+          "enforcement": "tail_adapter_constant",
+          "change_control": "source_contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "read_bytes",
+          "value": 4194304,
+          "unit": "bytes",
+          "enforcement": "tail_adapter_constant",
+          "change_control": "source_contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "deliveries_per_claim",
+          "value": 50,
+          "unit": "deliveries",
+          "enforcement": "consumer_contract_and_sql_limit",
+          "change_control": "contract_change_and_disposable_postgres_acceptance"
+        },
+        {
+          "key": "delivery_lease_seconds",
+          "value": 120,
+          "unit": "seconds",
+          "enforcement": "consumer_contract_and_sql_lease",
+          "change_control": "contract_change_and_disposable_postgres_acceptance"
+        },
+        {
+          "key": "delivery_attempts",
+          "value": 5,
+          "unit": "attempts",
+          "enforcement": "consumer_contract",
+          "change_control": "contract_change_and_disposable_postgres_acceptance"
+        },
+        {
+          "key": "class_cache_entries",
+          "value": 10000,
+          "unit": "entries",
+          "enforcement": "runtime_contract",
+          "change_control": "contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "class_cache_ttl_seconds",
+          "value": 604800,
+          "unit": "seconds",
+          "enforcement": "runtime_contract",
+          "change_control": "contract_change_and_focused_acceptance"
+        },
+        {
+          "key": "credential_lease_seconds",
+          "value": 900,
+          "unit": "seconds",
+          "enforcement": "fixture_credential_contract_only",
+          "change_control": "credential_contract_change_and_focused_acceptance"
+        }
+      ],
+      "hard_process_limits": {
+        "cpu_hard_limit": null,
+        "memory_bytes": null,
+        "pids": null,
+        "job_object_kill_on_close": null,
+        "working_directory_acl": null,
+        "network_allowlist_enforced": null
+      },
+      "observability_fields": [
+        "profile_id",
+        "mode",
+        "activation_state",
+        "temporary_profile",
+        "effective_until_utc",
+        "reason",
+        "declared_limits",
+        "enforced_limits",
+        "actual_usage",
+        "deviations",
+        "missing_hard_limits"
+      ]
+    }
+  ],
+  "explicitly_out_of_scope": [
+    "assigning_unmeasured_production_cpu_or_memory_values",
+    "worker_process_spawn",
+    "job_object_or_firewall_change",
+    "source_contact",
+    "runtime_activation",
+    "autostart"
+  ]
+}

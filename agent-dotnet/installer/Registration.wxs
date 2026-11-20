@@ -1,0 +1,41 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <Property Id="REGISTRATION_SNAPSHOT" Secure="yes" />
+    <Property Id="REGISTRATION_SHA256" Secure="yes" />
+    <Property Id="RegistrationUiCleanup" Hidden="yes" />
+    <Property Id="StageRegistration" Hidden="yes" />
+    <Property Id="RollbackRegistration" Hidden="yes" />
+    <Property Id="CommitRegistration" Hidden="yes" />
+    <Binary Id="RegistrationCA" SourceFile="$(var.RegistrationCaPath)" />
+    <CustomAction Id="ChooseRegistrationFile" BinaryRef="RegistrationCA" DllEntry="ChooseRegistrationFile" Return="check" />
+    <CustomAction Id="ValidateRegistrationFile" BinaryRef="RegistrationCA" DllEntry="ValidateRegistrationFile" Return="check" />
+    <CustomAction Id="ValidateInstanceName" BinaryRef="RegistrationCA" DllEntry="ValidateInstanceName" Return="check" />
+    <CustomAction Id="PrepareRegistrationData" BinaryRef="RegistrationCA" DllEntry="PrepareRegistrationData" Return="check" />
+    <CustomAction Id="RollbackRegistration" BinaryRef="RegistrationCA" DllEntry="RollbackRegistration" Execute="rollback" Impersonate="no" HideTarget="yes" Return="check" />
+    <CustomAction Id="StageRegistration" BinaryRef="RegistrationCA" DllEntry="StageRegistration" Execute="deferred" Impersonate="no" HideTarget="yes" Return="check" />
+    <CustomAction Id="CommitRegistration" BinaryRef="RegistrationCA" DllEntry="CommitRegistration" Execute="commit" Impersonate="no" HideTarget="yes" Return="check" />
+    <CustomAction Id="ClearRegistrationData" BinaryRef="RegistrationCA" DllEntry="ClearRegistrationData" Return="check" />
+    <CustomAction Id="ClearCommitData" BinaryRef="RegistrationCA" DllEntry="ClearCommitData" Return="check" />
+    <CustomAction Id="FinishUiRegistration" BinaryRef="RegistrationCA" DllEntry="FinishUiRegistration" Return="check" />
+    <CustomAction Id="CancelUiRegistration" BinaryRef="RegistrationCA" DllEntry="CleanupUiSnapshot" Return="check" />
+    <CustomAction Id="ErrorUiRegistration" BinaryRef="RegistrationCA" DllEntry="CleanupUiSnapshot" Return="check" />
+    <InstallUISequence>
+      <Custom Action="ValidateInstanceName" Before="LaunchConditions" Condition="NOT REMOVE" />
+      <Custom Action="ChooseRegistrationFile" Before="ValidateRegistrationFile" Condition="UILevel &gt;= 5 AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL AND NOT (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE))" />
+      <Custom Action="ValidateRegistrationFile" Before="LaunchConditions" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="FinishUiRegistration" OnExit="success" Condition="RegistrationUiCleanup" />
+      <Custom Action="CancelUiRegistration" OnExit="cancel" Condition="RegistrationUiCleanup" />
+      <Custom Action="ErrorUiRegistration" OnExit="error" Condition="RegistrationUiCleanup" />
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="ValidateInstanceName" Before="LaunchConditions" Condition="NOT REMOVE" />
+      <Custom Action="ValidateRegistrationFile" Before="LaunchConditions" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="PrepareRegistrationData" Before="RollbackRegistration" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="RollbackRegistration" Before="StageRegistration" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="StageRegistration" Before="ClearRegistrationData" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="ClearRegistrationData" Before="WriteRegistryValues" Condition="REGISTRATION_SNAPSHOT" />
+      <Custom Action="CommitRegistration" Before="ClearCommitData" Condition="REGISTRATION_SNAPSHOT AND NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT REMOVE AND NOT REINSTALL" />
+      <Custom Action="ClearCommitData" Before="InstallFinalize" Condition="REGISTRATION_SNAPSHOT" />
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

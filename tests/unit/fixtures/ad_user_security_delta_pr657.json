@@ -1,0 +1,118 @@
+{
+  "commit": "44564005807c169121444ff400c0ee915266831a",
+  "replacements": {
+    "server.sli.reports.users_v2_reporting": [
+      [
+        "        \"adminCount\": attrs.get(\"admin_count\"),\n        \"servicePrincipalNames\": list(attrs.get(\"service_principal_names\") or []),\n",
+        "        \"adminCount\": attrs.get(\"admin_count\"),\n        \"objectClasses\": list(attrs.get(\"object_classes\") or []),\n        \"servicePrincipalNames\": list(attrs.get(\"service_principal_names\") or []),\n"
+      ]
+    ],
+    "server.sli.reports.users_v2_views": [
+      [
+        "\nfrom server.sli.reports import ad_hygiene_policy\n\n",
+        "\nfrom server.sli.reports import ad_hygiene_policy, users_security\n\n"
+      ],
+      [
+        "    \"temporary_membership\", \"password_age\", \"password_age_unknown\", \"inactive_threshold\", \"enabled_activity_unknown\", \"identity_key_missing\", \"group_graph_partial\",\n)\n",
+        "    \"temporary_membership\", \"password_age\", \"password_age_unknown\", \"inactive_threshold\", \"enabled_activity_unknown\", \"identity_key_missing\", \"group_graph_partial\",\n    \"password_not_required\", \"kerberos_no_preauth\", \"spn_privileged\", \"spn_old_password\", \"privileged_password_never_expires\",\n)\n"
+      ],
+      [
+        "    \"group_graph_partial\": \"Граф групп собран частично\",\n}\n",
+        "    \"group_graph_partial\": \"Граф групп собран частично\",\n    \"password_not_required\": \"Пароль не требуется\",\n    \"kerberos_no_preauth\": \"Не требуется предварительная аутентификация Kerberos (AS-REP roasting)\",\n    \"spn_privileged\": \"SPN у привилегированной учётной записи\",\n    \"spn_old_password\": \"SPN и пароль старше 365 дней\",\n    \"privileged_password_never_expires\": \"Пароль привилегированной учётной записи не истекает\",\n}\n"
+      ],
+      [
+        "\ndef security_flags(user: Mapping[str, Any]) -> list[str]:\n    flags = []\n    if user.get(\"doesNotRequirePreAuth\"):\n        flags.append(\"Kerberos pre-authentication не требуется\")\n",
+        "\ndef security_flags(user: Mapping[str, Any], *, attention_only: bool = False) -> list[str]:\n    user = users_security.facts(user)\n    flags = []\n    for field, label in (\n        (\"passwordNeverExpires\", \"Пароль не истекает\"), (\"passwordNotRequired\", \"Пароль не требуется\"),\n        (\"smartcardLogonRequired\", \"Требуется смарт-карта\"), (\"accountNotDelegated\", \"Учётная запись чувствительна, не делегируется\"),\n    ):\n        if not attention_only and user.get(field) is True:\n            flags.append(label)\n    if not attention_only and user.get(\"doesNotRequirePreAuth\"):\n        flags.append(\"Kerberos pre-authentication не требуется\")\n"
+      ],
+      [
+        "    return {\"key\": key, \"label\": REASON_LABELS[key], \"summary\": summary, \"observed\": observed, \"condition\": condition,\n            \"qualification\": qualification, \"limitation\": limitation, \"next\": next_step, \"order\": REASON_ORDER.index(key), **extra}\n\n",
+        "    return {\"key\": key, \"label\": REASON_LABELS[key], \"summary\": summary, \"observed\": observed, \"condition\": condition,\n            \"qualification\": qualification, \"limitation\": limitation, \"next\": next_step, \"order\": REASON_ORDER.index(key),\n            \"severity\": \"info\" if key in INFORMATION_KEYS else \"medium\", **extra}\n\n"
+      ],
+      [
+        "def _review_observations(user: Mapping[str, Any], observed_at: Any, policy: Mapping[str, int] | None = None) -> list[dict[str, Any]]:\n    out: list[dict[str, Any]] = []\n",
+        "def _review_observations(user: Mapping[str, Any], observed_at: Any, policy: Mapping[str, int] | None = None) -> list[dict[str, Any]]:\n    user = users_security.facts(user)\n    out: list[dict[str, Any]] = []\n"
+      ],
+      [
+        "                           \"Проверить effective password policy и состояние пользователя на актуальном DC.\"))\n    flags = security_flags(user)\n    if flags:\n",
+        "                           \"Проверить effective password policy и состояние пользователя на актуальном DC.\"))\n    flags = security_flags(user, attention_only=True)\n    if flags:\n"
+      ],
+      [
+        "    hygiene = ad_hygiene_policy.for_user(user, observed_at, policy or ad_hygiene_policy.thresholds())\n    episodes = user.get(\"temporaryMemberships\") or []\n",
+        "    hygiene = ad_hygiene_policy.for_user(user, observed_at, policy or ad_hygiene_policy.thresholds())\n    privileged = users_security.privileged(user)\n    snapshot_at = (user.get(\"sourceStates\") or {}).get(\"directory\", {}).get(\"observed_at\") or observed_at\n    spn_password = ad_hygiene_policy.for_user(user, snapshot_at, {\"password_age\": 365, \"inactivity\": 90})[\"password_age\"]\n    for key, applies, severity, condition, next_step in (\n        (\"password_not_required\", user.get(\"passwordNotRequired\") is True, \"high\", \"userAccountControl & 0x20 != 0\",\n         \"Потребовать пароль; проверить назначение и действующие способы входа.\"),\n        (\"kerberos_no_preauth\", user.get(\"doesNotRequirePreAuth\") is True, \"high\", \"userAccountControl & 0x400000 != 0\",\n         \"Включить предварительную аутентификацию Kerberos и проверить стойкость пароля.\"),\n        (\"spn_privileged\", bool(user.get(\"servicePrincipalNames\")) and privileged, \"high\", \"SPN присутствует; подтверждено членство в привилегированной группе\",\n         \"Отделить сервисные права от административных; проверить необходимость SPN.\"),\n        (\"spn_old_password\", bool(user.get(\"servicePrincipalNames\")) and spn_password[\"status\"] == \"exceeded\", \"medium\", \"SPN присутствует; pwdLastSet старше 365 дней на дату снимка\",\n         \"Согласовать ротацию пароля сервиса или переход на gMSA.\"),\n        (\"privileged_password_never_expires\", user.get(\"passwordNeverExpires\") is True and privileged, \"high\", \"passwordNeverExpires = true; подтверждено членство в привилегированной группе\",\n         \"Включить срок действия пароля или согласовать безопасную ротацию привилегированной учётной записи.\"),\n    ):\n        if applies:\n            evidence = {\"uac\": user.get(\"userAccountControl\"), \"spn\": user.get(\"servicePrincipalNames\"),\n                        \"password_last_set\": user.get(\"passwordLastSet\"), \"snapshot_at\": snapshot_at}\n            out.append(_reason(key, REASON_LABELS[key], f\"{condition}; UAC = {_text(evidence['uac'])}; SPN = {'; '.join(evidence['spn']) or '—'}; pwdLastSet = {_text(evidence['password_last_set'])}; снимок: {_text(snapshot_at)}\",\n                               condition, REASON_LABELS[key], \"Настройка из снимка требует проверки; это не доказательство компрометации.\",\n                               next_step, severity=severity, evidence=evidence,\n                               **({\"password_evaluation\": spn_password} if key == \"spn_old_password\" else {})))\n    episodes = user.get(\"temporaryMemberships\") or []\n"
+      ],
+      [
+        "\ndef user_row(user: Mapping[str, Any], observed_at: Any, policy: Mapping[str, int] | None = None) -> dict[str, Any]:\n    member = memberships(user)\n",
+        "\ndef user_row(user: Mapping[str, Any], observed_at: Any, policy: Mapping[str, int] | None = None,\n             *, service_exceptions: Mapping[str, Any] | None = None) -> dict[str, Any]:\n    user = users_security.facts(user)\n    member = memberships(user)\n"
+      ],
+      [
+        "    observations = _review_observations(user, observed_at, policy)\n    reasons = [item for item in observations if item[\"key\"] not in INFORMATION_KEYS]\n",
+        "    observations = _review_observations(user, observed_at, policy)\n    service_exception = users_security.exception(user, service_exceptions or {})\n    if service_exception:\n        observations = [item for item in observations if item[\"key\"] not in users_security.HYGIENE_EXCEPTION_KEYS]\n    reasons = [item for item in observations if item[\"key\"] not in INFORMATION_KEYS]\n"
+      ],
+      [
+        "        \"reasons\": reasons, \"hygiene\": hygiene,\n        \"information_limitations\": limitations, \"information_keys\": [item[\"key\"] for item in limitations],\n",
+        "        \"reasons\": reasons, \"hygiene\": hygiene,\n        \"severity\": \"high\" if any(item[\"severity\"] == \"high\" for item in reasons) else \"medium\" if reasons else None,\n        \"service_account_type\": user.get(\"serviceAccountType\"), \"service_exception\": service_exception,\n        \"admin_count\": user.get(\"adminCount\"),\n        **{target: user.get(source) for source, target in (\n            (\"passwordNotRequired\", \"password_not_required\"), (\"doesNotRequirePreAuth\", \"kerberos_no_preauth\"),\n            (\"allowReversiblePasswordEncryption\", \"reversible_encryption\"), (\"smartcardLogonRequired\", \"smartcard_required\"),\n            (\"accountNotDelegated\", \"account_not_delegated\"))},\n        \"information_limitations\": limitations, \"information_keys\": [item[\"key\"] for item in limitations],\n"
+      ]
+    ],
+    "server.sli.reports.users_tabs": [
+      [
+        "included = \"exceeded\" in {row[\"password_age_policy\"], row[\"inactivity_policy\"]}",
+        "included = any(key in row[\"reason_keys\"] for key in (\"password_age\", \"inactive_threshold\"))"
+      ],
+      [
+        "from server.sli.reporting.v2.definition import Column, result, sort_rows\nfrom server.sli.reports import ad_hygiene_policy\nfrom server.sli.reports.users_reporting import USERS_INPUT_LIMIT\n",
+        "from server.sli.reporting.v2.definition import Column, result, sort_rows\nfrom server.sli.reports import ad_hygiene_policy, users_security\nfrom server.sli.reports.users_reporting import USERS_INPUT_LIMIT\n"
+      ],
+      [
+        "            row.update(password_age_policy=hygiene[\"password_age\"][\"status\"], inactivity_policy=hygiene[\"inactivity\"][\"status\"])\n            included = any(key in row[\"reason_keys\"] for key in (\"password_age\", \"inactive_threshold\"))\n            if \"unknown\" in {row[\"password_age_policy\"], row[\"inactivity_policy\"]} and matches(user, row, match_params):\n",
+        "            row.update(password_age_policy=hygiene[\"password_age\"][\"status\"], inactivity_policy=hygiene[\"inactivity\"][\"status\"])\n            included = bool(set(row[\"reason_keys\"]) & (users_security.RISK_KEYS | {\"password_age\", \"inactive_threshold\", \"sensitive_uac_flag\"}))\n            if \"unknown\" in {row[\"password_age_policy\"], row[\"inactivity_policy\"]} and matches(user, row, match_params):\n"
+      ]
+    ],
+    "server.sli.reporting.v2.reports.users": [
+      [
+        "from server.sli.reports import ad_hygiene_policy, users_activity, users_tabs\nfrom server.sli.reports.users_v2_reporting import load_users_v2_snapshots\n",
+        "from server.sli.reports import ad_hygiene_policy, users_activity, users_tabs\nfrom server.sli.core import ad_service_exceptions\nfrom server.sli.reports.users_v2_reporting import load_users_v2_snapshots\n"
+      ],
+      [
+        "    \"contact\": frozenset({\"mail\", \"telephoneNumber\", \"mobile\", \"ipPhone\"}),\n    \"technical\": frozenset({\"ou\", \"distinguishedName\", \"sid\", \"objectGuid\", \"description\", \"whenCreated\", \"whenChanged\", \"servicePrincipalNames\"}),\n    \"privilege\": frozenset({\"memberships\", \"privilegedMemberships\"}),\n    \"security\": frozenset({\"enabled\", \"lockedOut\", \"accountExpirationDate\", \"exactLastLogon\", \"lastLogonTimestamp\", \"passwordExpiry\",\n",
+        "    \"contact\": frozenset({\"mail\", \"telephoneNumber\", \"mobile\", \"ipPhone\"}),\n    \"technical\": frozenset({\"ou\", \"distinguishedName\", \"sid\", \"objectGuid\", \"description\", \"whenCreated\", \"whenChanged\", \"servicePrincipalNames\", \"objectClasses\"}),\n    \"privilege\": frozenset({\"memberships\", \"privilegedMemberships\", \"adminCount\"}),\n    \"security\": frozenset({\"enabled\", \"lockedOut\", \"accountExpirationDate\", \"exactLastLogon\", \"lastLogonTimestamp\", \"passwordExpiry\",\n"
+      ],
+      [
+        "                            \"smartcardLogonRequired\", \"accountNotDelegated\", \"allowReversiblePasswordEncryption\", \"trustedForDelegation\",\n                            \"trustedToAuthForDelegation\", \"doesNotRequirePreAuth\", \"useDesKeyOnly\"}),\n}\n",
+        "                            \"smartcardLogonRequired\", \"accountNotDelegated\", \"allowReversiblePasswordEncryption\", \"trustedForDelegation\",\n                            \"trustedToAuthForDelegation\", \"doesNotRequirePreAuth\", \"useDesKeyOnly\", \"userAccountControl\"}),\n}\n"
+      ],
+      [
+        "    \"contact\": frozenset({\"mail\", \"phones\"}),\n    \"technical\": frozenset({\"ou\", \"dn\", \"sid\", \"guid\", \"description\", \"created\", \"changed\", \"spn\"}),\n    \"privilege\": frozenset({\"direct_groups\", \"effective_count\", \"watch_groups\"}),\n    \"security\": frozenset({\"enabled\", \"locked\", \"account_expired\", \"activity_at\", \"activity_source\", \"password_last_set\", \"password_never_expires\", \"flags\", \"password_age_policy\", \"inactivity_policy\", \"hygiene\"}),\n}\n",
+        "    \"contact\": frozenset({\"mail\", \"phones\"}),\n    \"technical\": frozenset({\"ou\", \"dn\", \"sid\", \"guid\", \"description\", \"created\", \"changed\", \"spn\", \"service_account_type\"}),\n    \"privilege\": frozenset({\"direct_groups\", \"effective_count\", \"watch_groups\", \"admin_count\"}),\n    \"security\": frozenset({\"enabled\", \"locked\", \"account_expired\", \"activity_at\", \"activity_source\", \"password_last_set\", \"password_never_expires\", \"flags\", \"password_age_policy\", \"inactivity_policy\", \"hygiene\", \"password_not_required\", \"kerberos_no_preauth\", \"reversible_encryption\", \"smartcard_required\", \"account_not_delegated\"}),\n}\n"
+      ],
+      [
+        "ROW_CATEGORIES.update(users_tabs.ROW_CATEGORIES)\nPARAM_CATEGORIES = {\"department\": frozenset({\"hr\"}), \"company\": frozenset({\"hr\"}), \"ou\": frozenset({\"technical\"}),\n",
+        "ROW_CATEGORIES.update(users_tabs.ROW_CATEGORIES)\nROW_CATEGORIES.update({path: REASON_FIELDS for path in (\"severity\", \"service_exception\")})\nROW_CATEGORIES.update({f\"service_exception.{field}\": REASON_FIELDS for field in (\"excluded_by\", \"excluded_at\")})\nPARAM_CATEGORIES = {\"department\": frozenset({\"hr\"}), \"company\": frozenset({\"hr\"}), \"ou\": frozenset({\"technical\"}),\n"
+      ],
+      [
+        "    policy = ad_hygiene_policy.thresholds()\n    view = str(context.params.get(\"view\") or (\"attention\" if allowed(REASON_FIELDS) else \"all\"))\n",
+        "    policy = ad_hygiene_policy.thresholds()\n    service_exceptions = ad_service_exceptions.configured() if allowed(REASON_FIELDS) else {}\n    view = str(context.params.get(\"view\") or (\"attention\" if allowed(REASON_FIELDS) else \"all\"))\n"
+      ],
+      [
+        "    rows = [(user, user_row(user, observed_at, policy)) for user in users]\n",
+        "    rows = [(user, user_row(user, (user.get(\"sourceStates\") or {}).get(\"directory\", {}).get(\"observed_at\") or observed_at,\n                           policy, service_exceptions=service_exceptions)) for user in users]\n"
+      ],
+      [
+        "        Column(\"password_never_expires\", \"Пароль бессрочный\", \"boolean\", optional=True),\n        Column(\"flags\", \"Security-флаги\", \"list\", optional=True),\n",
+        "        Column(\"password_never_expires\", \"Пароль бессрочный\", \"boolean\", optional=True),\n        Column(\"password_not_required\", \"Пароль не требуется\", \"boolean\", optional=True),\n        Column(\"kerberos_no_preauth\", \"Kerberos без предварительной аутентификации\", \"boolean\", optional=True),\n        Column(\"reversible_encryption\", \"Обратимое шифрование пароля\", \"boolean\", optional=True),\n        Column(\"smartcard_required\", \"Требуется смарт-карта\", \"boolean\", optional=True),\n        Column(\"account_not_delegated\", \"Чувствительная учётная запись, не делегируется\", \"boolean\", optional=True),\n        Column(\"service_account_type\", \"Тип сервисной учётной записи\", \"state\", optional=True, labels={\"spn\": \"SPN\", \"msa\": \"MSA\", \"gmsa\": \"gMSA\"}),\n        Column(\"admin_count\", \"adminCount (исторический признак защиты)\", \"number\", optional=True),\n        Column(\"severity\", \"Уровень внимания\", \"state\", labels={\"high\": \"Высокий\", \"medium\": \"Средний\"}),\n        Column(\"service_exception_by\", \"Исключение сервиса: кто добавил\", path=\"service_exception.excluded_by\", optional=True),\n        Column(\"service_exception_at\", \"Исключение сервиса: когда добавлено\", \"datetime\", path=\"service_exception.excluded_at\", optional=True),\n        Column(\"flags\", \"Security-флаги\", \"list\", optional=True),\n"
+      ],
+      [
+        "            Column(\"category\", \"Основание\", \"state\", labels={\"confirmed\": \"Подтверждённая причина\", \"information\": \"Ограничение сведений\"}),\n            Column(\"label\", \"Причина\"), Column(\"observed\", \"Наблюдалось\"), Column(\"condition\", \"Условие\"),\n",
+        "            Column(\"category\", \"Основание\", \"state\", labels={\"confirmed\": \"Подтверждённая причина\", \"information\": \"Ограничение сведений\"}),\n            Column(\"severity\", \"Уровень внимания\", \"state\", labels={\"high\": \"Высокий\", \"medium\": \"Средний\", \"info\": \"Информация\"}),\n            Column(\"label\", \"Причина\"), Column(\"observed\", \"Наблюдалось\"), Column(\"condition\", \"Условие\"),\n"
+      ]
+    ],
+    "server.sli.entities.users_v2_directory_projection": [
+      [
+        "                \"adminCount\": attrs.get(\"admin_count\"),\n                \"servicePrincipalNames\": list(attrs.get(\"service_principal_names\") or []),\n",
+        "                \"adminCount\": attrs.get(\"admin_count\"),\n                \"objectClasses\": list(attrs.get(\"object_classes\") or []),\n                \"servicePrincipalNames\": list(attrs.get(\"service_principal_names\") or []),\n"
+      ]
+    ]
+  },
+  "sources": {
+    "reports.users_security": "\"\"\"Security facts from a daily AD snapshot, without account-name heuristics.\"\"\"\nfrom __future__ import annotations\n\nfrom collections.abc import Mapping\nfrom typing import Any\n\nUAC_FLAGS = {\n    \"passwordNotRequired\": 0x20,\n    \"allowReversiblePasswordEncryption\": 0x80,\n    \"passwordNeverExpires\": 0x10000,\n    \"smartcardLogonRequired\": 0x40000,\n    \"accountNotDelegated\": 0x100000,\n    \"doesNotRequirePreAuth\": 0x400000,\n}\nRISK_KEYS = frozenset({\"password_not_required\", \"kerberos_no_preauth\", \"spn_privileged\",\n                       \"spn_old_password\", \"privileged_password_never_expires\"})\nHYGIENE_EXCEPTION_KEYS = frozenset({\"password_age\", \"inactive_threshold\", \"spn_old_password\"})\n\n\ndef facts(user: Mapping[str, Any]) -> dict[str, Any]:\n    result = dict(user)\n    raw = user.get(\"userAccountControl\")\n    try:\n        uac = int(raw) if not isinstance(raw, bool) and str(raw).isascii() and str(raw).isdecimal() else None\n    except (ValueError, TypeError, OverflowError):\n        uac = None\n    for name, bit in UAC_FLAGS.items():\n        value = user.get(name)\n        result[name] = bool(uac & bit) if uac is not None else value if isinstance(value, bool) else None\n    classes = user.get(\"objectClasses\") or []\n    classes = {str(value).casefold() for value in (classes if isinstance(classes, list) else [classes])}\n    spns = user.get(\"servicePrincipalNames\")\n    spns = [value for value in (spns if isinstance(spns, list) else [spns]) if isinstance(value, str) and value.strip()]\n    result[\"servicePrincipalNames\"] = spns\n    result[\"serviceAccountType\"] = (\"gmsa\" if \"msds-groupmanagedserviceaccount\" in classes else\n                                    \"msa\" if \"msds-managedserviceaccount\" in classes else \"spn\" if spns else None)\n    return result\n\n\ndef privileged(user: Mapping[str, Any]) -> bool:\n    \"\"\"adminCount can survive privilege removal and is not current membership.\"\"\"\n    return any(group.get(\"watchGroup\") is True for group in (user.get(\"memberships\") or {}).get(\"effective\") or []\n               if isinstance(group, Mapping)) or any(\n        entry.get(\"relation\") == \"direct\" for entry in user.get(\"privilegedMemberships\") or [] if isinstance(entry, Mapping))\n\n\ndef exception(user: Mapping[str, Any], configured: Mapping[str, Any]) -> dict[str, Any] | None:\n    return configured.get(str(user.get(\"sid\") or \"\").upper()) if user.get(\"serviceAccountType\") else None\n"
+  }
+}

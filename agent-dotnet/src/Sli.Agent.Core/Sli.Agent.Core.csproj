@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Sli.Agent.Core</RootNamespace>
+    <AssemblyName>Sli.Agent.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Sli.Agent.Protocol\Sli.Agent.Protocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\config\event_storage_meanings.json" LogicalName="event_storage_meanings.json" />
+    <!-- The server still admits already queued packets from pre-table agents. -->
+    <EmbeddedResource Include="Resources\dc-event-catalog.json" LogicalName="dc-event-catalog.json" />
+  </ItemGroup>
+</Project>

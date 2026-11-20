@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-session-reconciliation.v1",
+  "status": "prepared_source_only",
+  "candidate_outcome": "identity_unresolved",
+  "maximum_candidates_per_run": 50,
+  "maximum_evidence_records_per_run": 1000,
+  "maximum_evidence_bytes_per_run": 67108864,
+  "identity_evidence_discovery": {
+    "maximum_manifests_per_run": 2000,
+    "maximum_bytes_per_run": 67108864,
+    "manifest_page_size": 250
+  },
+  "source_contact_allowed": false,
+  "verified_local_evidence_read_allowed": true,
+  "production_migration_applied": false,
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "retry_boundary": [
+    "new_evidence_corpus_sha256",
+    "new_resolver_contract_id"
+  ],
+  "immutable_inputs": [
+    "radius_accounting_session_observations",
+    "radius_session_projection_receipts",
+    "core_evidence_manifests"
+  ],
+  "prohibited_actions": [
+    "source_contact",
+    "observation_update",
+    "original_receipt_update_or_delete",
+    "raw_identity_persistence",
+    "evidence_delete",
+    "production_apply_without_disposable_acceptance"
+  ]
+}

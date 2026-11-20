@@ -1,0 +1,104 @@
+using System.Numerics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Sli.Agent.Core;
+using Sli.Agent.Protocol;
+
+namespace Sli.Server.Agents.Ingress;
+
+public static class AgentFileAuditValidator
+{
+    public static JsonArray Validate(Envelope e,JsonObject packet,FileAuditPolicy policy,Guid host)
+    {
+        try { return ValidateCore(e,packet,policy,host); }
+        catch(Exception error) when (error is AgentException or ProtocolException or JsonException or ArgumentException or InvalidOperationException or NullReferenceException or FormatException or OverflowException)
+        { throw new ProtocolException("agent_file_audit_packet_invalid"); }
+    }
+    private static JsonArray ValidateCore(Envelope e,JsonObject packet,FileAuditPolicy p,Guid host)
+    {
+        static void Require(bool value) { if (!value) throw new ArgumentException(); }
+        CollectionPacket.Validate(packet);
+        bool actions=packet["records"]!.AsArray().Any(r=>r?["format"]?.GetValue<string>()=="file_action");
+        var rows=actions ? ExtractActions(packet) : AgentCollectionRows.ExtractEvents(packet); string hostId=host.ToString("D");
+        string source=p.Value["source_name"]?.GetValue<string>() ?? hostId; var header=packet["header"]!.AsObject();
+        Require(e.ModuleId==FileAuditPolicy.ModuleId && e.SourceInstanceId==hostId && ValidGeneration(e.Generation,hostId)
+            && e.Channel=="Security" && e.ModuleVersion=="1.0.0" && e.PayloadContract==CollectionPacket.Contract && e.PolicyRevision==p.Revision
+            && header["source"]!.GetValue<string>()==source && header["generation"]!.GetValue<string>()==e.Generation && header["channel"]!.GetValue<string>()=="Security"
+            && AgentAdDcUtc.Parse(header["observed_at_utc"]!.GetValue<string>())==AgentAdDcUtc.Parse(e.ObservedAtUtc)
+            && CanonicalJson.Length(packet)<=Math.Min(p.Number("max_bytes"),44*1024));
+        var before=State(e.CursorBefore,hostId); var after=State(e.CursorAfter,hostId);
+        var start=Id(before["record_id"]); var last=Id(after["record_id"]); var context=packet["context"]!.AsObject();
+        Require(JsonRead.HasExactly(context,"policy_revision","filtered_count","lost_count","read_error")
+            && context["policy_revision"]!.GetValue<string>()==p.Revision && JsonRead.TryInteger(context["filtered_count"],out var filteredValue) && filteredValue>=0 && filteredValue<=long.MaxValue);
+        long filtered=(long)Integer(context["filtered_count"]); long? lost=context["lost_count"] is null ? null : (long)Integer(context["lost_count"]);
+        string? error=context["read_error"]?.GetValue<string>(); bool gap=error=="file_audit_journal_gap";
+        Require(lost is null || lost>=0);
+        string? bound=after["since_utc"]?.GetValue<string>(); string? oldBound=before["since_utc"]?.GetValue<string>();
+        if (bound!=oldBound)
+        {
+            var depth=p.Value["initial_read_hours"];
+            Require(oldBound is null && start is null && bound is not null && depth is not null && JsonRead.TryInteger(depth,out var hours)
+                && hours>=0 && hours<=876000 && AgentAdDcUtc.Parse(bound)==AgentAdDcUtc.Parse(e.ObservedAtUtc).AddHours(-(double)hours));
+        }
+        var comparableBefore=(JsonObject)before.DeepClone(); comparableBefore.Remove("since_utc");
+        var comparableAfter=(JsonObject)after.DeepClone(); comparableAfter.Remove("since_utc");
+        Require(error is null or "file_audit_read_failed" or "file_audit_journal_gap"
+            && (lost is null)==(error is not null) && rows.Count+filtered+(lost ?? 0)<=Math.Min(p.Number("max_events"),256)
+            && e.FilteredCount==filtered && e.LostCount==lost && e.ContinuityState==(error is not null || lost>0 ? "gap" : filtered>0 ? "filtered" : "not_proven")
+            && JsonNode.DeepEquals(packet["continuity"],new JsonObject { ["status"]="not_proven" })
+            && PythonMetadataEquality.Equal(header["cursor"],new JsonObject { ["after_record_id"]=start is null ? null : JsonRead.Integer(start.Value), ["last_record_id"]=last is null ? null : JsonRead.Integer(last.Value) }));
+        Require(after["generation"]!.GetValue<string>()==e.Generation
+            && (before["generation"]!.GetValue<string>()==e.Generation || gap && start is null)
+            && (!gap || rows.Count!=0 || start is null && last is null && e.Generation!=hostId && before["bookmark"]!.GetValue<string>()=="" && after["bookmark"]!.GetValue<string>()=="")
+            && (!gap || rows.Count==0 || rows.Any(r=>JsonRead.TryInteger(r!["event_id"],out var n) && n==1102)));
+        var ids=rows.Select(r=>Id(r!["record_id"]) ?? throw new ArgumentException()).ToArray();
+        Require(ids.All(n=>n>0) && ids.SequenceEqual(actions ? ids.Order() : ids.Distinct().Order()) && ids.All(n=>(start is null || n>start) && last is not null && n<=last)
+            && (start is null || last is not null && last>=start)
+            && (filtered!=0 || lost!=0 || gap || last==(ids.Length>0 ? ids[^1] : start))
+            && (filtered==0 && !(lost>0) || last is not null && (start is null || last>start))
+            && (error!="file_audit_read_failed" || rows.Count==0 && filtered==0 && JsonNode.DeepEquals(comparableAfter,comparableBefore))
+            && (rows.Count!=0 || filtered!=0 || lost!=0 || gap || JsonNode.DeepEquals(comparableAfter,comparableBefore)));
+        foreach(var item in rows)
+        {
+            var row=item!.AsObject();
+            if (bound is not null && start is null) Require(AgentAdDcUtc.Parse(row["time_created"]!.GetValue<string>())>=AgentAdDcUtc.Parse(bound));
+            if(actions) AgentFileAuditAction.Validate(row,p,source);
+            else AgentFileAuditEvents.Validate(row,p,source);
+        }
+        if(actions) Require(rows.OfType<JsonObject>().Select(r=>new {
+            Scope=r["collection_scope_id"]!.GetValue<string>(),Path=r["path"]!.GetValue<string>(),
+            Operation=r["operation"]!.GetValue<string>(),Actor=r["subject_user_sid"]!.GetValue<string>(),
+            Minute=AgentAdDcUtc.Parse(r["minute_utc"]!.GetValue<string>())
+        }).Distinct().Count()==rows.Count);
+        return rows;
+    }
+    private static JsonArray ExtractActions(JsonObject packet)
+    {
+        var rows=new JsonArray();
+        foreach(var item in packet["records"]!.AsArray()) {
+            var record=item!.AsObject(); var row=record["payload"]!.AsObject();
+            if(record["format"]!.GetValue<string>()!="file_action" || !JsonNode.DeepEquals(record["record_id"],row["record_id"]))
+                throw new ArgumentException();
+            rows.Add(row.DeepClone());
+        }
+        return rows;
+    }
+    private static BigInteger Integer(JsonNode? n) => JsonRead.TryInteger(n,out var number) ? number : throw new ArgumentException();
+    private static BigInteger? Id(JsonNode? n) => n is null ? null : Integer(n)>0 ? Integer(n) : throw new ArgumentException();
+    private static bool ValidGeneration(string value,string host) => value==host || value.StartsWith(host+":",StringComparison.Ordinal)
+        && Guid.TryParseExact(value[(host.Length+1)..],"D",out var guid) && guid.ToString("D")==value[(host.Length+1)..];
+    private static JsonObject State(Cursor cursor,string host)
+    {
+        if (cursor.Strategy!="bookmark") throw new ArgumentException();
+        if (cursor.Token=="") return new JsonObject { ["record_id"]=null,["bookmark"]="",["generation"]=host };
+        var value=JsonNode.Parse(cursor.Token)!.AsObject();
+        if (value.Any(p=>p.Key is not ("record_id" or "bookmark" or "generation" or "anchor_sha256" or "since_utc"))
+            || !value.ContainsKey("record_id") || !value.ContainsKey("bookmark") || !value.ContainsKey("generation")) throw new ArgumentException();
+        var id=Id(value["record_id"]); string bookmark=value["bookmark"]!.GetValue<string>();
+        if (!ValidGeneration(value["generation"]!.GetValue<string>(),host) || JsonRead.CodePoints(bookmark)>3000 || (id is null)!=(bookmark.Length==0)) throw new ArgumentException();
+        if (value.ContainsKey("anchor_sha256") && !Regex.IsMatch(value["anchor_sha256"]!.GetValue<string>(),"\\A[a-f0-9]{64}\\z")) throw new ArgumentException();
+        if (value.ContainsKey("since_utc")) _=AgentAdDcUtc.Parse(value["since_utc"]!.GetValue<string>());
+        return value;
+    }
+}

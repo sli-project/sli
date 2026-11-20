@@ -1,0 +1,171 @@
+/*
+  SLI design tokens (ADR 0013). Component CSS uses only var(--sli-*).
+  Legacy names (navy, blue, line, …) stay until the legacy stylesheets are
+  removed in phase 3; new code uses the semantic roles below.
+*/
+:root {
+  /* Legacy names kept for the existing stylesheets */
+  --sli-font-sans: "Segoe UI", "Inter", Arial, sans-serif;
+  --sli-color-text: #10213d;
+  --sli-color-surface: #f7f9fc;
+  --sli-color-panel: #fff;
+  --sli-color-navy: #062548;
+  --sli-color-navy-deep: #041a38;
+  --sli-color-blue: #0868e8;
+  --sli-color-blue-dark: #0758c9;
+  --sli-color-line: #d5dfec;
+  --sli-color-muted: #5d6d84;
+  --sli-radius-control: 6px;
+  --sli-radius-panel: 7px;
+  --sli-shadow-panel: 0 5px 18px rgba(24, 53, 91, .07);
+  --sli-sidebar-width: 272px;
+  --sli-sidebar-collapsed-width: 68px;
+  --sli-topbar-height: 68px;
+  --sli-control-height: 38px;
+  --sli-control-height-compact: 32px;
+  --sli-control-font-size: 13px;
+  --sli-control-line-height: 18px;
+  --sli-space-1: 4px;
+  --sli-space-2: 8px;
+  --sli-space-3: 12px;
+  --sli-space-4: 16px;
+  --sli-heading-size: 24px;
+
+  /* Semantic colour roles */
+  --sli-bg: #f4f7fb;
+  --sli-surface-1: #ffffff;
+  --sli-surface-2: #f7f9fc;
+  --sli-surface-3: #eef3f9;
+  --sli-border: #d5dfec;
+  --sli-border-strong: #b7c6da;
+  --sli-text: #10213d;
+  --sli-text-muted: #5d6d84;
+  --sli-text-inverse: #ffffff;
+  --sli-accent: #0868e8;
+  --sli-accent-hover: #0758c9;
+  --sli-accent-soft: #e6f0fe;
+  --sli-success: #127a4a;
+  --sli-success-soft: #e3f5ec;
+  --sli-warning: #9a5b00;
+  --sli-warning-soft: #fff3dc;
+  --sli-danger: #b42318;
+  --sli-danger-soft: #fdeceb;
+  --sli-info: #0b6b8f;
+  --sli-info-soft: #e3f3f9;
+  --sli-focus: #0868e8;
+  --sli-overlay: rgba(6, 37, 72, .38);
+
+  /* Chart palette (categorical), validated for both themes */
+  --sli-chart-1: #0868e8;
+  --sli-chart-2: #12a37f;
+  --sli-chart-3: #d97706;
+  --sli-chart-4: #7c3aed;
+  --sli-chart-5: #db2777;
+  --sli-chart-6: #0891b2;
+  --sli-chart-7: #65a30d;
+  --sli-chart-8: #475569;
+  --sli-chart-grid: #e3e9f2;
+
+  /* Typography */
+  --sli-font-mono: "Cascadia Mono", Consolas, monospace;
+  --sli-text-xs: 12px;
+  --sli-text-sm: 13px;
+  --sli-text-md: 14px;
+  --sli-text-lg: 16px;
+  --sli-text-xl: 20px;
+  --sli-text-2xl: 24px;
+  --sli-weight-regular: 400;
+  --sli-weight-medium: 600;
+  --sli-weight-bold: 700;
+  --sli-leading: 1.45;
+
+  /* Spacing (4 px grid) */
+  --sli-space-5: 20px;
+  --sli-space-6: 24px;
+  --sli-space-8: 32px;
+  --sli-space-10: 40px;
+
+  /* Shape and depth */
+  --sli-radius-sm: 4px;
+  --sli-radius-md: 6px;
+  --sli-radius-lg: 10px;
+  --sli-radius-pill: 999px;
+  --sli-shadow-1: 0 1px 2px rgba(16, 33, 61, .06), 0 1px 3px rgba(16, 33, 61, .08);
+  --sli-shadow-2: 0 8px 24px rgba(16, 33, 61, .14);
+
+  /* Density */
+  --sli-row-height: 28px;
+  --sli-cell-pad-x: 8px;
+  --sli-drawer-width: min(560px, 100vw);
+  --sli-motion: 120ms ease-out;
+  --sli-focus-width: 2px;
+  --sli-focus-offset: 2px;
+  --sli-chip-height: 28px;
+  --sli-icon-size: 18px;
+  --sli-field-min-width: 180px;
+  --sli-field-basis: 200px;
+  --sli-field-max-width: 320px;
+  --sli-metric-min-width: 160px;
+  --sli-metric-compact-min-width: 140px;
+}
+
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --sli-bg: #0b1422;
+    --sli-surface-1: #111d2e;
+    --sli-surface-2: #15233a;
+    --sli-surface-3: #1b2c46;
+    --sli-border: #2a3d59;
+    --sli-border-strong: #3b5376;
+    --sli-text: #e6edf7;
+    --sli-text-muted: #9fb0c8;
+    --sli-text-inverse: #0b1422;
+    --sli-accent: #5aa2ff;
+    --sli-accent-hover: #7db6ff;
+    --sli-accent-soft: #16304f;
+    --sli-success: #4cc38a;
+    --sli-success-soft: #123326;
+    --sli-warning: #f0b44c;
+    --sli-warning-soft: #3a2a0e;
+    --sli-danger: #ff7b72;
+    --sli-danger-soft: #3d1614;
+    --sli-info: #5cc3e6;
+    --sli-info-soft: #0f2f3b;
+    --sli-focus: #7db6ff;
+    --sli-overlay: rgba(0, 0, 0, .55);
+    --sli-chart-grid: #22344f;
+    --sli-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+    --sli-shadow-2: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sli-bg: #0b1422;
+  --sli-surface-1: #111d2e;
+  --sli-surface-2: #15233a;
+  --sli-surface-3: #1b2c46;
+  --sli-border: #2a3d59;
+  --sli-border-strong: #3b5376;
+  --sli-text: #e6edf7;
+  --sli-text-muted: #9fb0c8;
+  --sli-text-inverse: #0b1422;
+  --sli-accent: #5aa2ff;
+  --sli-accent-hover: #7db6ff;
+  --sli-accent-soft: #16304f;
+  --sli-success: #4cc38a;
+  --sli-success-soft: #123326;
+  --sli-warning: #f0b44c;
+  --sli-warning-soft: #3a2a0e;
+  --sli-danger: #ff7b72;
+  --sli-danger-soft: #3d1614;
+  --sli-info: #5cc3e6;
+  --sli-info-soft: #0f2f3b;
+  --sli-focus: #7db6ff;
+  --sli-overlay: rgba(0, 0, 0, .55);
+  --sli-chart-grid: #22344f;
+  --sli-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --sli-shadow-2: 0 8px 24px rgba(0, 0, 0, .5);
+}

@@ -1,0 +1,63 @@
+# SLI runtime configuration example.
+# Секреты и идентификаторы конкретной инфраструктуры задаются через
+# защищённое окружение, а не в этом файле.
+
+database:
+  backend: postgres
+  postgres_dsn: null
+  postgres_connect_timeout_seconds: 3
+  postgres_statement_timeout_ms: 900000
+  postgres_lock_timeout_ms: 3000
+
+storage:
+  reports_dir: data/reports
+  log_dir: data/logs
+
+collector:
+  interval_seconds: 600
+
+health:
+  lag_warn_minutes: 30
+  lag_high_minutes: 120
+
+retention:
+  apply_by_default: false
+  # Confirm one of economy / extended administratively.  Omit to preserve the
+  # existing resolved policy; recommendation never switches this value.
+  storage_capacity_profile: null
+  # Comma-separated StoragePolicy fields that intentionally override a selected
+  # profile. Ordinary retention keys do not override profile-owned defaults.
+  storage_capacity_profile_overrides: null
+  raw_retention_days: 14
+  raw_archive_enabled: true
+  raw_archive_compress: true
+  db_retention_days: 7
+  warm_retention_days: 365
+  backup_retention_days: 7
+  log_retention_days: 14
+  artifact_retention_days: 30
+  post_collection_retention_days: 30
+  archive_auto_delete_enabled: false
+  min_free_disk_percent: 15
+  stop_collection_if_free_disk_bytes_below: 10737418240
+  # Сбор блокируется при любом из двух stop-порогов: bytes ИЛИ percent.
+  stop_collection_if_free_disk_percent_below: 10
+  critical_free_disk_percent: 5
+
+backup:
+  dir: data/backups
+
+ui:
+  dashboard_refresh_seconds: 5
+
+autocollection:
+  channel_fairness_enabled: true
+  channel_fairness_stale_minutes: 360
+  channel_fairness_max_events: 100
+  channel_fairness_timeout_seconds: 120
+
+ai:
+  provider: openai_api
+  model: gpt-5.5
+  execute_enabled: false
+  timeout_seconds: 60

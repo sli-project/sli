@@ -1,0 +1,583 @@
+{
+  "groups": [
+    {
+      "key": "passwords",
+      "label": "Пароли",
+      "event_ids": [
+        4723,
+        4724
+      ],
+      "severity": "high",
+      "hint": "смена и сброс пароля",
+      "card_hint": "4723/4724",
+      "check": "Сопоставить сброс/смену пароля с последующим успешным входом и инициатором."
+    },
+    {
+      "key": "lockouts",
+      "label": "Блокировки",
+      "event_ids": [
+        4740,
+        4767
+      ],
+      "severity": "medium",
+      "hint": "lockout и разблокировка учетных записей",
+      "card_hint": "4740/4767",
+      "check": "Проверить источник блокировки: IP/host, повторяемость и связанные 4625."
+    },
+    {
+      "key": "groups",
+      "label": "Группы",
+      "event_ids": [
+        4728,
+        4729,
+        4732,
+        4733,
+        4756,
+        4757
+      ],
+      "severity": "high",
+      "hint": "изменения членства в группах",
+      "card_hint": "изменения членства",
+      "check": "Проверить, кто изменял группы, особенно привилегированные, и открыть evidence по строкам группы."
+    },
+    {
+      "key": "accounts",
+      "label": "Учетные записи",
+      "event_ids": [
+        4720,
+        4722,
+        4725,
+        4726,
+        4738
+      ],
+      "severity": "medium",
+      "hint": "создание, включение, отключение и изменение учеток",
+      "card_hint": "",
+      "check": ""
+    },
+    {
+      "key": "privileges",
+      "label": "Специальные привилегии",
+      "event_ids": [
+        4672
+      ],
+      "severity": "info",
+      "hint": "наблюдение privileged session; не доказывает повышение прав",
+      "card_hint": "4672",
+      "check": "Проверить 4672: учетная запись, хост, LogonId и соседние входы в investigation."
+    },
+    {
+      "key": "failed_logons",
+      "label": "Ошибки входа",
+      "event_ids": [
+        4625
+      ],
+      "severity": "medium",
+      "hint": "неуспешные входы",
+      "card_hint": "4625",
+      "check": "Посмотреть массовые 4625 по одному источнику или учетной записи."
+    },
+    {
+      "key": "auth",
+      "label": "Kerberos / NTLM",
+      "event_ids": [
+        4771,
+        4776
+      ],
+      "severity": "medium",
+      "hint": "ошибки Kerberos и NTLM validation",
+      "card_hint": "",
+      "check": ""
+    },
+    {
+      "key": "explicit_credentials",
+      "label": "Явные учетные данные",
+      "event_ids": [
+        4648
+      ],
+      "severity": "info",
+      "hint": "контекстное наблюдение, без высокого риска по одному событию",
+      "card_hint": "",
+      "check": ""
+    },
+    {
+      "key": "all_logons",
+      "label": "Все входы/выходы",
+      "event_ids": [
+        4624,
+        4634
+      ],
+      "severity": "info",
+      "hint": "массовые 4624/4634 только по явному выбору",
+      "card_hint": "",
+      "check": ""
+    },
+    {
+      "key": "services_tasks",
+      "label": "Службы и задачи",
+      "event_ids": [
+        7045,
+        106,
+        140,
+        141
+      ],
+      "severity": "high",
+      "hint": "установка служб и события планировщика",
+      "card_hint": "",
+      "check": ""
+    }
+  ],
+  "families": {
+    "authentication": [
+      4624,
+      4625,
+      4634,
+      4648,
+      4768,
+      4769,
+      4771,
+      4776
+    ],
+    "account_management": [
+      4720,
+      4722,
+      4723,
+      4724,
+      4725,
+      4726,
+      4728,
+      4729,
+      4732,
+      4733,
+      4738,
+      4740,
+      4756,
+      4757,
+      4767,
+      4781
+    ],
+    "privilege_management": [
+      4672
+    ],
+    "policy_change": [
+      1102,
+      4719
+    ],
+    "service_task": [
+      7036,
+      7040,
+      7045
+    ]
+  },
+  "labels": {
+    "4624": {
+      "ru": "Успешный вход",
+      "en": "Successful logon"
+    },
+    "4625": {
+      "ru": "Ошибка входа",
+      "en": "Failed logon"
+    },
+    "4634": {
+      "ru": "Выход из системы",
+      "en": "Logoff"
+    },
+    "4647": {
+      "ru": "Выход по инициативе пользователя",
+      "en": "User initiated logoff"
+    },
+    "4648": {
+      "ru": "Вход с явным указанием учетных данных",
+      "en": "Explicit credentials logon"
+    },
+    "4672": {
+      "ru": "Выданы специальные права",
+      "en": "Special privileges assigned"
+    },
+    "4720": {
+      "ru": "Создана учетная запись",
+      "en": "User account created"
+    },
+    "4722": {
+      "ru": "Учетная запись включена",
+      "en": "User account enabled"
+    },
+    "4723": {
+      "ru": "Попытка смены пароля",
+      "en": "Password change attempt"
+    },
+    "4724": {
+      "ru": "Попытка сброса пароля",
+      "en": "Password reset attempt"
+    },
+    "4725": {
+      "ru": "Учетная запись отключена",
+      "en": "User account disabled"
+    },
+    "4726": {
+      "ru": "Учетная запись удалена",
+      "en": "User account deleted"
+    },
+    "4728": {
+      "ru": "Добавление в привилегированную группу",
+      "en": "Added to privileged group"
+    },
+    "4729": {
+      "ru": "Удаление из привилегированной группы",
+      "en": "Removed from privileged group"
+    },
+    "4732": {
+      "ru": "Добавление в локальную группу",
+      "en": "Added to local group"
+    },
+    "4733": {
+      "ru": "Удаление из локальной группы",
+      "en": "Removed from local group"
+    },
+    "4740": {
+      "ru": "Учетная запись заблокирована",
+      "en": "Account locked out"
+    },
+    "4767": {
+      "ru": "Учетная запись разблокирована",
+      "en": "Account unlocked"
+    },
+    "4781": {
+      "ru": "Переименована учетная запись",
+      "en": "Account renamed"
+    },
+    "4768": {
+      "ru": "Запрошен Kerberos TGT",
+      "en": "Kerberos TGT requested"
+    },
+    "4769": {
+      "ru": "Запрошен Kerberos service ticket",
+      "en": "Kerberos service ticket requested"
+    },
+    "4771": {
+      "ru": "Ошибка предварительной проверки Kerberos",
+      "en": "Kerberos pre-authentication failed"
+    },
+    "4776": {
+      "ru": "Проверка учетных данных",
+      "en": "Credential validation"
+    },
+    "5504": {
+      "ru": "DNS-запрос/ответ с ошибкой",
+      "en": "DNS invalid query/response"
+    },
+    "7045": {
+      "ru": "Установлена новая служба",
+      "en": "New service installed"
+    }
+  },
+  "accounts": {
+    "4624": [
+      "Вход выполнен",
+      "logon",
+      "ok"
+    ],
+    "4625": [
+      "Неудачный вход",
+      "logon_failed",
+      "warn"
+    ],
+    "4648": [
+      "Вход с явным указанием учетных данных",
+      "explicit_credentials",
+      "warn"
+    ],
+    "4672": [
+      "Создана сессия со специальными привилегиями",
+      "privileged_session",
+      "info"
+    ],
+    "4720": [
+      "Создана учетная запись",
+      "account_lifecycle",
+      "high"
+    ],
+    "4722": [
+      "Учетная запись включена",
+      "account_lifecycle",
+      "warn"
+    ],
+    "4723": [
+      "Попытка смены пароля",
+      "password",
+      "warn"
+    ],
+    "4724": [
+      "Сброс пароля",
+      "password",
+      "high"
+    ],
+    "4725": [
+      "Учетная запись отключена",
+      "account_lifecycle",
+      "warn"
+    ],
+    "4726": [
+      "Учетная запись удалена",
+      "account_lifecycle",
+      "high"
+    ],
+    "4728": [
+      "Добавление в глобальную группу",
+      "group_change",
+      "high"
+    ],
+    "4729": [
+      "Удаление из глобальной группы",
+      "group_change",
+      "warn"
+    ],
+    "4732": [
+      "Добавление в локальную группу",
+      "group_change",
+      "high"
+    ],
+    "4733": [
+      "Удаление из локальной группы",
+      "group_change",
+      "warn"
+    ],
+    "4738": [
+      "Изменена учетная запись",
+      "account_change",
+      "warn"
+    ],
+    "4740": [
+      "Учетная запись заблокирована",
+      "lockout",
+      "high"
+    ],
+    "4767": [
+      "Учетная запись разблокирована",
+      "lockout",
+      "info"
+    ],
+    "4781": [
+      "Переименована учетная запись",
+      "account_lifecycle",
+      "warn"
+    ],
+    "4756": [
+      "Добавление в универсальную группу",
+      "group_change",
+      "high"
+    ],
+    "4757": [
+      "Удаление из универсальной группы",
+      "group_change",
+      "warn"
+    ],
+    "4768": [
+      "Запрошен Kerberos TGT",
+      "kerberos",
+      "info"
+    ],
+    "4769": [
+      "Запрошен Kerberos service ticket",
+      "kerberos",
+      "info"
+    ],
+    "4771": [
+      "Ошибка предварительной проверки Kerberos",
+      "kerberos_failed",
+      "warn"
+    ],
+    "4776": [
+      "Проверка учетных данных",
+      "credential_validation",
+      "info"
+    ]
+  },
+  "analysis_families": {
+    "successful_logon": [
+      4624
+    ],
+    "failed_logon": [
+      4625
+    ],
+    "logoff": [
+      4634
+    ],
+    "explicit_credentials": [
+      4648
+    ],
+    "special_privileges": [
+      4672
+    ],
+    "audit_policy_change": [
+      4719
+    ],
+    "account_created": [
+      4720
+    ],
+    "account_enabled": [
+      4722
+    ],
+    "privileged_group_change": [
+      4728,
+      4732
+    ],
+    "lockout": [
+      4740
+    ],
+    "kerberos": [
+      4768,
+      4769,
+      4771
+    ],
+    "kerberos_risky": [
+      4769,
+      4771
+    ],
+    "security_log_cleared": [
+      1102
+    ],
+    "dns_invalid": [
+      5504
+    ],
+    "context_security": [
+      4624,
+      4728,
+      4732,
+      4756
+    ],
+    "context_task": [
+      100,
+      106,
+      129,
+      140,
+      200,
+      201
+    ],
+    "scheduled_task": [
+      100,
+      102,
+      106,
+      129,
+      140,
+      200,
+      201,
+      324
+    ],
+    "scheduled_task_related": [
+      100,
+      102,
+      106,
+      140,
+      200,
+      201
+    ],
+    "gpo_application": [
+      101,
+      103,
+      108,
+      1112
+    ],
+    "critical_account_top": [
+      4625,
+      4740,
+      4720,
+      4732,
+      1102
+    ],
+    "audit_controls": [
+      4624,
+      4625,
+      4634,
+      4672,
+      4719,
+      4720,
+      4722,
+      4728,
+      4732,
+      4740,
+      4768,
+      4769,
+      1102
+    ],
+    "explicit_credentials_related": [
+      4648,
+      4624,
+      4769
+    ],
+    "failed_logon_related": [
+      4625,
+      4624,
+      4740
+    ],
+    "privileged_session_related": [
+      4624,
+      4672
+    ],
+    "security_attention": [
+      1102,
+      4719,
+      4720,
+      4722,
+      4728,
+      4732
+    ]
+  },
+  "finding_rules": {
+    "4740": {
+      "rule_code": "account_lockout",
+      "title": "Блокировка учетной записи",
+      "severity": "medium",
+      "recommendation": "Проверить источник ошибок входа и связанный компьютер/IP.",
+      "why_it_matters": "Пользовательская учетная запись была заблокирована."
+    },
+    "4724": {
+      "rule_code": "password_reset",
+      "title": "Сброс пароля",
+      "severity": "high",
+      "recommendation": "Проверить, кто инициировал смену/сброс пароля, и были ли рядом подозрительные входы.",
+      "why_it_matters": "Обнаружена попытка сброса пароля учетной записи."
+    },
+    "4723": {
+      "rule_code": "password_change_attempt",
+      "title": "Попытка смены пароля",
+      "severity": "medium",
+      "recommendation": "Проверить, кто инициировал смену/сброс пароля, и были ли рядом подозрительные входы.",
+      "why_it_matters": "Обнаружена попытка смены пароля."
+    },
+    "4728": {
+      "rule_code": "group_global_add",
+      "title": "Добавление в глобальную группу",
+      "severity": "high",
+      "recommendation": "Проверить инициатора, целевую группу и обоснование изменения членства.",
+      "why_it_matters": "Учетная запись добавлена в глобальную группу."
+    },
+    "4732": {
+      "rule_code": "group_local_add",
+      "title": "Добавление в локальную группу",
+      "severity": "high",
+      "recommendation": "Проверить инициатора, целевую группу и обоснование изменения членства.",
+      "why_it_matters": "Учетная запись добавлена в локальную группу."
+    },
+    "4756": {
+      "rule_code": "group_universal_add",
+      "title": "Добавление в универсальную группу",
+      "severity": "high",
+      "recommendation": "Проверить инициатора, целевую группу и обоснование изменения членства.",
+      "why_it_matters": "Учетная запись добавлена в универсальную группу."
+    },
+    "7045": {
+      "rule_code": "service_installed",
+      "title": "Установлена служба",
+      "severity": "high",
+      "recommendation": "Проверить evidence-события и подтвердить легитимность действия.",
+      "why_it_matters": "На сервере установлена новая служба."
+    }
+  },
+  "monitor_privileged_event_ids": [
+    4672,
+    4728,
+    4732,
+    4756
+  ]
+}

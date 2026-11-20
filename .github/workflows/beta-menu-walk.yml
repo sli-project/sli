@@ -1,0 +1,67 @@
+name: Beta menu walk
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'server-dotnet/**'
+      - 'config/navigation_v3.json'
+      - 'config/postgres_baseline/**'
+      - 'config/postgres_migrations/**'
+      - 'scripts/maintenance/beta_menu_walk.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/beta-menu-walk.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-menu-walk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  menu-walk:
+    runs-on: ${{ vars.SLI_LINUX_RUNNER || 'ubuntu-latest' }}
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_gcServer: '0'
+      DOTNET_GCHeapHardLimit: '40000000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: server-dotnet/global.json
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+      - run: npm ci
+      - run: npm --prefix frontend ci
+      - run: npx playwright install chromium
+      - name: PostgreSQL 18 test binaries (same runner as Server .NET)
+        run: |
+          if [ -x /usr/lib/postgresql/18/bin/initdb ]; then exit 0; fi
+          sudo install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
+      - run: node --test frontend/tests/menu-walk/checks.node.mjs
+      - name: Walk beta menu against owned PostgreSQL and .NET
+        run: npm run beta:menu-walk -- --results artifacts/menu-walk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: beta-menu-walk
+          path: artifacts/menu-walk/
+          retention-days: 3

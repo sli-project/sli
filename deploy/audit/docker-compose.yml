@@ -1,0 +1,72 @@
+# Start through: python -m scripts.dev.ui_audit.stand start --base ... --out ...
+# Seed image contract: a disposable PostgreSQL cluster prepared from the admitted
+# structured export, with the three viewer accounts in access_levels.json.
+# It must include server-enforced read-only grants/scopes/field classes and the
+# passport/account hashes as image labels. No production volume may be mounted.
+name: ${SLI_AUDIT_PROJECT:?Use an admitted sli-audit-* project}
+
+services:
+  postgres:
+    image: ${SLI_AUDIT_SEED_IMAGE:?Set the admitted immutable seed image}
+    environment:
+      POSTGRES_DB: sli
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    tmpfs:
+      - /var/lib/postgresql
+    networks: [audit]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d sli"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # The seed image initializes the tmpfs cluster; nothing survives this stand.
+
+  api:
+    image: ${SLI_AUDIT_APP_IMAGE:?Set an existing SLI Linux image}
+    command: [api, --host, "0.0.0.0", --port, "8443"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp, /var/lib/sli]
+    networks: [audit]
+    ports: ["127.0.0.1:${SLI_AUDIT_PORT:-18086}:8443"]
+    environment:
+      ADLOG_DB_BACKEND: postgres
+      ADLOG_PG_DSN: host=postgres port=5432 dbname=sli user=adlog_user
+      ADLOG_PG_PASSWORD_FILE: /run/secrets/runtime_password
+      ADLOG_DATA_DIR: /var/lib/sli
+      ADLOG_AUTH_REQUIRED: "1"
+      ADLOG_ALLOW_UNAUTHENTICATED: "0"
+      ADLOG_UI_MODE: postgres
+      ADLOG_STORAGE_READ_MODE: v2
+      ADLOG_DISABLE_SCHEDULER: "1"
+      ADLOG_ACQUISITION_DISABLED: "1"
+      ADLOG_ENABLE_POSTGRES_COLLECTION: "0"
+      ADLOG_POSTGRES_RUNTIME_COLLECTION: "0"
+      ADLOG_NPS_EVENTLOG_ENABLED: "0"
+      ADLOG_ENABLE_INPROCESS_COLLECTION_SCHEDULER: "0"
+      ADLOG_ENABLE_INPROCESS_POST_COLLECTION: "0"
+      ADLOG_EXTERNAL_POST_COLLECTION_WORKER: "1"
+      ADLOG_EXTERNAL_STORAGE_V2_OUTBOX_WORKER: "1"
+      ADLOG_SEMANTIC_PRODUCTION_ENABLED: "0"
+      ADLOG_STORAGE_LIFECYCLE_AUTOMATION_ENABLED: "0"
+      ADLOG_STORAGE_LIFECYCLE_DELETE_EXECUTION_ENABLED: "0"
+      SLI_CORE_JOB_RADIUS_PILOT: "0"
+      SLI_CORE_JOB_AD_GPO_PILOT: "0"
+      SLI_AD_DC_AGENT_IMPORT_ENABLED: "0"
+    secrets: [runtime_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  audit:
+    internal: true
+
+secrets:
+  postgres_password:
+    file: ${SLI_AUDIT_SECRETS:?Use an external stand-only secret directory}/postgres_password
+  runtime_password:
+    file: ${SLI_AUDIT_SECRETS}/runtime_password

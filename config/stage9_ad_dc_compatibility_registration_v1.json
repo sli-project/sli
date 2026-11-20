@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "registration_id": "sli.stage9.ad-dc.compatibility.v1",
+  "plugin_id": "sli.windows.ad-dc",
+  "mode": "compatibility_only",
+  "package": {
+    "delivery": "bundled_reviewed",
+    "lifecycle": "compatibility_registered",
+    "handler_loading": "existing_allowlisted_code_only"
+  },
+  "source_packs": [
+    {
+      "pack_id": "sli.windows.ad-dc",
+      "version": "1.4.0",
+      "manifest_sha256": "5c30a5170637b2cdeca7dc883df3d11ca58a2267c4769b80d4af9e2f2b08cea7"
+    },
+    {
+      "pack_id": "sli.windows.ad-context",
+      "version": "0.10.0",
+      "manifest_sha256": "6045c72945ec321de2e3cb7e20db6809b5b804e8ec2043b8c514d26118eb067c"
+    }
+  ],
+  "existing_execution_entrypoints": [
+    "scripts/run_dc_log_pilot.py",
+    "scripts/runtime/collection_worker.py",
+    "scripts/runtime/ad_context_snapshot_worker.py",
+    "scripts/runtime/post_collection_worker.py",
+    "scripts/runtime/storage_v2_outbox_worker.py",
+    "scripts/runtime/entity_state_worker.py"
+  ],
+  "state": {
+    "package_lifecycle": "compatibility_registered",
+    "desired_activation": "inherit_existing_manual_state",
+    "observed_health": "inherited_not_asserted",
+    "component_runtime": "core_owned_final",
+    "migration_state": "not_required",
+    "source_state": "existing_unchanged",
+    "queue_state": "existing_unchanged",
+    "dataset_state": "existing_unchanged"
+  },
+  "ownership": {
+    "descriptor_and_semantic_contract": "sli.windows.ad-dc",
+    "directory_context_contract": "sli.windows.ad-context",
+    "acquisition_transport": "legacy_core_compatibility",
+    "canonical_evidence": "core",
+    "postgresql_derived_state": "legacy_core_compatibility",
+    "warm_authentication_session": "core_hosted_compatibility"
+  },
+  "acquisition_policy": "full_channel_then_core_evidence_then_subscription_routing",
+  "changes": {
+    "source_contact": false,
+    "source_instance": false,
+    "cursor": false,
+    "database": false,
+    "migration": false,
+    "runtime_activation": false,
+    "autostart": false,
+    "access": false,
+    "dataset_contract": false,
+    "product_runtime_ownership": false
+  },
+  "potential_strangler_steps": [
+    "source_pack_parity",
+    "dataset_and_report_parity",
+    "adapter_parity",
+    "worker_parity",
+    "separate_read_path_cutover_decision"
+  ],
+  "strangler_steps_authorized": false,
+  "ownership_decision": {
+    "model": "core_owned_final",
+    "decision_basis": "delegated_in_technical_debt_checkpoint_brief_2026-08-21",
+    "decision_date": "2026-08-21",
+    "rationale": "AD/DC production collector делит общие core-воркеры со всей системой (collection_worker.py, ad_context_snapshot_worker.py и др. зарегистрированы как обычные core-компоненты в runtime_component_registry.py, не как plugin). Отдельный изолированный plugin runtime для AD/DC не существует и не планируется — создание такового было бы новой большой архитектурой, которую этот пункт техдолга явно не требует."
+  }
+}

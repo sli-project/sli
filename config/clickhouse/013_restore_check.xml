@@ -1,0 +1,9 @@
+<clickhouse>
+    <storage_configuration>
+        <disks><restore_check><type>local</type><path>/var/lib/clickhouse/restore-check/</path></restore_check></disks>
+        <policies><restore_check><volumes><main><disk>restore_check</disk></main></volumes></restore_check></policies>
+    </storage_configuration>
+    <max_server_memory_usage>536870912</max_server_memory_usage>
+    <logger><log>/var/lib/clickhouse/restore.log</log><errorlog>/var/lib/clickhouse/restore-error.log</errorlog></logger>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+</clickhouse>

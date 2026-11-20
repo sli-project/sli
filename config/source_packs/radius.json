@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "pack_id": "sli.windows.vpn-radius",
+  "version": "0.1.0",
+  "display_name": "Windows NPS and VPN/RADIUS",
+  "channels": [
+    "Security"
+  ],
+  "adapters": [
+    "windows-eventlog-pywin32",
+    "windows-eventlog-powershell"
+  ],
+  "event_catalog": "radius_event_catalog.json",
+  "normalizer": "windows-nps-radius-v1",
+  "entity_contract": "identity-ladder-v1",
+  "analysis_contract": "radius-authentication-observation-v1"
+}

@@ -1,0 +1,255 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.ad",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [
+    {
+      "dataset_id": "ad.infrastructure",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "ad.infrastructure",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "ad.users.v2",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "ad.users.v2",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "ad.computers.v6",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "ad.computers.v6",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "ad.computer-logons",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "ad.computer-logons",
+      "capabilities": []
+    }
+  ],
+  "reports": [
+    {
+      "report_key": "ad.new-logon-pairs",
+      "access_key": "ad.computer-logons",
+      "dataset_id": "ad.computer-logons",
+      "definition_id": "ad.new-logon-pairs",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.new-logon-pairs-report",
+      "routes": [
+        "/report/ad.new-logon-pairs"
+      ],
+      "required_fields": [
+        "computer_logon_observation"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computer-logons"
+    },
+    {
+      "report_key": "ad.infrastructure",
+      "access_key": "ad.state",
+      "dataset_id": "ad.infrastructure",
+      "definition_id": "ad.infrastructure",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.ad-report",
+      "routes": [
+        "/report/ad.infrastructure"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.infrastructure"
+    },
+    {
+      "report_key": "ad.users.v2",
+      "access_key": "ad.users.v2",
+      "dataset_id": "ad.users.v2",
+      "definition_id": "ad.users.v2",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.users-report",
+      "routes": [
+        "/report/ad.users.v2"
+      ],
+      "required_fields": [
+        "identity_basic"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.users.v2"
+    },
+    {
+      "report_key": "ad.computers.v6",
+      "access_key": "ad.computers.v6",
+      "dataset_id": "ad.computers.v6",
+      "definition_id": "ad.computers.v6",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.computers-report",
+      "routes": [
+        "/report/ad.computers.v6"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computers.v6"
+    },
+    {
+      "report_key": "ad.computer-logons",
+      "access_key": "ad.computer-logons",
+      "dataset_id": "ad.computer-logons",
+      "definition_id": "ad.computer-logons",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.logons-report",
+      "routes": [
+        "/report/ad.computer-logons"
+      ],
+      "required_fields": [
+        "computer_logon_observation"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computer-logons"
+    },
+    {
+      "report_key": "ad.privileged",
+      "access_key": "ad.privileged",
+      "dataset_id": "ad.infrastructure",
+      "definition_id": "ad.privileged",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.ad-report",
+      "routes": [
+        "/privileged-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.infrastructure"
+    },
+    {
+      "report_key": "ad.users",
+      "access_key": "ad.users",
+      "dataset_id": "ad.users.v2",
+      "definition_id": "ad.users",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.users-report",
+      "routes": [
+        "/users-report"
+      ],
+      "required_fields": [
+        "identity_basic"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.users.v2"
+    },
+    {
+      "report_key": "ad.computers",
+      "access_key": "ad.computers",
+      "dataset_id": "ad.computers.v6",
+      "definition_id": "ad.computers",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.computers-report",
+      "routes": [
+        "/computers-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computers.v6"
+    },
+    {
+      "report_key": "ad.computers.v2",
+      "access_key": "ad.computers.v2",
+      "dataset_id": "ad.computers.v6",
+      "definition_id": "ad.computers.v2",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.computers-report",
+      "routes": [
+        "/computers-v2-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computers.v6"
+    },
+    {
+      "report_key": "ad.computers.v4",
+      "access_key": "ad.computers.v4",
+      "dataset_id": "ad.computers.v6",
+      "definition_id": "ad.computers.v4",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.computers-report",
+      "routes": [
+        "/computers-v4-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computers.v6"
+    },
+    {
+      "report_key": "ad.computers.v5",
+      "access_key": "ad.computers.v5",
+      "dataset_id": "ad.computers.v6",
+      "definition_id": "ad.computers.v5",
+      "section_id": "active-directory",
+      "title_key": "shell.nav.computers-report",
+      "routes": [
+        "/computers-v5-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.computers.v6"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "active-directory",
+      "title_key": "shell.section.active-directory",
+      "icon_id": "database",
+      "order": 30,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_ad",
+    "existing_tables": [],
+    "migrations": []
+  }
+}

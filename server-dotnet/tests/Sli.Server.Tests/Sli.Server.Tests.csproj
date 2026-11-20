@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../config/stage10_plugin_worker_boundaries_v1.json" LogicalName="Sli.Server.Tests.Agents.stage10_plugin_worker_boundaries_v1.json" />
+    <EmbeddedResource Include="Access/catalog-lifecycle-source.json" />
+    <EmbeddedResource Include="Auth/password-phc-vectors.json" />
+    <EmbeddedResource Include="../../../config/plugin_architecture_v1.json" LogicalName="Sli.Server.Tests.Sources.plugin_architecture_v1.json" />
+    <EmbeddedResource Include="../../../tests/fixtures/plugin_contract_v1/*.json" LogicalName="Sli.Server.Tests.Sources.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../tests/fixtures/linux_auth/auth.log.txt" LogicalName="Sli.Server.Tests.Events.linux-auth.log.txt" />
+    <EmbeddedResource Include="Entities/what-where-when-vectors.json" />
+    <EmbeddedResource Include="Entities/entity-security-vectors.json" />
+    <EmbeddedResource Include="Workspace/reference.json" />
+    <EmbeddedResource Include="Workspace/dashboard-reference.json" />
+    <EmbeddedResource Include="Workspace/role-views-reference.json" />
+    <EmbeddedResource Include="Workspace/workspace-source.json" />
+    <EmbeddedResource Include="Ad/reference.json" />
+    <EmbeddedResource Include="Ad/snapshot-reference.json" />
+    <EmbeddedResource Include="Ad/computers-source-contract.json" />
+    <EmbeddedResource Include="Ad/inventory-reference.json" />
+    <EmbeddedResource Include="Ad/changes-reference.json" />
+    <EmbeddedResource Include="Ad/computer-comparison-batch-reference.json" />
+    <EmbeddedResource Include="Ad/control-reference.json" />
+    <EmbeddedResource Include="Reporting/report-locale-vectors.json" />
+    <EmbeddedResource Include="Compatibility/legacy-source.json" />
+    <EmbeddedResource Include="Compatibility/db-status-reference.json" />
+    <EmbeddedResource Include="Compatibility/system-health-http-source.json" />
+    <EmbeddedResource Include="Vpn/fold-reference.json" />
+    <EmbeddedResource Include="Vpn/report-reference.json" />
+    <EmbeddedResource Include="Workstations/reference.json" />
+    <EmbeddedResource Include="Semantic/normalization-reference.json" />
+    <EmbeddedResource Include="Semantic/producer-reference.json" />
+    <EmbeddedResource Include="Semantic/detection-reference.json" />
+    <EmbeddedResource Include="Semantic/remaining-reference.json" />
+    <EmbeddedResource Include="Investigations/Fixtures/source-vectors.json" />
+    <EmbeddedResource Include="Investigations/Fixtures/workspace-source.json" />
+    <EmbeddedResource Include="Domains/home-computer-source.json" />
+    <EmbeddedResource Include="Domains/domain-contract-vectors.json" />
+    <EmbeddedResource Include="Storage/event-card-vectors.json" />
+    <EmbeddedResource Include="Storage/snapshot-changes-vectors.json" />
+    <EmbeddedResource Include="Storage/promoted-package-vectors.json" />
+    <EmbeddedResource Include="Storage/warm-session-lifecycle-vectors.json" />
+    <EmbeddedResource Include="Storage/warm-plan-vectors.json" />
+    <EmbeddedResource Include="Installation/collection-source-vectors.json" />
+    <EmbeddedResource Include="Investigations/Fixtures/mutation-source-vectors.json" />
+    <EmbeddedResource Include="Investigations/Fixtures/completion-source-vectors.json" />
+    <EmbeddedResource Include="Semantic/Fixtures/detection-vectors.json.gz" />
+    <EmbeddedResource Include="Semantic/Fixtures/native-reference.json" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/Sli.Server/Sli.Server.csproj" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-FUNCTIONAL-SHADOW-1",
+  "status": "source_ready_shadow_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "depends_on": {
+    "backfill_gate": "STORAGE-V2-CONTROLLED-PRODUCTION-BACKFILL-1",
+    "backfill_gate_report": "STORAGE_V2_CONTROLLED_PRODUCTION_BACKFILL1_REPORT_20260714.json",
+    "backfill_gate_status": "accepted_source_only_execution_blocked",
+    "production_backfill_executed": false,
+    "read_cutover_authorized_by_backfill_gate": false,
+    "v1_reclaim_authorized_by_backfill_gate": false
+  },
+  "purpose": "Define the functional V1/V2 shadow acceptance gate required after controlled backfill and before any read cutover.",
+  "authorization": {
+    "this_stage_authorizes_runtime_shadow": false,
+    "this_stage_authorizes_read_cutover": false,
+    "this_stage_authorizes_write_cutover": false,
+    "this_stage_authorizes_v1_reclaim": false,
+    "requires_completed_backfill_report_before_live_shadow": true
+  },
+  "shadow_surfaces": [
+    {
+      "id": "fast_event_search",
+      "handlers": ["server/sli/events/event_search.py", "server/sli/events/security_events_monitor.py"],
+      "query_kinds": ["latest_events", "event_id_time", "server_time", "channel_event_time"],
+      "must_match": ["ordered_event_ids", "total_count_or_has_more", "time_bounds", "server_channel_filters"],
+      "payload_allowed": false,
+      "max_result_bound": 1000
+    },
+    {
+      "id": "account_timeline",
+      "handlers": ["server/sli/events/event_search.py"],
+      "query_kinds": ["subject_account_time", "target_account_time", "entity_timeline"],
+      "must_match": ["ordered_event_ids", "account_predicates", "time_bounds", "direction"],
+      "payload_allowed": false,
+      "max_result_bound": 5000
+    },
+    {
+      "id": "event_detail_and_deep_search",
+      "handlers": ["server/sli/events/event_search.py", "server/sli/events/event_details.py", "server/sli/access/data_redaction.py"],
+      "query_kinds": ["event_detail_archive_lookup"],
+      "must_match": ["event_identity", "record_xml_sha256", "message_text_sha256", "event_data_json_sha256", "redaction_output"],
+      "payload_allowed": true,
+      "requires_explicit_bounds": true,
+      "max_result_bound": 500
+    },
+    {
+      "id": "entity_detail",
+      "handlers": ["server/sli/entities/entity_details.py"],
+      "query_kinds": ["entity_timeline"],
+      "must_match": ["entity_identity", "timeline_event_ids", "entity_details_sha256"],
+      "payload_allowed": true,
+      "requires_explicit_bounds": true,
+      "max_result_bound": 5000
+    },
+    {
+      "id": "reports_and_correlations",
+      "handlers": ["server/sli/reports/analysis.py", "server/sli/reporting/reports.py", "server/sli/semantic/severity.py"],
+      "query_kinds": ["event_id_time", "server_time"],
+      "must_match": ["group_keys", "counts", "severity_bucket", "sample_event_ids"],
+      "payload_allowed": false,
+      "max_result_bound": 5000
+    },
+    {
+      "id": "findings_and_evidence",
+      "handlers": ["server/sli/semantic/findings.py", "server/sli/semantic/findings_pg_pipeline.py"],
+      "query_kinds": ["event_id_time", "entity_timeline"],
+      "must_match": ["finding_ids", "evidence_event_ids", "entity_ids", "severity", "status"],
+      "payload_allowed": false,
+      "max_result_bound": 5000
+    }
+  ],
+  "sampling_contract": {
+    "requires_completed_controlled_backfill": true,
+    "minimum_windows": ["early", "middle", "late", "recent"],
+    "minimum_queries_per_surface": 20,
+    "minimum_total_queries": 120,
+    "must_include": [
+      "user account search including operator-like account token",
+      "events without entity links",
+      "events with multiple entities",
+      "unicode payload",
+      "large message/event_data payload",
+      "empty/null payload fields",
+      "findings with evidence and entities",
+      "report rows with derived facts"
+    ],
+    "random_sampling_allowed": true,
+    "random_sampling_requires_seed_in_report": true
+  },
+  "acceptance": {
+    "required_status": "shadow_completed_no_cutover",
+    "identity_mismatches": 0,
+    "count_mismatches": 0,
+    "unexplained_semantic_mismatches": 0,
+    "payload_hash_mismatches": 0,
+    "redaction_mismatches": 0,
+    "unbounded_archive_scans": 0,
+    "required_surface_coverage_percent": 100,
+    "read_cutover_authorized_by_this_stage": false,
+    "write_cutover_authorized_by_this_stage": false,
+    "v1_reclaim_authorized_by_this_stage": false
+  },
+  "required_report_fields": [
+    "backfill_report_sha256",
+    "production_identity",
+    "schema_version",
+    "read_mode_before",
+    "read_mode_after",
+    "shadow_sample_seed",
+    "surface_results",
+    "query_count_total",
+    "identity_mismatches",
+    "count_mismatches",
+    "semantic_mismatches",
+    "payload_hash_mismatches",
+    "redaction_mismatches",
+    "unbounded_archive_scans",
+    "performance_summary",
+    "cutover_authorized",
+    "errors"
+  ],
+  "hard_stop_conditions": [
+    "controlled production backfill report is missing or not accepted",
+    "runtime read mode is already v2 before shadow acceptance",
+    "any shadow surface has zero executed queries",
+    "any required surface is absent from the report",
+    "any identity, count, payload hash or redaction mismatch is unexplained",
+    "deep search attempts an unbounded archive scan",
+    "archive identity verification fails",
+    "findings/evidence/entity links cannot be matched",
+    "operator requests read/write cutover",
+    "operator requests V1 reclaim"
+  ],
+  "strictly_forbidden": [
+    "enable ADLOG_STORAGE_READ_MODE=v2 in this stage",
+    "apply migration 11 or 12 in this stage",
+    "enable V2-primary writes in this stage",
+    "drop, truncate, rewrite or VACUUM FULL V1 relations in this stage",
+    "accept shadow with partial surface coverage",
+    "accept deep search without explicit bounds",
+    "treat performance-only improvement as semantic parity"
+  ],
+  "next_stage": {
+    "id": "STORAGE-V2-READ-WRITE-CUTOVER-1",
+    "authorized_by_this_stage": false,
+    "purpose": "Decide and execute read/write cutover only after accepted live functional shadow evidence."
+  }
+}

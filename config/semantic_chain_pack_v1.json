@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "pack_id": "sli.semantic-chain-pack.v1",
+  "owner": "semantic_worker",
+  "default_lifecycle": "draft",
+  "execution_policy": {
+    "atomic_events_retention_days": 7,
+    "max_dispatch_window_seconds": 86400,
+    "no_implicit_close": true,
+    "no_time_only_attribution": true,
+    "requires_exact_source_host": true,
+    "runtime_activation": "separate_owner_decision"
+  },
+  "rules": [
+    {
+      "rule_id": "auth.session.privileged-context",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "candidate_needs_boot_scope",
+      "definition": {
+        "type": "sequence",
+        "inputs": [
+          "authentication.session.created",
+          "authentication.privileged_session.created"
+        ],
+        "join_roles": ["source_host", "session_principal"],
+        "window_seconds": 900,
+        "minimum_count": 2,
+        "output_relation_kind": "authentication.session.privileged_context_observed",
+        "confidence": "medium",
+        "explanation": "Ordered source-host and LogonId-scoped observations; it proves privileged-session context, not privilege escalation. Boot-scope verification is required before promotion."
+      }
+    },
+    {
+      "rule_id": "auth.session.lifecycle",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "candidate_needs_boot_scope",
+      "definition": {
+        "type": "sequence",
+        "inputs": [
+          "authentication.session.created",
+          "authentication.session.ended"
+        ],
+        "join_roles": ["source_host", "session_principal"],
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "output_relation_kind": "authentication.session.lifecycle_observed",
+        "confidence": "medium",
+        "explanation": "Ordered 4624/4634-style observations under the current source-host plus LogonId key. It remains an observed lifecycle candidate until boot-scope/PID-reuse proof is accepted; timeout never fabricates an end."
+      }
+    },
+    {
+      "rule_id": "investigation.account.lockout.preceded-by-failures",
+      "rule_version": 1,
+      "rule_kind": "count_then",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_sid_observation",
+      "definition": {
+        "type": "count_then",
+        "inputs": ["authentication.session.failed", "authentication.account.locked"],
+        "partition_kind": "domain_account_sid",
+        "window_seconds": 900,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "output_relation_kind": "authentication.account.lockout_preceded_by_failures_observed",
+        "confidence": "medium",
+        "explanation": "At least two failed authentication observations strictly precede a lockout for the same exact domain and account SID within 15 minutes; this is an observed sequence, not a causal claim."
+      }
+    },
+    {
+      "rule_id": "investigation.account.unlock.after-lock",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["authentication.account.locked", "authentication.account.unlocked"],
+        "partition_kind": "domain_account_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "output_relation_kind": "authentication.account.unlock_after_lock_observed",
+        "confidence": "medium",
+        "explanation": "A lockout observation strictly precedes an unlock observation for the same exact domain and account SID within 24 hours; this is an observed sequence, not a causal claim."
+      }
+    },
+    {
+      "rule_id": "investigation.account.unlock.after-lock",
+      "rule_version": 2,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["authentication.account.locked", "authentication.account.unlocked"],
+        "partition_kind": "domain_account_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "continuation_policy": "anchor_all_admissible",
+        "output_relation_kind": "authentication.account.unlock_after_lock_observed",
+        "confidence": "medium",
+        "explanation": "A lockout observation strictly precedes every admissible unlock observation for the same exact domain and account SID within 24 hours. Multiple unlocks remain alternatives, not a selected causal continuation."
+      }
+    },
+    {
+      "rule_id": "investigation.group.membership.removed-after-add",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_member_group_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["group.member.added", "group.member.removed"],
+        "partition_kind": "domain_member_group_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "output_relation_kind": "directory.group.membership_reverted_observed",
+        "confidence": "medium",
+        "explanation": "A group-member add observation strictly precedes its removal for the same exact domain, member SID and group SID within 24 hours; this is an observed sequence, not a causal claim."
+      }
+    },
+    {
+      "rule_id": "investigation.group.membership.removed-after-add",
+      "rule_version": 2,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_member_group_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["group.member.added", "group.member.removed"],
+        "partition_kind": "domain_member_group_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "continuation_policy": "anchor_all_admissible",
+        "output_relation_kind": "directory.group.membership_reverted_observed",
+        "confidence": "medium",
+        "explanation": "A group-member add observation strictly precedes every admissible removal for the same exact domain, member SID and group SID within 24 hours. Multiple removals remain alternatives, not a selected causal continuation."
+      }
+    },
+    {
+      "rule_id": "investigation.account.created-then-group-add",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_account_member_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["directory.account.created", "group.member.added"],
+        "partition_kind": "domain_account_member_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "output_relation_kind": "directory.account.group_membership_added_observed",
+        "confidence": "medium",
+        "explanation": "Account creation strictly precedes group membership addition for the same exact domain and account/member SID within 24 hours; this is an observed sequence, not a causal claim."
+      }
+    },
+    {
+      "rule_id": "investigation.account.created-then-group-add",
+      "rule_version": 2,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "exact_domain_account_member_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["directory.account.created", "group.member.added"],
+        "partition_kind": "domain_account_member_sid",
+        "window_seconds": 86400,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "continuation_policy": "anchor_all_admissible",
+        "output_relation_kind": "directory.account.group_membership_added_observed",
+        "confidence": "medium",
+        "explanation": "Account creation strictly precedes every admissible group membership addition for the same exact domain and account/member SID within 24 hours. Multiple additions remain alternatives, not a selected causal continuation."
+      }
+    },
+    {
+      "rule_id": "investigation.password.reset-then-logon",
+      "rule_version": 1,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "source_native_success_and_exact_domain_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["account.password.reset.succeeded", "authentication.session.created"],
+        "partition_kind": "domain_account_sid",
+        "window_seconds": 3600,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "output_relation_kind": "authentication.password_reset_followed_by_logon_observed",
+        "confidence": "medium",
+        "explanation": "A source-native successful password-reset observation strictly precedes a successful logon for the same exact domain and account SID within one hour; it does not prove that the new password was used and is not a causal claim."
+      }
+    },
+    {
+      "rule_id": "investigation.password.reset-then-logon",
+      "rule_version": 2,
+      "rule_kind": "sequence",
+      "lifecycle_status": "draft",
+      "evidence_status": "source_native_success_and_exact_domain_sid_observation",
+      "definition": {
+        "type": "sequence",
+        "inputs": ["account.password.reset.succeeded", "authentication.session.created"],
+        "partition_kind": "domain_account_sid",
+        "window_seconds": 3600,
+        "minimum_count": 2,
+        "strict_time_order": true,
+        "continuation_policy": "anchor_all_admissible",
+        "output_relation_kind": "authentication.password_reset_followed_by_logon_observed",
+        "confidence": "medium",
+        "explanation": "A source-native successful password-reset observation strictly precedes every admissible successful logon for the same exact domain and account SID within one hour. Multiple logons remain alternatives; the concrete continuation and use of the new password are not established and no causal claim is made."
+      }
+    },
+    {
+      "rule_id": "process.episode.lifecycle",
+      "rule_version": 1,
+      "rule_kind": "worker_assembler",
+      "lifecycle_status": "draft",
+      "evidence_status": "needs_real_corpus_and_audit_policy",
+      "required_native_key": "domain_id + source_host_id + boot_event_id + process_id",
+      "inputs": ["system.boot.boundary", "process.started.fragment", "process.ended.fragment"],
+      "output_relation_kind": "process.episode",
+      "guardrails": ["start_must_precede_end", "no_end_inference", "pid_reuse_fails_closed"]
+    },
+    {
+      "rule_id": "vpn.accounting.lifecycle",
+      "rule_version": 1,
+      "rule_kind": "worker_assembler",
+      "lifecycle_status": "draft",
+      "evidence_status": "available",
+      "required_native_key": "source_instance_id + session_identity_key",
+      "inputs": ["accounting_start", "accounting_interim", "accounting_stop"],
+      "output_relation_kind": "remote_access.accounting_session",
+      "guardrails": ["no_stop_means_open_or_incomplete", "nps_authorization_is_context_not_exact_session_link"]
+    }
+  ]
+}

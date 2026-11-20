@@ -1,0 +1,5424 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]",
+  "audit": [
+    {
+      "name": "current-all-unknown-disabled",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "revision-True",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": true,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-False",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": false,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-5.0",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5.0,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-'5'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": "5",
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-0",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 0,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-6",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 6,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "revision-None",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": null,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "management-'applied'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "applied",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "management-'restored'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "restored",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "restored",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "management-'blocked'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "blocked",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "blocked",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "management-'unknown'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "unknown",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "unknown",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "management-'invalid'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "invalid",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "management-None",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": null,
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "management-1",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": 1,
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "command-False",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": false,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": false,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "command-True",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": true,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": true,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "command-'true'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": "true",
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "command-0",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": 0,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "current-family-missing",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "older-family-subset",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 4,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 4,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "older-state-kept",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {
+          "policy_revision": 5,
+          "sentinel": "previous-state"
+        }
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 4,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "sentinel": "previous-state"
+        }
+      },
+      "write": false
+    },
+    {
+      "name": "ps-{'channel_enabled': None, 'script_block_logging_enabled': True}",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "powershell_logging": {
+            "channel_enabled": null,
+            "script_block_logging_enabled": true
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "powershell_logging": {
+            "channel_enabled": null,
+            "script_block_logging_enabled": true
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "ps-{'channel_enabled': 1, 'script_block_logging_enabled': True}",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "powershell_logging": {
+            "channel_enabled": 1,
+            "script_block_logging_enabled": true
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "ps-{'channel_enabled': True}",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "powershell_logging": {
+            "channel_enabled": true
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "ps-None",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "powershell_logging": null
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "required-success-1",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": 1,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "required-actual_success-1",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": 1,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "required-actual_failure-True",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": true
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "required-guid-'invalid'",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "invalid",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "required-actual_failure-None",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          }
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "wrong-channel-list",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            }
+          }
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    },
+    {
+      "name": "no-workstation-families",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {}
+        }
+      },
+      "output": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {},
+          "reported_at": "2026-11-04T01:02:03.456789+00:00"
+        }
+      },
+      "write": true
+    },
+    {
+      "name": "unknown-audit-field",
+      "agent": {
+        "id": "86de913e-34f6-41ed-8367-1173d38c8cf6",
+        "policy_revision": 5,
+        "assigned_modules": [
+          {
+            "module_id": "sli.workstations",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "manage_windows_audit": false,
+          "audit_process_command_line": false
+        },
+        "windows_audit": {}
+      },
+      "body": {
+        "windows_audit": {
+          "policy_revision": 5,
+          "management_state": "disabled",
+          "command_line_enabled": null,
+          "families": {
+            "logons": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "logon",
+                  "guid": "0cce9215-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": true,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "logoff",
+                  "guid": "0cce9216-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "processes": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "process_creation",
+                  "guid": "0cce922b-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "local_admins": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_group_management",
+                  "guid": "0cce9237-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": []
+            },
+            "protection": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "security_system_extension",
+                  "guid": "0cce9211-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "other_object_access",
+                  "guid": "0cce9227-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                },
+                {
+                  "subcategory": "audit_policy_change",
+                  "guid": "0cce922f-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "System",
+                "Microsoft-Windows-Windows Defender/Operational",
+                "Microsoft-Windows-TaskScheduler/Operational"
+              ]
+            },
+            "usb": {
+              "state": "unknown",
+              "required": [
+                {
+                  "subcategory": "pnp_activity",
+                  "guid": "0cce9248-69ae-11d9-bed3-505054503030",
+                  "success": true,
+                  "failure": false,
+                  "actual_success": null,
+                  "actual_failure": null
+                }
+              ],
+              "non_security_channels": [
+                "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
+                "Microsoft-Windows-Kernel-PnP/Configuration"
+              ]
+            }
+          },
+          "extra": 1
+        }
+      },
+      "error": "invalid_agent_windows_audit_report"
+    }
+  ],
+  "removals": [
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "state_cleaned",
+        "reason": null
+      },
+      "output": {
+        "state": "state_cleaned"
+      }
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "cleanup_failed",
+        "reason": "agent_removal_requires_admin"
+      },
+      "output": {
+        "state": "cleanup_failed"
+      }
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "state_cleaned",
+        "reason": "agent_removal_unmanaged"
+      },
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "cleanup_failed",
+        "reason": null
+      },
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "cleanup_failed",
+        "reason": true
+      },
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "unknown",
+        "reason": null
+      },
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": {
+        "command_id": "not-uuid",
+        "state": "state_cleaned",
+        "reason": null
+      },
+      "error": "invalid_agent_identity"
+    },
+    {
+      "body": {
+        "command_id": "b35f95cb-782c-40c6-9b12-daa2f301a87b",
+        "state": "state_cleaned"
+      },
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": null,
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": [],
+      "error": "agent_removal_result_invalid"
+    },
+    {
+      "body": {},
+      "error": "agent_removal_result_invalid"
+    }
+  ],
+  "cursors": [
+    {
+      "query": "",
+      "value": 0
+    },
+    {
+      "query": "?after=",
+      "value": 0
+    },
+    {
+      "query": "?after=0",
+      "value": 0
+    },
+    {
+      "query": "?after=+1",
+      "value": 1
+    },
+    {
+      "query": "?after=%2B1_0",
+      "value": 10
+    },
+    {
+      "query": "?after=\uff11\uff12",
+      "value": 12
+    },
+    {
+      "query": "?after=%1c1",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=-1",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=9223372036854775807",
+      "value": 9223372036854775807
+    },
+    {
+      "query": "?after=9223372036854775808",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=1&after=2",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=1&extra=x",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=1&extra=",
+      "value": 1
+    },
+    {
+      "query": "?after=1.0",
+      "error": "invalid_revocation_cursor"
+    },
+    {
+      "query": "?after=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "error": "invalid_revocation_cursor"
+    }
+  ]
+}

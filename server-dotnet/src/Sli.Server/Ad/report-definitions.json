@@ -1,0 +1,3740 @@
+{
+  "ad.infrastructure": {
+    "declaration": {
+      "key": "ad.infrastructure",
+      "result_states": [
+        "ok",
+        "empty",
+        "denied",
+        "not_collected",
+        "partial",
+        "processing",
+        "stale",
+        "error"
+      ],
+      "section": "reports/identity",
+      "title": "Состояние Active Directory",
+      "description": "Фактические параметры домена, контроллеров, репликации, DNS, политик и доверий с явными условиями и основаниями оценки.",
+      "archetype": "inventory-status",
+      "intent": {
+        "contract_id": "sli.report-intent.v1",
+        "version": 1,
+        "user_role": "AD administrator",
+        "question": "Какие параметры AD требуют проверки в выбранных доменах?",
+        "action": "Review parameter evidence and the stated condition before an administrative decision.",
+        "scope": "Server-authorized domains; latest domain, controller, replication, DNS, policy and trust observations.",
+        "exclusions": "No organization compliance verdict without an accepted policy; no inferred client GPO application.",
+        "sources": [
+          "Canonical: AD Context sectional snapshots and collector diagnostics within granted domains.",
+          "Supplemental: published deterministic findings and current AD SPN observations."
+        ],
+        "freshness_expectation": "Последнее подтверждённое наблюдение разделов AD; неизвестная свежесть сохраняется.",
+        "rights": "ad.state view grant; server-resolved domain scope; export requires its own action grant.",
+        "field_classes": [
+          "identity_basic",
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "coverage": "Observed AD sections compared with the expected sections per authorized domain.",
+        "completeness": "Source-confirmed object/parameter pairs divided by expected pairs in the authorized scope; passed conditions are not the numerator. Unknown when expected population is unconfirmed.",
+        "denominator": "Ожидаемые разделы и объекты AD в разрешённых доменах; при неизвестном составе процент не вычисляется.",
+        "retention": "Permanent derived AD facts follow the storage policy; exact snapshot evidence is available only while retained.",
+        "provenance": "Domain, object, source section, observation timestamp, condition and authority in the control ledger.",
+        "primary_archetype": "matrix",
+        "product_archetype": "inventory-status",
+        "deterministic_policy": "Retain report_rule_v1 and collector diagnostics separately; passed, failed, not_evaluated and policy_not_defined are distinct.",
+        "result_limits": "Control rows, history and findings have separate bounds and source timestamps; report rules are not organization compliance.",
+        "fallback": "Missing control values remain not_evaluated; absent organization policy remains policy_not_defined; partial snapshots cannot pass controls.",
+        "acceptance_lanes": {
+          "product_user": "Infrastructure parameters and stated conditions support manual AD review.",
+          "authorization": "ad.state grant and authorized domain/field scope constrain controls, findings and history.",
+          "deterministic_interpretation": "Identical control inputs retain report_rule_v1 qualification; undefined policy never becomes passed.",
+          "api_view_model": "Control rows and supplemental collections preserve conditions, actual values and authority.",
+          "ui_honest_states": "Missing values, partial snapshots, stale observations and unavailable history remain explicit.",
+          "evidence_audit": "Each control retains source observation, rule authority and exact evidence context."
+        },
+        "qualification": {
+          "status": "measured",
+          "definition": "Existing report_rule_v1 control conditions and collector diagnostics; organization policy may remain undefined."
+        },
+        "risk": {
+          "status": "not_applicable",
+          "reason": "No new risk score or organization risk policy is asserted by this report."
+        },
+        "confidence": {
+          "status": "not_applicable",
+          "reason": "Source quality is reported separately; no confidence score is inferred."
+        }
+      },
+      "params": [
+        {
+          "key": "domain_id",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "domain",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "row_id",
+          "label": "Параметр",
+          "kind": "text",
+          "hidden": true
+        },
+        {
+          "key": "period",
+          "label": "Период",
+          "kind": "period",
+          "default": "7d",
+          "required": true,
+          "presets": [
+            "24h",
+            "7d",
+            "30d",
+            "90d",
+            "custom"
+          ],
+          "max_days": 3650
+        },
+        {
+          "key": "view",
+          "label": "Раздел",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "overview",
+              "label": "Все параметры"
+            },
+            {
+              "value": "domain_controllers",
+              "label": "Контроллеры"
+            },
+            {
+              "value": "replication",
+              "label": "Репликация"
+            },
+            {
+              "value": "dns",
+              "label": "DNS"
+            },
+            {
+              "value": "policies",
+              "label": "Политики"
+            },
+            {
+              "value": "trusts",
+              "label": "Доверия"
+            },
+            {
+              "value": "risks",
+              "label": "Только непройденные"
+            }
+          ],
+          "default": "overview"
+        },
+        {
+          "key": "qualification",
+          "label": "Результат",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "failed",
+              "label": "Не пройдено"
+            },
+            {
+              "value": "not_evaluated",
+              "label": "Не оценено"
+            },
+            {
+              "value": "policy_not_defined",
+              "label": "Требование не задано"
+            },
+            {
+              "value": "passed",
+              "label": "Пройдено"
+            }
+          ]
+        },
+        {
+          "key": "entity_type",
+          "label": "Тип объекта",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "domain",
+              "label": "Домен"
+            },
+            {
+              "value": "domain_controller",
+              "label": "Контроллер домена"
+            },
+            {
+              "value": "replication_link",
+              "label": "Связь репликации"
+            },
+            {
+              "value": "password_policy",
+              "label": "Политика паролей"
+            },
+            {
+              "value": "domain_trust",
+              "label": "Доверие"
+            }
+          ]
+        },
+        {
+          "key": "q",
+          "label": "Поиск",
+          "kind": "text"
+        },
+        {
+          "key": "spn_domain",
+          "label": "Домен SPN (ID)",
+          "kind": "int"
+        },
+        {
+          "key": "spn_service",
+          "label": "Класс сервиса SPN",
+          "kind": "text"
+        },
+        {
+          "key": "spn_collisions_only",
+          "label": "Только коллизии SPN",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "true",
+              "label": "Да"
+            },
+            {
+              "value": "false",
+              "label": "Нет"
+            }
+          ]
+        },
+        {
+          "key": "spn_enabled",
+          "label": "Владелец SPN включён",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "true",
+              "label": "Да"
+            },
+            {
+              "value": "false",
+              "label": "Нет"
+            }
+          ]
+        },
+        {
+          "key": "spn_delegation",
+          "label": "Delegation/preauth-флаги SPN",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "true",
+              "label": "Да"
+            },
+            {
+              "value": "false",
+              "label": "Нет"
+            }
+          ]
+        },
+        {
+          "key": "spn_password_days",
+          "label": "Минимальный возраст пароля SPN, дней",
+          "kind": "int"
+        }
+      ],
+      "columns": [
+        {
+          "key": "label",
+          "label": "Параметр",
+          "kind": "text",
+          "path": "label",
+          "sortable": true
+        },
+        {
+          "key": "entity_name",
+          "label": "Объект",
+          "kind": "text",
+          "path": "entity_name",
+          "link": "/app/entities/{entity_id}",
+          "sortable": true
+        },
+        {
+          "key": "entity_type",
+          "label": "Тип объекта",
+          "kind": "state",
+          "path": "entity_type",
+          "sortable": true,
+          "labels": {
+            "domain": "Домен",
+            "domain_controller": "Контроллер домена",
+            "replication_link": "Связь репликации",
+            "password_policy": "Политика паролей",
+            "domain_trust": "Доверие"
+          }
+        },
+        {
+          "key": "actual",
+          "label": "Фактическое значение",
+          "kind": "text",
+          "path": "actual_text"
+        },
+        {
+          "key": "expected_condition",
+          "label": "Ожидаемое условие",
+          "kind": "text",
+          "path": "expected_condition"
+        },
+        {
+          "key": "qualification",
+          "label": "Результат",
+          "kind": "state",
+          "path": "qualification",
+          "sortable": true,
+          "labels": {
+            "failed": "Не пройдено",
+            "not_evaluated": "Не оценено",
+            "policy_not_defined": "Требование не задано",
+            "passed": "Пройдено"
+          }
+        },
+        {
+          "key": "observed_at_utc",
+          "label": "Наблюдалось",
+          "kind": "datetime",
+          "path": "observed_at_utc",
+          "sortable": true
+        },
+        {
+          "key": "authority",
+          "label": "Источник правила",
+          "kind": "text",
+          "path": "authority_text",
+          "hidden_by_default": true
+        },
+        {
+          "key": "source_section",
+          "label": "Секция сбора",
+          "kind": "code",
+          "path": "source_section",
+          "hidden_by_default": true
+        },
+        {
+          "key": "control_id",
+          "label": "Код параметра",
+          "kind": "code",
+          "path": "control_id",
+          "hidden_by_default": true
+        }
+      ],
+      "views": [
+        {
+          "kind": "table",
+          "key": "controls",
+          "source": "items",
+          "title": "Параметры"
+        },
+        {
+          "kind": "table",
+          "key": "privileged_changes",
+          "source": "privileged_changes",
+          "title": "Изменения привилегированного членства",
+          "columns": [
+            {
+              "key": "entity_id",
+              "label": "Участник (ID)",
+              "kind": "number",
+              "path": "entity_id",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "group_id",
+              "label": "Группа (ID)",
+              "kind": "number",
+              "path": "group_id",
+              "link": "/app/entities/{group_id}"
+            },
+            {
+              "key": "kind",
+              "label": "Изменение",
+              "kind": "state",
+              "path": "kind",
+              "labels": {
+                "added": "Добавление",
+                "removed": "Удаление"
+              }
+            },
+            {
+              "key": "observed_at_utc",
+              "label": "Наблюдалось",
+              "kind": "datetime",
+              "path": "observed_at_utc"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "changes",
+          "source": "changes",
+          "title": "Изменения AD",
+          "note": "Изменения за выбранный период. Значения атрибутов представлены отпечатками; неполное покрытие отмечается явно.",
+          "columns": [
+            {
+              "key": "observed_at",
+              "label": "Снимок",
+              "kind": "datetime",
+              "path": "observed_at"
+            },
+            {
+              "key": "object_type",
+              "label": "Тип объекта",
+              "kind": "code",
+              "path": "object_type"
+            },
+            {
+              "key": "object_id",
+              "label": "Объект",
+              "kind": "code",
+              "path": "object_id"
+            },
+            {
+              "key": "related_object_id",
+              "label": "Связанный объект",
+              "kind": "code",
+              "path": "related_object_id"
+            },
+            {
+              "key": "kind",
+              "label": "Изменение",
+              "kind": "state",
+              "path": "kind",
+              "labels": {
+                "object_added": "Объект добавлен",
+                "object_removed": "Объект удалён",
+                "attribute_changed": "Атрибут изменён",
+                "membership_added": "Членство добавлено",
+                "membership_removed": "Членство удалено"
+              }
+            },
+            {
+              "key": "field",
+              "label": "Поле",
+              "kind": "code",
+              "path": "field"
+            },
+            {
+              "key": "before_sha256",
+              "label": "Прежний отпечаток",
+              "kind": "code",
+              "path": "before_sha256"
+            },
+            {
+              "key": "after_sha256",
+              "label": "Новый отпечаток",
+              "kind": "code",
+              "path": "after_sha256"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "spn_collisions",
+          "source": "spn_collisions",
+          "title": "Коллизии SPN",
+          "note": "Одна строка на владельца SPN. Снимки старше 36 часов отмечаются как устаревшие; данные ограничены последними 31 сутками.",
+          "columns": [
+            {
+              "key": "spn",
+              "label": "SPN",
+              "kind": "code",
+              "path": "spn"
+            },
+            {
+              "key": "owner_count",
+              "label": "Владельцев",
+              "kind": "number",
+              "path": "owner_count"
+            },
+            {
+              "key": "domain_id",
+              "label": "Домен (ID)",
+              "kind": "number",
+              "path": "domain_id"
+            },
+            {
+              "key": "entity_id",
+              "label": "Владелец",
+              "kind": "number",
+              "path": "entity_id",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "entity_type",
+              "label": "Тип объекта",
+              "kind": "state",
+              "path": "entity_type",
+              "labels": {
+                "ad_user": "Пользователь",
+                "ad_computer": "Компьютер"
+              }
+            },
+            {
+              "key": "enabled",
+              "label": "Включён",
+              "kind": "boolean",
+              "path": "enabled"
+            },
+            {
+              "key": "password_age_days",
+              "label": "Возраст пароля, дней",
+              "kind": "number",
+              "path": "password_age_days"
+            },
+            {
+              "key": "password_last_set_utc",
+              "label": "Пароль изменён",
+              "kind": "datetime",
+              "path": "password_last_set_utc"
+            },
+            {
+              "key": "trusted_for_delegation",
+              "label": "TrustedForDelegation",
+              "kind": "boolean",
+              "path": "trusted_for_delegation"
+            },
+            {
+              "key": "trusted_to_auth_for_delegation",
+              "label": "TrustedToAuthForDelegation",
+              "kind": "boolean",
+              "path": "trusted_to_auth_for_delegation"
+            },
+            {
+              "key": "does_not_require_preauth",
+              "label": "Без preauth",
+              "kind": "boolean",
+              "path": "does_not_require_preauth"
+            },
+            {
+              "key": "msds_supported_encryption_types",
+              "label": "Поддерживаемое шифрование (маска)",
+              "kind": "number",
+              "path": "msds_supported_encryption_types"
+            },
+            {
+              "key": "owner_quality",
+              "label": "Параметры владельца",
+              "kind": "state",
+              "path": "owner_quality",
+              "labels": {
+                "known": "Известны",
+                "unknown": "Часть неизвестна"
+              }
+            },
+            {
+              "key": "observed_at_utc",
+              "label": "Наблюдалось",
+              "kind": "datetime",
+              "path": "observed_at_utc"
+            },
+            {
+              "key": "source_freshness",
+              "label": "Свежесть источника",
+              "kind": "state",
+              "path": "source_freshness",
+              "labels": {
+                "fresh": "Свежий",
+                "stale": "Устаревший",
+                "unknown": "Неизвестна"
+              }
+            },
+            {
+              "key": "run_id",
+              "label": "Снимок",
+              "kind": "code",
+              "path": "run_id"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "semantic",
+          "source": "semantic",
+          "title": "Связанные находки",
+          "note": "Только опубликованные находки, точно связанные с инфраструктурной сущностью AD. Пустой список не доказывает отсутствие рисков.",
+          "columns": [
+            {
+              "key": "title",
+              "label": "Находка",
+              "kind": "text",
+              "path": "title"
+            },
+            {
+              "key": "entity_name",
+              "label": "Объект",
+              "kind": "text",
+              "path": "entity_name",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "severity",
+              "label": "Важность",
+              "kind": "state",
+              "path": "severity"
+            },
+            {
+              "key": "summary",
+              "label": "Описание",
+              "kind": "text",
+              "path": "summary"
+            },
+            {
+              "key": "why_it_matters",
+              "label": "Почему важно",
+              "kind": "text",
+              "path": "why_it_matters"
+            },
+            {
+              "key": "recommended_action",
+              "label": "Следующее действие",
+              "kind": "text",
+              "path": "recommended_action"
+            },
+            {
+              "key": "last_seen_utc",
+              "label": "Последнее наблюдение",
+              "kind": "datetime",
+              "path": "last_seen_utc"
+            }
+          ]
+        }
+      ],
+      "row_key": "row_id",
+      "detail": {
+        "kind": "inline",
+        "title": "Контекст объекта",
+        "key": "row_id",
+        "inline": "context",
+        "row_component": null,
+        "actions": null,
+        "columns": [
+          {
+            "key": "label",
+            "label": "Атрибут",
+            "kind": "text",
+            "path": "label"
+          },
+          {
+            "key": "value",
+            "label": "Значение",
+            "kind": "text",
+            "path": "value"
+          }
+        ],
+        "row_links": []
+      },
+      "export": true,
+      "limits": {
+        "default": 200,
+        "max": 200
+      },
+      "page_actions": null,
+      "presets": [
+        {
+          "label": "Непройденные",
+          "params": {
+            "view": "risks"
+          }
+        },
+        {
+          "label": "Не оценено",
+          "params": {
+            "qualification": "not_evaluated"
+          }
+        },
+        {
+          "label": "Репликация",
+          "params": {
+            "view": "replication"
+          }
+        }
+      ],
+      "row_links": [
+        {
+          "label": "Карточка объекта",
+          "href": "/app/entities/{entity_id}"
+        }
+      ]
+    },
+    "access_key": "ad.state",
+    "required_fields": [
+      "identity_basic",
+      "security",
+      "technical"
+    ],
+    "scope": "domain",
+    "param_fields": {
+      "domain_id": [],
+      "domain": [],
+      "row_id": [],
+      "period": [],
+      "view": [],
+      "qualification": [],
+      "entity_type": [],
+      "q": [],
+      "spn_domain": [],
+      "spn_service": [],
+      "spn_collisions_only": [],
+      "spn_enabled": [],
+      "spn_delegation": [],
+      "spn_password_days": []
+    },
+    "column_fields": {
+      "label": [],
+      "entity_name": [],
+      "entity_type": [],
+      "actual": [],
+      "expected_condition": [],
+      "qualification": [],
+      "observed_at_utc": [],
+      "authority": [],
+      "source_section": [],
+      "control_id": []
+    },
+    "row_categories": {},
+    "view_fields": {
+      "controls": [],
+      "privileged_changes": [
+        "privilege",
+        "technical"
+      ],
+      "changes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "spn_collisions": [],
+      "semantic": []
+    },
+    "view_column_fields": {
+      "controls": {},
+      "privileged_changes": {
+        "entity_id": [],
+        "group_id": [],
+        "kind": [],
+        "observed_at_utc": []
+      },
+      "changes": {
+        "observed_at": [],
+        "object_type": [],
+        "object_id": [],
+        "related_object_id": [],
+        "kind": [],
+        "field": [],
+        "before_sha256": [],
+        "after_sha256": []
+      },
+      "spn_collisions": {
+        "spn": [],
+        "owner_count": [],
+        "domain_id": [],
+        "entity_id": [],
+        "entity_type": [],
+        "enabled": [],
+        "password_age_days": [],
+        "password_last_set_utc": [],
+        "trusted_for_delegation": [],
+        "trusted_to_auth_for_delegation": [],
+        "does_not_require_preauth": [],
+        "msds_supported_encryption_types": [],
+        "owner_quality": [],
+        "observed_at_utc": [],
+        "source_freshness": [],
+        "run_id": []
+      },
+      "semantic": {
+        "title": [],
+        "entity_name": [],
+        "severity": [],
+        "summary": [],
+        "why_it_matters": [],
+        "recommended_action": [],
+        "last_seen_utc": []
+      }
+    },
+    "metric_categories": {}
+  },
+  "ad.users.v2": {
+    "declaration": {
+      "key": "ad.users.v2",
+      "result_states": [
+        "ok",
+        "empty",
+        "denied",
+        "not_collected",
+        "partial",
+        "processing",
+        "stale",
+        "error"
+      ],
+      "section": "reports/identity",
+      "title": "Пользователи",
+      "description": "Учётные записи пользователей домена по последнему снимку AD: причины внимания, состояние, организация, группы и активность.",
+      "archetype": "inventory-status",
+      "intent": {
+        "contract_id": "sli.report-intent.v1",
+        "version": 1,
+        "user_role": "AD account reviewer",
+        "question": "Какие учётные записи AD требуют внимания в выбранном срезе?",
+        "action": "Review account state, reasons and evidence before deciding on account maintenance.",
+        "scope": "Server-authorized domains; one AD account per row in the latest snapshot; bounded comparison and activity tabs.",
+        "exclusions": "Not an HR person census; enabled does not prove activity; event gaps do not prove inactivity.",
+        "sources": [
+          "Canonical: current and optional previous AD user snapshots within granted domains.",
+          "Supplemental: current semantic account and group activity facts in the selected window."
+        ],
+        "freshness_expectation": "Время последнего снимка AD; для активности — подтверждение источников выбранного окна.",
+        "rights": "ad.users.v2 view grant and server domain scope; optional categories checked atomically over the scope; export separately granted.",
+        "field_classes": [
+          "identity_basic",
+          "technical",
+          "security",
+          "privilege",
+          "hr",
+          "contact"
+        ],
+        "coverage": "Snapshot source quality and available attributes for AD accounts; event coverage is separate.",
+        "completeness": "Source-confirmed AD accounts divided by expected accounts in the authorized snapshot population before pagination; missing attributes and event continuity are separate quality dimensions. Unknown without a confirmed population.",
+        "denominator": "Все учётные записи AD ожидаемого снимка в разрешённом срезе; кадровый список не является знаменателем.",
+        "retention": "Derived account history follows the storage policy; snapshot and source-event evidence may expire independently.",
+        "provenance": "Snapshot pair, account identity and source timestamps; exact event IDs for activity; missing source attributes remain unknown.",
+        "primary_archetype": "list",
+        "product_archetype": "inventory-status",
+        "deterministic_policy": "Use observed AD account state, membership and activity reasons; lifecycle and accepted-risk records stay separate from observations.",
+        "result_limits": "Account pages, changes period and source sections have independent bounds; missing activity is unknown.",
+        "fallback": "Missing attributes and incomplete snapshots remain quality gaps; absence of accounts does not establish a complete directory.",
+        "acceptance_lanes": {
+          "product_user": "Account filters and reasons support a manual account review.",
+          "authorization": "ad.users.v2 grant, field categories, domain scope and independent export grant constrain all views.",
+          "deterministic_interpretation": "Observed state, privileged membership, activity reasons and risk decisions are not conflated.",
+          "api_view_model": "User rows and change collections preserve the existing filters, limits and row identities.",
+          "ui_honest_states": "Partial sections, stale snapshots, unknown activity and unavailable history stay explicit.",
+          "evidence_audit": "Account identity, relation observations and lifecycle author/time remain attributable."
+        },
+        "qualification": {
+          "status": "not_applicable",
+          "reason": "No automatic control qualification is asserted by this report."
+        },
+        "risk": {
+          "status": "not_applicable",
+          "reason": "No new risk score or organization risk policy is asserted by this report."
+        },
+        "confidence": {
+          "status": "not_applicable",
+          "reason": "Source quality is reported separately; no confidence score is inferred."
+        }
+      },
+      "params": [
+        {
+          "key": "domain_id",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "domain",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "q",
+          "label": "Поиск",
+          "kind": "text"
+        },
+        {
+          "key": "reason",
+          "label": "Причина",
+          "kind": "choice",
+          "options_from": "reason"
+        },
+        {
+          "key": "information",
+          "label": "Ограничение сведений",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "password_age_unknown",
+              "label": "Возраст пароля: неизвестно"
+            },
+            {
+              "value": "enabled_activity_unknown",
+              "label": "Неактивность: неизвестно"
+            },
+            {
+              "value": "identity_key_missing",
+              "label": "Не заполнен ключевой идентификатор"
+            },
+            {
+              "value": "group_graph_partial",
+              "label": "Граф групп собран частично"
+            }
+          ]
+        },
+        {
+          "key": "department",
+          "label": "Подразделение",
+          "kind": "choice",
+          "options_from": "department"
+        },
+        {
+          "key": "company",
+          "label": "Компания",
+          "kind": "choice",
+          "options_from": "company"
+        },
+        {
+          "key": "ou",
+          "label": "OU",
+          "kind": "choice",
+          "options_from": "ou"
+        },
+        {
+          "key": "group",
+          "label": "Группа",
+          "kind": "choice",
+          "options_from": "group"
+        },
+        {
+          "key": "relation",
+          "label": "Членство",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "effective",
+              "label": "Эффективное членство"
+            },
+            {
+              "value": "direct",
+              "label": "Прямое членство"
+            }
+          ],
+          "default": "effective"
+        },
+        {
+          "key": "check",
+          "label": "Проверка",
+          "kind": "text",
+          "hidden": true
+        },
+        {
+          "key": "as_of",
+          "label": "Состав на дату",
+          "kind": "text",
+          "hidden": true
+        },
+        {
+          "key": "account_state",
+          "label": "Состояние",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "enabled",
+              "label": "Включена"
+            },
+            {
+              "value": "disabled",
+              "label": "Отключена"
+            },
+            {
+              "value": "unknown",
+              "label": "Нет данных"
+            }
+          ]
+        },
+        {
+          "key": "period",
+          "label": "Период",
+          "kind": "period",
+          "max_days": 31,
+          "presets": [
+            "24h",
+            "7d",
+            "30d",
+            "custom"
+          ]
+        },
+        {
+          "key": "max_minutes",
+          "label": "Максимальный интервал членства, мин",
+          "kind": "int"
+        },
+        {
+          "key": "min_repeats",
+          "label": "Минимум кратких включений",
+          "kind": "int"
+        },
+        {
+          "key": "activity_type",
+          "label": "Тип активности",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "4624",
+              "label": "Успешная аутентификация Windows (4624)"
+            },
+            {
+              "value": "6272",
+              "label": "Разрешение NPS (6272)"
+            }
+          ]
+        }
+      ],
+      "columns": [
+        {
+          "key": "name",
+          "label": "Пользователь",
+          "kind": "text",
+          "path": "display_name",
+          "link": "/app/entities/{entity_id}",
+          "sortable": true
+        },
+        {
+          "key": "reason",
+          "label": "Требует внимания",
+          "kind": "text",
+          "path": "reason_text",
+          "sortable": true
+        },
+        {
+          "key": "information",
+          "label": "Ограничения сведений",
+          "kind": "text",
+          "path": "information_text"
+        },
+        {
+          "key": "state",
+          "label": "Включена",
+          "kind": "boolean",
+          "path": "enabled",
+          "sortable": true
+        },
+        {
+          "key": "department",
+          "label": "Подразделение",
+          "kind": "text",
+          "path": "department",
+          "sortable": true
+        },
+        {
+          "key": "title",
+          "label": "Должность",
+          "kind": "text",
+          "path": "title",
+          "sortable": true
+        },
+        {
+          "key": "activity",
+          "label": "Последняя активность",
+          "kind": "datetime",
+          "path": "activity_at",
+          "sortable": true
+        },
+        {
+          "key": "last_workplace",
+          "label": "Последнее рабочее место",
+          "kind": "text",
+          "path": "last_workplace",
+          "component": "ad.last-workplace"
+        },
+        {
+          "key": "sam",
+          "label": "Логин",
+          "kind": "code",
+          "path": "sam",
+          "sortable": true,
+          "hidden_by_default": false
+        },
+        {
+          "key": "groups",
+          "label": "Прямые группы",
+          "kind": "list",
+          "path": "direct_groups",
+          "hidden_by_default": true
+        },
+        {
+          "key": "effective",
+          "label": "Эффективных групп",
+          "kind": "number",
+          "path": "effective_count",
+          "sortable": true,
+          "hidden_by_default": true
+        },
+        {
+          "key": "watch",
+          "label": "Контрольные группы",
+          "kind": "list",
+          "path": "watch_groups",
+          "hidden_by_default": true
+        },
+        {
+          "key": "locked",
+          "label": "Заблокирована",
+          "kind": "boolean",
+          "path": "locked",
+          "hidden_by_default": true
+        },
+        {
+          "key": "upn",
+          "label": "UPN",
+          "kind": "code",
+          "path": "upn",
+          "hidden_by_default": true
+        },
+        {
+          "key": "mail",
+          "label": "Почта",
+          "kind": "text",
+          "path": "mail",
+          "hidden_by_default": true
+        },
+        {
+          "key": "phones",
+          "label": "Телефоны",
+          "kind": "text",
+          "path": "phones",
+          "hidden_by_default": true
+        },
+        {
+          "key": "company",
+          "label": "Компания",
+          "kind": "text",
+          "path": "company",
+          "hidden_by_default": true
+        },
+        {
+          "key": "manager",
+          "label": "Руководитель",
+          "kind": "text",
+          "path": "manager",
+          "hidden_by_default": true
+        },
+        {
+          "key": "ou",
+          "label": "OU",
+          "kind": "text",
+          "path": "ou",
+          "hidden_by_default": true
+        },
+        {
+          "key": "activity_source",
+          "label": "Источник активности",
+          "kind": "text",
+          "path": "activity_source",
+          "hidden_by_default": true
+        },
+        {
+          "key": "password_last_set",
+          "label": "Пароль изменён",
+          "kind": "datetime",
+          "path": "password_last_set",
+          "hidden_by_default": true
+        },
+        {
+          "key": "password_never_expires",
+          "label": "Пароль бессрочный",
+          "kind": "boolean",
+          "path": "password_never_expires",
+          "hidden_by_default": true
+        },
+        {
+          "key": "password_not_required",
+          "label": "Пароль не требуется",
+          "kind": "boolean",
+          "path": "password_not_required",
+          "hidden_by_default": true
+        },
+        {
+          "key": "kerberos_no_preauth",
+          "label": "Kerberos без предварительной аутентификации",
+          "kind": "boolean",
+          "path": "kerberos_no_preauth",
+          "hidden_by_default": true
+        },
+        {
+          "key": "reversible_encryption",
+          "label": "Обратимое шифрование пароля",
+          "kind": "boolean",
+          "path": "reversible_encryption",
+          "hidden_by_default": true
+        },
+        {
+          "key": "smartcard_required",
+          "label": "Требуется смарт-карта",
+          "kind": "boolean",
+          "path": "smartcard_required",
+          "hidden_by_default": true
+        },
+        {
+          "key": "account_not_delegated",
+          "label": "Чувствительная учётная запись, не делегируется",
+          "kind": "boolean",
+          "path": "account_not_delegated",
+          "hidden_by_default": true
+        },
+        {
+          "key": "service_account_type",
+          "label": "Тип сервисной учётной записи",
+          "kind": "state",
+          "path": "service_account_type",
+          "hidden_by_default": true,
+          "labels": {
+            "spn": "SPN",
+            "msa": "MSA",
+            "gmsa": "gMSA"
+          }
+        },
+        {
+          "key": "admin_count",
+          "label": "adminCount (исторический признак защиты)",
+          "kind": "number",
+          "path": "admin_count",
+          "hidden_by_default": true
+        },
+        {
+          "key": "severity",
+          "label": "Уровень внимания",
+          "kind": "state",
+          "path": "severity",
+          "labels": {
+            "high": "Высокий",
+            "medium": "Средний"
+          }
+        },
+        {
+          "key": "service_exception_by",
+          "label": "Исключение сервиса: кто добавил",
+          "kind": "text",
+          "path": "service_exception.excluded_by",
+          "hidden_by_default": true
+        },
+        {
+          "key": "service_exception_at",
+          "label": "Исключение сервиса: когда добавлено",
+          "kind": "datetime",
+          "path": "service_exception.excluded_at",
+          "hidden_by_default": true
+        },
+        {
+          "key": "flags",
+          "label": "Security-флаги",
+          "kind": "list",
+          "path": "flags",
+          "hidden_by_default": true
+        },
+        {
+          "key": "spn",
+          "label": "SPN",
+          "kind": "list",
+          "path": "spn",
+          "hidden_by_default": true
+        },
+        {
+          "key": "created",
+          "label": "Создана",
+          "kind": "datetime",
+          "path": "created",
+          "hidden_by_default": true
+        },
+        {
+          "key": "changed",
+          "label": "Изменена",
+          "kind": "datetime",
+          "path": "changed",
+          "hidden_by_default": true
+        },
+        {
+          "key": "employee_id",
+          "label": "Табельный номер",
+          "kind": "text",
+          "path": "employee_id",
+          "hidden_by_default": true
+        },
+        {
+          "key": "description",
+          "label": "Описание",
+          "kind": "text",
+          "path": "description",
+          "hidden_by_default": true
+        },
+        {
+          "key": "dn",
+          "label": "DN",
+          "kind": "code",
+          "path": "dn",
+          "hidden_by_default": true
+        },
+        {
+          "key": "sid",
+          "label": "SID",
+          "kind": "code",
+          "path": "sid",
+          "hidden_by_default": true
+        },
+        {
+          "key": "privilege_basis",
+          "label": "Основание привилегий",
+          "kind": "list",
+          "path": "privilege_basis"
+        },
+        {
+          "key": "nested_privilege_groups",
+          "label": "Известные вложенные привилегированные группы",
+          "kind": "list",
+          "path": "nested_privilege_groups"
+        },
+        {
+          "key": "password_age_policy",
+          "label": "Возраст пароля по политике",
+          "kind": "state",
+          "path": "password_age_policy",
+          "labels": {
+            "unknown": "Неизвестно",
+            "exceeded": "Порог превышен",
+            "within_policy": "В пределах политики"
+          }
+        },
+        {
+          "key": "inactivity_policy",
+          "label": "Неактивность по политике",
+          "kind": "state",
+          "path": "inactivity_policy",
+          "labels": {
+            "unknown": "Неизвестно",
+            "exceeded": "Порог превышен",
+            "within_policy": "В пределах политики"
+          }
+        },
+        {
+          "key": "finding_count",
+          "label": "Открытых находок",
+          "kind": "number",
+          "path": "finding_count"
+        },
+        {
+          "key": "queue",
+          "label": "Очередь проблем",
+          "kind": "text",
+          "path": "queue_entity_id",
+          "link": "/app/report/security.problems?entity_id={queue_entity_id}"
+        }
+      ],
+      "views": [
+        {
+          "kind": "table",
+          "key": "checks",
+          "source": "checks",
+          "title": "Требуют проверки",
+          "columns": [
+            {
+              "key": "check_severity",
+              "label": "Важность",
+              "kind": "text",
+              "path": "severity_text"
+            },
+            {
+              "key": "check_title",
+              "label": "Проверка",
+              "kind": "text",
+              "path": "title"
+            },
+            {
+              "key": "check_objects",
+              "label": "Объекты",
+              "kind": "list",
+              "path": "objects"
+            },
+            {
+              "key": "check_status_text",
+              "label": "Статус",
+              "kind": "text",
+              "path": "status_text"
+            },
+            {
+              "key": "check_new_count",
+              "label": "Новых",
+              "kind": "number",
+              "path": "new_count"
+            },
+            {
+              "key": "check_total",
+              "label": "Всего",
+              "kind": "number",
+              "path": "total"
+            },
+            {
+              "key": "check_why",
+              "label": "Чем опасно",
+              "kind": "text",
+              "path": "why"
+            },
+            {
+              "key": "check_action",
+              "label": "Что сделать",
+              "kind": "text",
+              "path": "action"
+            },
+            {
+              "key": "check_remediation",
+              "label": "Как исправить",
+              "kind": "text",
+              "path": "remediation"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "privileged",
+          "source": "items",
+          "title": "Привилегированные"
+        },
+        {
+          "kind": "table",
+          "key": "changes",
+          "source": "changes",
+          "title": "Изменения",
+          "note": "Сравнение двух последних снимков; отсутствие объекта не доказывает его удаление.",
+          "columns": [
+            {
+              "key": "observed_at_utc",
+              "label": "Наблюдение снимка",
+              "kind": "datetime",
+              "path": "observed_at_utc"
+            },
+            {
+              "key": "name",
+              "label": "Пользователь",
+              "kind": "text",
+              "path": "display_name",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "change",
+              "label": "Изменение",
+              "kind": "text",
+              "path": "label"
+            },
+            {
+              "key": "field",
+              "label": "Поле / связь",
+              "kind": "text",
+              "path": "field"
+            },
+            {
+              "key": "before",
+              "label": "Было",
+              "kind": "text",
+              "path": "before"
+            },
+            {
+              "key": "after",
+              "label": "Стало",
+              "kind": "text",
+              "path": "after"
+            },
+            {
+              "key": "group",
+              "label": "Категория",
+              "kind": "text",
+              "path": "change_group"
+            },
+            {
+              "key": "note",
+              "label": "Примечание",
+              "kind": "text",
+              "path": "note"
+            },
+            {
+              "key": "actor",
+              "label": "Исполнитель",
+              "kind": "text",
+              "path": "actor"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "all",
+          "source": "items",
+          "title": "Все учётки"
+        },
+        {
+          "kind": "table",
+          "key": "users",
+          "source": "items",
+          "title": "Пользователи"
+        },
+        {
+          "kind": "table",
+          "key": "disabled_active",
+          "source": "disabled_active",
+          "columns": [
+            {
+              "key": "name",
+              "label": "Пользователь",
+              "path": "display_name",
+              "kind": "text",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "disabled_at",
+              "label": "Отключение (4725)",
+              "kind": "datetime",
+              "path": "disabled_at"
+            },
+            {
+              "key": "activity_at",
+              "label": "Последующая активность",
+              "kind": "datetime",
+              "path": "activity_at"
+            },
+            {
+              "key": "activity_type",
+              "label": "Тип активности",
+              "kind": "code",
+              "path": "activity_type"
+            },
+            {
+              "key": "delay_minutes",
+              "label": "Задержка, мин",
+              "kind": "number",
+              "path": "delay_minutes"
+            },
+            {
+              "key": "source_id",
+              "label": "Источник",
+              "kind": "code",
+              "path": "source_id"
+            },
+            {
+              "key": "logon_type",
+              "label": "Тип входа",
+              "kind": "code",
+              "path": "logon_type"
+            },
+            {
+              "key": "evidence",
+              "label": "События",
+              "kind": "list",
+              "path": "evidence"
+            },
+            {
+              "key": "quality",
+              "label": "Качество",
+              "kind": "state",
+              "path": "quality"
+            }
+          ],
+          "title": "Отключены, но активны"
+        },
+        {
+          "kind": "table",
+          "key": "temporary_memberships",
+          "source": "temporary_memberships",
+          "columns": [
+            {
+              "key": "name",
+              "label": "Участник",
+              "path": "display_name",
+              "kind": "text",
+              "link": "/app/entities/{entity_id}"
+            },
+            {
+              "key": "group",
+              "label": "Контрольная группа",
+              "kind": "text",
+              "path": "group"
+            },
+            {
+              "key": "added_at",
+              "label": "Добавление",
+              "kind": "datetime",
+              "path": "added_at"
+            },
+            {
+              "key": "removed_at",
+              "label": "Удаление",
+              "kind": "datetime",
+              "path": "removed_at"
+            },
+            {
+              "key": "interval_minutes",
+              "label": "Наблюдаемый интервал, мин",
+              "kind": "number",
+              "path": "interval_minutes"
+            },
+            {
+              "key": "repeats",
+              "label": "Кратких включений",
+              "kind": "number",
+              "path": "repeats"
+            },
+            {
+              "key": "added_by",
+              "label": "Добавивший субъект",
+              "kind": "code",
+              "path": "added_by"
+            },
+            {
+              "key": "removed_by",
+              "label": "Удалившие субъекты",
+              "kind": "list",
+              "path": "removed_by"
+            },
+            {
+              "key": "activity_count",
+              "label": "Аутентификации внутри интервала",
+              "kind": "number",
+              "path": "activity_count"
+            },
+            {
+              "key": "activity_evidence",
+              "label": "События аутентификации",
+              "kind": "list",
+              "path": "activity_evidence"
+            },
+            {
+              "key": "evidence",
+              "label": "События членства",
+              "kind": "list",
+              "path": "evidence"
+            },
+            {
+              "key": "candidate_id",
+              "label": "Корреляция",
+              "kind": "code",
+              "path": "candidate_id"
+            },
+            {
+              "key": "quality",
+              "label": "Качество",
+              "kind": "state",
+              "path": "quality"
+            }
+          ],
+          "title": "Краткое членство в контрольных группах"
+        }
+      ],
+      "row_key": "id",
+      "detail": {
+        "kind": "inline",
+        "title": "Основания проверки и ограничения сведений",
+        "key": "id",
+        "inline": "review_details",
+        "row_component": null,
+        "actions": null,
+        "columns": [
+          {
+            "key": "category",
+            "label": "Основание",
+            "kind": "state",
+            "path": "category",
+            "labels": {
+              "confirmed": "Подтверждённая причина",
+              "information": "Ограничение сведений"
+            }
+          },
+          {
+            "key": "severity",
+            "label": "Уровень внимания",
+            "kind": "state",
+            "path": "severity",
+            "labels": {
+              "high": "Высокий",
+              "medium": "Средний",
+              "info": "Информация"
+            }
+          },
+          {
+            "key": "label",
+            "label": "Причина",
+            "kind": "text",
+            "path": "label"
+          },
+          {
+            "key": "observed",
+            "label": "Наблюдалось",
+            "kind": "text",
+            "path": "observed"
+          },
+          {
+            "key": "condition",
+            "label": "Условие",
+            "kind": "text",
+            "path": "condition"
+          },
+          {
+            "key": "qualification",
+            "label": "Квалификация",
+            "kind": "text",
+            "path": "qualification"
+          },
+          {
+            "key": "limitation",
+            "label": "Ограничение",
+            "kind": "text",
+            "path": "limitation"
+          },
+          {
+            "key": "next",
+            "label": "Безопасный следующий шаг",
+            "kind": "text",
+            "path": "next"
+          }
+        ],
+        "row_links": []
+      },
+      "export": true,
+      "limits": {
+        "default": 50,
+        "max": 500
+      },
+      "page_actions": null,
+      "presets": [],
+      "row_links": [
+        {
+          "label": "Карточка пользователя",
+          "href": "/app/entities/{entity_id}"
+        }
+      ]
+    },
+    "access_key": "ad.users.v2",
+    "required_fields": [
+      "identity_basic"
+    ],
+    "scope": "domain",
+    "param_fields": {
+      "domain_id": [
+        "identity_basic"
+      ],
+      "domain": [
+        "identity_basic"
+      ],
+      "q": [
+        "identity_basic"
+      ],
+      "reason": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "department": [
+        "hr"
+      ],
+      "company": [
+        "hr"
+      ],
+      "ou": [
+        "technical"
+      ],
+      "group": [
+        "privilege"
+      ],
+      "relation": [
+        "privilege"
+      ],
+      "check": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "as_of": [
+        "privilege",
+        "security"
+      ],
+      "account_state": [
+        "security"
+      ],
+      "period": [
+        "security"
+      ],
+      "max_minutes": [
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "min_repeats": [
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "activity_type": [
+        "security"
+      ]
+    },
+    "column_fields": {
+      "name": [
+        "identity_basic"
+      ],
+      "reason": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "state": [
+        "security"
+      ],
+      "department": [
+        "hr"
+      ],
+      "title": [
+        "hr"
+      ],
+      "activity": [
+        "security"
+      ],
+      "last_workplace": [
+        "security",
+        "technical"
+      ],
+      "sam": [
+        "identity_basic"
+      ],
+      "groups": [
+        "privilege"
+      ],
+      "effective": [
+        "privilege"
+      ],
+      "watch": [
+        "privilege"
+      ],
+      "locked": [
+        "security"
+      ],
+      "upn": [
+        "identity_basic"
+      ],
+      "mail": [
+        "contact"
+      ],
+      "phones": [
+        "contact"
+      ],
+      "company": [
+        "hr"
+      ],
+      "manager": [
+        "hr"
+      ],
+      "ou": [
+        "technical"
+      ],
+      "activity_source": [
+        "security"
+      ],
+      "password_last_set": [
+        "security"
+      ],
+      "password_never_expires": [
+        "security"
+      ],
+      "password_not_required": [
+        "security"
+      ],
+      "kerberos_no_preauth": [
+        "security"
+      ],
+      "reversible_encryption": [
+        "security"
+      ],
+      "smartcard_required": [
+        "security"
+      ],
+      "account_not_delegated": [
+        "security"
+      ],
+      "service_account_type": [
+        "technical"
+      ],
+      "admin_count": [
+        "privilege"
+      ],
+      "severity": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "service_exception_by": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "service_exception_at": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "flags": [
+        "security"
+      ],
+      "spn": [
+        "technical"
+      ],
+      "created": [
+        "technical"
+      ],
+      "changed": [
+        "technical"
+      ],
+      "employee_id": [
+        "hr"
+      ],
+      "description": [
+        "technical"
+      ],
+      "dn": [
+        "technical"
+      ],
+      "sid": [
+        "technical"
+      ],
+      "privilege_basis": [
+        "privilege"
+      ],
+      "nested_privilege_groups": [
+        "privilege"
+      ],
+      "password_age_policy": [
+        "security"
+      ],
+      "inactivity_policy": [
+        "security"
+      ],
+      "finding_count": [
+        "security"
+      ],
+      "queue": [
+        "security"
+      ]
+    },
+    "row_categories": {
+      "employee_id": [
+        "hr"
+      ],
+      "title": [
+        "hr"
+      ],
+      "department": [
+        "hr"
+      ],
+      "company": [
+        "hr"
+      ],
+      "manager": [
+        "hr"
+      ],
+      "mail": [
+        "contact"
+      ],
+      "phones": [
+        "contact"
+      ],
+      "ou": [
+        "technical"
+      ],
+      "dn": [
+        "technical"
+      ],
+      "created": [
+        "technical"
+      ],
+      "guid": [
+        "technical"
+      ],
+      "description": [
+        "technical"
+      ],
+      "service_account_type": [
+        "technical"
+      ],
+      "sid": [
+        "technical"
+      ],
+      "spn": [
+        "technical"
+      ],
+      "changed": [
+        "technical"
+      ],
+      "effective_count": [
+        "privilege"
+      ],
+      "direct_groups": [
+        "privilege"
+      ],
+      "admin_count": [
+        "privilege"
+      ],
+      "watch_groups": [
+        "privilege"
+      ],
+      "activity_source": [
+        "security"
+      ],
+      "hygiene": [
+        "security"
+      ],
+      "password_never_expires": [
+        "security"
+      ],
+      "inactivity_policy": [
+        "security"
+      ],
+      "account_expired": [
+        "security"
+      ],
+      "smartcard_required": [
+        "security"
+      ],
+      "activity_at": [
+        "security"
+      ],
+      "flags": [
+        "security"
+      ],
+      "password_not_required": [
+        "security"
+      ],
+      "kerberos_no_preauth": [
+        "security"
+      ],
+      "enabled": [
+        "security"
+      ],
+      "account_not_delegated": [
+        "security"
+      ],
+      "reversible_encryption": [
+        "security"
+      ],
+      "password_age_policy": [
+        "security"
+      ],
+      "locked": [
+        "security"
+      ],
+      "password_last_set": [
+        "security"
+      ],
+      "reasons": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "reason_text": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "reason_keys": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information_limitations": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information_keys": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information_text": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "review_details": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "privilege_basis": [
+        "privilege"
+      ],
+      "nested_privilege_groups": [
+        "privilege"
+      ],
+      "finding_count": [
+        "security"
+      ],
+      "queue_entity_id": [
+        "security"
+      ],
+      "last_workplace": [
+        "security",
+        "technical"
+      ],
+      "membership_paths": [
+        "privilege"
+      ],
+      "severity": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "service_exception": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "service_exception.excluded_by": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "service_exception.excluded_at": [
+        "privilege",
+        "security",
+        "technical"
+      ]
+    },
+    "view_fields": {
+      "checks": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "privileged": [
+        "privilege",
+        "security"
+      ],
+      "changes": [],
+      "all": [
+        "security"
+      ],
+      "users": [],
+      "disabled_active": [
+        "technical",
+        "security"
+      ],
+      "temporary_memberships": [
+        "technical",
+        "security",
+        "privilege"
+      ]
+    },
+    "view_column_fields": {
+      "checks": {
+        "check_severity": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_title": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_objects": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_status_text": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_new_count": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_total": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_why": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_action": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ],
+        "check_remediation": [
+          "identity_basic",
+          "privilege",
+          "security",
+          "technical"
+        ]
+      },
+      "privileged": {},
+      "changes": {
+        "observed_at_utc": [],
+        "name": [],
+        "change": [],
+        "field": [],
+        "before": [],
+        "after": [],
+        "group": [],
+        "note": [],
+        "actor": []
+      },
+      "all": {},
+      "disabled_active": {
+        "name": [
+          "technical",
+          "security"
+        ],
+        "disabled_at": [
+          "technical",
+          "security"
+        ],
+        "activity_at": [
+          "technical",
+          "security"
+        ],
+        "activity_type": [
+          "technical",
+          "security"
+        ],
+        "delay_minutes": [
+          "technical",
+          "security"
+        ],
+        "source_id": [
+          "technical",
+          "security"
+        ],
+        "logon_type": [
+          "technical",
+          "security"
+        ],
+        "evidence": [
+          "technical",
+          "security"
+        ],
+        "quality": [
+          "technical",
+          "security"
+        ]
+      },
+      "temporary_memberships": {
+        "name": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "group": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "added_at": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "removed_at": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "interval_minutes": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "repeats": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "added_by": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "removed_by": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "activity_count": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "activity_evidence": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "evidence": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "candidate_id": [
+          "technical",
+          "security",
+          "privilege"
+        ],
+        "quality": [
+          "technical",
+          "security",
+          "privilege"
+        ]
+      }
+    },
+    "metric_categories": {
+      "attention": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "information": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "enabled": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "disabled": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "locked": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "expired": [
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "unknown": [
+        "security"
+      ],
+      "activity_observations": [
+        "technical",
+        "security"
+      ],
+      "activity_accounts": [
+        "technical",
+        "security"
+      ],
+      "activity_unknown": [
+        "technical",
+        "security"
+      ],
+      "activity_repeated": [
+        "technical",
+        "security"
+      ],
+      "activity_ambiguous": [
+        "technical",
+        "security"
+      ]
+    }
+  },
+  "ad.computers.v6": {
+    "declaration": {
+      "key": "ad.computers.v6",
+      "result_states": [
+        "ok",
+        "empty",
+        "denied",
+        "not_collected",
+        "partial",
+        "processing",
+        "stale",
+        "error"
+      ],
+      "section": "reports/computers",
+      "title": "Компьютеры",
+      "description": "Инвентарь компьютеров домена по последнему снимку AD: тип, ОС, активность, адреса, причины внимания и качество данных.",
+      "archetype": "inventory-status",
+      "intent": {
+        "contract_id": "sli.report-intent.v1",
+        "version": 1,
+        "user_role": "AD asset reviewer",
+        "question": "Какие компьютеры AD требуют внимания в выбранном срезе?",
+        "action": "Inspect activity, reasons and data quality before deciding on asset maintenance.",
+        "scope": "Latest computer snapshot in server-authorized domains; type, OS, OU and attention filters.",
+        "exclusions": "No proof of absence from partial snapshots; no invented activity, IP address or physical asset census.",
+        "sources": [
+          "Canonical: AD computer snapshot within granted domains.",
+          "Supplemental: retained computer observations and server-defined attention reasons."
+        ],
+        "freshness_expectation": "Время последнего подтверждённого снимка компьютеров AD.",
+        "rights": "ad.computers.v6 view grant; identity_basic, technical and security in server domain scope; export separately granted.",
+        "field_classes": [
+          "identity_basic",
+          "technical",
+          "security"
+        ],
+        "coverage": "Computer snapshot sections and field quality in the selected authorized scope.",
+        "completeness": "Source-confirmed AD computer objects divided by expected computer objects in the selected scope before pagination; missing attributes are separate quality gaps. Unknown without a confirmed population.",
+        "denominator": "Ожидаемые объекты компьютеров AD в выбранном срезе; при неполном снимке состав не подтверждён.",
+        "retention": "Derived computer facts follow the storage policy; retained snapshots bound exact source evidence.",
+        "provenance": "Computer entity, AD snapshot identity and observation timestamp; reasons and quality issues retain their source.",
+        "primary_archetype": "list",
+        "product_archetype": "inventory-status",
+        "deterministic_policy": "Compute only existing server-defined attention reasons from observed computer attributes and activity.",
+        "result_limits": "Computer pages and logon detail are bounded separately; an incomplete snapshot is not an asset census.",
+        "fallback": "Missing activity, address and snapshot sections remain unknown; never infer absent assets from missing rows.",
+        "acceptance_lanes": {
+          "product_user": "Computer type, OS, OU and attention filters support asset review.",
+          "authorization": "ad.computers.v6 fields and domain scope constrain rows, detail and independently granted export.",
+          "deterministic_interpretation": "Identical observed attributes retain the same existing attention reasons.",
+          "api_view_model": "Rows, detail cursors and filter options preserve the v6 asset reader contract.",
+          "ui_honest_states": "Missing attributes, partial snapshots, stale and unavailable inventory stay distinct.",
+          "evidence_audit": "Computer entity, snapshot identity and reason provenance remain linked."
+        },
+        "qualification": {
+          "status": "not_applicable",
+          "reason": "No automatic control qualification is asserted by this report."
+        },
+        "risk": {
+          "status": "not_applicable",
+          "reason": "No new risk score or organization risk policy is asserted by this report."
+        },
+        "confidence": {
+          "status": "not_applicable",
+          "reason": "Source quality is reported separately; no confidence score is inferred."
+        }
+      },
+      "params": [
+        {
+          "key": "domain_id",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "domain",
+          "label": "Домен",
+          "kind": "domain",
+          "hidden": true
+        },
+        {
+          "key": "view",
+          "label": "Срез",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "attention",
+              "label": "Требуют внимания"
+            },
+            {
+              "value": "all",
+              "label": "Все компьютеры"
+            },
+            {
+              "value": "workstation_enabled",
+              "label": "Рабочие станции: включены"
+            },
+            {
+              "value": "workstation_disabled",
+              "label": "Рабочие станции: отключены"
+            },
+            {
+              "value": "server_enabled",
+              "label": "Серверы: включены"
+            },
+            {
+              "value": "server_disabled",
+              "label": "Серверы: отключены"
+            },
+            {
+              "value": "unknown_type",
+              "label": "Тип не определён"
+            },
+            {
+              "value": "data_quality",
+              "label": "Качество данных"
+            },
+            {
+              "value": "changes",
+              "label": "Изменения"
+            },
+            {
+              "value": "semantic",
+              "label": "Связанные находки"
+            }
+          ],
+          "default": "all",
+          "hidden": true
+        },
+        {
+          "key": "q",
+          "label": "Поиск",
+          "kind": "text"
+        },
+        {
+          "key": "type",
+          "label": "Тип",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "workstation",
+              "label": "Рабочая станция"
+            },
+            {
+              "value": "server",
+              "label": "Сервер"
+            },
+            {
+              "value": "domain_controller",
+              "label": "Контроллер домена"
+            },
+            {
+              "value": "unknown",
+              "label": "Не определён"
+            }
+          ]
+        },
+        {
+          "key": "enabled",
+          "label": "Учётная запись",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "enabled",
+              "label": "Включена"
+            },
+            {
+              "value": "disabled",
+              "label": "Отключена"
+            },
+            {
+              "value": "unknown",
+              "label": "Не определено"
+            }
+          ]
+        },
+        {
+          "key": "activity",
+          "label": "Активность",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "within_threshold",
+              "label": "В пределах порога"
+            },
+            {
+              "value": "over_threshold",
+              "label": "Старше порога"
+            },
+            {
+              "value": "missing",
+              "label": "Нет данных"
+            },
+            {
+              "value": "within_30_days",
+              "label": "До 30 дней"
+            },
+            {
+              "value": "days_31_to_90",
+              "label": "31–90 дней"
+            },
+            {
+              "value": "over_60_days",
+              "label": "Более 60 дней"
+            }
+          ]
+        },
+        {
+          "key": "threshold_days",
+          "label": "Порог давности",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "30",
+              "label": "30 дней"
+            },
+            {
+              "value": "60",
+              "label": "60 дней"
+            },
+            {
+              "value": "90",
+              "label": "90 дней"
+            },
+            {
+              "value": "180",
+              "label": "180 дней"
+            }
+          ],
+          "default": "90"
+        },
+        {
+          "key": "os",
+          "label": "ОС",
+          "kind": "choice",
+          "options_from": "os"
+        },
+        {
+          "key": "os_family",
+          "label": "Семейство ОС",
+          "kind": "choice",
+          "options_from": "os_family"
+        },
+        {
+          "key": "os_version",
+          "label": "Версия ОС",
+          "kind": "choice",
+          "options_from": "os_version"
+        },
+        {
+          "key": "ou",
+          "label": "OU",
+          "kind": "choice",
+          "options_from": "ou"
+        },
+        {
+          "key": "ad_site",
+          "label": "AD-сайт",
+          "kind": "choice",
+          "options_from": "ad_site"
+        },
+        {
+          "key": "reason_code",
+          "label": "Причина",
+          "kind": "text",
+          "hidden": true
+        },
+        {
+          "key": "quality_code",
+          "label": "Качество",
+          "kind": "text",
+          "hidden": true
+        }
+      ],
+      "columns": [
+        {
+          "key": "display_name",
+          "label": "Компьютер",
+          "kind": "text",
+          "path": "display_name",
+          "sortable": true
+        },
+        {
+          "key": "computer_type",
+          "label": "Тип",
+          "kind": "state",
+          "path": "computer_type",
+          "sortable": true,
+          "labels": {
+            "workstation": "Рабочая станция",
+            "server": "Сервер",
+            "domain_controller": "Контроллер домена",
+            "unknown": "Не определён"
+          }
+        },
+        {
+          "key": "enabled",
+          "label": "Учётная запись",
+          "kind": "state",
+          "path": "account_state",
+          "sortable": true,
+          "labels": {
+            "enabled": "Включена",
+            "disabled": "Отключена",
+            "unknown": "Не определено"
+          }
+        },
+        {
+          "key": "operating_system",
+          "label": "ОС",
+          "kind": "text",
+          "path": "operating_system",
+          "sortable": true
+        },
+        {
+          "key": "activity_state",
+          "label": "Активность",
+          "kind": "state",
+          "path": "activity_state",
+          "sortable": true,
+          "labels": {
+            "recent": "Активен",
+            "stale": "Давно не входил",
+            "missing": "Нет данных",
+            "not_applicable": "Не оценивается",
+            "within_threshold": "В пределах порога",
+            "over_threshold": "Старше порога"
+          }
+        },
+        {
+          "key": "last_logon_utc",
+          "label": "Последний вход",
+          "kind": "datetime",
+          "path": "last_logon_utc",
+          "sortable": true
+        },
+        {
+          "key": "reason",
+          "label": "Требует внимания",
+          "kind": "text",
+          "path": "reason_text",
+          "sortable": true
+        },
+        {
+          "key": "ip_addresses",
+          "label": "IP по DNS на дату снимка",
+          "kind": "text",
+          "path": "dns_ip.addresses",
+          "component": "ad.dns-ip"
+        },
+        {
+          "key": "sli_agent",
+          "label": "Агент SLI",
+          "kind": "text",
+          "path": "sli_agent",
+          "component": "ad.agent"
+        },
+        {
+          "key": "ou_path",
+          "label": "OU",
+          "kind": "text",
+          "path": "ou_path",
+          "sortable": true,
+          "hidden_by_default": true
+        },
+        {
+          "key": "quality",
+          "label": "Качество данных",
+          "kind": "text",
+          "path": "quality_text",
+          "sortable": true,
+          "hidden_by_default": true
+        },
+        {
+          "key": "age",
+          "label": "Дней без входа",
+          "kind": "number",
+          "path": "age_days",
+          "hidden_by_default": true
+        },
+        {
+          "key": "version",
+          "label": "Версия ОС",
+          "kind": "text",
+          "path": "operating_system_version",
+          "hidden_by_default": true
+        },
+        {
+          "key": "dns",
+          "label": "DNS-имя",
+          "kind": "text",
+          "path": "dns_host_name",
+          "hidden_by_default": true
+        },
+        {
+          "key": "description",
+          "label": "Описание",
+          "kind": "text",
+          "path": "description",
+          "hidden_by_default": true
+        },
+        {
+          "key": "site",
+          "label": "AD-сайт",
+          "kind": "text",
+          "path": "site_text",
+          "hidden_by_default": true
+        },
+        {
+          "key": "canonical_name",
+          "label": "Каноническое имя",
+          "kind": "text",
+          "path": "canonical_name",
+          "hidden_by_default": true
+        },
+        {
+          "key": "distinguished_name",
+          "label": "DN",
+          "kind": "code",
+          "path": "distinguished_name",
+          "hidden_by_default": true
+        },
+        {
+          "key": "managed_by",
+          "label": "Управляет",
+          "kind": "text",
+          "path": "managed_by",
+          "hidden_by_default": true
+        },
+        {
+          "key": "location",
+          "label": "Расположение",
+          "kind": "text",
+          "path": "location",
+          "hidden_by_default": true
+        },
+        {
+          "key": "created_utc",
+          "label": "Создан в AD",
+          "kind": "datetime",
+          "path": "created_utc",
+          "hidden_by_default": true
+        },
+        {
+          "key": "when_changed_utc",
+          "label": "Изменён в AD",
+          "kind": "datetime",
+          "path": "when_changed_utc",
+          "hidden_by_default": true
+        },
+        {
+          "key": "password_last_set_utc",
+          "label": "Пароль компьютера изменён",
+          "kind": "datetime",
+          "path": "password_last_set_utc",
+          "hidden_by_default": true
+        },
+        {
+          "key": "delegation",
+          "label": "Неограниченное делегирование",
+          "kind": "boolean",
+          "path": "trusted_for_delegation",
+          "hidden_by_default": true
+        },
+        {
+          "key": "delegation_auth",
+          "label": "Делегирование с проверкой подлинности",
+          "kind": "boolean",
+          "path": "trusted_to_auth_for_delegation",
+          "hidden_by_default": true
+        },
+        {
+          "key": "constrained_delegation",
+          "label": "Ограниченное делегирование",
+          "kind": "boolean",
+          "path": "constrained_delegation",
+          "hidden_by_default": true
+        },
+        {
+          "key": "resource_based_delegation_present",
+          "label": "Ресурсное делегирование (RBCD)",
+          "kind": "boolean",
+          "path": "resource_based_delegation_present",
+          "hidden_by_default": true
+        },
+        {
+          "key": "laps_state",
+          "label": "Метаданные LAPS",
+          "kind": "state",
+          "path": "laps_state",
+          "hidden_by_default": true,
+          "labels": {
+            "metadata_present": "Метаданные есть",
+            "expired": "Срок истёк",
+            "unknown": "Нет доступных метаданных"
+          }
+        },
+        {
+          "key": "laps_password_expiration_utc",
+          "label": "Плановый срок Windows LAPS",
+          "kind": "datetime",
+          "path": "laps_password_expiration_utc",
+          "hidden_by_default": true
+        },
+        {
+          "key": "legacy_laps_password_expiration_utc",
+          "label": "Плановый срок Legacy LAPS",
+          "kind": "datetime",
+          "path": "legacy_laps_password_expiration_utc",
+          "hidden_by_default": true
+        },
+        {
+          "key": "spn",
+          "label": "SPN",
+          "kind": "list",
+          "path": "service_principal_names",
+          "hidden_by_default": true
+        },
+        {
+          "key": "object_sid",
+          "label": "SID",
+          "kind": "code",
+          "path": "object_sid",
+          "hidden_by_default": true
+        },
+        {
+          "key": "object_guid",
+          "label": "GUID",
+          "kind": "code",
+          "path": "object_guid",
+          "hidden_by_default": true
+        },
+        {
+          "key": "observed",
+          "label": "Наблюдение снимка",
+          "kind": "datetime",
+          "path": "observed_at_utc",
+          "hidden_by_default": true
+        }
+      ],
+      "views": [
+        {
+          "kind": "table",
+          "key": "checks",
+          "source": "checks",
+          "title": "Требуют проверки",
+          "columns": [
+            {
+              "key": "check_severity",
+              "label": "Важность",
+              "kind": "text",
+              "path": "severity_text"
+            },
+            {
+              "key": "check_title",
+              "label": "Проверка",
+              "kind": "text",
+              "path": "title"
+            },
+            {
+              "key": "check_objects",
+              "label": "Объекты",
+              "kind": "list",
+              "path": "objects"
+            },
+            {
+              "key": "check_status_text",
+              "label": "Статус",
+              "kind": "text",
+              "path": "status_text"
+            },
+            {
+              "key": "check_new_count",
+              "label": "Новых",
+              "kind": "number",
+              "path": "new_count"
+            },
+            {
+              "key": "check_total",
+              "label": "Всего",
+              "kind": "number",
+              "path": "total"
+            },
+            {
+              "key": "check_why",
+              "label": "Чем опасно",
+              "kind": "text",
+              "path": "why"
+            },
+            {
+              "key": "check_action",
+              "label": "Что сделать",
+              "kind": "text",
+              "path": "action"
+            },
+            {
+              "key": "check_remediation",
+              "label": "Как исправить",
+              "kind": "text",
+              "path": "remediation"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "changes",
+          "source": "changes",
+          "title": "Изменения",
+          "columns": [
+            {
+              "key": "display_name",
+              "label": "Компьютер",
+              "kind": "text",
+              "path": "display_name"
+            },
+            {
+              "key": "computer_type",
+              "label": "Роль",
+              "kind": "state",
+              "path": "computer_type",
+              "labels": {
+                "workstation": "Рабочая станция",
+                "server": "Сервер",
+                "domain_controller": "Контроллер домена",
+                "unknown": "Не определён"
+              }
+            },
+            {
+              "key": "observed_at_utc",
+              "label": "Наблюдение снимка",
+              "kind": "datetime",
+              "path": "observed_at_utc"
+            },
+            {
+              "key": "change_type",
+              "label": "Изменение",
+              "kind": "state",
+              "path": "change_type",
+              "labels": {
+                "new_object": "Впервые обнаружен",
+                "missing_current": "Отсутствует в текущем снимке",
+                "enabled_changed": "Состояние учётной записи",
+                "ou_changed": "Перенесён в OU",
+                "os_changed": "Изменена ОС",
+                "ip_changed": "Изменены адреса",
+                "site_changed": "Изменён AD-сайт",
+                "managed_by_changed": "Изменён управляющий",
+                "classification_changed": "Изменена роль",
+                "quality_changed": "Изменилось качество данных",
+                "semantic_changed": "Изменились связанные находки",
+                "delegation_changed": "Изменено делегирование",
+                "laps_changed": "Изменены метаданные LAPS"
+              }
+            },
+            {
+              "key": "field",
+              "label": "Атрибут",
+              "kind": "state",
+              "path": "field",
+              "labels": {
+                "presence": "Наличие в снимке",
+                "enabled": "Учётная запись включена",
+                "ou_path": "OU",
+                "operating_system": "ОС",
+                "computer_type": "Роль",
+                "laps_password_expiration_utc": "Срок LAPS",
+                "unconstrained": "Неограниченное делегирование",
+                "constrained": "Ограниченное делегирование",
+                "resource_based": "Ресурсное делегирование (RBCD)"
+              }
+            },
+            {
+              "key": "before",
+              "label": "Было",
+              "kind": "text",
+              "path": "before"
+            },
+            {
+              "key": "after",
+              "label": "Стало",
+              "kind": "text",
+              "path": "after"
+            },
+            {
+              "key": "actor",
+              "label": "Исполнитель",
+              "kind": "text",
+              "path": "actor"
+            },
+            {
+              "key": "limitation",
+              "label": "Ограничение",
+              "kind": "text",
+              "path": "limitation",
+              "hidden_by_default": true
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "key": "computers",
+          "source": "items",
+          "title": "Все компьютеры"
+        }
+      ],
+      "row_key": "entity_id",
+      "detail": {
+        "kind": "inline",
+        "title": "Почему компьютер требует внимания",
+        "key": "entity_id",
+        "inline": "reasons",
+        "row_component": null,
+        "actions": null,
+        "columns": [
+          {
+            "key": "label",
+            "label": "Причина",
+            "kind": "text",
+            "path": "label"
+          },
+          {
+            "key": "observed",
+            "label": "Наблюдалось",
+            "kind": "text",
+            "path": "observed"
+          },
+          {
+            "key": "condition",
+            "label": "Условие",
+            "kind": "text",
+            "path": "condition"
+          },
+          {
+            "key": "qualification",
+            "label": "Квалификация",
+            "kind": "text",
+            "path": "qualification"
+          },
+          {
+            "key": "limitation",
+            "label": "Ограничение",
+            "kind": "text",
+            "path": "limitation"
+          },
+          {
+            "key": "next",
+            "label": "Безопасный следующий шаг",
+            "kind": "text",
+            "path": "next_action"
+          }
+        ],
+        "row_links": []
+      },
+      "export": true,
+      "limits": {
+        "default": 50,
+        "max": 200
+      },
+      "page_actions": null,
+      "presets": [
+        {
+          "label": "Давно не входили",
+          "params": {
+            "view": "attention",
+            "reason_code": "stale_activity"
+          }
+        },
+        {
+          "label": "Серверы",
+          "params": {
+            "view": "server_enabled"
+          }
+        },
+        {
+          "label": "Тип не определён",
+          "params": {
+            "view": "unknown_type"
+          }
+        }
+      ],
+      "row_links": [
+        {
+          "label": "Карточка компьютера",
+          "href": "/app/entities/{entity_id}"
+        }
+      ]
+    },
+    "access_key": "ad.computers.v6",
+    "required_fields": [
+      "identity_basic",
+      "security",
+      "technical"
+    ],
+    "scope": "domain",
+    "param_fields": {
+      "domain_id": [],
+      "domain": [],
+      "view": [],
+      "q": [],
+      "type": [],
+      "enabled": [],
+      "activity": [],
+      "threshold_days": [],
+      "os": [],
+      "os_family": [],
+      "os_version": [],
+      "ou": [],
+      "ad_site": [],
+      "reason_code": [],
+      "quality_code": []
+    },
+    "column_fields": {
+      "display_name": [],
+      "computer_type": [],
+      "enabled": [],
+      "operating_system": [],
+      "activity_state": [],
+      "last_logon_utc": [],
+      "reason": [],
+      "ip_addresses": [],
+      "sli_agent": [],
+      "ou_path": [],
+      "quality": [],
+      "age": [],
+      "version": [],
+      "dns": [],
+      "description": [],
+      "site": [],
+      "canonical_name": [],
+      "distinguished_name": [],
+      "managed_by": [],
+      "location": [],
+      "created_utc": [],
+      "when_changed_utc": [],
+      "password_last_set_utc": [],
+      "delegation": [],
+      "delegation_auth": [],
+      "constrained_delegation": [],
+      "resource_based_delegation_present": [],
+      "laps_state": [],
+      "laps_password_expiration_utc": [],
+      "legacy_laps_password_expiration_utc": [],
+      "spn": [],
+      "object_sid": [],
+      "object_guid": [],
+      "observed": []
+    },
+    "row_categories": {},
+    "view_fields": {
+      "checks": [
+        "identity_basic",
+        "security",
+        "technical"
+      ],
+      "changes": [],
+      "computers": []
+    },
+    "view_column_fields": {
+      "checks": {
+        "check_severity": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_title": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_objects": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_status_text": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_new_count": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_total": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_why": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_action": [
+          "identity_basic",
+          "security",
+          "technical"
+        ],
+        "check_remediation": [
+          "identity_basic",
+          "security",
+          "technical"
+        ]
+      },
+      "changes": {
+        "display_name": [],
+        "computer_type": [],
+        "observed_at_utc": [],
+        "change_type": [],
+        "field": [],
+        "before": [],
+        "after": [],
+        "actor": [],
+        "limitation": []
+      },
+      "computers": {}
+    },
+    "metric_categories": {}
+  },
+  "ad.computer-logons": {
+    "declaration": {
+      "key": "ad.computer-logons",
+      "result_states": [
+        "ok",
+        "empty",
+        "denied",
+        "not_collected",
+        "partial",
+        "processing",
+        "stale",
+        "error"
+      ],
+      "section": "reports/computers",
+      "title": "Входы на компьютеры",
+      "description": "Кто и когда входил на рабочие станции: наблюдения успешных входов, а не длительность работы.",
+      "archetype": "investigation-evidence",
+      "intent": {
+        "contract_id": "sli.report-intent.v1",
+        "version": 1,
+        "user_role": "Security investigator",
+        "question": "Какие входы на выбранные компьютеры наблюдались за период?",
+        "action": "Inspect exact logon evidence and account context for an investigation.",
+        "scope": "One server-resolved granted domain, selected computers and bounded observation window.",
+        "exclusions": "Logons are not work duration; DC 4624 alone does not prove workstation interactive use.",
+        "sources": [
+          "Canonical: successful computer-logon observations in the granted domain and window.",
+          "Supplemental: latest AD computer inventory for the same domain."
+        ],
+        "freshness_expectation": "Свежесть наблюдений входов и снимка инвентаря проверяется раздельно.",
+        "rights": "ad.computer-logons view grant with computer_logon_observation; engine enforces domain and event scope; export separately granted.",
+        "field_classes": [
+          "computer_logon_observation"
+        ],
+        "coverage": "Inventory coverage and logon observation coverage are separate source dimensions.",
+        "completeness": "Duration of source-confirmed logon collection intervals divided by expected source-window duration; neither row count nor an empty result proves continuity. Currently not_proven without source evidence.",
+        "denominator": "Ожидаемые источники входов выбранных компьютеров × период; без непрерывности сбора полнота не подтверждена.",
+        "retention": "Derived logon observations follow the storage policy; exact source events may expire independently.",
+        "provenance": "Computer entity, account identity, source event ID, domain and observation time.",
+        "primary_archetype": "timeline",
+        "product_archetype": "investigation-evidence",
+        "deterministic_policy": "Present retained 4624/4634 observations against current AD inventory; logons do not establish work duration.",
+        "result_limits": "Server-resolved report domain and declared period/page bounds apply; inventory and observation coverage are independent.",
+        "fallback": "Keep empty_unverified, not_collected and partial observation coverage; inventory or observation reader failure is unavailable.",
+        "acceptance_lanes": {
+          "product_user": "Observed logons answer the selected computer/window question without estimating work duration.",
+          "authorization": "computer_logon_observation grants resolve to the configured report domain and constrain detail.",
+          "deterministic_interpretation": "Native observations and current inventory matching retain their separate meaning.",
+          "api_view_model": "Computer pages and observation detail preserve reader states, cursors and UTC window.",
+          "ui_honest_states": "Empty_unverified, partial, not_collected and unavailable observations remain honest states.",
+          "evidence_audit": "Logon event identity, source channel and inventory matching provenance remain available."
+        },
+        "qualification": {
+          "status": "not_applicable",
+          "reason": "No automatic control qualification is asserted by this report."
+        },
+        "risk": {
+          "status": "not_applicable",
+          "reason": "No new risk score or organization risk policy is asserted by this report."
+        },
+        "confidence": {
+          "status": "not_applicable",
+          "reason": "Source quality is reported separately; no confidence score is inferred."
+        }
+      },
+      "params": [
+        {
+          "key": "period",
+          "label": "Период",
+          "kind": "period",
+          "default": "30d",
+          "required": true,
+          "presets": [
+            "7d",
+            "30d",
+            "90d",
+            "custom"
+          ],
+          "max_days": 365
+        },
+        {
+          "key": "q",
+          "label": "Компьютер",
+          "kind": "text"
+        },
+        {
+          "key": "user",
+          "label": "Пользователь",
+          "kind": "text"
+        },
+        {
+          "key": "with_logons",
+          "label": "Показывать",
+          "kind": "choice",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Только ПК со входами"
+            }
+          ]
+        }
+      ],
+      "columns": [
+        {
+          "key": "name",
+          "label": "Компьютер",
+          "kind": "text",
+          "path": "display_name"
+        },
+        {
+          "key": "count",
+          "label": "Входов за период",
+          "kind": "number",
+          "path": "login_count"
+        },
+        {
+          "key": "last",
+          "label": "Последний вход",
+          "kind": "datetime",
+          "path": "last_observed_logon_at_utc"
+        },
+        {
+          "key": "state",
+          "label": "Наблюдения",
+          "kind": "state",
+          "path": "observation_state",
+          "labels": {
+            "observed": "Входы наблюдались",
+            "empty_unverified": "Не наблюдались (полнота не доказана)",
+            "partial": "Данные частичные",
+            "not_collected": "Данные не собраны"
+          }
+        }
+      ],
+      "views": [
+        {
+          "kind": "table",
+          "key": "table",
+          "source": "items"
+        }
+      ],
+      "row_key": "entity_id",
+      "detail": {
+        "kind": "sub",
+        "title": "Входы на компьютер",
+        "key": "entity_id",
+        "inline": null,
+        "row_component": null,
+        "actions": null,
+        "columns": [
+          {
+            "key": "user",
+            "label": "Пользователь",
+            "kind": "text",
+            "path": "user_text"
+          },
+          {
+            "key": "time",
+            "label": "Время входа",
+            "kind": "datetime",
+            "path": "observed_at_utc"
+          },
+          {
+            "key": "event",
+            "label": "Исходное событие",
+            "kind": "code",
+            "path": "source_event_id",
+            "link": "/app/events/{source_event_id}"
+          }
+        ],
+        "row_links": [
+          {
+            "label": "Исходное событие",
+            "href": "/app/events/{source_event_id}"
+          }
+        ]
+      },
+      "export": false,
+      "limits": {
+        "default": 50,
+        "max": 200
+      },
+      "page_actions": null,
+      "presets": [
+        {
+          "label": "Только ПК со входами",
+          "params": {
+            "with_logons": "yes"
+          }
+        }
+      ],
+      "row_links": [
+        {
+          "label": "Карточка компьютера",
+          "href": "/app/entities/{entity_id}"
+        }
+      ]
+    },
+    "access_key": "ad.computer-logons",
+    "required_fields": [
+      "computer_logon_observation"
+    ],
+    "scope": "delegated",
+    "param_fields": {
+      "period": [],
+      "q": [],
+      "user": [],
+      "with_logons": []
+    },
+    "column_fields": {
+      "name": [],
+      "count": [],
+      "last": [],
+      "state": []
+    },
+    "row_categories": {},
+    "view_fields": {
+      "table": []
+    },
+    "view_column_fields": {
+      "table": {}
+    },
+    "metric_categories": {}
+  },
+  "ad.new-logon-pairs": {
+    "declaration": {
+      "key": "ad.new-logon-pairs",
+      "result_states": [
+        "ok",
+        "empty",
+        "denied",
+        "not_collected",
+        "partial",
+        "processing",
+        "stale",
+        "error"
+      ],
+      "section": "reports/computers",
+      "title": "Новые пары пользователь — компьютер",
+      "description": "Пары входов, впервые наблюдавшиеся в выбранном периоде относительно базового окна перед ним.",
+      "archetype": "investigation-evidence",
+      "intent": {
+        "contract_id": "sli.report-intent.v1",
+        "version": 1,
+        "user_role": "Security investigator",
+        "question": "Какие пары пользователь — компьютер впервые наблюдались за период относительно базового окна?",
+        "action": "Inspect newly observed pairs and their exact logon evidence against the preceding baseline.",
+        "scope": "One server-resolved granted domain, selected users and computers, bounded period and preceding baseline window.",
+        "exclusions": "Observed novelty is not first-ever use or a risk verdict; missing baseline or identity context leaves novelty undetermined.",
+        "sources": [
+          "Canonical: published permanent Security 4624 history for domain controllers in the granted domain and both windows.",
+          "Supplemental: current AD computer inventory, domain controller membership and service-account classification."
+        ],
+        "freshness_expectation": "Свежесть истории входов, базового окна и текущего AD-контекста проверяется раздельно.",
+        "rights": "ad.computer-logons view grant with computer_logon_observation; server resolves the domain scope before reading history; export is unavailable.",
+        "field_classes": [
+          "computer_logon_observation"
+        ],
+        "coverage": "History bounds, baseline availability, truncation and current AD identity context are separate dimensions; baseline_covered does not prove collection continuity.",
+        "completeness": "Source-confirmed collection intervals divided by expected source-window duration across both windows; history bounds and pair counts do not prove continuity. Currently not_proven.",
+        "denominator": "Ожидаемые источники входов выбранного домена × выбранный период и базовое окно; границы истории не доказывают непрерывность сбора.",
+        "retention": "Published derived history follows the storage policy; exact source events may expire independently.",
+        "provenance": "User SID, computer GUID, domain, DC source, first observed time and source event ID.",
+        "primary_archetype": "list",
+        "product_archetype": "investigation-evidence",
+        "deterministic_policy": "Compare first observed user/computer pairs with the retained baseline; novelty requires covered baseline and complete identity context.",
+        "result_limits": "Baseline days and current period are bounded by MAX_DAYS; history read caps and fact validation may invalidate novelty.",
+        "fallback": "Uncovered baseline, truncated history, incomplete facts or AD identity suppress confirmed novelty and expose limitations.",
+        "acceptance_lanes": {
+          "product_user": "First-observed pairs answer the baseline comparison question.",
+          "authorization": "Logon field grant and server-resolved domain also constrain baseline and entity pivots.",
+          "deterministic_interpretation": "Covered baseline and identity matching are necessary for confirmed novelty.",
+          "api_view_model": "Sealed cursor preserves baseline, current window and first_seen/id order.",
+          "ui_honest_states": "No baseline, truncated history and incomplete identities do not claim a new pair.",
+          "evidence_audit": "Pair identity and first observed event retain current AD matching provenance."
+        },
+        "qualification": {
+          "status": "not_applicable",
+          "reason": "No automatic control qualification is asserted by this report."
+        },
+        "risk": {
+          "status": "not_applicable",
+          "reason": "No new risk score or organization risk policy is asserted by this report."
+        },
+        "confidence": {
+          "status": "not_applicable",
+          "reason": "Source quality is reported separately; no confidence score is inferred."
+        }
+      },
+      "params": [
+        {
+          "key": "period",
+          "label": "Период",
+          "kind": "period",
+          "default": "24h",
+          "required": true,
+          "presets": [
+            "24h",
+            "7d",
+            "custom"
+          ],
+          "max_days": 365
+        },
+        {
+          "key": "baseline_days",
+          "label": "Базовое окно, дней",
+          "kind": "int",
+          "default": 30,
+          "required": true
+        },
+        {
+          "key": "q",
+          "label": "Компьютер",
+          "kind": "text"
+        },
+        {
+          "key": "user",
+          "label": "Пользователь",
+          "kind": "text"
+        }
+      ],
+      "columns": [
+        {
+          "key": "user",
+          "label": "Пользователь",
+          "kind": "text",
+          "path": "user",
+          "link": "/app/entities/{user_entity_id}"
+        },
+        {
+          "key": "computer",
+          "label": "Компьютер",
+          "kind": "text",
+          "path": "computer",
+          "link": "/app/entities/{computer_entity_id}"
+        },
+        {
+          "key": "first_seen",
+          "label": "Первое наблюдение за период",
+          "kind": "datetime",
+          "path": "first_seen"
+        },
+        {
+          "key": "logon_types",
+          "label": "Тип входа",
+          "kind": "list",
+          "path": "logon_types"
+        },
+        {
+          "key": "sources",
+          "label": "Источник DC/агент",
+          "kind": "list",
+          "path": "sources"
+        },
+        {
+          "key": "count",
+          "label": "Входов за период",
+          "kind": "number",
+          "path": "count"
+        },
+        {
+          "key": "prior_user_logon",
+          "label": "Любой вход пользователя в базовом окне",
+          "kind": "state",
+          "path": "prior_user_logon",
+          "labels": {
+            "yes": "Да",
+            "no": "Нет",
+            "unknown": "Неизвестно"
+          }
+        },
+        {
+          "key": "novelty",
+          "label": "Сравнение",
+          "kind": "state",
+          "path": "novelty",
+          "labels": {
+            "new_pair": "Новая пара",
+            "new_user": "Новый пользователь",
+            "no_baseline": "Новизна не определена"
+          }
+        }
+      ],
+      "views": [
+        {
+          "kind": "table",
+          "key": "table",
+          "source": "items"
+        }
+      ],
+      "row_key": "id",
+      "detail": "fields",
+      "export": false,
+      "limits": {
+        "default": 50,
+        "max": 200
+      },
+      "page_actions": null,
+      "presets": [],
+      "row_links": [
+        {
+          "label": "Исходное событие / расследование",
+          "href": "/app/events/{source_event_id}"
+        }
+      ]
+    },
+    "access_key": "ad.computer-logons",
+    "required_fields": [
+      "computer_logon_observation"
+    ],
+    "scope": "delegated",
+    "param_fields": {
+      "period": [],
+      "baseline_days": [],
+      "q": [],
+      "user": []
+    },
+    "column_fields": {
+      "user": [],
+      "computer": [],
+      "first_seen": [],
+      "logon_types": [],
+      "sources": [],
+      "count": [],
+      "prior_user_logon": [],
+      "novelty": []
+    },
+    "row_categories": {},
+    "view_fields": {
+      "table": []
+    },
+    "view_column_fields": {
+      "table": {}
+    },
+    "metric_categories": {}
+  }
+}

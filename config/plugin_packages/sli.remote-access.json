@@ -1,0 +1,105 @@
+{
+  "schema_version": 2,
+  "manifest_id": "sli.remote-access.package.v1",
+  "status": "accepted_supervised_production_metadata",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "plugin_id": "sli.remote-access",
+  "plugin_version": "0.1.0",
+  "core_api": {
+    "minimum": "1.0.0",
+    "maximum_exclusive": "2.0.0"
+  },
+  "delivery": "bundled_reviewed",
+  "trust": "bundled_reviewed_only",
+  "components": {
+    "source_packs": [
+      {
+        "component_id": "sli.windows.vpn-radius",
+        "component_version": "0.1.0",
+        "state": "registered_disabled"
+      }
+    ],
+    "adapters": [
+      {
+        "component_id": "radius-accounting-database-compatible-v1",
+        "state": "compatibility_existing"
+      }
+    ],
+    "workers": [
+      {
+        "component_id": "radius-acquisition",
+        "handler_id": "stage9-radius-manual-worker",
+        "state": "supervised_production"
+      },
+      {
+        "component_id": "radius-session-observation",
+        "handler_id": "stage9-radius-session-consumer-manual",
+        "state": "supervised_production"
+      }
+    ],
+    "datasets": [
+      {
+        "component_id": "vpn.sessions",
+        "state": "compatibility_core_hosted"
+      }
+    ],
+    "reports": [
+      {
+        "component_id": "vpn.audit",
+        "state": "compatibility_core_hosted"
+      },
+      {
+        "component_id": "vpn.connections",
+        "state": "compatibility_core_hosted"
+      }
+    ],
+    "resource_profiles": [
+      "stage9-radius-manual-bounded-v1"
+    ]
+  },
+  "dependencies": [
+    {
+      "contract_id": "directory.vpn_entitlements.v1",
+      "required": true,
+      "exchange": "immutable_typed_result"
+    }
+  ],
+  "migrations": {
+    "compatibility_existing": [58, 59, 60, 61, 62, 63, 64, 65],
+    "core_prerequisites": [66],
+    "plugin_owned_prepared": [67]
+  },
+  "required_worker_boundaries": [
+    "windows_identity",
+    "job_object",
+    "working_directory_acl",
+    "network_policy",
+    "component_secret_handle",
+    "allowlisted_handler",
+    "postgres_role",
+    "db_timeouts",
+    "runtime_identity"
+  ],
+  "lifecycle_actions_enabled": false,
+  "runtime_enabled": true,
+  "autostart_enabled": true,
+  "source_contact_allowed": true,
+  "production_read_path_cutover": false,
+  "production_runtime": {
+    "host_script": "scripts/runtime/remote_access_plugin_host.py",
+    "components": {
+      "radius-acquisition": "plugin_radius_acquisition",
+      "radius-session-observation": "plugin_radius_session_observation"
+    }
+  },
+  "explicitly_not_proven": [
+    "independent_package_install",
+    "independent_upgrade_and_rollback",
+    "live_plugin_handler_under_all_boundaries",
+    "target_windows_identity",
+    "working_directory_acl",
+    "network_allowlist",
+    "runtime_postgres_login",
+    "independent_report_module"
+  ]
+}

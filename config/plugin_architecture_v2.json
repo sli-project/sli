@@ -1,0 +1,99 @@
+{
+  "schema_version": 2,
+  "decision_id": "sli.plugin-architecture.v2",
+  "supersedes": "sli.plugin-architecture.v1",
+  "status": "owner_accepted_design_boundary",
+  "owner_decision_date": "2026-08-02",
+  "isolation_goal": "maximum_practical_plugin_isolation",
+  "trust_model": "bundled_reviewed_only",
+  "plugin_owned": [
+    "package_and_version",
+    "executable_processes",
+    "source_packs_and_normalizers",
+    "specialized_acquisition_workers",
+    "postgres_role_and_derived_state_namespace",
+    "queue_delivery_retry_and_quarantine",
+    "resource_budget_and_health",
+    "secret_handles_and_network_allowlist",
+    "dataset_contracts_and_executors",
+    "report_definitions_and_presentation_modules",
+    "install_upgrade_rollback_disable_detach_lifecycle"
+  ],
+  "core_shared_services": [
+    "single_cursor_transport_broker",
+    "immutable_evidence_store",
+    "contract_registry_and_outbox_protocol",
+    "rbac_and_audit_log",
+    "supervisor_control_plane",
+    "report_access_pagination_export_engine",
+    "ui_shell_and_reviewed_primitives"
+  ],
+  "shared_transport": {
+    "cursor_owner": "core_transport_broker",
+    "plugin_normalizer_runs_in_broker": false,
+    "plugin_delivery_positions_are_independent": true,
+    "subscriber_backpressure_isolated": true,
+    "windows_event_log_policy": "one_full_channel_read_then_immutable_evidence_fanout"
+  },
+  "specialized_transport": {
+    "ad_ldap_gpo": "ad_dc_plugin_process",
+    "radius_accounting": "vpn_radius_plugin_process"
+  },
+  "cross_plugin_contract": {
+    "direct_code_import": false,
+    "direct_plugin_table_sql": false,
+    "shared_mutable_cache": false,
+    "undeclared_rpc": false,
+    "allowed_paths": [
+      "immutable_versioned_outbox_result",
+      "core_contract_registry",
+      "capability_scoped_dataset_api"
+    ],
+    "missing_producer_state": "not_collected_or_blocked"
+  },
+  "report_boundary": {
+    "plugin_owns": [
+      "descriptor",
+      "dataset_executor",
+      "domain_aggregates",
+      "filters_and_columns",
+      "presentation_module"
+    ],
+    "core_owns": [
+      "access_and_scope_enforcement",
+      "pagination_sort_and_export_limits",
+      "saved_user_assignments",
+      "ui_shell"
+    ],
+    "cross_plugin_reports_use": "immutable_typed_results_only"
+  },
+  "frontend_v1": {
+    "module_kind": "bundled_reviewed_lazy_module",
+    "error_boundary_required": true,
+    "capability_scoped_api_required": true,
+    "shared_mutable_state_allowed": false,
+    "third_party_runtime_ui_allowed": false
+  },
+  "stage10_acceptance_requires": [
+    "independent_disable",
+    "failure_isolation",
+    "resource_exhaustion_isolation",
+    "independent_upgrade_and_rollback",
+    "detach_without_core_or_peer_outage",
+    "read_and_report_parity_before_ownership_cutover"
+  ],
+  "prohibited_without_separate_owner_decision": [
+    "autostart",
+    "continuous_source_contact",
+    "production_read_path_cutover",
+    "third_party_dynamic_plugin_execution",
+    "destructive_plugin_data_purge"
+  ],
+  "owner_decisions_granted": [
+    {
+      "scope": "sli.remote-access",
+      "actions": ["autostart", "continuous_source_contact"],
+      "decision_ref": "docs/adr/0007-radius-manual-control-contract-host-lease-split.md"
+    }
+  ]
+}

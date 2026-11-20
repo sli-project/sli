@@ -1,0 +1,78 @@
+name: sli-e2e
+
+services:
+  postgres:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: sli_e2e
+      POSTGRES_HOST_AUTH_METHOD: trust
+    # Own volumes support production-sized copies without exhausting RAM.
+    volumes:
+      - replay-pg:/var/lib/postgresql
+      - replay-dump:/dump
+    tmpfs:
+      - /tmp:mode=1777
+    command: [postgres, -c, log_statement=none, -c, log_min_error_statement=panic, -c, log_min_messages=panic]
+    healthcheck:
+      test: [CMD, pg_isready, -U, postgres, -d, sli_e2e]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [replay]
+  app:
+    image: ${SLI_E2E_IMAGE:-sli-e2e-code:local}
+    build:
+      context: ../..
+      dockerfile: tools/e2e/Dockerfile
+    working_dir: /workspace
+    command: [python, -m, tools.e2e.scenario, --serve]
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    volumes:
+      - type: bind
+        source: ${SLI_E2E_SOURCE:?Set the current checkout path}
+        target: /workspace
+        read_only: true
+        bind:
+          create_host_path: false
+      - replay-data:/var/lib/sli
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      ADLOG_DB_BACKEND: postgres
+      ADLOG_PG_DSN: host=postgres dbname=sli_e2e user=adlog_user
+      SLI_E2E_ADMIN_DSN: host=postgres dbname=sli_e2e user=postgres
+      ADLOG_STORAGE_V2_WORKER_DSN: host=postgres dbname=sli_e2e user=postgres
+      ADLOG_SEMANTIC_WORKER_DSN: host=postgres dbname=sli_e2e user=sli_e2e_semantic
+      ADLOG_DATA_DIR: /var/lib/sli
+      ADLOG_LOG_DIR: /var/lib/sli/logs
+      ADLOG_DISABLE_SCHEDULER: "1"
+      ADLOG_DISABLE_COLLECTION: "1"
+      ADLOG_ACQUISITION_DISABLED: "1"
+      ADLOG_EXTERNAL_POST_COLLECTION_WORKER: "1"
+      ADLOG_EXTERNAL_STORAGE_V2_OUTBOX_WORKER: "1"
+      ADLOG_STORAGE_READ_MODE: v2
+      ADLOG_STORAGE_WRITE_MODE: v2
+      ADLOG_HISTORY_READ_MODE: primary
+      ADLOG_SEMANTIC_RUNTIME_MODE: facts-v1
+      ADLOG_SEMANTIC_PRODUCTION_ENABLED: "1"
+      ADLOG_SEMANTIC_NORMALIZATION_ENABLED: "1"
+      ADLOG_SEMANTIC_ASSEMBLY_ENABLED: "1"
+      ADLOG_SEMANTIC_CORRELATION_ENABLED: "0"
+      ADLOG_SEMANTIC_RISK_ENGINE_ENABLED: "0"
+      ADLOG_SEMANTIC_FINDING_CREATION_ENABLED: "0"
+      SLI_PLUGIN_RUNTIME_DIR: /var/lib/sli/plugins
+      SLI_PLUGIN_LOCK_DIR: /var/lib/sli/plugin-locks
+    ports: ["127.0.0.1:${SLI_E2E_PORT:-18443}:18443"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [replay]
+volumes:
+  replay-data:
+  replay-pg:
+  replay-dump:
+networks:
+  replay:
+    internal: true

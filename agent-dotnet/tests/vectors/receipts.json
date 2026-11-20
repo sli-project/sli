@@ -1,0 +1,349 @@
+[
+ {
+  "accepted": true,
+  "name": "committed",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": true,
+  "name": "duplicate",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "duplicate"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "rejected",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": null,
+   "committed_cursor": null,
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": "agent_cursor_mismatch",
+   "evidence_ref": null,
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "rejected"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "retry-later",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": null,
+   "committed_cursor": null,
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": "agent_sequence_gap",
+   "evidence_ref": null,
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "retry_later"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "wrong-contract",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v2",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "wrong-packet",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-9000-999999999999",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "wrong-hash",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "wrong-cursor",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "99"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "no-evidence",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": null,
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "empty-evidence",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "bad-time",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "invalid",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "no-time",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": null,
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "naive-time",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "error-code-present",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": "agent_replay_window",
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "committed"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "unknown-status",
+  "packet_envelope_cursor_after": {
+   "strategy": "record_id",
+   "token": "1"
+  },
+  "packet_id": "00000000-0000-4000-a000-000000000001",
+  "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+  "receipt": {
+   "committed_at_utc": "2026-10-07T12:00:00+00:00",
+   "committed_cursor": {
+    "strategy": "record_id",
+    "token": "1"
+   },
+   "contract_id": "sli.agent-receipt.v1",
+   "error_code": null,
+   "evidence_ref": "agent-packet:00000000-0000-4000-a000-000000000001",
+   "packet_id": "00000000-0000-4000-a000-000000000001",
+   "payload_sha256": "7282c29309bd05e4e04adfab212f8e11fcf638a7beffe8c69e16b04a505cd278",
+   "status": "accepted"
+  }
+ },
+ {
+  "accepted": false,
+  "name": "not-an-object",
+  "packet_envelope_cursor_after": null,
+  "packet_id": null,
+  "payload_sha256": null,
+  "receipt": "oops"
+ }
+]

@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-DR-RECLAIM-1",
+  "status": "source_ready_reclaim_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "depends_on": {
+    "external_fk_cutover_gate": "STORAGE-V2-EXTERNAL-FK-CUTOVER-1",
+    "external_fk_cutover_report": "STORAGE_V2_EXTERNAL_FK_CUTOVER1_REPORT_20260714.json",
+    "external_fk_cutover_status": "accepted_source_only_fk_cutover_blocked",
+    "live_external_fk_cutover_completed": false,
+    "migration_12_executed": false,
+    "v1_reclaim_authorized_by_fk_gate": false
+  },
+  "purpose": "Define the disaster-recovery and irreversible V1 reclaim gate. This source-only stage does not drop, truncate, rewrite, vacuum-full, or delete any production relation, dump, archive, or backup.",
+  "authorization": {
+    "this_stage_authorizes_reclaim": false,
+    "requires_accepted_live_external_fk_cutover_report": true,
+    "requires_fresh_independent_backup_restore_proof": true,
+    "requires_owner_irreversible_approval": true,
+    "required_owner_phrase": "AUTHORIZE_STORAGE_V2_IRREVERSIBLE_V1_RECLAIM_20260715",
+    "sql_rollback_after_drop_possible": false,
+    "backup_restore_is_only_post_drop_recovery": true
+  },
+  "candidate_v1_relations": [
+    {
+      "relation": "event_entity_links",
+      "reason": "link graph represented by event_entity_link_blocks_v2 plus archive-verified link details",
+      "drop_authorized_by_this_stage": false
+    },
+    {
+      "relation": "events",
+      "reason": "event identity/facts represented by events_v2_core, event_facts_v2 and canonical event archives",
+      "drop_authorized_by_this_stage": false
+    },
+    {
+      "relation": "observed_entities",
+      "reason": "entity identity/details represented by entities_v2 and canonical entity archives",
+      "drop_authorized_by_this_stage": false
+    }
+  ],
+  "required_live_proofs": [
+    {
+      "id": "fresh_external_backup_copy",
+      "required": true,
+      "acceptance": "Fresh PostgreSQL dump and V2 archive root are copied to an independent disk or volume and SHA-256 verified after copy."
+    },
+    {
+      "id": "isolated_restore_from_external_copy",
+      "required": true,
+      "acceptance": "Restore uses the independent copy, verifies schema, exact counts, latest event, V2 archive manifests and smoke queries."
+    },
+    {
+      "id": "post_cutover_stability_window",
+      "required": true,
+      "acceptance": "V2 read/write and external FK cutover have operated for the approved stability window with zero unexplained data, archive, search, report or findings mismatch."
+    },
+    {
+      "id": "measured_reclaim_projection",
+      "required": true,
+      "acceptance": "Relation sizes are measured immediately before reclaim and projected post-drop database plus archive size still meets the accepted ratio gate."
+    },
+    {
+      "id": "rollback_truth_acknowledgement",
+      "required": true,
+      "acceptance": "Owner explicitly accepts that after dropping V1 identity/link relations, SQL rollback alone is impossible."
+    }
+  ],
+  "reclaim_plan": {
+    "execution_must_be_separate_migration": true,
+    "planned_migration_id": "013_storage_v2_drop_legacy_v1_relations",
+    "must_drop_only": ["event_entity_links", "events", "observed_entities"],
+    "must_not_drop": [
+      "finding_evidence",
+      "finding_entities",
+      "event_links",
+      "entity_states",
+      "detections",
+      "events_v2_core",
+      "event_facts_v2",
+      "entities_v2",
+      "entity_details_v2",
+      "event_entity_link_blocks_v2",
+      "storage_v2_archive_sets",
+      "storage_v2_archive_blocks"
+    ],
+    "must_not_delete_backups_or_archives": true,
+    "vacuum_full_required": false,
+    "physical_space_release_expected_from_drop": true
+  },
+  "acceptance": {
+    "required_status": "dr_reclaim_plan_ready_no_drop",
+    "reclaim_executed": false,
+    "v1_relations_dropped": [],
+    "required_reclaim_relation_count": 3,
+    "minimum_measured_ratio_after_projection": 2.5,
+    "required_report_fields": [
+      "external_backup_copy_sha256",
+      "external_restore_report_sha256",
+      "production_identity_before",
+      "schema_version_before",
+      "routing_state_before",
+      "candidate_relation_sizes_before",
+      "projected_database_bytes_after_drop",
+      "projected_archive_bytes",
+      "projected_total_bytes_after_reclaim",
+      "projected_ratio_after_reclaim",
+      "owner_irreversible_approval_fingerprint",
+      "rollback_truth_acknowledged",
+      "relations_dropped",
+      "backups_deleted",
+      "archives_deleted",
+      "errors",
+      "stop_reason"
+    ]
+  },
+  "hard_stop_conditions": [
+    "accepted live external FK cutover report is missing",
+    "fresh independent backup copy is missing or SHA mismatched",
+    "isolated restore from external copy is missing or failed",
+    "V2 archive restore or manifest verification failed",
+    "post-cutover stability window is missing",
+    "projected ratio after reclaim is below 2.5x",
+    "owner irreversible approval phrase is missing",
+    "rollback truth acknowledgement is missing",
+    "requested drop list differs from exactly event_entity_links, events, observed_entities",
+    "request attempts to delete dumps, V1 archives or V2 archives"
+  ],
+  "strictly_forbidden": [
+    "drop, truncate, rewrite or VACUUM FULL any production relation from this source-only stage",
+    "drop finding_evidence, finding_entities, event_links, entity_states or detections",
+    "drop any V2 table or archive manifest table",
+    "delete old dumps or archives in this stage",
+    "claim SQL rollback is possible after V1 drop",
+    "perform reclaim without fresh external restore proof",
+    "perform reclaim without explicit irreversible owner approval"
+  ],
+  "next_stage": {
+    "id": "DB-STORAGE-OPT-1-FINALIZER",
+    "authorized_by_this_stage": false,
+    "purpose": "Accept measured DB-storage result only after live reclaim evidence exists."
+  }
+}

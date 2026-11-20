@@ -1,0 +1,365 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.file-audit",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [
+    "file-audit.view",
+    "file-audit.export",
+    "file-audit.audit.manage"
+  ],
+  "dependencies": [],
+  "sources": [
+    {
+      "pack_version": "1.0.0",
+      "normalizer_version": "1.0.0",
+      "pack_id": "sli.windows.file-audit",
+      "input_contract": "sli.collection-packet.v1",
+      "collection_policy_schema_ref": "sli.file-audit.policy.v1",
+      "catalog_ref": "file-audit.event-catalog.v1",
+      "normalizer_id": "windows-file-audit-v1"
+    }
+  ],
+  "agent_modules": [
+    {
+      "capabilities": [],
+      "module_version": "1.0.0",
+      "module_id": "sli.file-audit",
+      "policy_schema_ref": "sli.file-audit.policy.v1",
+      "agent_api": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "rights_check_id": "windows-file-audit-local-read"
+    }
+  ],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.overview",
+      "reader_id": "file-audit.overview"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.actions",
+      "reader_id": "file-audit.actions"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.mass-operations",
+      "reader_id": "file-audit.mass-operations"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.permission-changes",
+      "reader_id": "file-audit.permission-changes"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.access-denials",
+      "reader_id": "file-audit.access-denials"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.out-of-hours",
+      "reader_id": "file-audit.out-of-hours"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.permissions",
+      "reader_id": "file-audit.permissions"
+    },
+    {
+      "contract_id": "sli.report-result.v2",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "contract_version": "2.0.0",
+      "dataset_id": "file-audit.audit-state",
+      "reader_id": "file-audit.audit-state"
+    }
+  ],
+  "reports": [
+    {
+      "definition_id": "file-audit.overview",
+      "access_key": "file-audit.overview",
+      "dataset_id": "file-audit.overview",
+      "report_key": "file-audit.overview",
+      "title_key": "file-audit.tabs.overview",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.overview",
+      "routes": [
+        "/report/file-audit.overview"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.actions",
+      "access_key": "file-audit.actions",
+      "dataset_id": "file-audit.actions",
+      "report_key": "file-audit.actions",
+      "title_key": "file-audit.tabs.actions",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.actions",
+      "routes": [
+        "/report/file-audit.actions"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.mass-operations",
+      "access_key": "file-audit.mass-operations",
+      "dataset_id": "file-audit.mass-operations",
+      "report_key": "file-audit.mass-operations",
+      "title_key": "file-audit.tabs.mass-operations",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.mass-operations",
+      "routes": [
+        "/report/file-audit.mass-operations"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.permission-changes",
+      "access_key": "file-audit.permission-changes",
+      "dataset_id": "file-audit.permission-changes",
+      "report_key": "file-audit.permission-changes",
+      "title_key": "file-audit.tabs.permission-changes",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.permission-changes",
+      "routes": [
+        "/report/file-audit.permission-changes"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.access-denials",
+      "access_key": "file-audit.access-denials",
+      "dataset_id": "file-audit.access-denials",
+      "report_key": "file-audit.access-denials",
+      "title_key": "file-audit.tabs.access-denials",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.access-denials",
+      "routes": [
+        "/report/file-audit.access-denials"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.out-of-hours",
+      "access_key": "file-audit.out-of-hours",
+      "dataset_id": "file-audit.out-of-hours",
+      "report_key": "file-audit.out-of-hours",
+      "title_key": "file-audit.tabs.out-of-hours",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.out-of-hours",
+      "routes": [
+        "/report/file-audit.out-of-hours"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.permissions",
+      "access_key": "file-audit.permissions",
+      "dataset_id": "file-audit.permissions",
+      "report_key": "file-audit.permissions",
+      "title_key": "file-audit.tabs.permissions",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.permissions",
+      "routes": [
+        "/report/file-audit.permissions"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    },
+    {
+      "definition_id": "file-audit.audit-state",
+      "access_key": "file-audit.audit-state",
+      "dataset_id": "file-audit.audit-state",
+      "report_key": "file-audit.audit-state",
+      "title_key": "file-audit.tabs.audit-state",
+      "capabilities": [
+        "file-audit.view"
+      ],
+      "history_reader_id": "file-audit.audit-state",
+      "routes": [
+        "/report/file-audit.audit-state"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "section_id": "file-audit"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "file-audit",
+      "title_key": "file-audit.title",
+      "icon_id": "report",
+      "order": 50,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "migrations": [
+      {
+        "version": 183,
+        "core_prerequisites": [
+          182
+        ],
+        "path": "config/postgres_migrations/183_file_audit_contracts.sql",
+        "name": "file_audit_contracts",
+        "sha256": "68eb5befbb5a3ca970d45dabba6d6f0506d2eb1b6d8e885ed683b176df703e31"
+      },
+      {
+        "version": 185,
+        "core_prerequisites": [
+          184
+        ],
+        "path": "config/postgres_migrations/185_file_audit_management.sql",
+        "name": "file_audit_management",
+        "sha256": "14053911f5954911773e914b5524a6b5cc32af7a171782d9affc2ac9ac44dc03"
+      },
+      {
+        "version": 186,
+        "core_prerequisites": [
+          185
+        ],
+        "path": "config/postgres_migrations/186_file_audit_collection.sql",
+        "name": "file_audit_collection",
+        "sha256": "183371f770c375cc15e1ab741adb4d93ee2f078d457d83bfabaef4165dd4ccbb"
+      },
+      {
+        "version": 187,
+        "core_prerequisites": [
+          186
+        ],
+        "path": "config/postgres_migrations/187_file_audit_rules.sql",
+        "name": "file_audit_rules",
+        "sha256": "641cfdf118f959ff572dffc7df6c39a0c86f27b0b1e20a1d65ebd74b2c8ff00f"
+      },
+      {
+        "version": 191,
+        "name": "file_audit_reports",
+        "core_prerequisites": [
+          190
+        ],
+        "path": "config/postgres_migrations/191_file_audit_reports.sql",
+        "sha256": "d6f6368b9acd4a4b3eaafdaf0b0339178576f28495e8b65a141888575e83fefa"
+      },
+      {
+        "version": 193,
+        "name": "file_audit_retention",
+        "core_prerequisites": [
+          192
+        ],
+        "path": "config/postgres_migrations/193_file_audit_retention.sql",
+        "sha256": "3ac8eb59ca49c7e6c5e0b5fb7ef0ac9ca05da3159cbe75727122a89c2e4f7b34"
+      },
+      {
+        "version": 197,
+        "name": "workstation_file_audit",
+        "core_prerequisites": [196],
+        "path": "config/postgres_migrations/197_workstation_file_audit.sql",
+        "sha256": "da1f271fa2d4e2bb617b9554171170ed854caef518feeb525a29494b927e7c59"
+      }
+    ],
+    "existing_tables": [],
+    "schema": "sli_plugin_file_audit"
+  }
+}

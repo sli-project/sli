@@ -1,0 +1,279 @@
+{
+  "dynamic": [
+    [
+      "collector-health.html",
+      "collector_health",
+      "Состояние сбора"
+    ],
+    [
+      "autocollection.html",
+      "autocollection",
+      "Состояние автосбора"
+    ],
+    [
+      "system-health.html",
+      "system_health",
+      "Состояние системы"
+    ],
+    [
+      "storage-health.html",
+      "storage_health",
+      "Storage Health"
+    ],
+    [
+      "db-status.html",
+      "db_status",
+      "DB Backend Status"
+    ],
+    [
+      "diagnostics.html",
+      "diagnostics",
+      "Диагностика"
+    ],
+    [
+      "findings.html",
+      "findings",
+      "Findings"
+    ],
+    [
+      "investigation.html",
+      "investigation",
+      "Рабочее место расследования"
+    ],
+    [
+      "role-overview.html",
+      "role_overview",
+      "Ролевые представления ИБ/ИТ"
+    ],
+    [
+      "ui-navigation.html",
+      "ui_navigation",
+      "Карта навигации"
+    ],
+    [
+      "security-events-monitor.html",
+      "security_events",
+      "ИБ-мониторинг событий"
+    ],
+    [
+      "ai-redaction-preview.html",
+      "ai_safety",
+      "AI preview: безопасная подготовка"
+    ],
+    [
+      "ai-prompt-preview.html",
+      "ai_prompt",
+      "AI prompt: OpenAI API"
+    ],
+    [
+      "ai-reports.html",
+      "ai_analysis",
+      "AI-отчеты"
+    ]
+  ],
+  "metadata": {
+    "collector-health.html": {
+      "kind": "collector_health",
+      "server": null,
+      "title": "Состояние сбора",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 70,
+      "description": "Lag, timeout, repeated backlog и качество сбора по DC/каналам."
+    },
+    "autocollection.html": {
+      "kind": "autocollection",
+      "server": null,
+      "title": "Состояние автосбора",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 80,
+      "description": "Текущий scheduled job, skipped-overlap, fairness и прогресс активного сбора."
+    },
+    "system-health.html": {
+      "kind": "system_health",
+      "server": null,
+      "title": "Состояние системы",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 110,
+      "description": "Общее runtime-состояние сервиса и локальной среды проекта."
+    },
+    "storage-health.html": {
+      "kind": "storage_health",
+      "server": null,
+      "title": "Storage Health",
+      "roles": [
+        "it"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 90,
+      "description": "Состояние raw/processed/logs/reports, retention и dry-run cleanup."
+    },
+    "db-status.html": {
+      "kind": "db_status",
+      "server": null,
+      "title": "DB Backend Status",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 95,
+      "description": "PostgreSQL-only runtime: DSN, schema, connection and operational readiness."
+    },
+    "diagnostics.html": {
+      "kind": "diagnostics",
+      "server": null,
+      "title": "Диагностика",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "focus_group": "operations",
+      "navigation_priority": 100,
+      "description": "Self-test, release gate, watchdog, diagnostic bundle и быстрые проверки."
+    },
+    "findings.html": {
+      "kind": "findings",
+      "server": null,
+      "title": "Findings",
+      "roles": [
+        "security"
+      ],
+      "focus_group": "security",
+      "navigation_priority": 40,
+      "description": "Сформированные выводы и гипотезы с evidence для ручной проверки."
+    },
+    "investigation.html": {
+      "kind": "investigation",
+      "server": null,
+      "title": "Рабочее место расследования",
+      "roles": [
+        "security",
+        "technical"
+      ],
+      "focus_group": "security",
+      "navigation_priority": 50,
+      "description": "Рабочее место расследования: pivots, цепочки, переходы к событиям."
+    },
+    "role-overview.html": {
+      "kind": "role_overview",
+      "server": null,
+      "title": "Ролевые представления ИБ/ИТ",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "overview",
+      "navigation_priority": 20,
+      "description": "Поясняет, что видят ИБ, ИТ и технический слой, без удаления общих данных."
+    },
+    "ui-navigation.html": {
+      "kind": "ui_navigation",
+      "server": null,
+      "title": "Карта навигации",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "overview",
+      "navigation_priority": 25,
+      "description": "Контрольная карта кнопок, отчетов и ролевой доступности интерфейса."
+    },
+    "security-events-monitor.html": {
+      "kind": "security_events",
+      "server": null,
+      "title": "ИБ-мониторинг событий",
+      "roles": [
+        "security",
+        "technical"
+      ],
+      "focus_group": "security",
+      "navigation_priority": 30,
+      "description": "Ключевые события Security за выбранный период: входы, группы, пароли, блокировки."
+    },
+    "ai-redaction-preview.html": {
+      "kind": "ai_safety",
+      "server": null,
+      "title": "AI preview: безопасная подготовка",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "shared",
+      "navigation_priority": 1000
+    },
+    "ai-prompt-preview.html": {
+      "kind": "ai_prompt",
+      "server": null,
+      "title": "AI prompt: OpenAI API",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "shared",
+      "navigation_priority": 1000
+    },
+    "ai-reports.html": {
+      "kind": "ai_analysis",
+      "server": null,
+      "title": "AI-отчеты",
+      "roles": [
+        "security"
+      ],
+      "focus_group": "security",
+      "navigation_priority": 60,
+      "description": "AI-гипотезы после безопасной подготовки и redaction-preview."
+    },
+    "ai-analysis.html": {
+      "kind": "ai_analysis",
+      "server": null,
+      "title": "AI-отчет",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "shared",
+      "navigation_priority": 1000
+    },
+    "ai-openai-analysis.html": {
+      "kind": "ai_analysis",
+      "server": null,
+      "title": "AI-анализ OpenAI",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "shared",
+      "navigation_priority": 1000
+    },
+    "domain-security-overview.html": {
+      "kind": "domain_overview",
+      "server": null,
+      "title": "Обзор безопасности домена",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "focus_group": "shared",
+      "navigation_priority": 1000
+    }
+  }
+}

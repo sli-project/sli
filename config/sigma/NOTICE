@@ -1,0 +1,33 @@
+Stage 01: offline package validation only. No rules are enabled or evaluated.
+
+The selected, unmodified SigmaHQ rules remain in the separately obtained archive
+identified by lock.json. The archive hash identifies the exact ZIP used by the
+design; GitHub may regenerate ZIP bytes for the same commit. A different ZIP
+must be reviewed and relocked, never silently accepted. SHA-256 integrity does
+not authenticate the publisher. Obtain packages from the official pinned URL
+or a trusted offline channel.
+
+DRL-1.1: retain original YAML bytes, author/attribution metadata, rule and set
+links, and the license notice/text when distributing rules. The verifier keeps
+original bytes and attribution in memory and never prints author values.
+Future messages based on matches (including cards, API, exports, notifications,
+and aggregated chains) must retain the supplied authorship of every input rule.
+Local modifications must be identified separately, preserving upstream credit.
+See licenses/DRL-1.1.txt and the pinned license URI in lock.json.
+
+pySigma 1.3.3 is LGPL-2.1-only, independently of the rules' DRL license.
+See licenses/LGPL-2.1.txt and the source URI in lock.json. This stage does not
+bundle the library into the server. Any later distribution must preserve the
+library's license/copyright notices, provide the corresponding library source
+as required by LGPL-2.1, and allow replacement/modification of the library.
+Keep it separately installed; do not merge or freeze it into proprietary code.
+Beta 1 excludes Sigma. The optional pySigma installation and its diskcache
+and diskcache-stubs dependencies have been removed from requirements.lock.txt
+and software-manifest.json. Remaining ancillary packages retain their hashes.
+The parser version and license in lock.json describe the historical verifier;
+this lock no longer installs that parser. Do not install it transitively to
+restore the retired tool environment. Package integrity checks are unchanged.
+
+The archive is an external input, not committed rule content or runtime data.
+Unit fixtures are synthetic and require no network or database. The optional
+SLI_SIGMA_ARCHIVE test additionally parses all 25 original pinned YAML files.

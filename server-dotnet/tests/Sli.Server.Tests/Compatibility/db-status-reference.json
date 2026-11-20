@@ -1,0 +1,611 @@
+{
+  "cases": [
+    {
+      "name": "no_dsn",
+      "dsn": "",
+      "size": null,
+      "tables": [],
+      "migrations": [],
+      "data": {
+        "status": "warn",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": false,
+          "dsn": null,
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "warn",
+            "reason": "ADLOG_PG_DSN/config database.postgres_dsn is not set"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">warn</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: False</p>\n    <p>DSN: <code>not set</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>warn</td><td><pre>{&#x27;status&#x27;: &#x27;warn&#x27;, &#x27;reason&#x27;: &#x27;ADLOG_PG_DSN/config database.postgres_dsn is not set&#x27;}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "complete",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": 1536,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings",
+        "ai_api_runs",
+        "extra_fixture"
+      ],
+      "migrations": [
+        {
+          "version": 1,
+          "name": "fixture <start> & 'quoted'"
+        },
+        {
+          "version": 2,
+          "name": "日本語 😀"
+        }
+      ],
+      "data": {
+        "status": "ok",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": true,
+          "size_bytes": 1536,
+          "size_human": "1.5 KB"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "ok",
+            "database": "fixture",
+            "user": "fixture_reader",
+            "version": "PostgreSQL fixture <version>"
+          },
+          "schema": {
+            "status": "ok",
+            "tables_seen": 9,
+            "missing_tables": [],
+            "schema_migrations": [
+              {
+                "version": 1,
+                "name": "fixture <start> & 'quoted'"
+              },
+              {
+                "version": 2,
+                "name": "日本語 😀"
+              }
+            ]
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">ok</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: True</p>\n    <p>Size: 1.5 KB</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;database&#x27;: &#x27;fixture&#x27;, &#x27;user&#x27;: &#x27;fixture_reader&#x27;, &#x27;version&#x27;: &#x27;PostgreSQL fixture &lt;version&gt;&#x27;}</pre></td></tr><tr><td>schema</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;tables_seen&#x27;: 9, &#x27;missing_tables&#x27;: [], &#x27;schema_migrations&#x27;: [{&#x27;version&#x27;: 1, &#x27;name&#x27;: &quot;fixture &lt;start&gt; &amp; &#x27;quoted&#x27;&quot;}, {&#x27;version&#x27;: 2, &#x27;name&#x27;: &#x27;日本語 😀&#x27;}]}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "empty_schema",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": 0,
+      "tables": [],
+      "migrations": [],
+      "data": {
+        "status": "warn",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": true,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "ok",
+            "database": "fixture",
+            "user": "fixture_reader",
+            "version": "PostgreSQL fixture <version>"
+          },
+          "schema": {
+            "status": "warn",
+            "tables_seen": 0,
+            "missing_tables": [
+              "schema_migrations",
+              "log_sources",
+              "collection_channel_state",
+              "collector_channel_runs",
+              "collector_stage_metrics",
+              "events",
+              "findings",
+              "ai_api_runs"
+            ],
+            "schema_migrations": []
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">warn</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: True</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;database&#x27;: &#x27;fixture&#x27;, &#x27;user&#x27;: &#x27;fixture_reader&#x27;, &#x27;version&#x27;: &#x27;PostgreSQL fixture &lt;version&gt;&#x27;}</pre></td></tr><tr><td>schema</td><td>warn</td><td><pre>{&#x27;status&#x27;: &#x27;warn&#x27;, &#x27;tables_seen&#x27;: 0, &#x27;missing_tables&#x27;: [&#x27;schema_migrations&#x27;, &#x27;log_sources&#x27;, &#x27;collection_channel_state&#x27;, &#x27;collector_channel_runs&#x27;, &#x27;collector_stage_metrics&#x27;, &#x27;events&#x27;, &#x27;findings&#x27;, &#x27;ai_api_runs&#x27;], &#x27;schema_migrations&#x27;: []}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "missing_table",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": 1024,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings"
+      ],
+      "migrations": [],
+      "data": {
+        "status": "warn",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": true,
+          "size_bytes": 1024,
+          "size_human": "1.0 KB"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "ok",
+            "database": "fixture",
+            "user": "fixture_reader",
+            "version": "PostgreSQL fixture <version>"
+          },
+          "schema": {
+            "status": "warn",
+            "tables_seen": 7,
+            "missing_tables": [
+              "ai_api_runs"
+            ],
+            "schema_migrations": []
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">warn</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: True</p>\n    <p>Size: 1.0 KB</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;database&#x27;: &#x27;fixture&#x27;, &#x27;user&#x27;: &#x27;fixture_reader&#x27;, &#x27;version&#x27;: &#x27;PostgreSQL fixture &lt;version&gt;&#x27;}</pre></td></tr><tr><td>schema</td><td>warn</td><td><pre>{&#x27;status&#x27;: &#x27;warn&#x27;, &#x27;tables_seen&#x27;: 7, &#x27;missing_tables&#x27;: [&#x27;ai_api_runs&#x27;], &#x27;schema_migrations&#x27;: []}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "failed_identity",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": null,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings",
+        "ai_api_runs"
+      ],
+      "migrations": [],
+      "error_stage": "identity",
+      "data": {
+        "status": "failed",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "failed",
+            "error_type": "OperationalError",
+            "error": "fixture <connection> & 'unavailable'"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">failed</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>failed</td><td><pre>{&#x27;status&#x27;: &#x27;failed&#x27;, &#x27;error_type&#x27;: &#x27;OperationalError&#x27;, &#x27;error&#x27;: &quot;fixture &lt;connection&gt; &amp; &#x27;unavailable&#x27;&quot;}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "failed_tables",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": null,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings",
+        "ai_api_runs"
+      ],
+      "migrations": [],
+      "error_stage": "tables",
+      "data": {
+        "status": "failed",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "failed",
+            "error_type": "OperationalError",
+            "error": "fixture <connection> & 'unavailable'"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">failed</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>failed</td><td><pre>{&#x27;status&#x27;: &#x27;failed&#x27;, &#x27;error_type&#x27;: &#x27;OperationalError&#x27;, &#x27;error&#x27;: &quot;fixture &lt;connection&gt; &amp; &#x27;unavailable&#x27;&quot;}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "failed_migrations",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": null,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings",
+        "ai_api_runs"
+      ],
+      "migrations": [],
+      "error_stage": "migrations",
+      "data": {
+        "status": "failed",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "failed",
+            "error_type": "OperationalError",
+            "error": "fixture <connection> & 'unavailable'"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">failed</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>failed</td><td><pre>{&#x27;status&#x27;: &#x27;failed&#x27;, &#x27;error_type&#x27;: &#x27;OperationalError&#x27;, &#x27;error&#x27;: &quot;fixture &lt;connection&gt; &amp; &#x27;unavailable&#x27;&quot;}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "schema_permission_denied",
+      "dsn": "host=192.0.2.10 user=fixture_reader password=fixture-password dbname=fixture",
+      "size": null,
+      "tables": [
+        "schema_migrations",
+        "log_sources",
+        "collection_channel_state",
+        "collector_channel_runs",
+        "collector_stage_metrics",
+        "events",
+        "findings",
+        "ai_api_runs"
+      ],
+      "migrations": [],
+      "error_stage": "migrations",
+      "error_sqlstate": "42501",
+      "data": {
+        "status": "failed",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=fixture_reader password=*** dbname=fixture host=192.0.2.10",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "failed",
+            "error_type": "InsufficientPrivilege",
+            "error": "fixture <connection> & 'unavailable'"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">failed</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=fixture_reader password=*** dbname=fixture host=192.0.2.10</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>failed</td><td><pre>{&#x27;status&#x27;: &#x27;failed&#x27;, &#x27;error_type&#x27;: &#x27;InsufficientPrivilege&#x27;, &#x27;error&#x27;: &quot;fixture &lt;connection&gt; &amp; &#x27;unavailable&#x27;&quot;}</pre></td></tr></table>\n</body>\n</html>"
+    },
+    {
+      "name": "connection_uri_failure",
+      "dsn": "postgresql://example_fixture:fixture-password@192.0.2.10:5432/fixture",
+      "size": null,
+      "tables": [],
+      "migrations": [],
+      "error_stage": "identity",
+      "data": {
+        "status": "failed",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": false,
+          "size_bytes": 0,
+          "size_human": "0 B"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "user=example_fixture password=*** dbname=fixture host=192.0.2.10 port=5432",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "dsn": {
+            "status": "ok"
+          },
+          "psycopg": {
+            "status": "ok",
+            "duration_ms": 0,
+            "module": "psycopg"
+          },
+          "connection": {
+            "status": "failed",
+            "error_type": "OperationalError",
+            "error": "fixture <connection> & 'unavailable'"
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">failed</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: False</p>\n    <p>Size: 0 B</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>user=example_fixture password=*** dbname=fixture host=192.0.2.10 port=5432</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>dsn</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;}</pre></td></tr><tr><td>psycopg</td><td>ok</td><td><pre>{&#x27;status&#x27;: &#x27;ok&#x27;, &#x27;duration_ms&#x27;: 0, &#x27;module&#x27;: &#x27;psycopg&#x27;}</pre></td></tr><tr><td>connection</td><td>failed</td><td><pre>{&#x27;status&#x27;: &#x27;failed&#x27;, &#x27;error_type&#x27;: &#x27;OperationalError&#x27;, &#x27;error&#x27;: &quot;fixture &lt;connection&gt; &amp; &#x27;unavailable&#x27;&quot;}</pre></td></tr></table>\n</body>\n</html>"
+    }
+  ],
+  "renders": [
+    {
+      "data": {},
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">None</span></p>\n    <p>Active backend: <b>None</b></p>\n    <p>Duration: None ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>None</code></p>\n    <p>Exists: None</p>\n    <p>Size: None</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: None</p>\n    <p>DSN: <code>not set</code></p>\n    <p>Timeout: None sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr></table>\n</body>\n</html>"
+    },
+    {
+      "data": {
+        "postgres": null,
+        "sqlite": null,
+        "checks": null
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">None</span></p>\n    <p>Active backend: <b>None</b></p>\n    <p>Duration: None ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>None</code></p>\n    <p>Exists: None</p>\n    <p>Size: None</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: None</p>\n    <p>DSN: <code>not set</code></p>\n    <p>Timeout: None sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr></table>\n</body>\n</html>"
+    },
+    {
+      "data": {
+        "status": "<script>\"&'</script>",
+        "mode": "db0_readiness",
+        "duration_ms": 0,
+        "active_backend": "postgres",
+        "sqlite": {
+          "path": "fixture/ad_logs.sqlite",
+          "exists": true,
+          "size_bytes": 1536,
+          "size_human": "1.5 KB"
+        },
+        "postgres": {
+          "configured": true,
+          "dsn": "",
+          "connect_timeout_seconds": 3
+        },
+        "safety": {
+          "backend_switched": false,
+          "migration_running": false,
+          "cursor_or_watermark_changed": false
+        },
+        "checks": {
+          "<check>&\"'": {
+            "status": null,
+            "values": [
+              true,
+              false,
+              null,
+              "a'b",
+              "a'\"b",
+              "\n\r\t\u0000​ 日本語😀",
+              "longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong"
+            ]
+          }
+        },
+        "release_metadata": {}
+      },
+      "html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\" />\n  <title>DB Backend Status</title>\n  <style>\n    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #f7f7f7; color: #222; }\n    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }\n    table { border-collapse: collapse; width: 100%; background: white; }\n    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }\n    th { background: #f0f0f0; }\n    pre { white-space: pre-wrap; margin: 0; font-size: 12px; }\n    .status { font-weight: 700; }\n  </style>\n</head>\n<body>\n  <h1>DB Backend Status</h1>\n  <div class=\"card\">\n    <p>Stage: <b>DB-0.1 PostgreSQL readiness</b></p>\n    <p>Status: <span class=\"status\">&lt;script&gt;&quot;&amp;&#x27;&lt;/script&gt;</span></p>\n    <p>Active backend: <b>postgres</b></p>\n    <p>Duration: 0 ms</p>\n  </div>\n  <div class=\"card\">\n    <h2>SQLite</h2>\n    <p>Path: <code>fixture/ad_logs.sqlite</code></p>\n    <p>Exists: True</p>\n    <p>Size: 1.5 KB</p>\n  </div>\n  <div class=\"card\">\n    <h2>PostgreSQL</h2>\n    <p>Configured: True</p>\n    <p>DSN: <code>not set</code></p>\n    <p>Timeout: 3 sec</p>\n  </div>\n  <h2>Checks</h2>\n  <table><tr><th>Check</th><th>Status</th><th>Details</th></tr><tr><td>&lt;check&gt;&amp;&quot;&#x27;</td><td>None</td><td><pre>{&#x27;status&#x27;: None, &#x27;values&#x27;: [True, False, None, &quot;a&#x27;b&quot;, &#x27;a\\&#x27;&quot;b&#x27;, &#x27;\\n\\r\\t\\x00\\u200b\\xa0日本語😀&#x27;, &#x27;longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong&#x27;]}</pre></td></tr></table>\n</body>\n</html>"
+    }
+  ],
+  "dsns": [
+    {
+      "input": "host=192.0.2.10 user=fixture password=fixture-password dbname=fixture",
+      "expected": "user=fixture password=*** dbname=fixture host=192.0.2.10"
+    },
+    {
+      "input": "host='db host' password='quoted secret' dbname=fixture",
+      "expected": "password=*** dbname=fixture host='db host'"
+    },
+    {
+      "input": "host = 192.0.2.10 password = spaced-secret dbname = fixture",
+      "expected": "password=*** dbname=fixture host=192.0.2.10"
+    },
+    {
+      "input": "postgresql://example_fixture:fixture%40password@192.0.2.10:5432/fixture",
+      "expected": "user=example_fixture password=*** dbname=fixture host=192.0.2.10 port=5432"
+    },
+    {
+      "input": "postgresql://example_fixture:fixture%40password@[2001:db8::1]:5432/fixture?sslpassword=fixture-cert",
+      "expected": "user=example_fixture password=*** dbname=fixture host=2001:db8::1 port=5432 sslpassword=***"
+    },
+    {
+      "input": "host=192.0.2.10 password=fixture-password sslpassword=fixture-cert",
+      "expected": "password=*** host=192.0.2.10 sslpassword=***"
+    },
+    {
+      "input": "host='unterminated password=must-not-leak",
+      "expected": "<invalid PostgreSQL DSN>"
+    },
+    {
+      "input": "unknown_option=must-not-leak",
+      "expected": "<invalid PostgreSQL DSN>"
+    },
+    {
+      "input": "host=192.0.2.10 application_name='a\\'b' options='a\\\\b c'",
+      "expected": "host=192.0.2.10 options='a\\\\b c' application_name=a\\'b"
+    }
+  ]
+}

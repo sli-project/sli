@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-accounting-runtime.v1",
+  "status": "accepted_for_fixture_only",
+  "source_pack_id": "sli.windows.vpn-radius",
+  "runtime_enabled": false,
+  "transport": "read_only_tail",
+  "cursor_owner_fields": [
+    "source_instance_id",
+    "stream_id",
+    "transport_binding"
+  ],
+  "stream_id": "radius-accounting",
+  "class_cache": {
+    "key": "sha256(source_instance_id + exact_class_octets)",
+    "value": "exact_principal_key_only",
+    "ttl_seconds": 604800,
+    "maximum_entries": 10000,
+    "raw_class_persisted": false,
+    "distinguished_name_persisted": false
+  },
+  "timestamp": {
+    "basis": "record_date_time_plus_observed_source_timezone",
+    "timezone_id_required": true,
+    "utc_offset_required_per_batch": true
+  },
+  "cursor_commit_protocol": "evidence_then_outbox_cache_cursor_atomic",
+  "rotation_protocol": "previous_generation_eof_then_new_generation_offset_zero",
+  "unmatched_class_result": "session_confirmed_identity_unresolved",
+  "prohibited_actions": [
+    "source_contact",
+    "postgresql_migration",
+    "clickhouse_migration",
+    "worker_activation",
+    "autostart",
+    "cursor_persistence",
+    "production_outbox_write"
+  ]
+}

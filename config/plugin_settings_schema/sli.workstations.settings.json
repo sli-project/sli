@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.workstations",
+  "name": "plugins.sli.workstations.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "workstations.evidence_retention_days": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3650,
+        "default": 90,
+        "x-label": "plugins.sli.workstations.settings.workstations.evidence_retention_days.label",
+        "x-help": "plugins.sli.workstations.settings.workstations.evidence_retention_days.help",
+        "x-group": "basic",
+        "x-secret": false
+      },
+      "workstations.logon_policy": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483646
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "station",
+                        "ou"
+                      ]
+                    },
+                    "station_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "domain_id": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "ou_path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "kind"
+                  ],
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "station"
+                          ]
+                        },
+                        "station_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "station_id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "ou"
+                          ]
+                        },
+                        "domain_id": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "ou_path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "domain_id",
+                        "ou_path"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "timezone": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "weekdays": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 7,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  }
+                },
+                "start": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "include_cached_interactive": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "scope",
+                "timezone",
+                "weekdays",
+                "start",
+                "end",
+                "include_cached_interactive"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "version",
+          "policies"
+        ],
+        "additionalProperties": false,
+        "default": null,
+        "x-label": "plugins.sli.workstations.settings.workstations.logon_policy.label",
+        "x-help": "plugins.sli.workstations.settings.workstations.logon_policy.help",
+        "x-group": "basic",
+        "x-secret": false
+      }
+    },
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": []
+  },
+  "rules": [
+    {
+      "rule_id": "C07",
+      "name": "plugins.sli.workstations.rules.C07.name",
+      "settings": [
+        "workstations.logon_policy"
+      ],
+      "core_settings": []
+    }
+  ],
+  "permissions": [
+    "workstations.logons",
+    "workstations.processes",
+    "workstations.protection",
+    "workstations.usb"
+  ],
+  "migration_directory": "config/postgres_migrations"
+}

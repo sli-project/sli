@@ -1,0 +1,112 @@
+{
+  "schema_version": 2,
+  "contract_id": "sli.plugin-management.v1",
+  "status": "runtime_state_management_enabled",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "read_only_api_enabled": true,
+  "mutation_api_enabled": true,
+  "production_read_path_cutover": false,
+  "destructive_purge_allowed": false,
+  "limits": {
+    "plugins": 20,
+    "source_packs_per_plugin": 20,
+    "observed_sources_per_plugin": 20
+  },
+  "sections": [
+    "overview",
+    "sources",
+    "workers",
+    "queues",
+    "resources",
+    "access",
+    "versions",
+    "audit"
+  ],
+  "lifecycle_actions": {
+    "install": {
+      "available": false,
+      "reason": "independent_package_executor_not_implemented",
+      "future_confirmation": "required"
+    },
+    "upgrade": {
+      "available": false,
+      "reason": "versioned_upgrade_executor_and_rollback_gate_not_implemented",
+      "future_confirmation": "required"
+    },
+    "rollback": {
+      "available": false,
+      "reason": "versioned_rollback_executor_not_implemented",
+      "future_confirmation": "required"
+    },
+    "enable": {
+      "available": true,
+      "reason": "owner_or_admin_configured_installed_revision_required",
+      "future_confirmation": "revision_required"
+    },
+    "disable": {
+      "available": true,
+      "reason": "close_acquisition_then_drain_preserve_data_and_permissions",
+      "future_confirmation": "revision_required"
+    },
+    "drain": {
+      "available": false,
+      "reason": "independent_queue_drain_executor_not_implemented",
+      "future_confirmation": "required"
+    },
+    "detach": {
+      "available": false,
+      "reason": "detach_reader_and_peer_isolation_acceptance_not_complete",
+      "future_confirmation": "required"
+    }
+  },
+  "plugins": [
+    {
+      "plugin_id": "sli.remote-access",
+      "display_name": "VPN / RADIUS",
+      "delivery": "bundled_reviewed",
+      "trust": "bundled_reviewed_only",
+      "management_state": "supervised_production",
+      "package_version": "0.1.0",
+      "version_state": "packaged_manifest_supervised_runtime",
+      "package_manifest": "sli.remote-access.package.v1",
+      "registration_contract": "config/stage9_radius_registration_v1.json",
+      "runtime_ownership": "plugin_owned_supervised_production",
+      "runtime_ownership_kind": "plugin",
+      "runtime_enabled": true,
+      "autostart_enabled": true,
+      "source_contact_allowed": true,
+      "source_pack_ids": [
+        "sli.windows.vpn-radius"
+      ],
+      "resource_profile_ids": [
+        "stage9-radius-manual-bounded-v1"
+      ]
+    },
+    {
+      "plugin_id": "sli.windows.ad-dc",
+      "display_name": "AD / DC",
+      "delivery": "bundled_reviewed",
+      "trust": "bundled_reviewed_only",
+      "management_state": "compatibility_registered",
+      "package_version": null,
+      "version_state": "not_packaged_as_independent_runtime",
+      "registration_contract": "config/stage9_ad_dc_compatibility_registration_v1.json",
+      "runtime_ownership": "core_owned_final",
+      "runtime_ownership_kind": "core",
+      "source_pack_ids": [
+        "sli.windows.ad-dc",
+        "sli.windows.ad-context"
+      ],
+      "resource_profile_ids": []
+    }
+  ],
+  "explicitly_out_of_scope": [
+    "install_upgrade_rollback_detach_http_endpoints",
+    "process_spawn_or_stop",
+    "source_data_or_acl_mutation",
+    "source_contact",
+    "autostart",
+    "production_read_path_cutover",
+    "destructive_plugin_data_purge"
+  ]
+}

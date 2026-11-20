@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "fixture_id": "stage6s-authentication-session-storage-benchmark-v1",
+  "fixture_classification": "payload_free_representative_fixture",
+  "window": {
+    "start_utc": "2026-08-01T00:00:00Z",
+    "end_utc": "2026-08-02T00:00:00Z"
+  },
+  "policy_horizons": {
+    "raw_payload_days": 2,
+    "record_days": 7,
+    "warm_record_days": 365
+  },
+  "source_records": [
+    {"source_event_id":101,"source_record_id":10,"event_key":4608,"descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","logon_id":null,"observed_at_utc":"2026-08-01T00:00:01Z","normalized_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","principal":null,"host":"dc-fixture","logon_type":null,"privilege_marker":null},
+    {"source_event_id":102,"source_record_id":20,"event_key":4624,"descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","logon_id":"0x0000000000000042","observed_at_utc":"2026-08-01T00:05:00Z","normalized_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","principal":"fixture-principal","host":"dc-fixture","logon_type":"3","privilege_marker":null},
+    {"source_event_id":103,"source_record_id":30,"event_key":4634,"descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","logon_id":"0x0000000000000042","observed_at_utc":"2026-08-01T00:10:00Z","normalized_hash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","principal":"fixture-principal","host":"dc-fixture","logon_type":"3","privilege_marker":null},
+    {"source_event_id":201,"source_record_id":50,"event_key":4608,"descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","logon_id":null,"observed_at_utc":"2026-08-01T12:00:01Z","normalized_hash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","principal":null,"host":"dc-fixture","logon_type":null,"privilege_marker":null},
+    {"source_event_id":202,"source_record_id":60,"event_key":4624,"descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","logon_id":"0x0000000000000043","observed_at_utc":"2026-08-01T12:05:00Z","normalized_hash":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","principal":"fixture-principal","host":"dc-fixture","logon_type":"10","privilege_marker":null}
+  ],
+  "continuity_declarations": [
+    {"scope_identity":"fixture-security-20260801-complete","descriptor_source":"sli.windows.ad-dc","descriptor_stream":"Security","server_id":1,"channel_id":1,"provider_name":"Microsoft-Windows-Security-Auditing","channel_generation_identity":"fixture-generation-stable","source_event_ids":[101,102,103],"source_hashes":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],"first_event_record_id":10,"last_event_record_id":30,"completeness":"complete"}
+  ]
+}

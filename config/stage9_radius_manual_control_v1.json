@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "contract_id": "sli.radius-accounting-manual-control.v1",
+  "status": "accepted_for_supervised_host_bounded_lease_production",
+  "source_instance_id": "radius01.example.test",
+  "subscription_id": "vpn-radius-session-observations-radius01-v1",
+  "required_migrations": [
+    58,
+    59
+  ],
+  "planning_contract_id": "sli.radius-accounting-runtime.v1",
+  "planning_contract_usage": "pure_batch_planning_only",
+  "host_runtime": {
+    "description": "scripts/runtime/remote_access_plugin_host.py is the sole production runtime owner for this RADIUS component; it is a long-running process, supervised and autostarted by worker_supervisor.py, and runs bounded acquisition cycles indefinitely until stopped.",
+    "runtime_owner": "scripts/runtime/remote_access_plugin_host.py",
+    "sole_runtime_owner": true,
+    "long_running_supervised_host": true,
+    "autostart_enabled": true,
+    "supervised_by": "worker_supervisor.py"
+  },
+  "lease": {
+    "description": "Each acquisition cycle acquires exactly one bounded Postgres credential/activation lease via bounded_manual_activation(); it is created fresh, authorizes exactly one bounded worker invocation, and is torn down before the cycle ends regardless of outcome. A lease never itself grants a continuous worker, process autostart, or admin database access.",
+    "activation_mode": "single_invocation_per_lease",
+    "maximum_runs_per_invocation": 1,
+    "maximum_records_per_run": 1000,
+    "maximum_runtime_seconds": 120,
+    "ephemeral_login": {
+      "role_prefix": "adlog_radius_manual_",
+      "member_of": "adlog_radius_accounting_worker",
+      "inherit": false,
+      "drop_after_run": true
+    },
+    "activation_state_during_run": "manual_enabled",
+    "required_final_state": "disabled",
+    "failure_protocol": [
+      "disable_source_and_subscription",
+      "drop_ephemeral_login",
+      "preserve_published_evidence_for_idempotent_retry"
+    ],
+    "continuous_worker_enabled": false,
+    "worker_autostart_enabled": false,
+    "worker_admin_db_access_enabled": false,
+    "prohibited_actions": [
+      "continuous_worker",
+      "autostart",
+      "admin_dsn_for_worker",
+      "identity_spine_select_grant",
+      "source_configuration_change",
+      "cursor_rewind",
+      "evidence_delete"
+    ]
+  }
+}

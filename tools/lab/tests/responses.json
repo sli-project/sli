@@ -1,0 +1,47 @@
+{
+  "home": {
+    "contract_id": "sli.home-summary.v2",
+    "problems_found": {"state": "ok", "count": 7},
+    "action_queue": {"state": "ok", "items": [], "has_more": false}
+  },
+  "queue": {
+    "contract_id": "sli.report-result.v2",
+    "report_key": "security.problems",
+    "state": "ok",
+    "items": [
+      {
+        "id": 41,
+        "rule_code": "semantic.qw.password-brute-force",
+        "status": "new",
+        "first_seen_utc": "2026-11-16T10:00:12Z",
+        "last_seen_utc": "2026-11-16T10:00:12Z",
+        "target": "lab.x00000000000001",
+        "source": "192.0.2.10",
+        "title": "Подбирают пароль учётной записи",
+        "title_code": "security.problems.presentation.qw.password-brute-force.title",
+        "what_happened": "Для тестовой учётной записи зарегистрированы неудачные входы.",
+        "next_text": "Проверьте источник входов.",
+        "occurrence_count": 1
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null,
+    "filtered_count": 1
+  },
+  "workspace": {
+    "channels": [{"kind": "telegram", "enabled": true}],
+    "items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "object_kind": "semantic_finding",
+        "finding_id": 41,
+        "channel": "telegram",
+        "state": "accepted",
+        "created_at": "2026-11-16T10:00:13Z",
+        "updated_at": "2026-11-16T10:00:14Z"
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null
+  }
+}

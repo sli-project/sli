@@ -1,0 +1,47 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.ad",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [
+    {
+      "module_id": "sli.windows.ad-dc",
+      "module_version": "1.0.0",
+      "agent_api": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "capabilities": [],
+      "rights_check_id": "windows-dc-eventlog-read",
+      "policy_schema_ref": "sli.ad-dc-policy.v1"
+    },
+    {
+      "module_id": "sli.windows.ad-dc-history",
+      "module_version": "1.0.0",
+      "agent_api": {"minimum": "1.0.0", "maximum_exclusive": "2.0.0"},
+      "capabilities": [],
+      "rights_check_id": "windows-dc-eventlog-read",
+      "policy_schema_ref": "sli.ad-dc-policy.v1"
+    }
+  ],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [],
+  "reports": [],
+  "navigation": [],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_ad",
+    "existing_tables": [],
+    "migrations": []
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-READ-WRITE-CUTOVER-1",
+  "status": "source_ready_cutover_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "depends_on": {
+    "functional_shadow_gate": "STORAGE-V2-FUNCTIONAL-SHADOW-1",
+    "functional_shadow_report": "STORAGE_V2_FUNCTIONAL_SHADOW1_REPORT_20260714.json",
+    "functional_shadow_status": "accepted_source_only_shadow_blocked",
+    "live_shadow_completed": false,
+    "read_cutover_authorized_by_shadow_gate": false,
+    "write_cutover_authorized_by_shadow_gate": false,
+    "v1_reclaim_authorized_by_shadow_gate": false
+  },
+  "purpose": "Define the read/write cutover decision gate after accepted live shadow evidence, while preserving rollback and keeping V1 reclaim out of scope.",
+  "authorization": {
+    "this_stage_authorizes_live_cutover": false,
+    "requires_accepted_live_shadow_report": true,
+    "read_cutover_requires_separate_operator_approval": true,
+    "write_cutover_requires_separate_operator_approval": true,
+    "read_and_write_cutover_must_not_be_combined": true,
+    "v1_reclaim_authorized": false,
+    "required_read_approval_phrase": "AUTHORIZE_STORAGE_V2_READ_CUTOVER_20260714",
+    "required_write_approval_phrase": "AUTHORIZE_STORAGE_V2_WRITE_CUTOVER_20260714"
+  },
+  "cutover_phases": [
+    {
+      "id": "phase_0_preflight",
+      "target_read_mode": "v1",
+      "target_write_mode": "v1",
+      "writes_production": false,
+      "requires": [
+        "accepted live shadow report",
+        "schema version 10 before migration 11 or 11 already applied in v1/v1",
+        "archive root configured and verified",
+        "rollback window owner approved"
+      ],
+      "rollback": "No routing change has occurred."
+    },
+    {
+      "id": "phase_1_apply_migration_11",
+      "target_read_mode": "v1",
+      "target_write_mode": "v1",
+      "writes_production": true,
+      "requires": [
+        "migration 10 completed",
+        "storage_v2_cutover_state absent or v1/v1",
+        "runtime role grants reviewed"
+      ],
+      "rollback": "Run migration 11 rollback only while read_mode=v1, write_mode=v1 and outbox has no active work."
+    },
+    {
+      "id": "phase_2_shadow_runtime_observation",
+      "target_read_mode": "shadow",
+      "target_write_mode": "v1",
+      "writes_production": true,
+      "requires": [
+        "positive shadow sample rate",
+        "all shadow surfaces still passing",
+        "operator can revert read_mode to v1 immediately"
+      ],
+      "rollback": "Set read_mode=v1 and keep write_mode=v1."
+    },
+    {
+      "id": "phase_3_read_cutover",
+      "target_read_mode": "v2",
+      "target_write_mode": "v1",
+      "writes_production": true,
+      "requires": [
+        "separate read approval phrase",
+        "zero live shadow mismatches",
+        "bounded deep search accepted",
+        "read rollback window active"
+      ],
+      "rollback": "Set read_mode=v1; write path was never moved."
+    },
+    {
+      "id": "phase_4_write_outbox_canary",
+      "target_read_mode": "v2",
+      "target_write_mode": "v1_outbox",
+      "writes_production": true,
+      "requires": [
+        "separate write approval phrase",
+        "read mode stable on v2",
+        "outbox lag SLO accepted",
+        "V1 mirror continuity check"
+      ],
+      "rollback": "Set write_mode=v1 and drain or quarantine outbox; read rollback remains available."
+    },
+    {
+      "id": "phase_5_v2_primary_compat",
+      "target_read_mode": "v2",
+      "target_write_mode": "v2_primary_compat",
+      "writes_production": true,
+      "requires": [
+        "V1 mirror parity",
+        "archive/raw spool replay tested",
+        "operator accepts write rollback cost"
+      ],
+      "rollback": "If V1 mirror parity holds, set read/write to v1; otherwise stop collection and replay immutable archive/raw spool into V1."
+    },
+    {
+      "id": "phase_6_stop_before_reclaim",
+      "target_read_mode": "v2",
+      "target_write_mode": "v2_primary_compat",
+      "writes_production": false,
+      "requires": [
+        "stability window accepted",
+        "DR/reclaim package not yet executed"
+      ],
+      "rollback": "Cancel decommission and retain frozen V1 schema."
+    }
+  ],
+  "acceptance": {
+    "required_status": "cutover_plan_ready_no_live_cutover",
+    "live_cutover_executed": false,
+    "read_cutover_authorized_by_this_stage": false,
+    "write_cutover_authorized_by_this_stage": false,
+    "v1_reclaim_authorized_by_this_stage": false,
+    "minimum_live_shadow_status_before_execution": "shadow_completed_no_cutover",
+    "required_report_fields": [
+      "live_shadow_report_sha256",
+      "production_identity_before",
+      "schema_version_before",
+      "phase_results",
+      "read_approval_fingerprint",
+      "write_approval_fingerprint",
+      "read_mode_before",
+      "read_mode_after",
+      "write_mode_before",
+      "write_mode_after",
+      "outbox_lag_summary",
+      "rollback_window",
+      "errors",
+      "stop_reason"
+    ]
+  },
+  "hard_stop_conditions": [
+    "accepted live shadow report is missing",
+    "any live shadow surface has unexplained mismatch",
+    "read/write approval phrases are both supplied in one run",
+    "migration 11 rollback preconditions are not true",
+    "read mode is already v2 before phase approval",
+    "write mode is already v2 or v2_primary_compat before phase approval",
+    "outbox has active unbounded lag",
+    "operator cannot immediately set read_mode=v1",
+    "request attempts migration 12",
+    "request attempts V1 reclaim"
+  ],
+  "strictly_forbidden": [
+    "combine read and write cutover in one operator action",
+    "apply migration 12 in this stage",
+    "drop, truncate, rewrite or VACUUM FULL V1 relations in this stage",
+    "delete old dumps or V1 archives in this stage",
+    "accept cutover with partial live shadow coverage",
+    "accept performance-only improvement as cutover proof",
+    "disable rollback window before DR/reclaim acceptance"
+  ],
+  "next_stage": {
+    "id": "STORAGE-V2-EXTERNAL-FK-CUTOVER-1",
+    "authorized_by_this_stage": false,
+    "purpose": "Rebind external FKs with migration 12 only after accepted read/write stability evidence."
+  }
+}

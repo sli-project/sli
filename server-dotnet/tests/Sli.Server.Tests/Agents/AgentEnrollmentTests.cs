@@ -1,0 +1,360 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json.Nodes;
+using Npgsql;
+using Sli.Server.Agents.Certificates;
+using Sli.Server.Agents.Registry;
+using Sli.Server.Tests.Integration;
+using Xunit;
+using Microsoft.Extensions.Configuration;
+using System.Text.Json;
+using Sli.Server.Agents.Control;
+
+namespace Sli.Server.Tests.Agents;
+
+public class AgentEnrollmentTests
+{
+    [Fact]
+    public async Task Authentication_and_renewal_share_transaction_and_rollback()
+    {
+
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_RUN_ID") is null, "Owned PostgreSQL binding required");
+        await using var db = await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(), TestContext.Current.CancellationToken);
+        await using var connection = await db.OpenConnectionAsync(TestContext.Current.CancellationToken);
+        await using (var grants = new NpgsqlCommand("select current_user, has_table_privilege(current_user,'sli_agents','SELECT'), has_table_privilege(current_user,'sli_agents','INSERT'), has_table_privilege(current_user,'sli_agent_certificates','SELECT'), has_table_privilege(current_user,'sli_agent_certificates','INSERT'), has_table_privilege(current_user,'sli_agent_audit','SELECT'), has_table_privilege(current_user,'sli_agent_audit','INSERT'), has_column_privilege(current_user,'sli_agents','last_seen','UPDATE'), has_column_privilege(current_user,'sli_agent_certificates','revoked_at','UPDATE'), has_table_privilege(current_user,'sli_agent_group_members','SELECT'), has_table_privilege(current_user,'sli_agent_group_members','INSERT')", connection))
+        await using (var grantReader = await grants.ExecuteReaderAsync(TestContext.Current.CancellationToken))
+        {
+            Assert.True(await grantReader.ReadAsync(TestContext.Current.CancellationToken));
+            Assert.Equal("adlog_user", grantReader.GetString(0));
+            for (int i = 1; i < grantReader.FieldCount; i++) Assert.True(grantReader.GetBoolean(i));
+        }
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root = CaRequest("CN=test root", rootKey, 1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var issuerPublic = CaRequest("CN=test issuer", issuerKey, 0).Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddYears(1), RandomNumberGenerator.GetBytes(16));
+        using var issuer = issuerPublic.CopyWithPrivateKey(issuerKey);
+        var ca = new AgentIssuingCa(root, issuer);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var id = Guid.NewGuid();
+        var host = Guid.NewGuid();
+        var csr = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256);
+        using var certificate = ca.Issue(AgentCertificateAuthority.ParseCsr(csr.CreateSigningRequestPem(), host), id, host);
+        var serial = Serial(certificate);
+        var certFp = Convert.ToHexStringLower(SHA256.HashData(certificate.RawData));
+        var keyFp = Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+        await using (var tx = await connection.BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await using var insert = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint) values(@id,@host,@key); insert into sli_agent_certificates(agent_id,serial,fingerprint,not_before,not_after) values(@id,@serial,@fingerprint,@before,@after)", connection, tx);
+            insert.Parameters.AddWithValue("id", id); insert.Parameters.AddWithValue("host", host); insert.Parameters.AddWithValue("key", keyFp);
+            insert.Parameters.AddWithValue("serial", serial); insert.Parameters.AddWithValue("fingerprint", certFp);
+            insert.Parameters.AddWithValue("before", certificate.NotBefore.ToUniversalTime()); insert.Parameters.AddWithValue("after", certificate.NotAfter.ToUniversalTime());
+            await insert.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            var service = new AgentIdentityService(ca);
+            var authenticated = await service.AuthenticateAsync(connection, tx, certificate, false, TestContext.Current.CancellationToken);
+            Assert.Equal(id, authenticated.Id);
+            var renew = new AgentEnrollmentService(ca, service);
+            var result = await renew.RenewAsync(connection, tx, certificate, new JsonObject { ["csr_pem"] = csr.CreateSigningRequestPem() }, TestContext.Current.CancellationToken);
+            Assert.Equal(id.ToString(), result["agent_id"]!.GetValue<string>());
+            await using var count = new NpgsqlCommand("select count(*) from sli_agent_certificates where agent_id=@id", connection, tx);
+            count.Parameters.AddWithValue("id", id);
+            Assert.Equal(2L, await count.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+            await using (var revoke = new NpgsqlCommand("update sli_agent_certificates set revoked_at=clock_timestamp() where agent_id=@id and serial=@serial", connection, tx))
+            { revoke.Parameters.AddWithValue("id", id); revoke.Parameters.AddWithValue("serial", serial); await revoke.ExecuteNonQueryAsync(TestContext.Current.CancellationToken); }
+            var rejection = await Assert.ThrowsAsync<AgentCertificateException>(() => service.AuthenticateAsync(connection, tx, certificate, false, TestContext.Current.CancellationToken));
+            Assert.Equal("agent_certificate_rejected", rejection.Code);
+            await tx.RollbackAsync(TestContext.Current.CancellationToken);
+        }
+        await using var check = new NpgsqlCommand("select count(*) from sli_agents where id=@id", connection);
+        check.Parameters.AddWithValue("id", id);
+        Assert.Equal(0L, await check.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        await using var auditCheck = new NpgsqlCommand("select count(*) from sli_agent_audit where target=@id and action='renew'", connection);
+        auditCheck.Parameters.AddWithValue("id", id.ToString());
+        Assert.Equal(0L, await auditCheck.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+    [Theory]
+    [InlineData("full", "workstation", "sli.workstations")]
+    [InlineData("full", "domain_controller", "sli.windows.ad-dc")]
+    [InlineData("beta", "workstation", null)]
+    [InlineData("beta", "domain_controller", "sli.windows.ad-dc")]
+    public async Task Enrollment_consumes_token_and_installs_default_policy_in_transaction(string profile, string role, string? module)
+    {
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_RUN_ID") is null, "Owned PostgreSQL binding required");
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(), ct);
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using (var grants = new NpgsqlCommand("select current_user, has_table_privilege(current_user,'sli_agents','SELECT'), has_table_privilege(current_user,'sli_agents','INSERT'), has_table_privilege(current_user,'sli_agent_certificates','SELECT'), has_table_privilege(current_user,'sli_agent_certificates','INSERT'), has_table_privilege(current_user,'sli_agent_audit','SELECT'), has_table_privilege(current_user,'sli_agent_audit','INSERT'), has_column_privilege(current_user,'sli_agents','last_seen','UPDATE'), has_column_privilege(current_user,'sli_agent_certificates','revoked_at','UPDATE'), has_table_privilege(current_user,'sli_agent_group_members','SELECT'), has_table_privilege(current_user,'sli_agent_group_members','INSERT')", connection))
+        await using (var grantReader = await grants.ExecuteReaderAsync(TestContext.Current.CancellationToken))
+        {
+            Assert.True(await grantReader.ReadAsync(TestContext.Current.CancellationToken));
+            Assert.Equal("adlog_user", grantReader.GetString(0));
+            for (int i = 1; i < grantReader.FieldCount; i++) Assert.True(grantReader.GetBoolean(i));
+        }
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root = CaRequest("CN=test root", rootKey, 1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var publicIssuer = CaRequest("CN=test issuer", issuerKey, 0).Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddYears(1), RandomNumberGenerator.GetBytes(16));
+        using var issuer = publicIssuer.CopyWithPrivateKey(issuerKey);
+        var ca = new AgentIssuingCa(root, issuer);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var host = Guid.NewGuid();
+        var csr = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256);
+        var keyFp = Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var digest = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(rawToken)));
+        await using var tx = await connection.BeginTransactionAsync(ct);
+        var enrollmentToken=Guid.NewGuid();
+        await using var insert = new NpgsqlCommand("insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at) values(@id,@hash,@host,@key,clock_timestamp(),clock_timestamp()+interval '15 minutes')", connection, tx);
+        insert.Parameters.AddWithValue("id", enrollmentToken); insert.Parameters.AddWithValue("hash", digest); insert.Parameters.AddWithValue("host", host); insert.Parameters.AddWithValue("key", keyFp);
+        await insert.ExecuteNonQueryAsync(ct);
+        if(profile=="beta" && role=="domain_controller")
+        {
+            await using var seed=new NpgsqlCommand("""
+                with forest as (insert into forests(name) values(@forest) returning id),
+                domain as (insert into domains(forest_id,fqdn,domain_sid)
+                    select id,'example.test','S-1-5-21-100000001-200000002-300000003' from forest returning id)
+                insert into servers(domain_id,hostname,role) select id,'fixture.example.test','domain_controller' from domain;
+                insert into sli_agent_audit(action,actor,target,details)
+                values('token_create','session:1',@token,'{"registration_host_name":"fixture.example.test"}'::jsonb)
+                """,connection,tx);
+            seed.Parameters.AddWithValue("forest","fixture-"+host);
+            seed.Parameters.AddWithValue("token",enrollmentToken.ToString());
+            await seed.ExecuteNonQueryAsync(ct);
+        }
+        var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Sli:CollectionProfile"]=profile }).Build();
+        var service = new AgentEnrollmentService(ca, new AgentIdentityService(ca),config);
+        var invalidName = await Assert.ThrowsAsync<AgentCertificateException>(() => service.EnrollAsync(connection, tx, new JsonObject { ["token"] = rawToken, ["instance_name"] = "bad\n", ["csr_pem"] = csr.CreateSigningRequestPem() }, ct));
+        Assert.Equal("invalid_agent_instance_name", invalidName.Code);
+        var result = await service.EnrollAsync(connection, tx, new JsonObject { ["token"] = rawToken, ["csr_pem"] = csr.CreateSigningRequestPem(), ["machine_role"] = role, ["reported_hostname"] = "fixture.example.test" }, ct);
+        var agent = Guid.Parse(result["agent_id"]!.GetValue<string>());
+        await using var query = new NpgsqlCommand("select e.used_at is not null, a.policy_revision, a.assigned_modules from sli_agent_enrollment_tokens e join sli_agents a on a.id=e.enrolled_agent_id where e.token_hash=@hash", connection, tx);
+        query.Parameters.AddWithValue("hash", digest);
+        await using (var reader = await query.ExecuteReaderAsync(ct))
+        {
+            Assert.True(await reader.ReadAsync(ct)); Assert.True(reader.GetBoolean(0)); Assert.Equal(module is null?1:2, reader.GetInt32(1));
+            var assignments=JsonNode.Parse(reader.GetString(2))!.AsArray();
+            if(module is null) Assert.Empty(assignments);
+            else Assert.Contains(assignments.OfType<JsonObject>(),m=>m["module_id"]!.GetValue<string>()==module);
+            if(profile=="beta" && role=="domain_controller")
+                foreach(var snapshot in new[] { "sli.ad-snapshot","sli.gpo-snapshot" })
+                    Assert.Contains(assignments.OfType<JsonObject>(),m=>m["module_id"]!.GetValue<string>()==snapshot && m["config"]!["domain_dns"]!.GetValue<string>()=="example.test");
+        }
+        await using (var audit = new NpgsqlCommand("select details->>'policy_sha256' from sli_agent_audit where target=@id and action='module_assign' and details->>'module_id'=@module", connection, tx))
+        {
+            audit.Parameters.AddWithValue("id", agent.ToString());
+            audit.Parameters.AddWithValue("module",module??"sli.workstations");
+            var expectedHash = role == "workstation" ? "8a09c7a41b0050e53b31cfa9b2a568108ba462206807efe734355f2f9f43f321" : "7edb1a39fb2ad5dffeb06cac8f65b4ec162e40fb6b661afd3b55dea3c18ee629";
+            var hash=await audit.ExecuteScalarAsync(ct);
+            if(profile=="full") Assert.Equal(expectedHash,hash);
+            else if(module is null) Assert.Null(hash);
+            else Assert.Matches("^[0-9a-f]{64}$",Assert.IsType<string>(hash));
+        }
+        if(role=="workstation")
+        {
+            var assigned=await new AgentModuleAssignmentService(new AgentControlAudit()).AssignAsync(connection,tx,
+                JsonSerializer.SerializeToElement(new { agent_id=agent,module_id="sli.workstations",enabled=true,config=new JsonObject(),expected_revision=module is null?1:2 }),"session:1",ct);
+            Assert.Contains(assigned.GetProperty("assigned_modules").EnumerateArray(),m=>m.GetProperty("module_id").GetString()=="sli.workstations" && m.GetProperty("enabled").GetBoolean());
+        }
+        var error = await Assert.ThrowsAsync<AgentCertificateException>(() => service.EnrollAsync(connection, tx, new JsonObject { ["token"] = rawToken, ["csr_pem"] = csr.CreateSigningRequestPem() }, ct));
+        Assert.Equal("enrollment_token_rejected", error.Code);
+        await tx.RollbackAsync(ct);
+        await using var check = new NpgsqlCommand("select count(*) from sli_agents where id=@id", connection);
+        check.Parameters.AddWithValue("id", agent);
+        Assert.Equal(0L, await check.ExecuteScalarAsync(ct));
+    }
+    [Fact]
+    public async Task Concurrent_enrollment_consumes_token_exactly_once()
+    {
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_RUN_ID") is null, "Owned PostgreSQL binding required");
+        var ct=TestContext.Current.CancellationToken;
+        await using var db=await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(),ct);
+        await using var seed=await db.OpenConnectionAsync(ct);
+        await using var first=await db.OpenConnectionAsync(ct);
+        await using var second=await db.OpenConnectionAsync(ct);
+        using var rootKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root=CaRequest("CN=test root",rootKey,1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var publicIssuer=CaRequest("CN=test issuer",issuerKey,0).Create(root,DateTimeOffset.UtcNow.AddHours(-1),DateTimeOffset.UtcNow.AddYears(1),RandomNumberGenerator.GetBytes(16));
+        using var issuer=publicIssuer.CopyWithPrivateKey(issuerKey);
+        var ca=new AgentIssuingCa(root,issuer);
+        using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var host=Guid.NewGuid(); var csr=new CertificateRequest($"CN={host}",key,HashAlgorithmName.SHA256);
+        var keyFp=Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+        var token=Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_');
+        var digest=Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(token)));
+        await using (var q=new NpgsqlCommand("insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at) values(@id,@hash,@host,@key,clock_timestamp(),clock_timestamp()+interval '15 minutes')",seed))
+        { q.Parameters.AddWithValue("id",Guid.NewGuid()); q.Parameters.AddWithValue("hash",digest); q.Parameters.AddWithValue("host",host); q.Parameters.AddWithValue("key",keyFp); await q.ExecuteNonQueryAsync(ct); }
+        var pem=csr.CreateSigningRequestPem();
+        async Task<string> Attempt(NpgsqlConnection c)
+        {
+            await using var tx=await c.BeginTransactionAsync(ct);
+            try
+            {
+                var result=await new AgentEnrollmentService(ca,new AgentIdentityService(ca)).EnrollAsync(c,tx,new JsonObject { ["token"]=token,["csr_pem"]=pem },ct);
+                await tx.CommitAsync(ct); return result["agent_id"]!.GetValue<string>();
+            }
+            catch (AgentCertificateException ex) { await tx.RollbackAsync(ct); return ex.Code; }
+        }
+        await using var firstTx=await first.BeginTransactionAsync(ct);
+        var firstResult=await new AgentEnrollmentService(ca,new AgentIdentityService(ca)).EnrollAsync(first,firstTx,new JsonObject { ["token"]=token,["csr_pem"]=pem },ct);
+        var secondAttempt=Attempt(second);
+        Assert.NotSame(secondAttempt,await Task.WhenAny(secondAttempt,Task.Delay(200,ct)));
+        await firstTx.CommitAsync(ct);
+        Assert.True(Guid.TryParse(firstResult["agent_id"]!.GetValue<string>(),out _));
+        Assert.Equal("enrollment_token_rejected",await secondAttempt);
+        await using var check=new NpgsqlCommand("select count(*) from sli_agents where host_id=@host",seed);
+        check.Parameters.AddWithValue("host",host); Assert.Equal(1L,await check.ExecuteScalarAsync(ct));
+    }
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task Group_approved_enrollment_enforces_scope_and_copies_template(bool withinScope, bool injectFailure)
+    {
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_RUN_ID") is null, "Owned PostgreSQL binding required");
+        Assert.SkipWhen(injectFailure && Environment.GetEnvironmentVariable("SLI_T2_AUDIT_FAILURE_FIXTURE") != "1", "Owned audit-failure fixture required");
+        var ct=TestContext.Current.CancellationToken;
+        await using var db=await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(),ct);
+        await using var c=await db.OpenConnectionAsync(ct);
+        using var rootKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root=CaRequest("CN=test root",rootKey,1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var pub=CaRequest("CN=test issuer",issuerKey,0).Create(root,DateTimeOffset.UtcNow.AddHours(-1),DateTimeOffset.UtcNow.AddYears(1),RandomNumberGenerator.GetBytes(16));
+        using var issuer=pub.CopyWithPrivateKey(issuerKey);
+        var ca=new AgentIssuingCa(root,issuer);
+        using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var host=Guid.NewGuid(); var csr=new CertificateRequest($"CN={host}",key,HashAlgorithmName.SHA256);
+        var keyFp=Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+        var raw=Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_');
+        var hash=Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(raw)));
+        var group=Guid.NewGuid(); var groupToken=Guid.NewGuid(); var token=Guid.NewGuid(); var request=Guid.NewGuid(); var template=Guid.NewGuid();
+        await using var tx=await c.BeginTransactionAsync(ct);
+        await using (var seed=new NpgsqlCommand("""
+            insert into sli_agent_enrollment_groups(id,domain_id,ou_entity_ids) values(@group,101,array[2147000002]::bigint[]);
+            insert into sli_agent_group_tokens(id,token_hash,created_at,expires_at,max_uses,domain_id,ou_entity_ids,group_id,computer_entity_ids) values(@gt,repeat('a',64),clock_timestamp(),clock_timestamp()+interval '1 hour',1,101,array[2147000002]::bigint[],@group,@selected);
+            insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at) values(@token,@hash,@host,@key,clock_timestamp(),clock_timestamp()+interval '15 minutes');
+            insert into sli_agent_group_requests(id,token_id,host_id,key_fingerprint,computer_entity_id,computer_version_id,status) select @request,@gt,@host,@key,2147000001,id,'approved' from ad_context_entity_versions where entity_id=2147000001 and source_section='directory_accounts';
+            insert into sli_agent_policy_templates(id,version,assigned_modules,collection_policy,policy_sha256) values(@template,1,'[]'::jsonb,'{"state":"paused"}'::jsonb,repeat('b',64));
+            insert into sli_agent_onboarding_copies(enrollment_token_id,request_id,template_id,template_version) values(@token,@request,@template,1);
+            """,c,tx))
+        {
+            seed.Parameters.AddWithValue("group",group); seed.Parameters.AddWithValue("gt",groupToken); seed.Parameters.AddWithValue("token",token); seed.Parameters.AddWithValue("hash",hash);
+            seed.Parameters.AddWithValue("host",host); seed.Parameters.AddWithValue("key",keyFp); seed.Parameters.AddWithValue("request",request); seed.Parameters.AddWithValue("template",template); seed.Parameters.AddWithValue("selected",new long[] { withinScope ? 2147000001L : 2147000002L }); await seed.ExecuteNonQueryAsync(ct);
+        }
+        await using (var revoke=new NpgsqlCommand("update sli_agent_group_tokens set revoked_at=clock_timestamp() where id=@id",c,tx))
+        { revoke.Parameters.AddWithValue("id",groupToken); await revoke.ExecuteNonQueryAsync(ct); }
+        var enrollment=new AgentEnrollmentService(ca,new AgentIdentityService(ca));
+        var rejected=await Assert.ThrowsAsync<AgentCertificateException>(() => enrollment.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem() },ct));
+        Assert.Equal("enrollment_token_rejected",rejected.Code);
+        await using (var restore=new NpgsqlCommand("update sli_agent_group_tokens set revoked_at=null where id=@id",c,tx))
+        { restore.Parameters.AddWithValue("id",groupToken); await restore.ExecuteNonQueryAsync(ct); }
+        if (!withinScope)
+        {
+            var denied=await Assert.ThrowsAsync<AgentCertificateException>(() => enrollment.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem() },ct));
+            Assert.Equal("invalid_group_enrollment_scope",denied.Code);
+            await tx.RollbackAsync(ct);
+            return;
+        }
+        if (injectFailure)
+        {
+            await using (var inject=new NpgsqlCommand("select set_config('sli.test.ca_audit_fail','on',true)",c,tx)) await inject.ExecuteNonQueryAsync(ct);
+            var failure=await Assert.ThrowsAsync<PostgresException>(()=>enrollment.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem() },ct));
+            Assert.Equal("P0001",failure.SqlState);
+            await tx.RollbackAsync(ct);
+            await using var rolledBack=new NpgsqlCommand("select (select count(*) from sli_agents where host_id=@host), (select count(*) from sli_agent_audit where actor='enrollment:' || @token::text), (select count(*) from sli_agent_group_members where group_id=@group)",c);
+            rolledBack.Parameters.AddWithValue("host",host); rolledBack.Parameters.AddWithValue("token",token); rolledBack.Parameters.AddWithValue("group",group);
+            await using var check=await rolledBack.ExecuteReaderAsync(ct); Assert.True(await check.ReadAsync(ct));
+            Assert.Equal(0L,check.GetInt64(0)); Assert.Equal(0L,check.GetInt64(1)); Assert.Equal(0L,check.GetInt64(2));
+            return;
+        }
+        var result=await enrollment.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem() },ct);
+        var id=Guid.Parse(result["agent_id"]!.GetValue<string>());
+        await using (var check=new NpgsqlCommand("select a.template_id,a.policy_revision,a.collection_policy->>'state',m.group_id from sli_agents a join sli_agent_group_members m on m.agent_id=a.id where a.id=@id",c,tx))
+        {
+            check.Parameters.AddWithValue("id",id); await using var r=await check.ExecuteReaderAsync(ct); Assert.True(await r.ReadAsync(ct));
+            Assert.Equal(template,r.GetGuid(0)); Assert.Equal(1L,r.GetInt64(1)); Assert.Equal("paused",r.GetString(2)); Assert.Equal(group,r.GetGuid(3));
+        }
+        await tx.RollbackAsync(ct);
+    }
+    [Fact]
+    public async Task Approved_registration_replacement_preserves_old_certificate_in_same_transaction()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture(); await fixture.StartAsync(ct);
+        await using var c=new NpgsqlConnection(fixture.Dsn("adlog_user")); await c.OpenAsync(ct);
+        using var rootKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root=CaRequest("CN=test root",rootKey,1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var pub=CaRequest("CN=test issuer",issuerKey,0).Create(root,DateTimeOffset.UtcNow.AddHours(-1),DateTimeOffset.UtcNow.AddYears(1),RandomNumberGenerator.GetBytes(16));
+        using var issuer=pub.CopyWithPrivateKey(issuerKey);
+        var ca=new AgentIssuingCa(root,issuer); var service=new AgentEnrollmentService(ca,new AgentIdentityService(ca));
+        await using var tx=await c.BeginTransactionAsync(ct);
+        async Task<Guid> Enroll()
+        {
+            using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256); var host=Guid.NewGuid();
+            var csr=new CertificateRequest($"CN={host}",key,HashAlgorithmName.SHA256);
+            var fingerprint=Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+            var raw=Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_');
+            var digest=Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(raw))); var token=Guid.NewGuid();
+            await using var seed=new NpgsqlCommand("insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at) values(@id,@hash,@host,@key,clock_timestamp(),clock_timestamp()+interval '15 minutes'); insert into sli_agent_audit(action,actor,target,details) values('token_create','synthetic',@target,'{\"registration_host_name\":\"fixture.example.test\"}'::jsonb)",c,tx);
+            seed.Parameters.AddWithValue("id",token); seed.Parameters.AddWithValue("hash",digest); seed.Parameters.AddWithValue("host",host); seed.Parameters.AddWithValue("key",fingerprint); seed.Parameters.AddWithValue("target",token.ToString()); await seed.ExecuteNonQueryAsync(ct);
+            var mismatch=await Assert.ThrowsAsync<AgentCertificateException>(()=>service.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem(),["reported_hostname"]="other.example.test" },ct));
+            Assert.Equal("agent_registration_name_mismatch",mismatch.Code);
+            var result=await service.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem(),["reported_hostname"]="fixture.example.test" },ct);
+            return Guid.Parse(result["agent_id"]!.GetValue<string>());
+        }
+        var oldId=await Enroll(); var newId=await Enroll();
+        await using (var q=new NpgsqlCommand("select status,(select count(*) from sli_agent_certificates where agent_id=@old and revoked_at is not null),(select count(*) from sli_agent_audit where target=@target and action='disable' and details->>'reason'='registration_replaced') from sli_agents where id=@old",c,tx))
+        {
+            q.Parameters.AddWithValue("old",oldId); q.Parameters.AddWithValue("target",oldId.ToString()); await using var r=await q.ExecuteReaderAsync(ct);
+            Assert.True(await r.ReadAsync(ct)); Assert.Equal("disabled",r.GetString(0)); Assert.Equal(0L,r.GetInt64(1)); Assert.Equal(1L,r.GetInt64(2));
+        }
+        Assert.NotEqual(oldId,newId);
+        await tx.RollbackAsync(ct);
+    }
+    [Fact]
+    public async Task Issue_audit_failure_rolls_back_token_certificate_policy_and_agent()
+    {
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_RUN_ID") is null, "Owned PostgreSQL binding required");
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("SLI_T2_AUDIT_FAILURE_FIXTURE") != "1", "Owned audit-failure fixture required");
+        var ct=TestContext.Current.CancellationToken;
+        await using var db=await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(),ct);
+        await using var c=await db.OpenConnectionAsync(ct);
+        using var rootKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root=CaRequest("CN=test root",rootKey,1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var pub=CaRequest("CN=test issuer",issuerKey,0).Create(root,DateTimeOffset.UtcNow.AddHours(-1),DateTimeOffset.UtcNow.AddYears(1),RandomNumberGenerator.GetBytes(16));
+        using var issuer=pub.CopyWithPrivateKey(issuerKey); var ca=new AgentIssuingCa(root,issuer);
+        using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256); var host=Guid.NewGuid(); var id=Guid.NewGuid();
+        var csr=new CertificateRequest($"CN={host}",key,HashAlgorithmName.SHA256);
+        var fingerprint=Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo()));
+        var raw=Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_');
+        var digest=Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(raw)));
+        await using (var seed=new NpgsqlCommand("insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at) values(@id,@hash,@host,@key,clock_timestamp(),clock_timestamp()+interval '15 minutes')",c))
+        { seed.Parameters.AddWithValue("id",id); seed.Parameters.AddWithValue("hash",digest); seed.Parameters.AddWithValue("host",host); seed.Parameters.AddWithValue("key",fingerprint); await seed.ExecuteNonQueryAsync(ct); }
+        await using (var tx=await c.BeginTransactionAsync(ct))
+        {
+            await using (var injection=new NpgsqlCommand("select set_config('sli.test.ca_audit_fail','on',true)",c,tx)) await injection.ExecuteNonQueryAsync(ct);
+            var service=new AgentEnrollmentService(ca,new AgentIdentityService(ca));
+            var failure=await Assert.ThrowsAsync<PostgresException>(()=>service.EnrollAsync(c,tx,new JsonObject { ["token"]=raw,["csr_pem"]=csr.CreateSigningRequestPem() },ct));
+            Assert.Equal("P0001",failure.SqlState);
+            await tx.RollbackAsync(ct);
+        }
+        await using var check=new NpgsqlCommand("select used_at is null, enrolled_agent_id is null, (select count(*) from sli_agents where host_id=@host), (select count(*) from sli_agent_audit where actor='enrollment:' || @id::text) from sli_agent_enrollment_tokens where id=@id",c);
+        check.Parameters.AddWithValue("id",id); check.Parameters.AddWithValue("host",host);
+        await using var r=await check.ExecuteReaderAsync(ct); Assert.True(await r.ReadAsync(ct));
+        Assert.True(r.GetBoolean(0)); Assert.True(r.GetBoolean(1)); Assert.Equal(0L,r.GetInt64(2)); Assert.Equal(0L,r.GetInt64(3));
+    }
+    private static string Serial(X509Certificate2 certificate)
+    {
+        var bytes = certificate.GetSerialNumber(); Array.Reverse(bytes);
+        return Convert.ToHexStringLower(bytes).TrimStart('0');
+    }
+    private static CertificateRequest CaRequest(string name, ECDsa key, int pathLength)
+    {
+        var r = new CertificateRequest(name, key, HashAlgorithmName.SHA256);
+        r.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, pathLength, true));
+        r.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        r.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") }, false));
+        return r;
+    }
+}

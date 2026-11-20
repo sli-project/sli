@@ -1,0 +1,83 @@
+[
+  {
+    "key": "reports.domain_fqdn",
+    "label": "Домен отчётов",
+    "description": "DNS-имя домена Active Directory, по которому строятся отчёты каталога: пользователи, компьютеры, состояние AD, «кто, где, когда».",
+    "environment": ""
+  },
+  {
+    "key": "ad.snapshot_history_days",
+    "label": "Хранение истории изменений AD/GPO, дней",
+    "description": "Компактные изменения снимков в ClickHouse; допустимо от 7 до 3650 дней.",
+    "environment": "SLI_AD_SNAPSHOT_HISTORY_DAYS",
+    "default": "365"
+  },
+  {
+    "key": "workstations.evidence_retention_days",
+    "label": "Хранение доказательств процессов и USB, дней",
+    "description": "Срок хранения в PostgreSQL до подтверждённого переноса в историю.",
+    "environment": "SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS",
+    "default": "90"
+  },
+  {
+    "key": "ad.password_max_age_days",
+    "label": "Максимальный возраст пароля AD, дней",
+    "description": "Принятая политика по наблюдаемому pwdLastSet. Допустимо 1–3650 дней.",
+    "environment": "",
+    "default": "365"
+  },
+  {
+    "key": "ad.inactivity_days",
+    "label": "Порог неактивности пользователей AD, дней",
+    "description": "Принятая политика по lastLogonTimestamp с учётом задержки репликации. Допустимо 1–3650 дней.",
+    "environment": "",
+    "default": "90"
+  },
+  {
+    "key": "ad.service_account_exceptions",
+    "label": "Исключения сервисных учётных записей AD",
+    "description": "JSON-список SID: исключения возраста пароля и неактивности для SPN/MSA/gMSA. Автор и время сохраняются автоматически; опасные флаги и привилегии не исключаются.",
+    "environment": "",
+    "default": "[]"
+  },
+  {
+    "key": "windows_auth.distributed_window_hours",
+    "label": "Окно распределённого подбора, часов",
+    "description": "Распределённый подбор паролей: сигнал для ручной проверки, не вердикт. Допустимо 1–744.",
+    "environment": "",
+    "default": "24"
+  },
+  {
+    "key": "windows_auth.distributed_min_accounts",
+    "label": "Минимум целевых SID",
+    "description": "Распределённый подбор паролей: сигнал для ручной проверки, не вердикт. Допустимо 1–744.",
+    "environment": "",
+    "default": "10"
+  },
+  {
+    "key": "windows_auth.distributed_min_sources",
+    "label": "Минимум источников подбора",
+    "description": "Распределённый подбор паролей: сигнал для ручной проверки, не вердикт. Допустимо 1–744.",
+    "environment": "",
+    "default": "5"
+  },
+  {
+    "key": "windows_auth.distributed_max_failures_per_account",
+    "label": "Максимум отказов на целевой SID",
+    "description": "Распределённый подбор паролей: сигнал для ручной проверки, не вердикт. Допустимо 1–744.",
+    "environment": "",
+    "default": "3"
+  },
+  {
+    "key": "security.working_time",
+    "label": "Рабочее время для правил ИБ",
+    "description": "JSON: часовой пояс, дни недели (0–6), начало/конец, исключённые даты и исключения SID.",
+    "environment": ""
+  },
+  {
+    "key": "workstations.logon_policy",
+    "label": "workstations.logon_policy.title",
+    "description": "workstations.logon_policy.description",
+    "environment": ""
+  }
+]

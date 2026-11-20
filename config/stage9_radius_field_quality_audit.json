@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "plan_id": "stage9-radius-field-quality-audit-v1",
+  "status": "owner_authorized",
+  "authorization_date": "2026-07-30",
+  "authorization_basis": "explicit_owner_command_after_successful_radius_preflight",
+  "targets_source": "config/stage9_radius_targets.json",
+  "expected_windows_account": "EXAMPLE\\operator",
+  "limits": {
+    "target_count": 1,
+    "window_hours": 168,
+    "event_ids": [
+      6272,
+      6273
+    ],
+    "events_total": 100,
+    "accounting_files": 1,
+    "accounting_candidates": 20,
+    "accounting_records": 200,
+    "accounting_bytes": 262144,
+    "overall_timeout_seconds": 60
+  },
+  "allowed_persisted_observations": [
+    "event_counts_by_id",
+    "event_field_names",
+    "event_field_presence_nonempty_and_shape_counts",
+    "accounting_format_counts",
+    "accounting_field_count_histogram",
+    "accounting_schema_names",
+    "accounting_radius_attribute_ids",
+    "accounting_packet_type_counts",
+    "accounting_request_quality_counts",
+    "accounting_status_type_counts",
+    "accounting_session_identifier_presence_counts",
+    "accounting_file_size_and_timestamp_without_name_or_path"
+  ],
+  "prohibited_actions": [
+    "event_value_persistence",
+    "event_xml_persistence",
+    "accounting_raw_line_persistence",
+    "accounting_value_persistence",
+    "accounting_file_name_or_path_persistence",
+    "radius_client_or_secret_read",
+    "nps_full_configuration_export",
+    "audit_policy_change",
+    "nps_configuration_change",
+    "radius_accounting_enable",
+    "service_change",
+    "scheduled_task_change",
+    "firewall_change",
+    "postgresql_write",
+    "clickhouse_write",
+    "event_import",
+    "cursor_update",
+    "descriptor_addition",
+    "normalizer_addition",
+    "migration",
+    "worker_activation",
+    "autostart"
+  ],
+  "completion_contract": {
+    "live_result": "aggregates_only_or_explicitly_inaccessible",
+    "next_gate": "review_field_quality_before_descriptor_normalizer_or_accounting_adapter"
+  }
+}

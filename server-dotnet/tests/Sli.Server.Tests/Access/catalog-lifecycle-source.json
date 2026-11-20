@@ -1,0 +1,164 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "source_sha256_lf": {
+    "server/sli/reporting/v2/registry.py": "898ef1f31e25978e54d60294a4836b07b382875396d745384e4dacef23725172",
+    "server/sli/plugins/registry.py": "565a1c280966cc442d920dec443e6d8382d623922e70a11a7d65c004a200c87a",
+    "server/sli/plugins/update_runtime.py": "99f96e690d48c76a0e98f7b4b31c3439c9cc4a98610050804ac12e2b28d371bb"
+  },
+  "generation_race": "plugin_version_changed",
+  "drain_callback": "plugin_update_draining",
+  "cases": [
+    {
+      "name": "bundled",
+      "generation": null,
+      "fenced": false,
+      "capabilities": [
+        "workspace.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "technical"
+          ],
+          "required_capabilities": []
+        }
+      ],
+      "permitted_domain_ids": null
+    },
+    {
+      "name": "updated_capability_denied",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": false,
+      "capabilities": [
+        "workspace.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "technical"
+          ],
+          "required_capabilities": [
+            "synthetic.view"
+          ]
+        }
+      ],
+      "permitted_domain_ids": []
+    },
+    {
+      "name": "updated_capability_allowed",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": false,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "technical"
+          ],
+          "required_capabilities": [
+            "synthetic.view"
+          ]
+        }
+      ],
+      "permitted_domain_ids": null
+    },
+    {
+      "name": "disabled",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": true,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [],
+      "permitted_domain_ids": []
+    },
+    {
+      "name": "enabled",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": false,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "technical"
+          ],
+          "required_capabilities": [
+            "synthetic.view"
+          ]
+        }
+      ],
+      "permitted_domain_ids": null
+    },
+    {
+      "name": "reregistered_fields_denied",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": false,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "security"
+          ],
+          "required_capabilities": []
+        }
+      ],
+      "permitted_domain_ids": []
+    },
+    {
+      "name": "removed",
+      "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fenced": false,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [],
+      "permitted_domain_ids": []
+    },
+    {
+      "name": "rollback",
+      "generation": null,
+      "fenced": false,
+      "capabilities": [
+        "workspace.view",
+        "synthetic.view"
+      ],
+      "declarations": [
+        {
+          "key": "ad.infrastructure",
+          "report_key": "ad.state",
+          "scope": "domain",
+          "required_fields": [
+            "technical"
+          ],
+          "required_capabilities": []
+        }
+      ],
+      "permitted_domain_ids": null
+    }
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-CONTROLLED-PRODUCTION-PREP-1",
+  "status": "source_ready_production_blocked",
+  "baseline": {
+    "parent_stage": "DB-STORAGE-OPT-1",
+    "production_schema_version": 8,
+    "final_canary_evidence": "STORAGE_V2_SCHEMA_BACKFILL_CANARY2_FINAL_20260714_124308.json",
+    "finalizer_evidence": "STORAGE_V2_CANARY_FINALIZER1_REPORT_20260714.json",
+    "finalizer_status": "accepted_with_warning",
+    "projected_v2_managed_plus_archive_bytes": 12996357434,
+    "restored_v1_bytes": 38958096384,
+    "projected_ratio": 2.997617,
+    "data_loss": 0,
+    "functional_mismatches": 0,
+    "production_change_authorized": false,
+    "production_backfill_authorized": false,
+    "production_cutover_authorized": false,
+    "production_reclaim_authorized": false
+  },
+  "purpose": "Prepare the exact controlled production path without applying production migrations, starting production backfill, switching runtime routing, or reclaiming V1 storage.",
+  "preflight_gates": [
+    {
+      "id": "external_backup_copy",
+      "type": "operator_evidence",
+      "required_before": "production_backfill",
+      "pass_condition": "latest PostgreSQL dump and V2 archive root are copied to an independent disk or volume, SHA-256 verified after copy, and the restore drill consumes that copied dump",
+      "evidence_required": [
+        "source dump path",
+        "source SHA-256",
+        "external copy path",
+        "external copy SHA-256",
+        "copied archive root path if V2 archives already exist",
+        "restore evidence JSON proving the external copy was used"
+      ],
+      "blocking_if_missing": true
+    },
+    {
+      "id": "free_space_headroom",
+      "type": "read_only_measurement",
+      "required_before": "production_migrations",
+      "pass_condition": "database volume has at least 2.2x current database bytes free, archive volume has at least projected V2 archive bytes plus 30 percent free, and backup volume has at least one full dump plus archive copy free",
+      "minimums": {
+        "database_volume_free_multiplier_of_current_db": 2.2,
+        "archive_volume_free_multiplier_of_projected_archive": 1.3,
+        "backup_volume_free_multiplier_of_dump_plus_archive": 1.0
+      },
+      "blocking_if_missing": true
+    },
+    {
+      "id": "wal_headroom",
+      "type": "read_only_measurement",
+      "required_before": "production_backfill",
+      "pass_condition": "WAL directory and archive policy can absorb the largest planned chunk burst with 2x safety margin; chunk size must be reduced if this cannot be proven",
+      "minimums": {
+        "wal_burst_safety_multiplier": 2.0,
+        "initial_chunk_size_max_events": 25000
+      },
+      "blocking_if_missing": true
+    },
+    {
+      "id": "archive_acl",
+      "type": "filesystem_dry_run",
+      "required_before": "production_backfill",
+      "pass_condition": "runtime account can create, atomically rename, read and delete a probe file under the configured V2 archive root; probe file contains no event payload",
+      "blocking_if_missing": true
+    },
+    {
+      "id": "role_privilege_dry_run",
+      "type": "read_only_sql_and_catalog_check",
+      "required_before": "production_migrations",
+      "pass_condition": "migration owner can create required V2 objects; backfill worker and runtime roles have only planned privileges; runtime role is not superuser and cannot create/drop databases",
+      "must_not_execute": [
+        "CREATE TABLE in production",
+        "ALTER TABLE in production",
+        "INSERT/UPDATE/DELETE production rows",
+        "migration 9 through 12"
+      ],
+      "blocking_if_missing": true
+    }
+  ],
+  "operator_runbook": [
+    {
+      "step": 1,
+      "name": "freeze_collection_window",
+      "action": "Disable scheduler, collection and continuous recovery for the maintenance window; confirm runtime server and port state separately.",
+      "rollback": "Re-enable the previous scheduler/collection settings only if no migration/backfill step has started."
+    },
+    {
+      "step": 2,
+      "name": "backup_and_external_copy",
+      "action": "Create or select the approved PostgreSQL dump, copy it and required archive material to an independent disk or volume, then verify SHA-256 on the copy.",
+      "rollback": "Do not proceed; keep existing production unchanged."
+    },
+    {
+      "step": 3,
+      "name": "isolated_restore_from_external_copy",
+      "action": "Restore the external copy into a disposable database and run schema/count/last-event/API-or-query smoke checks.",
+      "rollback": "Drop only the disposable database and stop."
+    },
+    {
+      "step": 4,
+      "name": "production_preflight_dry_run",
+      "action": "Measure free space, WAL headroom, archive ACLs and role privileges without applying migrations or writing event rows.",
+      "rollback": "Stop; no production schema or data was changed."
+    },
+    {
+      "step": 5,
+      "name": "apply_migrations_9_10",
+      "action": "Only after all gates pass, apply V2 foundation and backfill-support migrations in a named maintenance window.",
+      "rollback": "Use versioned rollback SQL before any V2 read/write cutover; do not drop V1."
+    },
+    {
+      "step": 6,
+      "name": "controlled_full_backfill",
+      "action": "Run restartable production backfill with bounded chunks, WAL monitoring, archive hash verification and checkpoints.",
+      "rollback": "Stop workers, keep V1 primary, clean only incomplete V2 chunks through guarded rollback tooling."
+    },
+    {
+      "step": 7,
+      "name": "functional_shadow",
+      "action": "Run V1/V2 shadow checks for fast search, deep search, details, reports, findings and investigation surfaces.",
+      "rollback": "Keep read mode on V1 and fix adapters; do not reclaim."
+    },
+    {
+      "step": 8,
+      "name": "read_write_cutover",
+      "action": "Enable V2 read/write only after shadow acceptance and a rollback window are explicitly approved.",
+      "rollback": "Return read/write flags to V1 while V1 relations remain intact."
+    },
+    {
+      "step": 9,
+      "name": "external_fk_cutover",
+      "action": "Apply migration 12 only after V2 primary stability and validate external references.",
+      "rollback": "Use migration 12 rollback before any V1 decommission."
+    },
+    {
+      "step": 10,
+      "name": "dr_reclaim_gate",
+      "action": "Run a separate DR/reclaim acceptance package before dropping legacy events, event_entity_links or observed_entities.",
+      "rollback": "After physical drop, SQL rollback alone is impossible; recovery requires the independently verified backup/archive."
+    }
+  ],
+  "go_no_go": {
+    "production_migrations": {
+      "go_requires": [
+        "external_backup_copy",
+        "free_space_headroom",
+        "role_privilege_dry_run",
+        "explicit maintenance window"
+      ],
+      "no_go_if": [
+        "external copy missing or SHA mismatch",
+        "production schema is not version 8 before migration",
+        "runtime role has elevated admin privileges",
+        "unexplained disposable restore mismatch"
+      ]
+    },
+    "production_backfill": {
+      "go_requires": [
+        "migrations 9 and 10 applied successfully",
+        "wal_headroom",
+        "archive_acl",
+        "external restore proof",
+        "bounded chunk configuration"
+      ],
+      "no_go_if": [
+        "WAL headroom cannot be proven",
+        "archive publish probe fails",
+        "checkpoint retry/failpoint proof is missing",
+        "operator cannot pause or resume workers"
+      ]
+    },
+    "read_cutover": {
+      "go_requires": [
+        "full backfill data loss equals 0",
+        "functional shadow mismatches equal 0 or are explicitly waived",
+        "archive coverage and hash verification accepted",
+        "rollback window still available"
+      ],
+      "no_go_if": [
+        "deep search or reports require unbounded archive scans",
+        "hydrated event details fail identity verification",
+        "findings/evidence/entity links are not proven"
+      ]
+    },
+    "v1_decommission": {
+      "go_requires": [
+        "V2-primary stability window accepted",
+        "migration 12 accepted and rollback window decision recorded",
+        "fresh independent backup and restore proof",
+        "separate DR-RECLAIM package accepted"
+      ],
+      "no_go_if": [
+        "only SQL rollback is available",
+        "external backup restore was not tested",
+        "current measured ratio is below 2.5x",
+        "business owner has not accepted irreversible reclaim"
+      ]
+    }
+  },
+  "strictly_forbidden": [
+    "apply migrations 9 through 12 to production in this stage",
+    "start production backfill in this stage",
+    "enable V2 read/write routing in this stage",
+    "delete, truncate, rewrite or VACUUM FULL legacy V1 relations in this stage",
+    "treat accepted_with_warning final canary as rollback-proof acceptance",
+    "rerun expensive restored-copy canary without a new engineering question"
+  ],
+  "next_stage": {
+    "id": "STORAGE-V2-CONTROLLED-PRODUCTION-BACKFILL-1",
+    "authorized_by_this_stage": false,
+    "requires_explicit_operator_approval": true
+  }
+}

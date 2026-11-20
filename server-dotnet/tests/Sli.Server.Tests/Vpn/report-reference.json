@@ -1,0 +1,684 @@
+[
+  {
+    "kind": "timeline",
+    "events": [
+      {
+        "event_db_id": 1,
+        "event_record_id": 101,
+        "event_id": 6272,
+        "time_created_utc": "2026-01-01T00:01:00Z",
+        "subject_user_sid": "synthetic-sid",
+        "alias_match_count": 1,
+        "entity_id": 7,
+        "source_ip": "192.0.2.7",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 2,
+        "event_record_id": 102,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:02:00Z",
+        "subject_user_sid": "synthetic-sid",
+        "alias_match_count": 1,
+        "entity_id": 7,
+        "source_ip": "192.0.2.7",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 3,
+        "event_record_id": 103,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:03:00Z",
+        "subject_user_sid": "synthetic-sid",
+        "alias_match_count": 1,
+        "entity_id": 7,
+        "source_ip": "192.0.2.7",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 4,
+        "event_record_id": 104,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:04:00Z",
+        "subject_user_sid": null,
+        "alias_match_count": 0,
+        "entity_id": null,
+        "source_ip": null,
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 5,
+        "event_record_id": 105,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:05:00Z",
+        "subject_user_sid": "ambiguous-sid",
+        "alias_match_count": 2,
+        "entity_id": null,
+        "source_ip": "192.0.2.8",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "identities": [
+      {
+        "entity_id": 7,
+        "display_name": "Synthetic User",
+        "netbios_name": "EXAMPLE",
+        "sam_account_name": "synthetic",
+        "department": "Synthetic"
+      }
+    ],
+    "coverage": {
+      "window_success_6272_count": 1,
+      "window_failed_6273_count": 4,
+      "history_event_present": true
+    },
+    "expected": {
+      "contract_id": "sli.vpn-audit-authorization-timeline.v1",
+      "report_key": "vpn.audit",
+      "source_domain_id": 1,
+      "state": "available",
+      "time_bounds": {
+        "from_utc": "2026-01-01T00:00:00Z",
+        "to_utc_exclusive": "2026-01-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "event_db_id": 1,
+          "event_record_id": 101,
+          "event_id": 6272,
+          "time_created_utc": "2026-01-01T00:01:00Z",
+          "authorization_result": "allowed",
+          "identity_state": "resolved",
+          "identity": {
+            "entity_id": 7,
+            "display_name": "Synthetic User",
+            "account_name": "EXAMPLE\\synthetic",
+            "department": "Synthetic"
+          },
+          "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_ip": "192.0.2.7"
+        },
+        {
+          "event_db_id": 2,
+          "event_record_id": 102,
+          "event_id": 6273,
+          "time_created_utc": "2026-01-01T00:02:00Z",
+          "authorization_result": "denied",
+          "identity_state": "resolved",
+          "identity": {
+            "entity_id": 7,
+            "display_name": "Synthetic User",
+            "account_name": "EXAMPLE\\synthetic",
+            "department": "Synthetic"
+          },
+          "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_ip": "192.0.2.7",
+          "reason_code": "16"
+        },
+        {
+          "event_db_id": 3,
+          "event_record_id": 103,
+          "event_id": 6273,
+          "time_created_utc": "2026-01-01T00:03:00Z",
+          "authorization_result": "denied",
+          "identity_state": "resolved",
+          "identity": {
+            "entity_id": 7,
+            "display_name": "Synthetic User",
+            "account_name": "EXAMPLE\\synthetic",
+            "department": "Synthetic"
+          },
+          "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_ip": "192.0.2.7",
+          "reason_code": "16"
+        },
+        {
+          "event_db_id": 4,
+          "event_record_id": 104,
+          "event_id": 6273,
+          "time_created_utc": "2026-01-01T00:04:00Z",
+          "authorization_result": "denied",
+          "identity_state": "unresolved",
+          "identity": {
+            "entity_id": null,
+            "observed_subject_sid": null
+          },
+          "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "reason_code": "16"
+        },
+        {
+          "event_db_id": 5,
+          "event_record_id": 105,
+          "event_id": 6273,
+          "time_created_utc": "2026-01-01T00:05:00Z",
+          "authorization_result": "denied",
+          "identity_state": "ambiguous",
+          "identity": {
+            "entity_id": null,
+            "observed_subject_sid": "ambiguous-sid"
+          },
+          "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_ip": "192.0.2.8",
+          "reason_code": "16"
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_present": true,
+        "window_success_6272_count": 1,
+        "window_failed_6273_count": 4,
+        "empty_window_basis": null,
+        "source_completeness": "not_proven",
+        "freshness": "not_asserted"
+      },
+      "unavailable_reason": null,
+      "result_window": {
+        "truncated": false,
+        "returned_event_count": 5,
+        "display_limit": 2000
+      },
+      "limits": {
+        "input_event_limit": 2000,
+        "bounded": true
+      }
+    }
+  },
+  {
+    "kind": "series",
+    "events": [
+      {
+        "event_db_id": 2,
+        "event_record_id": 102,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:02:00Z",
+        "subject_user_sid": "synthetic-sid",
+        "alias_match_count": 1,
+        "entity_id": 7,
+        "source_ip": "192.0.2.7",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 3,
+        "event_record_id": 103,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:03:00Z",
+        "subject_user_sid": "synthetic-sid",
+        "alias_match_count": 1,
+        "entity_id": 7,
+        "source_ip": "192.0.2.7",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 4,
+        "event_record_id": 104,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:04:00Z",
+        "subject_user_sid": null,
+        "alias_match_count": 0,
+        "entity_id": null,
+        "source_ip": null,
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 5,
+        "event_record_id": 105,
+        "event_id": 6273,
+        "time_created_utc": "2026-01-01T00:05:00Z",
+        "subject_user_sid": "ambiguous-sid",
+        "alias_match_count": 2,
+        "entity_id": null,
+        "source_ip": "192.0.2.8",
+        "reason_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "identities": [
+      {
+        "entity_id": 7,
+        "display_name": "Synthetic User",
+        "netbios_name": "EXAMPLE",
+        "sam_account_name": "synthetic",
+        "department": "Synthetic"
+      }
+    ],
+    "coverage": {
+      "window_success_6272_count": 1,
+      "window_failed_6273_count": 4,
+      "history_event_count": 5
+    },
+    "expected": {
+      "contract_id": "sli.vpn-audit-failed-authorization-series.v1",
+      "report_key": "vpn.audit",
+      "source_domain_id": 1,
+      "state": "available",
+      "time_bounds": {
+        "from_utc": "2026-01-01T00:00:00Z",
+        "to_utc_exclusive": "2026-01-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "series_state": "grouped",
+          "event_id": 6273,
+          "identity_state": "ambiguous",
+          "identity": {
+            "entity_id": null,
+            "observed_subject_sid": "ambiguous-sid"
+          },
+          "source_state": "available",
+          "source_ip": "192.0.2.8",
+          "count": 1,
+          "first_failed_at_utc": "2026-01-01T00:05:00Z",
+          "last_failed_at_utc": "2026-01-01T00:05:00Z",
+          "time_bounds": {
+            "from_utc": "2026-01-01T00:00:00Z",
+            "to_utc_exclusive": "2026-01-02T00:00:00Z"
+          },
+          "reason_codes": [
+            "16"
+          ],
+          "reason_codes_truncated": false,
+          "event_references": [
+            {
+              "event_db_id": 5,
+              "event_record_id": 105,
+              "event_id": 6273,
+              "time_created_utc": "2026-01-01T00:05:00Z",
+              "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          ],
+          "event_references_truncated": false
+        },
+        {
+          "series_state": "single_event_unattributed",
+          "event_id": 6273,
+          "identity_state": "unresolved",
+          "identity": {
+            "entity_id": null,
+            "observed_subject_sid": null
+          },
+          "source_state": "unavailable",
+          "source_ip": null,
+          "count": 1,
+          "first_failed_at_utc": "2026-01-01T00:04:00Z",
+          "last_failed_at_utc": "2026-01-01T00:04:00Z",
+          "time_bounds": {
+            "from_utc": "2026-01-01T00:00:00Z",
+            "to_utc_exclusive": "2026-01-02T00:00:00Z"
+          },
+          "reason_codes": [
+            "16"
+          ],
+          "reason_codes_truncated": false,
+          "event_references": [
+            {
+              "event_db_id": 4,
+              "event_record_id": 104,
+              "event_id": 6273,
+              "time_created_utc": "2026-01-01T00:04:00Z",
+              "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          ],
+          "event_references_truncated": false
+        },
+        {
+          "series_state": "grouped",
+          "event_id": 6273,
+          "identity_state": "resolved",
+          "identity": {
+            "entity_id": 7,
+            "display_name": "Synthetic User",
+            "account_name": "EXAMPLE\\synthetic",
+            "department": "Synthetic"
+          },
+          "source_state": "available",
+          "source_ip": "192.0.2.7",
+          "count": 2,
+          "first_failed_at_utc": "2026-01-01T00:02:00Z",
+          "last_failed_at_utc": "2026-01-01T00:03:00Z",
+          "time_bounds": {
+            "from_utc": "2026-01-01T00:00:00Z",
+            "to_utc_exclusive": "2026-01-02T00:00:00Z"
+          },
+          "reason_codes": [
+            "16"
+          ],
+          "reason_codes_truncated": false,
+          "event_references": [
+            {
+              "event_db_id": 2,
+              "event_record_id": 102,
+              "event_id": 6273,
+              "time_created_utc": "2026-01-01T00:02:00Z",
+              "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "event_db_id": 3,
+              "event_record_id": 103,
+              "event_id": 6273,
+              "time_created_utc": "2026-01-01T00:03:00Z",
+              "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          ],
+          "event_references_truncated": false
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_count": 5,
+        "window_success_6272_count": 1,
+        "window_failed_6273_count": 4,
+        "empty_window_basis": null,
+        "source_completeness": "not_proven",
+        "freshness": "not_asserted"
+      },
+      "limits": {
+        "input_event_limit": 2000,
+        "series_limit": 500,
+        "event_reference_limit": 100,
+        "bounded": true
+      }
+    }
+  },
+  {
+    "kind": "windows",
+    "events": [
+      {
+        "event_db_id": 1,
+        "event_record_id": 11,
+        "event_id": 4625,
+        "time_created_utc": "2026-01-01T00:01:00Z",
+        "domain_controller": "dc.example.test",
+        "target_user_sid": "synthetic-target",
+        "target_user_name": "synthetic",
+        "subject_user_sid": "synthetic-subject",
+        "subject_user_name": "synthetic-subject",
+        "source_ip": "192.0.2.7",
+        "result_code": "16",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 2,
+        "event_record_id": 12,
+        "event_id": 4776,
+        "time_created_utc": "2026-01-01T00:02:00Z",
+        "domain_controller": "dc.example.test",
+        "target_user_sid": "synthetic-target",
+        "target_user_name": "synthetic",
+        "subject_user_sid": "synthetic-subject",
+        "subject_user_name": "synthetic-subject",
+        "source_ip": "192.0.2.7",
+        "result_code": null,
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 3,
+        "event_record_id": 13,
+        "event_id": 4768,
+        "time_created_utc": "2026-01-01T00:03:00Z",
+        "domain_controller": "dc.example.test",
+        "target_user_sid": "synthetic-target",
+        "target_user_name": "synthetic",
+        "subject_user_sid": "synthetic-subject",
+        "subject_user_name": "synthetic-subject",
+        "source_ip": "192.0.2.7",
+        "result_code": "0x0",
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 4,
+        "event_record_id": 14,
+        "event_id": 4648,
+        "time_created_utc": "2026-01-01T00:04:00Z",
+        "domain_controller": "dc.example.test",
+        "target_user_sid": "synthetic-target",
+        "target_user_name": "synthetic",
+        "subject_user_sid": "synthetic-subject",
+        "subject_user_name": "synthetic-subject",
+        "source_ip": "192.0.2.7",
+        "result_code": null,
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "event_db_id": 5,
+        "event_record_id": 15,
+        "event_id": 4624,
+        "time_created_utc": "2026-01-01T00:05:00Z",
+        "domain_controller": "dc.example.test",
+        "target_user_sid": "synthetic-target",
+        "target_user_name": "synthetic",
+        "subject_user_sid": "synthetic-subject",
+        "subject_user_name": "synthetic-subject",
+        "source_ip": "192.0.2.7",
+        "result_code": null,
+        "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "coverage": {
+      "history_event_present": true
+    },
+    "policy": {
+      "state": "no_observed_signal_unverified"
+    },
+    "expected": {
+      "contract_id": "sli.vpn-audit-windows-authentication.v1",
+      "report_key": "vpn.audit",
+      "source_domain_id": 1,
+      "state": "available",
+      "unavailable_reason": null,
+      "time_bounds": {
+        "from_utc": "2026-01-01T00:00:00Z",
+        "to_utc_exclusive": "2026-01-02T00:00:00Z"
+      },
+      "items": [
+        {
+          "event_db_id": 1,
+          "event_record_id": 11,
+          "event_id": 4625,
+          "time_created_utc": "2026-01-01T00:01:00Z",
+          "domain_controller": "dc.example.test",
+          "authentication_fact": "observed_failed_logon",
+          "target": {
+            "state": "observed",
+            "target_user_sid": "synthetic-target",
+            "target_user_name": "synthetic"
+          },
+          "principal": {
+            "role": "target_account",
+            "state": "observed",
+            "principal_user_sid": "synthetic-target",
+            "principal_user_name": "synthetic"
+          },
+          "source": {
+            "state": "observed",
+            "source_ip": "192.0.2.7"
+          },
+          "source_native": {
+            "result_code": "16"
+          },
+          "evidence": {
+            "event_db_id": 1,
+            "event_record_id": 11,
+            "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_facts_sha256": null
+          }
+        },
+        {
+          "event_db_id": 2,
+          "event_record_id": 12,
+          "event_id": 4776,
+          "time_created_utc": "2026-01-01T00:02:00Z",
+          "domain_controller": "dc.example.test",
+          "authentication_fact": "observed_credential_validation",
+          "target": {
+            "state": "observed",
+            "target_user_sid": "synthetic-target",
+            "target_user_name": "synthetic"
+          },
+          "principal": {
+            "role": "target_account",
+            "state": "observed",
+            "principal_user_sid": "synthetic-target",
+            "principal_user_name": "synthetic"
+          },
+          "source": {
+            "state": "observed",
+            "source_ip": "192.0.2.7"
+          },
+          "source_native": {},
+          "evidence": {
+            "event_db_id": 2,
+            "event_record_id": 12,
+            "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_facts_sha256": null
+          },
+          "outcome": {
+            "state": "unknown"
+          }
+        },
+        {
+          "event_db_id": 3,
+          "event_record_id": 13,
+          "event_id": 4768,
+          "time_created_utc": "2026-01-01T00:03:00Z",
+          "domain_controller": "dc.example.test",
+          "authentication_fact": "observed_kerberos_as_request",
+          "target": {
+            "state": "observed",
+            "target_user_sid": "synthetic-target",
+            "target_user_name": "synthetic"
+          },
+          "principal": {
+            "role": "target_account",
+            "state": "observed",
+            "principal_user_sid": "synthetic-target",
+            "principal_user_name": "synthetic"
+          },
+          "source": {
+            "state": "observed",
+            "source_ip": "192.0.2.7"
+          },
+          "source_native": {
+            "result_code": "0x0"
+          },
+          "evidence": {
+            "event_db_id": 3,
+            "event_record_id": 13,
+            "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_facts_sha256": null
+          },
+          "outcome": {
+            "state": "observed",
+            "result": "success",
+            "result_code": "0x0"
+          }
+        },
+        {
+          "event_db_id": 4,
+          "event_record_id": 14,
+          "event_id": 4648,
+          "time_created_utc": "2026-01-01T00:04:00Z",
+          "domain_controller": "dc.example.test",
+          "authentication_fact": "observed_explicit_credentials",
+          "target": {
+            "state": "observed",
+            "target_user_sid": "synthetic-target",
+            "target_user_name": "synthetic"
+          },
+          "principal": {
+            "role": "target_account",
+            "state": "observed",
+            "principal_user_sid": "synthetic-target",
+            "principal_user_name": "synthetic"
+          },
+          "source": {
+            "state": "observed",
+            "source_ip": "192.0.2.7"
+          },
+          "source_native": {},
+          "evidence": {
+            "event_db_id": 4,
+            "event_record_id": 14,
+            "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_facts_sha256": null
+          }
+        },
+        {
+          "event_db_id": 5,
+          "event_record_id": 15,
+          "event_id": 4624,
+          "time_created_utc": "2026-01-01T00:05:00Z",
+          "domain_controller": "dc.example.test",
+          "authentication_fact": "observed_successful_logon",
+          "target": {
+            "state": "observed",
+            "target_user_sid": "synthetic-target",
+            "target_user_name": "synthetic"
+          },
+          "principal": {
+            "role": "target_account",
+            "state": "observed",
+            "principal_user_sid": "synthetic-target",
+            "principal_user_name": "synthetic"
+          },
+          "source": {
+            "state": "observed",
+            "source_ip": "192.0.2.7"
+          },
+          "source_native": {},
+          "evidence": {
+            "event_db_id": 5,
+            "event_record_id": 15,
+            "source_core_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_facts_sha256": null
+          },
+          "earlier_observed_failures_in_window": {
+            "state": "observed",
+            "event_references": [
+              {
+                "event_db_id": 1,
+                "event_record_id": 11,
+                "event_id": 4625,
+                "time_created_utc": "2026-01-01T00:01:00Z"
+              }
+            ]
+          }
+        }
+      ],
+      "collection_coverage": {
+        "state": "available",
+        "history_event_present": true,
+        "source_completeness": "not_proven"
+      },
+      "manual_review_policy": {
+        "state": "no_observed_signal_unverified"
+      },
+      "result_window": {
+        "display_limit": 200,
+        "returned_event_count": 5,
+        "truncated": false
+      },
+      "limits": {
+        "max_period_days": 90,
+        "display_limit": 200,
+        "max_display_limit": 500,
+        "bounded": true
+      },
+      "limitations": [
+        "source_events_not_windows_sessions",
+        "manual_review_signal_not_attack_verdict",
+        "empty_window_source_completeness_not_proven",
+        "unknown_results_remain_unknown",
+        "earlier_failure_context_displayed_sample_only",
+        "source_completeness_not_proven"
+      ]
+    }
+  }
+]

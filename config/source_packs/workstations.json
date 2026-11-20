@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "pack_id": "sli.windows.workstations",
+  "version": "1.0.0",
+  "display_name": "Windows workstation security",
+  "channels": [
+    "Security",
+    "Microsoft-Windows-Windows Defender/Operational",
+    "Microsoft-Windows-Kernel-PnP/Configuration",
+    "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+  ],
+  "adapters": [
+    "windows-eventlog-pywin32",
+    "windows-eventlog-powershell"
+  ],
+  "event_catalog": "workstations_event_catalog.json",
+  "normalizer": "windows-workstations-v1",
+  "normalizer_entry": "server.source_packs.windows_workstations:normalizer_namespace",
+  "entity_contract": "workstations.agent-key.v1",
+  "analysis_contract": "catalog-semantics-v1",
+  "capabilities": [
+    "workstations.usb",
+    "workstations.protection"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "pack_id": "example.linux-auth",
+  "version": "0.1.0",
+  "display_name": "Example: Linux auth.log (sshd, sudo)",
+  "channels": [
+    "linux:auth"
+  ],
+  "adapters": [],
+  "event_catalog": "source_packs/examples/linux_auth_event_catalog.json",
+  "normalizer": "example-linux-auth-v1",
+  "normalizer_entry": "server.source_packs.examples.linux_auth:normalizer_namespace",
+  "entity_contract": "identity-ladder-v1",
+  "analysis_contract": "example-linux-auth-v1",
+  "capabilities": [
+    "authentication",
+    "privilege_use"
+  ],
+  "collector": {
+    "kind": "file",
+    "entry": "server.source_packs.examples.linux_auth:auth_log_collector"
+  }
+}

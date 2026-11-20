@@ -1,0 +1,322 @@
+{
+  "declarations": [
+    {
+      "scope_identity": "sli.source-capture-continuity.v1:21:60b84c54692b9ac6e47298ba5548e592267381621df416004225ad9e1ae1bc1e",
+      "declaration_sha256": "60b84c54692b9ac6e47298ba5548e592267381621df416004225ad9e1ae1bc1e",
+      "collection_run_id": 1,
+      "raw_log_file_id": 21,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000015",
+      "server_id": 1,
+      "log_source_id": 1,
+      "descriptor_source": "sli.windows.ad-dc",
+      "descriptor_stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "channel_value": "Security",
+      "channel_generation_identity": "generation-stable",
+      "selector_event_ids": [
+        4608,
+        4624,
+        4634,
+        4672,
+        9999
+      ],
+      "query_exhausted": true,
+      "capture_after_record_id": 99,
+      "capture_latest_record_id": 101,
+      "first_event_record_id": 100,
+      "last_event_record_id": 101,
+      "completeness": "complete",
+      "covered_source_events": [
+        {
+          "id": 10,
+          "record_id": 100,
+          "event_key": 4608,
+          "sha256": "000000000000000000000000000000000000000000000000000000000000000a"
+        },
+        {
+          "id": 11,
+          "record_id": 101,
+          "event_key": 4624,
+          "sha256": "000000000000000000000000000000000000000000000000000000000000000b"
+        }
+      ],
+      "id": 1,
+      "current_raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000015"
+    },
+    {
+      "scope_identity": "sli.source-capture-continuity.v1:22:507eacdb216613056a6901b83a83826fe217e2b29e66fc1eeaf7cabb4d25d098",
+      "declaration_sha256": "507eacdb216613056a6901b83a83826fe217e2b29e66fc1eeaf7cabb4d25d098",
+      "collection_run_id": 2,
+      "raw_log_file_id": 22,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000016",
+      "server_id": 2,
+      "log_source_id": 2,
+      "descriptor_source": "sli.windows.ad-dc",
+      "descriptor_stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "channel_value": "Security",
+      "channel_generation_identity": "generation-stable",
+      "selector_event_ids": [
+        4608,
+        4624,
+        4634,
+        4672,
+        9999
+      ],
+      "query_exhausted": true,
+      "capture_after_record_id": 199,
+      "capture_latest_record_id": 200,
+      "first_event_record_id": 200,
+      "last_event_record_id": 200,
+      "completeness": "complete",
+      "covered_source_events": [
+        {
+          "id": 20,
+          "record_id": 200,
+          "event_key": 4608,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000014"
+        }
+      ],
+      "id": 2,
+      "current_raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000016"
+    },
+    {
+      "scope_identity": "sli.source-capture-continuity.v1:23:c433f0e683d26676137470b37d663d003b203372a2b4748fbe33a0dbefd1bef6",
+      "declaration_sha256": "c433f0e683d26676137470b37d663d003b203372a2b4748fbe33a0dbefd1bef6",
+      "collection_run_id": 3,
+      "raw_log_file_id": 23,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000017",
+      "server_id": 1,
+      "log_source_id": 1,
+      "descriptor_source": "sli.windows.ad-dc",
+      "descriptor_stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "channel_value": "Security",
+      "channel_generation_identity": "generation-stable",
+      "selector_event_ids": [
+        4608,
+        4624,
+        4634,
+        4672,
+        9999
+      ],
+      "query_exhausted": true,
+      "capture_after_record_id": 101,
+      "capture_latest_record_id": 102,
+      "first_event_record_id": 102,
+      "last_event_record_id": 102,
+      "completeness": "complete",
+      "covered_source_events": [
+        {
+          "id": 12,
+          "record_id": 102,
+          "event_key": 4634,
+          "sha256": "000000000000000000000000000000000000000000000000000000000000000c"
+        }
+      ],
+      "id": 3,
+      "current_raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000017"
+    },
+    {
+      "scope_identity": "sli.source-capture-continuity.v1:24:0c54951bafcf2c8467602e9099d905df69d1a5edf8e0540a0735f450fd02bab8",
+      "declaration_sha256": "0c54951bafcf2c8467602e9099d905df69d1a5edf8e0540a0735f450fd02bab8",
+      "collection_run_id": 4,
+      "raw_log_file_id": 24,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000018",
+      "server_id": 3,
+      "log_source_id": 3,
+      "descriptor_source": "sli.windows.ad-dc",
+      "descriptor_stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "channel_value": "Security",
+      "channel_generation_identity": "generation-stable",
+      "selector_event_ids": [
+        4608,
+        4624,
+        4634,
+        4672,
+        9999
+      ],
+      "query_exhausted": true,
+      "capture_after_record_id": 299,
+      "capture_latest_record_id": 300,
+      "first_event_record_id": 300,
+      "last_event_record_id": 300,
+      "completeness": "complete",
+      "covered_source_events": [
+        {
+          "id": 30,
+          "record_id": 300,
+          "event_key": 9999,
+          "sha256": "000000000000000000000000000000000000000000000000000000000000001e"
+        }
+      ],
+      "id": 4,
+      "current_raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000018"
+    },
+    {
+      "scope_identity": "sli.source-capture-continuity.v1:25:e2eac4aff68d9b6247f9a17f2aad204afef6184b057b553f57413c7742efeb08",
+      "declaration_sha256": "e2eac4aff68d9b6247f9a17f2aad204afef6184b057b553f57413c7742efeb08",
+      "collection_run_id": 5,
+      "raw_log_file_id": 25,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000019",
+      "server_id": 4,
+      "log_source_id": 4,
+      "descriptor_source": "sli.windows.ad-dc",
+      "descriptor_stream": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "channel_value": "Security",
+      "channel_generation_identity": "generation-stable",
+      "selector_event_ids": [
+        4608,
+        4624,
+        4634,
+        4672,
+        9999
+      ],
+      "query_exhausted": true,
+      "capture_after_record_id": 399,
+      "capture_latest_record_id": 400,
+      "first_event_record_id": 400,
+      "last_event_record_id": 400,
+      "completeness": "complete",
+      "covered_source_events": [
+        {
+          "id": 40,
+          "record_id": 400,
+          "event_key": 4608,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000028"
+        }
+      ],
+      "id": 5,
+      "current_raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000019"
+    }
+  ],
+  "rows": [
+    {
+      "id": 10,
+      "event_record_id": 100,
+      "event_id": 4608,
+      "normalized_hash": "000000000000000000000000000000000000000000000000000000000000000a",
+      "server_id": 1,
+      "log_source_id": 1,
+      "raw_log_file_id": 21,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000015",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": 11,
+      "event_record_id": 101,
+      "event_id": 4624,
+      "normalized_hash": "000000000000000000000000000000000000000000000000000000000000000b",
+      "server_id": 1,
+      "log_source_id": 1,
+      "raw_log_file_id": 21,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000015",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": 20,
+      "event_record_id": 200,
+      "event_id": 4608,
+      "normalized_hash": "0000000000000000000000000000000000000000000000000000000000000014",
+      "server_id": 2,
+      "log_source_id": 2,
+      "raw_log_file_id": 22,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000016",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": 12,
+      "event_record_id": 102,
+      "event_id": 4634,
+      "normalized_hash": "000000000000000000000000000000000000000000000000000000000000000c",
+      "server_id": 1,
+      "log_source_id": 1,
+      "raw_log_file_id": 23,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000017",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": 30,
+      "event_record_id": 300,
+      "event_id": 9999,
+      "normalized_hash": "000000000000000000000000000000000000000000000000000000000000001e",
+      "server_id": 3,
+      "log_source_id": 3,
+      "raw_log_file_id": 24,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000018",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": 40,
+      "event_record_id": 400,
+      "event_id": 4608,
+      "normalized_hash": "0000000000000000000000000000000000000000000000000000000000000028",
+      "server_id": 4,
+      "log_source_id": 4,
+      "raw_log_file_id": 25,
+      "raw_log_sha256": "0000000000000000000000000000000000000000000000000000000000000019",
+      "channel_value": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-07-01T00:00:00Z"
+    }
+  ],
+  "interleaved_selection": {
+    "event_ids": [
+      10,
+      11,
+      12
+    ],
+    "event_keys": [
+      "4608",
+      "4624",
+      "4634"
+    ],
+    "supplemental_event_ids": [],
+    "declaration_members": [
+      {
+        "scope_identity": "sli.source-capture-continuity.v1:21:60b84c54692b9ac6e47298ba5548e592267381621df416004225ad9e1ae1bc1e",
+        "declaration_sha256": "60b84c54692b9ac6e47298ba5548e592267381621df416004225ad9e1ae1bc1e",
+        "raw_log_file_id": 21,
+        "first_event_record_id": 100,
+        "last_event_record_id": 101,
+        "selector_event_ids": [
+          4608,
+          4624,
+          4634,
+          4672,
+          9999
+        ],
+        "channel_generation_identity": "generation-stable"
+      },
+      {
+        "scope_identity": "sli.source-capture-continuity.v1:23:c433f0e683d26676137470b37d663d003b203372a2b4748fbe33a0dbefd1bef6",
+        "declaration_sha256": "c433f0e683d26676137470b37d663d003b203372a2b4748fbe33a0dbefd1bef6",
+        "raw_log_file_id": 23,
+        "first_event_record_id": 102,
+        "last_event_record_id": 102,
+        "selector_event_ids": [
+          4608,
+          4624,
+          4634,
+          4672,
+          9999
+        ],
+        "channel_generation_identity": "generation-stable"
+      }
+    ],
+    "declaration_scope_identity": "sli.source-capture-continuity-range.v1:c0f44f6b8a90d06686c169a265ed4d8f92658b75f4aad3b7583d104f221d0294",
+    "declaration_sha256": "c0f44f6b8a90d06686c169a265ed4d8f92658b75f4aad3b7583d104f221d0294"
+  }
+}

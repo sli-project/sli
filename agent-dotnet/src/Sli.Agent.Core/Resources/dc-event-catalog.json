@@ -1,0 +1,360 @@
+{
+ "channels": [
+  "Security",
+  "System",
+  "Directory Service"
+ ],
+ "events": [
+  {
+   "channel": "Directory Service",
+   "event_id": 1162,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 1955,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 2041,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 2887,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 2974,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 3040,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 3041,
+   "provider": "microsoft-windows-activedirectory_domainservice"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 700,
+   "provider": "ntds isam"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 701,
+   "provider": "ntds isam"
+  },
+  {
+   "channel": "Directory Service",
+   "event_id": 2001,
+   "provider": "ntds isam"
+  },
+  {
+   "channel": "Security",
+   "event_id": 1102,
+   "provider": "microsoft-windows-eventlog"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4608,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4624,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4625,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4634,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4647,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4648,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4672,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4688,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4689,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4697,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4698,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4699,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4700,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4701,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4702,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4719,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4720,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4722,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4723,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4724,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4725,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4726,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4728,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4729,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4732,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4733,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4738,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4740,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4756,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4757,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4767,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4768,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4769,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4770,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4771,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4772,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4773,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4776,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 4781,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "Security",
+   "event_id": 5136,
+   "provider": "microsoft-windows-security-auditing"
+  },
+  {
+   "channel": "System",
+   "event_id": 101,
+   "provider": "application management group policy"
+  },
+  {
+   "channel": "System",
+   "event_id": 103,
+   "provider": "application management group policy"
+  },
+  {
+   "channel": "System",
+   "event_id": 108,
+   "provider": "application management group policy"
+  },
+  {
+   "channel": "System",
+   "event_id": 301,
+   "provider": "application management group policy"
+  },
+  {
+   "channel": "System",
+   "event_id": 6013,
+   "provider": "eventlog"
+  },
+  {
+   "channel": "System",
+   "event_id": 14554,
+   "provider": "microsoft-windows-dfssvc"
+  },
+  {
+   "channel": "System",
+   "event_id": 1112,
+   "provider": "microsoft-windows-grouppolicy"
+  },
+  {
+   "channel": "System",
+   "event_id": 1502,
+   "provider": "microsoft-windows-grouppolicy"
+  },
+  {
+   "channel": "System",
+   "event_id": 3,
+   "provider": "microsoft-windows-security-kerberos"
+  },
+  {
+   "channel": "System",
+   "event_id": 139,
+   "provider": "microsoft-windows-time-service"
+  },
+  {
+   "channel": "System",
+   "event_id": 142,
+   "provider": "microsoft-windows-time-service"
+  },
+  {
+   "channel": "System",
+   "event_id": 5721,
+   "provider": "netlogon"
+  },
+  {
+   "channel": "System",
+   "event_id": 5723,
+   "provider": "netlogon"
+  },
+  {
+   "channel": "System",
+   "event_id": 5805,
+   "provider": "netlogon"
+  },
+  {
+   "channel": "System",
+   "event_id": 36887,
+   "provider": "schannel"
+  },
+  {
+   "channel": "System",
+   "event_id": 7036,
+   "provider": "service control manager"
+  },
+  {
+   "channel": "System",
+   "event_id": 7040,
+   "provider": "service control manager"
+  },
+  {
+   "channel": "System",
+   "event_id": 7045,
+   "provider": "service control manager"
+  },
+  {
+   "channel": "System",
+   "event_id": 33,
+   "provider": "volsnap"
+  }
+ ],
+ "pack_id": "sli.windows.ad-dc"
+}

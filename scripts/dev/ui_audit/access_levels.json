@@ -1,0 +1,8 @@
+{
+  "persona": "information_security_specialist",
+  "accounts": {
+    "full": {"username": "audit_full", "role": "viewer", "scope": {"mode": "all"}, "allowed_actions": ["view"], "field_classes": ["identity_basic", "security", "technical", "privilege", "contact", "hr", "sensitive", "raw_evidence", "computer_logon_observation"]},
+    "limited": {"username": "audit_limited", "role": "viewer", "scope": {"mode": "restricted", "clauses": [{"collection_scope_ids": ["ad-domain:1"]}]}, "allowed_actions": ["view"], "field_classes": ["identity_basic", "security", "technical", "privilege", "contact", "hr", "sensitive", "raw_evidence", "computer_logon_observation"]},
+    "without_raw_evidence": {"username": "audit_without_raw", "role": "viewer", "scope": {"mode": "all"}, "allowed_actions": ["view"], "field_classes": ["identity_basic", "security", "technical", "privilege", "contact", "hr", "sensitive", "computer_logon_observation"]}
+  }
+}

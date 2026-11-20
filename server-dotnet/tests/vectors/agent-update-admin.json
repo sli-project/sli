@@ -1,0 +1,119 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "cases": [
+    {
+      "name": "explicit",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0}",
+      "output": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "batch_size": 1,
+        "error_threshold": 0,
+        "group_token_id": null,
+        "agent_ids": [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        ]
+      },
+      "error": null
+    },
+    {
+      "name": "group",
+      "raw": "{\"group_token_id\": \"{aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}\", \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 100, \"error_threshold\": 1000}",
+      "output": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "batch_size": 100,
+        "error_threshold": 1000,
+        "group_token_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "agent_ids": null
+      },
+      "error": null
+    },
+    {
+      "name": "last duplicate",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0,\"batch_size\":2}",
+      "output": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "batch_size": 2,
+        "error_threshold": 0,
+        "group_token_id": null,
+        "agent_ids": [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        ]
+      },
+      "error": null
+    },
+    {
+      "name": "extra",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0, \"extra\": true}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "bool batch",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": true, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "float batch",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1.0, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "zero batch",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 0, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "threshold bool",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": false}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "threshold negative",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": -1}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "oversize batch",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 101, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "bad digest first",
+      "raw": "{\"agent_ids\": [\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\", \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"], \"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"batch_size\": 0, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_package_invalid"
+    },
+    {
+      "name": "duplicate normalized IDs",
+      "raw": "{\"agent_ids\": [\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\", \"{aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa}\"], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "bad ID",
+      "raw": "{\"agent_ids\": [true], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0}",
+      "output": null,
+      "error": "invalid_agent_identity"
+    },
+    {
+      "name": "empty",
+      "raw": "{\"agent_ids\": [], \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    },
+    {
+      "name": "wrong list",
+      "raw": "{\"agent_ids\": \"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\", \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"batch_size\": 1, \"error_threshold\": 0}",
+      "output": null,
+      "error": "agent_update_wave_invalid"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: sli-warm-tier-step1
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+      - TZ=UTC
+    ports:
+      - "127.0.0.1:57846:8123"
+    volumes:
+      - sli-warm-tier-step1-data:/var/lib/clickhouse
+      - ../config/clickhouse/010_system_log_retention.xml:/etc/clickhouse-server/config.d/010_system_log_retention.xml:ro
+      - ../config/clickhouse/011_disable_sampling_profiler.xml:/etc/clickhouse-server/users.d/011_disable_sampling_profiler.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:18
+    container_name: sli-postgres-container
+    profiles:
+      - optional-docker-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sli_app
+      POSTGRES_PASSWORD: sli_local_password
+      POSTGRES_DB: sli_local
+      # Keep PGDATA aligned with the existing named-volume root; do not relocate data implicitly.
+      # Reuses compatible PG18 data; cross-major upgrades require a planned migration.
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - sli-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  sli-warm-tier-step1-data:
+    external: true
+  sli-postgres-data:
+    name: sli-postgres-data

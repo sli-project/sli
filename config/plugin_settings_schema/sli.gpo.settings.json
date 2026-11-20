@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.gpo",
+  "name": "plugins.sli.gpo.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": []
+  },
+  "rules": [],
+  "permissions": [
+    "ad.gpo.review",
+    "ad.gpo.v2"
+  ],
+  "migration_directory": "config/postgres_migrations"
+}

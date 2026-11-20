@@ -1,0 +1,180 @@
+[
+  {
+    "entity": 1001,
+    "role": 1,
+    "stages": {
+      "baseline": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 2,
+          "last": 513,
+          "hash": "1a91852f5c2192f77502d7533c273ae2f65c48fe5409853d6f69afaca96a759a"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 514,
+          "last": 1026,
+          "hash": "fa2436662fa8cf129ed7b7e342a62560d0d899c953fea3a8afde3be773b35939"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1027,
+          "last": 1538,
+          "hash": "f63e832e8d73e4992016f65d4e89d086a4034551baf801637bfcbcd3f0dbd18d"
+        }
+      ],
+      "middle": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 2,
+          "last": 513,
+          "hash": "1a91852f5c2192f77502d7533c273ae2f65c48fe5409853d6f69afaca96a759a"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 514,
+          "last": 1025,
+          "hash": "849ff580379462ca23c17302ff2e5eabdadd7b981821fee47bb68a46768728ee"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1026,
+          "last": 1537,
+          "hash": "dc5141903e5908a18509f091d52d120ba4d36ab15d95c17547ae8f7d869d304d"
+        },
+        {
+          "number": 3,
+          "count": 1,
+          "first": 1538,
+          "last": 1538,
+          "hash": "c1f485e1ad7c080b082f6381013ba667fb6c9e2281e93d871025477396f53a43"
+        }
+      ],
+      "first": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 1,
+          "last": 512,
+          "hash": "fe4f8f748ef4c552ac22f5bce13dc6352f0705f6dfbfafb8941abf9545d6f52c"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 513,
+          "last": 1024,
+          "hash": "1229773ab2c0ba7dd75e30778c0cffd088b2dfbdf4e61a777006affa2b378746"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1025,
+          "last": 1536,
+          "hash": "ac2b6090d581ae71d8d4cb6bd3666ed4e9d350119114061a03df830725a82a5e"
+        },
+        {
+          "number": 3,
+          "count": 2,
+          "first": 1537,
+          "last": 1538,
+          "hash": "23c6d76b910de4b4ff7db58ab45386577c1e690be4cff71431da545503134eea"
+        }
+      ]
+    }
+  },
+  {
+    "entity": 1001,
+    "role": 2,
+    "stages": {
+      "baseline": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 2,
+          "last": 513,
+          "hash": "00f3f076bae9fc81b74500407bb11833f70f23ecd115c51192cf695e88c0a61e"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 514,
+          "last": 1026,
+          "hash": "e8e99b56b76cc91c5829a0272f77612ec0e79d531a6a6002631dcf8a8e89ae58"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1027,
+          "last": 1538,
+          "hash": "d570894ddb259a1c395ea6ea5e428bb5e98912a0277f3fa5561b7188d8db668b"
+        }
+      ],
+      "middle": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 2,
+          "last": 513,
+          "hash": "00f3f076bae9fc81b74500407bb11833f70f23ecd115c51192cf695e88c0a61e"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 514,
+          "last": 1025,
+          "hash": "4defdc67809c056ca65db74d3ba228cfc08d79f3d1a6b4bbedf9113975939b2f"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1026,
+          "last": 1537,
+          "hash": "c7a3403220ac81118185b5bc002ccf888df38ee66c2d9a730c749c8e17f652d8"
+        },
+        {
+          "number": 3,
+          "count": 1,
+          "first": 1538,
+          "last": 1538,
+          "hash": "f6038319e0a0ffd33a4fa85443c0406c6497ba3cf17b6cf78acdee83a6677da9"
+        }
+      ],
+      "first": [
+        {
+          "number": 0,
+          "count": 512,
+          "first": 1,
+          "last": 512,
+          "hash": "83d1fc39c52bec48d9bf97916af7c95864e5747a0d1b47154765850140d31d82"
+        },
+        {
+          "number": 1,
+          "count": 512,
+          "first": 513,
+          "last": 1024,
+          "hash": "4d191fdcc3dabe92980e9d3e8967ec275427e064188c7f167fdee55d57538d31"
+        },
+        {
+          "number": 2,
+          "count": 512,
+          "first": 1025,
+          "last": 1536,
+          "hash": "a2bd1471167aad7d6ac59d73aa7d4ebfd6132caf00054f8d50bf1a887f271eba"
+        },
+        {
+          "number": 3,
+          "count": 2,
+          "first": 1537,
+          "last": 1538,
+          "hash": "ebc2d58cd9cee9986da7039bc53e13e70cebb88cd8c060436e0b66227f1258b8"
+        }
+      ]
+    }
+  }
+]

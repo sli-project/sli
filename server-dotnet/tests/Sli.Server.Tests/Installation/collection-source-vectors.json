@@ -1,0 +1,2472 @@
+[
+  {
+    "name": "current",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "current",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "current",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 1
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "missing",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "error",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "error",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "error",
+                  "failure_reason": "packet_missing",
+                  "issue_since_utc": "2026-11-05T11:25:00+00:00",
+                  "issue_observed_at_utc": "2026-11-05T12:00:00+00:00",
+                  "last_packet_at": null,
+                  "last_import_at": null,
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": null,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "read_error",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": true,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "error",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "error",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "error",
+                  "failure_reason": "read_error",
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": "2026-11-05T11:59:30+00:00",
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "pending",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": "2026-11-05T11:58:00+00:00",
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "lagging",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "lagging",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 120,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "overdue",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": "2026-11-05T11:43:20+00:00",
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "error",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "error",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "error",
+                  "failure_reason": "import_overdue",
+                  "issue_since_utc": "2026-11-05T11:58:20+00:00",
+                  "issue_observed_at_utc": "2026-11-05T12:00:00+00:00",
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 1000,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "stale",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:30:00+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "error",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "error",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "error",
+                  "failure_reason": "packet_stale",
+                  "issue_since_utc": "2026-11-05T11:45:00+00:00",
+                  "issue_observed_at_utc": "2026-11-05T12:00:00+00:00",
+                  "last_packet_at": "2026-11-05T11:30:00+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 1780,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "stale_import",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:30:00+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "error",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "error",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "error",
+                  "failure_reason": "import_overdue",
+                  "issue_since_utc": "2026-11-05T11:45:00+00:00",
+                  "issue_observed_at_utc": "2026-11-05T12:00:00+00:00",
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:30:00+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 0,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "not_applied",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 1,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "waiting",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 1,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "offline_not_applied",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:10:00+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 1,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "offline",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:10:00+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 1,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "grace",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:59:40+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "waiting",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": null,
+                  "last_import_at": null,
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": null,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "paused",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "paused",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "unknown",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "paused",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "paused",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 0,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": false,
+        "paused": true
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "disabled",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "disabled",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "unknown",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "disabled",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "disabled",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 0,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": false,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "module_paused",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              },
+              "paused": true
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "paused",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": false,
+        "paused": true
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "diagnostics_unavailable",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": false,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "unknown",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "unknown",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": null,
+                  "last_import_at": null,
+                  "import_lag_seconds": null,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "historical_gap",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": "2026-11-05T11:43:20+00:00",
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 3,
+        "historical_error_at": "2026-11-05T11:50:00+00:00"
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "current",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "current",
+          "connection": "online",
+          "completeness": {
+            "state": "known_gaps",
+            "last_accepted_gap_at": "2026-11-05T11:43:20+00:00"
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 3,
+                  "historical_error_at": "2026-11-05T11:50:00+00:00",
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "known_gaps"
+      },
+      "active_agents": 1,
+      "current_agents": 1
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "snapshot",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.ad-snapshot",
+            "enabled": true,
+            "config": {
+              "domain_dns": "example.test",
+              "schedule": {
+                "hours": [
+                  6,
+                  18
+                ]
+              },
+              "capture_seconds": 300
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.ad-snapshot",
+        "revision": "1",
+        "channel": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "current",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "current",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.ad-snapshot",
+              "channels": [
+                {
+                  "channel": null,
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 44400
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 1
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.ad-snapshot",
+        "source_name": null,
+        "domain_dns": "example.test",
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.ad-snapshot",
+        "revision": "1",
+        "channel": null,
+        "snapshot": true
+      }
+    ]
+  },
+  {
+    "name": "file_unknown",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.file-audit",
+            "enabled": true,
+            "config": {}
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.file-audit",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": null,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "unknown",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.file-audit",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "unknown",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.file-audit",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "nps_disabled_family",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.vpn-nps",
+            "enabled": true,
+            "config": {
+              "families": {
+                "nps": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.vpn-nps",
+              "channels": []
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [],
+    "requested": []
+  },
+  {
+    "name": "unbound_source",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "source_name": "00000000-0000-4000-8000-000000000002"
+          }
+        ],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T11:59:30+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "current",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "current",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T11:59:30+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 10,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 1
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": null,
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "timestamp_future",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [
+          {
+            "module_id": "sli.windows.ad-dc",
+            "enabled": true,
+            "config": {
+              "source_name": "DC",
+              "channels": {
+                "System": false,
+                "Directory Service": false
+              }
+            }
+          }
+        ],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "last_packet_at": "2026-11-05T12:01:40+00:00",
+        "last_import_at": "2026-11-05T11:59:40+00:00",
+        "pending_since": null,
+        "read_error": false,
+        "historical_unimported_packets": 0,
+        "historical_error_at": null
+      }
+    ],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "current",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "current",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [
+            {
+              "module_id": "sli.windows.ad-dc",
+              "channels": [
+                {
+                  "channel": "Security",
+                  "state": "current",
+                  "failure_reason": null,
+                  "issue_since_utc": null,
+                  "issue_observed_at_utc": null,
+                  "last_packet_at": "2026-11-05T12:01:40+00:00",
+                  "last_import_at": "2026-11-05T11:59:40+00:00",
+                  "historical_unimported_packets": 0,
+                  "historical_error_at": null,
+                  "import_lag_seconds": 0,
+                  "budget_seconds": 900
+                }
+              ]
+            }
+          ],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 1
+    },
+    "bindings": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "source_name": "DC",
+        "domain_dns": null,
+        "enabled": true,
+        "paused": false
+      }
+    ],
+    "requested": [
+      {
+        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "module_id": "sli.windows.ad-dc",
+        "revision": "1",
+        "channel": "Security",
+        "snapshot": false
+      }
+    ]
+  },
+  {
+    "name": "no_modules",
+    "agents": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "host_id": "00000000-0000-4000-8000-000000000002",
+        "instance_name": "synthetic",
+        "status": "active",
+        "last_seen": "2026-11-05T11:59:40+00:00",
+        "created_at": "2026-11-05T10:53:20+00:00",
+        "assigned_modules": [],
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60
+        },
+        "registration_host_name": "dc.example.test",
+        "policy_revision": 2,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "source_bindings": [],
+        "policy_applied_at": "2026-11-05T11:10:00+00:00",
+        "domain": "example.test",
+        "host_name": null,
+        "last_accepted_gap_at": null,
+        "last_packet_at": "2026-11-05T11:59:30+00:00"
+      }
+    ],
+    "streams": [],
+    "now": "2026-11-05T12:00:00+00:00",
+    "diagnostics_available": true,
+    "expected": {
+      "state": "partial",
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "host_id": "00000000-0000-4000-8000-000000000002",
+          "name": "dc.example.test · synthetic",
+          "domains": [
+            "example.test"
+          ],
+          "state": "waiting",
+          "connection": "online",
+          "completeness": {
+            "state": "not_assessed",
+            "last_accepted_gap_at": null
+          },
+          "last_seen": "2026-11-05T11:59:40+00:00",
+          "last_packet_at": "2026-11-05T11:59:30+00:00",
+          "modules": [],
+          "policy_revision": 2,
+          "applied_policy_revision": 2,
+          "href": "/app/agents?agent_id=00000000-0000-4000-8000-000000000001#agent-00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "checked_at_utc": "2026-11-05T12:00:00+00:00",
+      "completeness": {
+        "state": "not_assessed"
+      },
+      "active_agents": 1,
+      "current_agents": 0
+    },
+    "bindings": [],
+    "requested": []
+  }
+]

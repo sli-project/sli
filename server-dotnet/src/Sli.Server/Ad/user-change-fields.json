@@ -1,0 +1,124 @@
+{
+  "fields": [
+    [
+      "ou",
+      "Перемещение между OU",
+      "organization"
+    ],
+    [
+      "department",
+      "Подразделение",
+      "organization"
+    ],
+    [
+      "title",
+      "Должность",
+      "organization"
+    ],
+    [
+      "company",
+      "Компания",
+      "organization"
+    ],
+    [
+      "userPrincipalName",
+      "UPN",
+      "identity"
+    ],
+    [
+      "mail",
+      "Электронная почта",
+      "contact"
+    ],
+    [
+      "telephoneNumber",
+      "Рабочий телефон",
+      "contact"
+    ],
+    [
+      "mobile",
+      "Мобильный телефон",
+      "contact"
+    ],
+    [
+      "accountExpirationDate",
+      "Срок учётной записи",
+      "identity"
+    ],
+    [
+      "passwordExpiry",
+      "Дата истечения пароля",
+      "authentication"
+    ],
+    [
+      "passwordLastSet",
+      "PasswordLastSet",
+      "authentication"
+    ],
+    [
+      "passwordExpired",
+      "PasswordExpired",
+      "authentication"
+    ],
+    [
+      "passwordNeverExpires",
+      "PasswordNeverExpires",
+      "authentication"
+    ],
+    [
+      "passwordNotRequired",
+      "PasswordNotRequired",
+      "authentication"
+    ],
+    [
+      "cannotChangePassword",
+      "CannotChangePassword",
+      "authentication"
+    ],
+    [
+      "smartcardLogonRequired",
+      "SmartcardLogonRequired",
+      "security"
+    ],
+    [
+      "accountNotDelegated",
+      "AccountNotDelegated",
+      "security"
+    ],
+    [
+      "allowReversiblePasswordEncryption",
+      "AllowReversiblePasswordEncryption",
+      "security"
+    ],
+    [
+      "trustedForDelegation",
+      "TrustedForDelegation",
+      "security"
+    ],
+    [
+      "trustedToAuthForDelegation",
+      "TrustedToAuthForDelegation",
+      "security"
+    ],
+    [
+      "doesNotRequirePreAuth",
+      "DoesNotRequirePreAuth",
+      "security"
+    ],
+    [
+      "useDesKeyOnly",
+      "UseDESKeyOnly",
+      "security"
+    ]
+  ],
+  "groups": {
+    "identity": "Учётная запись",
+    "organization": "Организация",
+    "contact": "Контакты",
+    "groups": "Членство",
+    "authentication": "Пароль и вход",
+    "security": "Security-related",
+    "quality": "Качество источников",
+    "lifecycle": "Состав снимка"
+  }
+}

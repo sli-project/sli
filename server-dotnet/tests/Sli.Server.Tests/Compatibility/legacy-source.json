@@ -1,0 +1,5388 @@
+[
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4625,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4625,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Неуспешный вход",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4672,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4672,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Наблюдается сессия со специальными привилегиями",
+      "category": "authentication",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4724,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4724,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Попытка сброса пароля",
+      "category": "account_management",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует попытку сброса пароля другой учетной записи; успешное изменение не предполагается без сохраненного source-native результата."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 106,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 106,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача зарегистрирована",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 999,
+      "event_record_id": 9,
+      "channel": "Unknown",
+      "provider_name": "Unknown",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 999,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Unknown",
+      "provider_name": "Unknown",
+      "label": "неизвестный тип события",
+      "category": "event",
+      "severity": "info",
+      "tier": null,
+      "purpose_tier": "technical",
+      "base_risk": "unknown",
+      "final_risk": "unknown",
+      "final_security_severity": "unknown",
+      "confidence": "low",
+      "noise_class": "unknown",
+      "source_payload_state": null,
+      "assessment_confidence": "low",
+      "catalog_match": false,
+      "reasons": [
+        "catalog_rule_missing"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Оценка ИБ не определена",
+        "confidence": "низкая"
+      },
+      "summary": "Каталог не содержит проверенной интерпретации этого события."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 6273,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 6273,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "NPS отклонил запрос доступа",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "high",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "high",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "высокая"
+      },
+      "summary": "Отказ NPS важен для расследования ошибок удалённого доступа и серий неуспешной аутентификации, но один отказ не доказывает атаку."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 5136,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 5136,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Изменён атрибут объекта каталога",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4723,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4723,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Попытка смены собственного пароля",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует попытку операции с паролем; событие не доказывает изменение пароля без отдельного source-native результата."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4724,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4724,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Попытка сброса пароля",
+      "category": "account_management",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует попытку сброса пароля другой учетной записи; успешное изменение не предполагается без сохраненного source-native результата."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4729,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4729,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Удаление участника из глобальной группы",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное удаление члена из группы; полная история и текущий состав не предполагаются."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4733,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4733,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Удаление участника из локальной группы",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное удаление члена из локальной группы; полная история и текущий состав не предполагаются."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4756,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4756,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Добавление участника в универсальную группу",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное добавление члена в универсальную группу; критичность группы требует отдельного exact SID context."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4757,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4757,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Удаление участника из универсальной группы",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное удаление члена из универсальной группы; критичность группы требует отдельного exact SID context."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4103,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4103,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell module command observed",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует модульную PowerShell-активность на контроллере домена; это доказательное событие, а не process/session chain."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4104,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4104,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell script block observed",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует ScriptBlock PowerShell на контроллере домена; содержимое доступно только по отдельной sensitive capability."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 1102,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Eventlog",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 1102,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Eventlog",
+      "label": "Security log очищен",
+      "category": "policy_change",
+      "severity": "critical",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "critical",
+      "final_risk": "critical",
+      "final_security_severity": "critical",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4624,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4624,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Успешный вход",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4625,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4625,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Неуспешный вход",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4634,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4634,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Выход из системы",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует самостоятельное source-native наблюдение завершения входа."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4647,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4647,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Выход по инициативе пользователя",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует отдельное source-native наблюдение выхода пользователя."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4608,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4608,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Windows Security audit boot boundary",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "4608 фиксирует запуск LSASS и инициализацию Security auditing при старте Windows; это приватная source-native boot boundary для PowerShell origin."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4648,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4648,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Использованы явные учетные данные",
+      "category": "authentication",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "4648 фиксирует контекст использования явных учетных данных, но сам по себе не является признаком инцидента или высокого риска."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4672,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4672,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Наблюдается сессия со специальными привилегиями",
+      "category": "authentication",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4688,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4688,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Process created",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4689,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4689,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Process ended",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4697,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4697,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Service installed",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 7045,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 7045,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "label": "Service installed",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native service installation evidence; the event does not prove a causal process attachment."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4698,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4698,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Scheduled task created",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4699,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4699,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Scheduled task deleted",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4700,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4700,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Scheduled task enabled",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4701,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4701,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Scheduled task disabled",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4702,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4702,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Scheduled task updated",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Source-native administrative activity evidence; process attachment is allowed only through an exact native process bridge."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4719,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4719,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Изменена политика аудита",
+      "category": "policy_change",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Изменение политики аудита снижает доверие к полноте логов."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4720,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4720,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Создан пользователь",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Создание учетной записи меняет поверхность доступа."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4722,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4722,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Включена учетная запись",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Включение учетной записи может вернуть доступ старому или неиспользуемому объекту."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4725,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4725,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Учетная запись отключена",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник зафиксировал отключение учетной записи на контроллере домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4726,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4726,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Учетная запись удалена",
+      "category": "account_management",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Источник зафиксировал удаление учетной записи на контроллере домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4738,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4738,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Изменена учетная запись",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник зафиксировал изменение учетной записи на контроллере домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4767,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4767,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Учетная запись разблокирована",
+      "category": "account_management",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Источник зафиксировал разблокировку учетной записи на контроллере домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4781,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4781,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Переименована учетная запись",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Источник зафиксировал старое и новое имя одной учетной записи на контроллере домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4728,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4728,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Добавление участника в глобальную группу",
+      "category": "privilege_management",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное добавление члена в глобальную группу; Event ID не доказывает критичность группы."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4732,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4732,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Добавление участника в локальную группу",
+      "category": "privilege_management",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Источник фиксирует отдельное добавление члена в локальную группу; Event ID не доказывает критичность группы."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4740,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4740,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Блокировка учетной записи",
+      "category": "account_management",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Блокировка помогает искать источник неправильных попыток входа и возможный перебор."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4768,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4768,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Kerberos AS request",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Kerberos AS-события нужны для baseline и поиска ошибок аутентификации."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4769,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4769,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Kerberos service ticket",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "TGS-события помогают искать необычные сервисы, типы шифрования и Kerberoasting-паттерны."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4770,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4770,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Обновлен Kerberos service ticket",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует source-native обновление Kerberos service ticket."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4771,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4771,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Kerberos pre-authentication failed",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Ошибки Kerberos pre-auth могут быть частью password spray или проблем синхронизации."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4772,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4772,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Зарезервированный идентификатор проверки Kerberos ticket",
+      "category": "authentication",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Microsoft документирует Event ID 4772, но Windows его не генерирует; отказ AS-request фиксируется фактически генерируемым Event ID 4768."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4773,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4773,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Ошибка запроса Kerberos service ticket",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует source-native отказ запроса Kerberos service ticket."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4776,
+      "event_record_id": 9,
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4776,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Security",
+      "provider_name": "Microsoft-Windows-Security-Auditing",
+      "label": "Проверка учетных данных",
+      "category": "authentication",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует source-native credential validation observation."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 5504,
+      "event_record_id": 9,
+      "channel": "DNS Server",
+      "provider_name": "Microsoft-Windows-DNS-Server-Service",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 5504,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "DNS Server",
+      "provider_name": "Microsoft-Windows-DNS-Server-Service",
+      "label": "DNS Server событие 5504",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Массовые DNS-события могут быть нормальной нагрузкой, ошибкой конфигурации или аномалией."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4016,
+      "event_record_id": 9,
+      "channel": "DNS Server",
+      "provider_name": "Microsoft-Windows-DNS-Server-Service",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4016,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "DNS Server",
+      "provider_name": "Microsoft-Windows-DNS-Server-Service",
+      "label": "DNS: тайм-аут операции с Active Directory",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "DNS Server не завершил операцию службы каталогов вовремя. Повторяемость может указывать на проблему AD-интегрированной зоны, доступности каталога или репликации, но сама по себе не доказывает атаку."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 1162,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 1162,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS служебное событие 1162",
+      "category": "infrastructure",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие относится к Active Directory Domain Services и требует чтения message/XML для точной трактовки в конкретной версии ОС."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 3,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Security-Kerberos",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 3,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Security-Kerberos",
+      "label": "Kerberos системное событие 3",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Kerberos-события на DC важны для проверки ошибок аутентификации, доверия и времени."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 33,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "volsnap",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 33,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "volsnap",
+      "label": "VolSnap событие 33",
+      "category": "operations",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "События теневых копий важны для понимания состояния дисков, VSS и возможной потери старых снимков."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 101,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 101,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "label": "Ошибка Group Policy / Software Installation",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Ошибки Software Installation GPO могут нарушать применение политик и управляемого ПО."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 103,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 103,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "label": "Ошибка Group Policy / Software Installation",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Ошибки удаления или назначения приложения через GPO влияют на консистентность управления."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 108,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 108,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "label": "Ошибка применения Group Policy",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Ошибка применения GPO может означать, что часть настроек безопасности не применена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 139,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Time-Service",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 139,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Time-Service",
+      "label": "Windows Time Service событие 139",
+      "category": "infrastructure",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Время на DC критично для Kerberos; события службы времени требуют проверки при ошибках синхронизации."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 142,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Time-Service",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 142,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-Time-Service",
+      "label": "Windows Time Service событие 142",
+      "category": "infrastructure",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Время на DC критично для Kerberos; события службы времени требуют проверки при ошибках синхронизации."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 301,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 301,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Application Management Group Policy",
+      "label": "Application Management Group Policy событие 301",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие связано с обработкой установки ПО через Group Policy и может объяснять ошибки применения GPO."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 1112,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-GroupPolicy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 1112,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-GroupPolicy",
+      "label": "Group Policy требует повторной обработки",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Повторная обработка GPO нужна для завершения применения изменений."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 1502,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-GroupPolicy",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 1502,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-GroupPolicy",
+      "label": "Group Policy событие 1502",
+      "category": "policy_change",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие Group Policy на DC важно для оценки корректности применения политик безопасности."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 5721,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 5721,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "label": "NETLOGON событие 5721",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "NETLOGON-события на DC могут указывать на проблемы secure channel, доверия компьютеров или доменной аутентификации."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 5723,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 5723,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "label": "NETLOGON: ошибка аутентификации компьютера",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Неуспешная аутентификация компьютера может означать проблему доверительного канала или устаревший пароль учетной записи компьютера."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 5805,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 5805,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "NETLOGON",
+      "label": "NETLOGON: отказ session setup",
+      "category": "authentication",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Отказ session setup может указывать на проблему доверительного канала или некорректную учетную запись компьютера."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 7036,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 7036,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "label": "Изменение состояния службы",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Состояние служб на DC важно для доступности и расследования изменений."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 7040,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 7040,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Service Control Manager",
+      "label": "Изменен тип запуска службы",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Изменение типа запуска службы на DC может влиять на безопасность, доступность и устойчивость сервиса."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 14554,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-DfsSvc",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 14554,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Microsoft-Windows-DfsSvc",
+      "label": "DFS Service событие 14554",
+      "category": "infrastructure",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "DFS/DFSR и SYSVOL важны для доступности политик и скриптов входа в домене."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 100,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 100,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача запущена",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Запуск задач на DC нужен для контроля администрирования и возможной персистентности."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 102,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 102,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача завершена",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Завершение задачи помогает связать запуск и результат выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 106,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 106,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача зарегистрирована",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Регистрация задачи на DC может быть механизмом персистентности."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 107,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 107,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача вызвана триггером",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Триггер задачи показывает, почему выполнение стартовало именно в это время."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 108,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 108,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача запущена планировщиком",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает связать расписание, контекст и фактический запуск задачи."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 110,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 110,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача запущена пользователем или службой",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Ручной или сервисный запуск задачи важен для расследования административных действий."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 119,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 119,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача не запущена по условию или ограничению",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Сбой запуска задачи может нарушить администрирование, обновления или контрольные процедуры."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 129,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 129,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: процесс задачи создан",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Создание процесса задачей полезно для расследования action."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 140,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 140,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Изменено задание планировщика Windows",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "medium",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "medium",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "expected_role_missing:object",
+        "expected_role_missing:initiator"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "средняя"
+      },
+      "summary": "Изменение задания планировщика на контроллере домена требует проверки, если задание неизвестно, создано недавно, запускает нестандартный файл или изменено обычной пользовательской/административной учётной записью."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 140,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{\"TaskName\": \"\\\\Microsoft\\\\Windows\\\\fake-task\", \"UserContext\": \"SYSTEM\", \"Action\": \"C:\\\\Windows\\\\fake.exe\"}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 140,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Изменено задание планировщика Windows",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "low",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "low",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched",
+        "contextual_rule_matched:1"
+      ],
+      "evidence_fields": [
+        "UserName",
+        "UserContext",
+        "SubjectUserName",
+        "Author",
+        "TaskName",
+        "TaskNamePath"
+      ],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "низкая"
+      },
+      "summary": "Имя находится в пространстве Microsoft\\\\Windows и инициатор похож на SYSTEM/машинную учётную запись, но штатность требует проверки XML, action, автора и подписи запускаемого файла."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 200,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 200,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: action запущен",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Запуск action показывает фактическое выполнение команды или приложения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 201,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 201,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: action завершен",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Завершение action помогает проверить результат выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 301,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 301,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие выполнения 301",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Служебные события выполнения помогают восстановить цепочку запуска задачи."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 310,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 310,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 310",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 311,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 311,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 311",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 314,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 314,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 314",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 317,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 317,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 317",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 318,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 318,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 318",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 319,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 319,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие задачи 319",
+      "category": "service_task",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Событие помогает уточнить состояние задачи в цепочке выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 324,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 324,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 324",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 325,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 325,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 325",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 329,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 329,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 329",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 332,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 332,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 332",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 706,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 706,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 706",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 709,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 709,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: служебное событие 709",
+      "category": "service_task",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие планировщика требует TaskName/UserContext для оценки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 4100,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 4100,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell engine lifecycle / error event",
+      "category": "operations",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "PowerShell-события на DC важны для контроля административных действий, ошибок выполнения и возможной автоматизации атак."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 53504,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 53504,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell operational event 53504",
+      "category": "operations",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Служебное PowerShell-событие помогает видеть активность PowerShell на DC, но требует Message/XML для точной трактовки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 40961,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 40961,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell operational event 40961",
+      "category": "operations",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Служебное PowerShell-событие может отражать запуск или состояние PowerShell-компонента; контекст важнее самого Event ID."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 40962,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 40962,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-PowerShell/Operational",
+      "provider_name": "Microsoft-Windows-PowerShell",
+      "label": "PowerShell operational event 40962",
+      "category": "operations",
+      "severity": "low",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "low",
+      "final_risk": "low",
+      "final_security_severity": "low",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Низкий риск",
+        "confidence": "unknown"
+      },
+      "summary": "Служебное PowerShell-событие может отражать завершение или изменение состояния PowerShell-компонента; требуется контекст."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 1955,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 1955,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS operational event 1955",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие AD DS требует проверки текста, так как может относиться к репликации, объектам каталога или внутренним операциям DC."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 700,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 700,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "label": "NTDS ISAM service event 700",
+      "category": "infrastructure",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие NTDS ISAM связано с состоянием базы Active Directory и обычно требует анализа текста события."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 701,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 701,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "label": "NTDS ISAM service event 701",
+      "category": "infrastructure",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие NTDS ISAM связано с состоянием базы Active Directory; критичность зависит от текста и кода ошибки."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 2974,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 2974,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS operational event 2974",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие AD DS может указывать на изменение состояния службы каталога или объекта; без Message/XML нельзя надежно оценить риск."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 2041,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 2041,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS operational event 2041",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие AD DS требует контекста репликации/каталога и может быть важно при повторяемости."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 2887,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 2887,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS LDAP bind warning",
+      "category": "infrastructure",
+      "severity": "high",
+      "tier": "critical",
+      "purpose_tier": "critical",
+      "base_risk": "high",
+      "final_risk": "high",
+      "final_security_severity": "high",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Высокий риск",
+        "confidence": "unknown"
+      },
+      "summary": "События семейства 288x часто связаны с LDAP bind без подписи или простыми bind и важны для оценки защищенности LDAP на DC."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 3040,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 3040,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS LDAP/channel binding diagnostic event",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие относится к диагностике LDAP/AD DS; для оценки риска нужны клиент, тип bind и текст события."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 3041,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 3041,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "Microsoft-Windows-ActiveDirectory_DomainService",
+      "label": "AD DS LDAP/channel binding diagnostic event",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Событие относится к диагностике LDAP/AD DS; критичность зависит от клиента, типа bind и политики домена."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 2001,
+      "event_record_id": 9,
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 2001,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Directory Service",
+      "provider_name": "NTDS ISAM",
+      "label": "NTDS ISAM service event 2001",
+      "category": "infrastructure",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие NTDS ISAM требует текста сообщения для оценки состояния базы каталога."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 6013,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "EventLog",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 6013,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "EventLog",
+      "label": "System uptime event",
+      "category": "operations",
+      "severity": "info",
+      "tier": "technical",
+      "purpose_tier": "technical",
+      "base_risk": "info",
+      "final_risk": "info",
+      "final_security_severity": "info",
+      "confidence": "unknown",
+      "noise_class": "context",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Информация",
+        "confidence": "unknown"
+      },
+      "summary": "Событие фиксирует время работы системы и полезно для понимания перезагрузок и окон доступности DC."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 36887,
+      "event_record_id": 9,
+      "channel": "System",
+      "provider_name": "Schannel",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 36887,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "System",
+      "provider_name": "Schannel",
+      "label": "Schannel TLS fatal alert",
+      "category": "infrastructure",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Schannel fatal alert может указывать на проблемы TLS, несовместимые протоколы, сертификаты или сканирование."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 101,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 101,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача не запущена",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Сбой запуска задачи на DC может нарушить обслуживание или указывать на изменение учетных данных/условий выполнения."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 118,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 118,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача пропущена или не выполнена по условию",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Пропуск задачи может быть нормальным условием или признаком сбоя расписания/доступа."
+    }
+  },
+  {
+    "row": {
+      "id": 7,
+      "event_id": 142,
+      "event_record_id": 9,
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_local": null,
+      "server": "dc-test",
+      "event_data_json": "{}",
+      "subject_user_name": "fake-user",
+      "ip_address": "192.0.2.1"
+    },
+    "expected": {
+      "event_db_id": 7,
+      "event_id": 142,
+      "event_record_id": 9,
+      "time_created_utc": "2026-11-01T00:00:00Z",
+      "time_created_utc_display": "01.11.2026 00:00:00 UTC",
+      "time_created_local_display": "—",
+      "server": "dc-test",
+      "channel": "Microsoft-Windows-TaskScheduler/Operational",
+      "provider_name": "Microsoft-Windows-TaskScheduler",
+      "label": "Task Scheduler: задача отключена или изменено состояние",
+      "category": "service_task",
+      "severity": "medium",
+      "tier": "important",
+      "purpose_tier": "important",
+      "base_risk": "medium",
+      "final_risk": "medium",
+      "final_security_severity": "medium",
+      "confidence": "unknown",
+      "noise_class": "signal",
+      "source_payload_state": null,
+      "assessment_confidence": "unknown",
+      "catalog_match": true,
+      "reasons": [
+        "catalog_rule_matched"
+      ],
+      "evidence_fields": [],
+      "display_labels": {
+        "risk": "Требует проверки",
+        "confidence": "unknown"
+      },
+      "summary": "Изменение состояния задачи на DC может влиять на обслуживание или скрывать отключение важной автоматизации."
+    }
+  }
+]

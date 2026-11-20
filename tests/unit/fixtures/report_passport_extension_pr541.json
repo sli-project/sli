@@ -1,0 +1,111 @@
+{
+  "commit": "0f3e0603967fffa612d82b917d4c7d614b1709e3",
+  "defaults": {
+    "qualification": {
+      "status": "not_applicable",
+      "reason": "No automatic control qualification is asserted by this report."
+    },
+    "risk": {
+      "status": "not_applicable",
+      "reason": "No new risk score or organization risk policy is asserted by this report."
+    },
+    "confidence": {
+      "status": "not_applicable",
+      "reason": "Source quality is reported separately; no confidence score is inferred."
+    }
+  },
+  "reports": {
+    "ad.infrastructure": {
+      "product_archetype": "inventory-status",
+      "deterministic_policy": "Retain report_rule_v1 and collector diagnostics separately; passed, failed, not_evaluated and policy_not_defined are distinct.",
+      "result_limits": "Control rows, history and findings have separate bounds and source timestamps; report rules are not organization compliance.",
+      "fallback": "Missing control values remain not_evaluated; absent organization policy remains policy_not_defined; partial snapshots cannot pass controls.",
+      "acceptance_lanes": {
+        "product_user": "Infrastructure parameters and stated conditions support manual AD review.",
+        "authorization": "ad.state grant and authorized domain/field scope constrain controls, findings and history.",
+        "deterministic_interpretation": "Identical control inputs retain report_rule_v1 qualification; undefined policy never becomes passed.",
+        "api_view_model": "Control rows and supplemental collections preserve conditions, actual values and authority.",
+        "ui_honest_states": "Missing values, partial snapshots, stale observations and unavailable history remain explicit.",
+        "evidence_audit": "Each control retains source observation, rule authority and exact evidence context."
+      },
+      "qualification": {
+        "status": "measured",
+        "definition": "Existing report_rule_v1 control conditions and collector diagnostics; organization policy may remain undefined."
+      }
+    },
+    "ad.users.v2": {
+      "product_archetype": "inventory-status",
+      "deterministic_policy": "Use observed AD account state, membership and activity reasons; lifecycle and accepted-risk records stay separate from observations.",
+      "result_limits": "Account pages, changes period and source sections have independent bounds; missing activity is unknown.",
+      "fallback": "Missing attributes and incomplete snapshots remain quality gaps; absence of accounts does not establish a complete directory.",
+      "acceptance_lanes": {
+        "product_user": "Account filters and reasons support a manual account review.",
+        "authorization": "ad.users.v2 grant, field categories, domain scope and independent export grant constrain all views.",
+        "deterministic_interpretation": "Observed state, privileged membership, activity reasons and risk decisions are not conflated.",
+        "api_view_model": "User rows and change collections preserve the existing filters, limits and row identities.",
+        "ui_honest_states": "Partial sections, stale snapshots, unknown activity and unavailable history stay explicit.",
+        "evidence_audit": "Account identity, relation observations and lifecycle author/time remain attributable."
+      }
+    },
+    "ad.computers.v6": {
+      "product_archetype": "inventory-status",
+      "deterministic_policy": "Compute only existing server-defined attention reasons from observed computer attributes and activity.",
+      "result_limits": "Computer pages and logon detail are bounded separately; an incomplete snapshot is not an asset census.",
+      "fallback": "Missing activity, address and snapshot sections remain unknown; never infer absent assets from missing rows.",
+      "acceptance_lanes": {
+        "product_user": "Computer type, OS, OU and attention filters support asset review.",
+        "authorization": "ad.computers.v6 fields and domain scope constrain rows, detail and independently granted export.",
+        "deterministic_interpretation": "Identical observed attributes retain the same existing attention reasons.",
+        "api_view_model": "Rows, detail cursors and filter options preserve the v6 asset reader contract.",
+        "ui_honest_states": "Missing attributes, partial snapshots, stale and unavailable inventory stay distinct.",
+        "evidence_audit": "Computer entity, snapshot identity and reason provenance remain linked."
+      }
+    },
+    "ad.computer-logons": {
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Present retained 4624/4634 observations against current AD inventory; logons do not establish work duration.",
+      "result_limits": "Server-resolved report domain and declared period/page bounds apply; inventory and observation coverage are independent.",
+      "fallback": "Keep empty_unverified, not_collected and partial observation coverage; inventory or observation reader failure is unavailable.",
+      "acceptance_lanes": {
+        "product_user": "Observed logons answer the selected computer/window question without estimating work duration.",
+        "authorization": "computer_logon_observation grants resolve to the configured report domain and constrain detail.",
+        "deterministic_interpretation": "Native observations and current inventory matching retain their separate meaning.",
+        "api_view_model": "Computer pages and observation detail preserve reader states, cursors and UTC window.",
+        "ui_honest_states": "Empty_unverified, partial, not_collected and unavailable observations remain honest states.",
+        "evidence_audit": "Logon event identity, source channel and inventory matching provenance remain available."
+      }
+    },
+    "ad.new-logon-pairs": {
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Compare first observed user/computer pairs with the retained baseline; novelty requires covered baseline and complete identity context.",
+      "result_limits": "Baseline days and current period are bounded by MAX_DAYS; history read caps and fact validation may invalidate novelty.",
+      "fallback": "Uncovered baseline, truncated history, incomplete facts or AD identity suppress confirmed novelty and expose limitations.",
+      "acceptance_lanes": {
+        "product_user": "First-observed pairs answer the baseline comparison question.",
+        "authorization": "Logon field grant and server-resolved domain also constrain baseline and entity pivots.",
+        "deterministic_interpretation": "Covered baseline and identity matching are necessary for confirmed novelty.",
+        "api_view_model": "Sealed cursor preserves baseline, current window and first_seen/id order.",
+        "ui_honest_states": "No baseline, truncated history and incomplete identities do not claim a new pair.",
+        "evidence_audit": "Pair identity and first observed event retain current AD matching provenance."
+      }
+    },
+    "ad.gpo.v2": {
+      "product_archetype": "investigation-evidence",
+      "risk": {
+        "status": "measured",
+        "definition": "Existing broad_edit, non_admin_group_edit, direct_principal_edit and unknown_trustee_edit review rules; no organization risk score."
+      },
+      "deterministic_policy": "Compare retained GPO snapshots and bounded membership/DACL paths; effective rights and review-risk rules do not prove client application.",
+      "result_limits": "Snapshot/history pages and graph traversal are bounded; freshness threshold is 36 hours; WMI and SYSVOL limits remain explicit.",
+      "fallback": "Missing prior snapshot disables comparison; incomplete ACL or membership paths remain unknown; stale snapshot stays stale.",
+      "acceptance_lanes": {
+        "product_user": "Links, settings, permissions and changes support a manual GPO review.",
+        "authorization": "ad.gpo.v2 grant and identity, technical, security and privilege scope constrain all views and export.",
+        "deterministic_interpretation": "Snapshot comparison and DACL precedence preserve unknown paths and existing review-risk rules.",
+        "api_view_model": "Collections and export preserve declared row caps, graph truncation and source times.",
+        "ui_honest_states": "No previous snapshot, partial ACL, stale and unavailable history remain explicit.",
+        "evidence_audit": "GPO identity, source ACE and membership paths link to the retained snapshot."
+      }
+    }
+  }
+}

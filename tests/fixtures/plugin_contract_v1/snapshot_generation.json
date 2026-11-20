@@ -1,0 +1,39 @@
+{
+  "fixture_id": "snapshot-generation",
+  "archetype": "snapshot_generation",
+  "runtime_enabled": false,
+  "package": {
+    "plugin_id": "sli.fixture.snapshot",
+    "plugin_version": "1.0.0-fixture",
+    "delivery": "bundled_reviewed",
+    "handler_id": "snapshot-fixture-handler"
+  },
+  "snapshot": {
+    "generation_id": "generation-fixture-1",
+    "expected_pages": [1, 2, 3],
+    "received_pages": [1, 2, 3],
+    "manifest_verified": true,
+    "atomic_publish": true
+  },
+  "states": {
+    "package_lifecycle": "registered",
+    "desired_activation": "disabled",
+    "observed_health": "ready",
+    "component_runtime": "stopped",
+    "migration_state": "not_required",
+    "source_state": "fixture_only",
+    "queue_state": "empty",
+    "dataset_state": "complete"
+  },
+  "storage": {
+    "raw_owner": "core",
+    "canonical_evidence_owner": "core",
+    "derived_backend": "postgresql"
+  },
+  "detach_reader": {
+    "kind": "core_immutable_snapshot",
+    "source_contact": false,
+    "jobs_enabled": false,
+    "write_rights": false
+  }
+}

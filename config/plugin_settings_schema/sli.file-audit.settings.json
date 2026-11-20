@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.file-audit",
+  "name": "plugins.sli.file-audit.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": [
+      "security.working_time"
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "file-audit.out-of-hours",
+      "name": "plugins.sli.file-audit.rules.file-audit.out-of-hours.name",
+      "settings": [],
+      "core_settings": [
+        "security.working_time"
+      ]
+    },
+    {
+      "rule_id": "file-audit.acl-review",
+      "name": "plugins.sli.file-audit.rules.file-audit.acl-review.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.broad-write",
+      "name": "plugins.sli.file-audit.rules.file-audit.broad-write.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.direct-user-rights",
+      "name": "plugins.sli.file-audit.rules.file-audit.direct-user-rights.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.disabled-account-rights",
+      "name": "plugins.sli.file-audit.rules.file-audit.disabled-account-rights.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.mass-read",
+      "name": "plugins.sli.file-audit.rules.file-audit.mass-read.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.mass-write",
+      "name": "plugins.sli.file-audit.rules.file-audit.mass-write.name",
+      "settings": [],
+      "core_settings": []
+    },
+    {
+      "rule_id": "file-audit.mass-delete",
+      "name": "plugins.sli.file-audit.rules.file-audit.mass-delete.name",
+      "settings": [],
+      "core_settings": []
+    }
+  ],
+  "permissions": [
+    "file-audit.access-denials",
+    "file-audit.actions",
+    "file-audit.audit-state",
+    "file-audit.audit.manage",
+    "file-audit.export",
+    "file-audit.mass-operations",
+    "file-audit.out-of-hours",
+    "file-audit.overview",
+    "file-audit.permission-changes",
+    "file-audit.permissions",
+    "file-audit.view"
+  ],
+  "migration_directory": "config/postgres_migrations"
+}

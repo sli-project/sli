@@ -1,0 +1,235 @@
+[
+  {
+    "input": {
+      "name": "operator",
+      "url": "/reports/system-health.html"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "admin",
+      "url": "/reports/system-health.html",
+      "role": "admin"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "viewer_with_grant",
+      "url": "/reports/system-health.html",
+      "role": "viewer"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "unknown_role",
+      "url": "/reports/system-health.html",
+      "role": "unknown"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "anonymous",
+      "url": "/reports/system-health.html",
+      "authenticated": false
+    },
+    "expected": {
+      "status": 302,
+      "location": "/login?next=%2Freports%2Fsystem-health.html",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "anonymous_query",
+      "url": "/reports/system-health.html?q=a%26b&legacy=1",
+      "authenticated": false
+    },
+    "expected": {
+      "status": 302,
+      "location": "/login?next=%2Freports%2Fsystem-health.html%3Fq%3Da%2526b%26legacy%3D1",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "missing_capability",
+      "url": "/reports/system-health.html?limit=bad",
+      "grant": "missing"
+    },
+    "expected": {
+      "status": 403,
+      "location": null,
+      "json": {
+        "error": "insufficient_capability",
+        "required_capability": "operations.view"
+      }
+    }
+  },
+  {
+    "input": {
+      "name": "scoped_capability",
+      "url": "/reports/system-health.html",
+      "grant": "scoped"
+    },
+    "expected": {
+      "status": 403,
+      "location": null,
+      "json": {
+        "error": "resource_context_required",
+        "required_capability": "operations.view"
+      }
+    }
+  },
+  {
+    "input": {
+      "name": "explicit_deny",
+      "url": "/reports/system-health.html",
+      "grant": "deny"
+    },
+    "expected": {
+      "status": 403,
+      "location": null,
+      "json": {
+        "error": "explicit_deny",
+        "required_capability": "operations.view"
+      }
+    }
+  },
+  {
+    "input": {
+      "name": "legacy_is_not_a_bypass",
+      "url": "/reports/system-health.html?legacy=1&force=true&limit=bad"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "invalid_inputs_ignored",
+      "url": "/reports/system-health.html?timezone=No/Such&time_from=bad&limit=bad"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations?time_from=bad",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "empty_values",
+      "url": "/reports/system-health.html?q=&scope=%20&server="
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "first_nonempty_value",
+      "url": "/reports/system-health.html?q=&q=first&q=second&server=one&server=two"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations?q=first&server=one",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "first_whitespace_value",
+      "url": "/reports/system-health.html?q=%20&q=second"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "escaped_query",
+      "url": "/reports/system-health.html?q=%3Cscript%3E%26%22%27&server=dc.example.test&next=https://example.test"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations?q=%3Cscript%3E%26%22%27&server=dc.example.test",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "unicode_query",
+      "url": "/reports/system-health.html?q=%D1%82%D0%B5%D1%81%D1%82+%2B&scope=all"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations?q=%D1%82%D0%B5%D1%81%D1%82+%2B&scope=all",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "allowlisted_query",
+      "url": "/reports/system-health.html?event_id=4625&channel=Security&risk=high&status=open&result_class=ok&risk_class=high&event_db_id=7&entity_id=8&time_from=bad&time_to=bad"
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations?event_id=4625&channel=Security&risk=high&status=open&result_class=ok&risk_class=high&event_db_id=7&entity_id=8&time_from=bad&time_to=bad",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "auth_disabled",
+      "url": "/reports/system-health.html",
+      "auth_required": false,
+      "authenticated": false
+    },
+    "expected": {
+      "status": 302,
+      "location": "/app/operations",
+      "json": null
+    }
+  },
+  {
+    "input": {
+      "name": "auth_disabled_capability_denied",
+      "url": "/reports/system-health.html",
+      "auth_required": false,
+      "grant": "missing"
+    },
+    "expected": {
+      "status": 403,
+      "location": null,
+      "json": {
+        "error": "insufficient_capability",
+        "required_capability": "operations.view"
+      }
+    }
+  }
+]

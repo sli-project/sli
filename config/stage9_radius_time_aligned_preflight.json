@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "plan_id": "stage9-radius-time-aligned-preflight-v1",
+  "status": "owner_authorized",
+  "purpose": "repeat the bounded RADIUS correlation proof on one accounting-derived UTC interval instead of unrelated newest-record samples",
+  "authorization_basis": "owner explicitly allowed harmless bounded read-only checks and instructed Codex to continue Stage 9",
+  "targets_source": "config/stage9_radius_targets.json",
+  "expected_windows_account": "EXAMPLE\\operator",
+  "limits": {
+    "target_count": 1,
+    "event_ids": [
+      6272,
+      6273
+    ],
+    "nps_events": 500,
+    "accounting_files": 1,
+    "accounting_candidates": 20,
+    "accounting_records": 400,
+    "accounting_bytes": 262144,
+    "alignment_padding_seconds": 600,
+    "maximum_alignment_span_seconds": 10800,
+    "source_timezone_queries": 1,
+    "overall_timeout_seconds": 75
+  },
+  "allowed_in_memory_fields": [
+    "nps_event_time_utc",
+    "nps_account_session_identifier",
+    "nps_nas_identity",
+    "nps_subject_sid",
+    "accounting_record_date",
+    "accounting_record_time",
+    "accounting_event_timestamp",
+    "accounting_account_session_id",
+    "accounting_nas_identity"
+  ],
+  "allowed_persisted_observations": [
+    "accounting_sample_counts",
+    "alignment_window_quality",
+    "nps_event_counts_by_id",
+    "cap_and_truncation_flags",
+    "join_quality_counts",
+    "exact_principal_bridge_counts",
+    "joined_time_delta_bucket_counts",
+    "classification"
+  ],
+  "prohibited_persistence": [
+    "event_xml",
+    "event_payload",
+    "event_timestamp_value",
+    "accounting_raw_line",
+    "accounting_timestamp_value",
+    "account_session_identifier",
+    "nas_identity",
+    "subject_sid",
+    "user_name",
+    "distinguished_name",
+    "ip_address",
+    "file_name",
+    "file_path",
+    "radius_client",
+    "radius_secret"
+  ],
+  "prohibited_actions": [
+    "audit_policy_change",
+    "nps_configuration_change",
+    "radius_accounting_enable",
+    "service_change",
+    "scheduled_task_change",
+    "firewall_change",
+    "postgresql_write",
+    "clickhouse_write",
+    "event_import",
+    "cursor_update",
+    "migration",
+    "source_instance_creation",
+    "descriptor_change",
+    "normalizer_change",
+    "worker_activation",
+    "autostart"
+  ],
+  "evaluation_contract": {
+    "alignment_basis": "accounting_record_date_time_plus_explicit_source_utc_offset",
+    "correlation_candidate_key": "account_session_id_plus_nas_identity",
+    "principal_bridge": "exact_subject_sid_only_from_one_to_one_matched_nps_event",
+    "username_is_not_exact_identity": true,
+    "event_timestamp_preferred": true,
+    "fallback_timestamp_basis": "record_date_plus_record_time_plus_explicit_source_timezone",
+    "truncated_or_ambiguous_result": "correlation_not_proven",
+    "success_result": "ready_for_runtime_adapter_design"
+  },
+  "next_action": "one_bounded_read_only_time_aligned_source_contact_then_owner_review"
+}

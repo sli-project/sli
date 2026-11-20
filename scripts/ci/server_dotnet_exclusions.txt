@@ -1,0 +1,72 @@
+# Existing tests that require a separately provisioned synthetic database binding.
+# Keep tests that start their own fixtures in normal discovery.
+class Sli.Server.Tests.Access.AccessAdministrationTests
+class Sli.Server.Tests.Access.AccessReadTests
+class Sli.Server.Tests.Access.AccessRequestInputTests
+class Sli.Server.Tests.Access.AccessRequestTests
+class Sli.Server.Tests.Access.AccessRuntimeTests
+class Sli.Server.Tests.Access.PrincipalAuthenticatorTests
+class Sli.Server.Tests.Access.ReportCatalogDatabaseTests
+class Sli.Server.Tests.AgentGroupDatabaseTests
+class Sli.Server.Tests.Agents.AgentAdDcDispatcherDatabaseTests
+class Sli.Server.Tests.Agents.AgentClientControlDatabaseTests
+class Sli.Server.Tests.Agents.AgentControlTests
+class Sli.Server.Tests.Agents.AgentFileAuditDatabaseTests
+class Sli.Server.Tests.Agents.AgentLifecycleTests
+class Sli.Server.Tests.Agents.AgentModuleAssignmentDatabaseTests
+class Sli.Server.Tests.Agents.AgentNpsDatabaseTests
+class Sli.Server.Tests.Agents.AgentPacketDatabaseTests
+class Sli.Server.Tests.Agents.AgentPacketFixRoundTests
+class Sli.Server.Tests.Agents.AgentRadiusDatabaseTests
+class Sli.Server.Tests.Agents.AgentRecoveryDatabaseTests
+class Sli.Server.Tests.Agents.AgentSnapshotDispatcherDatabaseTests
+class Sli.Server.Tests.Agents.AgentUpdateAdministrationDatabaseTests
+class Sli.Server.Tests.Agents.AgentUpdateDatabaseTests
+class Sli.Server.Tests.Agents.AgentWorkstationDatabaseTests
+class Sli.Server.Tests.Agents.FileAuditWorkerMixedDatabaseTests
+class Sli.Server.Tests.Agents.GpoPublicationDatabaseTests
+class Sli.Server.Tests.Agents.GpoPublicationR1DatabaseTests
+class Sli.Server.Tests.Agents.GpoRetainedReadOnlyTests
+class Sli.Server.Tests.Agents.GpoWorkerHostDatabaseTests
+class Sli.Server.Tests.Agents.M4.AgentImportBorrowedSessionDatabaseTests
+class Sli.Server.Tests.Agents.M4.AgentImportWorkerDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationAttestation089DatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationInboxDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationLogonsDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationProcessDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationProtectionDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationServiceDefenderDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationTaskGroupDatabaseTests
+class Sli.Server.Tests.Agents.M4.WorkstationUsbDatabaseTests
+class Sli.Server.Tests.Agents.RadiusRolePreflightTests
+class Sli.Server.Tests.Agents.SnapshotIngressDatabaseTests
+class Sli.Server.Tests.Auth.AdmissionDatabaseTests
+class Sli.Server.Tests.Auth.ApiKeyLifecycleTests
+class Sli.Server.Tests.Auth.ExactEventAuthorizationTests
+class Sli.Server.Tests.Auth.ExactEventLegacyScopeTests
+class Sli.Server.Tests.Auth.InitialOwnerDatabaseTests
+class Sli.Server.Tests.Auth.LoginLifecycleTests
+class Sli.Server.Tests.Auth.OwnerRecoveryDatabaseTests
+class Sli.Server.Tests.Auth.OwnerRecoveryHttpTests
+class Sli.Server.Tests.Auth.ReportKeyLifecycleTests
+class Sli.Server.Tests.Auth.ReportKeyProgramTests
+class Sli.Server.Tests.Auth.ReportKeyRequestGateTests
+class Sli.Server.Tests.Auth.UserAdministrationResponseTests
+class Sli.Server.Tests.Auth.UserAdministrationTests
+class Sli.Server.Tests.Entities.EntityStateWorker132DatabaseTests
+class Sli.Server.Tests.Entities.EntityStateWorkerDatabaseTests
+class Sli.Server.Tests.Storage.DirectWorkerDispatchDatabaseTests
+class Sli.Server.Tests.Storage.DirectWorkerProcessDatabaseTests
+class Sli.Server.Tests.Storage.DirectWorkerQuarantineDatabaseTests
+class Sli.Server.Tests.Storage.DirectWorkerStateDatabaseTests
+
+# These classes also have independent tests. Exclude only the borrowed-database cases.
+method Sli.Server.Tests.Agents.FileAuditConsumerDatabaseTests.WorkstationWritesRuleAndServerRemainsPendingInOneRollbackTransaction
+method Sli.Server.Tests.Agents.AgentEnrollmentTests.Authentication_and_renewal_share_transaction_and_rollback
+method Sli.Server.Tests.Agents.AgentEnrollmentTests.Concurrent_enrollment_consumes_token_exactly_once
+method Sli.Server.Tests.Agents.AgentEnrollmentTests.Enrollment_consumes_token_and_installs_default_policy_in_transaction
+method Sli.Server.Tests.Agents.AgentEnrollmentTests.Group_approved_enrollment_enforces_scope_and_copies_template
+method Sli.Server.Tests.Agents.AgentEnrollmentTests.Issue_audit_failure_rolls_back_token_certificate_policy_and_agent
+
+# The Beta menu walk workflow provides the built UI and results destination.
+class Sli.Server.Tests.Workspace.BetaMenuWalkTests

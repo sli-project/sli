@@ -1,0 +1,206 @@
+{
+  "state": "partial",
+  "domains": [
+    {
+      "domain_id": 4,
+      "state": "partial",
+      "current": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "partial",
+        "snapshot_id": 41,
+        "source_observed_at_utc": null,
+        "collection_status": "partial",
+        "source_state": "partial",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "previous": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "available",
+        "snapshot_id": 40,
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "items": [],
+      "change_count": 0,
+      "deletion_claim_allowed": false
+    },
+    {
+      "domain_id": 2,
+      "state": "not_collected",
+      "reason": "incompatible_snapshot_pair_not_compared",
+      "current": {
+        "snapshot_id": 21,
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "previous": null,
+      "items": [],
+      "change_count": 0,
+      "deletion_claim_allowed": false
+    },
+    {
+      "domain_id": 1,
+      "state": "available",
+      "current": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "available",
+        "snapshot_id": 11,
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "previous": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "available",
+        "snapshot_id": 10,
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "items": [
+        {
+          "row_id": "enabled_changed:1",
+          "entity_id": 1,
+          "display_name": "1",
+          "change_type": "enabled_changed",
+          "before": "False",
+          "after": "True",
+          "object": {
+            "object_guid": "synthetic-1",
+            "entity_id": 1,
+            "enabled": true
+          },
+          "qualification": "Зафиксировано различие двух совместимых снимков; причина изменения не устанавливается автоматически.",
+          "limitation": "Снимки показывают два наблюдаемых состояния и не доказывают, кто, почему или вследствие чего внёс изменение.",
+          "next_action": "Проверить объект и связанные evidence; решение принимает человек.",
+          "domain_id": 1
+        }
+      ],
+      "change_count": 1,
+      "deletion_claim_allowed": false
+    },
+    {
+      "domain_id": 3,
+      "state": "not_collected",
+      "reason": "previous_compatible_snapshot_not_collected",
+      "current": {
+        "snapshot_id": 30,
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "previous": null,
+      "items": [],
+      "change_count": 0,
+      "deletion_claim_allowed": false
+    },
+    {
+      "domain_id": 5,
+      "state": "not_collected",
+      "reason": "snapshot_history_not_collected",
+      "current": null,
+      "previous": null,
+      "items": [],
+      "change_count": 0,
+      "deletion_claim_allowed": false
+    },
+    {
+      "domain_id": 1,
+      "state": "available",
+      "current": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "available",
+        "snapshot_id": 11,
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "previous": {
+        "captured_at_utc": "2026-01-01T00:00:00Z",
+        "state": "available",
+        "snapshot_id": 10,
+        "source_observed_at_utc": null,
+        "collection_status": "available",
+        "source_state": "available",
+        "object_count": 1,
+        "query_dc": null
+      },
+      "items": [
+        {
+          "row_id": "enabled_changed:1",
+          "entity_id": 1,
+          "display_name": "1",
+          "change_type": "enabled_changed",
+          "before": "False",
+          "after": "True",
+          "object": {
+            "object_guid": "synthetic-1",
+            "entity_id": 1,
+            "enabled": true
+          },
+          "qualification": "Зафиксировано различие двух совместимых снимков; причина изменения не устанавливается автоматически.",
+          "limitation": "Снимки показывают два наблюдаемых состояния и не доказывают, кто, почему или вследствие чего внёс изменение.",
+          "next_action": "Проверить объект и связанные evidence; решение принимает человек.",
+          "domain_id": 1
+        }
+      ],
+      "change_count": 1,
+      "deletion_claim_allowed": false
+    }
+  ],
+  "items": [
+    {
+      "row_id": "enabled_changed:1",
+      "entity_id": 1,
+      "display_name": "1",
+      "change_type": "enabled_changed",
+      "before": "False",
+      "after": "True",
+      "object": {
+        "object_guid": "synthetic-1",
+        "entity_id": 1,
+        "enabled": true
+      },
+      "qualification": "Зафиксировано различие двух совместимых снимков; причина изменения не устанавливается автоматически.",
+      "limitation": "Снимки показывают два наблюдаемых состояния и не доказывают, кто, почему или вследствие чего внёс изменение.",
+      "next_action": "Проверить объект и связанные evidence; решение принимает человек.",
+      "domain_id": 1
+    },
+    {
+      "row_id": "enabled_changed:1",
+      "entity_id": 1,
+      "display_name": "1",
+      "change_type": "enabled_changed",
+      "before": "False",
+      "after": "True",
+      "object": {
+        "object_guid": "synthetic-1",
+        "entity_id": 1,
+        "enabled": true
+      },
+      "qualification": "Зафиксировано различие двух совместимых снимков; причина изменения не устанавливается автоматически.",
+      "limitation": "Снимки показывают два наблюдаемых состояния и не доказывают, кто, почему или вследствие чего внёс изменение.",
+      "next_action": "Проверить объект и связанные evidence; решение принимает человек.",
+      "domain_id": 1
+    }
+  ],
+  "change_count": 2,
+  "deletion_claim_allowed": false
+}

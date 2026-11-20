@@ -1,0 +1,1006 @@
+{
+  "workstations.overview": {
+    "key": "workstations.overview",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/workstations",
+    "title": "Рабочие станции",
+    "description": "",
+    "archetype": "journal",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Workstation security reviewer",
+      "question": "Which authorized workstations have observed findings, and what evidence should be reviewed?",
+      "action": "Open the scoped station and inspect its observed findings and source evidence.",
+      "scope": "Current projected inventory within the atomic overview grant and current workstation read scope.",
+      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "sources": [
+        "Canonical: workstation inventory, summary and active finding projections.",
+        "Supplemental: exact retained PostgreSQL observations and protection snapshots referenced by findings."
+      ],
+      "freshness_expectation": "Projection and source timestamps describe observed freshness; evaluator completeness is unproven.",
+      "rights": "workstations.overview atomic field grant and workstation read capability, including scoped denies.",
+      "field_classes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "coverage": "Authorized projected station identities; distinct observed findings do not establish evaluated coverage.",
+      "completeness": "Not proven: missing or zero observed findings never establish a passed check.",
+      "denominator": "Distinct authorized projected stations after search, domain and OU filters.",
+      "retention": "This view reads retained PostgreSQL evidence only; missing evidence is unavailable, with no history substitution.",
+      "provenance": "Station and finding IDs, rule revision and exact server-owned source references and hashes.",
+      "primary_archetype": "list",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Read projected station identities and active findings; missing evaluations remain unknown.",
+      "result_limits": "50 stations per page, 100 findings per card and 100 source references per finding; five-second reads.",
+      "fallback": "Source read errors fail visibly; missing exact retained evidence is not collected. No decisions or source collection.",
+      "acceptance_lanes": {
+        "product_user": "Open an authorized projected station, its observed findings and retained source, then return to the list.",
+        "authorization": "Atomic overview grant and current scoped read admission precede counts, pages, cards and evidence.",
+        "deterministic_interpretation": "Distinct observed findings are lower bounds; missing evaluations remain unknown.",
+        "api_view_model": "Registered report data/detail routes use bounded keyset pages and exact source references.",
+        "ui_honest_states": "Denied, partial, unknown and unavailable source states never become safe zero.",
+        "evidence_audit": "Exact PostgreSQL source hashes are checked; no mutation or audit guarantee is asserted."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "not_applicable",
+        "reason": "No new risk score or organization risk policy is asserted by this report."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 90
+      },
+      {
+        "key": "domain",
+        "label": "Домен",
+        "kind": "domain",
+        "options_from": "domain"
+      },
+      {
+        "key": "search",
+        "label": "workstations.overview.search",
+        "kind": "text"
+      },
+      {
+        "key": "ou",
+        "label": "workstations.overview.ou",
+        "kind": "choice",
+        "options_from": "ou"
+      },
+      {
+        "key": "domain_id",
+        "label": "workstations.overview.domain",
+        "kind": "int",
+        "hidden": true
+      },
+      {
+        "key": "check_id",
+        "label": "workstations.overview.check",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "C01",
+            "label": "C01"
+          },
+          {
+            "value": "C02",
+            "label": "C02"
+          },
+          {
+            "value": "C03",
+            "label": "C03"
+          },
+          {
+            "value": "C04",
+            "label": "C04"
+          },
+          {
+            "value": "C05",
+            "label": "C05"
+          },
+          {
+            "value": "C06",
+            "label": "C06"
+          },
+          {
+            "value": "C07",
+            "label": "C07"
+          },
+          {
+            "value": "C08",
+            "label": "C08"
+          },
+          {
+            "value": "C09",
+            "label": "C09"
+          },
+          {
+            "value": "C10",
+            "label": "C10"
+          }
+        ]
+      },
+      {
+        "key": "finding_id",
+        "label": "Finding",
+        "kind": "text",
+        "hidden": true
+      },
+      {
+        "key": "evidence_index",
+        "label": "Evidence",
+        "kind": "int",
+        "hidden": true
+      }
+    ],
+    "columns": [
+      {
+        "key": "station_id",
+        "label": "workstations.overview.station",
+        "kind": "text",
+        "path": "station_id"
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "checks",
+        "source": "checks"
+      },
+      {
+        "kind": "table",
+        "key": "stations",
+        "source": "items"
+      },
+      {
+        "kind": "table",
+        "key": "findings",
+        "source": "findings"
+      },
+      {
+        "kind": "table",
+        "key": "paging",
+        "source": "paging"
+      }
+    ],
+    "row_key": "station_id",
+    "detail": {
+      "kind": "sub",
+      "title": "workstations.overview.station",
+      "key": "station_id",
+      "inline": null,
+      "row_component": null,
+      "actions": null,
+      "columns": [],
+      "row_links": []
+    },
+    "export": false,
+    "limits": {
+      "default": 50,
+      "max": 50
+    },
+    "page_actions": null,
+    "presets": [],
+    "row_links": []
+  },
+  "workstations.logons": {
+    "key": "workstations.logons",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/workstations",
+    "title": "Входы на станциях",
+    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "archetype": "journal",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Workstation security reviewer",
+      "question": "Какие входы наблюдались на выбранных рабочих станциях за период?",
+      "action": "Inspect source observations before deciding on a workstation investigation.",
+      "scope": "Server-resolved authorized agent identities, selected family and a period of at most 90 days.",
+      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "sources": [
+        "Canonical: workstations logons observations in the granted station/channel/window scope.",
+        "Supplemental: canonical AD identity enrichment retained per observation."
+      ],
+      "freshness_expectation": "Подтверждение источников станций в выбранном окне; непрерывность сбора пока не доказана.",
+      "rights": "workstations.logons view grant with atomic workstation field classes; the server identity adapter bounds agent keys.",
+      "field_classes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "coverage": "Authorized stations and expected family channels in the window; PG and permanent history share the same scope.",
+      "completeness": "Confirmed station/channel collection intervals divided by expected station/channel/window duration; currently not_proven without continuity evidence. Rows and pagination are not the numerator.",
+      "denominator": "Разрешённые станции × ожидаемые каналы выбранного семейства × период; число строк не доказывает полноту.",
+      "retention": "Process/USB evidence moves from PG after the configured period only on exact permanent-history readback; held observations remain hot.",
+      "provenance": "Immutable observation ID, agent identity, native event ID, family and source observation time.",
+      "primary_archetype": "timeline",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Present only native logons observations for server-bound agents; immutable ID orders PG/history pages without inferring activity.",
+      "result_limits": "At most 500 authorized stations, 90 days and 500 rows per page; continuity is not_proven.",
+      "fallback": "Missing identity adapter fails closed; unavailable permanent history exposes PG-only partial data; conflicting receipts fail visibly.",
+      "acceptance_lanes": {
+        "product_user": "Observed logons events answer the workstation question without inferring work duration or file copying.",
+        "authorization": "workstations.logons grant, atomic fields and server identity binding constrain PG, history and detail.",
+        "deterministic_interpretation": "Native logons facts retain immutable identity and do not imply compliance or collection continuity.",
+        "api_view_model": "logons pages preserve station, window and row bounds across PG/history deduplication.",
+        "ui_honest_states": "logons adapter failure, history loss and continuity not_proven remain explicit.",
+        "evidence_audit": "logons observation retains agent, native event identity, source time and applicable source hashes."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "not_applicable",
+        "reason": "No new risk score or organization risk policy is asserted by this report."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 90
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text"
+      }
+    ],
+    "columns": [
+      {
+        "key": "observed_at",
+        "label": "Время",
+        "kind": "datetime",
+        "path": "observed_at"
+      },
+      {
+        "key": "host_name",
+        "label": "Компьютер",
+        "kind": "text",
+        "path": "host_name"
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text",
+        "path": "agent_key",
+        "hidden_by_default": true
+      },
+      {
+        "key": "event_id",
+        "label": "Событие",
+        "kind": "number",
+        "path": "event_id"
+      },
+      {
+        "key": "semantic_type",
+        "label": "Тип",
+        "kind": "text",
+        "path": "semantic_type"
+      },
+      {
+        "key": "logon_type",
+        "label": "Тип входа",
+        "kind": "text",
+        "path": "facts.logon_type"
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "table",
+        "source": "items"
+      }
+    ],
+    "row_key": "id",
+    "detail": "fields",
+    "export": false,
+    "limits": {
+      "default": 100,
+      "max": 500
+    },
+    "page_actions": null,
+    "presets": [],
+    "row_links": []
+  },
+  "workstations.processes": {
+    "key": "workstations.processes",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/workstations",
+    "title": "Процессы и службы",
+    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "archetype": "journal",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Workstation security reviewer",
+      "question": "Какие процессы, службы и задания наблюдались на выбранных станциях за период?",
+      "action": "Inspect source observations before deciding on a workstation investigation.",
+      "scope": "Server-resolved authorized agent identities, selected family and a period of at most 3650 days.",
+      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "sources": [
+        "Canonical: workstations processes observations in the granted station/channel/window scope.",
+        "Supplemental: canonical AD identity enrichment retained per observation."
+      ],
+      "freshness_expectation": "Подтверждение источников станций в выбранном окне; непрерывность сбора пока не доказана.",
+      "rights": "workstations.processes view grant with atomic workstation field classes; the server identity adapter bounds agent keys.",
+      "field_classes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "coverage": "Authorized stations and expected family channels in the window; PG and permanent history share the same scope.",
+      "completeness": "Confirmed station/channel collection intervals divided by expected station/channel/window duration; currently not_proven without continuity evidence. Rows and pagination are not the numerator.",
+      "denominator": "Разрешённые станции × ожидаемые каналы выбранного семейства × период; число строк не доказывает полноту.",
+      "retention": "Process/USB evidence moves from PG after the configured period only on exact permanent-history readback; held observations remain hot.",
+      "provenance": "Immutable observation ID, agent identity, native event ID, family and source observation time.",
+      "primary_archetype": "timeline",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Present only native processes observations for server-bound agents; immutable ID orders PG/history pages without inferring activity.",
+      "result_limits": "At most 500 authorized stations, 3650 days and 500 rows per page; continuity is not_proven.",
+      "fallback": "Missing identity adapter fails closed; unavailable permanent history exposes PG-only partial data; conflicting receipts fail visibly.",
+      "acceptance_lanes": {
+        "product_user": "Observed processes events answer the workstation question without inferring work duration or file copying.",
+        "authorization": "workstations.processes grant, atomic fields and server identity binding constrain PG, history and detail.",
+        "deterministic_interpretation": "Native processes facts retain immutable identity and do not imply compliance or collection continuity.",
+        "api_view_model": "processes pages preserve station, window and row bounds across PG/history deduplication.",
+        "ui_honest_states": "processes adapter failure, history loss and continuity not_proven remain explicit.",
+        "evidence_audit": "processes observation retains agent, native event identity, source time and applicable source hashes."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "not_applicable",
+        "reason": "No new risk score or organization risk policy is asserted by this report."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 3650
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text"
+      }
+    ],
+    "columns": [
+      {
+        "key": "observed_at",
+        "label": "Время",
+        "kind": "datetime",
+        "path": "observed_at"
+      },
+      {
+        "key": "host_name",
+        "label": "Компьютер",
+        "kind": "text",
+        "path": "host_name"
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text",
+        "path": "agent_key",
+        "hidden_by_default": true
+      },
+      {
+        "key": "event_id",
+        "label": "Событие",
+        "kind": "number",
+        "path": "event_id"
+      },
+      {
+        "key": "semantic_type",
+        "label": "Тип",
+        "kind": "text",
+        "path": "semantic_type"
+      },
+      {
+        "key": "process_image",
+        "label": "Процесс",
+        "kind": "text",
+        "path": "facts.process_image"
+      },
+      {
+        "key": "process_command_line",
+        "label": "Командная строка",
+        "kind": "text",
+        "path": "facts.process_command_line"
+      },
+      {
+        "key": "service_name",
+        "label": "Служба",
+        "kind": "text",
+        "path": "facts.service_name"
+      },
+      {
+        "key": "service_file",
+        "label": "Файл службы",
+        "kind": "text",
+        "path": "facts.service_file"
+      },
+      {
+        "key": "task_name",
+        "label": "Задание",
+        "kind": "text",
+        "path": "facts.task_name"
+      },
+      {
+        "key": "task_change",
+        "label": "Изменение задания",
+        "kind": "text",
+        "path": "facts.task_change"
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "table",
+        "source": "items"
+      }
+    ],
+    "row_key": "id",
+    "detail": {
+      "kind": "sub",
+      "title": "Исходное наблюдение",
+      "key": "id",
+      "inline": null,
+      "row_component": null,
+      "actions": null,
+      "columns": [
+        {
+          "key": "observed_at",
+          "label": "Время",
+          "kind": "datetime",
+          "path": "observed_at"
+        },
+        {
+          "key": "agent_key",
+          "label": "Ключ агента",
+          "kind": "text",
+          "path": "agent_key"
+        },
+        {
+          "key": "event_id",
+          "label": "Событие",
+          "kind": "number",
+          "path": "event_id"
+        },
+        {
+          "key": "source_xml",
+          "label": "Исходный XML",
+          "kind": "text",
+          "path": "source_xml"
+        },
+        {
+          "key": "source_sha256",
+          "label": "SHA-256 XML",
+          "kind": "text",
+          "path": "source_sha256"
+        },
+        {
+          "key": "observation_sha256",
+          "label": "SHA-256 наблюдения",
+          "kind": "text",
+          "path": "observation_sha256"
+        }
+      ],
+      "row_links": []
+    },
+    "export": false,
+    "limits": {
+      "default": 25,
+      "max": 500
+    },
+    "page_actions": null,
+    "presets": [],
+    "row_links": []
+  },
+  "workstations.usb": {
+    "key": "workstations.usb",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/workstations",
+    "title": "Съёмные носители",
+    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "archetype": "journal",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Workstation security reviewer",
+      "question": "Какие съёмные носители наблюдались на выбранных станциях за период?",
+      "action": "Inspect source observations before deciding on a workstation investigation.",
+      "scope": "Server-resolved authorized agent identities, selected family and a period of at most 3650 days.",
+      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "sources": [
+        "Canonical: workstations usb observations in the granted station/channel/window scope.",
+        "Supplemental: canonical AD identity enrichment retained per observation."
+      ],
+      "freshness_expectation": "Подтверждение источников станций в выбранном окне; непрерывность сбора пока не доказана.",
+      "rights": "workstations.usb view grant with atomic workstation field classes; the server identity adapter bounds agent keys.",
+      "field_classes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "coverage": "Authorized stations and expected family channels in the window; PG and permanent history share the same scope.",
+      "completeness": "Confirmed station/channel collection intervals divided by expected station/channel/window duration; currently not_proven without continuity evidence. Rows and pagination are not the numerator.",
+      "denominator": "Разрешённые станции × ожидаемые каналы выбранного семейства × период; число строк не доказывает полноту.",
+      "retention": "Process/USB evidence moves from PG after the configured period only on exact permanent-history readback; held observations remain hot.",
+      "provenance": "Immutable observation ID, agent identity, native event ID, family and source observation time.",
+      "primary_archetype": "timeline",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Present only native usb observations for server-bound agents; immutable ID orders PG/history pages without inferring activity.",
+      "result_limits": "At most 500 authorized stations, 3650 days and 500 rows per page; continuity is not_proven.",
+      "fallback": "Missing identity adapter fails closed; unavailable permanent history exposes PG-only partial data; conflicting receipts fail visibly.",
+      "acceptance_lanes": {
+        "product_user": "Observed usb events answer the workstation question without inferring work duration or file copying.",
+        "authorization": "workstations.usb grant, atomic fields and server identity binding constrain PG, history and detail.",
+        "deterministic_interpretation": "Native usb facts retain immutable identity and do not imply compliance or collection continuity.",
+        "api_view_model": "usb pages preserve station, window and row bounds across PG/history deduplication.",
+        "ui_honest_states": "usb adapter failure, history loss and continuity not_proven remain explicit.",
+        "evidence_audit": "usb observation retains agent, native event identity, source time and applicable source hashes."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "not_applicable",
+        "reason": "No new risk score or organization risk policy is asserted by this report."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 3650
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text"
+      }
+    ],
+    "columns": [
+      {
+        "key": "observed_at",
+        "label": "Время",
+        "kind": "datetime",
+        "path": "observed_at"
+      },
+      {
+        "key": "host_name",
+        "label": "Компьютер",
+        "kind": "text",
+        "path": "host_name"
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text",
+        "path": "agent_key",
+        "hidden_by_default": true
+      },
+      {
+        "key": "event_id",
+        "label": "Событие",
+        "kind": "number",
+        "path": "event_id"
+      },
+      {
+        "key": "semantic_type",
+        "label": "Тип",
+        "kind": "text",
+        "path": "semantic_type"
+      },
+      {
+        "key": "device_id",
+        "label": "Устройство",
+        "kind": "text",
+        "path": "facts.device_id"
+      },
+      {
+        "key": "device_description",
+        "label": "Описание устройства",
+        "kind": "text",
+        "path": "facts.device_description"
+      },
+      {
+        "key": "device_class",
+        "label": "Класс устройства",
+        "kind": "text",
+        "path": "facts.device_class"
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "table",
+        "source": "items"
+      }
+    ],
+    "row_key": "id",
+    "detail": {
+      "kind": "sub",
+      "title": "Исходное наблюдение",
+      "key": "id",
+      "inline": null,
+      "row_component": null,
+      "actions": null,
+      "columns": [
+        {
+          "key": "observed_at",
+          "label": "Время",
+          "kind": "datetime",
+          "path": "observed_at"
+        },
+        {
+          "key": "agent_key",
+          "label": "Ключ агента",
+          "kind": "text",
+          "path": "agent_key"
+        },
+        {
+          "key": "event_id",
+          "label": "Событие",
+          "kind": "number",
+          "path": "event_id"
+        },
+        {
+          "key": "source_xml",
+          "label": "Исходный XML",
+          "kind": "text",
+          "path": "source_xml"
+        },
+        {
+          "key": "source_sha256",
+          "label": "SHA-256 XML",
+          "kind": "text",
+          "path": "source_sha256"
+        },
+        {
+          "key": "observation_sha256",
+          "label": "SHA-256 наблюдения",
+          "kind": "text",
+          "path": "observation_sha256"
+        }
+      ],
+      "row_links": []
+    },
+    "export": false,
+    "limits": {
+      "default": 100,
+      "max": 500
+    },
+    "page_actions": null,
+    "presets": [],
+    "row_links": []
+  },
+  "workstations.protection": {
+    "key": "workstations.protection",
+    "result_states": [
+      "ok",
+      "empty",
+      "denied",
+      "not_collected",
+      "partial",
+      "processing",
+      "stale",
+      "error"
+    ],
+    "section": "reports/workstations",
+    "title": "Локальные администраторы и защита",
+    "description": "Последний снимок Defender независимо от периода и события изменений за период. Время снимка показывает его свежесть; неизвестные флаги не подтверждают защиту.",
+    "archetype": "journal",
+    "intent": {
+      "contract_id": "sli.report-intent.v1",
+      "version": 1,
+      "user_role": "Workstation security reviewer",
+      "question": "Каково последнее наблюдаемое состояние защиты станций и какие изменения локальных прав произошли за период?",
+      "action": "Inspect source observations before deciding on a workstation investigation.",
+      "scope": "Server-resolved authorized agent identities, selected family and a period of at most 90 days.",
+      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "sources": [
+        "Canonical: workstations protection observations in the granted station/channel/window scope.",
+        "Supplemental: canonical AD identity enrichment retained per observation."
+      ],
+      "freshness_expectation": "Подтверждение источников станций в выбранном окне; непрерывность сбора пока не доказана.",
+      "rights": "workstations.protection view grant with atomic workstation field classes; the server identity adapter bounds agent keys.",
+      "field_classes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "coverage": "Authorized stations and expected family channels in the window; PG and permanent history share the same scope.",
+      "completeness": "Confirmed station/channel collection intervals divided by expected station/channel/window duration; currently not_proven without continuity evidence. Rows and pagination are not the numerator.",
+      "denominator": "Разрешённые станции × ожидаемые каналы выбранного семейства × период; число строк не доказывает полноту.",
+      "retention": "Process/USB evidence moves from PG after the configured period only on exact permanent-history readback; held observations remain hot.",
+      "provenance": "Immutable observation ID, agent identity, native event ID, family and source observation time.",
+      "primary_archetype": "timeline",
+      "product_archetype": "investigation-evidence",
+      "deterministic_policy": "Present only native protection observations for server-bound agents; immutable ID orders PG/history pages without inferring activity.",
+      "result_limits": "At most 500 authorized stations, 90 days and 500 rows per page; continuity is not_proven.",
+      "fallback": "Missing identity adapter fails closed; unavailable permanent history exposes PG-only partial data; conflicting receipts fail visibly.",
+      "acceptance_lanes": {
+        "product_user": "Observed protection events answer the workstation question without inferring work duration or file copying.",
+        "authorization": "workstations.protection grant, atomic fields and server identity binding constrain PG, history and detail.",
+        "deterministic_interpretation": "Native protection facts retain immutable identity and do not imply compliance or collection continuity.",
+        "api_view_model": "protection pages preserve station, window and row bounds across PG/history deduplication.",
+        "ui_honest_states": "protection adapter failure, history loss and continuity not_proven remain explicit.",
+        "evidence_audit": "protection observation retains agent, native event identity, source time and applicable source hashes."
+      },
+      "qualification": {
+        "status": "not_applicable",
+        "reason": "No automatic control qualification is asserted by this report."
+      },
+      "risk": {
+        "status": "not_applicable",
+        "reason": "No new risk score or organization risk policy is asserted by this report."
+      },
+      "confidence": {
+        "status": "not_applicable",
+        "reason": "Source quality is reported separately; no confidence score is inferred."
+      }
+    },
+    "params": [
+      {
+        "key": "period",
+        "label": "Период",
+        "kind": "period",
+        "default": "7d",
+        "required": true,
+        "presets": [
+          "24h",
+          "7d",
+          "30d",
+          "90d",
+          "custom"
+        ],
+        "max_days": 90
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text"
+      }
+    ],
+    "columns": [
+      {
+        "key": "observed_at",
+        "label": "Время",
+        "kind": "datetime",
+        "path": "observed_at"
+      },
+      {
+        "key": "host_name",
+        "label": "Компьютер",
+        "kind": "text",
+        "path": "host_name"
+      },
+      {
+        "key": "agent_key",
+        "label": "Ключ агента",
+        "kind": "text",
+        "path": "agent_key",
+        "hidden_by_default": true
+      },
+      {
+        "key": "event_id",
+        "label": "Событие",
+        "kind": "number",
+        "path": "event_id"
+      },
+      {
+        "key": "semantic_type",
+        "label": "Тип",
+        "kind": "text",
+        "path": "semantic_type"
+      },
+      {
+        "key": "protection_state",
+        "label": "Снимок защиты",
+        "kind": "state",
+        "path": "quality.state",
+        "labels": {
+          "available": "Получен",
+          "unavailable": "Недоступен"
+        }
+      },
+      {
+        "key": "group",
+        "label": "Группа",
+        "kind": "text",
+        "path": "facts.group"
+      },
+      {
+        "key": "member",
+        "label": "Участник",
+        "kind": "text",
+        "path": "facts.member"
+      },
+      {
+        "key": "change",
+        "label": "Изменение",
+        "kind": "text",
+        "path": "facts.change"
+      },
+      {
+        "key": "protection_component",
+        "label": "Компонент защиты",
+        "kind": "text",
+        "path": "facts.protection_component"
+      },
+      {
+        "key": "audit_policy_changes",
+        "label": "Изменение политики аудита",
+        "kind": "text",
+        "path": "facts.audit_policy_changes"
+      },
+      {
+        "key": "antivirus_enabled",
+        "label": "Антивирус включён",
+        "kind": "boolean",
+        "path": "facts.antivirus_enabled"
+      },
+      {
+        "key": "real_time_protection_enabled",
+        "label": "Защита в реальном времени",
+        "kind": "boolean",
+        "path": "facts.real_time_protection_enabled"
+      },
+      {
+        "key": "behavior_monitor_enabled",
+        "label": "Контроль поведения",
+        "kind": "boolean",
+        "path": "facts.behavior_monitor_enabled"
+      },
+      {
+        "key": "ioav_protection_enabled",
+        "label": "Проверка скачанных файлов",
+        "kind": "boolean",
+        "path": "facts.ioav_protection_enabled"
+      },
+      {
+        "key": "nis_enabled",
+        "label": "Защита сети",
+        "kind": "boolean",
+        "path": "facts.nis_enabled"
+      },
+      {
+        "key": "tamper_protected",
+        "label": "Защита от изменений",
+        "kind": "boolean",
+        "path": "facts.tamper_protected"
+      }
+    ],
+    "views": [
+      {
+        "kind": "table",
+        "key": "table",
+        "source": "items"
+      }
+    ],
+    "row_key": "id",
+    "detail": "fields",
+    "export": false,
+    "limits": {
+      "default": 100,
+      "max": 500
+    },
+    "page_actions": null,
+    "presets": [],
+    "row_links": []
+  }
+}

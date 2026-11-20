@@ -1,0 +1,52 @@
+{
+  "hr": [
+    "company",
+    "department",
+    "employeeID",
+    "manager",
+    "title"
+  ],
+  "contact": [
+    "ipPhone",
+    "mail",
+    "mobile",
+    "telephoneNumber"
+  ],
+  "technical": [
+    "description",
+    "distinguishedName",
+    "objectClasses",
+    "objectGuid",
+    "ou",
+    "servicePrincipalNames",
+    "sid",
+    "whenChanged",
+    "whenCreated"
+  ],
+  "privilege": [
+    "adminCount",
+    "memberships",
+    "privilegedMemberships"
+  ],
+  "security": [
+    "accountExpirationDate",
+    "accountNotDelegated",
+    "allowReversiblePasswordEncryption",
+    "cannotChangePassword",
+    "doesNotRequirePreAuth",
+    "enabled",
+    "exactLastLogon",
+    "lastLogonTimestamp",
+    "lockedOut",
+    "passwordExpired",
+    "passwordExpiry",
+    "passwordLastSet",
+    "passwordNeverExpires",
+    "passwordNotRequired",
+    "smartcardLogonRequired",
+    "trustedForDelegation",
+    "trustedToAuthForDelegation",
+    "useDesKeyOnly",
+    "userAccountControl"
+  ]
+}

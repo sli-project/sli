@@ -1,0 +1,5 @@
+Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting,Exclusion Setting,Setting Value
+fixture-host,System,Logon,{0CCE9215-69AE-11D9-BED3-505054503030},Success and Failure,,3
+fixture-host,System,Logoff,{0CCE9216-69AE-11D9-BED3-505054503030},No Auditing,,0
+fixture-host,System,Process Creation,{0CCE922B-69AE-11D9-BED3-505054503030},Success,,1
+fixture-host,S-1-5-21-1-2-3-1001,Logon,{0CCE9215-69AE-11D9-BED3-505054503030},Failure,,2

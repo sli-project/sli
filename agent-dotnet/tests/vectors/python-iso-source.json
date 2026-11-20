@@ -1,0 +1,519 @@
+[
+  {
+    "text": "2026-01-01T00:00:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:00:00+01:02:03",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 3723000000,
+    "utc": "2025-12-31T22:57:57.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00-01:02:03.1234567",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": -3723123456,
+    "utc": "2026-01-01T01:02:03.123456",
+    "utc_source": false
+  },
+  {
+    "text": "20260101T000000+010203",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 3723000000,
+    "utc": "2025-12-31T22:57:57.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-W01-4T12:00:00+01:00",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 3600000000,
+    "utc": "2026-01-01T11:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026W014T120000Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T12:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-W01T12:00+01",
+    "valid": true,
+    "aware": true,
+    "wall": "2025-12-29T12:00:00.000000",
+    "offset_us": 3600000000,
+    "utc": "2025-12-29T11:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01 12:30+01:30",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:30:00.000000",
+    "offset_us": 5400000000,
+    "utc": "2026-01-01T11:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01x12+01",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 3600000000,
+    "utc": "2026-01-01T11:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30:10.123456789+01:02:03.9999999",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:30:10.123456",
+    "offset_us": 3723999999,
+    "utc": "2026-01-01T11:28:06.123457",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-02-30T00:00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-13-01T00:00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-W54-1T00:00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T24:00:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-02T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-02T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:60:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:60Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+24:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00",
+    "valid": true,
+    "aware": false,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "01/02/2026 00:00:00 +01:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12.5+01:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30.5+01:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T1230.5+0100",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T120000+01:0203",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:0000+01:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+01:60",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 7200000000,
+    "utc": "2025-12-31T22:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+01:00:60",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 3660000000,
+    "utc": "2025-12-31T22:59:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+01:00:00.123456",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 3600123456,
+    "utc": "2025-12-31T22:59:59.876544",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+00:00:00.000001",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:00:00+000000.5",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T24Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-02T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-02T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T24:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-02T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-02T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T24:00:00.000001Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T24:00:00.0000009Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-02T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-02T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T24:01Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "9999-12-31T24:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30:00+23:99",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30:00+00:99:99",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:30:00.000000",
+    "offset_us": 6039000000,
+    "utc": "2026-01-01T10:49:21.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30:00+01.5",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30:00+01:02.5",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-W011T00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026W01-1T00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026W01T00:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2025-12-29T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2025-12-29T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01\ud83d\ude0000:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "0001-W01-1T00:00Z",
+    "valid": true,
+    "aware": true,
+    "wall": "0001-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "0001-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "9999-W52-7T00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01",
+    "valid": true,
+    "aware": false,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "20260101",
+    "valid": true,
+    "aware": false,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026-W01",
+    "valid": true,
+    "aware": false,
+    "wall": "2025-12-29T00:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026W01",
+    "valid": true,
+    "aware": false,
+    "wall": "2025-12-29T00:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12",
+    "valid": true,
+    "aware": false,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30",
+    "valid": true,
+    "aware": false,
+    "wall": "2026-01-01T12:30:00.000000",
+    "offset_us": null,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:30.5",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "10/28/2026 12:00:00 +00:00",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+00:00:01.000001",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 1000001,
+    "utc": "2025-12-31T23:59:58.999999",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00-00:00:01.1234567",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": -1123456,
+    "utc": "2026-01-01T00:00:01.123456",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00-00:00:00.1",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "0001-01-01T00:00:00+01:00",
+    "valid": true,
+    "aware": true,
+    "wall": "0001-01-01T00:00:00.000000",
+    "offset_us": 3600000000,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "9999-12-31T23:59:59-01:00",
+    "valid": true,
+    "aware": true,
+    "wall": "9999-12-31T23:59:59.000000",
+    "offset_us": -3600000000,
+    "utc": null,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T00:00:00+00",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:00:00-0000",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:00:00+00:00:00.0000009",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T00:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T00:00:00+00:00:01.0000009",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T00:00:00.000000",
+    "offset_us": 1000000,
+    "utc": "2025-12-31T23:59:59.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T12:00:00,123456789Z",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.123456",
+    "offset_us": 0,
+    "utc": "2026-01-01T12:00:00.123456",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01\ud83d\udca012:00:00+00:00",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T12:00:00.000000",
+    "utc_source": true
+  },
+  {
+    "text": "2026-01-01T12:00:00+000060",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 60000000,
+    "utc": "2026-01-01T11:59:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01Z12:00:00+00:00",
+    "valid": true,
+    "aware": true,
+    "wall": "2026-01-01T12:00:00.000000",
+    "offset_us": 0,
+    "utc": "2026-01-01T12:00:00.000000",
+    "utc_source": false
+  },
+  {
+    "text": "\uff12\uff10\uff12\uff16-01-01T00:00:00Z",
+    "valid": false,
+    "utc_source": false
+  },
+  {
+    "text": "2026-01-01T\u0660\u0660:00:00Z",
+    "valid": false,
+    "utc_source": false
+  }
+]

@@ -1,0 +1,86 @@
+[
+  {
+    "candidate": {
+      "details": {
+        "catalog_key": {
+          "channel": "Security",
+          "event_id": 4720,
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "catalog_match": true,
+        "entity_role": "target"
+      },
+      "entity_id": 99,
+      "observed_at_utc": "2026-10-07T00:00:00.123457Z",
+      "projection_status": "normal",
+      "rule_id": "account-created-4720",
+      "rule_version": "entity-state-1.0",
+      "severity": "medium",
+      "source_event_db_id": 42,
+      "state_type": "account.lifecycle",
+      "status": "created",
+      "summary": "Создан пользователь"
+    },
+    "core": "3c278e6e3af64e372805d6bf6812d185dd26f7b941f6fd1d81a691b97a252fee",
+    "event_id": 4720,
+    "facts_absent": true,
+    "identity": "92716bdb026525113db8182a81f0092874913b6af0ab7621fc38b36cca5cbc35",
+    "job_id": "9e958750-ac5c-57d3-9bf3-d4e29ee5061b"
+  },
+  {
+    "candidate": {
+      "details": {
+        "catalog_key": {
+          "channel": "Security",
+          "event_id": 4722,
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "catalog_match": true,
+        "entity_role": "target"
+      },
+      "entity_id": 99,
+      "observed_at_utc": "2026-10-07T00:00:00.123457Z",
+      "projection_status": "normal",
+      "rule_id": "account-enabled-4722",
+      "rule_version": "entity-state-1.0",
+      "severity": "medium",
+      "source_event_db_id": 42,
+      "state_type": "account.access",
+      "status": "enabled",
+      "summary": "Включена учетная запись"
+    },
+    "core": "460ee2f06892f8f28c067f779e257cf5473b596984f7415372e0b537ee6529d5",
+    "event_id": 4722,
+    "facts_absent": true,
+    "identity": "47670c8f2221e8e7b99248a86cc2df576b1cb2b76de7020d5deb097d2f1329fa",
+    "job_id": "9e958750-ac5c-57d3-9bf3-d4e29ee5061b"
+  },
+  {
+    "candidate": {
+      "details": {
+        "catalog_key": {
+          "channel": "Security",
+          "event_id": 4740,
+          "provider": "Microsoft-Windows-Security-Auditing"
+        },
+        "catalog_match": true,
+        "entity_role": "target"
+      },
+      "entity_id": 99,
+      "observed_at_utc": "2026-10-07T00:00:00.123457Z",
+      "projection_status": "normal",
+      "rule_id": "account-locked-4740",
+      "rule_version": "entity-state-1.0",
+      "severity": "medium",
+      "source_event_db_id": 42,
+      "state_type": "account.access",
+      "status": "locked",
+      "summary": "Блокировка учетной записи"
+    },
+    "core": "86dc6d9031ebbc3704f7b52195b62b998f6fff5934f397126549ac4cbce4daf6",
+    "event_id": 4740,
+    "facts_absent": true,
+    "identity": "0150d626f8c7ce492692f06594a78d3b04aa61bda57114522f73ac62e8a39d08",
+    "job_id": "9e958750-ac5c-57d3-9bf3-d4e29ee5061b"
+  }
+]

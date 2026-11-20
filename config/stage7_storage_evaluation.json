@@ -1,0 +1,190 @@
+{
+  "contract_version": 2,
+  "stage": "7.0",
+  "decision_not_preselected": true,
+  "candidates": [
+    {
+      "id": "D",
+      "name": "PostgreSQL Storage V2 R3 плюс проверяемый архив",
+      "role": "control"
+    },
+    {
+      "id": "A",
+      "name": "ClickHouse с полным типизированным событием и payload",
+      "role": "candidate"
+    },
+    {
+      "id": "B",
+      "name": "ClickHouse с компактным атомарным событием и RAW locator",
+      "role": "candidate"
+    },
+    {
+      "id": "C",
+      "name": "ClickHouse с горячими атомарными событиями, производными событиями и агрегатами",
+      "role": "candidate"
+    }
+  ],
+  "canonical_corpus": {
+    "evidence": "artifacts/stage7/evidence/storage-inventory-postgres.json",
+    "events": 1875775,
+    "event_entity_links": 10188114,
+    "archive_rows": 12063889,
+    "archive_blocks": 96,
+    "archive_raw_bytes": 8295581298,
+    "archive_compressed_bytes": 262712933,
+    "event_uid_status": "research_contract_verified_registry_not_persisted",
+    "event_uid_contract": "sli-event-v1",
+    "event_uid_count": 1875775,
+    "event_uid_sequence_sha256": "7dd881aadce4975ab184320101e3dabbddbc534009fe631efb92b0fad5c9d724",
+    "source_instance_count": 2,
+    "stream_and_epoch_count": 12
+  },
+  "hard_gates": {
+    "event_uid_set_mismatches_max": 0,
+    "event_count_mismatches_max": 0,
+    "event_hash_mismatches_max": 0,
+    "link_tuple_mismatches_max": 0,
+    "archive_failed_blocks_max": 0,
+    "missing_payloads_max": 0,
+    "report_semantic_hash_mismatches_max": 0,
+    "access_scope_mismatches_max": 0,
+    "restore_failures_max": 0
+  },
+  "performance_gates": {
+    "independent_runs": 3,
+    "warmup_runs_per_query": 5,
+    "measured_runs_per_query": 30,
+    "gates_are_computed": true,
+    "computed_by": "Stage 7 control benchmark",
+    "применение": "Пределы берутся из query_classes по классу нагрузки; единого предела для всех запросов больше нет. Ни один класс не сравнивается с контролем по отношению: для точечных чтений это снято как невыполнимое, для аналитических не вводилось. Ворота выражают требование к отклику, а решение о размещении нагрузки принимается по ветви архитектуры."
+  },
+  "selection": {
+    "ranking_order": [
+      "hard_gate_completeness_and_restore",
+      "minimum_full_managed_storage_bytes",
+      "performance_after_minimum_viability",
+      "lower_operational_complexity"
+    ],
+    "primary_metric": "full_managed_storage_bytes_excluding_capacity_headroom",
+    "performance_is_not_primary_ranking_metric": true,
+    "eligible_only_after_all_hard_and_minimum_performance_gates": true,
+    "equivalent_storage_difference_ratio": 0.03,
+    "equivalent_storage_tiebreakers": [
+      "better_measured_performance",
+      "lower_operational_complexity"
+    ]
+  },
+  "control_d_prime": {
+    "event_archive_frame_rows_candidates": [
+      512,
+      2048,
+      8192
+    ],
+    "selection": "smallest_total_storage_among_variants_passing_detail_latency_gates",
+    "production_mutation": false
+  },
+  "managed_storage_components": [
+    "live_data_plane",
+    "indexes_marks_and_dictionaries",
+    "canonical_raw_or_event_archive",
+    "independent_recovery_copy",
+    "postgresql_control_plane",
+    "completed_backup"
+  ],
+  "query_workloads": [
+    "latest_events",
+    "event_id_time",
+    "server_time",
+    "channel_event_time",
+    "subject_account_time",
+    "target_account_time",
+    "ip_time",
+    "logon_id_time",
+    "entity_timeline",
+    "event_detail_archive_lookup",
+    "ad_state_report",
+    "gpo_review_report",
+    "privileged_accounts_report",
+    "vpn_audit_report",
+    "security_problem_queue",
+    "bounded_csv_export"
+  ],
+  "execution": {
+    "same_machine": true,
+    "same_corpus": true,
+    "same_query_parameters": true,
+    "hot_and_cold_cache": true,
+    "post_merge_or_compaction_state": true,
+    "sequential_isolated_candidates": true,
+    "production_runtime_mutation": false,
+    "collection_start": false,
+    "retention_or_delete": false
+  },
+  "revision": {
+    "date": "2026-07-28",
+    "reason": "E1-E3 бэклога 7.2: ворота объявлялись, но не вычислялись; единый предел был недостижим для аналитического движка; в контракте отсутствовала ветвь разделения ролей"
+  },
+  "query_classes": {
+    "point": {
+      "описание": "точечные чтения по ключу или узкому диапазону; обслуживают карточки, расследования и навигацию",
+      "workloads": [
+        "latest_events",
+        "event_id_time",
+        "server_time",
+        "channel_event_time",
+        "subject_account_time",
+        "target_account_time",
+        "ip_time",
+        "logon_id_time",
+        "event_detail_archive_lookup"
+      ],
+      "warm_p95_ms_max": 25,
+      "cold_p95_ms_max": 250,
+      "candidate_p95_to_control_max_ratio": null,
+      "примечание": "Отношение к контролю снято 28.07.2026 по итогу первого фактического вычисления ворот. Предел 1,1 был объявлен, но ни разу не считался; когда его посчитали, оказалось, что PostgreSQL отвечает на точечное чтение по индексу за 0,3-0,5 мс, а оба кандидата - за 26-42 мс, то есть отношение 70-110 крат. Это не дефект настройки: у столбцового движка архитектурный пол в десятки миллисекунд на запрос, и никакая конфигурация не приведёт его к 1,1 от индексного чтения по ключу. Критерий заранее дисквалифицировал кандидатов по свойству, к выбору формата хранения не относящемуся. Остаётся абсолютный потолок: он выражает требование к отклику интерфейса, а не сравнение движков.",
+      "историческое_значение_отношения": 1.1,
+      "наблюдённое_отношение_28_07_2026": {
+        "кандидат_A": "69,4-109,9",
+        "кандидат_B": "72,5-105,2"
+      }
+    },
+    "analytical": {
+      "описание": "выборки с агрегацией и разворотом связей; обслуживают отчёты, таймлайны и экспорт",
+      "workloads": [
+        "entity_timeline",
+        "ad_state_report",
+        "gpo_review_report",
+        "privileged_accounts_report",
+        "vpn_audit_report",
+        "security_problem_queue",
+        "bounded_csv_export"
+      ],
+      "warm_p95_ms_max": 400,
+      "cold_p95_ms_max": 900,
+      "candidate_p95_to_control_max_ratio": null,
+      "примечание": "отношение к контролю не применяется: у столбцового движка архитектурный пол 10-30 мс на запрос, поэтому сравнение с индексным чтением по ключу лишено смысла"
+    }
+  },
+  "architecture_branches": [
+    {
+      "id": "single_engine_control",
+      "описание": "победа Storage V2 R3: единый storage adapter, ClickHouse не внедряется"
+    },
+    {
+      "id": "single_engine_candidate",
+      "описание": "победа кандидата ClickHouse: общий adapter, backfill, shadow reads, restore gate, раздельные cutover"
+    },
+    {
+      "id": "split_roles",
+      "описание": "разделение ролей: PostgreSQL — горячий контур и точка решений о доступе; ClickHouse — тёплый аналитический слой и своды",
+      "принято": "предложено 28.07.2026 по итогам разбора измерений",
+      "основание": "события составляют 10.3% полного управляемого объёма, поэтому выбор формата ограничен потолком 2.8x; на горизонте 365 суток ни один одиночный вариант не помещается в доступные 116.8 ГБ"
+    }
+  ],
+  "capacity_requirements": {
+    "measured_peak_temporary_merge_or_backfill_space": {
+      "учитывается": "отдельно от объёма хранения",
+      "причина": "это требование к свободной ёмкости, а не постоянный след; у контроля D оно давало 3 557 460 006 байт из 7 489 148 522, то есть 47.5% оценки"
+    }
+  }
+}

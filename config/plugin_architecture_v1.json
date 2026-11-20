@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "decision_id": "sli.plugin-architecture.v1",
+  "status": "accepted_for_p0a_p0b_fixture_only",
+  "owner_decision_date": "2026-07-30",
+  "package_model": "bundled_reviewed",
+  "source_pack_role": "nested_declarative_semantic_contract",
+  "acquisition": {
+    "source_identity_excludes": [
+      "plugin_id",
+      "component_version",
+      "subscription_selector",
+      "display_name",
+      "credential_generation",
+      "adapter_version"
+    ],
+    "cursor_owner_fields": [
+      "source_instance_id",
+      "stream_id",
+      "transport_binding"
+    ],
+    "existing_windows_stream_policy": "full_channel_then_core_evidence_then_subscription_routing",
+    "cursor_commit_protocol": "evidence_manifest_then_registry_outbox_cursor_transaction"
+  },
+  "routing": {
+    "kind": "compiled_subscription_registry",
+    "selector_fields": [
+      "source_kind",
+      "stream",
+      "provider",
+      "event_key",
+      "schema_version"
+    ],
+    "fan_out": true,
+    "single_pack_resolver_role": "compatibility_only"
+  },
+  "state_axes": [
+    "package_lifecycle",
+    "desired_activation",
+    "observed_health",
+    "component_runtime",
+    "migration_state",
+    "source_state",
+    "queue_state",
+    "dataset_state"
+  ],
+  "execution": {
+    "short_handler_host": "generic_process_and_db_isolated_host",
+    "continuous_transport": "separate_daemon_only_when_required",
+    "sandbox_claimed": false,
+    "required_boundaries": [
+      "windows_identity",
+      "job_object",
+      "working_directory_acl",
+      "network_policy",
+      "component_secret_handle",
+      "allowlisted_handler",
+      "postgres_role",
+      "db_timeouts",
+      "runtime_identity"
+    ]
+  },
+  "contracts": {
+    "owner": "core_contract_registry",
+    "machine_path": "immutable_versioned_facts_outbox",
+    "bounded_dataset_roles": [
+      "snapshot",
+      "backfill",
+      "ui",
+      "operator_query"
+    ],
+    "authority": "one_authoritative_producer_per_contract_and_partition",
+    "shadow_producers": true,
+    "partition_merge": "deterministic_partitioned_union",
+    "required_feedback_cycles": false
+  },
+  "access": {
+    "required_labels": [
+      "resource_groups",
+      "row_sensitivity",
+      "field_visibility_categories",
+      "evidence_access_requirement",
+      "producer_contract_version",
+      "label_policy_version",
+      "provenance"
+    ],
+    "platform_owner_policy": "read_time_actor_policy",
+    "declassification": "reviewed_versioned_rule_only"
+  },
+  "storage": {
+    "raw_owner": "core",
+    "canonical_evidence_owner": "core",
+    "plugin_owned_v1": [
+      "postgresql_derived_state"
+    ],
+    "multi_storage_component": "core_hosted_compatibility_until_backend_gate",
+    "authentication_session_warm": "core_hosted_compatibility"
+  },
+  "lifecycle_operations": [
+    "disable",
+    "detach",
+    "archive",
+    "purge",
+    "forget_evidence"
+  ],
+  "durable_result_readers": [
+    "core_immutable_snapshot",
+    "reviewed_read_only_compatibility_reader"
+  ],
+  "supported_v1_transports": [
+    "read_only_bounded_pull",
+    "read_only_tail"
+  ],
+  "prohibited_until_separate_owner_decision": [
+    "postgresql_migration",
+    "clickhouse_migration",
+    "worker_activation",
+    "windows_service_change",
+    "windows_firewall_change",
+    "source_contact",
+    "nps_radius_inventory",
+    "product_runtime_ownership_transfer",
+    "autostart",
+    "webhook_write_lifecycle",
+    "destructive_purge"
+  ],
+  "p0b_archetypes": [
+    "shared_bounded_pull",
+    "snapshot_generation",
+    "unique_continuous_transport_declaration"
+  ]
+}

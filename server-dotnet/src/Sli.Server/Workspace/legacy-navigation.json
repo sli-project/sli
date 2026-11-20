@@ -1,0 +1,210 @@
+{
+  "ROLE_ORDER": [
+    "security",
+    "it",
+    "technical"
+  ],
+  "ROLE_TITLES": {
+    "security": "ИБ",
+    "it": "ИТ",
+    "technical": "Технический"
+  },
+  "NAV_ITEMS": [
+    {
+      "id": "home",
+      "title": "Главная панель",
+      "url": "/",
+      "group": "overview",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "priority": 10,
+      "description": "Общий рабочий экран с быстрым поиском, состоянием наблюдения, источниками и отчетами."
+    },
+    {
+      "id": "role-overview",
+      "title": "Ролевая карта",
+      "url": "/reports/role-overview.html",
+      "group": "overview",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "priority": 20,
+      "description": "Поясняет, что видят ИБ, ИТ и технический слой, без удаления общих данных."
+    },
+    {
+      "id": "ui-navigation",
+      "title": "Карта навигации",
+      "url": "/reports/ui-navigation.html",
+      "group": "overview",
+      "roles": [
+        "security",
+        "it",
+        "technical"
+      ],
+      "priority": 25,
+      "description": "Контрольная карта кнопок, отчетов и ролевой доступности интерфейса."
+    },
+    {
+      "id": "security-monitor",
+      "title": "ИБ-мониторинг 24ч",
+      "url": "/reports/security-events-monitor.html?period=24h",
+      "group": "security",
+      "roles": [
+        "security",
+        "technical"
+      ],
+      "priority": 30,
+      "description": "Ключевые события Security за выбранный период: входы, группы, пароли, блокировки."
+    },
+    {
+      "id": "findings",
+      "title": "Findings",
+      "url": "/reports/findings.html",
+      "group": "security",
+      "roles": [
+        "security"
+      ],
+      "priority": 40,
+      "description": "Сформированные выводы и гипотезы с evidence для ручной проверки."
+    },
+    {
+      "id": "investigation",
+      "title": "Расследование",
+      "url": "/reports/investigation.html",
+      "group": "security",
+      "roles": [
+        "security",
+        "technical"
+      ],
+      "priority": 50,
+      "description": "Рабочее место расследования: pivots, цепочки, переходы к событиям."
+    },
+    {
+      "id": "ai-reports",
+      "title": "AI-отчеты",
+      "url": "/reports/ai-reports.html",
+      "group": "security",
+      "roles": [
+        "security"
+      ],
+      "priority": 60,
+      "description": "AI-гипотезы после безопасной подготовки и redaction-preview."
+    },
+    {
+      "id": "collector-health",
+      "title": "Состояние сбора",
+      "url": "/reports/collector-health.html",
+      "group": "operations",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "priority": 70,
+      "description": "Lag, timeout, repeated backlog и качество сбора по DC/каналам."
+    },
+    {
+      "id": "autocollection",
+      "title": "Автосбор",
+      "url": "/reports/autocollection.html",
+      "group": "operations",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "priority": 80,
+      "description": "Текущий scheduled job, skipped-overlap, fairness и прогресс активного сбора."
+    },
+    {
+      "id": "storage-health",
+      "title": "Storage Health",
+      "url": "/reports/storage-health.html",
+      "group": "operations",
+      "roles": [
+        "it"
+      ],
+      "priority": 90,
+      "description": "Состояние raw/processed/logs/reports, retention и dry-run cleanup."
+    },
+    {
+      "id": "db-status",
+      "title": "DB Backend",
+      "url": "/reports/db-status.html",
+      "group": "operations",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "priority": 95,
+      "description": "PostgreSQL-only runtime: DSN, schema, connection and operational readiness."
+    },
+    {
+      "id": "diagnostics",
+      "title": "Диагностика",
+      "url": "/reports/diagnostics.html",
+      "group": "operations",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "priority": 100,
+      "description": "Self-test, release gate, watchdog, diagnostic bundle и быстрые проверки."
+    },
+    {
+      "id": "system-health",
+      "title": "Система",
+      "url": "/reports/system-health.html",
+      "group": "operations",
+      "roles": [
+        "it",
+        "technical"
+      ],
+      "priority": 110,
+      "description": "Общее runtime-состояние сервиса и локальной среды проекта."
+    },
+    {
+      "id": "search",
+      "title": "Поиск событий",
+      "url": "/reports/search.html?limit=300&order=desc",
+      "group": "technical",
+      "roles": [
+        "security",
+        "technical"
+      ],
+      "priority": 120,
+      "description": "Низкоуровневый поиск по PostgreSQL: user, IP, computer, LogonId, Event ID."
+    },
+    {
+      "id": "event-details",
+      "title": "Event details",
+      "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100",
+      "group": "technical",
+      "roles": [
+        "technical"
+      ],
+      "priority": 130,
+      "description": "Детализация конкретного Event ID с таблицей доказательств."
+    },
+    {
+      "id": "entity-details",
+      "title": "Entity details",
+      "url": "/reports/entity-details.html?limit=100",
+      "group": "technical",
+      "roles": [
+        "technical"
+      ],
+      "priority": 140,
+      "description": "Связи event → entity и технический слой нормализации."
+    }
+  ],
+  "GROUP_TITLES": {
+    "overview": "Обзор и роли",
+    "security": "ИБ и расследование",
+    "operations": "ИТ / эксплуатация",
+    "technical": "Технический drill-down"
+  }
+}

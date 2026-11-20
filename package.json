@@ -1,0 +1,13 @@
+{
+  "name": "security-log-intelligence-quality-gates",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.1.0",
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "beta:menu-walk": "node scripts/maintenance/beta_menu_walk.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

@@ -1,0 +1,837 @@
+{
+  "contract_id": "sli.gpo-report.v2.reference-1.0",
+  "threshold_percent": 95,
+  "scoring": "all listed selectors per clause must PASS; missing proof is NOT_PROVEN",
+  "clauses": [
+    {
+      "id": "I01",
+      "authority": "owner",
+      "requirement": "Новый report key ad.gpo.v2",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_migration_registers_sibling_report"
+      ]
+    },
+    {
+      "id": "I02",
+      "authority": "owner",
+      "requirement": "Имя «Групповые политики — example.test»",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_migration_registers_sibling_report"
+      ]
+    },
+    {
+      "id": "I03",
+      "authority": "owner",
+      "requirement": "Маршрут /gpo-v2-report",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_migration_registers_sibling_report",
+        "vitest::route_is_gpo_v2_report"
+      ]
+    },
+    {
+      "id": "I04",
+      "authority": "owner",
+      "requirement": "ad.gpo.review и /gpo-report не изменены",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_preserves_predecessor_registration",
+        "vitest::legacy_gpo_route_is_unchanged"
+      ]
+    },
+    {
+      "id": "I05",
+      "authority": "owner",
+      "requirement": "Старый отчёт остаётся на прежней проекции",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_collector_preserves_legacy_projection"
+      ]
+    },
+    {
+      "id": "I06",
+      "authority": "README.md:23",
+      "requirement": "Demo payload запрещён в production",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_rejects_demo_snapshot"
+      ]
+    },
+    {
+      "id": "R01",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует schema_version",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[schema_version]"
+      ]
+    },
+    {
+      "id": "R02",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует collector_version",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[collector_version]"
+      ]
+    },
+    {
+      "id": "R03",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует demo",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[demo]"
+      ]
+    },
+    {
+      "id": "R04",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует started_at",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[started_at]"
+      ]
+    },
+    {
+      "id": "R05",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует completed_at",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[completed_at]"
+      ]
+    },
+    {
+      "id": "R06",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует observed_at",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[observed_at]"
+      ]
+    },
+    {
+      "id": "R07",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует collection_status",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[collection_status]"
+      ]
+    },
+    {
+      "id": "R08",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует domain",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[domain]"
+      ]
+    },
+    {
+      "id": "R09",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует scope",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[scope]"
+      ]
+    },
+    {
+      "id": "R10",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует source_states",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[source_states]"
+      ]
+    },
+    {
+      "id": "R11",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует gpos",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[gpos]"
+      ]
+    },
+    {
+      "id": "R12",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует scopes",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[scopes]"
+      ]
+    },
+    {
+      "id": "R13",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует links",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[links]"
+      ]
+    },
+    {
+      "id": "R14",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует settings",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[settings]"
+      ]
+    },
+    {
+      "id": "R15",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует permissions",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[permissions]"
+      ]
+    },
+    {
+      "id": "R16",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует wmi_filters",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[wmi_filters]"
+      ]
+    },
+    {
+      "id": "R17",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует unresolved_links",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[unresolved_links]"
+      ]
+    },
+    {
+      "id": "R18",
+      "authority": "DATA_CONTRACT.md:11-34",
+      "requirement": "Корень снимка содержит и валидирует collection_errors",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_root_contract[collection_errors]"
+      ]
+    },
+    {
+      "id": "S01",
+      "authority": "DATA_CONTRACT.md:37-68; DESIGN.md:55-64",
+      "requirement": "Закрытый словарь source state",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_semantics[closed_vocabulary]"
+      ]
+    },
+    {
+      "id": "S02",
+      "authority": "DATA_CONTRACT.md:37-68; DESIGN.md:55-64",
+      "requirement": "partial не равен нулю или safe",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_semantics[partial]"
+      ]
+    },
+    {
+      "id": "S03",
+      "authority": "DATA_CONTRACT.md:37-68; DESIGN.md:55-64",
+      "requirement": "not_collected не равен нулю или safe",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_semantics[not_collected]"
+      ]
+    },
+    {
+      "id": "S04",
+      "authority": "DATA_CONTRACT.md:37-68; DESIGN.md:55-64",
+      "requirement": "Ошибки сохраняют source/detail/error/coverage",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_semantics[errors]"
+      ]
+    },
+    {
+      "id": "S05",
+      "authority": "DATA_CONTRACT.md:37-68; DESIGN.md:55-64",
+      "requirement": "unlinked только при links=observed",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_source_semantics[unlinked_gate]"
+      ]
+    },
+    {
+      "id": "E01",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GUID является стабильной идентичностью GPO",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[gpo_identity]"
+      ]
+    },
+    {
+      "id": "E02",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GPO содержит имя, домен, owner, description и даты",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[gpo_context]"
+      ]
+    },
+    {
+      "id": "E03",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Computer/User enabled и версии AD/SYSVOL раздельны",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[gpo_sides]"
+      ]
+    },
+    {
+      "id": "E04",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GPC raw context сохраняется",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[gpc]"
+      ]
+    },
+    {
+      "id": "E05",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GPT path/probe/status/INI version сохраняются",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[gpt]"
+      ]
+    },
+    {
+      "id": "E06",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GPO хранит ссылки на links/settings/permissions",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[references]"
+      ]
+    },
+    {
+      "id": "E07",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "GPO хранит собственные source states/errors",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[per_gpo_states]"
+      ]
+    },
+    {
+      "id": "E08",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Неразрешённые ссылки не теряются",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[unresolved_refs]"
+      ]
+    },
+    {
+      "id": "E09",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Site/domain/OU — самостоятельные entities",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[scope_entity]"
+      ]
+    },
+    {
+      "id": "E10",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Block Inheritance хранится отдельно",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[scope_block]"
+      ]
+    },
+    {
+      "id": "E11",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Link enabled/enforced/order/raw_options сохраняются",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[link_flags]"
+      ]
+    },
+    {
+      "id": "E12",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Порядок берётся из gPLink sequence",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[link_order]"
+      ]
+    },
+    {
+      "id": "E13",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Настройка хранит side/extension/path/name/value/source/fingerprint",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[setting_leaf]"
+      ]
+    },
+    {
+      "id": "E14",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Ограничение нормализации даёт partial",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[setting_limit]"
+      ]
+    },
+    {
+      "id": "E15",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "Permission хранит GPO/trustee/SID/type/permission/inherited",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[permission]"
+      ]
+    },
+    {
+      "id": "E16",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "WMI хранит identity/metadata/WQL/used_by",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[wmi]"
+      ]
+    },
+    {
+      "id": "E17",
+      "authority": "DATA_CONTRACT.md:85-295",
+      "requirement": "WQL не выполняется",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_entity_contract[wmi_no_exec]"
+      ]
+    },
+    {
+      "id": "A01",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина source_failed",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[source_failed]",
+        "vitest::attention_reason_source_failed"
+      ]
+    },
+    {
+      "id": "A02",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина version_mismatch",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[version_mismatch]",
+        "vitest::attention_reason_version_mismatch"
+      ]
+    },
+    {
+      "id": "A03",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина gpt_unavailable",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[gpt_unavailable]",
+        "vitest::attention_reason_gpt_unavailable"
+      ]
+    },
+    {
+      "id": "A04",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина unresolved_link",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[unresolved_link]",
+        "vitest::attention_reason_unresolved_link"
+      ]
+    },
+    {
+      "id": "A05",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина unresolved_wmi",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[unresolved_wmi]",
+        "vitest::attention_reason_unresolved_wmi"
+      ]
+    },
+    {
+      "id": "A06",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина all_settings_disabled",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[all_settings_disabled]",
+        "vitest::attention_reason_all_settings_disabled"
+      ]
+    },
+    {
+      "id": "A07",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина unlinked",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[unlinked]",
+        "vitest::attention_reason_unlinked"
+      ]
+    },
+    {
+      "id": "A08",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина empty_enabled_side",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[empty_enabled_side]",
+        "vitest::attention_reason_empty_enabled_side"
+      ]
+    },
+    {
+      "id": "A09",
+      "authority": "DESIGN.md:39-53",
+      "requirement": "Детерминированная причина stale_modified",
+      "non_waivable": false,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_reason[stale_modified]",
+        "vitest::attention_reason_stale_modified"
+      ]
+    },
+    {
+      "id": "A10",
+      "authority": "DESIGN.md:53",
+      "requirement": "Каждая причина содержит факт, условие, qualification, limitation и safe next action",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_attention_explanation_chain",
+        "vitest::attention_drawer_explanation_chain"
+      ]
+    },
+    {
+      "id": "A11",
+      "authority": "DESIGN.md:51",
+      "requirement": "stale_modified активируется только выбранным пользователем порогом и не является нормативом",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_stale_reason_requires_user_threshold",
+        "vitest::stale_filter_is_optional"
+      ]
+    },
+    {
+      "id": "V01",
+      "authority": "README.md:25-40",
+      "requirement": "Представление attention доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_attention_renders",
+        "runtime::tab_attention"
+      ]
+    },
+    {
+      "id": "V02",
+      "authority": "README.md:25-40",
+      "requirement": "Представление changes доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_changes_renders",
+        "runtime::tab_changes"
+      ]
+    },
+    {
+      "id": "V03",
+      "authority": "README.md:25-40",
+      "requirement": "Представление all доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_all_renders",
+        "runtime::tab_all"
+      ]
+    },
+    {
+      "id": "V04",
+      "authority": "README.md:25-40",
+      "requirement": "Представление linked доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_linked_renders",
+        "runtime::tab_linked"
+      ]
+    },
+    {
+      "id": "V05",
+      "authority": "README.md:25-40",
+      "requirement": "Представление unlinked доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_unlinked_renders",
+        "runtime::tab_unlinked"
+      ]
+    },
+    {
+      "id": "V06",
+      "authority": "README.md:25-40",
+      "requirement": "Представление scopes доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_scopes_renders",
+        "runtime::tab_scopes"
+      ]
+    },
+    {
+      "id": "V07",
+      "authority": "README.md:25-40",
+      "requirement": "Представление settings доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_settings_renders",
+        "runtime::tab_settings"
+      ]
+    },
+    {
+      "id": "V08",
+      "authority": "README.md:25-40",
+      "requirement": "Представление permissions доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_permissions_renders",
+        "runtime::tab_permissions"
+      ]
+    },
+    {
+      "id": "V09",
+      "authority": "README.md:25-40",
+      "requirement": "Представление wmi доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_wmi_renders",
+        "runtime::tab_wmi"
+      ]
+    },
+    {
+      "id": "V10",
+      "authority": "README.md:25-40",
+      "requirement": "Представление quality доступно как горизонтальная вкладка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::view_quality_renders",
+        "runtime::tab_quality"
+      ]
+    },
+    {
+      "id": "U01",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Поиск фильтрует текущий видимый срез",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_search",
+        "pytest::test_gpo_v2_search_contract"
+      ]
+    },
+    {
+      "id": "U02",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "У каждой вкладки есть контекстные фильтры",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_context_filters",
+        "pytest::test_gpo_v2_context_filters_contract"
+      ]
+    },
+    {
+      "id": "U03",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Каждый видимый столбец сортируется",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_sort",
+        "pytest::test_gpo_v2_sort_contract"
+      ]
+    },
+    {
+      "id": "U04",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Пользователь выбирает видимые столбцы",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_columns",
+        "pytest::test_gpo_v2_columns_contract"
+      ]
+    },
+    {
+      "id": "U05",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Обычная и компактная плотность",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_density",
+        "pytest::test_gpo_v2_density_contract"
+      ]
+    },
+    {
+      "id": "U06",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "CSV содержит ровно текущие видимые строки и колонки",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::interaction_csv",
+        "pytest::test_gpo_v2_csv_contract"
+      ]
+    },
+    {
+      "id": "U07",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Карточки GPO/scope/setting/permission/WMI/change/quality открываются",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_details",
+        "pytest::test_gpo_v2_details_contract"
+      ]
+    },
+    {
+      "id": "U08",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Пустое состояние называет ограничения и позволяет сбросить фильтры",
+      "non_waivable": false,
+      "selectors": [
+        "vitest::interaction_empty",
+        "pytest::test_gpo_v2_empty_contract"
+      ]
+    },
+    {
+      "id": "U09",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Пагинации нет; превышение лимита явно partial",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::interaction_no_pagination",
+        "pytest::test_gpo_v2_no_pagination_contract"
+      ]
+    },
+    {
+      "id": "U10",
+      "authority": "DESIGN.md:88-99; owner",
+      "requirement": "Изменения используют два последних совместимых завершённых снимка",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::interaction_previous",
+        "pytest::test_gpo_v2_previous_contract"
+      ]
+    },
+    {
+      "id": "U11",
+      "authority": "DESIGN.md; owner amendment 2026-08-31",
+      "requirement": "Карточка GPO показывает принадлежащие ей настройки в свёрнутом по умолчанию разделе",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::card_settings_are_linked_and_collapsed_by_default",
+        "runtime::gpo_card_settings_linked_and_collapsed"
+      ]
+    },
+    {
+      "id": "U12",
+      "authority": "owner amendment 2026-08-31",
+      "requirement": "Пользовательские состояния и подписи отображаются простым русским языком",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::user_facing_statuses_are_simple_russian",
+        "runtime::user_facing_statuses_are_russian"
+      ]
+    },
+    {
+      "id": "Q01",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "UI и API явно не утверждают фактическое применение",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_prohibited_claims",
+        "vitest::not_rsop_notice"
+      ]
+    },
+    {
+      "id": "Q02",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Отсутствие в текущем снимке не называется удалением",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_comparison_does_not_claim_deletion"
+      ]
+    },
+    {
+      "id": "Q03",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Collector не содержит AD/GPO/SYSVOL write cmdlets",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_collector_is_read_only"
+      ]
+    },
+    {
+      "id": "Q04",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Snapshot API проверяет report action и domain scope до чтения payload",
+      "non_waivable": true,
+      "selectors": [
+        "pytest::test_gpo_v2_snapshot_api_is_authorized"
+      ]
+    },
+    {
+      "id": "Q05",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "В стандартном окне одновременно один видимый vertical scroll owner",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::single_vertical_scroll_contract",
+        "runtime::single_vertical_scroll"
+      ]
+    },
+    {
+      "id": "Q06",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "В стандартном окне нет root или nested horizontal overflow",
+      "non_waivable": true,
+      "selectors": [
+        "vitest::word_wrap_layout_contract",
+        "runtime::no_horizontal_overflow"
+      ]
+    },
+    {
+      "id": "Q07",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Authenticated production route не даёт console/page errors",
+      "non_waivable": true,
+      "selectors": [
+        "runtime::no_console_or_page_errors"
+      ]
+    },
+    {
+      "id": "Q08",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Production route не содержит demo records",
+      "non_waivable": true,
+      "selectors": [
+        "runtime::production_snapshot_demo_false"
+      ]
+    },
+    {
+      "id": "Q09",
+      "authority": "SOURCE_NOTES.md; owner",
+      "requirement": "Production snapshot hash/count/status прочитаны обратно",
+      "non_waivable": true,
+      "selectors": [
+        "runtime::source_snapshot_readback"
+      ]
+    }
+  ]
+}

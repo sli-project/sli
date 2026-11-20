@@ -1,0 +1,33 @@
+{
+  "_FAILURE_TEXT": {
+    "context_read_timeout": "Чтение сохранённого AD-контекста не завершилось в отведённое время. Проверьте нагрузку и состояние хранилища; сравнение входов не выполнено.",
+    "context_read_cancelled": "Чтение сохранённого AD-контекста прервано хранилищем или отменой запроса. Повторите запрос; сравнение входов не выполнено.",
+    "computer_inventory_unavailable": "Реестр рабочих станций AD не собран или недоступен. Проверьте сбор компьютеров выбранного домена; сравнение входов не выполнено.",
+    "report_domain_not_configured": "Домен отчёта не задан. Укажите его в настройках платформы и повторите запрос.",
+    "domain_context_unavailable": "Не удалось определить домен отчёта. Проверьте настройки домена и повторите запрос.",
+    "domain_controllers_missing": "Для выбранного домена нет контроллеров — источников входов. Проверьте настройку сбора с контроллеров домена.",
+    "users_context_missing": "Нет сохранённого снимка пользователей для сравнения. Проверьте сбор AD-контекста пользователей выбранного домена.",
+    "computers_context_missing": "Нет сохранённого снимка компьютеров для сравнения. Проверьте сбор AD-контекста компьютеров выбранного домена.",
+    "context_verification_failed": "Снимок AD-контекста не прошёл проверку целостности. Сравнение остановлено; проверьте состояние сбора и хранилища.",
+    "context_read_failed": "Не удалось прочитать AD-контекст. Повторите запрос; если ошибка сохраняется, проверьте состояние сбора и хранилища.",
+    "history_verification_failed": "История входов не прошла проверку целостности. Сравнение остановлено; проверьте состояние хранилища.",
+    "history_read_failed": "Не удалось прочитать историю входов. Повторите запрос; если ошибка сохраняется, проверьте доступность хранилища истории.",
+    "read_cancelled": "Чтение данных прервано: истекло время ожидания или запрос был отменён. Повторите запрос. Новизна пар не определена.",
+    "read_timeout": "Время ожидания данных истекло. Сузьте период и базовое окно, затем повторите запрос. Новизна пар не определена.",
+    "comparison_failed": "Не удалось построить сравнение входов. Повторите запрос; если ошибка сохраняется, передайте её администратору платформы.",
+    "history_empty": "В постоянной истории нет сохранённых входов от контроллеров выбранного домена. Проверьте сбор и публикацию истории; это не означает, что входов не было."
+  },
+  "_REASON_CODES": {
+    "report_domain_not_configured": "report_domain_not_configured",
+    "logon_domain_controllers_missing": "domain_controllers_missing",
+    "what_where_when_users_snapshot_unavailable": "users_context_missing",
+    "logon_computers_snapshot_missing": "computers_context_missing",
+    "logon_inventory_unavailable": "computer_inventory_unavailable",
+    "stored_snapshot_hash_mismatch": "context_verification_failed",
+    "stored_snapshot_object_count_mismatch": "context_verification_failed",
+    "stored_snapshot_identity_mismatch": "context_verification_failed",
+    "stored_snapshot_status_mismatch": "context_verification_failed",
+    "stored_base_inventory_status_mismatch": "context_verification_failed",
+    "what_where_when_users_snapshot_hash_mismatch": "context_verification_failed"
+  }
+}

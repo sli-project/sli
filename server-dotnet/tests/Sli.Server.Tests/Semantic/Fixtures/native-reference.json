@@ -1,0 +1,710 @@
+{
+  "scope": {
+    "installation_id": "00000000-0000-4000-8000-000000000001",
+    "plugin_id": "sli.windows.ad-dc",
+    "source_instance_id": "synthetic",
+    "source_generation": "synthetic",
+    "collection_scope_id": ""
+  },
+  "vectors": [
+    {
+      "name": "optional_absent",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "optional_absent",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "empty_data",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'/></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": ""
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "empty_data",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'/></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": ""
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "whitespace",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'> \t </Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": " \t "
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "whitespace",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'> \t </Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": " \t "
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "numeric_string",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0x0</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0x0"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "numeric_string",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0x0</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0x0"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "case_preserved",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='SubjectUserName'>SYNTHETIC</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "SubjectUserName": "SYNTHETIC"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "case_preserved",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='SubjectUserName'>SYNTHETIC</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "SubjectUserName": "SYNTHETIC"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "binary",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Binary>00</Binary></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "binary",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Binary>00</Binary></EventData></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "data_and_binary",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data><Binary>00</Binary></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "data_and_binary",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data><Binary>00</Binary></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "multiple_eventdata",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data></EventData><EventData><Data Name='CommandLine'>synthetic</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "multiple_eventdata",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data></EventData><EventData><Data Name='CommandLine'>synthetic</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0",
+          "CommandLine": "synthetic"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "duplicate_across_eventdata",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data></EventData><EventData><Data Name='Status'>1</Data></EventData></Event>"
+      },
+      "expected": {
+        "fields": {
+          "Status": "0"
+        },
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "duplicate_across_eventdata",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data></EventData><EventData><Data Name='Status'>1</Data></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "userdata_1102",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><UserData><LogFileCleared xmlns='http://manifests.microsoft.com/win/2004/08/windows/eventlog'/></UserData></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "userdata_1102",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><UserData><LogFileCleared xmlns='http://manifests.microsoft.com/win/2004/08/windows/eventlog'/></UserData></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "missing_name",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data/></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "missing_name",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data/></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "nested",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'><value/></Data></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "nested",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'><value/></Data></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "duplicate",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data><Data Name='Status'>1</Data></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "duplicate",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='Status'>0</Data><Data Name='Status'>1</Data></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "untrusted_name",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='private-host-token'/><Data Name='private-host-token'/></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "untrusted_name",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/><Computer>dc.example.test</Computer></System><EventData><Data Name='private-host-token'/><Data Name='private-host-token'/></EventData></Event>"
+      },
+      "expected": null
+    },
+    {
+      "name": "time_14",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00.1234567Z\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_14",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00.1234567Z\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_15",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T07:00:00.123456+07:00\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_15",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T07:00:00.123456+07:00\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_16",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00,123456+0000\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_16",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00,123456+0000\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_17",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:30.123456+00:00:30\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "time_17",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123456+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:30.123456+00:00:30\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    },
+    {
+      "name": "missing_computer",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": null
+      }
+    },
+    {
+      "name": "missing_computer",
+      "identity": false,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00Z\"/></System></Event>"
+      },
+      "expected": {
+        "fields": {},
+        "host": ""
+      }
+    },
+    {
+      "name": "rounded_storage_time_mismatch",
+      "identity": true,
+      "row": {
+        "source_event_id": 1,
+        "native_id": "1",
+        "event_id": 1102,
+        "occurred_at_utc": "2026-11-01T00:00:00.123457+00:00",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_xml": "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><EventID>1102</EventID><TimeCreated SystemTime=\"2026-11-01T00:00:00.1234567Z\"/><Computer>dc.example.test</Computer></System></Event>"
+      },
+      "expected": null,
+      "corrected_expected": {
+        "fields": {},
+        "host": "dc.example.test"
+      }
+    }
+  ],
+  "acl": {
+    "snapshot": {
+      "contract_id": "sli.file-audit.inventory.v1",
+      "collection_scope_id": "synthetic-root",
+      "policy_revision": "1",
+      "observed_at_utc": "2026-01-01T00:00:00+00:00",
+      "scan_id": "00000000-0000-4000-8000-000000000002",
+      "page_number": 0,
+      "has_more": false,
+      "completeness": "complete",
+      "unread_objects": 0,
+      "share": {
+        "name": "synthetic",
+        "path": "C:\\synthetic",
+        "dacl": "D:(A;;FA;;;WD)",
+        "complete": true
+      },
+      "local_groups": {
+        "complete": true,
+        "groups": []
+      },
+      "objects": [
+        {
+          "path": "C:\\synthetic\\\u0422\u0435\u0441\u0442\ud83d\ude00",
+          "object_id": "synthetic-object",
+          "object_type": "file",
+          "owner_sid": "S-1-5-18",
+          "dacl": "D:(A;;FW;;;WD)",
+          "sacl": "S:",
+          "sacl_protected": false,
+          "sacl_missing": false
+        }
+      ],
+      "snapshot_sha256": "47e256122eacbb4140edc76f7ac0c392ab2a70c4766959f97db09cb5e61e2ad8",
+      "snapshot_id": "8a5d5a49-0295-5cfc-adae-55ef824027a0"
+    },
+    "config": {
+      "policy_revision": "1",
+      "source_name": "dc.example.test",
+      "source_kind": "server",
+      "roots": [
+        {
+          "collection_scope_id": "synthetic-root",
+          "path": "C:\\synthetic",
+          "share_name": "synthetic",
+          "important": true
+        }
+      ],
+      "service_account_exclusions": []
+    },
+    "result": {
+      "result_id": "f9ee5afa7e6db7930dc7f3f8a324029269b416646664d0542141ba9b147bf762",
+      "rule_code": "file-audit.broad-write",
+      "rule_version": 1,
+      "agent_id": "00000000-0000-4000-8000-000000000001",
+      "source_instance_id": "00000000-0000-4000-8000-000000000003",
+      "collection_scope_id": "synthetic-root",
+      "subject_sid": "S-1-1-0",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "conclusion_state": "observed",
+      "action_ids": [],
+      "snapshot_ids": [
+        "8a5d5a49-0295-5cfc-adae-55ef824027a0"
+      ],
+      "details": {
+        "path": "C:\\synthetic\\\u0422\u0435\u0441\u0442\ud83d\ude00",
+        "layer": "ntfs",
+        "ntfs_mask": 1179926,
+        "share_mask": null,
+        "effective_smb_mask": null,
+        "effective_smb_state": "requires_review",
+        "limitations": [
+          "privileges_and_conditional_aces_not_evaluated"
+        ],
+        "coverage_state": "complete",
+        "membership_complete": false,
+        "snapshot_sha256": "47e256122eacbb4140edc76f7ac0c392ab2a70c4766959f97db09cb5e61e2ad8",
+        "principal": {}
+      }
+    },
+    "severity": "medium"
+  }
+}

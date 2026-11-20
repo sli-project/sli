@@ -1,0 +1,82 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.gpo",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [
+    {
+      "dataset_id": "ad.gpo.v2",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "ad.gpo.v2",
+      "capabilities": []
+    }
+  ],
+  "reports": [
+    {
+      "report_key": "ad.gpo.v2",
+      "access_key": "ad.gpo.v2",
+      "dataset_id": "ad.gpo.v2",
+      "definition_id": "ad.gpo.v2",
+      "section_id": "group-policies",
+      "title_key": "shell.nav.gpo-report",
+      "routes": [
+        "/report/ad.gpo.v2"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.gpo.v2"
+    },
+    {
+      "report_key": "ad.gpo.review",
+      "access_key": "ad.gpo.review",
+      "dataset_id": "ad.gpo.v2",
+      "definition_id": "ad.gpo.review",
+      "section_id": "group-policies",
+      "title_key": "shell.nav.gpo-report",
+      "routes": [
+        "/gpo-report"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "ad.gpo.v2"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "group-policies",
+      "title_key": "shell.section.group-policies",
+      "icon_id": "settings",
+      "order": 40,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_gpo",
+    "existing_tables": [],
+    "migrations": []
+  }
+}

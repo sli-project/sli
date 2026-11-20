@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-CONTROLLED-PRODUCTION-BACKFILL-1",
+  "status": "source_ready_execution_blocked",
+  "parent_stage": "DB-STORAGE-OPT-1",
+  "depends_on": {
+    "prep_stage": "STORAGE-V2-CONTROLLED-PRODUCTION-PREP-1",
+    "prep_report": "STORAGE_V2_CONTROLLED_PRODUCTION_PREP1_REPORT_20260714.json",
+    "prep_status": "accepted_source_only",
+    "production_schema_version_before_start": 8,
+    "production_backfill_authorized_by_prep": false
+  },
+  "purpose": "Define the controlled production backfill package, required live proofs, execution guardrails, pause/resume behavior and stop conditions without running production backfill from this source-only stage.",
+  "authorization": {
+    "this_stage_authorizes_execution": false,
+    "requires_explicit_operator_approval": true,
+    "required_approval_phrase": "AUTHORIZE_STORAGE_V2_PRODUCTION_BACKFILL_20260714",
+    "approval_must_be_runtime_input_not_config_default": true,
+    "approval_expires_after_one_run": true,
+    "cutover_authorized": false,
+    "reclaim_authorized": false
+  },
+  "required_live_inputs": [
+    {
+      "id": "external_restore_proof",
+      "source": "operator_evidence",
+      "required": true,
+      "acceptance": "Independent external dump copy SHA matches source SHA and isolated restore from that external copy proves schema/count/last-event/API-or-query smoke."
+    },
+    {
+      "id": "production_connection_identity",
+      "source": "read_only_sql",
+      "required": true,
+      "acceptance": "Operator confirms exact database name, server address, port, current schema version 8 and production fingerprint before any migration."
+    },
+    {
+      "id": "free_space_headroom",
+      "source": "read_only_filesystem_measurement",
+      "required": true,
+      "acceptance": "Database volume free >= 2.2x current database bytes; archive volume free >= projected archive bytes * 1.3; backup volume keeps the independent copy intact."
+    },
+    {
+      "id": "wal_headroom",
+      "source": "read_only_sql_and_filesystem_measurement",
+      "required": true,
+      "acceptance": "WAL can absorb one planned chunk burst with 2x margin; if not, initial chunk size is reduced before start."
+    },
+    {
+      "id": "archive_acl_probe",
+      "source": "filesystem_probe",
+      "required": true,
+      "acceptance": "Runtime account can create, fsync/rename, read and delete a non-payload probe in the V2 archive root."
+    },
+    {
+      "id": "role_privilege_dry_run",
+      "source": "read_only_catalog_check",
+      "required": true,
+      "acceptance": "Runtime role is not SUPERUSER/CREATEDB/CREATEROLE; storage owner/migrator/worker privileges match the migration contract."
+    },
+    {
+      "id": "maintenance_freeze",
+      "source": "operator_state",
+      "required": true,
+      "acceptance": "Scheduler, collection and continuous recovery are disabled for the window; port/runtime state is recorded separately."
+    }
+  ],
+  "execution_plan": [
+    {
+      "step": 1,
+      "name": "preflight_evidence_load",
+      "writes_production": false,
+      "action": "Load and verify all required live inputs; refuse execution if any proof is missing, stale, mismatched or produced from production mutation."
+    },
+    {
+      "step": 2,
+      "name": "apply_migrations_9_10",
+      "writes_production": true,
+      "action": "Apply only migrations 9 and 10 inside the approved maintenance window; migration 11, migration 12, read/write routing and reclaim stay disabled.",
+      "rollback": "Use rollback 10 then rollback 9 before any read/write cutover if migration/backfill is abandoned."
+    },
+    {
+      "step": 3,
+      "name": "start_backfill_worker",
+      "writes_production": true,
+      "action": "Run one named worker with initial chunk size <= 25000, checkpoint lease, archive hash verification and WAL/duration telemetry.",
+      "rollback": "Stop worker; V1 remains source of truth; incomplete V2 chunks are handled only by guarded rollback tooling."
+    },
+    {
+      "step": 4,
+      "name": "bounded_progress_loop",
+      "writes_production": true,
+      "action": "Continue chunks only while every chunk is verified, WAL/headroom stays inside limits, no source/target mismatch appears and operator pause remains available."
+    },
+    {
+      "step": 5,
+      "name": "completion_identity_proof",
+      "writes_production": false,
+      "action": "After high watermark completion, prove exact event/entity/link/fact counts, chunk hash coverage, archive coverage and V1 row counts unchanged."
+    },
+    {
+      "step": 6,
+      "name": "stop_before_cutover",
+      "writes_production": false,
+      "action": "Stop after backfill acceptance. Do not enable V2 read/write, do not apply migration 11/12 and do not reclaim V1 in this stage."
+    }
+  ],
+  "chunk_policy": {
+    "initial_chunk_size_max_events": 25000,
+    "adaptive_min_events": 5000,
+    "adaptive_max_events": 50000,
+    "target_chunk_seconds": 30,
+    "max_single_chunk_seconds_before_pause": 300,
+    "max_allowed_chunk_failures": 1,
+    "pause_on_wal_margin_below": 2.0,
+    "pause_on_archive_publish_error": true,
+    "pause_on_functional_mismatch": true
+  },
+  "acceptance": {
+    "required_status": "backfill_completed_no_cutover",
+    "data_loss": 0,
+    "unexplained_functional_mismatches": 0,
+    "v1_counts_unchanged": true,
+    "archive_coverage_percent": 100,
+    "checkpoint_state": "completed",
+    "read_cutover_authorized_by_this_stage": false,
+    "v1_reclaim_authorized_by_this_stage": false,
+    "required_report_fields": [
+      "approval_fingerprint",
+      "external_restore_proof_sha256",
+      "production_identity_before",
+      "production_identity_after",
+      "schema_version_before",
+      "schema_version_after",
+      "chunk_count",
+      "events_backfilled",
+      "entities_backfilled",
+      "links_backfilled",
+      "facts_backfilled",
+      "archive_event_sets",
+      "archive_link_sets",
+      "wal_bytes_total",
+      "duration_ms_total",
+      "v1_counts_before",
+      "v1_counts_after",
+      "errors",
+      "stop_reason"
+    ]
+  },
+  "hard_stop_conditions": [
+    "missing explicit operator approval phrase",
+    "external restore proof is missing or not from independent copy",
+    "production database identity differs from approved fingerprint",
+    "production schema version is not 8 before migrations",
+    "runtime role has SUPERUSER, CREATEDB or CREATEROLE",
+    "free-space or WAL headroom falls below accepted threshold",
+    "archive ACL probe fails",
+    "any chunk has source/target hash mismatch",
+    "V1 counts change unexpectedly during backfill",
+    "archive manifest or block hash verification fails",
+    "operator pause cannot be honored",
+    "request attempts read/write cutover or V1 reclaim"
+  ],
+  "strictly_forbidden": [
+    "run without explicit one-run operator approval",
+    "apply migration 11 read/write routing in this stage",
+    "apply migration 12 external FK cutover in this stage",
+    "enable ADLOG_STORAGE_READ_MODE=v2 in this stage",
+    "enable V2-primary writes in this stage",
+    "drop, truncate, rewrite or VACUUM FULL legacy V1 relations in this stage",
+    "delete old dumps or V1 archives in this stage",
+    "treat completed backfill as storage reclaim"
+  ],
+  "next_stage": {
+    "id": "STORAGE-V2-FUNCTIONAL-SHADOW-1",
+    "authorized_by_this_stage": false,
+    "purpose": "Prove V1/V2 runtime/search/report/findings semantic parity after controlled backfill before any read cutover."
+  }
+}

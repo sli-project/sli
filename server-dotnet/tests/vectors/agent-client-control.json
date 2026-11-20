@@ -1,0 +1,589 @@
+{
+  "source_commit": "ddce909d0ddebe43a670e63c85df369e0bd16f17",
+  "interpreter": "CPython 3.14.6",
+  "reports": [
+    {
+      "name": "drain acknowledgement",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4,
+        "collection_state": "paused",
+        "runtime_handoff_supported": true,
+        "rights_probe": {
+          "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "status": "allowed"
+        }
+      },
+      "output": {
+        "applied_policy_revision": 4,
+        "rights_probe": {
+          "runtime_handoff_supported": true,
+          "last_result": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "status": "allowed",
+            "policy_revision": 4,
+            "reported_at": "2026-11-03T01:02:03+00:00"
+          }
+        },
+        "applied_collection_state": "paused"
+      },
+      "error": null
+    },
+    {
+      "name": "older acknowledged revision",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 1,
+        "collection_state": "paused"
+      },
+      "output": {
+        "applied_policy_revision": 2,
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        },
+        "applied_collection_state": "active"
+      },
+      "error": null
+    },
+    {
+      "name": "equal applied older than desired",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 2,
+        "collection_state": "paused"
+      },
+      "output": {
+        "applied_policy_revision": 2,
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        },
+        "applied_collection_state": "paused"
+      },
+      "error": null
+    },
+    {
+      "name": "diagnostics not acknowledgement",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "delivery_diagnostics": []
+      },
+      "output": {
+        "delivery_diagnostics": {
+          "reported_at": "2026-11-03T01:02:03+00:00",
+          "items": []
+        }
+      },
+      "error": null
+    },
+    {
+      "name": "eventlog aware offset",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4,
+        "collection_state": "paused",
+        "eventlog_diagnostics": [
+          {
+            "channel": "Security",
+            "observed_at_utc": "2026-W45-2T01:02:03+01:00:30",
+            "policy_revision": 4,
+            "error": null
+          }
+        ]
+      },
+      "output": {
+        "applied_policy_revision": 4,
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          },
+          "eventlog_diagnostics": {
+            "reported_at": "2026-11-03T01:02:03+00:00",
+            "items": [
+              {
+                "channel": "Security",
+                "observed_at_utc": "2026-W45-2T01:02:03+01:00:30",
+                "policy_revision": 4,
+                "error": null
+              }
+            ]
+          }
+        },
+        "applied_collection_state": "paused"
+      },
+      "error": null
+    },
+    {
+      "name": "boolean revision",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": true,
+        "collection_state": "paused"
+      },
+      "output": null,
+      "error": "invalid_agent_policy_revision"
+    },
+    {
+      "name": "float revision",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4.0,
+        "collection_state": "paused"
+      },
+      "output": null,
+      "error": "invalid_agent_policy_revision"
+    },
+    {
+      "name": "future revision",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 5,
+        "collection_state": "paused"
+      },
+      "output": null,
+      "error": "invalid_agent_policy_revision"
+    },
+    {
+      "name": "missing state",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4
+      },
+      "output": null,
+      "error": "invalid_agent_collection_state"
+    },
+    {
+      "name": "wrong drain state",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4,
+        "collection_state": "active"
+      },
+      "output": null,
+      "error": "invalid_agent_collection_state"
+    },
+    {
+      "name": "false capability",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4,
+        "collection_state": "paused",
+        "runtime_handoff_supported": false
+      },
+      "output": null,
+      "error": "invalid_agent_policy_report"
+    },
+    {
+      "name": "claimed identity",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "agent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      },
+      "output": null,
+      "error": "invalid_agent_policy_report"
+    },
+    {
+      "name": "wrong probe",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "applied_policy_revision": 4,
+        "collection_state": "paused",
+        "rights_probe": {
+          "request_id": "wrong",
+          "status": "allowed"
+        }
+      },
+      "output": null,
+      "error": "invalid_agent_probe_report"
+    },
+    {
+      "name": "bad delivery body",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "body": {
+        "delivery_diagnostics": [
+          {
+            "secret": "synthetic"
+          }
+        ]
+      },
+      "output": null,
+      "error": "invalid_agent_delivery_diagnostics"
+    }
+  ],
+  "checkins": [
+    {
+      "name": "bundled default",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "output": {
+        "agent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "rights_probe_request": {
+          "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        },
+        "collection_policy": {
+          "state": "drain",
+          "interval_seconds": 60,
+          "batch_size": 32,
+          "rate_limit_per_minute": 120,
+          "spool_max_bytes": 67108864
+        },
+        "eventlog_diagnostics_supported": true,
+        "delivery_diagnostics_supported": true
+      }
+    },
+    {
+      "name": "handoff",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        },
+        "source_host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "runtime_resume": {}
+      },
+      "output": {
+        "agent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "assigned_modules": [],
+        "runtime_handoff": {
+          "source_host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "cursors": {}
+        },
+        "policy_revision": 4,
+        "rights_probe_request": {
+          "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        },
+        "collection_policy": {
+          "state": "drain",
+          "interval_seconds": 60,
+          "batch_size": 32,
+          "rate_limit_per_minute": 120,
+          "spool_max_bytes": 67108864
+        },
+        "eventlog_diagnostics_supported": true,
+        "delivery_diagnostics_supported": true
+      }
+    },
+    {
+      "name": "audit-enabled",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "active",
+          "manage_windows_audit": true
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        }
+      },
+      "output": {
+        "agent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "rights_probe_request": {
+          "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        },
+        "collection_policy": {
+          "state": "active",
+          "interval_seconds": 60,
+          "batch_size": 32,
+          "rate_limit_per_minute": 120,
+          "spool_max_bytes": 67108864,
+          "manage_windows_audit": true,
+          "audit_process_command_line": false
+        },
+        "eventlog_diagnostics_supported": true,
+        "delivery_diagnostics_supported": true
+      }
+    },
+    {
+      "name": "file-request",
+      "agent": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "host_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "applied_policy_revision": 2,
+        "applied_collection_state": "active",
+        "collection_policy": {
+          "state": "drain"
+        },
+        "rights_probe": {
+          "pending": {
+            "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+          }
+        },
+        "file_audit": {
+          "request": {
+            "contract": "synthetic-request"
+          }
+        }
+      },
+      "output": {
+        "agent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "assigned_modules": [],
+        "policy_revision": 4,
+        "rights_probe_request": {
+          "request_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        },
+        "collection_policy": {
+          "state": "drain",
+          "interval_seconds": 60,
+          "batch_size": 32,
+          "rate_limit_per_minute": 120,
+          "spool_max_bytes": 67108864
+        },
+        "eventlog_diagnostics_supported": true,
+        "delivery_diagnostics_supported": true,
+        "file_audit": {
+          "contract": "synthetic-request"
+        }
+      }
+    }
+  ]
+}

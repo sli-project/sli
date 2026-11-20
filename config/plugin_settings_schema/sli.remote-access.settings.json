@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.remote-access",
+  "name": "plugins.sli.remote-access.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": []
+  },
+  "rules": [
+    {
+      "rule_id": "qw.nps-denials",
+      "name": "plugins.sli.remote-access.rules.qw.nps-denials.name",
+      "settings": [],
+      "core_settings": []
+    }
+  ],
+  "permissions": [
+    "vpn.audit"
+  ],
+  "migration_directory": "config/postgres_migrations"
+}

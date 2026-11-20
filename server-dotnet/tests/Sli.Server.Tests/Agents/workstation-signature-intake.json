@@ -1,0 +1,353 @@
+[
+  {
+    "name": "valid",
+    "payload": {
+      "context": {
+        "workstations": {
+          "channel_reset": false,
+          "dropped_by_event_id": {},
+          "dropped_count": 0,
+          "filtered_count": 1,
+          "policy_revision": "1",
+          "rate_window_seconds": 60,
+          "read_error": null,
+          "process_signatures": [
+            {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "path": "C:\\app1\\safe.exe",
+              "source_sha256": "caccf9fadc0878ed30c589b251649ef576a500adc12099494ac9e4de285648b0",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:00:00+00:00",
+                "status": "signed",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "kind": "embedded"
+              }
+            }
+          ]
+        }
+      },
+      "continuity": {
+        "status": "not_proven"
+      },
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "channel": "Security",
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 2
+        },
+        "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+        "observed_at_utc": "2026-10-07T12:00:00+00:00",
+        "record_id_range": {
+          "first": 1,
+          "last": 1
+        },
+        "source": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "payload": {
+            "channel": "Security",
+            "computer_name": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+            "connect_address": "localhost",
+            "event_id": 4688,
+            "keywords": "0x8020000000000000",
+            "level": 0,
+            "machine_name": "dc1.example.test",
+            "message": null,
+            "opcode": 0,
+            "properties": [
+              "C:\\app1\\safe.exe"
+            ],
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "record_id": 1,
+            "task": 12544,
+            "time_created": "2026-10-07T00:00:00.1234567Z",
+            "user_id": "S-1-5-18",
+            "version": 2,
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4688</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='NewProcessName'>C:\\app1\\safe.exe</Data></EventData></Event>"
+          },
+          "record_id": 1
+        }
+      ]
+    },
+    "envelope": {
+      "source_instance_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "channel": "workstations",
+      "module_version": "1.1.0",
+      "payload_contract": "sli.collection-packet.v1",
+      "policy_revision": "1",
+      "cursor_before": {
+        "strategy": "bookmark",
+        "token": ""
+      },
+      "cursor_after": {
+        "strategy": "bookmark",
+        "token": "{\"channels\":{\"Security\":{\"bookmark\":\"<BookmarkList><Bookmark RecordId='2'/></BookmarkList>\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":2}},\"next\":1,\"rate\":{\"counts\":{},\"window\":29856240}}"
+      },
+      "filtered_count": 1,
+      "lost_count": 0,
+      "continuity_state": "filtered"
+    },
+    "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+    "config": {
+      "allow_process_paths": [
+        "c:/app[12]/*.exe"
+      ],
+      "deny_process_paths": [
+        "*/secret.exe"
+      ],
+      "families": {
+        "local_admins": false,
+        "logons": false,
+        "processes": true,
+        "protection": false,
+        "usb": false
+      }
+    },
+    "source_accepted": true
+  },
+  {
+    "name": "invalid_hash",
+    "payload": {
+      "context": {
+        "workstations": {
+          "channel_reset": false,
+          "dropped_by_event_id": {},
+          "dropped_count": 0,
+          "filtered_count": 1,
+          "policy_revision": "1",
+          "rate_window_seconds": 60,
+          "read_error": null,
+          "process_signatures": [
+            {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "path": "C:\\app1\\safe.exe",
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:00:00+00:00",
+                "status": "signed",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "kind": "embedded"
+              }
+            }
+          ]
+        }
+      },
+      "continuity": {
+        "status": "not_proven"
+      },
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "channel": "Security",
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 2
+        },
+        "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+        "observed_at_utc": "2026-10-07T12:00:00+00:00",
+        "record_id_range": {
+          "first": 1,
+          "last": 1
+        },
+        "source": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "payload": {
+            "channel": "Security",
+            "computer_name": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+            "connect_address": "localhost",
+            "event_id": 4688,
+            "keywords": "0x8020000000000000",
+            "level": 0,
+            "machine_name": "dc1.example.test",
+            "message": null,
+            "opcode": 0,
+            "properties": [
+              "C:\\app1\\safe.exe"
+            ],
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "record_id": 1,
+            "task": 12544,
+            "time_created": "2026-10-07T00:00:00.1234567Z",
+            "user_id": "S-1-5-18",
+            "version": 2,
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4688</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='NewProcessName'>C:\\app1\\safe.exe</Data></EventData></Event>"
+          },
+          "record_id": 1
+        }
+      ]
+    },
+    "envelope": {
+      "source_instance_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "channel": "workstations",
+      "module_version": "1.1.0",
+      "payload_contract": "sli.collection-packet.v1",
+      "policy_revision": "1",
+      "cursor_before": {
+        "strategy": "bookmark",
+        "token": ""
+      },
+      "cursor_after": {
+        "strategy": "bookmark",
+        "token": "{\"channels\":{\"Security\":{\"bookmark\":\"<BookmarkList><Bookmark RecordId='2'/></BookmarkList>\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":2}},\"next\":1,\"rate\":{\"counts\":{},\"window\":29856240}}"
+      },
+      "filtered_count": 1,
+      "lost_count": 0,
+      "continuity_state": "filtered"
+    },
+    "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+    "config": {
+      "allow_process_paths": [
+        "c:/app[12]/*.exe"
+      ],
+      "deny_process_paths": [
+        "*/secret.exe"
+      ],
+      "families": {
+        "local_admins": false,
+        "logons": false,
+        "processes": true,
+        "protection": false,
+        "usb": false
+      }
+    },
+    "source_accepted": false
+  },
+  {
+    "name": "float_event",
+    "payload": {
+      "context": {
+        "workstations": {
+          "channel_reset": false,
+          "dropped_by_event_id": {},
+          "dropped_count": 0,
+          "filtered_count": 1,
+          "policy_revision": "1",
+          "rate_window_seconds": 60,
+          "read_error": null,
+          "process_signatures": [
+            {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "path": "C:\\app1\\safe.exe",
+              "source_sha256": "caccf9fadc0878ed30c589b251649ef576a500adc12099494ac9e4de285648b0",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:00:00+00:00",
+                "status": "signed",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "kind": "embedded"
+              }
+            }
+          ]
+        }
+      },
+      "continuity": {
+        "status": "not_proven"
+      },
+      "contract": "sli.collection-packet.v1",
+      "header": {
+        "channel": "Security",
+        "cursor": {
+          "after_record_id": null,
+          "last_record_id": 2
+        },
+        "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+        "observed_at_utc": "2026-10-07T12:00:00+00:00",
+        "record_id_range": {
+          "first": 1,
+          "last": 1
+        },
+        "source": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
+      },
+      "records": [
+        {
+          "format": "event_xml",
+          "payload": {
+            "channel": "Security",
+            "computer_name": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+            "connect_address": "localhost",
+            "event_id": 4688.0,
+            "keywords": "0x8020000000000000",
+            "level": 0,
+            "machine_name": "dc1.example.test",
+            "message": null,
+            "opcode": 0,
+            "properties": [
+              "C:\\app1\\safe.exe"
+            ],
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "record_id": 1,
+            "task": 12544,
+            "time_created": "2026-10-07T00:00:00.1234567Z",
+            "user_id": "S-1-5-18",
+            "version": 2,
+            "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4688</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-10-07T00:00:00.1234567Z'/><EventRecordID>1</EventRecordID><Correlation/><Execution ProcessID='664' ThreadID='3092'/><Channel>Security</Channel><Computer>dc1.example.test</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='NewProcessName'>C:\\app1\\safe.exe</Data></EventData></Event>"
+          },
+          "record_id": 1
+        }
+      ]
+    },
+    "envelope": {
+      "source_instance_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "channel": "workstations",
+      "module_version": "1.1.0",
+      "payload_contract": "sli.collection-packet.v1",
+      "policy_revision": "1",
+      "cursor_before": {
+        "strategy": "bookmark",
+        "token": ""
+      },
+      "cursor_after": {
+        "strategy": "bookmark",
+        "token": "{\"channels\":{\"Security\":{\"bookmark\":\"<BookmarkList><Bookmark RecordId='2'/></BookmarkList>\",\"generation\":\"6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f\",\"record_id\":2}},\"next\":1,\"rate\":{\"counts\":{},\"window\":29856240}}"
+      },
+      "filtered_count": 1,
+      "lost_count": 0,
+      "continuity_state": "filtered"
+    },
+    "host_id": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+    "config": {
+      "allow_process_paths": [
+        "c:/app[12]/*.exe"
+      ],
+      "deny_process_paths": [
+        "*/secret.exe"
+      ],
+      "families": {
+        "local_admins": false,
+        "logons": false,
+        "processes": true,
+        "protection": false,
+        "usb": false
+      }
+    },
+    "source_accepted": true
+  }
+]

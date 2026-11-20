@@ -1,0 +1,245 @@
+[
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+  },
+  "name": "Security:fresh"
+ },
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and (EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+  },
+  "name": "Security:fresh-since"
+ },
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136) and EventRecordID > 500]]"
+  },
+  "name": "Security:record-id-no-bookmark"
+ },
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
+  },
+  "name": "Security:bookmark"
+ },
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
+  },
+  "name": "Security:bookmark-with-since"
+ },
+ {
+  "channel": "Security",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00Z"
+  },
+  "expected": {
+   "channel": "Security",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and EventRecordID > 500 and (EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+  },
+  "name": "Security:since-and-record-id"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*"
+  },
+  "name": "System:fresh"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z']]]"
+  },
+  "name": "System:fresh-since"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*[System[EventRecordID > 500]]"
+  },
+  "name": "System:record-id-no-bookmark"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*"
+  },
+  "name": "System:bookmark"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*"
+  },
+  "name": "System:bookmark-with-since"
+ },
+ {
+  "channel": "System",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00Z"
+  },
+  "expected": {
+   "channel": "System",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and EventRecordID > 500]]"
+  },
+  "name": "System:since-and-record-id"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*"
+  },
+  "name": "Directory Service:fresh"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": null,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z']]]"
+  },
+  "name": "Directory Service:fresh-since"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*[System[EventRecordID > 500]]"
+  },
+  "name": "Directory Service:record-id-no-bookmark"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*"
+  },
+  "name": "Directory Service:bookmark"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "<BookmarkList/>",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00+00:00"
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*"
+  },
+  "name": "Directory Service:bookmark-with-since"
+ },
+ {
+  "channel": "Directory Service",
+  "cursor": {
+   "bookmark": "",
+   "generation": "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+   "record_id": 500,
+   "since_utc": "2026-10-06T12:00:00Z"
+  },
+  "expected": {
+   "channel": "Directory Service",
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and EventRecordID > 500]]"
+  },
+  "name": "Directory Service:since-and-record-id"
+ }
+]

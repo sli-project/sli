@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.radius-acquisition-evidence-root.v2",
+  "status": "prepared_source_only",
+  "platform": "windows_ntfs",
+  "activation_enabled": false,
+  "manual_worker_identity": {
+    "source": "configured_collection_identity"
+  },
+  "required_relative_directories": [
+    "staging",
+    "published",
+    "quarantine"
+  ],
+  "required_acl": {
+    "owner_sid": "S-1-5-32-544",
+    "fixed_full_control_sids": [
+      "S-1-5-18",
+      "S-1-5-32-544"
+    ],
+    "configured_worker_sid_required": true,
+    "full_control_rights": 2032127,
+    "inheritance_flags": 3,
+    "propagation_flags": 0,
+    "root_inheritance_protected": true,
+    "children_inherit_only": true
+  },
+  "forbidden_sids": [
+    "S-1-1-0",
+    "S-1-5-11",
+    "S-1-5-32-545",
+    "S-1-5-32-546"
+  ],
+  "root_policy": {
+    "explicit_absolute_path_required": true,
+    "outside_project_root_required": true,
+    "same_volume_required": true,
+    "reparse_points_allowed": false,
+    "raw_path_persisted": false
+  },
+  "prohibited_actions": [
+    "acl_apply",
+    "directory_create",
+    "source_contact",
+    "production_registration",
+    "cursor_bootstrap",
+    "worker_activation",
+    "autostart"
+  ]
+}

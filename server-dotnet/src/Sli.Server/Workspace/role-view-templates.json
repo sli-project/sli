@@ -1,0 +1,197 @@
+[
+  {
+    "id": "security",
+    "title": "Вид ИБ",
+    "short_title": "ИБ",
+    "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+    "audience": "Специалист ИБ",
+    "status": "ok",
+    "metrics": [
+      {
+        "name": "Активные findings",
+        "value": 0,
+        "hint": "объекты проверки с evidence"
+      },
+      {
+        "name": "Security events",
+        "value": null,
+        "hint": "главный AD-канал"
+      },
+      {
+        "name": "Security lag",
+        "value": "—",
+        "hint": "важно для доверия к выводам"
+      },
+      {
+        "name": "AI-отчеты",
+        "value": 0,
+        "hint": "гипотезы после redaction"
+      }
+    ],
+    "actions": [
+      {
+        "label": "ИБ-мониторинг 24ч",
+        "url": "/reports/security-events-monitor.html?period=24h"
+      },
+      {
+        "label": "Открыть findings",
+        "url": "/reports/findings.html"
+      },
+      {
+        "label": "Рабочее место расследования",
+        "url": "/reports/investigation.html"
+      },
+      {
+        "label": "AI-отчеты",
+        "url": "/reports/ai-reports.html"
+      },
+      {
+        "label": "Карта навигации",
+        "url": "/reports/ui-navigation.html"
+      },
+      {
+        "label": "Подготовить AI prompt",
+        "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+      },
+      {
+        "label": "Главная панель",
+        "url": "/"
+      },
+      {
+        "label": "Ролевая карта",
+        "url": "/reports/role-overview.html"
+      }
+    ],
+    "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+  },
+  {
+    "id": "it",
+    "title": "Вид ИТ",
+    "short_title": "ИТ",
+    "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+    "audience": "Специалист ИТ",
+    "status": "ok",
+    "metrics": [
+      {
+        "name": "Источники",
+        "value": null,
+        "hint": "серверы в наблюдении"
+      },
+      {
+        "name": "Security high",
+        "value": 0,
+        "hint": "качество сбора"
+      },
+      {
+        "name": "Retention",
+        "value": 0,
+        "hint": "кандидаты на очистку"
+      },
+      {
+        "name": "System status",
+        "value": null,
+        "hint": "runtime-файлы и БД"
+      }
+    ],
+    "actions": [
+      {
+        "label": "Состояние сбора",
+        "url": "/reports/collector-health.html"
+      },
+      {
+        "label": "Автосбор",
+        "url": "/reports/autocollection.html"
+      },
+      {
+        "label": "Storage Health",
+        "url": "/reports/storage-health.html"
+      },
+      {
+        "label": "Диагностика",
+        "url": "/reports/diagnostics.html"
+      },
+      {
+        "label": "Состояние системы",
+        "url": "/reports/system-health.html"
+      },
+      {
+        "label": "Карта навигации",
+        "url": "/reports/ui-navigation.html"
+      },
+      {
+        "label": "Главная панель",
+        "url": "/"
+      },
+      {
+        "label": "Ролевая карта",
+        "url": "/reports/role-overview.html"
+      }
+    ],
+    "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+  },
+  {
+    "id": "technical",
+    "title": "Технический вид",
+    "short_title": "Технический",
+    "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+    "audience": "Аналитик / инженер",
+    "status": "ok",
+    "metrics": [
+      {
+        "name": "Всего событий",
+        "value": null,
+        "hint": "строки в активном backend"
+      },
+      {
+        "name": "Каналы",
+        "value": 0,
+        "hint": "Windows Event Log"
+      },
+      {
+        "name": "Сущности",
+        "value": null,
+        "hint": "объекты наблюдения"
+      },
+      {
+        "name": "Связи",
+        "value": null,
+        "hint": "event → entity"
+      }
+    ],
+    "actions": [
+      {
+        "label": "Поиск по всем событиям",
+        "url": "/reports/search.html?limit=300&order=desc"
+      },
+      {
+        "label": "Event details 4624",
+        "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+      },
+      {
+        "label": "Entity details",
+        "url": "/reports/entity-details.html?limit=100"
+      },
+      {
+        "label": "Диагностика",
+        "url": "/reports/diagnostics.html"
+      },
+      {
+        "label": "Карта навигации",
+        "url": "/reports/ui-navigation.html"
+      },
+      {
+        "label": "AI redaction preview",
+        "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+      },
+      {
+        "label": "Главная панель",
+        "url": "/"
+      },
+      {
+        "label": "Ролевая карта",
+        "url": "/reports/role-overview.html"
+      }
+    ],
+    "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+  }
+]

@@ -1,0 +1,2264 @@
+{
+  "positive": [
+    {
+      "name": "signed",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "entity_id": 23,
+      "ad_computer_id": null,
+      "expected_result": {
+        "observed": 2,
+        "inserted": 2,
+        "ignored": 0
+      },
+      "observations": [
+        {
+          "id": "7e1bf5fe0884fd57e21a099e604636ffeb0bedc041fa63371020346ea9968a1a",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "processes",
+            "semantic_type": "process.started.fragment",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            },
+            "facts": {
+              "windows_event_id": 4688,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "process_id": "42",
+              "process_name": "C:\\synthetic.exe"
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": false,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "process_id_state": "exact",
+              "process_parent_id_state": "unknown_missing",
+              "process_command_line_state": "unknown_missing",
+              "identity_roles": {},
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4688,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 1,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+            "file_signature": {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+              "path": "C:\\synthetic.exe",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                "status": "signed",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "kind": "embedded"
+              }
+            }
+          },
+          "hash": "55e7925375e03f7757e6b67f12112d7ad00da120fe3d9ddf86905f61fe89c97a"
+        },
+        {
+          "id": "5d4a72d0d881b7e1abf73c90a7c9fc28d662994516f9ba42f60dda92e8d775be",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "logons",
+            "semantic_type": "authentication.session.created",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "affected_entity": "name:demo",
+              "session_principal": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3"
+            },
+            "facts": {
+              "windows_event_id": 4624,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "logon_type": null,
+              "logon_user_name": "Demo",
+              "logon_user_domain": null,
+              "logon_user_sid": null
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": true,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "relation_account_identity": {
+                "state": "not_exact",
+                "sid_field": "TargetUserSid"
+              },
+              "identity_roles": {
+                "affected_entity": {
+                  "key": "name:demo",
+                  "state": "unresolved",
+                  "step": 5,
+                  "provisional": false,
+                  "confidence": 0.3,
+                  "reason": "\u043d\u0435\u0442_\u0434\u043e\u043c\u0435\u043d\u0430",
+                  "aliases": [],
+                  "rule": "identity-ladder/v1"
+                },
+                "session_principal": {
+                  "key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3",
+                  "state": "resolved",
+                  "step": "source_scoped_session",
+                  "provisional": false,
+                  "confidence": 1.0,
+                  "reason": null,
+                  "aliases": [],
+                  "rule": "source-host-plus-logon-id/v1"
+                }
+              },
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [
+                "affected_entity"
+              ],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4624,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 2,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "e68ffba20bf4c463d58ef2e15b820eb73d5029b7488b9e8c40735d45587a7350"
+          },
+          "hash": "c94850703c02fd47ebb47ecaa3265aa4c2e69097441aa1a1c79b17d6fd827167"
+        }
+      ]
+    },
+    {
+      "name": "unsigned",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:34:59+00:00",
+                  "status": "unsigned",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": null,
+                  "kind": "none"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "entity_id": 23,
+      "ad_computer_id": null,
+      "expected_result": {
+        "observed": 2,
+        "inserted": 2,
+        "ignored": 0
+      },
+      "observations": [
+        {
+          "id": "7e1bf5fe0884fd57e21a099e604636ffeb0bedc041fa63371020346ea9968a1a",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "processes",
+            "semantic_type": "process.started.fragment",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            },
+            "facts": {
+              "windows_event_id": 4688,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "process_id": "42",
+              "process_name": "C:\\synthetic.exe"
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": false,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "process_id_state": "exact",
+              "process_parent_id_state": "unknown_missing",
+              "process_command_line_state": "unknown_missing",
+              "identity_roles": {},
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4688,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 1,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+            "file_signature": {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+              "path": "C:\\synthetic.exe",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:34:59+00:00",
+                "status": "unsigned",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": null,
+                "kind": "none"
+              }
+            }
+          },
+          "hash": "55b38856dd30daceb5e270db927d2673f47f6b916c241e3a03eab45c5701aefb"
+        },
+        {
+          "id": "5d4a72d0d881b7e1abf73c90a7c9fc28d662994516f9ba42f60dda92e8d775be",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "logons",
+            "semantic_type": "authentication.session.created",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "affected_entity": "name:demo",
+              "session_principal": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3"
+            },
+            "facts": {
+              "windows_event_id": 4624,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "logon_type": null,
+              "logon_user_name": "Demo",
+              "logon_user_domain": null,
+              "logon_user_sid": null
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": true,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "relation_account_identity": {
+                "state": "not_exact",
+                "sid_field": "TargetUserSid"
+              },
+              "identity_roles": {
+                "affected_entity": {
+                  "key": "name:demo",
+                  "state": "unresolved",
+                  "step": 5,
+                  "provisional": false,
+                  "confidence": 0.3,
+                  "reason": "\u043d\u0435\u0442_\u0434\u043e\u043c\u0435\u043d\u0430",
+                  "aliases": [],
+                  "rule": "identity-ladder/v1"
+                },
+                "session_principal": {
+                  "key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3",
+                  "state": "resolved",
+                  "step": "source_scoped_session",
+                  "provisional": false,
+                  "confidence": 1.0,
+                  "reason": null,
+                  "aliases": [],
+                  "rule": "source-host-plus-logon-id/v1"
+                }
+              },
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [
+                "affected_entity"
+              ],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4624,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 2,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "e68ffba20bf4c463d58ef2e15b820eb73d5029b7488b9e8c40735d45587a7350"
+          },
+          "hash": "c94850703c02fd47ebb47ecaa3265aa4c2e69097441aa1a1c79b17d6fd827167"
+        }
+      ]
+    },
+    {
+      "name": "unavailable",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:01+00:00",
+                  "status": "unavailable",
+                  "reason": "timeout",
+                  "sha256_before": null,
+                  "sha256_after": null,
+                  "identity_before": null,
+                  "identity_after": null,
+                  "signer_sha256": null,
+                  "kind": null
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "entity_id": 23,
+      "ad_computer_id": null,
+      "expected_result": {
+        "observed": 2,
+        "inserted": 2,
+        "ignored": 0
+      },
+      "observations": [
+        {
+          "id": "7e1bf5fe0884fd57e21a099e604636ffeb0bedc041fa63371020346ea9968a1a",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "processes",
+            "semantic_type": "process.started.fragment",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            },
+            "facts": {
+              "windows_event_id": 4688,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "process_id": "42",
+              "process_name": "C:\\synthetic.exe"
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": false,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "process_id_state": "exact",
+              "process_parent_id_state": "unknown_missing",
+              "process_command_line_state": "unknown_missing",
+              "identity_roles": {},
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4688,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 1,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+            "file_signature": {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+              "path": "C:\\synthetic.exe",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:35:01+00:00",
+                "status": "unavailable",
+                "reason": "timeout",
+                "sha256_before": null,
+                "sha256_after": null,
+                "identity_before": null,
+                "identity_after": null,
+                "signer_sha256": null,
+                "kind": null
+              }
+            }
+          },
+          "hash": "f0bbcacc568c79a5682a5ab81c2020690b6613ae50f57c9dc7cf9aac8bdaf3ee"
+        },
+        {
+          "id": "5d4a72d0d881b7e1abf73c90a7c9fc28d662994516f9ba42f60dda92e8d775be",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "logons",
+            "semantic_type": "authentication.session.created",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "affected_entity": "name:demo",
+              "session_principal": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3"
+            },
+            "facts": {
+              "windows_event_id": 4624,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "logon_type": null,
+              "logon_user_name": "Demo",
+              "logon_user_domain": null,
+              "logon_user_sid": null
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": true,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "relation_account_identity": {
+                "state": "not_exact",
+                "sid_field": "TargetUserSid"
+              },
+              "identity_roles": {
+                "affected_entity": {
+                  "key": "name:demo",
+                  "state": "unresolved",
+                  "step": 5,
+                  "provisional": false,
+                  "confidence": 0.3,
+                  "reason": "\u043d\u0435\u0442_\u0434\u043e\u043c\u0435\u043d\u0430",
+                  "aliases": [],
+                  "rule": "identity-ladder/v1"
+                },
+                "session_principal": {
+                  "key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3",
+                  "state": "resolved",
+                  "step": "source_scoped_session",
+                  "provisional": false,
+                  "confidence": 1.0,
+                  "reason": null,
+                  "aliases": [],
+                  "rule": "source-host-plus-logon-id/v1"
+                }
+              },
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [
+                "affected_entity"
+              ],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4624,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 2,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "e68ffba20bf4c463d58ef2e15b820eb73d5029b7488b9e8c40735d45587a7350"
+          },
+          "hash": "c94850703c02fd47ebb47ecaa3265aa4c2e69097441aa1a1c79b17d6fd827167"
+        }
+      ]
+    },
+    {
+      "name": "float",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688.0,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688.0,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "entity_id": 23,
+      "ad_computer_id": null,
+      "expected_result": {
+        "observed": 2,
+        "inserted": 2,
+        "ignored": 0
+      },
+      "observations": [
+        {
+          "id": "7e1bf5fe0884fd57e21a099e604636ffeb0bedc041fa63371020346ea9968a1a",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "processes",
+            "semantic_type": "process.started.fragment",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            },
+            "facts": {
+              "windows_event_id": 4688,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "process_id": "42",
+              "process_name": "C:\\synthetic.exe"
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": false,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "process_id_state": "exact",
+              "process_parent_id_state": "unknown_missing",
+              "process_command_line_state": "unknown_missing",
+              "identity_roles": {},
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4688,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 1,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+            "file_signature": {
+              "contract": "sli.workstation-file-signature.v1",
+              "record_id": 1,
+              "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+              "path": "C:\\synthetic.exe",
+              "measurement": {
+                "scope": "file_at_measurement",
+                "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                "status": "signed",
+                "reason": null,
+                "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "kind": "embedded"
+              }
+            }
+          },
+          "hash": "55e7925375e03f7757e6b67f12112d7ad00da120fe3d9ddf86905f61fe89c97a"
+        },
+        {
+          "id": "5d4a72d0d881b7e1abf73c90a7c9fc28d662994516f9ba42f60dda92e8d775be",
+          "document": {
+            "agent_key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "entity_id": 23,
+            "ad_computer_id": null,
+            "family": "logons",
+            "semantic_type": "authentication.session.created",
+            "roles": {
+              "source_host": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "affected_entity": "name:demo",
+              "session_principal": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3"
+            },
+            "facts": {
+              "windows_event_id": 4624,
+              "channel": "Security",
+              "provider": "Microsoft-Windows-Security-Auditing",
+              "logon_type": null,
+              "logon_user_name": "Demo",
+              "logon_user_domain": null,
+              "logon_user_sid": null
+            },
+            "quality": {
+              "event_data_encoding": "named",
+              "catalog_independent": true,
+              "raw_event_mutated": false,
+              "missing_actor_sid": true,
+              "unresolved_actor": false,
+              "unresolved_target": true,
+              "missing_source_ip": true,
+              "unknown_event_mapping": false,
+              "semantic_mapping_status": "mapped",
+              "defined_but_not_emitted": false,
+              "relation_account_identity": {
+                "state": "not_exact",
+                "sid_field": "TargetUserSid"
+              },
+              "identity_roles": {
+                "affected_entity": {
+                  "key": "name:demo",
+                  "state": "unresolved",
+                  "step": 5,
+                  "provisional": false,
+                  "confidence": 0.3,
+                  "reason": "\u043d\u0435\u0442_\u0434\u043e\u043c\u0435\u043d\u0430",
+                  "aliases": [],
+                  "rule": "identity-ladder/v1"
+                },
+                "session_principal": {
+                  "key": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0x3",
+                  "state": "resolved",
+                  "step": "source_scoped_session",
+                  "provisional": false,
+                  "confidence": 1.0,
+                  "reason": null,
+                  "aliases": [],
+                  "rule": "source-host-plus-logon-id/v1"
+                }
+              },
+              "provisional_identity_roles": [],
+              "unresolved_identity_roles": [
+                "affected_entity"
+              ],
+              "ad_enrichment": "not_collected",
+              "coverage": "not_proven"
+            },
+            "event_id": 4624,
+            "channel": "Security",
+            "provider_name": "Microsoft-Windows-Security-Auditing",
+            "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "record_id": 2,
+            "observed_at": "2026-10-07T12:34:56+00:00",
+            "keywords": null,
+            "source_sha256": "e68ffba20bf4c463d58ef2e15b820eb73d5029b7488b9e8c40735d45587a7350"
+          },
+          "hash": "c94850703c02fd47ebb47ecaa3265aa4c2e69097441aa1a1c79b17d6fd827167"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "path",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\NUL.txt",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "hash",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "duplicate",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              },
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "bool-record",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": true,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "changed-file",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "late",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:06+00:00",
+                  "status": "signed",
+                  "reason": null,
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    },
+    {
+      "name": "unknown-reason",
+      "packet": {
+        "contract": "sli.collection-packet.v1",
+        "header": {
+          "source": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "channel": "Security",
+          "generation": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "record_id_range": {
+            "first": 1,
+            "last": 2
+          },
+          "cursor": {
+            "after_record_id": null,
+            "last_record_id": 2
+          },
+          "observed_at_utc": "2026-10-07T12:35:00+00:00"
+        },
+        "records": [
+          {
+            "format": "event_xml",
+            "record_id": 1,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4688,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 1,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "42",
+                "C:\\synthetic.exe"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+            }
+          },
+          {
+            "format": "event_xml",
+            "record_id": 2,
+            "payload": {
+              "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "connect_address": "",
+              "channel": "Security",
+              "provider_name": "Microsoft-Windows-Security-Auditing",
+              "event_id": 4624,
+              "version": null,
+              "level": null,
+              "task": null,
+              "opcode": null,
+              "keywords": null,
+              "record_id": 2,
+              "time_created": "2026-10-07T12:34:56Z",
+              "machine_name": "synthetic.example",
+              "user_id": null,
+              "message": null,
+              "properties": [
+                "Demo",
+                "0x3"
+              ],
+              "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+            }
+          }
+        ],
+        "continuity": {
+          "status": "not_proven"
+        },
+        "context": {
+          "workstations": {
+            "process_signatures": [
+              {
+                "contract": "sli.workstation-file-signature.v1",
+                "record_id": 1,
+                "source_sha256": "d09a6baee7f9624cb13ffaed4c90d7a3b8dceb77463232c2e3f3a2f8747476c5",
+                "path": "C:\\synthetic.exe",
+                "measurement": {
+                  "scope": "file_at_measurement",
+                  "observed_at_utc": "2026-10-07T12:35:05+00:00",
+                  "status": "unavailable",
+                  "reason": "oops",
+                  "sha256_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sha256_after": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "identity_before": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "identity_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "signer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "kind": "embedded"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rows": [
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4688,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 1,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "42",
+            "C:\\synthetic.exe"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4688</EventID><EventRecordID>1</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"NewProcessId\">42</Data><Data Name=\"NewProcessName\">C:\\synthetic.exe</Data></EventData></Event>"
+        },
+        {
+          "computer_name": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "connect_address": "",
+          "channel": "Security",
+          "provider_name": "Microsoft-Windows-Security-Auditing",
+          "event_id": 4624,
+          "version": null,
+          "level": null,
+          "task": null,
+          "opcode": null,
+          "keywords": null,
+          "record_id": 2,
+          "time_created": "2026-10-07T12:34:56Z",
+          "machine_name": "synthetic.example",
+          "user_id": null,
+          "message": null,
+          "properties": [
+            "Demo",
+            "0x3"
+          ],
+          "xml": "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>2</EventRecordID><Channel>Security</Channel><TimeCreated SystemTime='2026-10-07T12:34:56Z'/><Computer>synthetic.example</Computer></System><EventData><Data Name=\"TargetUserName\">Demo</Data><Data Name=\"TargetLogonId\">0x3</Data></EventData></Event>"
+        }
+      ],
+      "accepted": false
+    }
+  ]
+}

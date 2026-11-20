@@ -1,0 +1,64 @@
+{
+  "_CONTROL_CONTEXT_FIELDS": {
+    "domain_controller": [
+      "dns_host_name",
+      "site_name",
+      "is_global_catalog",
+      "is_read_only",
+      "operation_master_roles",
+      "distinguished_name"
+    ],
+    "domain": [
+      "forest_name",
+      "netbios_name",
+      "distinguished_name",
+      "pdc_emulator",
+      "rid_master",
+      "infrastructure_master",
+      "schema_master",
+      "domain_naming_master"
+    ],
+    "replication_link": [
+      "source_dc",
+      "destination_dc",
+      "naming_context",
+      "last_replication_attempt_utc"
+    ],
+    "domain_trust": [
+      "trust_partner",
+      "trust_flat_name",
+      "distinguished_name"
+    ]
+  },
+  "CONTEXT_LABELS": {
+    "dns_host_name": "DNS",
+    "site_name": "Сайт",
+    "is_global_catalog": "Global Catalog",
+    "is_read_only": "RODC",
+    "operation_master_roles": "FSMO",
+    "distinguished_name": "DN",
+    "forest_name": "Лес",
+    "netbios_name": "NetBIOS",
+    "pdc_emulator": "PDC Emulator",
+    "rid_master": "RID Master",
+    "infrastructure_master": "Infrastructure Master",
+    "schema_master": "Schema Master",
+    "domain_naming_master": "Domain Naming Master",
+    "source_dc": "Источник",
+    "destination_dc": "Назначение",
+    "naming_context": "Раздел каталога",
+    "last_replication_attempt_utc": "Последняя попытка",
+    "trust_partner": "Партнёр",
+    "trust_flat_name": "Краткое имя"
+  },
+  "ENUM_LABELS": {
+    "passed": "Пройдено",
+    "unknown": "Неизвестно",
+    "inactive": "Неактивно",
+    "BiDirectional": "Двустороннее",
+    "Uplevel": "Доверие Active Directory",
+    "Inbound": "Входящее",
+    "Outbound": "Исходящее",
+    "Downlevel": "Доверие старого типа"
+  }
+}

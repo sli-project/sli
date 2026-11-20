@@ -1,0 +1,10 @@
+# CODEOWNERS template. No GitHub usernames have been provided yet.
+# Assign confirmed organization teams or usernames before enabling required
+# CODEOWNERS review for these zones:
+# /server/
+# /frontend/
+# /config/postgres_migrations/
+# /scripts/runtime/
+# /tests/
+# /docs/
+# /.github/

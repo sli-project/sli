@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-lifecycle.v1",
+  "state_management": {
+    "contract_id": "sli.plugin-state.v1",
+    "api": "/api/v1/plugins",
+    "executable_actions": ["enable", "disable"],
+    "state_axes": ["installed", "configured", "enabled", "receiving_data"],
+    "disable_semantics": "close_acquisition_then_drain_deliveries",
+    "preserve_data_and_permissions": true
+  },
+  "status": "bundled_install_executor_ready_runtime_disabled",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "trust": "bundled_reviewed_only",
+  "supported_plugin_ids": [
+    "sli.remote-access"
+  ],
+  "required_capability": "plugins.manage",
+  "capability_registered": true,
+  "mutation_execution_enabled": true,
+  "executable_actions": [
+    "install"
+  ],
+  "runtime_enabled": false,
+  "autostart_enabled": false,
+  "source_contact_allowed": false,
+  "process_control_allowed": false,
+  "database_mutation_allowed": false,
+  "production_read_path_cutover": false,
+  "destructive_purge_allowed": false,
+  "actions": [
+    "install",
+    "upgrade",
+    "rollback",
+    "enable",
+    "drain",
+    "disable",
+    "detach"
+  ],
+  "install_semantics": "register_bundled_release_manifest_only",
+  "state_axes": {
+    "package_lifecycle": [
+      "validated",
+      "registered",
+      "detached"
+    ],
+    "desired_activation": [
+      "disabled",
+      "enabled_manual"
+    ],
+    "observed_health": [
+      "unknown",
+      "ready",
+      "degraded",
+      "blocked"
+    ],
+    "component_runtime": [
+      "stopped",
+      "starting",
+      "running",
+      "draining",
+      "failed"
+    ],
+    "queue_state": [
+      "drained",
+      "backlog",
+      "quarantined"
+    ]
+  },
+  "required_live_boundaries": [
+    "windows_identity",
+    "job_object",
+    "working_directory_acl",
+    "network_policy",
+    "component_secret_handle",
+    "allowlisted_handler",
+    "postgres_role",
+    "db_timeouts",
+    "runtime_identity"
+  ],
+  "confirmation_required": true,
+  "audit_category": "plugin_lifecycle",
+  "audit_actor_source": "server_authoritative_principal_only",
+  "forbidden_effects": [
+    "dynamic_external_package_execution",
+    "source_contact",
+    "process_spawn_or_stop",
+    "database_or_acl_mutation",
+    "autostart",
+    "production_read_path_cutover",
+    "destructive_data_purge",
+    "evidence_deletion"
+  ],
+  "explicitly_not_proven": [
+    "accepted_live_worker_boundaries",
+    "queue_drain_executor",
+    "process_supervisor_executor",
+    "versioned_upgrade_or_rollback_executor",
+    "detach_reader_acceptance",
+    "production_mutation_api"
+  ]
+}

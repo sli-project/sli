@@ -1,0 +1,2115 @@
+{
+  "timeline": [
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4624,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4624,
+        "title": "Успешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4624.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4624.summary",
+        "category": "authentication",
+        "severity": "low",
+        "purpose_tier": "technical",
+        "base_risk": "low",
+        "confidence": "unknown",
+        "noise_class": "context",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "low",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4624.summary",
+        "checks": [
+          "Проверить доказательное событие и сохранённые поля источника; не выводить Windows-сессию, длительность или общую pair-связь с 4634."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4624.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4624,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4624,
+        "title": "Успешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4624.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4624,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4624,
+        "title": "Успешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4624.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4624.summary",
+        "category": "authentication",
+        "severity": "low",
+        "purpose_tier": "technical",
+        "base_risk": "low",
+        "confidence": "unknown",
+        "noise_class": "context",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "low",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Событие фиксирует самостоятельное source-native наблюдение успешного входа.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4624.summary",
+        "checks": [
+          "Проверить доказательное событие и сохранённые поля источника; не выводить Windows-сессию, длительность или общую pair-связь с 4634."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4624.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4624,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4624,
+        "title": "Успешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4624.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4625,
+        "title": "Неуспешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+        "category": "authentication",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+        "checks": [
+          "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4625,
+        "title": "Неуспешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4625,
+        "title": "Неуспешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+        "category": "authentication",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Повторяющиеся отказы могут указывать на перебор, password spray или устаревшие сохраненные учетные данные.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4625.summary",
+        "checks": [
+          "Проверить частоту, источник, TargetUser, Status/SubStatus и последующие успешные входы."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4625.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4625,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4625,
+        "title": "Неуспешный вход",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4625.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4672,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4672,
+        "title": "Наблюдается сессия со специальными привилегиями",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4672.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4672.summary",
+        "category": "authentication",
+        "severity": "info",
+        "purpose_tier": "technical",
+        "base_risk": "info",
+        "confidence": "unknown",
+        "noise_class": "context",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "info",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4672.summary",
+        "checks": [
+          "Связать с 4624 по LogonId и оценивать риск только вместе с подтвержденными последующими действиями."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4672.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4672,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4672,
+        "title": "Наблюдается сессия со специальными привилегиями",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4672.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4672,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4672,
+        "title": "Наблюдается сессия со специальными привилегиями",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4672.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4672.summary",
+        "category": "authentication",
+        "severity": "info",
+        "purpose_tier": "technical",
+        "base_risk": "info",
+        "confidence": "unknown",
+        "noise_class": "context",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "info",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4672.summary",
+        "checks": [
+          "Связать с 4624 по LogonId и оценивать риск только вместе с подтвержденными последующими действиями."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4672.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4672,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4672,
+        "title": "Наблюдается сессия со специальными привилегиями",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4672.title",
+        "summary_code": null,
+        "category": "authentication",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4720,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4720,
+        "title": "Создан пользователь",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4720.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4720.summary",
+        "category": "account_management",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Создание учетной записи меняет поверхность доступа.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Создание учетной записи меняет поверхность доступа.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4720.summary",
+        "checks": [
+          "Проверить владельца заявки, инициатора, группы и необходимость учетной записи."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4720.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4720,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4720,
+        "title": "Создан пользователь",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4720.title",
+        "summary_code": null,
+        "category": "account_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4720,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4720,
+        "title": "Создан пользователь",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4720.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4720.summary",
+        "category": "account_management",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Создание учетной записи меняет поверхность доступа.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Создание учетной записи меняет поверхность доступа.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4720.summary",
+        "checks": [
+          "Проверить владельца заявки, инициатора, группы и необходимость учетной записи."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4720.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4720,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4720,
+        "title": "Создан пользователь",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4720.title",
+        "summary_code": null,
+        "category": "account_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4728,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4728,
+        "title": "Добавление участника в глобальную группу",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4728.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4728.summary",
+        "category": "privilege_management",
+        "severity": "high",
+        "purpose_tier": "critical",
+        "base_risk": "high",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник фиксирует отдельное добавление члена в глобальную группу; Event ID не доказывает критичность группы.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "high",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник фиксирует отдельное добавление члена в глобальную группу; Event ID не доказывает критичность группы.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4728.summary",
+        "checks": [
+          "Проверить инициатора, MemberSid, TargetSid группы и исходное доказательное событие."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4728.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4728,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4728,
+        "title": "Добавление участника в глобальную группу",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4728.title",
+        "summary_code": null,
+        "category": "privilege_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4728,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4728,
+        "title": "Добавление участника в глобальную группу",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4728.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4728.summary",
+        "category": "privilege_management",
+        "severity": "high",
+        "purpose_tier": "critical",
+        "base_risk": "high",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник фиксирует отдельное добавление члена в глобальную группу; Event ID не доказывает критичность группы.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "high",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник фиксирует отдельное добавление члена в глобальную группу; Event ID не доказывает критичность группы.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4728.summary",
+        "checks": [
+          "Проверить инициатора, MemberSid, TargetSid группы и исходное доказательное событие."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4728.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4728,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4728,
+        "title": "Добавление участника в глобальную группу",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4728.title",
+        "summary_code": null,
+        "category": "privilege_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4738,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4738,
+        "title": "Изменена учетная запись",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4738.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4738.summary",
+        "category": "account_management",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник зафиксировал изменение учетной записи на контроллере домена.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник зафиксировал изменение учетной записи на контроллере домена.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4738.summary",
+        "checks": [
+          "Проверить доказательное событие, инициатора и целевую учетную запись."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4738.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4738,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4738,
+        "title": "Изменена учетная запись",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4738.title",
+        "summary_code": null,
+        "category": "account_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4738,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4738,
+        "title": "Изменена учетная запись",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4738.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4738.summary",
+        "category": "account_management",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник зафиксировал изменение учетной записи на контроллере домена.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник зафиксировал изменение учетной записи на контроллере домена.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:4738.summary",
+        "checks": [
+          "Проверить доказательное событие, инициатора и целевую учетную запись."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:4738.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 4738,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 4738,
+        "title": "Изменена учетная запись",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:4738.title",
+        "summary_code": null,
+        "category": "account_management",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 5136,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 5136,
+        "title": "Изменён атрибут объекта каталога",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+        "category": "policy_change",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+        "checks": [
+          "Проверить инициатора, ObjectGUID, имя атрибута, операцию и исходное событие."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:5136.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 5136,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 5136,
+        "title": "Изменён атрибут объекта каталога",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+        "summary_code": null,
+        "category": "policy_change",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 5136,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 5136,
+        "title": "Изменён атрибут объекта каталога",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+        "category": "policy_change",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Источник фиксирует отдельный фрагмент изменения атрибута AD, включая объекты GPO.",
+        "summary_code": "Security:Microsoft-Windows-Security-Auditing:5136.summary",
+        "checks": [
+          "Проверить инициатора, ObjectGUID, имя атрибута, операцию и исходное событие."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Security-Auditing:5136.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 5136,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Security-Auditing",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 5136,
+        "title": "Изменён атрибут объекта каталога",
+        "title_code": "Security:Microsoft-Windows-Security-Auditing:5136.title",
+        "summary_code": null,
+        "category": "policy_change",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 1102,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Eventlog",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 1102,
+        "title": "Security log очищен",
+        "title_code": "Security:Microsoft-Windows-Eventlog:1102.title",
+        "summary_code": "Security:Microsoft-Windows-Eventlog:1102.summary",
+        "category": "policy_change",
+        "severity": "critical",
+        "purpose_tier": "critical",
+        "base_risk": "critical",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "critical",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита.",
+        "summary_code": "Security:Microsoft-Windows-Eventlog:1102.summary",
+        "checks": [
+          "Немедленно проверить администратора, время очистки, соседние события входа и причину операции."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Eventlog:1102.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 1102,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Eventlog",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 1102,
+        "title": "Security log очищен",
+        "title_code": "Security:Microsoft-Windows-Eventlog:1102.title",
+        "summary_code": null,
+        "category": "policy_change",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 1102,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Eventlog",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 1102,
+        "title": "Security log очищен",
+        "title_code": "Security:Microsoft-Windows-Eventlog:1102.title",
+        "summary_code": "Security:Microsoft-Windows-Eventlog:1102.summary",
+        "category": "policy_change",
+        "severity": "critical",
+        "purpose_tier": "critical",
+        "base_risk": "critical",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "critical",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Очистка журнала безопасности может скрывать следы действий и снижает доверие к полноте аудита.",
+        "summary_code": "Security:Microsoft-Windows-Eventlog:1102.summary",
+        "checks": [
+          "Немедленно проверить администратора, время очистки, соседние события входа и причину операции."
+        ],
+        "check_codes": [
+          "Security:Microsoft-Windows-Eventlog:1102.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 1102,
+        "channel": "Security",
+        "provider_name": "Microsoft-Windows-Eventlog",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 1102,
+        "title": "Security log очищен",
+        "title_code": "Security:Microsoft-Windows-Eventlog:1102.title",
+        "summary_code": null,
+        "category": "policy_change",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 106,
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "provider_name": "Microsoft-Windows-TaskScheduler",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "event_id": 106,
+        "title": "Task Scheduler: задача зарегистрирована",
+        "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+        "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+        "category": "service_task",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+        "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+        "checks": [
+          "Проверить автора, action, RunAs и легитимность создания задачи."
+        ],
+        "check_codes": [
+          "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 106,
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "provider_name": "Microsoft-Windows-TaskScheduler",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "event_id": 106,
+        "title": "Task Scheduler: задача зарегистрирована",
+        "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+        "summary_code": null,
+        "category": "service_task",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 106,
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "provider_name": "Microsoft-Windows-TaskScheduler",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "event_id": 106,
+        "title": "Task Scheduler: задача зарегистрирована",
+        "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+        "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+        "category": "service_task",
+        "severity": "medium",
+        "purpose_tier": "important",
+        "base_risk": "medium",
+        "confidence": "unknown",
+        "noise_class": "signal",
+        "assessment_confidence": "unknown",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+        "catalogued": true
+      },
+      "card": {
+        "known": true,
+        "final_risk": "medium",
+        "classification_origin": "catalog_base",
+        "card_completeness": "not_applicable",
+        "summary": "Регистрация задачи на DC может быть механизмом персистентности.",
+        "summary_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.summary",
+        "checks": [
+          "Проверить автора, action, RunAs и легитимность создания задачи."
+        ],
+        "check_codes": [
+          "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.checks.0"
+        ]
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 106,
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "provider_name": "Microsoft-Windows-TaskScheduler",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Microsoft-Windows-TaskScheduler/Operational",
+        "event_id": 106,
+        "title": "Task Scheduler: задача зарегистрирована",
+        "title_code": "Microsoft-Windows-TaskScheduler/Operational:Microsoft-Windows-TaskScheduler:106.title",
+        "summary_code": null,
+        "category": "service_task",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": true
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 999999,
+        "channel": "Security",
+        "provider_name": "unknown",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 999999,
+        "title": "Event ID 999999",
+        "title_code": null,
+        "summary_code": null,
+        "category": "unknown",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": null,
+        "catalogued": false
+      },
+      "card": {
+        "known": false,
+        "final_risk": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "summary": "Каталог не содержит правила для этого Provider, Channel и Event ID. Ни действие, ни результат не интерпретируются автоматически.",
+        "summary_code": "uncatalogued.summary",
+        "checks": [
+          "Открыть технические данные и сообщение Windows.",
+          "Добавить проверенное правило в каталог события, если оно повторяется."
+        ],
+        "check_codes": []
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 999999,
+        "channel": "Security",
+        "provider_name": "unknown",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 999999,
+        "title": "Event ID 999999",
+        "title_code": null,
+        "summary_code": null,
+        "category": "unknown",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": null,
+        "target": null,
+        "source": null,
+        "summary": null,
+        "catalogued": false
+      },
+      "metadata": true
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 999999,
+        "channel": "Security",
+        "provider_name": "unknown",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 999999,
+        "title": "Event ID 999999",
+        "title_code": null,
+        "summary_code": null,
+        "category": "unknown",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "summary": null,
+        "catalogued": false
+      },
+      "card": {
+        "known": false,
+        "final_risk": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "summary": "Каталог не содержит правила для этого Provider, Channel и Event ID. Ни действие, ни результат не интерпретируются автоматически.",
+        "summary_code": "uncatalogued.summary",
+        "checks": [
+          "Открыть технические данные и сообщение Windows.",
+          "Добавить проверенное правило в каталог события, если оно повторяется."
+        ],
+        "check_codes": []
+      },
+      "metadata": false
+    },
+    {
+      "row": {
+        "event_db_id": 7,
+        "event_id": 999999,
+        "channel": "Security",
+        "provider_name": "unknown",
+        "server": "dc1",
+        "time_created_utc": "2026-11-02T12:00:00Z",
+        "event_data": {
+          "SubjectUserName": "alice",
+          "TargetUserName": "bob",
+          "TaskName": "\\Microsoft\\Windows\\test"
+        },
+        "subject": "alice",
+        "target": "bob",
+        "source": "dc1",
+        "subject_user_name": "alice",
+        "target_user_name": "bob",
+        "task_name": "\\Microsoft\\Windows\\test"
+      },
+      "item": {
+        "event_db_id": 7,
+        "time_utc": "2026-11-02T12:00:00Z",
+        "server": "dc1",
+        "channel": "Security",
+        "event_id": 999999,
+        "title": "Event ID 999999",
+        "title_code": null,
+        "summary_code": null,
+        "category": "unknown",
+        "severity": "unknown",
+        "purpose_tier": "technical",
+        "base_risk": "unknown",
+        "confidence": "unknown",
+        "noise_class": "unknown",
+        "assessment_confidence": "unknown",
+        "classification_origin": "unavailable",
+        "card_completeness": "not_applicable",
+        "inclusion_reason": "reason",
+        "actor": "alice",
+        "target": "bob",
+        "source": null,
+        "summary": null,
+        "catalogued": false
+      },
+      "metadata": true
+    }
+  ],
+  "cursor": {
+    "context": [
+      "investigation",
+      7,
+      null,
+      "тест \"x\"",
+      null,
+      "2026-11-02T00:00:00Z",
+      "2026-11-03T00:00:00Z",
+      "UTC"
+    ],
+    "token": "eyJiaW5kaW5nIjoiMDBjYzVjODVlNTkyMmRhN2MyNWJiNzMxMTI1MTVhNGY5ZDZmZmRhNzhjOGY3ZjQzMzAxOGM0NGRmZDdmOTA2MSIsInBvc2l0aW9uIjp7InJlbGF0aW9ucyI6InNvdXJjZS1yZWxhdGlvbi1jdXJzb3IifX0"
+  }
+}

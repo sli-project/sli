@@ -1,0 +1,274 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.workstations",
+  "plugin_version": "1.1.0",
+  "core_api": {
+    "minimum": "3.0.0",
+    "maximum_exclusive": "4.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [
+    "workstations.security.v1"
+  ],
+  "dependencies": [
+    {
+      "contract_id": "core.identity.agent-key.v1",
+      "versions": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "required": true,
+      "exchange": "immutable_typed_result"
+    },
+    {
+      "contract_id": "core.history.evidence.v1",
+      "versions": {
+        "minimum": "1.0.0",
+        "maximum_exclusive": "2.0.0"
+      },
+      "required": false,
+      "exchange": "immutable_typed_result"
+    }
+  ],
+  "sources": [
+    {
+      "pack_id": "sli.windows.workstations",
+      "pack_version": "1.0.0",
+      "normalizer_id": "windows-workstations-v1",
+      "normalizer_version": "1.0.0",
+      "input_contract": "sli.collection-packet.v1",
+      "catalog_ref": "workstations.event-catalog.v1",
+      "collection_policy_schema_ref": "workstations.collection-policy.v1"
+    }
+  ],
+  "agent_modules": [],
+  "handlers": [
+    {
+      "handler_id": "workstations.evidence-retention",
+      "handler_version": "1.0.0",
+      "kind": "reconcile",
+      "input_contract": "workstations.retention-policy.v1",
+      "result_contract": "sli.core-job-result.v1",
+      "resource_profile": "workstations.retention.bounded",
+      "rights_profile": "workstations.retention.history-verified",
+      "budget": {
+        "wall_seconds": 30,
+        "cpu_seconds": 10,
+        "memory_bytes": 268435456,
+        "max_records": 50,
+        "max_result_bytes": 65536,
+        "max_db_connections": 1,
+        "statement_timeout_ms": 5000,
+        "lock_timeout_ms": 1000
+      },
+      "max_attempts": 3
+    }
+  ],
+  "schedules": [
+    {
+      "schedule_id": "workstations.evidence-retention.daily",
+      "handler_id": "workstations.evidence-retention",
+      "trigger": "interval",
+      "interval_seconds": 86400,
+      "calendar": null,
+      "timezone": "UTC",
+      "max_inflight_per_source": 1
+    }
+  ],
+  "datasets": [
+    {
+      "dataset_id": "workstations.overview",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.overview",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.logons",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.logons",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.processes",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.processes",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.usb",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.usb",
+      "capabilities": []
+    },
+    {
+      "dataset_id": "workstations.protection",
+      "contract_id": "sli.report-result.v2",
+      "contract_version": "2.0.0",
+      "reader_id": "workstations.protection",
+      "capabilities": []
+    }
+  ],
+  "reports": [
+    {
+      "report_key": "workstations.overview",
+      "access_key": "workstations.overview",
+      "dataset_id": "workstations.overview",
+      "definition_id": "workstations.overview",
+      "section_id": "workstations",
+      "title_key": "workstations.overview.nav_title",
+      "routes": ["/report/workstations.overview", "/workstations"],
+      "required_fields": ["identity_basic", "technical", "security", "privilege"],
+      "capabilities": [],
+      "history_reader_id": "workstations.overview"
+    },
+    {
+      "report_key": "workstations.logons",
+      "access_key": "workstations.logons",
+      "dataset_id": "workstations.logons",
+      "definition_id": "workstations.logons",
+      "section_id": "workstations",
+      "title_key": "workstations.logons.title",
+      "routes": [
+        "/report/workstations.logons"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.logons"
+    },
+    {
+      "report_key": "workstations.processes",
+      "access_key": "workstations.processes",
+      "dataset_id": "workstations.processes",
+      "definition_id": "workstations.processes",
+      "section_id": "workstations",
+      "title_key": "workstations.processes.title",
+      "routes": [
+        "/report/workstations.processes"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.processes"
+    },
+    {
+      "report_key": "workstations.usb",
+      "access_key": "workstations.usb",
+      "dataset_id": "workstations.usb",
+      "definition_id": "workstations.usb",
+      "section_id": "workstations",
+      "title_key": "workstations.usb.title",
+      "routes": [
+        "/report/workstations.usb"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.usb"
+    },
+    {
+      "report_key": "workstations.protection",
+      "access_key": "workstations.protection",
+      "dataset_id": "workstations.protection",
+      "definition_id": "workstations.protection",
+      "section_id": "workstations",
+      "title_key": "workstations.protection.title",
+      "routes": [
+        "/report/workstations.protection"
+      ],
+      "required_fields": [
+        "identity_basic",
+        "technical",
+        "security",
+        "privilege"
+      ],
+      "capabilities": [],
+      "history_reader_id": "workstations.protection"
+    }
+  ],
+  "navigation": [
+    {
+      "section_id": "workstations",
+      "title_key": "shell.section.workstations",
+      "icon_id": "report",
+      "order": 60,
+      "parent_section_id": null
+    }
+  ],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_workstations",
+    "existing_tables": [],
+    "migrations": [
+      {
+        "version": 159,
+        "name": "workstation_security",
+        "path": "config/postgres_migrations/159_workstation_security.sql",
+        "sha256": "c8e6ffbe4707611038740c67c7dbc52c4589c62edc5ac943052787e46dcbeba0",
+        "core_prerequisites": [
+          158
+        ]
+      },
+      {
+        "version": 209,
+        "name": "workstation_protection_state",
+        "path": "config/postgres_migrations/209_workstation_protection_state.sql",
+        "sha256": "46369538647a04e61f687bd8138aa4f5cd0ff9373abe78e4436fa208a62240ef",
+        "core_prerequisites": [208]
+      },
+      {
+        "version": 252,
+        "name": "workstation_overview_projections",
+        "path": "config/postgres_migrations/252_workstation_overview_projections.sql",
+        "sha256": "2c32faa73a879916739fb65a7d8a9e6010a88fdd61ee5976d9881696ba9f0d2f",
+        "core_prerequisites": [251]
+      },
+      {
+        "version": 254,
+        "name": "workstation_projection_queue",
+        "path": "config/postgres_migrations/254_workstation_projection_queue.sql",
+        "sha256": "2ac275c57df77ae5c0758f41b45932832bb706f431259db96b3ddc15846d62eb",
+        "core_prerequisites": [253]
+      },
+      {
+        "version": 255,
+        "name": "workstation_protection_predecessor",
+        "path": "config/postgres_migrations/255_workstation_protection_predecessor.sql",
+        "sha256": "8054c3ee638f4a491ed9031456e5d1425ecf2373effd268f0d6334a592334893",
+        "core_prerequisites": [254]
+      },
+      {
+        "version": 258,
+        "name": "workstation_device_seen",
+        "path": "config/postgres_migrations/258_workstation_device_seen.sql",
+        "sha256": "9579113758a295d7e5d7b93db2a5165e382ce102617eb7298094c4c8c3954158",
+        "core_prerequisites": [257]
+      },
+      {
+        "version": 287,
+        "name": "workstation_inventory_job",
+        "path": "config/postgres_migrations/287_workstation_inventory_job.sql",
+        "sha256": "d7c4c1d484d33de61c6357c4a6d5bfb89ed9f7d3bfb50fe9cd62ee1c1be654e3",
+        "core_prerequisites": [286]
+      }
+    ]
+  }
+}

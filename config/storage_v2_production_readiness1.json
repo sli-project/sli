@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "stage": "STORAGE-V2-PRODUCTION-READINESS-1",
+  "status": "source_ready_production_blocked",
+  "accepted_baseline_commit": "21eda8d",
+  "production_schema_version": 8,
+  "production_change_authorized": false,
+  "reclaim_authorized": false,
+  "supersedes_execution_of": [
+    "STORAGE-V2-BACKFILL-CANARY-1"
+  ],
+  "storage_evidence": {
+    "database_bytes": 40593782463,
+    "database_gib": 37.81,
+    "largest_relations": [
+      {"name": "events", "gib": 22.37},
+      {"name": "event_entity_links", "gib": 13.98},
+      {"name": "observed_entities", "gib": 1.43}
+    ],
+    "largest_relations_percent": 99.95,
+    "r3_projected_managed_bytes": 14223000000,
+    "r3_projected_archive_bytes": 1356000000,
+    "r3_projected_total_bytes": 15579000000,
+    "r3_projected_saved_bytes": 25015000000,
+    "r3_projected_reduction_percent": 61.62,
+    "r3_projected_ratio": 2.605726,
+    "minimum_accepted_ratio": 2.5,
+    "remeasurement_required_because": "event_facts_v2 was added after the R3 sample"
+  },
+  "functional_surfaces": [
+    {
+      "id": "fast_event_search",
+      "v1_payload_dependencies": [],
+      "v2_strategy": "events_v2_core plus dictionaries",
+      "implementation": "PostgresStorageV2ReadStore",
+      "remaining_gate": "wire search handler and prove V1/V2 result identity in shadow"
+    },
+    {
+      "id": "event_and_entity_investigation",
+      "v1_payload_dependencies": ["message_text", "event_data_json", "record_xml"],
+      "v2_strategy": "hash-verified canonical event archive hydration by event id",
+      "implementation": "StorageV2RuntimeReader.event_details",
+      "remaining_gate": "wire event/entity detail handlers and exercise redaction on hydrated rows"
+    },
+    {
+      "id": "deep_payload_search",
+      "v1_payload_dependencies": ["message_text", "event_data_json"],
+      "v2_strategy": "literal casefold search over published archives with mandatory event-id and block limits",
+      "implementation": "ArchiveReader.search_events and StorageV2RuntimeReader.deep_search",
+      "remaining_gate": "expose only behind explicit time/id bounds and shadow-test representative queries"
+    },
+    {
+      "id": "reports_and_correlations",
+      "v1_payload_dependencies": ["message_text", "event_data_json"],
+      "v2_strategy": "bounded event_facts_v2 for recurring aggregation fields; archive hydration for evidence drilldown",
+      "implementation": "event_facts_from_v1 plus event_facts_v2",
+      "remaining_gate": "rewrite report SQL adapters and prove report semantic parity"
+    },
+    {
+      "id": "findings_and_evidence",
+      "v1_payload_dependencies": ["message_text", "events.id", "observed_entities.id"],
+      "v2_strategy": "preserved identifiers, compact facts and canonical archive evidence",
+      "implementation": "migration 12 external reference cutover contract",
+      "remaining_gate": "full backfill, V2 routing and FK validation on a restored production copy"
+    }
+  ],
+  "payload_dependency_inventory": {
+    "scan_tokens": ["message_text", "event_data_json", "record_xml"],
+    "covered_v1_modules": [
+      "server/sli/reports/analysis.py",
+      "server/sli/reporting/dashboard_fast.py",
+      "server/sli/access/data_redaction.py",
+      "server/sli/entities/entity_details.py",
+      "server/sli/semantic/event_card_semantics.py",
+      "server/sli/events/event_details.py",
+      "server/sli/events/event_search.py",
+      "server/sli/semantic/findings.py",
+      "server/sli/semantic/findings_pg_pipeline.py",
+      "server/sli/events/security_events_monitor.py",
+      "server/sli/semantic/severity.py"
+    ],
+    "cutover_rule": "all listed modules require handler or query-adapter shadow parity before V2 read mode"
+  },
+  "derived_facts_contract": {
+    "table": "event_facts_v2",
+    "row_policy": "create a row only when an approved derived fact is present",
+    "not_a_payload_store": true,
+    "message_sample_max_chars": 220,
+    "task_action_max_chars": 1024,
+    "fields": [
+      "process_name", "process_id", "target_server_name", "service_name",
+      "task_name", "task_action", "task_author", "run_as", "logon_type",
+      "result_code", "object_name", "share_name", "message_sample"
+    ]
+  },
+  "minimum_path_to_first_reclaim": [
+    "STORAGE-V2-PRODUCTION-READINESS-1 source acceptance",
+    "STORAGE-V2-SCHEMA-BACKFILL-CANARY-2 on a disposable restored production copy",
+    "controlled production full backfill with external backup and restore proof",
+    "V1/V2 functional shadow for search, details, reports, findings and investigations",
+    "controlled V2 read/write cutover with rollback window",
+    "migration 12 external FK cutover and disaster-recovery exercise",
+    "separately approved reclaim migration drops legacy event_entity_links, events and observed_entities"
+  ],
+  "reclaim_contract": {
+    "candidate_relations": ["event_entity_links", "events", "observed_entities"],
+    "physical_action": "DROP legacy relations in a separately versioned migration after every gate passes",
+    "first_real_release_point": "commit of the approved reclaim migration",
+    "vacuum_full_required_for_dropped_relations": false,
+    "rollback_after_drop": "restore from independently verified backup/archive; SQL rollback alone is insufficient",
+    "required_before_drop": [
+      "external backup copy and successful isolated restore",
+      "100 percent full-backfill identity and hash parity",
+      "published archive coverage and sampled restore proof",
+      "functional shadow parity accepted for every declared surface",
+      "V2-primary stability window accepted",
+      "migration 12 accepted on restored production copy",
+      "measured managed-plus-archive ratio at least 2.5x including event_facts_v2"
+    ]
+  },
+  "next_stage": {
+    "id": "STORAGE-V2-SCHEMA-BACKFILL-CANARY-2",
+    "purpose": "re-prove revised migrations and measure compact facts on representative early, middle and late production-derived ranges",
+    "must_measure": [
+      "managed table and index bytes by relation",
+      "archive bytes",
+      "WAL bytes and duration per chunk",
+      "derived-fact row coverage",
+      "projected managed-plus-archive ratio",
+      "representative search/report/detail parity"
+    ],
+    "acceptance": {
+      "minimum_projected_ratio": 2.5,
+      "data_loss": 0,
+      "unexplained_functional_mismatches": 0,
+      "production_change_authorized": false
+    }
+  },
+  "strictly_forbidden": [
+    "run STORAGE-V2-BACKFILL-CANARY-1 as packaged",
+    "treat the earlier schema-canary proof as proof for revised migration 9",
+    "apply migrations 9 through 12 to production from this package",
+    "enable ADLOG_STORAGE_READ_MODE=v2 before handler-level shadow acceptance",
+    "delete, truncate, rewrite or vacuum-full any production V1 relation",
+    "start production backfill before external backup-copy and isolated restore proof"
+  ]
+}

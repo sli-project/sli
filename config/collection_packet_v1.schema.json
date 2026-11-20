@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sli:collection-packet:v1",
+  "title": "SLI collection packet v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "header", "records", "continuity", "context"],
+  "properties": {
+    "contract": {"const": "sli.collection-packet.v1"},
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "channel", "generation", "record_id_range", "cursor", "observed_at_utc"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "channel": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "generation": {"type": ["string", "null"], "minLength": 1, "pattern": "\\S"},
+        "observed_at_utc": {"type": "string", "format": "date-time", "pattern": "(?:Z|\\+00:00)$"},
+        "cursor": {"type": "object"},
+        "record_id_range": {
+          "type": "object", "additionalProperties": false,
+          "required": ["first", "last"],
+          "properties": {
+            "first": {"type": ["integer", "null"], "minimum": 0},
+            "last": {"type": ["integer", "null"], "minimum": 0}
+          }
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["format", "record_id", "payload"],
+        "properties": {
+          "format": {"enum": ["event_xml", "file_action", "accounting_line", "snapshot_json"]},
+          "record_id": {"type": ["integer", "null"], "minimum": 0},
+          "payload": {"type": ["object", "string"]}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"format": {"const": "accounting_line"}}},
+            "then": {"properties": {"payload": {"type": "string"}, "record_id": {"type": "null"}}},
+            "else": {"properties": {"payload": {"type": "object"}}}
+          },
+          {
+            "if": {"properties": {"format": {"const": "event_xml"}}},
+            "then": {"properties": {"payload": {"required": ["computer_name", "channel", "xml"], "properties": {"xml": {"type": "string"}}}}}
+          },
+          {
+            "if": {"properties": {"format": {"const": "file_action"}}},
+            "then": {"properties": {"record_id": {"type": "integer", "minimum": 1}}}
+          },
+          {
+            "if": {"properties": {"format": {"const": "snapshot_json"}}},
+            "then": {"properties": {"record_id": {"type": "null"}}}
+          }
+        ]
+      }
+    },
+    "continuity": {
+      "type": "object", "required": ["status"],
+      "properties": {"status": {"enum": ["complete", "not_proven"]}}
+    },
+    "context": {"type": "object"}
+  }
+}

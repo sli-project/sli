@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "plugin_id": "sli.sigma",
+  "name": "plugins.sli.sigma.name",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false,
+    "x-core-settings": []
+  },
+  "rules": [],
+  "permissions": [],
+  "migration_directory": "config/postgres_migrations"
+}

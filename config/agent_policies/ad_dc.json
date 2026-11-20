@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sli.ad-dc-policy.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_name", "connect_address"],
+  "properties": {
+    "source_name": {"type": "string", "minLength": 1, "maxLength": 128},
+    "connect_address": {"type": "string", "minLength": 1, "maxLength": 128},
+    "policy_revision": {"type": "string", "minLength": 1, "maxLength": 128},
+    "batch_size": {"type": "integer", "minimum": 1, "maximum": 128},
+    "initial_read_hours": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 876000}, {"const": "all"}]},
+    "history_before_utc": {"type": "string", "minLength": 1, "maxLength": 64},
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Security": {"type": "boolean"},
+        "System": {"type": "boolean"},
+        "Directory Service": {"type": "boolean"}
+      }
+    },
+    "allow_event_ids": {
+      "type": ["array", "null"],
+      "maxItems": 512,
+      "items": {"type": "integer", "minimum": 0, "maximum": 65535}
+    },
+    "channel_generations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Security": {"type": "string", "minLength": 1, "maxLength": 128},
+        "System": {"type": "string", "minLength": 1, "maxLength": 128},
+        "Directory Service": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    }
+  }
+}

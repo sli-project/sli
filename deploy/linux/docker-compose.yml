@@ -1,0 +1,614 @@
+name: sli-linux-stand
+
+x-runtime: &runtime
+  image: sli-linux-stand:local
+  pull_policy: never
+  build:
+    context: ../..
+    dockerfile: deploy/linux/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &runtime-env
+    SLI_PLUGIN_RUNTIME_DIR: /opt/sli/plugins
+    SLI_PLUGIN_LOCK_DIR: /opt/sli/plugin-locks
+    ADLOG_DB_BACKEND: postgres
+    ADLOG_PG_DSN: host=postgres port=5432 dbname=sli user=adlog_user
+    ADLOG_PG_PASSWORD_FILE: /run/secrets/runtime_password
+    ADLOG_DATA_DIR: /var/lib/sli
+    ADLOG_LOG_DIR: /var/lib/sli/logs
+    ADLOG_AUTH_REQUIRED: "1"
+    ADLOG_UI_MODE: postgres
+    ADLOG_STORAGE_READ_MODE: v2
+    ADLOG_STORAGE_WRITE_MODE: v2
+    ADLOG_STORAGE_V2_SHADOW_SAMPLE_RATE: "0"
+    ADLOG_EXTERNAL_POST_COLLECTION_WORKER: "1"
+    ADLOG_EXTERNAL_STORAGE_V2_OUTBOX_WORKER: "1"
+    ADLOG_DISABLE_SCHEDULER: "1"
+    ADLOG_HISTORY_READ_MODE: primary
+    ADLOG_HISTORY_CLICKHOUSE_HOST: clickhouse
+    ADLOG_HISTORY_CLICKHOUSE_PORT: "8123"
+    ADLOG_HISTORY_CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+    ADLOG_HISTORY_CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+    SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS: ${SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS:-90}
+    ADLOG_SEMANTIC_RUNTIME_MODE: findings-v1
+    ADLOG_SEMANTIC_PRODUCTION_ENABLED: "1"
+    ADLOG_SEMANTIC_NORMALIZATION_ENABLED: "1"
+    ADLOG_SEMANTIC_ASSEMBLY_ENABLED: "1"
+    ADLOG_SEMANTIC_CORRELATION_ENABLED: "1"
+    ADLOG_SEMANTIC_RISK_ENGINE_ENABLED: "1"
+    ADLOG_SEMANTIC_FINDING_CREATION_ENABLED: "1"
+    ADLOG_STORAGE_LIFECYCLE_AUTOMATION_ENABLED: "1"
+    ADLOG_STORAGE_LIFECYCLE_DELETE_EXECUTION_ENABLED: "1"
+    ADLOG_STORAGE_LIFECYCLE_DELETE_ADMISSION: "0"
+    ADLOG_STORAGE_LIFECYCLE_WARM_COPY_ADMISSION: "0"
+    ADLOG_AD_CONTEXT_INTERVAL_SECONDS: "1800"
+    ADLOG_STOP_COLLECTION_IF_FREE_DISK_BYTES_BELOW: "10737418240"
+    ADLOG_ENABLE_POSTGRES_COLLECTION: "0"
+    ADLOG_POSTGRES_RUNTIME_COLLECTION: "0"
+    ADLOG_NPS_EVENTLOG_ENABLED: "0"
+    ADLOG_ACQUISITION_DISABLED: "1"
+    ADLOG_ENABLE_INPROCESS_COLLECTION_SCHEDULER: "0"
+    ADLOG_ENABLE_INPROCESS_POST_COLLECTION: "0"
+    SLI_CORE_JOB_RADIUS_PILOT: ${SLI_CORE_JOB_RADIUS_PILOT:-0}
+    SLI_CORE_JOB_AD_GPO_PILOT: ${SLI_CORE_JOB_AD_GPO_PILOT:-0}
+    SLI_AD_DC_AGENT_IMPORT_ENABLED: ${SLI_AD_DC_AGENT_IMPORT_ENABLED:-0}
+    SLI_LEGACY_COLLECTION_DISABLED: ${SLI_LEGACY_COLLECTION_DISABLED:-0}
+  secrets: [runtime_password, history_password]
+  volumes:
+    - sli-data:/var/lib/sli
+    - ${SLI_PLUGIN_DIR:-../../runtime/plugins}:/opt/sli/plugins:ro
+    - ../../config/plugin_packages/v3:/opt/sli/plugin-locks:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+    clickhouse:
+      condition: service_healthy
+  stop_grace_period: 30s
+
+x-executor: &executor
+  <<: *runtime
+  profiles: [core-jobs]
+  volumes:
+    - ${SLI_PLUGIN_DIR:-../../runtime/plugins}:/opt/sli/plugins:ro
+    - ../../config/plugin_packages/v3:/opt/sli/plugin-locks:ro
+  mem_limit: 1200m
+  cpus: 1.0
+  pids_limit: 64
+  stop_grace_period: 40s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    group_add: ["10001"]
+    environment:
+      CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+      # Never let the image's recursive startup chown touch PostgreSQL dumps.
+      CLICKHOUSE_DO_NOT_CHOWN: "1"
+      CLICKHOUSE_GID: "10001"
+    secrets: [history_password]
+    volumes:
+      - history-data:/var/lib/clickhouse
+      - history-backups:/var/lib/clickhouse/backups
+      - ../../config/clickhouse/012_backup_limits.xml:/etc/clickhouse-server/config.d/013_backup_limits.xml:ro
+      - ${SLI_BACKUP_DIR:?Set absolute backup directory}:/var/lib/clickhouse/backups/scheduled
+      - ../../config/clickhouse/010_system_log_retention.xml:/etc/clickhouse-server/config.d/010_system_log_retention.xml:ro
+      - ../../config/stage7_clickhouse_backup.xml:/etc/clickhouse-server/config.d/012_history_backup.xml:ro
+      - ../../config/clickhouse/011_disable_sampling_profiler.xml:/etc/clickhouse-server/users.d/011_disable_sampling_profiler.xml:ro
+    healthcheck:
+      test: [CMD, wget, --spider, -q, -T, "3", http://127.0.0.1:8123/ping]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  warm-tier:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    group_add: ["10001"]
+    environment:
+      CLICKHOUSE_DB: sli_warm
+      CLICKHOUSE_USER: ${ADLOG_WARM_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/warm_password
+      CLICKHOUSE_DO_NOT_CHOWN: "1"
+      CLICKHOUSE_GID: "10001"
+      TZ: UTC
+    secrets: [warm_password]
+    volumes:
+      - warm-data:/var/lib/clickhouse
+      - ../../config/clickhouse/012_backup_limits.xml:/etc/clickhouse-server/config.d/013_backup_limits.xml:ro
+      - ${SLI_BACKUP_DIR:?Set absolute backup directory}:/var/lib/clickhouse/backups/scheduled
+      - ../../config/stage7_clickhouse_backup.xml:/etc/clickhouse-server/config.d/012_history_backup.xml:ro
+      - ../../config/clickhouse/010_system_log_retention.xml:/etc/clickhouse-server/config.d/010_system_log_retention.xml:ro
+      - ../../config/clickhouse/011_disable_sampling_profiler.xml:/etc/clickhouse-server/users.d/011_disable_sampling_profiler.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+    healthcheck:
+      test: [CMD, wget, --no-verbose, --tries=1, --spider, "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
+
+  postgres:
+    image: postgres:18.6-bookworm
+    command:
+      - postgres
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - checkpoint_completion_target=0.9
+    restart: unless-stopped
+    # Start directly as the image's postgres identity: root -> gosu drops group_add.
+    user: "999:999"
+    group_add: ["10001"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: sli
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password, migration_password, runtime_password]
+    volumes:
+      # PostgreSQL 18 uses a version-specific PGDATA below this directory.
+      - postgres-data:/var/lib/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/10-sli-roles.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d sli"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  clickhouse-restore:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    group_add: ["10001"]
+    mem_limit: 768m
+    cpus: "2.0"
+    environment:
+      CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+      CLICKHOUSE_DO_NOT_CHOWN: "1"
+      CLICKHOUSE_GID: "10001"
+    secrets: [history_password]
+    volumes:
+      - ../../config/clickhouse/013_restore_check.xml:/etc/clickhouse-server/config.d/014_restore_check.xml:ro
+      - ${SLI_RESTORE_CHECK_DIR:-${SLI_BACKUP_DIR}/.restore-check}/clickhouse:/var/lib/clickhouse
+      - ${SLI_BACKUP_DIR:?Set absolute backup directory}:/var/lib/clickhouse/backups/scheduled:ro
+      - ../../config/stage7_clickhouse_backup.xml:/etc/clickhouse-server/config.d/012_history_backup.xml:ro
+      - ../../config/clickhouse/012_backup_limits.xml:/etc/clickhouse-server/config.d/013_backup_limits.xml:ro
+      - ../../config/clickhouse/010_system_log_retention.xml:/etc/clickhouse-server/config.d/010_system_log_retention.xml:ro
+      - ../../config/clickhouse/011_disable_sampling_profiler.xml:/etc/clickhouse-server/users.d/011_disable_sampling_profiler.xml:ro
+    healthcheck:
+      test: [CMD, wget, --spider, -q, -T, "3", http://127.0.0.1:8123/ping]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
+  backup:
+    <<: *runtime
+    entrypoint: [python, -m, deploy.linux.backup]
+    command: []
+    cpus: "2.0"
+    mem_limit: 1g
+    environment:
+      SLI_BACKUP_ROOT: /backups
+      SLI_BACKUP_FILES_ROOT: /var/lib/sli
+      SLI_BACKUP_INTERVAL_SECONDS: ${SLI_BACKUP_INTERVAL_SECONDS:-86400}
+      SLI_BACKUP_START_DELAY_SECONDS: ${SLI_BACKUP_START_DELAY_SECONDS:-300}
+      SLI_BACKUP_TIME: ${SLI_BACKUP_TIME:-02:00}
+      TZ: ${TZ:-UTC}
+      SLI_BACKUP_RETENTION: ${SLI_BACKUP_RETENTION:-7}
+      SLI_BACKUP_WEEKLY_RETENTION: ${SLI_BACKUP_WEEKLY_RETENTION:-4}
+      SLI_RESTORE_CHECK_ROOT: /restore-check
+      SLI_PG_ADMIN_PASSWORD_FILE: /run/secrets/postgres_password
+      SLI_HISTORY_CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+      SLI_HISTORY_CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+      ADLOG_WARM_CLICKHOUSE_USER: ${ADLOG_WARM_CLICKHOUSE_USER:-default}
+      SLI_WARM_CLICKHOUSE_PASSWORD_FILE: /run/secrets/warm_password
+    secrets: [postgres_password, history_password, warm_password]
+    volumes:
+      - ${SLI_BACKUP_DIR:?Set absolute backup directory}:/backups
+      - ${SLI_RESTORE_CHECK_DIR:-${SLI_BACKUP_DIR}/.restore-check}:/restore-check
+      - sli-data:/var/lib/sli
+    depends_on:
+      clickhouse-restore:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      warm-tier:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.backup, --healthcheck]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  migrate:
+    <<: *runtime
+    restart: "no"
+    command: [migrate]
+    environment:
+      SLI_CORE_JOB_WORKSTATIONS_RETENTION: ${SLI_CORE_JOB_WORKSTATIONS_RETENTION:-0}
+      SLI_CORE_JOB_WORKSTATIONS_PROJECTION: ${SLI_CORE_JOB_WORKSTATIONS_PROJECTION:-0}
+      SLI_JOB_DISPATCHER_LIGHT_PASSWORD_FILE: /run/secrets/job_dispatcher_light
+      SLI_JOB_EXECUTOR_LIGHT_PASSWORD_FILE: /run/secrets/job_executor_light
+      SLI_JOB_PUBLISHER_LIGHT_PASSWORD_FILE: /run/secrets/job_publisher_light
+      ADLOG_HISTORY_READ_MODE: primary
+      ADLOG_HISTORY_CLICKHOUSE_HOST: clickhouse
+      ADLOG_HISTORY_CLICKHOUSE_PORT: "8123"
+      ADLOG_HISTORY_CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+      ADLOG_HISTORY_CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+      SLI_PG_ADMIN_PASSWORD_FILE: /run/secrets/postgres_password
+      SLI_PLATFORM_OWNER_PASSWORD_FILE: /run/secrets/platform_owner_password
+      ADLOG_SEMANTIC_WORKER_PASSWORD_FILE: /run/secrets/semantic_password
+      ADLOG_STORAGE_V2_WORKER_PASSWORD_FILE: /run/secrets/storage_password
+      SLI_INSTALL_DOMAIN: ${SLI_INSTALL_DOMAIN:?Set the installation report domain}
+      ADLOG_AD_CONTEXT_WORKER_PASSWORD_FILE: /run/secrets/context_password
+      SLI_NOTIFICATION_DB_PASSWORD_FILE: /run/secrets/notification_db_password
+    secrets: [postgres_password, platform_owner_password, semantic_password, storage_password, context_password,
+      job_dispatcher_light, job_executor_light, job_publisher_light, history_password, notification_db_password]
+    volumes: []
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  api:
+    <<: *runtime
+    command: [api, --host, "0.0.0.0", --port, "8443"]
+    ports:
+      - "${SLI_BIND_ADDRESS:-127.0.0.1}:${SLI_HTTPS_PORT:-8443}:8443"
+    environment:
+      <<: *runtime-env
+      ADLOG_TRUSTED_PROXIES: ${ADLOG_TRUSTED_PROXIES:-}
+      ADLOG_TLS_CERT_FILE: /run/secrets/tls_certificate
+      ADLOG_TLS_KEY_FILE: /run/secrets/tls_key
+      SLI_TLS_CA_FILE: /run/secrets/tls_ca
+      SLI_HEALTH_URL: ${SLI_HEALTH_URL:?Set HTTPS URL with certificate SAN and port 8443}
+    secrets: [runtime_password, history_password, tls_certificate, tls_key, tls_ca]
+    volumes:
+      - ${SLI_BACKUP_DIR:?Set absolute backup directory}/.status:/run/sli-backup-status:ro
+      - sli-data:/var/lib/sli
+      - ${SLI_PLUGIN_DIR:-../../runtime/plugins}:/opt/sli/plugins:ro
+      - ../../config/plugin_packages/v3:/opt/sli/plugin-locks:ro
+      - ${SLI_SECRETS_DIR}/notification-control:/run/notification-setup:ro
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, api]
+      interval: 15s
+      timeout: 8s
+      retries: 4
+      start_period: 30s
+
+  notification-setup:
+    image: sli-linux-stand:local
+    pull_policy: never
+    command: [notification-setup]
+    user: "0:0"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:mode=1777]
+    mem_limit: 256m
+    pids_limit: 64
+    environment:
+      SLI_PUBLIC_URL: ${SLI_HEALTH_URL:?Set HTTPS URL}
+    volumes:
+      - ${SLI_SECRETS_DIR}/notifications:/var/lib/notification-secrets
+      - ${SLI_SECRETS_DIR}/notification-control:/run/notification-setup
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.notification_health, setup]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
+  notification-delivery:
+    image: sli-linux-stand:local
+    pull_policy: never
+    command: [notification-delivery]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:mode=1777]
+    mem_limit: 256m
+    pids_limit: 64
+    environment:
+      ADLOG_DB_BACKEND: postgres
+      ADLOG_PG_DSN: host=postgres port=5432 dbname=sli user=sli_notification_login
+      ADLOG_PG_PASSWORD_FILE: /run/secrets/notification_db_password
+      SLI_NOTIFICATION_TELEGRAM_TOKEN_FILE: /var/lib/notification-secrets/notification_telegram_token
+      SLI_NOTIFICATION_TELEGRAM_CONFIG_FILE: /var/lib/notification-secrets/telegram.json
+      SLI_NOTIFICATION_SMTP_PASSWORD_FILE: /var/lib/notification-secrets/notification_smtp_password
+      SLI_NOTIFICATION_SMTP_CONFIG_FILE: /var/lib/notification-secrets/smtp.json
+    secrets: [notification_db_password]
+    volumes:
+      - ${SLI_SECRETS_DIR}/notifications:/var/lib/notification-secrets:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.notification_health, delivery]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  post-collection:
+    <<: *runtime
+    command: [post-collection, --poll-seconds, "30"]
+    environment:
+      <<: *runtime-env
+      SLI_CORE_JOB_WORKSTATIONS_PROJECTION: ${SLI_CORE_JOB_WORKSTATIONS_PROJECTION:-0}
+      ADLOG_STORAGE_V2_WORKER_DSN: host=postgres port=5432 dbname=sli user=sli_storage_login
+      ADLOG_STORAGE_V2_WORKER_PASSWORD_FILE: /run/secrets/storage_password
+      ADLOG_AD_CONTEXT_WORKER_DSN: host=postgres port=5432 dbname=sli user=sli_context_login
+      ADLOG_AD_CONTEXT_WORKER_PASSWORD_FILE: /run/secrets/context_password
+    secrets: [runtime_password, history_password, storage_password, context_password]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, post_collection]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  what-where-when:
+    <<: *runtime
+    command: [what-where-when]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, what_where_when_projection]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  semantic:
+    <<: *runtime
+    command: [semantic]
+    environment:
+      <<: *runtime-env
+      ADLOG_SEMANTIC_WORKER_DSN: host=postgres port=5432 dbname=sli user=sli_semantic_login
+      ADLOG_SEMANTIC_WORKER_PASSWORD_FILE: /run/secrets/semantic_password
+    secrets: [runtime_password, history_password, semantic_password]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, semantic]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  entity-state:
+    <<: *runtime
+    command: [entity-state]
+    environment:
+      <<: *runtime-env
+      ADLOG_STORAGE_V2_WORKER_DSN: host=postgres port=5432 dbname=sli user=sli_storage_login
+      ADLOG_STORAGE_V2_WORKER_PASSWORD_FILE: /run/secrets/storage_password
+    secrets: [runtime_password, history_password, storage_password]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, entity_state]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  storage-lifecycle:
+    <<: *runtime
+    command: [storage-lifecycle, --interval-seconds, "21600"]
+    environment:
+      <<: *runtime-env
+      # migrate prepares permanent history; admit publication without deletion.
+      ADLOG_STORAGE_LIFECYCLE_WARM_COPY_ADMISSION: START-STAGE7-WARM-INCREMENTAL-COPY
+      ADLOG_STORAGE_LIFECYCLE_DELETE_EXECUTION_ENABLED: "0"
+      ADLOG_STORAGE_V2_WORKER_DSN: host=postgres port=5432 dbname=sli user=sli_storage_login
+      ADLOG_STORAGE_V2_WORKER_PASSWORD_FILE: /run/secrets/storage_password
+      ADLOG_WARM_CLICKHOUSE_HOST: warm-tier
+      ADLOG_WARM_CLICKHOUSE_PORT: "8123"
+      ADLOG_WARM_CLICKHOUSE_USER: ${ADLOG_WARM_CLICKHOUSE_USER:-default}
+      ADLOG_WARM_CLICKHOUSE_PASSWORD_FILE: /run/secrets/warm_password
+    secrets: [runtime_password, history_password, storage_password, warm_password]
+    volumes:
+      - sli-data:/var/lib/sli
+      - sli-data:/opt/sli/data
+      - storage-evidence:/opt/sli/artifacts
+      - ${SLI_PLUGIN_DIR:-../../runtime/plugins}:/opt/sli/plugins:ro
+      - ../../config/plugin_packages/v3:/opt/sli/plugin-locks:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      warm-tier:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, storage_lifecycle]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  ad-snapshot-manifest-coordinator:
+    <<: *runtime
+    command: [ad-snapshot-manifest-coordinator, --no-initial-delay]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, ad_snapshot_manifest_coordinator]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+  executor-light:
+    <<: *executor
+    profiles: []
+    volumes:
+      - sli-data:/var/lib/sli
+      - ${SLI_PLUGIN_DIR:-../../runtime/plugins}:/opt/sli/plugins:ro
+      - ../../config/plugin_packages/v3:/opt/sli/plugin-locks:ro
+    command: [executor, --profile, light]
+    mem_limit: 384m
+    environment:
+      SLI_CORE_JOB_WORKSTATIONS_RETENTION: ${SLI_CORE_JOB_WORKSTATIONS_RETENTION:-0}
+      SLI_CORE_JOB_WORKSTATIONS_PROJECTION: ${SLI_CORE_JOB_WORKSTATIONS_PROJECTION:-0}
+      SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS: ${SLI_WORKSTATION_EVIDENCE_RETENTION_DAYS:-90}
+      ADLOG_HISTORY_READ_MODE: primary
+      ADLOG_HISTORY_CLICKHOUSE_HOST: clickhouse
+      ADLOG_HISTORY_CLICKHOUSE_PORT: "8123"
+      ADLOG_HISTORY_CLICKHOUSE_USER: ${SLI_HISTORY_CLICKHOUSE_USER:-sli_history}
+      ADLOG_HISTORY_CLICKHOUSE_PASSWORD_FILE: /run/secrets/history_password
+      ADLOG_DATA_DIR: /var/lib/sli
+      SLI_PLUGIN_RUNTIME_DIR: /opt/sli/plugins
+      SLI_PLUGIN_LOCK_DIR: /opt/sli/plugin-locks
+      SLI_CORE_JOB_RADIUS_PILOT: ${SLI_CORE_JOB_RADIUS_PILOT:-0}
+      SLI_CORE_JOB_AD_GPO_PILOT: ${SLI_CORE_JOB_AD_GPO_PILOT:-0}
+      SLI_CORE_JOB_RADIUS_SOURCE_INSTANCE_ID: ${SLI_CORE_JOB_RADIUS_SOURCE_INSTANCE_ID:-}
+      SLI_JOB_DISPATCHER_LIGHT_PASSWORD_FILE: /run/secrets/job_dispatcher_light
+      SLI_JOB_EXECUTOR_LIGHT_PASSWORD_FILE: /run/secrets/job_executor_light
+      SLI_JOB_PUBLISHER_LIGHT_PASSWORD_FILE: /run/secrets/job_publisher_light
+    secrets: [job_dispatcher_light, job_executor_light, job_publisher_light, history_password]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, executor-light]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  executor-heavy:
+    <<: *executor
+    command: [executor, --profile, heavy]
+    environment:
+      SLI_PLUGIN_RUNTIME_DIR: /opt/sli/plugins
+      SLI_PLUGIN_LOCK_DIR: /opt/sli/plugin-locks
+      SLI_CORE_JOB_RADIUS_PILOT: ${SLI_CORE_JOB_RADIUS_PILOT:-0}
+      SLI_CORE_JOB_AD_GPO_PILOT: ${SLI_CORE_JOB_AD_GPO_PILOT:-0}
+      SLI_JOB_DISPATCHER_HEAVY_PASSWORD_FILE: /run/secrets/job_dispatcher_heavy
+      SLI_JOB_EXECUTOR_HEAVY_PASSWORD_FILE: /run/secrets/job_executor_heavy
+      SLI_JOB_PUBLISHER_HEAVY_PASSWORD_FILE: /run/secrets/job_publisher_heavy
+    secrets: [job_dispatcher_heavy, job_executor_heavy, job_publisher_heavy]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, executor-heavy]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  executor-long:
+    <<: *executor
+    command: [executor, --profile, long]
+    environment:
+      SLI_PLUGIN_RUNTIME_DIR: /opt/sli/plugins
+      SLI_PLUGIN_LOCK_DIR: /opt/sli/plugin-locks
+      SLI_CORE_JOB_RADIUS_PILOT: ${SLI_CORE_JOB_RADIUS_PILOT:-0}
+      SLI_CORE_JOB_AD_GPO_PILOT: ${SLI_CORE_JOB_AD_GPO_PILOT:-0}
+      SLI_JOB_DISPATCHER_LONG_PASSWORD_FILE: /run/secrets/job_dispatcher_long
+      SLI_JOB_EXECUTOR_LONG_PASSWORD_FILE: /run/secrets/job_executor_long
+      SLI_JOB_PUBLISHER_LONG_PASSWORD_FILE: /run/secrets/job_publisher_long
+    secrets: [job_dispatcher_long, job_executor_long, job_publisher_long]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, executor-long]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  remote-access:
+    <<: *runtime
+    command: [remote-access, --component, radius-session-observation]
+    healthcheck:
+      test: [CMD, python, -m, deploy.linux.healthcheck, radius-session-observation]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 45s
+
+secrets:
+  notification_db_password:
+    file: ${SLI_SECRETS_DIR}/notification_db_password
+  job_dispatcher_light:
+    file: ${SLI_SECRETS_DIR}/job_dispatcher_light
+  job_executor_light:
+    file: ${SLI_SECRETS_DIR}/job_executor_light
+  job_publisher_light:
+    file: ${SLI_SECRETS_DIR}/job_publisher_light
+  job_dispatcher_heavy:
+    file: ${SLI_SECRETS_DIR}/job_dispatcher_heavy
+  job_executor_heavy:
+    file: ${SLI_SECRETS_DIR}/job_executor_heavy
+  job_publisher_heavy:
+    file: ${SLI_SECRETS_DIR}/job_publisher_heavy
+  job_dispatcher_long:
+    file: ${SLI_SECRETS_DIR}/job_dispatcher_long
+  job_executor_long:
+    file: ${SLI_SECRETS_DIR}/job_executor_long
+  job_publisher_long:
+    file: ${SLI_SECRETS_DIR}/job_publisher_long
+  warm_password:
+    file: ${SLI_SECRETS_DIR}/warm_password
+  postgres_password:
+    file: ${SLI_SECRETS_DIR:?Set absolute secret directory}/postgres_password
+  migration_password:
+    file: ${SLI_SECRETS_DIR}/migration_password
+  runtime_password:
+    file: ${SLI_SECRETS_DIR}/runtime_password
+  platform_owner_password:
+    file: ${SLI_SECRETS_DIR}/platform_owner_password
+  semantic_password:
+    file: ${SLI_SECRETS_DIR}/semantic_password
+  storage_password:
+    file: ${SLI_SECRETS_DIR}/storage_password
+  context_password:
+    file: ${SLI_SECRETS_DIR}/context_password
+  history_password:
+    file: ${SLI_SECRETS_DIR}/history_password
+  tls_certificate:
+    file: ${SLI_SECRETS_DIR}/tls_certificate
+  tls_key:
+    file: ${SLI_SECRETS_DIR}/tls_key
+  tls_ca:
+    file: ${SLI_SECRETS_DIR}/tls_ca
+
+volumes:
+  warm-data:
+    external: true
+    name: ${SLI_WARM_CLICKHOUSE_VOLUME:-sli-warm-tier-step1-data}
+  storage-evidence:
+  postgres-data:
+  sli-data:
+  history-data:
+    external: true
+    name: ${SLI_HISTORY_DATA_VOLUME:-sli-history-data}
+  history-backups:
+    external: true
+    name: ${SLI_HISTORY_BACKUPS_VOLUME:-sli-history-backups}
+

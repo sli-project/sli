@@ -1,0 +1,295 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using NpgsqlTypes;
+using Sli.Agent.Protocol;
+using Sli.Server.Agents;
+using Sli.Server.Agents.Consumer;
+using Sli.Server.Agents.FileAudit;
+using Sli.Server.Agents.Ingress;
+using Xunit;
+
+namespace Sli.Server.Tests.Agents;
+
+public class FileAuditConsumerDatabaseTests
+{
+    private sealed class Clock(DateTimeOffset now):TimeProvider { public override DateTimeOffset GetUtcNow()=>now; }
+    private static readonly Guid Agent=Guid.Parse("00000000-0000-4000-8000-000000000227");
+    // Enable the future 7a branch only inside a disposable, owned cluster.
+    private static Task Enable(NpgsqlConnection db,CancellationToken ct)=>PostCollectionPostgres.Sql(db,"""
+        create or replace function public.agent_module_enabled_v380(p_module text) returns boolean
+        language sql stable security definer set search_path=pg_catalog,pg_temp as $$
+          select p_module not in ('sli.workstations','sli.vpn-nps','sli.radius-accounting')
+        $$;
+        """,ct);
+    private static async Task Register(NpgsqlConnection db,CancellationToken ct,string? scopeRoot=null)
+    {
+        var (_,_,policy)=AgentFileAuditValidatorTests.ActionPacket();
+        if(scopeRoot is not null)policy.Roots[0]!["path"]=scopeRoot;
+        await using var seed=new NpgsqlCommand("""
+            insert into servers(id,domain_id,hostname,fqdn,role) values(900227,1,'files','files.example.test','file_server');
+            insert into sli_agents(id,host_id,key_fingerprint,registration_host_name,assigned_modules)
+              values(@agent,@host,repeat('a',64),'files.example.test',@assignments);
+            """,db);
+        seed.Parameters.AddWithValue("agent",Agent);seed.Parameters.AddWithValue("host",AgentFileAuditValidatorTests.ActionHost);
+        seed.Parameters.AddWithValue("assignments",NpgsqlDbType.Jsonb,new JsonArray(new JsonObject {
+            ["module_id"]="sli.file-audit",["enabled"]=true,["config"]=policy.Value.DeepClone() }).ToJsonString());
+        await seed.ExecuteNonQueryAsync(ct);
+    }
+    private static async Task<(Guid Id,JsonObject Envelope,JsonObject Body,JsonArray Rows)> Seed(NpgsqlConnection db,CancellationToken ct,
+        string operation,int kind,int sequence=1,Action<JsonObject>? change=null)
+    {
+        var (e,body,_)=AgentFileAuditValidatorTests.ActionPacket(operation,kind);
+        change?.Invoke(body);
+        e=e with { AgentId=Agent.ToString(),Sequence=sequence,PayloadSha256=Packets.Digest(body),PayloadBytes=CanonicalJson.Length(body),
+            RecordCount=body["records"]!.AsArray().Count };
+        var envelope=e.ToJson();var rows=new JsonArray(body["records"]!.AsArray().Select(r=>r!["payload"]!.DeepClone()).ToArray());
+        var id=Guid.Parse(e.PacketId);
+        await using var seed=new NpgsqlCommand("""
+            insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt)
+              values(@agent,'sli.file-audit',@sequence,@packet,@hash,@envelope,@receipt);
+            insert into sli_agent_packet_inbox(packet_id,envelope,packet,event_rows) values(@packet,@envelope,@body,@rows);
+            """,db);
+        seed.Parameters.AddWithValue("agent",Agent);seed.Parameters.AddWithValue("sequence",sequence);seed.Parameters.AddWithValue("packet",id);
+        seed.Parameters.AddWithValue("hash",Packets.Digest(envelope));seed.Parameters.AddWithValue("envelope",NpgsqlDbType.Jsonb,envelope.ToJsonString());
+        seed.Parameters.AddWithValue("receipt",NpgsqlDbType.Jsonb,AgentReceipt.Make(e,"committed",null,DateTimeOffset.Parse(e.ObservedAtUtc)).ToJsonString());
+        seed.Parameters.AddWithValue("body",NpgsqlDbType.Jsonb,body.ToJsonString());seed.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,rows.ToJsonString());
+        await seed.ExecuteNonQueryAsync(ct);return(id,envelope,body,rows);
+    }
+    private static async Task<long> Number(NpgsqlConnection db,string sql,CancellationToken ct)
+    { await using var cmd=new NpgsqlCommand(sql,db);return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct)); }
+    private static async Task Write(NpgsqlConnection db,Guid packet,JsonArray rows,CancellationToken ct)
+    {
+        await using var cmd=new NpgsqlCommand("select write_file_actions389(@packet,@rows)",db);
+        cmd.Parameters.AddWithValue("packet",packet);cmd.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,rows.ToJsonString());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+    [Fact]
+    public async Task Signed_folded_packet_keeps_signature_identity_scope_and_duplicate_checks()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);
+        await Register(owner,ct,@"C:\ΑΡΧΕΙΟΣ");
+        var (e,writePacket,_)=AgentFileAuditValidatorTests.ActionPacket();
+        var (_,deletePacket,_)=AgentFileAuditValidatorTests.ActionPacket("delete",4660);
+        var write=writePacket["records"]![0]!["payload"]!;
+        var delete=deletePacket["records"]![0]!["payload"]!;
+        write["path"]=@"C:\αρχειος\пример-🚀.txt";
+        delete["record_id"]=11;
+        delete["path"]=@"C:\αρχειος\удалённый.txt";
+        delete["minute_utc"]="2026-09-30T01:02:00Z";
+        delete["time_created"]="2026-09-30T01:02:03Z";
+        delete["first_seen_utc"]="2026-09-30T01:02:03Z";
+        delete["last_seen_utc"]="2026-09-30T01:02:58Z";
+        var now=DateTimeOffset.Parse(e.ObservedAtUtc);var clock=new Clock(now);
+        var body=CollectionPacket.Make("files.example.test","Security",e.Generation,
+            new JsonObject { ["after_record_id"]=null,["last_record_id"]=11 },
+            [new PacketRecord("file_action",10,write),new PacketRecord("file_action",11,delete)],
+            "not_proven",writePacket["context"]!.AsObject(),now);
+        var after=JsonNode.Parse(e.CursorAfter.Token)!.AsObject();after["record_id"]=11;
+        using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var cert=new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256).CreateSelfSigned(now.AddDays(-1),now.AddDays(1));
+        var sample=new Sample("sli.file-audit",e.SourceInstanceId,"Security",e.Generation,e.CursorBefore,new Cursor("bookmark",after.ToJsonString()),body,
+            PolicyRevision:"1",ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
+        var signed=Packets.Make(new EcdsaPacketSigner(key),Agent.ToString(),1,sample,now).ToJson();
+        var service=new AgentPacketService(clock,new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184),
+            new AgentIngressDiagnostics(fixture.Pg.Root,NullLogger<AgentIngressDiagnostics>.Instance,clock));
+        var identity=new AgentIdentity(Agent,AgentFileAuditValidatorTests.ActionHost,new string('a',64),"active");
+        await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));await app.OpenAsync(ct);
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            var changed=(JsonObject)signed.DeepClone();changed["payload"]!["records"]![0]!["payload"]!["count"]=8;
+            await Assert.ThrowsAsync<ProtocolException>(()=>service.ReceiveAsync(app,tx,identity,cert,changed,ct));
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,signed,ct))["error_code"]!.GetValue<string>());
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        await Enable(owner,ct);
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            var wrong=identity with { Id=Guid.NewGuid() };
+            Assert.Equal("agent_identity_mismatch",(await service.ReceiveAsync(app,tx,wrong,cert,signed,ct))["error_code"]!.GetValue<string>());
+            Assert.Equal("committed",(await service.ReceiveAsync(app,tx,identity,cert,signed,ct))["status"]!.GetValue<string>());
+            await tx.CommitAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            var step=await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(step.Imported,step.PendingReason+"\n"+(step.Imported?"":await fixture.Pg.DiagnosticsAsync(ct)));
+            await tx.CommitAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            Assert.Equal("duplicate",(await service.ReceiveAsync(app,tx,identity,cert,signed,ct))["status"]!.GetValue<string>());
+            Assert.False((await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct)).Scanned);
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(2,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(2,await Number(owner,"select count(distinct (time_created_utc at time zone 'UTC')::date) from event_hot",ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='delete'",ct));
+        Assert.Equal(7,await Number(owner,"select event_count from event_cold_daily",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from file_action_projection389",ct));
+        Assert.Equal(0,await Number(owner,"""
+            select count(*) from unnest(array['adlog_user','adlog_storage_worker']) names(role_name)
+            where has_table_privilege(role_name,'public.file_action_projection389','SELECT,INSERT,UPDATE,DELETE')
+            """,ct));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+    [Fact]
+    public async Task Folded_actions_are_atomic_weighted_replay_safe_and_expire_independently()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);
+        await Register(owner,ct);await Enable(owner,ct);
+        foreach(var (operation,kind) in new[] { ("read",4663),("write",4663),("delete",4660),("rename",4663),("permissions",4670),("access_denied",5145) })
+            await Seed(owner,ct,operation,kind,(int)await Number(owner,"select count(*)+1 from sli_agent_receipts",ct));
+        var another=await Seed(owner,ct,"write",4663,7,p=> {
+            var r=p["records"]![0]!["payload"]!;
+            r["path"]="C:\\Files\\another.txt";r["minute_utc"]="2026-10-01T01:03:00Z";
+            r["time_created"]="2026-10-01T01:03:03Z";r["first_seen_utc"]="2026-10-01T01:03:03Z";r["last_seen_utc"]="2026-10-01T01:03:58Z";
+        });
+        await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));await app.OpenAsync(ct);
+        for(int n=0;n<7;n++) {
+            await using var tx=await app.BeginTransactionAsync(ct);
+            var step=await FileAuditInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(step.Imported,step.PendingReason+"\n"+(step.Imported?"":await fixture.Pg.DiagnosticsAsync(ct)));await tx.CommitAsync(ct);
+        }
+        Assert.Equal(7,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(3,await Number(owner,"select count(*) from event_cold_facts",ct));
+        Assert.Equal(14,await Number(owner,"select event_count from event_cold_daily where method->>'operation'='write'",ct));
+        Assert.Equal(7,await Number(owner,"select event_count from event_cold_daily where method->>'operation'='read'",ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_daily where method->>'operation'='write' and first_seen_utc='2026-10-01T01:02:03Z' and last_seen_utc='2026-10-01T01:03:58Z'",ct));
+        Assert.Equal(7,await Number(owner,"select count(*) from event_hot where source_sha256 is not null and method#>>'{$origin,plugin_id}'='sli.file-audit' and method#>>'{$origin,collection_scope_id}'='scope:files'",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot where method ? '$file_packet' or method ? '$file_ordinal'",ct));
+        await Write(app,another.Id,another.Rows,ct);
+        Assert.Equal(14,await Number(owner,"select event_count from event_cold_daily where method->>'operation'='write'",ct));
+        var concurrent=await Seed(owner,ct,"write",4663,8);
+        await using(var second=new NpgsqlConnection(fixture.Dsn("adlog_user"))) {
+            await second.OpenAsync(ct);
+            await Task.WhenAll(Write(app,concurrent.Id,concurrent.Rows,ct),Write(second,concurrent.Id,concurrent.Rows,ct));
+        }
+        Assert.Equal(8,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(21,await Number(owner,"select event_count from event_cold_daily where method->>'operation'='write'",ct));
+        await PostCollectionPostgres.Sql(owner,"select * from expire_short_storage_partitions342('2026-10-02T00:00:00Z','2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')",ct);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(3,await Number(owner,"select count(*) from event_cold_facts",ct));
+        await Write(app,another.Id,another.Rows,ct);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(21,await Number(owner,"select event_count from event_cold_daily where method->>'operation'='write'",ct));
+        await PostCollectionPostgres.Sql(owner,"select * from expire_short_storage_partitions342('2026-11-01T00:00:00Z','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')",ct);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_cold_facts",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from event_cold_daily",ct));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+    [Fact]
+    public async Task Invalid_second_action_rolls_back_the_whole_packet_and_disabled_module_imports_nothing()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);await Register(owner,ct);
+        var packet=await Seed(owner,ct,"write",4663);
+        await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));await app.OpenAsync(ct);
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            var step=await FileAuditInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.False(step.Imported);Assert.Equal("module_disabled",step.PendingReason);await tx.RollbackAsync(ct);
+        }
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        await Enable(owner,ct);
+        // Signed admission rows can still be corrupt in storage: the SQL gate
+        // must fail closed even when called without the C# validator.
+        var invalid=await Seed(owner,ct,"write",4663,2,p=> {
+            var second=p["records"]![0]!.DeepClone();second["record_id"]=11;second["payload"]!["record_id"]=11;
+            second["payload"]!["event_id"]=99999;p["records"]!.AsArray().Add(second);
+        });
+        var invalidError=await Assert.ThrowsAsync<PostgresException>(()=>Write(app,invalid.Id,invalid.Rows,ct));
+        Assert.Equal("file_action_kind_invalid",invalidError.MessageText);
+        JsonArray reordered=new(invalid.Rows.Reverse().Select(row=>row!.DeepClone()).ToArray());
+        await using(var update=new NpgsqlCommand("update sli_agent_packet_inbox set event_rows=@rows where packet_id=@packet",owner)) {
+            update.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,reordered.ToJsonString());
+            update.Parameters.AddWithValue("packet",invalid.Id);
+            await update.ExecuteNonQueryAsync(ct);
+        }
+        var orderError=await Assert.ThrowsAsync<PostgresException>(()=>Write(app,invalid.Id,reordered,ct));
+        Assert.Equal("file_action_attestation_failed",orderError.MessageText);
+        var samePath=await Seed(owner,ct,"rename",4663,3,p=> {
+            var row=p["records"]![0]!["payload"]!;
+            row["path"]=@"C:\Files\ΟΣ";
+            row["old_path"]=@"C:\Files\ος";
+        });
+        var renameError=await Assert.ThrowsAsync<PostgresException>(()=>Write(app,samePath.Id,samePath.Rows,ct));
+        Assert.Equal("file_action_scope_invalid",renameError.MessageText);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from event_cold_daily",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from file_action_projection389",ct));
+        // Missing stream receipt cannot become an attested file action.
+        await PostCollectionPostgres.Sql(owner,"delete from sli_agent_stream_receipts",ct);
+        var missingStream=await Assert.ThrowsAsync<PostgresException>(()=>Write(app,packet.Id,packet.Rows,ct));
+        Assert.Equal("P0002",missingStream.SqlState);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+    }
+    [Theory]
+    [InlineData("envelope")]
+    [InlineData("body")]
+    public async Task Stored_integrity_mismatch_is_rejected_before_file_actions_are_written(string corruptPart)
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var owner=await fixture.Pg.OpenAsync(ct);await Register(owner,ct);await Enable(owner,ct);
+        var packet=await Seed(owner,ct,"write",4663);
+        if(corruptPart=="envelope")
+            await PostCollectionPostgres.Sql(owner,"update sli_agent_receipts set envelope_sha256=repeat('0',64)",ct);
+        else
+            await PostCollectionPostgres.Sql(owner,"update sli_agent_packet_inbox set packet=jsonb_set(packet,'{context,filtered_count}','1')",ct);
+        await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));await app.OpenAsync(ct);
+        var error=await Assert.ThrowsAsync<PostgresException>(()=>Write(app,packet.Id,packet.Rows,ct));
+        Assert.Equal("file_action_attestation_failed",error.MessageText);
+        Assert.Equal(0,await Number(owner,"select count(*) from event_hot",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from event_cold_daily",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null",ct));
+    }
+    [Fact]
+    public async Task Migration_requires_388_and_rolls_back_without_deleting_facts()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct,throughVersion:387);
+        string migration=Path.Combine(PostCollectionPostgres.Repository(),"config/postgres_migrations/389_file_action_intake.sql");
+        await using var db=await fixture.Pg.OpenAsync(ct);
+        Assert.Equal(387,await Number(db,"select max(version) from schema_migrations",ct));
+        var missing=await Assert.ThrowsAsync<InvalidOperationException>(()=>fixture.Pg.ApplyFileAsync(migration,null,ct));
+        Assert.Contains("file_action_intake389_preflight",missing.Message);
+        string previous=Path.Combine(PostCollectionPostgres.Repository(),"config/postgres_migrations/388_password_live_first.sql");
+        await fixture.Pg.ApplyFileAsync(previous,null,ct);
+        Assert.Equal(388,await Number(db,"select max(version) from schema_migrations",ct));
+
+        const string fileDispatch="    if new.method ? '$file_packet' then return public.attest_file_action389(new); end if;\n";
+        async Task<(string Definition,string Metadata)> ReadShortEventAttestation()
+        {
+            await using var command=new NpgsqlCommand("""
+                select pg_get_functiondef(oid),jsonb_build_array(proowner::text,proacl::text)::text
+                from pg_proc where oid='public.attest_short_event337()'::regprocedure
+                """,db);
+            await using var reader=await command.ExecuteReaderAsync(ct);
+            Assert.True(await reader.ReadAsync(ct));
+            return (reader.GetString(0),reader.GetString(1));
+        }
+
+        var original=await ReadShortEventAttestation();
+        Assert.Contains("public.generic_short_event_proof388(",original.Definition);
+        Assert.DoesNotContain(fileDispatch,original.Definition);
+        await fixture.Pg.ApplyFileAsync(migration,null,ct);
+        Assert.Equal(389,await Number(db,"select max(version) from schema_migrations",ct));
+        var combined=await ReadShortEventAttestation();
+        Assert.Contains(fileDispatch,combined.Definition);
+        Assert.Equal(original.Definition,combined.Definition.Replace(fileDispatch,"",StringComparison.Ordinal));
+        Assert.Equal(original.Metadata,combined.Metadata);
+        await Register(db,ct);await Enable(db,ct);var packet=await Seed(db,ct,"delete",4660);await Write(db,packet.Id,packet.Rows,ct);
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration,".rollback.sql"),null,ct);
+        Assert.Equal(original,await ReadShortEventAttestation());
+        Assert.Equal(1,await Number(db,"select count(*) from event_cold_facts",ct));
+        await fixture.Pg.ApplyFileAsync(migration,null,ct);
+        Assert.Equal(combined,await ReadShortEventAttestation());
+        Assert.Equal(1,await Number(db,"select count(*) from event_cold_facts",ct));
+    }
+}

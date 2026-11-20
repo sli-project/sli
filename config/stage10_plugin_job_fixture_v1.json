@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-job-fixture.v1",
+  "status": "prepared_disposable_local_fixture",
+  "fixture_only": true,
+  "runtime_enabled": false,
+  "source_contact_allowed": false,
+  "database_access_allowed": false,
+  "autostart_enabled": false,
+  "limits": {
+    "active_processes": 1,
+    "process_memory_bytes": 134217728,
+    "kill_on_job_close": true,
+    "cpu_hard_limit": 20
+  },
+  "child": {
+    "kind": "python_sleep_fixture",
+    "maximum_runtime_seconds": 30,
+    "inherit_environment": false,
+    "network_required": false
+  },
+  "cpu_effectiveness_probe": {
+    "control_hard_limit": 100,
+    "capped_hard_limit": 1,
+    "pbkdf2_iterations": 3000000,
+    "timeout_seconds": 45,
+    "minimum_control_cpu_ratio": 0.5,
+    "maximum_relative_capped_ratio": 0.6
+  },
+  "explicitly_not_proven": [
+    "target_windows_service_identity",
+    "working_directory_acl",
+    "network_allowlist",
+    "postgresql_role_and_namespace",
+    "plugin_handler_or_source_runtime"
+  ]
+}

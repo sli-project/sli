@@ -1,0 +1,26 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.workstations",
+  "plugin_version": "1.0.0",
+  "core_api": {"minimum": "1.0.0", "maximum_exclusive": "2.0.0"},
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [], "dependencies": [], "sources": [], "agent_modules": [],
+  "handlers": [{
+    "handler_id": "workstations.evidence-retention", "handler_version": "1.0.0",
+    "kind": "reconcile", "input_contract": "workstations.retention-policy.v1",
+    "result_contract": "sli.core-job-result.v1", "resource_profile": "light",
+    "rights_profile": "workstations-retention", "max_attempts": 3,
+    "budget": {"wall_seconds": 90, "cpu_seconds": 10, "memory_bytes": 268435456,
+      "max_records": 50, "max_result_bytes": 65536, "max_db_connections": 1,
+      "statement_timeout_ms": 5000, "lock_timeout_ms": 1000}
+  }],
+  "schedules": [{
+    "schedule_id": "workstations.evidence-retention", "handler_id": "workstations.evidence-retention",
+    "trigger": "interval", "interval_seconds": 30, "calendar": null,
+    "timezone": "UTC", "max_inflight_per_source": 1
+  }],
+  "datasets": [], "reports": [], "navigation": [], "home_widgets": [],
+  "data": {"schema": "sli_plugin_workstations", "existing_tables": [], "migrations": []}
+}

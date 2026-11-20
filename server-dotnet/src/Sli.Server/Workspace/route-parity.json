@@ -1,0 +1,25 @@
+{
+  "direct": {
+    "/vpn-report": "/app/vpn-report",
+    "/reports/search.html": "/app/events",
+    "/reports/search-deep.html": "/app/events",
+    "/reports/security-events-monitor.html": "/app/events",
+    "/reports/account-timeline.html": "/app/investigations",
+    "/reports/investigation.html": "/app/investigations",
+    "/reports/findings.html": "/app/scenarios",
+    "/reports/collector-health.html": "/app/operations",
+    "/reports/autocollection.html": "/app/operations",
+    "/reports/system-health.html": "/app/operations",
+    "/reports/storage-health.html": "/app/operations",
+    "/reports/diagnostics.html": "/app/operations",
+    "/reports/role-overview.html": "/app/settings",
+    "/reports/ui-navigation.html": "/app/settings"
+  },
+  "export_only_routes": [
+    "/reports/ai-analysis.html",
+    "/reports/ai-prompt-preview.html",
+    "/reports/ai-redaction-preview.html",
+    "/reports/ai-reports.html",
+    "/reports/domain-security-overview.html"
+  ]
+}

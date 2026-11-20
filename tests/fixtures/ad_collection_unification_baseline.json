@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "current_facts": {
+    "active_product_anchors": [
+      "ad.state",
+      "ad.users.v2",
+      "ad.computers.v6",
+      "ad.gpo.v2",
+      "vpn.audit"
+    ],
+    "worker_cadences_seconds": {
+      "ad_snapshot_manifest_coordinator": 43200
+    },
+    "ad_context_section_cadences_seconds": {
+      "light": 1800,
+      "deep": 21600,
+      "exact_logon": 86400
+    },
+    "v5_runtime": {
+      "feature_enabled": false,
+      "supervised": false,
+      "entrypoint": "computers_report_v5_snapshot_worker.py"
+    },
+    "legacy_gpo_governance_projection": {
+      "source_section": "gpo_governance",
+      "dataset_key": "ad.gpo.governance",
+      "report_key": "ad.gpo.review",
+      "internal_consumers": [
+        "server/sli/sources/plugin_compatibility_registration.py",
+        "server/sli/reporting/reporting_v4.py"
+      ]
+    },
+    "retained_rollback_entrypoints": {
+      "ad_context_snapshot": "ad_context_snapshot_worker.py",
+      "ad_snapshot_projection": "ad_snapshot_projection_worker.py",
+      "computers_v5_snapshot": "computers_report_v5_snapshot_worker.py",
+      "computers_v6_source": "computers_v6_source_worker.py",
+      "computers_v6_snapshot": "computers_report_v6_snapshot_worker.py",
+      "users_v2_snapshot": "users_report_v2_snapshot_worker.py"
+    }
+  },
+  "target_decisions": {
+    "v5": {
+      "known": true,
+      "feature_enabled_target": false,
+      "supervised_target": false,
+      "entrypoint_retained": true
+    },
+    "gpo": {
+      "legacy_projection_retained": true,
+      "single_v2_acquisition_target": true
+    },
+    "scope_guard": {
+      "radius_untouched": true,
+      "semantic_untouched": true,
+      "product_untouched": true,
+      "ui_untouched": true
+    },
+    "active_snapshot_storage": {
+      "contracts": [
+        "ad.users.v2",
+        "ad.computers.v6",
+        "ad.gpo.v2"
+      ],
+      "cutover_before_s10": false
+    },
+    "manifest_foundation": {
+      "contract_version": "sli.ad-snapshot-manifest/1.0",
+      "migration_name": "121_ad_snapshot_manifest_foundation",
+      "cadence_seconds": 43200,
+      "source_only": true,
+      "report_cutover": false,
+      "production_apply": false
+    }
+  },
+  "normalized_content_sha256": "78d4212ddb9607a15e7d250ce031fd45f104f13edefc0d15fcc5e6d80ae4dc5d"
+}

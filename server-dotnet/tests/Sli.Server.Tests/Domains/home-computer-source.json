@@ -1,0 +1,195 @@
+{
+  "schema_version": "2.0",
+  "metadata": {
+    "snapshot_id": "00000000-0000-4000-8000-000000000114",
+    "label": "AD inventory 2026-08-30 01:10:00 UTC",
+    "started_at": "2026-08-30T01:00:00Z",
+    "completed_at": "2026-08-30T01:10:00Z",
+    "query_dc": "dc01.example.test",
+    "domain": "example.test",
+    "search_base": null,
+    "collection_status": "complete",
+    "object_count": 1,
+    "collector_version": "evidence-collector-1.0",
+    "sources": [
+      {
+        "name": "ad",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "dns",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "os",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "site",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "last_logon_timestamp",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "exact_last_logon",
+        "status": "observed",
+        "requested": true,
+        "counts": {
+          "observed": 1
+        }
+      },
+      {
+        "name": "dc_events",
+        "status": "not_collected",
+        "requested": false,
+        "counts": {
+          "not_collected": 1
+        }
+      }
+    ],
+    "errors": []
+  },
+  "objects": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "objectGuid": "00000000-0000-4000-8000-000000000001",
+      "name": "APP-01",
+      "dnsHostName": "app-01.example.test",
+      "enabled": true,
+      "deviceType": "server",
+      "classification": {
+        "status": "observed",
+        "value": "server",
+        "rule_id": "device-classification/os-server-v1",
+        "evidence": [
+          "OperatingSystem contains Server"
+        ]
+      },
+      "ipv4s": [
+        "192.0.2.10"
+      ],
+      "ipv6s": [],
+      "osName": "Windows Server 2022 Standard",
+      "osVersion": "10.0 (20348)",
+      "osBuild": "20348",
+      "osFamily": "Windows Server 2022",
+      "servicePack": "",
+      "ou": "Servers",
+      "distinguishedName": "CN=APP-01,OU=Servers,DC=example,DC=test",
+      "canonicalName": "example.test/Servers/APP-01",
+      "domain": "example.test",
+      "adSite": "HQ",
+      "lastLogonTimestamp": "2026-08-29T12:00:00Z",
+      "exactLastLogon": "2026-08-29T12:30:00Z",
+      "eventLastSeen": null,
+      "passwordLastSet": "2026-07-01T00:00:00Z",
+      "whenCreated": "2025-01-01T00:00:00Z",
+      "whenChanged": "2026-08-29T00:00:00Z",
+      "description": "Application server",
+      "location": "Datacenter",
+      "managedBy": null,
+      "sid": "S-1-5-21-100000001-200000002-300000003-1001",
+      "userAccountControl": 4096,
+      "spns": [
+        "HOST/app-01.example.test"
+      ],
+      "trustedForDelegation": false,
+      "trustedToAuthForDelegation": false,
+      "roleHint": "Сервер",
+      "roleEvidence": "OperatingSystem contains Server",
+      "collectedAt": "2026-08-30T01:05:00Z",
+      "queryDc": "dc01.example.test",
+      "collectorVersion": "evidence-collector-1.0",
+      "sources": {
+        "ad": {
+          "status": "observed",
+          "source": "ad",
+          "value": null,
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "dns": {
+          "status": "observed",
+          "source": "dns",
+          "value": {
+            "ipv4": [
+              "192.0.2.10"
+            ],
+            "ipv6": []
+          },
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "os": {
+          "status": "observed",
+          "source": "os",
+          "value": {
+            "name": "Windows Server 2022 Standard",
+            "version": "10.0 (20348)",
+            "service_pack": ""
+          },
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "site": {
+          "status": "observed",
+          "source": "site",
+          "value": "HQ",
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "last_logon_timestamp": {
+          "status": "observed",
+          "source": "last_logon_timestamp",
+          "value": "2026-08-29T12:00:00Z",
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "exact_last_logon": {
+          "status": "observed",
+          "source": "exact_last_logon",
+          "value": "2026-08-29T12:30:00Z",
+          "observed_at": "2026-08-30T01:05:00Z",
+          "error": null,
+          "details": null
+        },
+        "dc_events": {
+          "status": "not_collected",
+          "source": "dc_events",
+          "value": null,
+          "observed_at": null,
+          "error": null,
+          "details": null
+        }
+      },
+      "collectionErrors": []
+    }
+  ]
+}

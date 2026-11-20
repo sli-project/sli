@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "contract_id": "sli.plugin-postgresql-isolation.v1",
+  "status": "prepared_disposable_only",
+  "architecture_decision_id": "sli.plugin-architecture.v2",
+  "required_migration": 67,
+  "plugin_id": "sli.remote-access",
+  "owner_role": "adlog_plugin_remote_access_owner",
+  "runtime_role": "adlog_plugin_remote_access_runtime",
+  "state_schema": "sli_plugin_remote_access",
+  "namespace_marker": "sli_plugin_remote_access.plugin_namespace_contract_v1",
+  "production_migration_applied": false,
+  "runtime_role_login_enabled": false,
+  "plugin_runtime_enabled": false,
+  "source_contact_allowed": false,
+  "existing_compatibility_tables_moved": false,
+  "production_read_path_cutover": false,
+  "guarantees": [
+    "plugin_namespace_has_dedicated_owner_role",
+    "plugin_runtime_role_is_nologin_and_noinherit",
+    "public_has_no_plugin_namespace_access",
+    "plugin_runtime_has_no_schema_create",
+    "plugin_runtime_has_no_core_table_privileges",
+    "rollback_refuses_unknown_namespace_objects"
+  ],
+  "explicitly_out_of_scope": [
+    "production_apply",
+    "moving_stage9_public_tables",
+    "production_read_path_cutover",
+    "plugin_handler_activation",
+    "runtime_login_role_creation",
+    "source_contact",
+    "autostart",
+    "destructive_existing_state_cleanup"
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "restore": {
+    "expected_revision": 2,
+    "config": {
+      "roots": [
+        {
+          "share_name": "Bound",
+          "important": true,
+          "path": "C:\\Bound",
+          "sacl": {
+            "inherit_files": false,
+            "trustee_sids": [
+              "S-1-5-11"
+            ],
+            "inherit_directories": true
+          },
+          "collection_scope_id": "bound:scope"
+        }
+      ],
+      "max_events": 17,
+      "service_account_exclusions": [
+        "S-1-5-18"
+      ],
+      "source_kind": "server"
+    },
+    "agent_id": "00000000-0000-4000-8000-000000000001",
+    "command": {
+      "command_id": "10000000-0000-4000-8000-000000000003",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "collection_scope_ids": [
+        "bound:scope"
+      ],
+      "policy_revision": "3",
+      "action": "restore"
+    }
+  },
+  "check": {
+    "expected_revision": 2,
+    "config": {
+      "roots": [
+        {
+          "share_name": "Bound",
+          "important": true,
+          "path": "C:\\Bound",
+          "sacl": {
+            "inherit_files": false,
+            "trustee_sids": [
+              "S-1-5-11"
+            ],
+            "inherit_directories": true
+          },
+          "collection_scope_id": "bound:scope"
+        }
+      ],
+      "max_events": 17,
+      "service_account_exclusions": [
+        "S-1-5-18"
+      ],
+      "source_kind": "server"
+    },
+    "agent_id": "00000000-0000-4000-8000-000000000001",
+    "command": {
+      "command_id": "10000000-0000-4000-8000-000000000001",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "collection_scope_ids": [
+        "bound:scope"
+      ],
+      "policy_revision": "3",
+      "action": "check"
+    }
+  },
+  "apply": {
+    "agent_id": "00000000-0000-4000-8000-000000000001",
+    "config": {
+      "roots": [
+        {
+          "share_name": "Bound",
+          "important": true,
+          "path": "C:\\Bound",
+          "sacl": {
+            "inherit_files": false,
+            "trustee_sids": [
+              "S-1-5-11"
+            ],
+            "inherit_directories": true
+          },
+          "collection_scope_id": "bound:scope"
+        }
+      ],
+      "max_events": 17,
+      "service_account_exclusions": [
+        "S-1-5-18"
+      ],
+      "source_kind": "server"
+    },
+    "command": {
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "contract_id": "sli.file-audit.audit-command.v1",
+      "collection_scope_ids": [
+        "bound:scope"
+      ],
+      "policy_revision": "3",
+      "action": "apply"
+    },
+    "enabled": true,
+    "activate_collection": true,
+    "expected_revision": 2
+  }
+}

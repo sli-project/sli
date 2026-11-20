@@ -1,0 +1,3840 @@
+{
+  "cases": [
+    {
+      "name": "populated",
+      "components": {
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 3,
+          "total_event_entity_links": 6,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": [
+          {
+            "hostname": "dc.example.test",
+            "label": "<script>&\"fixture"
+          }
+        ],
+        "findings": {
+          "items": [
+            {
+              "status": "open"
+            },
+            {
+              "status": "closed"
+            },
+            {
+              "status": "false_positive"
+            }
+          ]
+        },
+        "ai_runs": {
+          "items": [
+            {
+              "id": "fixture"
+            }
+          ]
+        },
+        "jobs": [],
+        "reports": [],
+        "archive_status": {
+          "archive_start_utc": null,
+          "channel_states": [],
+          "backend": "postgres"
+        }
+      },
+      "runtime": {
+        "status": "ok",
+        "active_backend": "postgres",
+        "scheduler": {},
+        "collection": {}
+      },
+      "failure": null,
+      "payload": {
+        "generated_at_utc": "<generated>",
+        "status": "ok",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 3,
+          "total_event_entity_links": 6,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 3,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 3,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 6,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "entity_summary": 0,
+            "sources": 0,
+            "archive_status": 0,
+            "ai_runs": 0,
+            "reports": 0,
+            "jobs": 0,
+            "findings": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot"
+        }
+      },
+      "warming": {
+        "generated_at_utc": "<generated>",
+        "status": "warming",
+        "health": {
+          "status": "warming",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          }
+        },
+        "collector_health": {
+          "summary": {},
+          "items": [],
+          "post_collection": {
+            "summary": {},
+            "items": []
+          },
+          "status": "unavailable"
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "status": "unavailable"
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "views": [],
+          "summary": {}
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {},
+          "components": {},
+          "failures": [],
+          "request_model": "startup_warming_response"
+        }
+      },
+      "fresh": {
+        "generated_at_utc": "<generated>",
+        "status": "ok",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 3,
+          "total_event_entity_links": 6,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 3,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 3,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 6,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "entity_summary": 0,
+            "sources": 0,
+            "archive_status": 0,
+            "ai_runs": 0,
+            "reports": 0,
+            "jobs": 0,
+            "findings": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "fresh_cache"
+        }
+      },
+      "stale": {
+        "generated_at_utc": "<generated>",
+        "status": "stale",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 3,
+          "total_event_entity_links": 6,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 3,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 3,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 6,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": true,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "entity_summary": 0,
+            "sources": 0,
+            "archive_status": 0,
+            "ai_runs": 0,
+            "reports": 0,
+            "jobs": 0,
+            "findings": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "stale_while_revalidate"
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "components": {
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 0,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 0
+          },
+          "items": []
+        },
+        "sources": [],
+        "findings": {
+          "items": []
+        },
+        "ai_runs": {
+          "items": []
+        },
+        "jobs": [],
+        "reports": [],
+        "archive_status": {
+          "archive_start_utc": null,
+          "channel_states": [],
+          "backend": "postgres"
+        }
+      },
+      "runtime": {
+        "status": "ok",
+        "active_backend": "postgres",
+        "scheduler": {},
+        "collection": {}
+      },
+      "failure": null,
+      "payload": {
+        "generated_at_utc": "<generated>",
+        "status": "ok",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 0
+          },
+          "items": []
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 0,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 0,
+            "total_events": 0,
+            "security_events": 0,
+            "entities": 0,
+            "active_findings": 0,
+            "ai_runs": 0,
+            "security_high": 0,
+            "worst_security_lag_minutes": null,
+            "system_status": "ok"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 0,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 0,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "—",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 0,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 0,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "ok",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 0,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 0,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "findings": 0,
+            "events_summary": 0,
+            "jobs": 0,
+            "sources": 0,
+            "reports": 0,
+            "collector_health": 0,
+            "archive_status": 0,
+            "entity_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot"
+        }
+      },
+      "warming": {
+        "generated_at_utc": "<generated>",
+        "status": "warming",
+        "health": {
+          "status": "warming",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          }
+        },
+        "collector_health": {
+          "summary": {},
+          "items": [],
+          "post_collection": {
+            "summary": {},
+            "items": []
+          },
+          "status": "unavailable"
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "status": "unavailable"
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "views": [],
+          "summary": {}
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {},
+          "components": {},
+          "failures": [],
+          "request_model": "startup_warming_response"
+        }
+      },
+      "fresh": {
+        "generated_at_utc": "<generated>",
+        "status": "ok",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 0
+          },
+          "items": []
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 0,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 0,
+            "total_events": 0,
+            "security_events": 0,
+            "entities": 0,
+            "active_findings": 0,
+            "ai_runs": 0,
+            "security_high": 0,
+            "worst_security_lag_minutes": null,
+            "system_status": "ok"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 0,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 0,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "—",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 0,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 0,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "ok",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 0,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 0,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "findings": 0,
+            "events_summary": 0,
+            "jobs": 0,
+            "sources": 0,
+            "reports": 0,
+            "collector_health": 0,
+            "archive_status": 0,
+            "entity_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "fresh_cache"
+        }
+      },
+      "stale": {
+        "generated_at_utc": "<generated>",
+        "status": "stale",
+        "health": {
+          "status": "ok",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 0
+          },
+          "items": []
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 0,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 0,
+            "total_events": 0,
+            "security_events": 0,
+            "entities": 0,
+            "active_findings": 0,
+            "ai_runs": 0,
+            "security_high": 0,
+            "worst_security_lag_minutes": null,
+            "system_status": "ok"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 0,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 0,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "—",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 0,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 0,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "ok",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 0,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 0,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": true,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "findings": 0,
+            "events_summary": 0,
+            "jobs": 0,
+            "sources": 0,
+            "reports": 0,
+            "collector_health": 0,
+            "archive_status": 0,
+            "entity_summary": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "stale_while_revalidate"
+        }
+      }
+    },
+    {
+      "name": "partial",
+      "components": {
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 3,
+          "total_event_entity_links": 6,
+          "by_type": [],
+          "by_role": [],
+          "dashboard_mode": "postgres_v2_statistics_and_sample",
+          "estimated": true,
+          "recent_sample_size": 20000,
+          "limitations": [
+            "entity/link totals use PostgreSQL statistics estimates",
+            "type/role distribution uses a bounded recent sample",
+            "deep entity reports keep exact query semantics"
+          ]
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": [
+          {
+            "hostname": "dc.example.test",
+            "label": "<script>&\"fixture"
+          }
+        ],
+        "findings": {
+          "items": [
+            {
+              "status": "open"
+            },
+            {
+              "status": "closed"
+            },
+            {
+              "status": "false_positive"
+            }
+          ]
+        },
+        "ai_runs": {
+          "items": [
+            {
+              "id": "fixture"
+            }
+          ]
+        },
+        "jobs": [],
+        "reports": [],
+        "archive_status": {
+          "archive_start_utc": null,
+          "channel_states": [],
+          "backend": "postgres"
+        }
+      },
+      "runtime": {
+        "status": "ok",
+        "active_backend": "postgres",
+        "scheduler": {},
+        "collection": {}
+      },
+      "failure": "entity_summary",
+      "payload": {
+        "generated_at_utc": "<generated>",
+        "status": "partial",
+        "health": {
+          "status": "warn",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 0,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "entity_summary": 0,
+            "sources": 0,
+            "findings": 0,
+            "jobs": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "reports": 0,
+            "archive_status": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "failed",
+              "duration_ms": 0,
+              "error": "RuntimeError: dashboard_component_unavailable"
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [
+            "entity_summary"
+          ],
+          "request_model": "parallel_bounded_snapshot"
+        }
+      },
+      "warming": {
+        "generated_at_utc": "<generated>",
+        "status": "warming",
+        "health": {
+          "status": "warming",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          }
+        },
+        "collector_health": {
+          "summary": {},
+          "items": [],
+          "post_collection": {
+            "summary": {},
+            "items": []
+          },
+          "status": "unavailable"
+        },
+        "sources": {
+          "items": []
+        },
+        "events_summary": {
+          "total_events": 0,
+          "by_channel": [],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "status": "unavailable"
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "views": [],
+          "summary": {}
+        },
+        "diagnostics": {
+          "cache_hit": false,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {},
+          "components": {},
+          "failures": [],
+          "request_model": "startup_warming_response"
+        }
+      },
+      "fresh": {
+        "generated_at_utc": "<generated>",
+        "status": "partial",
+        "health": {
+          "status": "warn",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 0,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": false,
+          "refreshing": false,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "entity_summary": 0,
+            "sources": 0,
+            "findings": 0,
+            "jobs": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "reports": 0,
+            "archive_status": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "failed",
+              "duration_ms": 0,
+              "error": "RuntimeError: dashboard_component_unavailable"
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [
+            "entity_summary"
+          ],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "fresh_cache"
+        }
+      },
+      "stale": {
+        "generated_at_utc": "<generated>",
+        "status": "partial",
+        "health": {
+          "status": "warn",
+          "service": "ad-log-reports",
+          "mode": "real-readonly-archive-collector",
+          "runtime": {
+            "status": "ok",
+            "active_backend": "postgres",
+            "scheduler": {},
+            "collection": {}
+          },
+          "archive_start_utc": null,
+          "archive_channel_states": [],
+          "archive_backend": "postgres"
+        },
+        "collector_health": {
+          "summary": {
+            "security_high": 0,
+            "security_warn": 1
+          },
+          "items": [
+            {
+              "channel": "Security",
+              "lag_minutes": "invalid"
+            },
+            {
+              "channel": "Security",
+              "lag_minutes": -3
+            }
+          ]
+        },
+        "sources": {
+          "items": [
+            {
+              "hostname": "dc.example.test",
+              "label": "<script>&\"fixture"
+            }
+          ]
+        },
+        "events_summary": {
+          "total_events": 9,
+          "by_channel": [
+            {
+              "channel": "Security",
+              "count": 12
+            }
+          ],
+          "top_event_ids": [],
+          "by_server": [],
+          "by_server_channel": [],
+          "security_24h_summary": {
+            "important_total": 0,
+            "mode": "recent_bounded_sample",
+            "sample_size": 50000
+          },
+          "dashboard_mode": "postgres_v2_bounded_catalog",
+          "estimated": true,
+          "catalog_event_rows": 12,
+          "recent_sample_size": 50000,
+          "limitations": [
+            "total_events uses PostgreSQL planner/statistics estimate for a nonblocking dashboard",
+            "top_event_ids is calculated from a bounded recent event sample",
+            "deep event reports keep exact query semantics"
+          ]
+        },
+        "entity_summary": {
+          "total_entities": 0,
+          "total_event_entity_links": 0,
+          "by_type": [],
+          "by_role": [],
+          "status": "unavailable"
+        },
+        "jobs": {
+          "items": []
+        },
+        "reports": {
+          "items": []
+        },
+        "role_views": {
+          "generated_at_utc": "<generated>",
+          "principle": "Ролевые представления не удаляют данные: они только меняют порядок и акценты.",
+          "summary": {
+            "sources": 1,
+            "total_events": 9,
+            "security_events": 12,
+            "entities": 0,
+            "active_findings": 1,
+            "ai_runs": 1,
+            "security_high": 0,
+            "worst_security_lag_minutes": -3,
+            "system_status": "warn"
+          },
+          "views": [
+            {
+              "id": "security",
+              "title": "Вид ИБ",
+              "short_title": "ИБ",
+              "subtitle": "Риски, findings, цепочки учетных записей, AI-отчеты и evidence для проверки действий в AD.",
+              "audience": "Специалист ИБ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Активные findings",
+                  "value": 1,
+                  "hint": "объекты проверки с evidence"
+                },
+                {
+                  "name": "Security events",
+                  "value": 12,
+                  "hint": "главный AD-канал"
+                },
+                {
+                  "name": "Security lag",
+                  "value": "-3 мин",
+                  "hint": "важно для доверия к выводам"
+                },
+                {
+                  "name": "AI-отчеты",
+                  "value": 1,
+                  "hint": "гипотезы после redaction"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "ИБ-мониторинг 24ч",
+                  "url": "/reports/security-events-monitor.html?period=24h"
+                },
+                {
+                  "label": "Открыть findings",
+                  "url": "/reports/findings.html"
+                },
+                {
+                  "label": "Рабочее место расследования",
+                  "url": "/reports/investigation.html"
+                },
+                {
+                  "label": "AI-отчеты",
+                  "url": "/reports/ai-reports.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Подготовить AI prompt",
+                  "url": "/reports/ai-prompt-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Состояние сбора и технические события не скрываются: они нужны для проверки качества данных."
+            },
+            {
+              "id": "it",
+              "title": "Вид ИТ",
+              "short_title": "ИТ",
+              "subtitle": "Качество сбора, состояние DC/каналов, эксплуатация, backup, retention и обновления.",
+              "audience": "Специалист ИТ",
+              "status": "warn",
+              "metrics": [
+                {
+                  "name": "Источники",
+                  "value": 1,
+                  "hint": "серверы в наблюдении"
+                },
+                {
+                  "name": "Security high",
+                  "value": 0,
+                  "hint": "качество сбора"
+                },
+                {
+                  "name": "Retention",
+                  "value": 0,
+                  "hint": "кандидаты на очистку"
+                },
+                {
+                  "name": "System status",
+                  "value": "warn",
+                  "hint": "runtime-файлы и БД"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Состояние сбора",
+                  "url": "/reports/collector-health.html"
+                },
+                {
+                  "label": "Автосбор",
+                  "url": "/reports/autocollection.html"
+                },
+                {
+                  "label": "Storage Health",
+                  "url": "/reports/storage-health.html"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Состояние системы",
+                  "url": "/reports/system-health.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Findings и AI-отчеты не скрываются: они помогают ИТ понимать, какие инфраструктурные проблемы влияют на риск."
+            },
+            {
+              "id": "technical",
+              "title": "Технический вид",
+              "short_title": "Технический",
+              "subtitle": "Сырые события, Event ID, LogonId, сущности, JSON-поля и переходы к детальным таблицам.",
+              "audience": "Аналитик / инженер",
+              "status": "ok",
+              "metrics": [
+                {
+                  "name": "Всего событий",
+                  "value": 9,
+                  "hint": "строки в активном backend"
+                },
+                {
+                  "name": "Каналы",
+                  "value": 1,
+                  "hint": "Windows Event Log"
+                },
+                {
+                  "name": "Сущности",
+                  "value": 0,
+                  "hint": "объекты наблюдения"
+                },
+                {
+                  "name": "Связи",
+                  "value": 0,
+                  "hint": "event → entity"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "Поиск по всем событиям",
+                  "url": "/reports/search.html?limit=300&order=desc"
+                },
+                {
+                  "label": "Event details 4624",
+                  "url": "/reports/event-details.html?event_id=4624&channel=Security&limit=100"
+                },
+                {
+                  "label": "Entity details",
+                  "url": "/reports/entity-details.html?limit=100"
+                },
+                {
+                  "label": "Диагностика",
+                  "url": "/reports/diagnostics.html"
+                },
+                {
+                  "label": "Карта навигации",
+                  "url": "/reports/ui-navigation.html"
+                },
+                {
+                  "label": "AI redaction preview",
+                  "url": "/reports/ai-redaction-preview.html?redaction_level=strict&limit=80"
+                },
+                {
+                  "label": "Главная панель",
+                  "url": "/"
+                },
+                {
+                  "label": "Ролевая карта",
+                  "url": "/reports/role-overview.html"
+                }
+              ],
+              "kept_for_other_roles": "Сырые события остаются вторым слоем: они нужны для доказательности, но не должны перегружать главный ИБ/ИТ-экран."
+            }
+          ]
+        },
+        "diagnostics": {
+          "cache_hit": true,
+          "cache_age_ms": 0,
+          "cache_ttl_seconds": 17.0,
+          "stale": true,
+          "refreshing": true,
+          "total_duration_ms": 0,
+          "build_duration_ms": 0,
+          "response_duration_ms": 0,
+          "components_ms": {
+            "ai_runs": 0,
+            "entity_summary": 0,
+            "sources": 0,
+            "findings": 0,
+            "jobs": 0,
+            "collector_health": 0,
+            "events_summary": 0,
+            "reports": 0,
+            "archive_status": 0,
+            "role_views_compose": 0
+          },
+          "components": {
+            "ai_runs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "entity_summary": {
+              "status": "failed",
+              "duration_ms": 0,
+              "error": "RuntimeError: dashboard_component_unavailable"
+            },
+            "sources": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "findings": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "jobs": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "collector_health": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "events_summary": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "reports": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "archive_status": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            },
+            "role_views_compose": {
+              "status": "ok",
+              "duration_ms": 0,
+              "error": null
+            }
+          },
+          "failures": [
+            "entity_summary"
+          ],
+          "request_model": "parallel_bounded_snapshot",
+          "response_model": "stale_while_revalidate"
+        }
+      }
+    }
+  ],
+  "forces": [
+    {
+      "query": "",
+      "force": false
+    },
+    {
+      "query": "force=1",
+      "force": true
+    },
+    {
+      "query": "force=TRUE",
+      "force": true
+    },
+    {
+      "query": "force=Yes",
+      "force": true
+    },
+    {
+      "query": "force=0",
+      "force": false
+    },
+    {
+      "query": "force=false",
+      "force": false
+    },
+    {
+      "query": "force=on",
+      "force": false
+    },
+    {
+      "query": "force=%20true%20",
+      "force": false
+    },
+    {
+      "query": "force=",
+      "force": false
+    },
+    {
+      "query": "force=&force=yes",
+      "force": true
+    },
+    {
+      "query": "force=no&force=yes",
+      "force": false
+    },
+    {
+      "query": "force=yes&force=no",
+      "force": true
+    }
+  ]
+}

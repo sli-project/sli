@@ -1,0 +1,586 @@
+{
+  "users": {
+    "disabled_logon": {
+      "severity": "high",
+      "title": "Вход отключённой учётки",
+      "why": "Успешный вход после наблюдаемого отключения требует расследования; снимок сам по себе не доказывает обход отключения.",
+      "action": "Проверить источник входа и состояние учётки на контроллерах домена.",
+      "remediation": "Сопоставить 4725, последующие 4722 и 4624 по SID; проверить репликацию и существующие сессии.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.disabled_logon.title",
+          "params": {},
+          "text": "Вход отключённой учётки"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.disabled_logon.why",
+          "params": {},
+          "text": "Успешный вход после наблюдаемого отключения требует расследования; снимок сам по себе не доказывает обход отключения."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.disabled_logon.action",
+          "params": {},
+          "text": "Проверить источник входа и состояние учётки на контроллерах домена."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.disabled_logon.remediation",
+          "params": {},
+          "text": "Сопоставить 4725, последующие 4722 и 4624 по SID; проверить репликацию и существующие сессии."
+        }
+      }
+    },
+    "new_privileged": {
+      "severity": "high",
+      "title": "Новые в привилегированных группах",
+      "why": "Новый прямой или вложенный участник административной группы получает критичные права.",
+      "action": "Подтвердить основание и владельца изменения.",
+      "remediation": "Проверить цепочку стандартных административных групп и заявку; отозвать несогласованное членство.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.new_privileged.title",
+          "params": {},
+          "text": "Новые в привилегированных группах"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.new_privileged.why",
+          "params": {},
+          "text": "Новый прямой или вложенный участник административной группы получает критичные права."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.new_privileged.action",
+          "params": {},
+          "text": "Подтвердить основание и владельца изменения."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.new_privileged.remediation",
+          "params": {},
+          "text": "Проверить цепочку стандартных административных групп и заявку; отозвать несогласованное членство."
+        }
+      }
+    },
+    "reversible_password": {
+      "severity": "high",
+      "title": "Обратимое шифрование пароля",
+      "why": "Разрешённое обратимое хранение повышает риск раскрытия пароля.",
+      "action": "Проверить необходимость настройки.",
+      "remediation": "Отключить Store password using reversible encryption и согласовать смену пароля.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.reversible_password.title",
+          "params": {},
+          "text": "Обратимое шифрование пароля"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.reversible_password.why",
+          "params": {},
+          "text": "Разрешённое обратимое хранение повышает риск раскрытия пароля."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.reversible_password.action",
+          "params": {},
+          "text": "Проверить необходимость настройки."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.reversible_password.remediation",
+          "params": {},
+          "text": "Отключить Store password using reversible encryption и согласовать смену пароля."
+        }
+      }
+    },
+    "inactive_privileged": {
+      "severity": "high",
+      "title": "Привилегированная отключена или неактивна",
+      "why": "Неиспользуемая привилегированная учётка сохраняет опасное членство.",
+      "action": "Сверить назначение и необходимость привилегий.",
+      "remediation": "Проверить прямое и вложенное членство; удалить лишние привилегии по согласованию с владельцем.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.inactive_privileged.title",
+          "params": {},
+          "text": "Привилегированная отключена или неактивна"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.inactive_privileged.why",
+          "params": {},
+          "text": "Неиспользуемая привилегированная учётка сохраняет опасное членство."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.inactive_privileged.action",
+          "params": {},
+          "text": "Сверить назначение и необходимость привилегий."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.inactive_privileged.remediation",
+          "params": {},
+          "text": "Проверить прямое и вложенное членство; удалить лишние привилегии по согласованию с владельцем."
+        }
+      }
+    },
+    "spn_privileged": {
+      "severity": "high",
+      "title": "SPN у привилегированной учётки",
+      "why": "SPN у привилегированной учётки увеличивает последствия компрометации сервисного пароля.",
+      "action": "Разделить сервисные и административные полномочия.",
+      "remediation": "Проверить назначение SPN; убрать лишние привилегии или перенести службу на gMSA.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.spn_privileged.title",
+          "params": {},
+          "text": "SPN у привилегированной учётки"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.spn_privileged.why",
+          "params": {},
+          "text": "SPN у привилегированной учётки увеличивает последствия компрометации сервисного пароля."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.spn_privileged.action",
+          "params": {},
+          "text": "Разделить сервисные и административные полномочия."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.spn_privileged.remediation",
+          "params": {},
+          "text": "Проверить назначение SPN; убрать лишние привилегии или перенести службу на gMSA."
+        }
+      }
+    },
+    "privileged_password_never_expires": {
+      "severity": "high",
+      "title": "Пароль привилегированной учётки без срока действия",
+      "why": "Скомпрометированный пароль администратора может оставаться пригодным длительное время.",
+      "action": "Согласовать ротацию с владельцем.",
+      "remediation": "Отключить Password never expires либо установить согласованную управляемую ротацию.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.privileged_password_never_expires.title",
+          "params": {},
+          "text": "Пароль привилегированной учётки без срока действия"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.privileged_password_never_expires.why",
+          "params": {},
+          "text": "Скомпрометированный пароль администратора может оставаться пригодным длительное время."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.privileged_password_never_expires.action",
+          "params": {},
+          "text": "Согласовать ротацию с владельцем."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.privileged_password_never_expires.remediation",
+          "params": {},
+          "text": "Отключить Password never expires либо установить согласованную управляемую ротацию."
+        }
+      }
+    },
+    "locked_out": {
+      "severity": "medium",
+      "title": "Блокировки учёток",
+      "why": "Блокировка может указывать на перебор или устаревшие сохранённые пароли.",
+      "action": "Найти источник неудачных входов.",
+      "remediation": "Проверить 4740 и связанные 4625/4771; устранить причину перед разблокировкой.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.locked_out.title",
+          "params": {},
+          "text": "Блокировки учёток"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.locked_out.why",
+          "params": {},
+          "text": "Блокировка может указывать на перебор или устаревшие сохранённые пароли."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.locked_out.action",
+          "params": {},
+          "text": "Найти источник неудачных входов."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.locked_out.remediation",
+          "params": {},
+          "text": "Проверить 4740 и связанные 4625/4771; устранить причину перед разблокировкой."
+        }
+      }
+    },
+    "service_interactive_logon": {
+      "severity": "medium",
+      "title": "Сервисная учётка с интерактивным входом",
+      "why": "Интерактивное использование сервисной учётки повышает риск утечки её учётных данных.",
+      "action": "Проверить назначение входа и узел.",
+      "remediation": "Проверить 4624 с типом 2 или 10; ограничить интерактивный вход служебных учёток через политику.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.service_interactive_logon.title",
+          "params": {},
+          "text": "Сервисная учётка с интерактивным входом"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.service_interactive_logon.why",
+          "params": {},
+          "text": "Интерактивное использование сервисной учётки повышает риск утечки её учётных данных."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.service_interactive_logon.action",
+          "params": {},
+          "text": "Проверить назначение входа и узел."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.service_interactive_logon.remediation",
+          "params": {},
+          "text": "Проверить 4624 с типом 2 или 10; ограничить интерактивный вход служебных учёток через политику."
+        }
+      }
+    },
+    "kerberos_no_preauth": {
+      "severity": "medium",
+      "title": "Kerberos pre-auth отключён",
+      "why": "Отключение предварительной аутентификации создаёт риск AS-REP roasting.",
+      "action": "Проверить необходимость исключения.",
+      "remediation": "Снять Do not require Kerberos preauthentication после проверки совместимости приложения.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.kerberos_no_preauth.title",
+          "params": {},
+          "text": "Kerberos pre-auth отключён"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.kerberos_no_preauth.why",
+          "params": {},
+          "text": "Отключение предварительной аутентификации создаёт риск AS-REP roasting."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.kerberos_no_preauth.action",
+          "params": {},
+          "text": "Проверить необходимость исключения."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.kerberos_no_preauth.remediation",
+          "params": {},
+          "text": "Снять Do not require Kerberos preauthentication после проверки совместимости приложения."
+        }
+      }
+    },
+    "inactive_enabled": {
+      "severity": "low",
+      "title": "Включена, не входила больше 90 дней",
+      "why": "Забытая включённая учётка может использоваться незаметно; дата AD приблизительная.",
+      "action": "Согласовать отключение или исключение.",
+      "remediation": "Сверить журнал входов и владельца; отключить ненужную учётку, исключения задать в настройках SLI.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.inactive_enabled.title",
+          "params": {},
+          "text": "Включена, не входила больше 90 дней"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.inactive_enabled.why",
+          "params": {},
+          "text": "Забытая включённая учётка может использоваться незаметно; дата AD приблизительная."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.inactive_enabled.action",
+          "params": {},
+          "text": "Согласовать отключение или исключение."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.inactive_enabled.remediation",
+          "params": {},
+          "text": "Сверить журнал входов и владельца; отключить ненужную учётку, исключения задать в настройках SLI."
+        }
+      }
+    },
+    "old_password": {
+      "severity": "low",
+      "title": "Пароль не менялся больше года",
+      "why": "Длительный срок использования пароля увеличивает последствия его утечки; слабость пароля не установлена.",
+      "action": "Согласовать смену пароля.",
+      "remediation": "Сменить пароль; для сервисной учётки согласовать окно или переход на gMSA.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.old_password.title",
+          "params": {},
+          "text": "Пароль не менялся больше года"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.old_password.why",
+          "params": {},
+          "text": "Длительный срок использования пароля увеличивает последствия его утечки; слабость пароля не установлена."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.old_password.action",
+          "params": {},
+          "text": "Согласовать смену пароля."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.old_password.remediation",
+          "params": {},
+          "text": "Сменить пароль; для сервисной учётки согласовать окно или переход на gMSA."
+        }
+      }
+    },
+    "password_never_expires": {
+      "severity": "low",
+      "title": "Пароль без срока действия",
+      "why": "Без управляемой ротации скомпрометированный пароль долго остаётся пригодным.",
+      "action": "Проверить политику ротации и исключения.",
+      "remediation": "Включить срок действия либо настроить согласованную управляемую ротацию или gMSA.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.users.password_never_expires.title",
+          "params": {},
+          "text": "Пароль без срока действия"
+        },
+        "why": {
+          "code": "reports.ad.checks.users.password_never_expires.why",
+          "params": {},
+          "text": "Без управляемой ротации скомпрометированный пароль долго остаётся пригодным."
+        },
+        "action": {
+          "code": "reports.ad.checks.users.password_never_expires.action",
+          "params": {},
+          "text": "Проверить политику ротации и исключения."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.users.password_never_expires.remediation",
+          "params": {},
+          "text": "Включить срок действия либо настроить согласованную управляемую ротацию или gMSA."
+        }
+      }
+    }
+  },
+  "computers": {
+    "unconstrained_delegation": {
+      "severity": "high",
+      "title": "Неограниченное делегирование",
+      "why": "Узел может получать делегированные полномочия пользователей; контроллеры домена требуют отдельной оценки.",
+      "action": "Проверить роль и необходимость делегирования.",
+      "remediation": "После проверки зависимостей отключить неограниченное делегирование; оценить ограниченный вариант.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.unconstrained_delegation.title",
+          "params": {},
+          "text": "Неограниченное делегирование"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.unconstrained_delegation.why",
+          "params": {},
+          "text": "Узел может получать делегированные полномочия пользователей; контроллеры домена требуют отдельной оценки."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.unconstrained_delegation.action",
+          "params": {},
+          "text": "Проверить роль и необходимость делегирования."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.unconstrained_delegation.remediation",
+          "params": {},
+          "text": "После проверки зависимостей отключить неограниченное делегирование; оценить ограниченный вариант."
+        }
+      }
+    },
+    "unsupported_os": {
+      "severity": "high",
+      "title": "ОС без поддержки Microsoft",
+      "why": "Завершение поддержки повышает риск отсутствия исправлений; наличие патчей снимок не подтверждает.",
+      "action": "Уточнить редакцию и план обновления.",
+      "remediation": "Сверить версию с каталогом жизненного цикла Microsoft и обновить либо изолировать узел.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.unsupported_os.title",
+          "params": {},
+          "text": "ОС без поддержки Microsoft"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.unsupported_os.why",
+          "params": {},
+          "text": "Завершение поддержки повышает риск отсутствия исправлений; наличие патчей снимок не подтверждает."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.unsupported_os.action",
+          "params": {},
+          "text": "Уточнить редакцию и план обновления."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.unsupported_os.remediation",
+          "params": {},
+          "text": "Сверить версию с каталогом жизненного цикла Microsoft и обновить либо изолировать узел."
+        }
+      }
+    },
+    "new_computer": {
+      "severity": "medium",
+      "title": "Новые компьютеры в домене",
+      "why": "Несогласованное создание учётки компьютера требует проверки; первое обнаружение не означает создание.",
+      "action": "Подтвердить создание и владельца.",
+      "remediation": "Проверить whenCreated за сутки снимка, событие 4741 и заявку на ввод узла.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.new_computer.title",
+          "params": {},
+          "text": "Новые компьютеры в домене"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.new_computer.why",
+          "params": {},
+          "text": "Несогласованное создание учётки компьютера требует проверки; первое обнаружение не означает создание."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.new_computer.action",
+          "params": {},
+          "text": "Подтвердить создание и владельца."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.new_computer.remediation",
+          "params": {},
+          "text": "Проверить whenCreated за сутки снимка, событие 4741 и заявку на ввод узла."
+        }
+      }
+    },
+    "laps": {
+      "severity": "medium",
+      "title": "Нет LAPS или пароль LAPS просрочен",
+      "why": "Отсутствие управляемой ротации локального пароля повышает риск; недоступные метаданные не доказывают отсутствие LAPS.",
+      "action": "Проверить применение политики и метаданные LAPS.",
+      "remediation": "Проверить Windows LAPS или Legacy LAPS и срок метаданных; восстановить ротацию без чтения пароля.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.laps.title",
+          "params": {},
+          "text": "Нет LAPS или пароль LAPS просрочен"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.laps.why",
+          "params": {},
+          "text": "Отсутствие управляемой ротации локального пароля повышает риск; недоступные метаданные не доказывают отсутствие LAPS."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.laps.action",
+          "params": {},
+          "text": "Проверить применение политики и метаданные LAPS."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.laps.remediation",
+          "params": {},
+          "text": "Проверить Windows LAPS или Legacy LAPS и срок метаданных; восстановить ротацию без чтения пароля."
+        }
+      }
+    },
+    "rbcd": {
+      "severity": "medium",
+      "title": "Ресурсное делегирование (RBCD)",
+      "why": "Разрешение действовать от имени других учёток требует согласованного назначения.",
+      "action": "Проверить разрешённых субъектов и заявку.",
+      "remediation": "Проверить msDS-AllowedToActOnBehalfOfOtherIdentity; убрать несогласованные назначения.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.rbcd.title",
+          "params": {},
+          "text": "Ресурсное делегирование (RBCD)"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.rbcd.why",
+          "params": {},
+          "text": "Разрешение действовать от имени других учёток требует согласованного назначения."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.rbcd.action",
+          "params": {},
+          "text": "Проверить разрешённых субъектов и заявку."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.rbcd.remediation",
+          "params": {},
+          "text": "Проверить msDS-AllowedToActOnBehalfOfOtherIdentity; убрать несогласованные назначения."
+        }
+      }
+    },
+    "no_sli_agent": {
+      "severity": "medium",
+      "title": "Компьютеры без агента SLI",
+      "why": "В реестре SLI нет агента, сопоставленного с объектом компьютера AD.",
+      "action": "Проверить сопоставление и необходимость установки агента.",
+      "remediation": "Сверить реестр агентов и объект AD; при необходимости установить и зарегистрировать агент штатным способом.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.no_sli_agent.title",
+          "params": {},
+          "text": "Компьютеры без агента SLI"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.no_sli_agent.why",
+          "params": {},
+          "text": "В реестре SLI нет агента, сопоставленного с объектом компьютера AD."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.no_sli_agent.action",
+          "params": {},
+          "text": "Проверить сопоставление и необходимость установки агента."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.no_sli_agent.remediation",
+          "params": {},
+          "text": "Сверить реестр агентов и объект AD; при необходимости установить и зарегистрировать агент штатным способом."
+        }
+      }
+    },
+    "inactive_enabled": {
+      "severity": "low",
+      "title": "Включён, не входил больше 90 дней",
+      "why": "Неиспользуемая включённая учётка может сохранять доступ; дата AD не доказывает отсутствие работающего узла.",
+      "action": "Сверить инвентарь и назначение узла.",
+      "remediation": "Проверить доступные события и владельца; отключить ненужный объект по согласованной процедуре.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.inactive_enabled.title",
+          "params": {},
+          "text": "Включён, не входил больше 90 дней"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.inactive_enabled.why",
+          "params": {},
+          "text": "Неиспользуемая включённая учётка может сохранять доступ; дата AD не доказывает отсутствие работающего узла."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.inactive_enabled.action",
+          "params": {},
+          "text": "Сверить инвентарь и назначение узла."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.inactive_enabled.remediation",
+          "params": {},
+          "text": "Проверить доступные события и владельца; отключить ненужный объект по согласованной процедуре."
+        }
+      }
+    },
+    "old_machine_password": {
+      "severity": "low",
+      "title": "Машинный пароль старше 60 дней",
+      "why": "Давняя смена машинного пароля может указывать на нарушение доверия или ротации; это не пароль LAPS.",
+      "action": "Проверить доверие и политику смены пароля.",
+      "remediation": "Проверить PasswordLastSet и защищённый канал; восстановить штатную ротацию машинного пароля.",
+      "presentation_messages": {
+        "title": {
+          "code": "reports.ad.checks.computers.old_machine_password.title",
+          "params": {},
+          "text": "Машинный пароль старше 60 дней"
+        },
+        "why": {
+          "code": "reports.ad.checks.computers.old_machine_password.why",
+          "params": {},
+          "text": "Давняя смена машинного пароля может указывать на нарушение доверия или ротации; это не пароль LAPS."
+        },
+        "action": {
+          "code": "reports.ad.checks.computers.old_machine_password.action",
+          "params": {},
+          "text": "Проверить доверие и политику смены пароля."
+        },
+        "remediation": {
+          "code": "reports.ad.checks.computers.old_machine_password.remediation",
+          "params": {},
+          "text": "Проверить PasswordLastSet и защищённый канал; восстановить штатную ротацию машинного пароля."
+        }
+      }
+    }
+  }
+}

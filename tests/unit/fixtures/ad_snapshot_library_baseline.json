@@ -1,0 +1,651 @@
+{
+  "definitions": [
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "AdContextContractError",
+      "sha256": "26be0825d6c543801a3141a201e0e797f7e2bf88902c11a127a7b05c75d04d6a"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "load_bundle",
+      "sha256": "570d1d00d09721a4065a2be60e366483c43bf4fdf246f264bc1dc533e3c80c86"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "canonical_sha256",
+      "sha256": "80c4c1c1ca107e907c354b7850c4b1b449d0f39d2d4540d2e4daab558156fb1e"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "record_content_sha256",
+      "sha256": "85d8b21ec4f1b2990c1176c7c499f636c45e06590f244fef5758d59b69221ca0"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_section",
+      "sha256": "e2a41a3e6a199502657b451af410c82d917c75139c2f1061bb1333ee9c582363"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_record",
+      "sha256": "e3785f9ad83e36b86bb54568dc6fc496c27877526c9db01ebafb0a8e7496ab3f"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_allowlisted_object",
+      "sha256": "1eb5c4bcc8b3cfc29dc80f50053ad7a4277e06d2922b6330068848907c921424"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_normalized_computer_attribute_states",
+      "sha256": "51e4aa7b24d5ad19b9d6548452c83debe37b76d603e999300e24545fccef65ed"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_computer_attribute_states",
+      "sha256": "0572c8088ff9b506ced1f6b735ef1ae11f9e1a2e0bd7504cd5de31d76e1cce57"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_computer_reference_attribute_states",
+      "sha256": "b250b7f8abb44fe8cf972546f3c9c7de7a2399d61610c4c77f441a1b0da9999b"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_object",
+      "sha256": "d75f6e342c05df29bff57d108b6e5701cce04e26ea43e701aa2547f527d7c591"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_reject_unknown",
+      "sha256": "d6d377a25ce58b87d0188dd5b3160b6a2a0c66c62fd085690843c00d5a25c168"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_enum",
+      "sha256": "1bd365ce11973dcf356c7c291dd7fe7c7d01562f8deee5988273aa582dbf6ad7"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_required_text",
+      "sha256": "1ab900cbcc5dad5979055c54a21c4b9c387135c4acea77b57229259c123106ed"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_optional_text",
+      "sha256": "46083c3b3f85b5550e9cd449ce8ef016e12701c87c0b9c0a5e7586dd1b389e41"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "_utc",
+      "sha256": "b7c996026311f6d39077a87f7416dfbf357b8de72a9e6b02bf0cd60794802ae7"
+    },
+    {
+      "original": "server/ad_context/projection.py",
+      "candidate": "server/sli/plugins/ad/context/projection.py",
+      "name": "Version",
+      "sha256": "52f0e026ee97a6c8c4589555a73932d303e38162bd7fcb8b465c0a498a2cef83"
+    },
+    {
+      "original": "server/ad_context/projection.py",
+      "candidate": "server/sli/plugins/ad/context/projection.py",
+      "name": "ContextProjection",
+      "sha256": "9162e6af0e4385229cd2e198ed7838abb15b674cdea490236bd8b3e0708d75a2"
+    },
+    {
+      "original": "server/ad_context/enrichment.py",
+      "candidate": "server/sli/plugins/ad/context/enrichment.py",
+      "name": "explain_privileged_membership_event",
+      "sha256": "168f79f99dc03059ab179fe5e86a26cd85a092dbc9e9f271e35e992186de1364"
+    },
+    {
+      "original": "server/ad_context/enrichment.py",
+      "candidate": "server/sli/plugins/ad/context/enrichment.py",
+      "name": "_clean",
+      "sha256": "4016d5ebcb236b180b09de6c536793ebcf9ed4db4d03f7b4c5b8a231828864bd"
+    },
+    {
+      "original": "server/ad_context/integration.py",
+      "candidate": "server/sli/plugins/ad/context/integration.py",
+      "name": "get_runtime_entity_context_evidence",
+      "sha256": "49c47cfe0feb54e42d3bddf3db1fd54801d431a90a6f7a82bf55c2f3f700bd49"
+    },
+    {
+      "original": "server/ad_context/integration.py",
+      "candidate": "server/sli/plugins/ad/context/integration.py",
+      "name": "get_entity_context_evidence",
+      "sha256": "969181c089d72e943144cde35b46b978d5068fba0cac49c3bd8c45aba656e35f"
+    },
+    {
+      "original": "server/ad_context/integration.py",
+      "candidate": "server/sli/plugins/ad/context/integration.py",
+      "name": "attach_context_evidence_to_state",
+      "sha256": "b4f6cb2db482d91a47bc56a0cd3cc6dd1e1d9e5ad6243773cf8c5c1c38123160"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "SnapshotManifestError",
+      "sha256": "b255eda8cb55052b2461dc311d522906eb1761b3b030d73d3041a2d6a21677b4"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "snapshot_composition",
+      "sha256": "a2c54d0ad515ade0d7a6f1b113d4b0c8004506c79d69696e13528ff71d4c35d8"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "v2_schedule_header",
+      "sha256": "8d9bae09bf0fd66555ff696ccb479ca53b3742e4a9ad79ad968abb3ee23adc22"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "canonical_manifest_sha256",
+      "sha256": "07fb433ef5411dff437f8dab66272e79cc49b9369b461a101e196971f2cb8a03"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "validate_snapshot_manifest",
+      "sha256": "5de2d8be1efed62831d8b9b9e53f0acb1139e1fb3cf10008c488a16145b8d2bc"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_normalize_shape",
+      "sha256": "7a148cf5b5883b421084754164baf5288ba8d86fb6d7b9ed4ab207ffac518034"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_normalize_member",
+      "sha256": "a0ff97e2f12fcc2c6eeae2817b850edceb6005f4bc5c04bdb06dc79aef2cfeb2"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_validate_readback",
+      "sha256": "9b2a1121a24c8640467018ec30c0a09d552349da32846544c88eaba82de91196"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_uuid",
+      "sha256": "aac48695fc4145b733d78ab18666413e4ba964c26043646535247d5022b4381e"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_text",
+      "sha256": "0bb9f57259506d8bca438adad81572fa421f2689f1b04187c5da07b31707923a"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_parse_utc",
+      "sha256": "da32bef585db5faa67aefdba2e69347081ad1f1d36be8f7821d53c664dd154dd"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_canonical_utc",
+      "sha256": "128a4b349ba9a71be707390225ec44f905a4ed59c7e43ec7cfdaeb13ddbe4229"
+    },
+    {
+      "original": "server/ad_context/snapshot_manifest.py",
+      "candidate": "server/sli/plugins/ad/snapshots/manifest.py",
+      "name": "_canonical_scheduled_local_at",
+      "sha256": "1bffd8a410a4fe615fc1a42312cd1b1c854496ece9a8b84920714a44d0cd3fe5"
+    },
+    {
+      "original": "server/sli/agents/ad_snapshot_import.py",
+      "candidate": "server/sli/plugins/ad/snapshot_import.py",
+      "name": "prepare_ad_cycle",
+      "sha256": "8d9df302a234c5c4e4a8c62205176430848c58aa2fade74ac4b97766de9708e9"
+    },
+    {
+      "original": "server/sli/agents/ad_snapshot_import.py",
+      "candidate": "server/sli/plugins/ad/snapshot_import.py",
+      "name": "exact_directory_inputs",
+      "sha256": "cb0ed5cd9ab67c71358efcb36fb12124b42a4d7e885bac863b3522c4db97a36b"
+    },
+    {
+      "original": "server/sli/agents/ad_snapshot_import.py",
+      "candidate": "server/sli/plugins/ad/snapshot_import.py",
+      "name": "build_exact_users",
+      "sha256": "cff3ce5df71f1673c74d4c8780d94903718b5d942d6eecfae5ed221bf3bc23b8"
+    },
+    {
+      "original": "server/sli/agents/ad_snapshot_import.py",
+      "candidate": "server/sli/plugins/ad/snapshot_import.py",
+      "name": "import_ad_cycle",
+      "sha256": "fb6855d1bab802ef82745e15d6e9d88df4ae542728973b2fd1e7cf7981bf4edb",
+      "import_aliases": {
+        "server.sli.plugins.ad.context.repository": "server.ad_context.repository"
+      }
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "ProjectionConflictError",
+      "sha256": "f5ae5877291e1eb6b671d6be48df05bc6c6e38b6d1d791b90d2f2277ca911bf9"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "ProjectionOutputMissingError",
+      "sha256": "417205d0830235c9f8fda3ae78f78d3b0dc00a40cbd437c3afdf57010fad8014"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "canonical_output_sha256",
+      "sha256": "a407cb25aefceca523ba5f297b252c1e6d0b9cd907e3ed0a73db3b4c0e5de6e6"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_canonical_output_json",
+      "sha256": "d310ec511105f2c1612bda10d82ef15d38b359e9acea88e19225403822101732"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_canonical_manifest_id",
+      "sha256": "e1b6754a34d997f5632b962d15065fa45d9c8a5b713dcbbd21f22dfa6004922b"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_sha256_hex",
+      "sha256": "55202d65d8a352e82d16fed2cacc5cd9c12ff28bb53ede99ecf4c0575ce578af"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_projection_pair",
+      "sha256": "7c76d56fcc5fbde31a4036f301cf702bc5b47466b01f4350da09c37eb3402170"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_output_identity",
+      "sha256": "904aa3524b959111246198395b5d39668871806d94e20d1d2696e6a26a817cea"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "create_projection_receipts",
+      "sha256": "1d5dd1d0b24924a90ad38b0b725b6babf1938bdbe6f212aaea819f89bd73187c"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "insert_projection_receipts",
+      "sha256": "7e1b21bb3e78c08291d391c3c87a808c97fd2b68f3bc3931735dc53639f4db0b"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "claim_projection_receipts",
+      "sha256": "a5eb7230f307b261d8fa1fcfc0d002b21f1e199480a9b188294d34f66425a100"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_read_projection_output",
+      "sha256": "3ec0df7bf1e86b304f91145c55e2a26a4c06bedad5fbaa91bb7e987c84e0db4d"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_verify_projection_output_readback",
+      "sha256": "2126461ef931325027937b53fbeefc82e7ac0258672ac43571133ec1c3473436"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "record_projection_result",
+      "sha256": "3c2d8896b004af28d601bac62401f24e59ba04f0fa4603fea73d12aab23ab60c"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "persist_projection_output",
+      "sha256": "cdc968145c007019e9976c4d59edd3b01f7c16b3542854d1b92f009604e48d6b"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "read_projection_receipts",
+      "sha256": "6e81c879ed86155c019923017a62d87ade180fa30f6315afb0dffba807321479"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "ensure_projection_receipts",
+      "sha256": "4d4d8d4770986dd1a040e7e46798fde0981d7fa6c9556168bd57bdc51c345ef8"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_mark_completed_receipt_retryable_failed",
+      "sha256": "aa7fa760057327273bb20ce132a4407f33d570f215c3510ce4845b659aa3bd52"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "revalidate_completed_projection_receipt",
+      "sha256": "42472653d062397377a0f8beea6c8631c21ebc08883ac854c3a54a84278b5a60"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "project_exact_manifest",
+      "sha256": "6c18759d2afe6c8df7bc211a67d48ec488551d7fd2f815c41b0452dd1968c124"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "complete_projection_claim",
+      "sha256": "36b736ceb3ce3efc23048954a08a38da6612602975952c45d1a4f160cc2f9cb8"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "run_exact_manifest_projection_cycle",
+      "sha256": "ec9acac932ed50c0605284e6f881602a4f35b4fee31a106a48cbc96de5a0283b",
+      "import_aliases": {
+        "server.sli.plugins.ad.context.repository": "server.ad_context.repository"
+      }
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_project_exact_manifest_payloads",
+      "sha256": "4564eb78832da137a3e21ab0d0da33f40cfa11d2340be8f21164c3e38796e44c"
+    },
+    {
+      "original": "server/sli/sources/ad_snapshot_projection.py",
+      "candidate": "server/sli/plugins/ad/snapshots/projection.py",
+      "name": "_pure_project",
+      "sha256": "42ad93112fe532e10d47c2f41b4ac724b39edbaacbcbb314917ca0fdf7229ff1",
+      "import_aliases": {
+        "server.sli.plugins.gpo.snapshot_projection": "server.sli.reports.gpo_v2_reporting"
+      }
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/entities/context_identity.py",
+      "name": "_resolve_domain",
+      "sha256": "bd54c78ae051ec459b1d728b5d74422aaea270ef21580d4cfd2a82994e6bc0df"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/entities/context_identity.py",
+      "name": "_preload_existing_entity_ids",
+      "sha256": "a738261b91d180be55c4a4c0070b61dca574fdfe22162c50ea75524254667dc8"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/entities/context_identity.py",
+      "name": "_require_entity_identity",
+      "sha256": "32462d3792b3da6d616911fea8965f8a708a143c9d64aa7fd059fb377f007375"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/snapshots/store.py",
+      "name": "publish_snapshot_manifest",
+      "sha256": "53bb9429fad1e89cfb8e5a99b03f5a27bd0cc83712c3f5b9a3d20552fe688adf"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/snapshots/store.py",
+      "name": "load_projection_manifest",
+      "sha256": "f5fd117f5c45cc8da3cbc1628e9e35334684c76593179c2dc5dbb037c6d7c279"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/snapshots/store.py",
+      "name": "load_exact_projection_source",
+      "sha256": "0c1aba2c6f641be83efd793c85a0c45ba2e6ee518cf74a388da2896b01eb1ab0"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/snapshots/store.py",
+      "name": "_resolve_manifest_source",
+      "sha256": "9c7c07fbefc2674f64e3b90f8cb4c27eec7cec34aa66fa0de7ed249f94ddce45"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/gpo/snapshot_store.py",
+      "name": "_store_gpo_v2_snapshot",
+      "sha256": "7d85677c5e860e0665eb3a42b102984fb173e118e34ffa3d6bc6bd46f8cb5d95"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "materialize_entity_attributes",
+      "sha256": "aebf3bc3a02e9ab6d67e9b55b154669a12a4abcaedbac327d6217c110f50a4f9"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "import_bundle",
+      "sha256": "6b123424b5618970439d72d7d6d4b4bcfabcf9644ccf0f57e1feb39d1dd035eb"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "_start_run",
+      "sha256": "74aced19f7b86d18f3816529e5941c0d0c371a9c5633e40be98c803aff4b3c74"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "_observe_entity",
+      "sha256": "78267c0ae00417279e55257139ce76e3f5c5767310733a0d2d63b17b5b887f7b"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "_observe_relation",
+      "sha256": "32de2267048780a4a5ff737dbc96197c7edfc2731a1b01c7a06b036dfbc47ebc"
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "_write_evidence",
+      "sha256": "afe201ff0a792790ef71a03b5e5faa968b0513b92bd7228d6ac795fb24b68344"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_qualify_base_bundle",
+      "sha256": "130f78263f9e64c4cff07104d4cfb8932e3575140d46c8e367d486510d284a16"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "ScheduledSlot",
+      "sha256": "666e04201e0255ab8de208287626d3d9d4bd8b2943ef16cdaa84da7340123252"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "slot_start_utc",
+      "sha256": "7b77a17f2ff4aa449b5a2ad2a0e94c802847c194d10aa8450ee41d1cea05b684"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "scheduled_slot_from_local",
+      "sha256": "9d832223b54fc28d731b783b5a4083cc809e32169982c9632a8a4984ea3b141d"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "scheduled_slot_from_utc",
+      "sha256": "c023dded8798c132c75784c76de95c370f783c2e55daced498dc6585e3c9468b"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "latest_due_scheduled_slot",
+      "sha256": "94ff8b4af6908e89a39293e8029055111a20c419b2fe04e3b3fca8d1ee89ab41"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "next_scheduled_slot",
+      "sha256": "576d3b6086fc14f238256d3f254959b742bf1c28fa0c17bb2ea723fabc1e88b7"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "seconds_until_next_scheduled_slot",
+      "sha256": "9b9e878154048b78891e90a43be94a8299742874cbf91321184de78538ff5e58"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_resolve_manifest_slot",
+      "sha256": "ef504fc0b0fbaa4a1aa7be1ccaafbbdcfdbaa41309d759cb53ef999619978268"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_exact_manifest",
+      "sha256": "4d52702c011ed13c20e67a92fc162c8091fba3dc896de38221b26fafe6002a6f"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_require_descriptor",
+      "sha256": "892447da467645fcbd4280aff7d37694acbec27675cf0cba11c20d4139777b61"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "run_one_shot",
+      "sha256": "1edc297bfac8d5f6808fe0d3fc7380ec6427a8acfa767c52045ad69e3d86514a"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_iso_utc_to_windows_filetime",
+      "sha256": "46fafb314c8e4fa48a9368fd19319ee3506586c1bf0caf6ca52f037d6f31e7d9"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_computer_rows",
+      "sha256": "ef4588d6a0262a7d53cb57b944b412f5e2dbc79ea19e580a4e540f93f05a4476"
+    },
+    {
+      "original": "scripts/runtime/ad_snapshot_manifest_coordinator_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/coordinator.py",
+      "name": "_source_descriptor",
+      "sha256": "a6566ae6b5877aee4d6d2544bd0706335b29948c5b1535c4af6baee2ed02efa1",
+      "import_aliases": {
+        "server.sli.plugins.ad.context.repository": "server.ad_context.repository"
+      }
+    },
+    {
+      "original": "scripts/runtime/users_report_v2_snapshot_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/users_persistence.py",
+      "name": "_utc",
+      "sha256": "4a5e57430197fa9fabae84fcc3eb739ca4e451f8f6f168123a91fdd1c7197279"
+    },
+    {
+      "original": "scripts/runtime/users_report_v2_snapshot_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/users_persistence.py",
+      "name": "snapshot_bucket_start",
+      "sha256": "e21779924a2525a2e287244ca087ba32c4ba1e8573efa51554ebb32285c036b8"
+    },
+    {
+      "original": "scripts/runtime/users_report_v2_snapshot_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/users_persistence.py",
+      "name": "_canonical",
+      "sha256": "ab827e8af58ca4b53c74a2663a8e936b0c70f22b1f62d104b03ec92a1c9257b8"
+    },
+    {
+      "original": "scripts/runtime/users_report_v2_snapshot_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/users_persistence.py",
+      "name": "persist_users_v2_snapshot",
+      "sha256": "4370b510cf073a596bb93391e049436137951b63d88bf7b3824412bec2573220"
+    },
+    {
+      "original": "scripts/runtime/computers_v6_source_worker.py",
+      "candidate": "server/sli/plugins/ad/snapshots/computers_persistence.py",
+      "name": "persist_computers_v6_source_snapshot",
+      "sha256": "3a805659345eb923a855edd248c6b43d1b449c607a68a44f8326290bd7ebc9b1"
+    },
+    {
+      "original": "scripts/runtime/ad_context_snapshot_worker.py",
+      "candidate": "server/sli/agents/snapshot_publication_connection.py",
+      "name": "_import_connect",
+      "sha256": "eaef121cd24acb6472370087cf880fde02e8d889ac43d888eb8a030dc58b5a9c"
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/ad/context/contracts.py",
+      "name": "validate_bundle",
+      "sha256": "13e5fc3d7911af4df1044b197b34162d0cfa149c5b3ec257ee0226f98632cd59",
+      "inline_gpo_validation": true
+    },
+    {
+      "original": "server/ad_context/contracts.py",
+      "candidate": "server/sli/plugins/gpo/context_contracts.py",
+      "name": "_gpo_settings",
+      "sha256": "3d9e67920b1ff9156db5a73d5ba481985c0e3fa9ffd0fd78a704a02c8e26154c",
+      "strip_context_import": true,
+      "import_aliases": {
+        "server.sli.plugins.ad.context.contracts": "server.ad_context.contracts"
+      }
+    },
+    {
+      "original": "server/ad_context/repository.py",
+      "candidate": "server/sli/plugins/ad/context/repository.py",
+      "name": "_upsert_entity",
+      "sha256": "303cf922f4596a947d1e3d3a4a2fe7e155162818c9eba57aacdab502d959c3c9",
+      "inline_identity_writes": true
+    }
+  ],
+  "sql": [
+    {
+      "original": "server/ad_context/repository.py",
+      "name": "_upsert_entity",
+      "candidates": [
+        {
+          "path": "server/sli/plugins/ad/context/repository.py",
+          "name": "_upsert_entity"
+        },
+        {
+          "path": "server/sli/entities/context_identity.py",
+          "name": "persist_entity_identity"
+        }
+      ],
+      "sha256": "30a44aa41706cf1481ed45e39d0bbdbff482964e194ed935714b78ee6164be56"
+    }
+  ]
+}

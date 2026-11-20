@@ -1,0 +1,27 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.sigma",
+  "plugin_version": "1.0.0",
+  "core_api": {"minimum": "3.0.0", "maximum_exclusive": "4.0.0"},
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": ["sli.sigma.detection-match.v1"],
+  "dependencies": [
+    {
+      "contract_id": "sli.ad.process-episode.v1",
+      "versions": {"minimum": "1.0.0", "maximum_exclusive": "2.0.0"},
+      "required": true,
+      "exchange": "immutable_typed_result"
+    }
+  ],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [],
+  "schedules": [],
+  "datasets": [],
+  "reports": [],
+  "navigation": [],
+  "home_widgets": [],
+  "data": {"schema": "sli_plugin_sigma", "existing_tables": [], "migrations": []}
+}

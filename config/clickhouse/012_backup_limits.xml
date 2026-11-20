@@ -1,0 +1,6 @@
+<clickhouse>
+    <backup_threads>2</backup_threads>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+    </backups>
+</clickhouse>

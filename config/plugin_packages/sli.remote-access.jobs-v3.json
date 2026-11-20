@@ -1,0 +1,35 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.remote-access",
+  "plugin_version": "1.0.0",
+  "core_api": {"minimum": "1.0.0", "maximum_exclusive": "2.0.0"},
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [
+    {
+      "handler_id": "radius-acquisition", "handler_version": "1.0.0", "kind": "acquire",
+      "input_contract": "sli.radius-job-input.v1", "result_contract": "sli.radius-job-output.v1",
+      "resource_profile": "light", "rights_profile": "vpn-read", "max_attempts": 1,
+      "budget": {"wall_seconds": 90, "cpu_seconds": 30, "memory_bytes": 268435456, "max_records": 50,
+        "max_result_bytes": 65536, "max_db_connections": 1, "statement_timeout_ms": 10000, "lock_timeout_ms": 1000}
+    },
+    {
+      "handler_id": "radius-session-observation", "handler_version": "1.0.0", "kind": "project",
+      "input_contract": "sli.radius-job-input.v1", "result_contract": "sli.radius-job-output.v1",
+      "resource_profile": "light", "rights_profile": "vpn-read", "max_attempts": 5,
+      "budget": {"wall_seconds": 90, "cpu_seconds": 30, "memory_bytes": 268435456, "max_records": 500000,
+        "max_result_bytes": 65536, "max_db_connections": 1, "statement_timeout_ms": 10000, "lock_timeout_ms": 1000}
+    }
+  ],
+  "schedules": [
+    {"schedule_id": "radius-session-observation", "handler_id": "radius-session-observation",
+      "trigger": "interval", "interval_seconds": 30, "calendar": null, "timezone": "UTC", "max_inflight_per_source": 1}
+  ],
+  "datasets": [], "reports": [], "navigation": [], "home_widgets": [],
+  "data": {"schema": "sli_plugin_remote_access", "existing_tables": [], "migrations": []}
+}

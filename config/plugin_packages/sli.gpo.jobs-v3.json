@@ -1,0 +1,92 @@
+{
+  "schema_version": 3,
+  "architecture_decision_id": "sli.plugin-architecture.v3",
+  "plugin_id": "sli.gpo",
+  "plugin_version": "1.0.0",
+  "core_api": {
+    "minimum": "1.0.0",
+    "maximum_exclusive": "2.0.0"
+  },
+  "trust": "bundled_reviewed_only",
+  "own_permanent_workers": false,
+  "capabilities": [],
+  "dependencies": [],
+  "sources": [],
+  "agent_modules": [],
+  "handlers": [
+    {
+      "handler_id": "gpo-snapshot",
+      "handler_version": "1.0.0",
+      "kind": "snapshot",
+      "input_contract": "sli.ad-snapshot-job-input.v1",
+      "result_contract": "sli.ad-snapshot-job-output.v1",
+      "resource_profile": "long",
+      "rights_profile": "gpo-read",
+      "max_attempts": 4,
+      "budget": {
+        "wall_seconds": 300,
+        "cpu_seconds": 90,
+        "memory_bytes": 1073741824,
+        "max_records": 50000,
+        "max_result_bytes": 65536,
+        "max_db_connections": 1,
+        "statement_timeout_ms": 10000,
+        "lock_timeout_ms": 1000
+      }
+    },
+    {
+      "handler_id": "gpo-acquisition",
+      "handler_version": "1.0.0",
+      "kind": "acquire",
+      "input_contract": "sli.ad-snapshot-job-input.v1",
+      "result_contract": "sli.ad-snapshot-job-output.v1",
+      "resource_profile": "long",
+      "rights_profile": "gpo-read",
+      "max_attempts": 4,
+      "budget": {
+        "wall_seconds": 300,
+        "cpu_seconds": 90,
+        "memory_bytes": 1073741824,
+        "max_records": 50000,
+        "max_result_bytes": 65536,
+        "max_db_connections": 1,
+        "statement_timeout_ms": 10000,
+        "lock_timeout_ms": 1000
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "schedule_id": "gpo-snapshot",
+      "handler_id": "gpo-snapshot",
+      "trigger": "input_available",
+      "interval_seconds": null,
+      "calendar": null,
+      "timezone": "UTC",
+      "max_inflight_per_source": 4
+    },
+    {
+      "schedule_id": "gpo-acquisition",
+      "handler_id": "gpo-acquisition",
+      "trigger": "calendar",
+      "interval_seconds": null,
+      "calendar": {
+        "local_times": [
+          "06:00",
+          "18:00"
+        ]
+      },
+      "timezone": "Asia/Novosibirsk",
+      "max_inflight_per_source": 4
+    }
+  ],
+  "datasets": [],
+  "reports": [],
+  "navigation": [],
+  "home_widgets": [],
+  "data": {
+    "schema": "sli_plugin_gpo",
+    "existing_tables": [],
+    "migrations": []
+  }
+}
