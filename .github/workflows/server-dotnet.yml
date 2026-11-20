@@ -95,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       risk-areas: ${{ steps.diff.outputs.risk-areas }}
+      pr-postgres: ${{ steps.diff.outputs.pr-postgres }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -111,6 +112,8 @@ jobs:
           # Count both paths when a rename crosses a risk boundary.
           areas=$(git diff --name-only --no-renames -z "$BASE...$HEAD" | python3 scripts/ci/server_dotnet_risk.py)
           echo "risk-areas=$areas" >> "$GITHUB_OUTPUT"
+          postgres=$(bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD")
+          echo "pr-postgres=$postgres" >> "$GITHUB_OUTPUT"
 
   source-vectors:
     timeout-minutes: 20
@@ -181,14 +184,17 @@ jobs:
 
   build-and-test:
     timeout-minutes: 4
-    needs: server-tests
+    needs: [server-tests, source-vectors]
     if: ${{ always() }}
     runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest') }}
     steps:
-      - name: Require every server shard to pass
+      - name: Require every server shard and source vector job to pass
         env:
           SERVER_TESTS_RESULT: ${{ needs.server-tests.result }}
-        run: test "$SERVER_TESTS_RESULT" = success
+          SOURCE_VECTORS_RESULT: ${{ needs.source-vectors.result }}
+        run: |
+          test "$SERVER_TESTS_RESULT" = success
+          test "$SOURCE_VECTORS_RESULT" = success
 
   server-tests:
     needs: changes
@@ -250,6 +256,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
       - name: Run and verify server test shard
+        shell: bash
         env:
           # Leave room in the 2 GiB runner for the CLI and owned PostgreSQL clusters.
           DOTNET_gcServer: "0"
@@ -259,7 +266,17 @@ jobs:
           SHARD_COUNT: ${{ strategy.job-total }}
           PROFILE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }}
           RISK_AREAS: ${{ needs.changes.outputs.risk-areas }}
-        run: python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" --risk-areas "$RISK_AREAS"
+          PR_POSTGRES: ${{ needs.changes.outputs.pr-postgres }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          covered=(--covered-by source-vectors)
+          if [ "$EVENT" = pull_request ]; then
+            covered+=(--covered-by pr-python)
+            if [ "$PR_POSTGRES" = true ]; then
+              covered+=(--covered-by pr-postgres)
+            fi
+          fi
+          python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" --risk-areas "$RISK_AREAS" "${covered[@]}"
       - name: Preserve per-case test results
         if: always()
         # A full artifact quota must not turn passed tests red.

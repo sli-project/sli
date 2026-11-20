@@ -18,6 +18,9 @@ else:
     from shard_balance import balance, estimated_weights, read_durations
 
 
+DEDICATED_JOBS = ("source-vectors", "pr-python", "pr-postgres")
+
+
 def read_rules(path: Path) -> list[list[str]]:
     return [
         entry.split()
@@ -51,7 +54,7 @@ def plan_profiles(
         if not case["Explicit"]:
             default_methods.add(method)
 
-    profiles = {label: set() for label in ("load", "outside-beta", "security")}
+    profiles = {label: set() for label in ("load", "outside-beta", "security", *DEDICATED_JOBS)}
     for label, kind, name in rules:
         if (kind, name) not in targets:
             raise ValueError(f"CI profile rule matches no runnable test: {label} {kind} {name}")
@@ -71,6 +74,7 @@ def plan_profiles(
         "nightly": Counter({name: weights[name] for name in default_methods | nightly_only}),
         "nightly-only": Counter({name: weights[name] for name in nightly_only}),
         "security": Counter({name: weights[name] for name in profiles["security"]}),
+        **{label: Counter({name: weights[name] for name in profiles[label]}) for label in DEDICATED_JOBS},
     }
 
 
@@ -119,6 +123,8 @@ def main() -> None:
     parser.add_argument("count", type=int)
     parser.add_argument("--profile", choices=("pr", "nightly"), default="pr")
     parser.add_argument("--risk-areas", default="", help="Space-separated risk areas for a pull request")
+    parser.add_argument("--covered-by", action="append", choices=DEDICATED_JOBS, default=[],
+                        help="Delegate these tests to a dedicated CI job that runs for this event")
     parser.add_argument("--split-classes", action="store_true", help="Balance methods across isolated runners")
     parser.add_argument("--describe", action="store_true", help="List profile classes and shard sizes without running tests")
     args = parser.parse_args()
@@ -140,6 +146,8 @@ def main() -> None:
         risk_classes(args.risk_areas.split()),
     )
     methods = profiles[args.profile]
+    for label in args.covered_by:
+        methods = methods - profiles[label]
     # Keep tests from the same xUnit class together unless explicitly split.
     keep_classes = not args.split_classes
     durations = read_durations(directory / "server_test_durations.json") if args.profile == "pr" else {}
