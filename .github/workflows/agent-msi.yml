@@ -66,18 +66,18 @@ jobs:
         shell: pwsh
         working-directory: agent-dotnet
         run: |
-          ./tools/Build-Msi.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'agent-dotnet') `
+          ./tools/Build-Msi.ps1 -OutputRoot (Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet') `
             -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
       - name: Verify MSI tables and complete payload
         shell: pwsh
         run: |
-          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet'
+          $out = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet'
           ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
             -PublishDirectory (Join-Path $out 'publish')
       - name: Build and verify higher version for lifecycle test
         shell: pwsh
         run: |
-          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade'
+          $out = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet-upgrade'
           ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version 0.3.6 -NoRestore `
             -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
           ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
@@ -92,8 +92,8 @@ jobs:
             exit 0
           }
           $env:SLI_AGENT_MSI_DISPOSABLE = '1'
-          $env:SLI_AGENT_MSI_BASELINE = Join-Path $env:RUNNER_TEMP 'agent-dotnet/SliAgent.msi'
-          $env:SLI_AGENT_MSI_UPGRADE = Join-Path $env:RUNNER_TEMP 'agent-dotnet-upgrade/SliAgent.msi'
+          $env:SLI_AGENT_MSI_BASELINE = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet/SliAgent.msi'
+          $env:SLI_AGENT_MSI_UPGRADE = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet-upgrade/SliAgent.msi'
           dotnet test tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj -c Release `
             --filter 'FullyQualifiedName~MsiLifecycleWindowsTests' --logger 'console;verbosity=normal'
           if ($LASTEXITCODE -ne 0) { throw 'MSI lifecycle test failed' }
@@ -104,8 +104,8 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.commit || github.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $out = Join-Path $env:RUNNER_TEMP 'agent-dotnet'
-          $dest = Join-Path $env:RUNNER_TEMP 'artifact'
+          $out = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet'
+          $dest = Join-Path $env:GITHUB_WORKSPACE 'agent-msi-artifact'
           New-Item -ItemType Directory -Force $dest | Out-Null
           if ($env:SOURCE_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full source SHA.' }
           $commit = git rev-parse HEAD
@@ -123,6 +123,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sli-agent-dotnet-msi-${{ inputs.commit || github.sha }}
-          path: ${{ runner.temp }}/artifact
+          path: agent-msi-artifact
           if-no-files-found: error
           retention-days: 14

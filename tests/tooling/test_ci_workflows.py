@@ -46,6 +46,20 @@ def setup_steps(job: dict, action: str) -> list[dict]:
             or step.get("uses") == f"./artifacts/ci-actions/{action}"]
 
 
+@pytest.mark.parametrize(("name", "runners"), [
+    ("beta-kit.yml", {"build": "ubuntu-latest", "release": "ubuntu-latest"}),
+    ("agent-msi.yml", {"msi": "windows-2025"}),
+])
+def test_release_builds_use_fixed_hosted_runners(name, runners):
+    source = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+    assert not any(re.search(r"\bvars\s*[.\[]", expression)
+                   for expression in re.findall(r"\$\{\{(.*?)\}\}", source, re.DOTALL))
+    jobs = workflow(name)["jobs"]
+    assert {job_name: job["runs-on"] for job_name, job in jobs.items() if "runs-on" in job} == runners
+    if name == "beta-kit.yml":
+        assert jobs["agent-msi"]["uses"] == "./.github/workflows/agent-msi.yml"
+
+
 @pytest.mark.parametrize(("case", "status"), [
     ("", 1),
     ('<test type="OtherTest" result="Pass"/>', 1),
