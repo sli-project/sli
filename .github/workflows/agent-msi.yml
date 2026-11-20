@@ -99,6 +99,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'MSI lifecycle test failed' }
       - name: Package MSI and source manifest
         shell: pwsh
+        working-directory: agent-dotnet
         env:
           SOURCE_COMMIT: ${{ inputs.commit || github.sha }}
         run: |
@@ -107,12 +108,17 @@ jobs:
           $dest = Join-Path $env:RUNNER_TEMP 'artifact'
           New-Item -ItemType Directory -Force $dest | Out-Null
           if ($env:SOURCE_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full source SHA.' }
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $commit -cne $env:SOURCE_COMMIT) { throw 'Unexpected MSI source checkout.' }
+          $sdk = dotnet --version
+          $expectedSdk = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
+          if ($LASTEXITCODE -ne 0 -or $sdk -cne $expectedSdk) { throw "Expected agent .NET SDK $expectedSdk." }
           $name = "SliAgent-$env:SOURCE_COMMIT.msi"
           $file = Join-Path $dest $name
           Copy-Item -LiteralPath (Join-Path $out 'SliAgent.msi') -Destination $file
           if ((Get-Item -LiteralPath $file).Length -eq 0) { throw "Empty artifact: $name" }
           $digest = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-          $manifest = @{ source_commit = $env:SOURCE_COMMIT; sha256 = $digest } | ConvertTo-Json
+          $manifest = @{ source_commit = $commit; sha256 = $digest; dotnet_sdk = $sdk } | ConvertTo-Json
           [IO.File]::WriteAllText("$file.json", $manifest + "`n")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -59,28 +59,72 @@ def test_msi_actions_reuse_existing_pins_and_keep_checkout_read_only():
     assert "pull_request_target" not in source
 
 
-def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path):
+@pytest.mark.parametrize("source_matches", [True, False], ids=["matching-source", "wrong-source"])
+def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path, source_matches):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("PowerShell is required to execute the packaging step")
-    output = tmp_path / "agent-dotnet"
-    output.mkdir()
-    (output / "SliAgent.msi").write_bytes(b"synthetic MSI")
+
     step, = [s for s in workflow()["jobs"]["msi"]["steps"] if s.get("name") == "Package MSI and source manifest"]
-    script = tmp_path / "package.ps1"
-    script.write_text(step["run"], encoding="utf-8")
-    commit = "a" * 40
-    result = subprocess.run([pwsh, "-NoProfile", "-File", str(script)],
-                            env={**os.environ, "RUNNER_TEMP": str(tmp_path), "SOURCE_COMMIT": commit},
-                            capture_output=True, text=True, timeout=30)
+    checkout = tmp_path / "checkout"
+    working_dir = checkout / step["working-directory"]
+    working_dir.mkdir(parents=True)
+    global_json = working_dir / "global.json"
+    shutil.copyfile(ROOT / step["working-directory"] / "global.json", global_json)
+    sdk = json.loads(global_json.read_text(encoding="utf-8"))["sdk"]["version"]
+
+    subprocess.run(["git", "init", "--quiet", "--object-format=sha1", "--template="],
+                   cwd=checkout, check=True, timeout=30)
+    subprocess.run(["git", "add", "--", str(global_json)], cwd=checkout, check=True, timeout=30)
+    subprocess.run([
+        "git", "-c", "user.name=MSI Test", "-c", "user.email=msi@example.test",
+        "-c", f"core.hooksPath={checkout / 'disabled-hooks'}", "commit", "--quiet",
+        "--no-gpg-sign", "-m", "Test checkout",
+    ], cwd=checkout, check=True, timeout=30)
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout,
+                                     text=True, timeout=30).strip()
+    source_commit = commit if source_matches else ("1" if commit[0] == "0" else "0") + commit[1:]
+
+    runner_temp = tmp_path / "runner-temp"
+    output = runner_temp / "agent-dotnet"
+    output.mkdir(parents=True)
+    (output / "SliAgent.msi").write_bytes(b"synthetic MSI")
+    script = runner_temp / "package.ps1"
+    # The offline test exercises packaging without installing the agent SDK.
+    script.write_text(
+        """function dotnet {
+    if ($args.Count -ne 1 -or $args[0] -cne '--version') { throw 'Expected dotnet --version.' }
+    $global:LASTEXITCODE = 0
+    $env:TEST_DOTNET_SDK
+}
+""" + step["run"],
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-File", str(script)], cwd=working_dir, env={
+            **os.environ,
+            "GITHUB_WORKSPACE": str(checkout),
+            "RUNNER_TEMP": str(runner_temp),
+            "SOURCE_COMMIT": source_commit,
+            "TEST_DOTNET_SDK": sdk,
+        }, capture_output=True, text=True, timeout=30,
+    )
+
+    artifact = runner_temp / "artifact"
+    if not source_matches:
+        assert result.returncode != 0
+        assert "Unexpected MSI source checkout." in result.stdout + result.stderr
+        assert not list(artifact.glob("*"))
+        return
+
     assert result.returncode == 0, result.stdout + result.stderr
-    artifact = tmp_path / "artifact"
     name = f"SliAgent-{commit}.msi"
     assert {p.name for p in artifact.iterdir()} == {name, f"{name}.json"}
     assert (artifact / name).read_bytes() == b"synthetic MSI"
     assert json.loads((artifact / f"{name}.json").read_text(encoding="utf-8")) == {
         "source_commit": commit,
         "sha256": hashlib.sha256(b"synthetic MSI").hexdigest(),
+        "dotnet_sdk": sdk,
     }
 
 

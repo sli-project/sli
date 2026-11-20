@@ -50,7 +50,7 @@ def export_commit(root, commit, checkout, archive):
         stream.extractall(checkout, filter='data')
 
 
-def package_pins(pins):
+def package_rows(pins):
     """Follow the pinned PostgreSQL dependency closure plus the runtime dependencies."""
     spec = pins['runtime_build']
     rows = {row['name']: row for row in spec['debian_artifacts']}
@@ -67,7 +67,11 @@ def package_pins(pins):
     for dependency in spec['debian_runtime']:
         if dependency['version'] != rows[dependency['name']]['version']:
             raise ValueError(f"Runtime dependency version differs from the package pin for {dependency['name']}")
-    return {Path(rows[name]['filename']).name: rows[name]['sha256'] for name in sorted(required)}
+    return [rows[name] for name in sorted(required)]
+
+
+def package_pins(pins):
+    return {Path(row['filename']).name: row['sha256'] for row in package_rows(pins)}
 
 
 def checked_inputs(cache, pins):
@@ -96,7 +100,7 @@ def copy_inputs(cache, output, pins):
             raise ValueError(f'Package changed during copy: {name}')
 
 
-def stage_agent_msi(cache, commit, output, source=None):
+def stage_agent_msi(cache, commit, output, source=None, *, expected_sdk=None):
     # The runner's input cache is trusted. An MSI supplied by path cannot
     # supply its own expected hash or source commit.
     name = f'SliAgent-{commit}.msi'
@@ -109,6 +113,8 @@ def stage_agent_msi(cache, commit, output, source=None):
         raise ValueError(f'Invalid agent MSI manifest: {manifest}') from error
     if not isinstance(metadata, dict) or metadata.get('source_commit') != commit:
         raise ValueError(f'Agent MSI manifest does not identify source commit {commit}: {manifest}')
+    if expected_sdk is not None and metadata.get('dotnet_sdk') != expected_sdk:
+        raise ValueError(f'Agent MSI manifest does not identify .NET SDK {expected_sdk}: {manifest}')
     digest = metadata.get('sha256')
     if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
         raise ValueError(f'Invalid agent MSI SHA-256 in {manifest}')
@@ -143,6 +149,48 @@ def input_pins(pins):
     return {**artifact, 'pin_source': pin_source}, runtime_filename, {
         **package_pins(pins), runtime_filename: artifact['sha256'],
     }
+
+
+def package_urls(row, captured_utc):
+    url = row.get('url', '').replace('http://', 'https://', 1)
+    if url.startswith('https://apt.postgresql.org/'):
+        return url, url.replace('apt.postgresql.org', 'apt-archive.postgresql.org', 1)
+    filename = row['filename']
+    security = filename.startswith('pool/updates/')
+    repository = 'debian-security' if security else 'debian'
+    mirror = 'security.debian.org' if security else 'deb.debian.org'
+    stamp = re.sub(r'[-:]', '', captured_utc[:19]) + 'Z'
+    snapshot = f'https://snapshot.debian.org/archive/{repository}/{stamp}/{filename}'
+    return url or f'https://{mirror}/{repository}/{filename}', snapshot
+
+
+def fetch_inputs(cache, pins):
+    artifact, runtime_filename, locked = input_pins(pins)
+    # The accepted runtime is a binary input, pinned independently of its mirror.
+    runtime_url = ('https://github.com/sli-project/sli/releases/download/'
+                   f"beta-input-{artifact['runtime_id']}/{runtime_filename}")
+    sources = {runtime_filename: (runtime_url,)}
+    sources.update({Path(row['filename']).name: package_urls(row, pins['captured_utc']) for row in package_rows(pins)})
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.beta-download-', dir=cache) as temporary:
+        partial = Path(temporary) / 'package.deb'
+        for name, urls in sources.items():
+            digest = locked[name]
+            destination = cache / name
+            if destination.is_file() and not destination.is_symlink() and sha256(destination) == digest:
+                continue
+            for url in urls:
+                try:
+                    command(['curl', '--fail', '--silent', '--show-error', '--location', '--retry', '3',
+                             '--proto', '=https', '--proto-redir', '=https', '--output', partial, url])
+                except subprocess.CalledProcessError:
+                    continue
+                if sha256(partial) != digest:
+                    raise ValueError(f'Package SHA-256 mismatch: {name} ({url})')
+                partial.replace(destination)
+                break
+            else:
+                raise ValueError(f'Could not download pinned package {name}: {", ".join(urls)}')
 
 
 def nuget_graph_without_local_versions(entries):
@@ -397,7 +445,51 @@ def archive_kit(packages):
             archive.add(path, arcname='sli-debian-beta-kit/' + path.name)
 
 
-def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
+def verify_offline_kit(path, commit):
+    """Verify the native Debian archive before it is published."""
+    checksums, metadata = {}, {}
+    with tarfile.open(path, 'r|gz') as archive:
+        for member in archive:
+            name = member.name.removeprefix('sli-debian-beta-kit/')
+            if (name == member.name or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_~-]*', name)
+                    or not member.isfile() or name in checksums):
+                raise ValueError(f'Invalid beta kit archive member: {member.name}')
+            with archive.extractfile(member) as stream:
+                if name in {'SHA256SUMS', 'manifest.json'}:
+                    metadata[name] = stream.read()
+                    checksums[name] = hashlib.sha256(metadata[name]).hexdigest()
+                else:
+                    checksums[name] = hashlib.file_digest(stream, 'sha256').hexdigest()
+
+    if {'manifest.json', 'SHA256SUMS'} - metadata.keys():
+        raise ValueError('Beta kit archive must include its manifest and SHA256SUMS')
+    expected = {}
+    for line in metadata['SHA256SUMS'].decode('ascii').splitlines():
+        digest, _, name = line.partition('  ')
+        if not re.fullmatch(r'[0-9a-f]{64}', digest) or name in expected:
+            raise ValueError('Invalid beta kit SHA256SUMS entry')
+        expected[name] = digest
+    del checksums['SHA256SUMS']
+    if checksums != expected:
+        raise ValueError('Beta kit archive files do not match SHA256SUMS')
+
+    manifest = json.loads(metadata['manifest.json'])
+    if (not isinstance(manifest, dict) or manifest.get('git_commit') != commit
+            or manifest.get('target') != 'debian-13-amd64'):
+        raise ValueError('Beta kit manifest does not match the selected commit and target')
+    packages = {row['filename']: row['sha256'] for row in manifest['packages']}
+    if not packages or len(packages) != len(manifest['packages']) or not all(name.endswith('.deb') for name in packages):
+        raise ValueError('Beta kit manifest must list its Debian packages')
+    for key, filename in [('installer', 'install-beta-kit'), ('remover', 'remove-beta-kit')]:
+        if manifest[key]['filename'] != filename:
+            raise ValueError(f'Beta kit manifest must list {filename}')
+        packages[filename] = manifest[key]['sha256']
+    packages['manifest.json'] = checksums['manifest.json']
+    if checksums != packages:
+        raise ValueError('Beta kit archive files do not match the manifest')
+
+
+def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk=False):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64' or os.geteuid() == 0:
         raise ValueError('Run the build as an ordinary user on an amd64 Linux runner')
     if not cache.is_dir() or output.exists() or output.is_symlink():
@@ -421,8 +513,11 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
         export_commit(root, commit, checkout, work / 'source.tar')
         agent_args = []
         staged_msi = None
-        if (checkout / 'server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1').is_file():
-            staged_msi = stage_agent_msi(cache, commit, work, agent_msi)
+        if require_agent_sdk or (checkout / 'server-dotnet/src/Sli.Server/Agents/Control/InstallAgent.ps1').is_file():
+            sdk = None
+            if require_agent_sdk:
+                sdk = json.loads((checkout / 'agent-dotnet/global.json').read_text(encoding='utf-8'))['sdk']['version']
+            staged_msi = stage_agent_msi(cache, commit, work, agent_msi, expected_sdk=sdk)
             agent_args = ['--agent-msi', staged_msi.absolute()]
         bundle = cache / f'sli-agent-dotnet-msi-{commit}'
         if staged_msi is None or bundle.exists() or bundle.is_symlink():
@@ -473,26 +568,38 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', default='HEAD', help='Git commit to build, default HEAD')
-    parser.add_argument('--debs', type=Path, required=True,
+    parser.add_argument('--debs', type=Path,
                         help='pinned .debs and trusted agent artifacts for the selected commit')
     output = parser.add_mutually_exclusive_group(required=True)
     output.add_argument('--output', type=Path, help='new directory for the finished kit')
+    output.add_argument('--fetch-inputs', action='store_true', help='download and verify the pinned .deb inputs')
     output.add_argument('--verify-inputs', action='store_true', help='verify the pinned cache without building')
+    output.add_argument('--verify-offline-kit', type=Path, help='verify the archive checksums, manifest and commit')
     parser.add_argument('--pg-bin', type=Path, default=Path('/usr/lib/postgresql/18/bin'),
                         help='PostgreSQL 18 tools for the disposable migration inventory')
     parser.add_argument('--agent-msi', type=Path,
                         help='override SliAgent-<commit>.msi; its trusted .msi.json manifest stays in --debs')
+    parser.add_argument('--require-agent-sdk', action='store_true', help='require the locked SDK in the agent manifest')
     args = parser.parse_args()
+    if args.verify_offline_kit is None and args.debs is None:
+        parser.error('--debs is required for downloading or verifying inputs and building')
     try:
-        cache = args.debs.resolve()
-        if args.verify_inputs:
+        if args.verify_offline_kit is not None:
+            commit = git(ROOT, 'rev-parse', '--verify', '--end-of-options', args.commit + '^{commit}')
+            verify_offline_kit(args.verify_offline_kit, commit)
+            print(f'Debian beta kit verified for {commit}')
+        elif args.verify_inputs or args.fetch_inputs:
+            cache = args.debs.resolve()
             commit = git(ROOT, 'rev-parse', '--verify', '--end-of-options', args.commit + '^{commit}')
             pins = json.loads(git(ROOT, 'show', f'{commit}:deploy/linux/native_pins.json'))
+            if args.fetch_inputs:
+                fetch_inputs(cache, pins)
             _, _, locked = input_pins(pins)
             print(f'{len(checked_inputs(cache, locked))} pinned packages verified for {commit}')
         else:
-            print(build(ROOT, args.commit, cache, args.output.absolute(), args.pg_bin.resolve(), agent_msi=args.agent_msi))
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+            print(build(ROOT, args.commit, args.debs.resolve(), args.output.absolute(), args.pg_bin.resolve(),
+                        agent_msi=args.agent_msi, require_agent_sdk=args.require_agent_sdk))
+    except (ValueError, OSError, subprocess.CalledProcessError, tarfile.TarError, KeyError, TypeError) as error:
         parser.exit(1, f'Beta kit build failed: {error}\n')
 
 
