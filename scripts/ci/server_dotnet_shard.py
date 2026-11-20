@@ -125,6 +125,8 @@ def main() -> None:
     parser.add_argument("--risk-areas", default="", help="Space-separated risk areas for a pull request")
     parser.add_argument("--covered-by", action="append", choices=DEDICATED_JOBS, default=[],
                         help="Delegate these tests to a dedicated CI job that runs for this event")
+    parser.add_argument("--configuration", help="Build configuration of the test binaries")
+    parser.add_argument("--discovery", type=Path, help="xUnit full/json listing from the test build")
     parser.add_argument("--split-classes", action="store_true", help="Balance methods across isolated runners")
     parser.add_argument("--describe", action="store_true", help="List profile classes and shard sizes without running tests")
     args = parser.parse_args()
@@ -132,13 +134,19 @@ def main() -> None:
         parser.error("--risk-areas requires the PR profile")
 
     command = [os.environ.get("DOTNET_HOST_PATH", "dotnet"), "run", "--project",
-               "tests/Sli.Server.Tests/Sli.Server.Tests.csproj", "--no-build", "--"]
-    discovery = subprocess.run(
-        [*command, "-list", "full/json", "-noColor", "-preEnumerateTheories"],
-        check=True, stdout=subprocess.PIPE,
-    )
+               "tests/Sli.Server.Tests/Sli.Server.Tests.csproj", "--no-build"]
+    if args.configuration:
+        command.extend(("--configuration", args.configuration))
+    command.append("--")
+    if args.discovery is None:
+        discovery = subprocess.run(
+            [*command, "-list", "full/json", "-noColor", "-preEnumerateTheories"],
+            check=True, stdout=subprocess.PIPE,
+        ).stdout
+    else:
+        discovery = args.discovery.read_bytes()
     directory = Path(__file__).parent
-    cases = json.loads(discovery.stdout)
+    cases = json.loads(discovery)
     profiles = plan_profiles(
         cases,
         read_rules(directory / "server_dotnet_exclusions.txt"),

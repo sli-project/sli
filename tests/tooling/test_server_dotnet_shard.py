@@ -57,7 +57,9 @@ def test_duration_builder_sums_cases_and_shards_before_taking_run_median(tmp_pat
                 encoding="utf-8",
             )
 
-    assert build_durations(runs, "dotnet") == {"A": 26.0}
+    assert build_durations(runs, "dotnet", expected_shards=2) == {"A": 26.0}
+    with pytest.raises(ValueError, match="Expected 3 shard reports.*found 2"):
+        build_durations(runs, "dotnet", expected_shards=3)
     with pytest.raises(ValueError, match="at least three distinct"):
         build_durations(runs[:2] + runs[:1], "dotnet")
 
@@ -239,4 +241,27 @@ def test_shard_enables_explicit_only_for_selected_nightly_methods(tmp_path, monk
 
     monkeypatch.setattr(server_dotnet_shard.subprocess, "run", run)
     monkeypatch.setattr(sys, "argv", ["server_dotnet_shard.py", "1", "1", "--risk-areas", "storage"])
+    server_dotnet_shard.main()
+
+
+def test_shard_runs_release_using_discovery_from_the_build(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    discovery = tmp_path / "test-cases.json"
+    discovery.write_text('[{"Class":"Auth","Method":"Login","Explicit":false}]', encoding="utf-8")
+    monkeypatch.setattr(server_dotnet_shard, "read_rules", lambda path: [])
+    monkeypatch.setattr(sys, "argv", [
+        "server_dotnet_shard.py", "1", "1", "--configuration", "Release", "--discovery", str(discovery),
+    ])
+
+    def run(command, **kwargs):
+        assert "-list" not in command
+        assert "--no-build" in command
+        assert command[command.index("--configuration") + 1] == "Release"
+        assert command[command.index("-method") + 1] == "Auth.Login"
+        Path("server-dotnet-results.xml").write_text(
+            '<assemblies><assembly><collection><test type="Auth" method="Login" result="Pass"/>'
+            '</collection></assembly></assemblies>', encoding="utf-8",
+        )
+
+    monkeypatch.setattr(server_dotnet_shard.subprocess, "run", run)
     server_dotnet_shard.main()
