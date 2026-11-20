@@ -143,14 +143,17 @@ storage options above. Setup preserves existing filesystems and data.
 
 ### Windows agent
 
-After signing in, open **Agents → Add agent** and run the PowerShell
-command on the domain controller.
+Sign in to SLI and select **Agents → Add agent → Create command**. Copy the
+command and run it in 64-bit PowerShell as administrator on the target Windows
+computer (the domain controller for AD collection). Check the agent's last
+connection on the **Agents** page.
 
-The MSI and its checksum are available at `/app/installers/SliAgent.msi`
-and `/app/installers/SHA256SUMS` on the server's HTTPS address. If your kit
-includes the portable ZIP, download it at `/app/installers/SliAgent-publish-win-x64.zip`
-and use the same checksum file.
-See [agent enrollment](docs/agent-enrollment.md) for registration and CA pinning.
+To download the MSI manually without signing in, append
+`/api/v1/agent/installer/SliAgent.msi` to your SLI server's HTTPS address.
+The download response includes the expected SHA-256 in the
+`X-SLI-Package-SHA256` header. Compare it with
+`Get-FileHash .\SliAgent.msi -Algorithm SHA256`. The generated command checks
+the package hash and registers the agent.
 
 ### Native backups
 
@@ -292,10 +295,9 @@ See the [security policy](SECURITY.md) and the [administrator guide](docs/ADMIN_
 | Topic | English | Русский |
 | --- | --- | --- |
 | Server installation | [Guide](docs/install/SERVER_INSTALL.en.md) | [Руководство](docs/install/SERVER_INSTALL.ru.md) |
-| Agent installation | [Guide](docs/install/AGENT_INSTALL.en.md) | [Руководство](docs/install/AGENT_INSTALL.ru.md) |
+| Agent installation | [Windows agent](#windows-agent) | [Агент Windows](README.ru.md#агент-windows) |
 
 - [Contributing, checks and migrations](CONTRIBUTING.md)
-- [Agent enrollment and CA](docs/agent-enrollment.md)
 - [Administrator guide](docs/ADMIN_GUIDE.md) and [user guide](docs/USER_GUIDE.md)
 
 ## License
