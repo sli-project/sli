@@ -71,10 +71,11 @@ export function SystemStatusPage() {
   const failed = (label: string, retry: () => unknown) => <p role="status">{t("systemStatus.failed", { table: label })} <button type="button" className="sli-ds-button" onClick={() => void retry()}>{t("systemStatus.retry")}</button></p>;
   const loading = (columns: number) => <LoadingRegion><TableSkeleton columns={columns}/></LoadingRegion>;
   const sourceColumns: TableColumn<(typeof sources)[number]>[] = [
-    { key: "name", label: t("systemStatus.computer") },
+    { key: "name", label: t("systemStatus.computer"), render: (row) => row.href
+      ? <a href={row.href}>{row.name === EMPTY_VALUE ? t("systemStatus.openAgent") : row.name}</a> : row.name },
     { key: "collection", label: t("systemStatus.collection") },
     { key: "time", label: t("systemStatus.lastData") },
-    { key: "state", label: t("systemStatus.state"), render: (row) => <Status tone={row.tone}>{row.state}</Status> },
+    { key: "state", label: t("systemStatus.state") },
     { key: "action", label: t("systemStatus.action"), render: (row) => row.fallback ? access?.platform_owner ? <RestoreAgentAction agentId={row.fallback.agent_id} currentAgentId={row.currentAgent} name={row.name} canRestore={row.fallback.can_restore}/> : EMPTY_VALUE : row.action },
   ];
   const serviceColumns: TableColumn<(typeof services)[number]>[] = [

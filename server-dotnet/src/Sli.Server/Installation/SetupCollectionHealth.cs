@@ -174,6 +174,10 @@ public static class SetupCollectionHealth
                 ["completeness"] = new JsonObject { ["state"] = agent["last_accepted_gap_at"] is null ? "not_assessed" : "known_gaps", ["last_accepted_gap_at"] = Iso(Time(agent["last_accepted_gap_at"])) },
                 ["last_seen"] = Iso(Time(agent["last_seen"])), ["last_packet_at"] = Iso(Time(agent["last_packet_at"]) ?? (packetStamps.Length > 0 ? packetStamps.Max() : null)),
                 ["modules"] = modules, ["policy_revision"] = agent["policy_revision"]?.DeepClone(), ["applied_policy_revision"] = agent["applied_policy_revision"]?.DeepClone(),
+                ["collection_interval_seconds"] = interval,
+                ["windows_audit"] = agent["windows_audit"] is JsonObject audit && audit["families"] is JsonObject
+                    ? audit.DeepClone() : null,
+                ["eventlog_diagnostics"] = agent["eventlog_diagnostics"]?.DeepClone(),
                 ["href"] = "/app/agents?agent_id=" + T(agent["id"]) + "#agent-" + T(agent["id"]) });
             if (B(agent["password_domain_required"])) items[^1]!["password_domain_required"] = true;
         }

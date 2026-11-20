@@ -4,9 +4,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiResponseError, type AgentItem } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
+import { formatDateTime } from "../../shared/date-time";
 
 const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
-  issueCommand: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn() }));
+  issueCommand: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner, capabilities: state.capabilities, subject: { type: "session", id: 1, username: "fixture-owner" }, evaluated_at_utc: state.accessRevision }), useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../api/client", async (original) => ({ ...await original<typeof import("../../api/client")>(), api: {
   agentFileAuditStatus: (agentId: string) => state.auditStatus(agentId),
@@ -14,6 +15,7 @@ vi.mock("../../api/client", async (original) => ({ ...await original<typeof impo
   agentTemplates: () => state.deploymentTemplates(), agentGroupTokens: () => state.deploymentTokens(),
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
   agents: () => state.list(), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
+  setupStatus: () => state.setupStatus(),
   createAgentConsoleToken: (limit: number, audit: boolean) => state.issueCommand(limit, audit), agentConsoleTokens: () => state.consoleTokens(),
   revokeAgentConsoleToken: (id: string) => state.revokeConsoleToken(id),
 } }));
@@ -35,6 +37,7 @@ beforeEach(() => {
   state.owner = true; state.capabilities = []; state.accessRevision = "first";
   setLocale("ru"); window.history.replaceState(null, "", "/app/agents");
   state.list.mockResolvedValue({ items: [agent] }); state.action.mockResolvedValue({});
+  state.setupStatus.mockResolvedValue({});
   state.deploymentDirectory.mockResolvedValue({ domains: [] }); state.deploymentTemplates.mockResolvedValue({ items: [] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
   state.consoleTokens.mockResolvedValue({ items: [] });
@@ -59,6 +62,33 @@ async function manual() {
 it("denies before loading inventory without owner or access.manage", () => {
   state.owner = false; mount(); expect(state.list).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: t("agents.addComputer") })).toBeNull();
+});
+
+it.each([
+  [5, "Нет доступа к журналу Security", "Проверьте права службы SLIAgentNet"],
+  [1502, "Журнал Security переполнен", "Увеличьте размер журнала Windows"],
+])("shows the reported journal failure with its time and action (%s)", async (winerror, reason, action) => {
+  const time = new Date(Date.now() - 1000).toISOString();
+  state.list.mockResolvedValue({ items: [{ ...agent, last_seen: time, applied_policy_revision: 2,
+    eventlog_diagnostics: { reported_at: time, items: [{ channel: "Security", observed_at_utc: time, policy_revision: 2,
+      error: { exception_class: "EventLogException", winerror } }] },
+  }] });
+  mount();
+  const observation = `${reason} · ${formatDateTime(time, "UTC", { withYear: false })}`;
+  const row = (await screen.findByText(observation)).closest("tr")!;
+  expect(within(row).getByText(action)).toBeTruthy();
+  expect(within(await openCard()).getByText(`${observation}. ${action}`)).toBeTruthy();
+});
+
+it("does not use journal errors reported before the current collection settings", async () => {
+  const time = new Date(Date.now() - 1000).toISOString();
+  state.list.mockResolvedValue({ items: [{ ...agent, last_seen: time,
+    eventlog_diagnostics: { reported_at: time, items: [{ channel: "Security", observed_at_utc: time, policy_revision: 1,
+      error: { exception_class: "EventLogException", winerror: 5 } }] },
+  }] });
+  mount();
+  const table = await screen.findByRole("table", { name: t("agents.title") });
+  expect(within(table).queryByText(/Нет доступа к журналу Security/)).toBeNull();
 });
 
 it.each(["ru", "en"] as const)("shows the replaced version and confirms removal of the named computer (%s)", async (locale) => {

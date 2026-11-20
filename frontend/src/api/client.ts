@@ -1220,6 +1220,8 @@ export type AgentCollectionHealth = {
     duplicate_agents?: number; identity_conflict?: boolean; password_domain_required?: boolean; agent_version?: string | null; replacement_version?: string | null;
     delivery_fallback?: { agent_id: string; last_packet_at: string; since: string | null; can_restore: boolean } | null;
     windows_audit?: AgentWindowsAudit | null;
+    eventlog_diagnostics?: AgentItem["eventlog_diagnostics"];
+    collection_interval_seconds?: number;
     data_gaps?: Array<{ from_utc: string; to_utc: string }>;
     completeness?: AgentCollectionCompleteness & { last_accepted_gap_at: string | null };
     state: "current" | "error" | "waiting" | "lagging" | "unknown" | "paused" | "disabled";

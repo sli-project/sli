@@ -30,6 +30,19 @@ public sealed class SetupAgentCollectionTests
     }
 
     [Fact]
+    public void Setup_source_keeps_reported_audit_and_event_log_observations()
+    {
+        var agents = Agents();
+        agents[0]!["windows_audit"] = O("""{"policy_revision":1,"families":{"domain_controller":{"state":"managed_by_gpo"}}}""");
+        agents[0]!["eventlog_diagnostics"] = O("""{"items":[{"channel":"Security","policy_revision":1,"error":{"winerror":5}}]}""");
+        var source = Assert.Single(SetupCollectionHealth.View(agents, Streams(), DateTimeOffset.Parse(Stamp))["items"]!.AsArray())!;
+        Assert.Equal("managed_by_gpo", T(source["windows_audit"]!["families"]!["domain_controller"]!["state"]));
+        var observed = Assert.Single(source["eventlog_diagnostics"]!["items"]!.AsArray())!;
+        Assert.Equal("Security", T(observed["channel"]));
+        Assert.Equal(5, observed["error"]!["winerror"]!.GetValue<int>());
+    }
+
+    [Fact]
     public void Canonical_dc_has_one_source_and_retains_replaced_agent_for_removal()
     {
         var agents=new JsonArray();

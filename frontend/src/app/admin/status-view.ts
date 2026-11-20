@@ -3,6 +3,7 @@ import { t, type MessageKey } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { EMPTY_VALUE } from "../../shared/format";
 import { auditDetectionName } from "./agent-windows-audit";
+import { collectionDiagnosis, missingAuditSetting } from "./collection-diagnosis";
 
 const modules: Record<string, MessageKey> = {
   "sli.windows.ad-dc": "systemStatus.collect.events",
@@ -24,8 +25,7 @@ const services: Record<string, MessageKey> = {
 
 function missingAudit(agent: AgentCollectionHealth["items"][number]) {
   if (agent.windows_audit?.policy_revision !== agent.policy_revision || ["disabled", "paused"].includes(agent.state)) return [];
-  return (agent.windows_audit?.families.domain_controller?.required ?? []).filter((row) =>
-    row.success && row.actual_success === false || row.failure && row.actual_failure === false);
+  return (agent.windows_audit?.families.domain_controller?.required ?? []).filter(missingAuditSetting);
 }
 
 export function statusAuditChecks(health: AgentCollectionHealth | null | undefined, domains: SetupDomain[]) {
@@ -54,48 +54,52 @@ export function statusSources(health: AgentCollectionHealth | null | undefined, 
       const packetTimes = channels.map((channel) => channel.last_packet_at).filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value!)));
       const lastData = packetTimes.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
       const name = agent.name.trim().slice(0, 200) || EMPTY_VALUE;
-      const auditCount = missingAudit(agent).length;
+      const diagnosis = agent.connection === "online" && active.length
+        ? collectionDiagnosis(agent, timeZone, agent.collection_interval_seconds)
+        : null;
       const time = formatDateTime(lastData, timeZone, { withYear: false });
       // A stream the server expects but that never reported: the deadline time is its own, not another channel's packet.
       const missing = active.find((channel) => channel.channel && !channel.last_packet_at && channel.state === "error"
         && channel.failure_reason === "packet_missing" && Number.isFinite(Date.parse(channel.issue_since_utc ?? "")));
+      const readError = active.find((channel) => channel.failure_reason === "read_error");
+      const importError = active.find((channel) => channel.failure_reason === "import_overdue");
       let state: MessageKey = "systemStatus.source.receiving";
       let action: MessageKey | null = null;
-      let tone = "current";
       if (agent.state === "disabled" || agent.state === "paused" || (channels.length > 0 && !active.length)) {
-        state = "systemStatus.source.paused"; action = "systemStatus.action.enable"; tone = "neutral";
+        state = "systemStatus.source.paused"; action = "systemStatus.action.enable";
       } else if (rejected) {
         state = rejected.import_failure_reason === "short_event_attestation_failed" ? "systemStatus.source.originRejected"
           : rejected.import_failure_reason === "short_event_summary_conflict" ? "systemStatus.source.summaryRejected"
           : "systemStatus.source.eventRejected";
-        tone = "neutral";
-      } else if (active.some((channel) => channel.failure_reason === "read_error")) {
-        state = "systemStatus.source.readError"; action = "systemStatus.action.permissions"; tone = "error";
-      } else if (active.some((channel) => channel.failure_reason === "import_overdue")) {
-        state = "systemStatus.source.importError"; action = "systemStatus.action.import"; tone = "error";
       } else if (agent.connection === "offline") {
-        state = "systemStatus.source.offline"; action = "systemStatus.action.agent"; tone = "error";
-      } else if (missing) {
-        state = "systemStatus.source.channelSilent"; action = "systemStatus.action.agent"; tone = "error";
-      } else if (!lastData) {
-        state = "systemStatus.source.waiting"; action = "systemStatus.action.agent"; tone = "neutral";
-      } else if (active.some((channel) => ["unknown", "waiting"].includes(channel.state))) {
-        state = "systemStatus.source.check"; action = "systemStatus.action.agent"; tone = "neutral";
-      } else if (active.some((channel) => ["error", "lagging"].includes(channel.state))) {
-        state = "systemStatus.source.silent"; action = "systemStatus.action.agent"; tone = "error";
-      } else if (agent.connection !== "online" || !active.length) {
-        state = "systemStatus.source.check"; action = "systemStatus.action.agent"; tone = "neutral";
-      } else if (auditCount > 0) {
-        state = "agents.auditOffStatus"; action = "systemStatus.auditEnable"; tone = "neutral";
+        state = "systemStatus.source.offline"; action = "systemStatus.action.agent";
+      } else if (agent.connection === "never_seen") {
+        state = "systemStatus.source.notConnected"; action = "systemStatus.action.agent";
+      } else if (!diagnosis) {
+        if (readError) state = "systemStatus.source.readError";
+        else if (importError) state = "systemStatus.source.importError";
+        else if (missing) state = "systemStatus.source.channelSilent";
+        else if (!lastData) state = "systemStatus.source.waiting";
+        else if (active.some((channel) => ["error", "lagging"].includes(channel.state))) state = "systemStatus.source.silent";
+        else if (active.some((channel) => ["unknown", "waiting"].includes(channel.state)) || agent.connection !== "online" || !active.length)
+          state = "systemStatus.source.check";
+        if (state !== "systemStatus.source.receiving")
+          action = state === "systemStatus.source.importError" ? "systemStatus.action.import" : "systemStatus.action.agent";
       }
-      return [{ id: agent.id, name, lastData, time, tone: agent.delivery_fallback ? "error" : tone, connected: Boolean(agent.last_seen),
+      const direct = state === "systemStatus.source.receiving" ? diagnosis : null;
+      const observedAt = state === "systemStatus.source.readError" ? readError?.issue_observed_at_utc
+        : state === "systemStatus.source.importError" ? importError?.issue_since_utc : null;
+      const observation = observedAt
+        ? ` · ${formatDateTime(observedAt, timeZone, { withYear: false })}` : "";
+      return [{ id: agent.id, name, lastData, time, connected: Boolean(agent.last_seen),
+        href: state !== "systemStatus.source.receiving" || direct || agent.delivery_fallback ? `/app/agents?agent_id=${encodeURIComponent(agent.id)}` : null,
         collection: collected.map((module) => t(modules[module.module_id])).join(", ") || EMPTY_VALUE,
-        state: agent.delivery_fallback ? t("agents.deliveryFallback", { name, version: agent.agent_version || EMPTY_VALUE, since: formatDateTime(agent.delivery_fallback.since, timeZone, { withYear: false }), until: formatDateTime(agent.delivery_fallback.last_packet_at, timeZone, { withYear: false }) }) : t(state, { name, count: auditCount, channel: missing?.channel ?? "", time: state === "systemStatus.source.offline" ? formatDateTime(agent.last_seen, timeZone, { withYear: false })
+        state: agent.delivery_fallback ? t("agents.deliveryFallback", { name, version: agent.agent_version || EMPTY_VALUE, since: formatDateTime(agent.delivery_fallback.since, timeZone, { withYear: false }), until: formatDateTime(agent.delivery_fallback.last_packet_at, timeZone, { withYear: false }) }) : direct?.state ?? t(state, { name, channel: missing?.channel ?? "", time: state === "systemStatus.source.offline" ? formatDateTime(agent.last_seen, timeZone, { withYear: false })
           : state === "systemStatus.source.silent" ? formatDateTime(active.filter((channel) => ["error", "lagging"].includes(channel.state)).map((channel) => channel.last_packet_at).filter((value): value is string => Number.isFinite(Date.parse(value ?? ""))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? lastData, timeZone, { withYear: false })
           : rejected ? formatDateTime(rejected.import_failure_at, timeZone, { withYear: false })
-          : state === "systemStatus.source.channelSilent" ? formatDateTime(missing?.issue_since_utc, timeZone, { withYear: false }) : time }),
+          : state === "systemStatus.source.channelSilent" ? formatDateTime(missing?.issue_since_utc, timeZone, { withYear: false }) : time }) + observation,
         fallback: agent.delivery_fallback, currentAgent: agent.id,
-        action: action ? t(action, { name }) : EMPTY_VALUE,
+        action: direct?.action ?? (action ? t(action, { name }) : EMPTY_VALUE),
       }];
     });
 }

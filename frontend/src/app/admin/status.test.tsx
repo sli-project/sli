@@ -160,7 +160,24 @@ it.each(["ru", "en"] as const)("names checks blocked by missing DC auditing in %
   const checks = await screen.findByRole("table", { name: locale === "ru" ? "Неработающие проверки" : "Checks not running" });
   expect(checks.textContent).toContain("LAB-DC01");
   expect(within(checks).getAllByRole("link", { name: locale === "ru" ? "Включите аудит на LAB-DC01" : "Enable auditing on LAB-DC01" }).length).toBeGreaterThan(0);
-  expect(screen.getByRole("table", { name: t("systemStatus.sources") }).textContent).toContain(locale === "ru" ? "Аудит выключен: 1 настроек" : "Auditing off: 1 settings");
+  expect(screen.getByRole("table", { name: t("systemStatus.sources") }).textContent).toContain(locale === "ru" ? "Аудит Windows выключен" : "Windows auditing is off");
+});
+
+it("links one source row with the reported audit cause, time and corrective action to its agent", async () => {
+  const source = structuredClone(agent);
+  source.windows_audit = { policy_revision: 1, checked_at: "2026-11-14T01:16:00Z", reported_at: "2026-11-14T01:17:00Z",
+    management_state: "blocked", command_line_enabled: null, families: { domain_controller: {
+      state: "managed_by_gpo", non_security_channels: [], required: [{ guid: "fixture", subcategory: "logon", success: false,
+        failure: true, actual_success: true, actual_failure: false, state: "managed_by_gpo" }],
+    } } };
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([source]));
+  renderPage();
+  const fact = await screen.findByText("Аудит выключен политикой домена · 14.11, 01:16");
+  const table = screen.getByRole("table", { name: "Источники" });
+  const row = within(table).getAllByRole("row")[1];
+  expect(within(row).getByText(fact.textContent!)).toBe(fact);
+  expect(within(row).getByText("Включите аудит в политике домена")).toBeTruthy();
+  expect(within(row).getByRole("link", { name: source.name }).getAttribute("href")).toBe(`/app/agents?agent_id=${source.id}`);
 });
 
 it("does not show a failure while a successful response is still pending", async () => {
@@ -238,7 +255,7 @@ it("shows a silent source with its name, last packet time and action", async () 
   vi.mocked(api.setupStatus).mockResolvedValue(setup([silent]));
   renderPage();
   const fact = await screen.findByText("LAB-DC01 не присылает данные с 08.11, 01:16");
-  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet на компьютере")).toBeTruthy();
+  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet")).toBeTruthy();
 });
 
 it("keeps services and disk visible when the sources request fails", async () => {
@@ -303,7 +320,7 @@ it("shows lost connection for an agent that connected before and has an enabled 
   vi.mocked(api.setupStatus).mockResolvedValue(setup([lost]));
   renderPage();
   const fact = await screen.findByText("Агент на LAB-DC01 не выходит на связь с 13.11, 20:00");
-  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet на компьютере")).toBeTruthy();
+  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet")).toBeTruthy();
   expect(screen.queryByText("LAB-DC01 ещё не присылал данные")).toBeNull();
 });
 
@@ -316,13 +333,13 @@ it("shows lost connection instead of a waiting neighbour channel when another ch
   expect(await screen.findByText("Агент на LAB-DC01 не выходит на связь с 13.11, 20:00")).toBeTruthy();
 });
 
-it("keeps waiting for a new agent that has never connected and is within its deadline", async () => {
+it("explains that a new agent has never connected while it is within its deadline", async () => {
   const fresh = structuredClone(agent);
   fresh.state = "waiting"; fresh.connection = "never_seen"; fresh.last_seen = null; fresh.last_packet_at = null;
   fresh.modules[0].channels[0] = { channel: "Security", state: "waiting", last_packet_at: null, last_import_at: null, import_lag_seconds: null, budget_seconds: 900 };
   vi.mocked(api.setupStatus).mockResolvedValue(setup([fresh]));
   renderPage();
-  expect(await screen.findByText("LAB-DC01 ещё не присылал данные")).toBeTruthy();
+  expect(await screen.findByText("Агент на LAB-DC01 ещё не выходил на связь")).toBeTruthy();
 });
 
 const directory = { channel: "Directory Service", state: "error" as const, failure_reason: "packet_missing" as const, last_packet_at: null,
@@ -334,7 +351,7 @@ it("names a silent expected channel and its own deadline while another channel i
   vi.mocked(api.setupStatus).mockResolvedValue(setup([partial]));
   renderPage();
   const fact = await screen.findByText("LAB-DC01 не присылает данные из канала Directory Service с 14.11, 00:30");
-  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet на компьютере")).toBeTruthy();
+  expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet")).toBeTruthy();
   expect(fact.textContent).not.toContain("01:15");
 });
 
