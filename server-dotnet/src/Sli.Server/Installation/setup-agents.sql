@@ -22,6 +22,7 @@ with latest_audit as materialized (
 select a.id::text, a.host_id::text, a.instance_name, a.status, a.last_seen,
        a.created_at, a.assigned_modules, a.collection_policy, a.registration_host_name,
        a.policy_revision, a.applied_policy_revision, a.applied_collection_state,
+       a.windows_audit, a.rights_probe->'eventlog_diagnostics' as eventlog_diagnostics,
        dc.id as server_id,dc.hostname as canonical_host_name,a.rights_probe ? 'identity_conflict' as identity_conflict,
        coalesce(a.rights_probe->>'agent_version',version.version,issued_version.details->>'agent_version') as agent_version,
        exists(select 1 from sli_agent_certificates c where c.agent_id=a.id and c.revoked_at is null

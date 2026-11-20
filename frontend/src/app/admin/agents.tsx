@@ -5,6 +5,7 @@ import { api, PASSWORD_DETECTION_DOMAIN_UNAVAILABLE, type AgentItem, type AgentE
 import { DataTable, DetailDrawer, FactList, PageHeader, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
+import { EMPTY_VALUE } from "../../shared/format";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { Note } from "./gate";
 import { AgentCollectionControls, AgentModuleControls } from "./agent-policy-controls";
@@ -16,6 +17,8 @@ import { AgentDeliveryDiagnostics } from "./agent-delivery-diagnostics";
 import { AgentEventlogDiagnostics } from "./agent-eventlog-diagnostics";
 import { AgentSequenceRecovery } from "./agent-sequence-recovery";
 import { AgentConsoleEnrollment } from "./agent-console-enrollment";
+import { collectionDiagnosis, missingAuditSetting } from "./collection-diagnosis";
+import { statusSources } from "./status-view";
 
 export function AgentsPage() {
   const access = useEffectiveAccess();
@@ -28,10 +31,24 @@ export function AgentsPage() {
 }
 
 type AgentFilter = "all" | "silent" | "auditOff" | "disabled";
-// The server uses the same five-minute silence threshold for agent removal readback.
-const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen || Date.now() - Date.parse(agent.last_seen) > 300_000);
-function missingAuditSetting(row: { success: boolean; failure: boolean; actual_success: boolean | null; actual_failure: boolean | null }) {
-  return row.success && row.actual_success === false || row.failure && row.actual_failure === false;
+const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen
+  || Date.now() - Date.parse(agent.last_seen) > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000);
+
+function agentCollectionState(agent: AgentItem, timeZone: string, source?: ReturnType<typeof statusSources>[number]) {
+  if (agent.status !== "active") return { state: t("agents.disabled"), action: EMPTY_VALUE };
+  if (silent(agent)) {
+    const state = agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected");
+    return { state, action: t("systemStatus.action.agent") };
+  }
+  if (agent.collection_policy && agent.collection_policy.state !== "active") {
+    return { state: t("collectionDiagnosis.paused"), action: t("collectionDiagnosis.resume") };
+  }
+  const issue = collectionDiagnosis(agent, timeZone, agent.collection_policy?.interval_seconds);
+  if (issue) return issue;
+  if (source?.href) return source;
+  const count = auditDisabled(agent);
+  if (count && !dcAuditFailure(agent)) return { state: t("agents.auditOffStatus", { count }), action: t("collectionDiagnosis.auditAction") };
+  return { state: t("agents.working"), action: EMPTY_VALUE };
 }
 function auditDisabled(agent: AgentItem): number | null {
   const report = agent.windows_audit;
@@ -70,6 +87,10 @@ function AgentsContent() {
   const client = useQueryClient();
   const agentId = new URLSearchParams(window.location.search).get("agent_id") ?? undefined;
   const inventory = useQuery({ queryKey: agentId ? ["admin-agents", agentId] : ["admin-agents"], queryFn: () => api.agents(agentId), refetchInterval: 15_000 });
+  const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, retry: false, refetchInterval: 30_000 });
+  const health = !setup.isError && !setup.data?.agent_collection?.diagnostics ? setup.data?.agent_collection : null;
+  const sources = new Map(statusSources(health, setup.data?.domains ?? [], timeZone).map((row) => [row.id, row]));
+  const collectionState = (agent: AgentItem) => agentCollectionState(agent, timeZone, sources.get(agent.id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const linkedAgentFocused = useRef(false);
   useEffect(() => {
@@ -118,22 +139,19 @@ function AgentsContent() {
     { key: "agent_version", label: t("agents.version"), render: (agent) => agent.agent_version || "—" },
     { key: "role", label: t("agents.computerRole"), render: (agent) => agent.assigned_modules.some((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(moduleId(module)))
       ? t("agents.roleDc") : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? t("agents.roleWorkstation") : "—" },
-    { key: "status", label: t("agents.status"), render: (agent) => {
-      if (agent.status !== "active") return t("agents.disabled");
-      if (silent(agent)) return agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected");
-      const count = auditDisabled(agent);
-      return count && !dcAuditFailure(agent) ? t("agents.auditOffStatus", { count }) : t("agents.working");
-    } },
-    { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (agent) => date(agent.last_seen) },
+    { key: "status", label: t("agents.status"), render: (agent) => collectionState(agent).state },
+    { key: "action", label: t("systemStatus.action"), render: (agent) => collectionState(agent).action },
+    { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (agent) =>
+      <span title={date(agent.last_seen)}>{formatDateTime(agent.last_seen, timeZone, { withYear: false })}</span> },
     { key: "windows_audit", label: t("agents.windowsAudit"), render: (agent) => {
       const count = auditDisabled(agent);
       return dcAuditFailure(agent) ?? (count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured"));
     } },
-    { key: "certificates", label: t("agents.certificateUntil"), kind: "datetime", render: (agent) => date(agent.certificates.filter((cert) => !cert.revoked_at).sort((a, b) => Date.parse(b.not_after) - Date.parse(a.not_after))[0]?.not_after) },
   ];
   const sessionKey = JSON.stringify([access?.subject.type, access?.subject.id, access?.subject.username, access?.evaluated_at_utc]);
   const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
+  const selectedState = selected && collectionState(selected);
   return <section className="sli-ds-report">
     <PageHeader title={t("agents.title")} actions={addButton}/>
     <div className="sli-ds-filters" role="group" aria-label={t("agents.title")}>
@@ -154,6 +172,7 @@ function AgentsContent() {
     {consoleSession === sessionKey && <AgentConsoleEnrollment onClose={() => setConsoleSession(undefined)}/>}
     {keysSession === sessionKey && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={() => setKeysSession(undefined)}/>}
     {selected ? <DetailDrawer open title={agentHostName(selected)} onClose={() => setSelectedId(null)}>
+      {selectedState ? <p>{selectedState.state}{selectedState.action === EMPTY_VALUE ? "" : `. ${selectedState.action}`}</p> : null}
       {selected.collection_policy || modules.length || selected.eventlog_diagnostics?.items.length || selected.delivery_diagnostics ? <section>
         <h3>{t("agents.collection")}</h3>
         {selected.collection_policy ? <AgentCollectionControls key={`${selected.id}:${selected.policy_revision}`} agent={selected} busy={action.isPending} change={changePolicy}/> : null}
