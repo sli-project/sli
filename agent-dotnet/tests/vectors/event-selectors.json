@@ -8,7 +8,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+   "xpath": "*[System[((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
   },
   "name": "Security:fresh"
  },
@@ -22,7 +22,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and (EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and ((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
   },
   "name": "Security:fresh-since"
  },
@@ -35,7 +35,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136) and EventRecordID > 500]]"
+   "xpath": "*[System[((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136) and EventRecordID > 500]]"
   },
   "name": "Security:record-id-no-bookmark"
  },
@@ -48,7 +48,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
+   "xpath": "*[System[((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
   },
   "name": "Security:bookmark"
  },
@@ -62,7 +62,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[(EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
+   "xpath": "*[System[((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136 or EventRecordID=500)]]"
   },
   "name": "Security:bookmark-with-since"
  },
@@ -76,7 +76,7 @@
   },
   "expected": {
    "channel": "Security",
-   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and EventRecordID > 500 and (EventID=1102 or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
+   "xpath": "*[System[TimeCreated[@SystemTime >= '2026-10-06T12:00:00Z'] and EventRecordID > 500 and ((EventID >= 1102 and EventID <= 1104) or (EventID >= 4608 and EventID <= 4648) or (EventID >= 4672 and EventID <= 4702) or (EventID >= 4719 and EventID <= 4781) or EventID=5136)]]"
   },
   "name": "Security:since-and-record-id"
  },
