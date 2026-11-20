@@ -18,9 +18,11 @@ OFFER = {"agent_id": AGENT, "agent_removal": {"command_id": COMMAND, "action": "
 def owned(root):
     root.mkdir()
     (root / ".msi-owned").write_text(msi.OWNER)
-    config = AgentConfig("https://core.invalid", root / "ca.pem", root / "state")
+    config = AgentConfig("https://core.invalid", root / "ca.pem", root / "state",
+                         service_identity_sid="S-1-5-18")
     (root / "agent.json").write_text(json.dumps({"server_url": config.server_url,
-        "ca_bundle": str(config.ca_bundle), "state_dir": str(config.state_dir)}))
+        "ca_bundle": str(config.ca_bundle), "state_dir": str(config.state_dir),
+        "service_identity_sid": config.service_identity_sid}))
     config.state_dir.mkdir()
     (config.state_dir / "identity-key.json").write_text("fixture-key")
     (config.state_dir / "spool").mkdir()
@@ -168,14 +170,17 @@ def test_uninstall_refuses_named_sibling_and_symlink_before_loading_identity(tmp
 
 
 def test_audit_restore_failure_preserves_rollback_state_and_key(tmp_path, monkeypatch):
+    from sli_agent.windows_audit import AuditManager
+
     root = tmp_path / "Agent"
     config = owned(root)
     audit = config.state_dir / "windows-audit"
     audit.mkdir()
-    (audit / "state.json").write_text("fixture")
+    (audit / "state.json").write_text(json.dumps({
+        "subcategories": {}, "command_line": {"previous": 0, "applied": 1, "phase": "confirmed"},
+    }))
     monkeypatch.setattr("sli_agent.enrollment.IdentityStore", lambda _: SimpleNamespace(load=lambda: None))
-    monkeypatch.setattr("sli_agent.windows_audit.AuditManager", lambda _: SimpleNamespace(
-        reconcile=lambda *a: {"management_state": "blocked"}))
+    monkeypatch.setattr(AuditManager, "reconcile", lambda *a: {"management_state": "blocked"})
     with pytest.raises(ValueError, match="agent_removal_cleanup_failed"):
         msi.uninstall_owned(root)
     assert (audit / "state.json").exists() and (config.state_dir / "identity-key.json").exists()

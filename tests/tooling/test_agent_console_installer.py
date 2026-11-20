@@ -45,8 +45,15 @@ $remove = $ast.Find({param($node) $node -is [System.Management.Automation.Langua
     $node.Name -eq 'Remove-InstalledAgentMsi'}, $true)
 . ([scriptblock]::Create($remove.Extent.Text))
 function Test-LegacyAgentServiceMissing { return $script:missing }
+# SystemDirectory is empty on the Linux runner. Resolve a fixture path without
+# depending on a Windows installation, and intercept the process invocation.
+function Join-Path {
+    param($Path, $ChildPath)
+    return [IO.Path]::Combine($PSScriptRoot, $ChildPath)
+}
 function Start-Process {
     param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru, $WindowStyle)
+    if ($FilePath -ne [IO.Path]::Combine($PSScriptRoot, 'msiexec.exe')) { throw 'Unexpected installer path.' }
     $script:calls.Add($ArgumentList)
     return @{ ExitCode = $script:codes.Dequeue() }
 }
