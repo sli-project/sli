@@ -37,7 +37,7 @@ it("renders the English decision form and standard history while preserving comm
   expect(screen.getByRole("heading", { name: "Decision history" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Change status" })).toBeTruthy();
   expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-    "New", "In progress", "In review", "Confirmed", "False positive", "Closed", "Recurred",
+    "Open", "In progress", "False positive",
   ]);
   expect(screen.getByLabelText("Owner").getAttribute("placeholder")).toBe("Account or team");
   expect(screen.getByLabelText("Comment").getAttribute("placeholder")).toBe("Why this decision was made");
@@ -47,14 +47,14 @@ it("renders the English decision form and standard history while preserving comm
   expect(history).toContain("System · Repeat evidence added");
   expect(history).toContain("fixture-user · Комментарий пользователя");
   expect(history).toContain("fixture-user · created from event");
-  expect(statusLabel("unknown-code")).toBe("Status unknown");
+  expect(statusLabel("unknown-code")).toBe("—");
   expect(screen.getByRole("button", { name: "Save decision" })).toBeTruthy();
 });
 
 it("submits unchanged comments and shows English success and failure notifications", async () => {
   const update = vi.spyOn(api, "updateFinding").mockResolvedValue({ status: "ok", changed: true, finding: {} } as never);
   mount();
-  expect(screen.getByText("Decision history is not published.")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Decision history" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Комментарий пользователя" } });
   fireEvent.change(screen.getByLabelText("Status"), { target: { value: "active" } });
   fireEvent.click(screen.getByRole("button", { name: "Save decision" }));
@@ -93,11 +93,11 @@ it("renders the English pending and denied states", async () => {
   expect(screen.queryByRole("button", { name: "Save decision" })).toBeNull();
 });
 
-it("does not submit a human decision without a reason", () => {
+it("still requires a comment for changes made through the status and assignment form", () => {
   const update = vi.spyOn(api, "updateFinding");
   mount();
   expect((screen.getByLabelText("Comment") as HTMLInputElement).required).toBe(true);
-  fireEvent.change(screen.getByLabelText("Status"), { target: { value: "confirmed" } });
+  fireEvent.change(screen.getByLabelText("Status"), { target: { value: "active" } });
   fireEvent.submit(screen.getByRole("button", { name: "Save decision" }).closest("form")!);
   expect(update).not.toHaveBeenCalled();
 });

@@ -2,12 +2,10 @@
 
 [Русская версия](README.ru.md)
 
-SLI collects and analyses security evidence for investigations: Windows events,
-directory context, remote access and workstation observations. A Python core
-provides ingestion, identities, storage, access control, job execution, reports
-and investigations. Bundled plugins supply collection modules, normalization,
-rules and views for AD/domain controllers, GPO, VPN/remote access (including
-NPS/RADIUS), and workstations.
+SLI collects and analyses Windows security events and Active Directory data.
+The .NET server handles ingestion, access control, reports and alerts. The first
+beta covers Active Directory checks, including Group Policy, and detects attacks
+in domain controller logs.
 
 Windows agents read approved sources and deliver bounded batches over HTTPS.
 The core registers agents, authenticates them with mTLS and assigns modules.
@@ -28,221 +26,95 @@ semantics, entity state, storage lifecycle, AD snapshots and remote access.
   they need no database credentials.
 - **Core and plugins** separate shared mechanisms from source-specific knowledge.
 
-## Quick installation — first beta, Debian 13
+## Installation
 
-Use a clean **Debian 13 amd64** server with sudo, 4 cores, 8 GB RAM, internet,
-a local ext4 or XFS filesystem, a disk of at least 40 GB and **20 GiB free after
-installing the packages**. No separate database partition is required. The server
-name must resolve from your browser and agent; an IP address also works. Allow
-inbound TCP 443 in your firewall. This fresh-install procedure does not adopt
-another PostgreSQL installation. Collection requires one Windows
-10 / Server 2016 or later computer with local administrator access.
+Use clean **Debian 13 amd64** with sudo, network access to Debian repositories,
+4 cores and 8 GB RAM. SLI needs **20 GiB free** on a local ext4 or XFS volume
+after APT installs the packages. Allow inbound HTTPS on port 443 or the port
+printed by the installer.
 
-1. Obtain the **complete Debian 13 amd64 beta kit** from the release provider;
-   obtain or build the .NET agent separately in step 6. Check the supplied
-   checksums through your trusted delivery channel. Extract it and enter the directory containing the `.deb`
-   files: `sli-host`, `sli`, `sli-rollback-hold`, `sli-release-*`, `sli-runtime-*`,
-   `sli-server-dotnet`, and pinned vendor dependencies including PostgreSQL 18.
-   Source code alone is insufficient. A public APT repository and
-   package signing are separate release work; do not add an unverified repository.
-2. Update the distribution package index:
+1. Get `sli-debian-beta-kit.tar.gz` through your beta provider's authenticated
+   delivery channel and unpack it on Debian.
+2. From the directory where you unpacked the archive, run:
 
    ```sh
-   sudo apt update
+   bash sli-debian-beta-kit/install-beta-kit
    ```
 
-3. Install the full kit:
+   The script verifies the kit checksums, installs the packages and runs setup
+   without asking for a server address, port or disk.
+3. Open the printed HTTPS address. For first-time access on Windows, paste the
+   PowerShell line from your trusted server console to add the server's public CA
+   to your Windows account and open the address. Sign in with `admin` / `admin` and
+   set a new password of at least 12 characters.
 
-   ```sh
-   sudo apt install --fix-broken ./*.deb
-   ```
+### Optional setup settings
 
-   APT installs the dependencies and startup guard before the database server.
-   The guard prevents an automatic vendor `main` cluster;
-   package installation stages SLI without starting it, creating an owner or
-   formatting a disk.
-4. Run **`sudo sli-setup`**. Enter the server name/IP and HTTPS port (Enter uses
-   **443**). For automation:
+Pass these flags after `install-beta-kit`, or to `sudo sli-setup` if the
+packages are already staged.
 
-   ```sh
-   sudo sli-setup --non-interactive --server sli.example.org --port 443
-   ```
+- `--server`, `--port`, `--bind` override the address, HTTPS port and listener.
+  Setup uses a resolvable local hostname or a local IP. It prefers HTTPS port 443
+  and selects a free port if 443 is busy. Use a stable DNS name or IP.
+- `--directory /srv/sli-data` picks a dedicated data directory. By default SLI
+  uses `/var/lib/sli-db` if it has room, then looks for the mounted volume with
+  the most free space. `--uuid <UUID>` uses an ext4 volume already mounted at
+  `/srv/sli-db`. Keep the selected volume mounted across reboots.
+- `--backup-root /mnt/backup/sli` selects an existing directory on a separate disk
+  for backups. `--cold-tablespace-root` selects an existing directory on a
+  separate disk for cold PostgreSQL tables.
+- `sudo sli-setup --reset-admin-password` sets the owner's password to `admin`,
+  revokes existing sessions and requires a password change at the next sign-in.
+  The owner's username stays the same.
+- From the server's root terminal, run `sudo sli-setup --owner-recovery <owner-username>`
+  for a locked-out owner. Use `admin` on a fresh installation or the existing
+  username after an upgrade. Enter the single-use code within 10 minutes together
+  with the current password.
 
-   Replace these examples with your name and local IP; IP-only installation needs
-   just `--server <IP>`. Setup creates site.toml, secrets, TLS SANs for the name
-   and IP, the agent CA, services, and `/var/lib/sli-db` bound to `/srv/sli-db`.
+To open the server from another OS, import `/var/lib/sli/tls-ca.crt` from the
+trusted server into the browser's trust store. Compare its SHA-256 DER
+fingerprint with the one printed by setup. To display it again on Debian, run
+`openssl x509 -in /var/lib/sli/tls-ca.crt -noout -fingerprint -sha256`. Repeating
+`sudo sli-setup` preserves saved settings and keys. Inspect installation
+diagnostics with `sudo journalctl -t sli-setup`.
 
-   The database needs at least 20 GiB free. If `/var/lib/sli-db` is too small,
-   setup reports the available space and lists candidate volumes. Use `lsblk -f`
-   to identify an existing dedicated ext4 filesystem, mount it at `/srv/sli-db`,
-   and add that mount to `/etc/fstab` so it survives reboot. Then run
-   `sudo sli-setup --uuid <UUID>` with its filesystem UUID and any other setup
-   flags. For an empty directory on an already mounted ext4 or XFS filesystem,
-   use `sudo sli-setup --directory /mnt/sli-data` if that is the mount's directory.
-   Setup does not format or relocate existing data.
+The default listener covers IPv4 and, when available, IPv6. Health checks use
+loopback with matching TLS certificate names. Use `--bind 192.0.2.10` to restrict
+the listener to one local address, or `--bind 127.0.0.1` behind a local reverse
+proxy with explicitly configured trusted proxies.
 
-   New setups listen on all IPv4 addresses (`0.0.0.0`), and IPv6 (`::`) when
-   dual stack is available. DHCP changes do not pin the listener to an old IP.
-   Health probes use loopback, with loopback SANs in the TLS certificate.
-   Use `--bind 192.0.2.10` to restrict HTTPS to one address, or
-   `--bind 127.0.0.1` behind a local reverse proxy; configure trusted proxies
-   explicitly. Authentication and HTTPS requirements still apply.
-   Use a static IP or stable DNS name for browsers and agents. Setup issues the
-   certificate for the name/IP supplied at installation and the IPs resolved then.
-   After an IP change, update DNS and retain the same DNS URL (with wildcard bind).
-   **`sudo sli-setup --server <new-IP>` does not reissue certificates:** saved
-   server name, bind and port changes fail with `native_setup_configuration_conflict`.
-   IP-only installations must retain/restore their original static IP; changing
-   the address/certificate of an installed server has no automated beta path.
-   Existing installations retain their saved bind;
-   do not change only `site.toml` or delete certificates/installation receipts.
-5. Copy the **public** CA `/var/lib/sli/tls-ca.crt` to your computer through a
-   trusted channel, compare the printed SHA-256 DER fingerprint and import it
-   into your OS/browser's trusted root store. To print that fingerprint again on Debian:
+Use a stable DNS name or static IP. Setup includes the supplied name or IP and
+the applicable resolved addresses in the certificate. After a DHCP address
+change, update DNS and keep the same DNS URL with wildcard binding. Saved
+server names, binds and ports are retained on retries. Changes fail with
+`native_setup_configuration_conflict`. Keep the original static IP for an
+IP-only installation.
 
-   ```sh
-   openssl x509 -in /var/lib/sli/tls-ca.crt -outform DER | sha256sum
-   ```
+If no eligible data directory has 20 GiB free, use `lsblk -f` to inspect the
+volumes. Mount a dedicated volume persistently before rerunning setup with the
+storage options above. Setup preserves existing filesystems and data.
 
-   Open the printed SLI address, sign in with `admin` / `admin`, and set a new
-   password of at least 12 characters. Running `sudo sli-setup --reset-admin-password`
-   restores the password `admin`, revokes the owner's sessions and requires a
-   password change at the next sign-in. The owner's username stays the same.
+### Windows agent
 
-   If password guessing locks the activated owner out, run this in the server's
-   root terminal:
-
-   ```sh
-   sudo sli-setup --owner-recovery <owner-username>
-   ```
-
-   Use `admin` on a fresh installation and the existing owner's username on an
-   upgraded installation. Enter the displayed single-use code together with the owner's existing
-   password in the login form. It expires after 10 minutes; issuing another
-   invalidates the previous code. This does not reset the password or clear
-   the regular login lockout. Only an active platform owner can recover.
-6. Use the **.NET agent**, service `SLIAgentNet`. The manual
-   [agent-msi workflow](.github/workflows/agent-msi.yml) builds the ready unsigned
-   MSI. Download `sli-agent-dotnet-msi-<full-commit>` from a successful run's
-   **Artifacts** (retained for 14 days), or obtain the same kit from the beta provider.
-   It contains `SliAgent.msi`, `SliAgent-publish-win-x64.zip` and `SHA256SUMS`.
-   Verify both files against the trusted checksums; unpack the portable ZIP as
-   `publish`, with `SliAgent.exe` directly inside. No public release download is configured.
-   To build the matching kit yourself on Windows, use PowerShell 7,
-   .NET SDK **10.0.113**, MSVC Build Tools **14.44.35207** and Windows SDK
-   **10.0.26100.0** installed at the defaults in
-   [Build-RegistrationCA.ps1](agent-dotnet/tools/Build-RegistrationCA.ps1).
-   From the repository root (restore requires access to the package sources):
-
-   ```powershell
-   .\agent-dotnet\tools\Build-Msi.ps1
-   .\agent-dotnet\tools\Test-MsiTables.ps1 -Msi .\artifacts\agent-dotnet\SliAgent.msi -PublishDirectory .\artifacts\agent-dotnet\publish
-   Get-FileHash .\artifacts\agent-dotnet\SliAgent.msi -Algorithm SHA256
-   ```
-
-   The MSI is self-contained win-x64; the target needs no installed .NET runtime.
-   It is unsigned; verify its SHA256 through the trusted delivery channel.
-   On the **one target Windows computer**, use elevated PowerShell, with transcripts off:
-
-   ```powershell
-   $ErrorActionPreference = 'Stop'
-   New-Item -ItemType Directory -Force C:\SLI-Bootstrap | Out-Null
-   icacls.exe C:\SLI-Bootstrap /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
-   if ($LASTEXITCODE -ne 0) { throw 'Cannot protect bootstrap directory' }
-   ```
-
-   Copy `SliAgent.msi`, the complete `publish` directory and the server's
-   **public** `tls-ca.crt` into `C:\SLI-Bootstrap` through a trusted channel.
-   Verify the copied CA against the setup fingerprint, then prepare the identity
-   **on this target**, before installation:
-
-   ```powershell
-   $ca = [Security.Cryptography.X509Certificates.X509Certificate2]::new('C:\SLI-Bootstrap\tls-ca.crt')
-   $sha = [Security.Cryptography.SHA256]::Create()
-   ([BitConverter]::ToString($sha.ComputeHash($ca.RawData))).Replace('-', '').ToLowerInvariant()
-   $sha.Dispose()
-   $ca.Dispose()
-   & C:\SLI-Bootstrap\publish\SliAgent.exe prepare
-   ```
-
-   Compare the printed CA hash with the SHA256 (DER) from step 5; stop on mismatch.
-   `prepare` prints public `host_id` (UUID) and `key_fingerprint`; it keeps the key
-   in `%ProgramData%\SLI\AgentNet\state`, shared with the future service. Do not
-   run it on the build computer or copy a private identity between computers.
-   As `platform-owner`, open **Agents → Manual registration for support → New agent enrollment**,
-   enter those two public values and click **Create enrollment token** (default
-   TTL 900 seconds). Leave the optional replacement name empty for this new agent.
-   On the target, paste the token into the hidden prompt below within its TTL:
-
-   ```powershell
-   $token = Read-Host 'Enrollment token' -AsSecureString
-   try {
-       [IO.File]::WriteAllText('C:\SLI-Bootstrap\enrollment.token',
-           [Net.NetworkCredential]::new('', $token).Password, [Text.Encoding]::ASCII)
-   } finally { $token.Dispose(); Remove-Variable token }
-   $msi = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-       '/i', 'C:\SLI-Bootstrap\SliAgent.msi', '/qn', '/norestart',
-       'SERVER_URL=https://sli.example.test',
-       'CA_FILE=C:\SLI-Bootstrap\tls-ca.crt',
-       'TOKEN_FILE=C:\SLI-Bootstrap\enrollment.token'
-   )
-   if ($msi.ExitCode -notin 0, 3010) { throw "MSI exit code: $($msi.ExitCode)" }
-   Get-Service SLIAgentNet
-   ```
-
-   Replace `SERVER_URL` with the HTTPS origin from setup (no `/app` or API path).
-   MSI starts the service; it enrolls automatically and deletes the token file
-   after saving its identity. Subsequent check-ins and delivery use mTLS.
-   Supported connection properties are `SERVER_URL`, `TOKEN_FILE` or `ENROLL_TOKEN`,
-   `CA_FILE` or `CA_FINGERPRINT` (the CA SHA256 DER, 64 hex), and optional
-   `INSTANCE_NAME` (`[a-z0-9][a-z0-9_-]{0,47}`, must match the token).
-   Omit `INSTANCE_NAME` for this single manual enrollment. `ENROLL_TOKEN` is
-   supported but exposes the token to process-command-line recording; use the
-   protected `TOKEN_FILE`. Keep `CA_FILE` in place: it remains the service's trust
-   source. The program installs to `%ProgramFiles%\SLI\AgentNet`.
-7. In **Agents**, find this host's row and a fresh **Last seen** time (heartbeat).
-   In **Actions**, assign **Workstations** (`sli.workstations`) for a workstation,
-   choose the required event categories and resume collection if paused. For a DC,
-   use `sli.windows.ad-dc` and its permitted channels. Wait for matching desired
-   and applied policy revisions and acknowledged active collection in the row.
-   Ensure Windows auditing is enabled and the service can read the source;
-   generate an authorized test logon event. Open **Event journal** for that interval
-   and check your host's event. Heartbeat confirms connectivity; the received event
-   confirms collection. If missing, inspect channel/delivery diagnostics in the row
-   and Windows **Application** log, source `SLIAgentNet` (safe diagnostic codes).
-
-8. To upgrade, run the higher-version MSI from elevated PowerShell:
-
-   ```powershell
-   msiexec.exe /i "C:\SLI-Bootstrap\update\SliAgent.msi" /qn /norestart
-   ```
-
-   Major upgrades keep the registration, certificate, pending packets and cursors.
-   Do not supply another enrollment token. Downgrades are rejected.
-
-   To uninstall, use **Installed apps → SLI Agent .NET**, or elevated PowerShell
-   with the original matching MSI:
-
-   ```powershell
-   $remove = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-       '/x', 'C:\SLI-Bootstrap\SliAgent.msi', '/qn', '/norestart'
-   )
-   if ($remove.ExitCode -notin 0, 3010) { throw "MSI exit code: $($remove.ExitCode)" }
-   ```
-
-   MSI stops and removes `SLIAgentNet`; connection settings and the local identity
-   remain for reinstallation. Exit code 3010 requires a reboot.
-
-Operators and mTLS agents share HTTPS port **443**, so agents need no additional
-open port. Include a custom port in the MSI URL when applicable. Check
-`sudo systemctl status sli.target sli-health.service`, reboot, then verify login
-again. Setup errors explain the next action; diagnostic codes go to
-`sudo journalctl -t sli-setup`. Use `systemctl --failed` to inspect failed units.
+After signing in, open these paths on your installed SLI server's HTTPS address
+to download the bundled MSI, portable ZIP and their checksums.
+`/app/installers/SliAgent.msi`, `/app/installers/SliAgent-publish-win-x64.zip`
+and `/app/installers/SHA256SUMS`.
+See [agent enrollment](docs/agent-enrollment.md) for registration and CA pinning.
 
 ### Native backups
 
 Check the scheduled daily backup with `sudo systemctl list-timers sli-backup.timer`.
-To create a recovery set now, run `sudo sli-native-backup capture`.
+`sudo sli-backup` creates a backup now and prints its directory.
+`sudo sli-restore <backup-directory>` restores data and settings on a server with the matching Debian kit installed.
+`sudo sli-rollback [previous-kit-directory]` restores the previous version using the backup taken automatically before the update.
+
+Keep the backup directory accessible to root only. On a new server, install the same
+Debian kit version and keep the original connection address (DNS name or IP) so agents
+reconnect with their existing certificates. If you saved AD credentials, provision
+their original protected key on the new server. Rollback uses the official `.deb` kit
+in the specified protected directory or the same version from APT. Both commands save
+the current data under `/var/backups/sli/native/before-restore` before replacing it.
 The result is `/var/backups/sli/native/last-result.json`; when an external backup
 volume is configured, SLI mounts it under `/var/backups/sli`.
 `backup_created` confirms capture and integrity checks; it does not mean that a full
@@ -274,22 +146,15 @@ Correct storage/identity/configuration conflicts; restore a missing complete
 secret bundle from trusted recovery. Never rename registry/journal files or run
 fresh bootstrap to bypass refusal. An unfinished transaction requires the
 coordinator's `sudo sli-native-upgrade resume-package <target-version>`;
-after rollback, follow its explicit package reconciliation procedure. A committed
-transaction must never be rolled back to its old checkpoint. Use a full VM
-snapshot for disposable rehearsal recovery.
+after automatic recovery from an APT failure, follow its package reconciliation procedure.
+Use `sudo sli-rollback` after a successful update.
 
 In `site.toml`, optional `operation_stall_minutes = 15` (integer 1–180) controls no-progress waits; migrations default to 30 minutes when omitted. Size/history estimate duration; work continues while confirmed progress arrives.
 
-Select another dedicated directory before initial setup with
-`--directory /srv/sli-data`. An optional separate ext4 filesystem, already mounted
-at `/srv/sli-db` with a persistent fstab entry, uses `--uuid <UUID>`; setup never
-partitions or formats disks. An existing trusted directory on another backup
-disk can be selected with `--backup-root /mnt/backup/sli`. Otherwise directory
-mode keeps local copies under `/var/backups/sli/native`: these **do not protect
-against disk failure**. Restore verification requires a separate volume; creating
-a copy never implies a verified restore. Move the generated agent root-key
-directory `/var/lib/sli-ca-offline` to protected offline storage; distribute only
-public CA certificates to agents.
+Directory mode keeps local copies under `/var/backups/sli/native` when an external
+backup disk is absent. Restore verification requires a separate volume. Move
+`/var/lib/sli-ca-offline` to protected offline storage and distribute only public
+CA certificates to agents.
 
 **Uninstall:** `sudo apt remove sli` stops applications, timers and databases.
 Data, `/etc/sli`, secrets and recovery packages survive removal and purge;

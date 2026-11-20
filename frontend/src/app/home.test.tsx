@@ -1,21 +1,22 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { api, ApiResponseError, type HomeDecisionSummary } from "../api/client";
+import { api, ApiResponseError, type HomeDecisionSummary, type V4Access } from "../api/client";
 import { counted, localeRuntime, setLocale, t } from "../i18n";
 import { homeAssignee, homeDay, homeObjects, homeOccurrences, homeParams, homeTime } from "./home-view";
 
 let accessStatus = "получены";
+let access: V4Access | undefined;
 vi.mock("./App", () => ({
   useTimeZone: () => ({ timeZone: "UTC" }),
-  useEffectiveAccess: () => undefined,
+  useEffectiveAccess: () => access,
   useAccessStatus: () => accessStatus,
 }));
 import { HomeComposition, HomePage } from "./home";
 
 beforeEach(() => {
-  accessStatus = "получены"; window.history.replaceState({}, "", "/app");
+  accessStatus = "получены"; access = undefined; window.history.replaceState({}, "", "/app");
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale("ru");
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -35,6 +36,31 @@ function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return { client, ...render(<QueryClientProvider client={client}><HomePage/></QueryClientProvider>) };
 }
+
+it("offers setup when the server has no agents and removes the actions when an agent appears", async () => {
+  access = { platform_owner: true, capabilities: [] } as unknown as V4Access;
+  const inventory = vi.spyOn(api, "agents").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "homeDecisions").mockResolvedValue({ ...summary(), state: "partial", groups: [], total: null });
+  const { client, container } = show();
+
+  expect((await screen.findByRole("link", { name: "Добавить агента" })).getAttribute("href")).toBe("/app/agents?register=1");
+  expect(screen.getByRole("link", { name: "Подключить оповещения" }).getAttribute("href")).toBe("/app/notifications?tab=channels");
+  expect(container.querySelector("p, table")).toBeNull();
+
+  inventory.mockResolvedValue({ items: [{ id: "00000000-0000-4000-8000-000000000001" }] } as Awaited<ReturnType<typeof api.agents>>);
+  await client.invalidateQueries({ queryKey: ["admin-agents"] });
+  await waitFor(() => expect(screen.queryByRole("link", { name: "Добавить агента" })).toBeNull());
+  expect(screen.queryByRole("link", { name: "Подключить оповещения" })).toBeNull();
+});
+
+it("keeps the queue when agent inventory is unavailable", async () => {
+  access = { platform_owner: true, capabilities: [] } as unknown as V4Access;
+  vi.spyOn(api, "agents").mockRejectedValue(new ApiResponseError(503, "unavailable"));
+  vi.spyOn(api, "homeDecisions").mockResolvedValue(summary());
+  show();
+  expect(await screen.findByRole("table")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Добавить агента" })).toBeNull();
+});
 
 it("renders one grouped queue with counts, domain objects and a scoped group link", () => {
   const { container } = compose();

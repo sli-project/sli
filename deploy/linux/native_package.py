@@ -156,11 +156,13 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         write(host, "usr/sbin/sli-setup", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_setup.py \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-cold-tables", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_host.py cold-tables \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-backup", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch \"$@\"\n", 0o755)
+        write(host, "usr/sbin/sli-backup", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup capture \"$@\"\n", 0o755)
+        write(host, "usr/sbin/sli-restore", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup restore \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-upgrade", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py launch \"$@\"\n", 0o755)
+        write(host, "usr/sbin/sli-rollback", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-upgrade rollback latest \"$@\"\n", 0o755)
         write(host, "DEBIAN/prerm", retain_recovery_prerm(), 0o755)
         payload = staging / ("sli-release-" + release)
-        control(payload, payload.name, version,
-                f"sli-runtime-{runtime} (= {runtime_version}), sli-server-dotnet (= {version})",
+        control(payload, payload.name, version, f"sli-runtime-{runtime} (= {runtime_version})",
                 "SLI immutable application release")
         shutil.copytree(source, payload / "opt/sli/releases" / release)
         write(payload, f"opt/sli/releases/{release}/native-runtime.json",
@@ -171,7 +173,7 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             path.chmod(0o755 if path.is_dir() or path.stat().st_mode & 0o111 else 0o644)
         hold = staging / "sli-rollback-hold"
         dependencies = [f"sli-host (= {version})", f"{payload.name} (= {version})",
-                        f"sli-runtime-{runtime} (= {runtime_version})"]
+                        f"sli-runtime-{runtime} (= {runtime_version})", f"sli-server-dotnet (= {version})"]
         if previous:
             # The retained immutable release pins its own exact runtime. Its ID
             # need not equal that runtime's ID (compatible releases may share it).

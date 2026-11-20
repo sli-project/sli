@@ -142,8 +142,9 @@ public partial class OperationsFiles
     {
         string fallback = Setting("SLI_DEPLOYMENT_MODE") == "native" ? "/var/lib/sli/backup-status/summary.json" : "/run/sli-backup-status/summary.json";
         var data = ReadJson(Setting("SLI_BACKUP_SUMMARY_PATH", fallback), 4096);
-        var result = new JsonObject { ["last_backup_at_utc"] = null, ["last_verified_at_utc"] = null, ["capacity_days"] = null };
+        var result = new JsonObject { ["last_backup_at_utc"] = null, ["last_verified_at_utc"] = null, ["capacity_days"] = null, ["same_disk_as_postgres"] = null };
         foreach (string key in new[] { "last_backup_at_utc", "last_verified_at_utc" }) if (Time(data?[key]) is {} time) result[key] = Stamp(time);
+        if (result["last_backup_at_utc"] is not null && data?["same_disk_as_postgres"] is JsonValue disk && disk.TryGetValue<bool>(out bool sameDisk)) result["same_disk_as_postgres"] = sameDisk;
         if (Time(data?["observed_at_utc"]) is {} observed && (now - observed).TotalSeconds <= 172800 && data?["capacity_days"] is JsonValue v && v.TryGetValue<long>(out long days) && days >= 0) result["capacity_days"] = days;
         return result;
     }

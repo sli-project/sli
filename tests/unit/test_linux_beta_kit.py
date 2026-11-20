@@ -3,10 +3,46 @@ import json
 import os
 import shutil
 import subprocess
+import tarfile
 
 import pytest
 
 from deploy.linux import build_beta_kit as kit, native_plugins
+
+
+@pytest.mark.parametrize('tampered', [False, True])
+def test_copy_agent_checks_packaged_bytes(tmp_path, tampered):
+    source = tmp_path / 'agent'
+    source.mkdir()
+    payloads = {'SliAgent.msi': b'synthetic MSI', 'SliAgent-publish-win-x64.zip': b'synthetic ZIP'}
+    for name, body in payloads.items():
+        (source / name).write_bytes(body)
+    sums = ''.join(f'{hashlib.sha256(body).hexdigest()}  {name}\n' for name, body in payloads.items())
+    (source / 'SHA256SUMS').write_text(sums, encoding='utf-8-sig')
+    destination = tmp_path / 'installers'
+    if tampered:
+        (source / 'SliAgent.msi').write_bytes(b'changed MSI')
+        with pytest.raises(ValueError, match='Agent SHA-256 verification failed'):
+            kit.include_agent(source, destination)
+    else:
+        kit.include_agent(source, destination)
+        assert {path.name: path.read_bytes() for path in destination.iterdir()} == {
+            **payloads, 'SHA256SUMS': sums.encode('ascii'),
+        }
+
+
+def test_archive_contains_the_installer_and_verified_kit_bytes(tmp_path):
+    files = {'install-beta-kit': b'synthetic script', 'sli-fixture.deb': b'synthetic package',
+             'manifest.json': b'{}', 'SHA256SUMS': b'synthetic checksums'}
+    for name, body in files.items():
+        (tmp_path / name).write_bytes(body)
+
+    kit.archive_kit(tmp_path)
+
+    with tarfile.open(tmp_path / 'sli-debian-beta-kit.tar.gz') as archive:
+        assert {member.name: archive.extractfile(member).read() for member in archive} == {
+            'sli-debian-beta-kit/' + name: body for name, body in files.items()
+        }
 
 
 def test_copies_only_pinned_debs_and_leaves_cache_intact(tmp_path):
@@ -124,7 +160,7 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     assert result.stdout.strip() == 'beta kit smoke'
 
 @pytest.mark.skipif(os.name != 'posix' or not shutil.which('bash'), reason='Linux shell tools required')
-@pytest.mark.parametrize('scenario', ['valid', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
+@pytest.mark.parametrize('scenario', ['valid', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
 def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     source = kit.ROOT / 'deploy/linux/install-beta-kit'
     assert source.is_file(), 'The Debian beta kit needs a standalone install helper'
@@ -151,16 +187,22 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     bin_dir.mkdir()
     apt_calls = tmp_path / 'apt-calls'
     sudo = bin_dir / 'sudo'
-    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n', encoding='utf-8')
+    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n'
+                    'if [[ $SCENARIO == apt_failure && $* == *"apt-get install"* ]]; then exit 1; fi\n',
+                    encoding='utf-8')
     sudo.chmod(0o755)
-    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls),
+    env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls), SCENARIO=scenario,
                TMPDIR=str(tmp_path))
-    run = subprocess.run(['bash', script], cwd=extracted, env=env, capture_output=True, text=True)
+    run = subprocess.run(['bash', script, '--port', '9443'], cwd=extracted, env=env, capture_output=True, text=True)
     if scenario == 'valid':
         assert run.returncode == 0, run.stderr
         assert apt_calls.read_text(encoding='utf-8').splitlines() == [
-            'apt-get update', f'apt-get install --fix-broken ./{deb.name}',
+            'apt-get update', f'DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove --fix-broken ./{deb.name}',
+            '/usr/sbin/sli-setup --port 9443',
         ]
+    elif scenario == 'apt_failure':
+        assert run.returncode != 0
+        assert '/usr/sbin/sli-setup' not in apt_calls.read_text(encoding='utf-8')
     else:
         assert run.returncode != 0
         assert not apt_calls.exists()

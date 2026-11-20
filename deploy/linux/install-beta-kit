@@ -45,4 +45,5 @@ printf '%s\n' "${checksums[@]}" | sha256sum --check --strict --status - || fail 
 chmod 0755 -- "$staging"
 
 sudo apt-get update
-sudo apt-get install --fix-broken "${packages[@]}"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-remove --fix-broken "${packages[@]}"
+sudo /usr/sbin/sli-setup "$@"
