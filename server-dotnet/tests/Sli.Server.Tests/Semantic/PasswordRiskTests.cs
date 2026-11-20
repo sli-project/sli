@@ -32,7 +32,7 @@ public class PasswordRiskTests
         Assert.Equal("599faee63dc0a0275618d39a468e075ff42f7d5cbe69354aea18d3187cb666bc",proposal.ContributionKey);
         Assert.Equal(65,proposal.Assessment.Score);Assert.Equal("medium",proposal.Assessment.Confidence);
         var snapshot=PasswordRiskCompleteness.Capture(Start.AddSeconds(130),proposal.At);
-        Assert.Equal(105,snapshot["catalog_completeness"]!["entry_count"]!.GetValue<int>());
+        Assert.Equal(Sli.Server.Storage.EventReports.EventCatalogQuality.ShippedCatalog()["entries"]!.AsArray().Count,snapshot["catalog_completeness"]!["entry_count"]!.GetValue<int>());
         Assert.False(snapshot["supports_negative_conclusion"]!.GetValue<bool>());
         Assert.Null(snapshot["collection_freshness"]!["max_age_seconds"]);
     }
