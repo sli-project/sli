@@ -1474,6 +1474,8 @@
   "events.semantic.Microsoft-Windows-PowerShell/Operational:Microsoft-Windows-PowerShell:4104.summary": "The source records a PowerShell ScriptBlock on a domain controller; content requires a separate sensitive capability.",
   "events.semantic.Security:Microsoft-Windows-Eventlog:1102.title": "Security log cleared",
   "events.semantic.Security:Microsoft-Windows-Eventlog:1102.summary": "Clearing the security log may hide traces of activity and reduces confidence in audit completeness.",
+  "events.semantic.Security:Microsoft-Windows-Eventlog:1104.title": "Security log full",
+  "events.semantic.Security:Microsoft-Windows-Eventlog:1104.summary": "The security log reached its size limit; new security events may not be recorded.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4624.title": "Successful logon",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4624.summary": "The event records an independent source-native observation of a successful logon.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4625.title": "Failed logon",
