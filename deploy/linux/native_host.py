@@ -742,34 +742,46 @@ class Host:
             self.validate_database_directory(match[1])
             return match[1]
 
-        best = None
-        free = 0
         backup = self.path(backup_root) if backup_root else None
         backup_device = self.backup_device(backup) if backup is not None and backup.is_dir() else None
-        targets = [DIRECTORY]
-        for directory in targets:
+        mounted = json.loads(run(['findmnt', '--json', '--list', '--real',
+                                  '--output', 'TARGET,FSTYPE,OPTIONS']))['filesystems']
+        mounts = sorted({row['target'] for row in mounted
+                         if row['fstype'] in {'ext4', 'xfs'} and 'rw' in row['options'].split(',')
+                         and re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]*', row['target'])})
+        candidates = [(DIRECTORY, None)]
+        # /srv/sli-db is the bind target for the database services.
+        candidates.extend(('/srv/sli-data' if target == '/srv' else target.rstrip('/') + '/sli-db', target)
+                          for target in mounts if target != MOUNT)
+
+        best = None
+        best_free = MIN_DATABASE_FREE - 1
+        checked = {}
+        for directory, mountpoint in candidates:
             try:
-                source = self.validate_database_directory(directory, fresh=False, mounted=directory != DIRECTORY)
-                if source.exists() and any(source.iterdir()):
-                    raise HostError('native_existing_database')
+                source = self.validate_database_directory(directory, fresh=False, mounted=mountpoint is not None)
                 parent = source if source.exists() else source.parent
-                if self.backup_device(parent) != backup_device:
-                    available = self.backup_free(parent)
-                    if directory == DIRECTORY and available >= MIN_DATABASE_FREE:
-                        return directory
-                    if available > free:
-                        best, free = directory, available
-            except (HostError, OSError) as error:
-                if directory == DIRECTORY and str(error) == 'native_existing_database':
-                    raise
-            if directory == DIRECTORY:
-                mounted = json.loads(run(['findmnt', '--json', '--list', '--real',
-                                          '--output', 'TARGET,FSTYPE']))['filesystems']
-                targets.extend(sorted({row['target'] + '/sli-db' for row in mounted
-                                       if row['target'] != '/' and row['fstype'] in {'ext4', 'xfs'}}
-                                      - {DIRECTORY}))
-        if free < MIN_DATABASE_FREE:
-            raise HostError(f'native_database_space_insufficient:{free}')
+                target = mountpoint or self.database_filesystem(parent)['target']
+                available = self.backup_free(parent)
+                if re.fullmatch(r'/[A-Za-z0-9_./-]{0,160}', target):
+                    checked[target] = available
+                device = self.backup_device(parent)
+                if available <= best_free or device == backup_device:
+                    continue
+                if source.exists() and any(source.iterdir()):
+                    # Keep an occupied data directory intact and try a dedicated sibling.
+                    directory += '-2'
+                    source = self.validate_database_directory(directory, fresh=False, mounted=mountpoint is not None)
+                    if source.exists() and (self.backup_device(source) != device or any(source.iterdir())):
+                        continue
+                best, best_free = directory, available
+            except (HostError, OSError):
+                continue
+        if best is None:
+            volumes = '; '.join(f'{target} ({free / 1024**3:.1f} GiB free)' for target, free in checked.items())
+            raise GuardError('native_database_space_insufficient', 'Database storage',
+                             'no suitable directory with 20 GiB free',
+                             f'Checked volumes: {volumes or "none"}. Free space or mount another disk')
         return best
 
     def validate_receipt_file(self, path):

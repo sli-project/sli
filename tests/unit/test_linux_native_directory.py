@@ -41,45 +41,80 @@ def test_directory_refuses_low_space_before_creating_data(directory, monkeypatch
     assert not list(source.iterdir())
 
 
-@pytest.mark.parametrize('default_gib,expected', [(25, '/var/lib/sli-db'), (12, '/mnt/large/sli-db')])
-def test_selects_default_then_largest_suitable_volume(directory, monkeypatch, default_gib, expected):
+def mounted_volumes(directory, monkeypatch, default_gib, mounted):
     machine, source = directory
-    mounted = [('/mnt/small', 30, 'rw'), ('/mnt/large', 50, 'rw'),
-               ('/mnt/readonly', 90, 'ro'), ('/mnt/occupied', 100, 'rw')]
     space = {source: default_gib * 1024**3}
-    filesystems = {source: {'target': '/', 'fstype': 'ext4', 'options': 'rw'}}
-    for name, gib, options in mounted:
+    filesystems = {source: {'target': '/var', 'fstype': 'ext4', 'options': 'rw', 'uuid': 'fixture'}}
+    for name, gib, filesystem, options in mounted:
         path = machine.path(name)
-        path.mkdir(parents=True)
+        path.mkdir(parents=True, exist_ok=True)
         space[path] = gib * 1024**3
-        filesystems[path] = {'target': str(path), 'fstype': 'xfs', 'options': options, 'uuid': 'fixture'}
-    occupied = machine.path('/mnt/occupied/sli-db')
-    occupied.mkdir()
-    (occupied / 'keep').touch()
-    filesystems[occupied] = filesystems[occupied.parent]
+        filesystems[path] = {'target': str(path), 'fstype': filesystem, 'options': options, 'uuid': 'fixture'}
+
+    def containing(path):
+        return next(parent for parent in (path, *path.parents) if parent in filesystems)
 
     def findmnt(argv):
-        rows = ([filesystems[Path(argv[argv.index('--target') + 1])]] if '--target' in argv
-                else [{'target': name, 'fstype': 'xfs'} for name, _, _ in mounted])
+        rows = ([filesystems[containing(Path(argv[argv.index('--target') + 1]))]] if '--target' in argv
+                else [{'target': name, 'fstype': filesystem, 'options': options}
+                      for name, _, filesystem, options in mounted])
         return json.dumps({'filesystems': rows})
     monkeypatch.setattr(host, 'run', findmnt)
-    monkeypatch.setattr(machine, 'backup_free', lambda path: space[path])
+    monkeypatch.setattr(machine, 'backup_free', lambda path: space[containing(path)])
+    return machine
 
+
+@pytest.mark.parametrize('default_gib,expected', [(9.1, '/srv/sli-data'), (25, '/srv/sli-data'),
+                                                (300, '/var/lib/sli-db')])
+def test_selects_largest_writable_local_volume(directory, monkeypatch, default_gib, expected):
+    machine = mounted_volumes(directory, monkeypatch, default_gib, [
+        ('/mnt/small', 57, 'ext4', 'rw'), ('/srv', 278, 'xfs', 'rw,nosuid'),
+        ('/mnt/readonly', 500, 'ext4', 'ro'), ('/mnt/network', 500, 'nfs', 'rw'),
+        ('/mnt/temporary', 500, 'tmpfs', 'rw'), ('/mnt/overlay', 500, 'overlay', 'rw'),
+    ])
+    unrelated = machine.path('/srv/keep')
+    unrelated.touch()
     assert machine.select_database_directory() == expected
-    assert not machine.path('/mnt/large/sli-db').exists()
+    assert not machine.path('/srv/sli-data').exists()
+    assert unrelated.exists()
+
+
+def test_selects_dedicated_sibling_when_database_directory_is_occupied(directory, monkeypatch):
+    machine = mounted_volumes(directory, monkeypatch, 25, [('/mnt/large', 50, 'xfs', 'rw')])
+    occupied = machine.path('/mnt/large/sli-db')
+    occupied.mkdir()
+    (occupied / 'keep').touch()
+    assert machine.select_database_directory() == '/mnt/large/sli-db-2'
+    assert not machine.path('/mnt/large/sli-db-2').exists()
     assert (occupied / 'keep').exists()
+
+
+def test_selects_larger_root_volume_when_var_is_separate(directory, monkeypatch):
+    machine = mounted_volumes(directory, monkeypatch, 25, [('/', 50, 'ext4', 'rw')])
+    assert machine.select_database_directory() == '/sli-db'
 
 
 def test_setup_reports_available_space_before_creating_data(directory, monkeypatch, capsys):
     from deploy.linux import native_diagnostics as diagnostics
 
-    machine, source = directory
-    monkeypatch.setattr(machine, 'backup_free', lambda path: 12 * 1024**3)
-    with pytest.raises(host.HostError, match='native_database_space_insufficient') as caught:
+    _, source = directory
+    machine = mounted_volumes(directory, monkeypatch, 12, [
+        ('/mnt/other', 19, 'xfs', 'rw'), ('/mnt/full', 0, 'ext4', 'rw'),
+        ('/mnt/readonly', 100, 'ext4', 'ro'),
+    ])
+    logged = []
+    monkeypatch.setattr(diagnostics, 'log_code', logged.append)
+    with pytest.raises(host.GuardError, match='native_database_space_insufficient') as caught:
         machine.select_database_directory()
     diagnostics.failure(caught.value)
     output = capsys.readouterr().err
-    assert '20 GiB' in output and '12.0 GiB' in output and not list(source.iterdir())
+    assert '20 GiB' in output and 'Checked volumes:' in output
+    assert '/var (12.0 GiB free)' in output
+    assert '/mnt/other (19.0 GiB free)' in output
+    assert '/mnt/full (0.0 GiB free)' in output
+    assert '/mnt/readonly' not in output
+    assert logged == ['native_database_space_insufficient']
+    assert not list(source.iterdir())
 
 
 @pytest.mark.parametrize('operation', ['validate_database_directory', 'prepare'])
