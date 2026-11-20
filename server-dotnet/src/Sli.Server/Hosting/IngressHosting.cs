@@ -18,6 +18,7 @@ public static class IngressHosting
 
     public static IServiceCollection AddSliIngress(this IServiceCollection services, IConfiguration configuration, AgentTlsTrust? clientTrust = null)
     {
+        services.AddSingleton<AgentCertificateRejections>();
         if (clientTrust is not null)
         {
             services.AddSingleton(_ => clientTrust);
@@ -36,10 +37,10 @@ public static class IngressHosting
         if (clientTrust is not null)
         {
             services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
-                .Configure<AgentTlsTrust>((options, trust) => options.ConfigureHttpsDefaults(https =>
+                .Configure<AgentTlsTrust, AgentCertificateRejections>((options, trust, rejections) => options.ConfigureHttpsDefaults(https =>
                 {
                     https.HandshakeTimeout = TimeSpan.FromSeconds(30);
-                    trust.Configure(https);
+                    trust.Configure(https, rejections);
                 }));
         }
         services.AddRateLimiter(options =>

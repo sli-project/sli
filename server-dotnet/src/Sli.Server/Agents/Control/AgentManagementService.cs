@@ -3,10 +3,11 @@ using System.Text;
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
+using Sli.Server.Hosting;
 
 namespace Sli.Server.Agents.Control;
 
-public sealed partial class AgentManagementService(IAgentControlAudit audit)
+public sealed partial class AgentManagementService(IAgentControlAudit audit, AgentCertificateRejections? rejections = null)
 {
     public async Task<JsonElement> CreateTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, JsonElement payload, string actor, CancellationToken ct)
     {

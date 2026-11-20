@@ -1,3 +1,4 @@
+using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
@@ -25,8 +26,10 @@ public sealed class AgentTlsTrust : IDisposable
                 foreach (var issuer in issuers)
                 {
                     if (issuer.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault()?.CertificateAuthority != true
-                        || !chain.Build(issuer) || chain.ChainElements.Count != 2)
+                        || !chain.Build(issuer))
                         throw new CryptographicException("Agent listener issuer is not issued by a trusted root");
+                    if (chain.ChainElements.Count != 2)
+                        throw new CryptographicException("Agent listener issuer chain has an unexpected length");
                 }
             }
         }
@@ -50,17 +53,42 @@ public sealed class AgentTlsTrust : IDisposable
         { return false; }
     }
 
-    public void Configure(HttpsConnectionAdapterOptions https)
+    public void Configure(HttpsConnectionAdapterOptions https, AgentCertificateRejections rejections)
     {
         https.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
         https.CheckCertificateRevocation = false;
-        https.ClientCertificateValidation = null;
+        https.ClientCertificateValidation = (certificate, chain, errors) =>
+        {
+            if (errors == SslPolicyErrors.None) return true;
+            rejections.Record(certificate, RejectionReason(certificate, chain, issuers.Count == 0 ? 2 : 3));
+            return false;
+        };
         https.OnAuthenticate = (_, ssl) =>
         {
             var policy = CreateChainPolicy();
             policy.ExtraStore.AddRange(issuers);
             ssl.CertificateChainPolicy = policy;
         };
+    }
+
+    private static string RejectionReason(X509Certificate2 certificate, X509Chain? chain, int expectedLength)
+    {
+        var flags = X509ChainStatusFlags.NoError;
+        foreach (var status in chain?.ChainStatus ?? []) flags |= status.Status;
+        if (flags.HasFlag(X509ChainStatusFlags.Revoked)) return "revoked";
+        if (flags.HasFlag(X509ChainStatusFlags.NotTimeValid))
+        {
+            var now = DateTime.UtcNow;
+            return certificate.NotAfter.ToUniversalTime() <= now
+                || chain!.ChainElements.Cast<X509ChainElement>().Any(element => element.Certificate.NotAfter.ToUniversalTime() <= now)
+                ? "expired" : "not_yet_valid";
+        }
+        if (flags.HasFlag(X509ChainStatusFlags.NotValidForUsage)) return "wrong_eku";
+        if (flags.HasFlag(X509ChainStatusFlags.UntrustedRoot)) return "untrusted_root";
+        // Classify an already-rejected partial chain. Trusted direct-root leaves remain valid.
+        if (flags.HasFlag(X509ChainStatusFlags.PartialChain))
+            return chain!.ChainElements.Count < expectedLength ? "unexpected_chain_length" : "untrusted_root";
+        return "invalid_chain";
     }
 
     private X509ChainPolicy CreateChainPolicy()

@@ -201,6 +201,17 @@ public sealed class PacketDeliveryTests : IDisposable
         Assert.Single(_queue.Pending());
     }
 
+    [Fact]
+    public async Task AFailedPacketPostReportsTheHttpStatusAndKeepsThePacket()
+    {
+        Capture("", "1");
+        var server = new ThrowingTransport(new TransportException("agent_service_unavailable", 503));
+        var result = await new PacketDelivery(_queue, server).DeliverOnceAsync();
+        Assert.False(result.Success);
+        Assert.Equal("Server returned HTTP 503.", result.TransportFailure?.Detail);
+        Assert.Single(_queue.Pending());
+    }
+
     [Theory]
     [InlineData("agent_http_timeout")]
     [InlineData("agent_tls_client_key_unusable")]
