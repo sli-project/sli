@@ -212,9 +212,6 @@ public sealed partial class ProblemRepository
     }
     public async Task<JsonObject> FindingsAsync(FindingQuery query, ProblemAccess access, CancellationToken ct)
     {
-        long[]? coverageDomains = query.Domains;
-        if (query.PageQueue && !query.Compact && access.Scope("security.queue").Domains() is {} allowed)
-            coverageDomains = coverageDomains is null ? allowed : coverageDomains.Intersect(allowed).Order().ToArray();
         await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
         if (query.PageQueue) await Execute(tx, "set transaction read only; set local jit=off", new(), ct);
         var (page, summarySql, args) = FindingsQueries(query);
@@ -283,13 +280,11 @@ public sealed partial class ProblemRepository
         }
         await AttachKerberosFacts(tx, rows.OfType<JsonObject>().ToArray(), ct);
         await tx.CommitAsync(ct);
-        JsonObject? passwordCoverage = query.PageQueue && !query.Compact ? await ReadQueuePasswordCoverageAsync(coverageDomains, ct) : null;
         var result = new JsonObject { ["generated_at_utc"] = ProblemJson.Iso(generated), ["status"] = "ok", ["source"] = "semantic_production_findings",
             ["state"] = runtimeState == "stale" ? "stale" : runtimeState is "inactive" or "unknown" ? "partial" : rows.Count > 0 ? "available" : "empty",
             ["items"] = rows, ["summary"] = summary, ["has_more"] = more, ["limits"] = new JsonObject { ["limit"] = query.Limit, ["details_per_finding"] = 20 },
             ["lifecycle"] = System.Text.Json.JsonSerializer.SerializeToNode(new { valid_statuses = FindingStatusInput.Statuses, allowed_transitions = FindingStatusInput.Transitions }),
             ["semantic_runtime"] = runtime, ["limitations"] = limitations };
-        if (query.PageQueue) result["password_detection_coverage"] = passwordCoverage;
         return result;
     }
     internal static async Task AttachDetails(NpgsqlTransaction tx, JsonArray rows, CancellationToken ct, bool queueList = false)

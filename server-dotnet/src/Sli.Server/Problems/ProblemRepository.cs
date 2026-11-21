@@ -12,6 +12,7 @@ public interface IProblemRepository
 {
     Task<JsonObject> LegacyFindingsAsync(string query, int limit, CancellationToken ct) => throw new NotSupportedException();
     Task<JsonObject> FindingsAsync(FindingQuery query, ProblemAccess access, CancellationToken ct);
+    Task<JsonObject?> ReadQueuePasswordCoverageAsync(long[]? domains, CancellationToken ct) => throw new NotSupportedException();
     Task<JsonObject> StatusAsync(long id, FindingStatusInput input, string actor, CancellationToken ct);
     Task<JsonObject> RiskAsync(long id, RiskInput input, CancellationToken ct);
     Task<JsonObject> ResponsiblesAsync(CancellationToken ct);

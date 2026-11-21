@@ -54,6 +54,31 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
     }
+    internal async Task<JsonObject> PasswordCoverageAsync(ReportQueryContext c, CancellationToken ct)
+    {
+        try {
+            var password = await repository.ReadQueuePasswordCoverageAsync(CoverageDomains(c), ct);
+            return RenderPasswordCoverage(c, password);
+        }
+        catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
+    }
+    internal static JsonObject RenderPasswordCoverage(ReportQueryContext c, JsonObject? password)
+    {
+        var coverage = new JsonObject(); var limitations = new JsonArray();
+        if (password is null) return ReportResult.Create(c.Definition.Key, "ok", coverage: coverage);
+        coverage["password_detection"] = password.DeepClone();
+        bool incomplete = password.Text("availability") != "observed" || password.Flag("has_more")
+            || password["rows"] is not JsonArray list || list.Count == 0 || list.Any(r =>
+                r?["policy_state"]?.ToString() is "unknown" or "disabled_last_known" || r?["frozen_episode_count"]?.ToString() != "0"
+                || r?["policy_state"]?.ToString() == "enabled" && r?["status"]?.ToString() != "healthy");
+        if (incomplete) AddLimitation(c, limitations, "password_coverage_incomplete");
+        return ReportResult.Create(c.Definition.Key, incomplete ? "partial" : "ok", coverage: coverage, limitations: limitations);
+    }
+    private static void AddLimitation(ReportQueryContext c, JsonArray limitations, string code)
+    {
+        var message = ProblemPresentation.Message("reports.v2.security.problems.limitations." + code, c.Language);
+        limitations.Add(new JsonObject { ["code"] = code, ["text"] = message["text"]!.DeepClone(), ["presentation_messages"] = new JsonObject { ["text"] = message } });
+    }
     public async Task<JsonObject> DetailAsync(ReportQueryContext c, string rowId, CancellationToken ct)
     {
         try {
@@ -96,17 +121,9 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         var runtime = raw["semantic_runtime"] as JsonObject ?? new(); var limitations = new JsonArray();
         foreach (var text in raw["limitations"] as JsonArray ?? []) limitations.Add(new JsonObject { ["code"] = "problems_" + limitations.Count, ["text"] = text?.ToString() });
         string state = ReportResult.SourceState(raw["state"]?.ToString()); if (state == "ok" && rows.Count == 0) state = "empty";
-        void Limitation(string code) {
-            var message = ProblemPresentation.Message("reports.v2.security.problems.limitations." + code, c.Language);
-            limitations.Add(new JsonObject { ["code"] = code, ["text"] = message["text"]!.DeepClone(), ["presentation_messages"] = new JsonObject { ["text"] = message } });
+        if (runtime.Text("findings_state") != "active") {
+            AddLimitation(c, limitations, "zero_is_not_safe");
             if (state is "ok" or "empty") state = "partial";
-        }
-        if (runtime.Text("findings_state") != "active") Limitation("zero_is_not_safe");
-        JsonObject? password = null;
-        if (state != "denied" && CoverageDomains(c) is not { Length: 0 }) {
-            password = raw["password_detection_coverage"]?.DeepClone() as JsonObject ?? new JsonObject { ["availability"] = "unavailable", ["as_of"] = null, ["rows"] = new JsonArray(), ["has_more"] = false };
-            if (password.Text("availability") != "observed" || password.Flag("has_more") || password["rows"] is not JsonArray list || list.Count == 0 || list.Any(r =>
-                r?["policy_state"]?.ToString() is "unknown" or "disabled_last_known" || r?["frozen_episode_count"]?.ToString() != "0" || r?["policy_state"]?.ToString() == "enabled" && r?["status"]?.ToString() != "healthy")) Limitation("password_coverage_incomplete");
         }
         long Count(params string[] statuses) => (raw["summary"] as JsonArray ?? []).OfType<JsonObject>().Where(r => statuses.Contains(r.Text("status")) && !r.Flag("risk_accepted")).Sum(r => long.TryParse(r["count"]?.ToString(), out long n) ? n : 0);
         long attention = Count("new", "confirmed", "repeated"), progress = Count("active", "review");
@@ -118,7 +135,6 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         string? Latest(string key) => rows.OfType<JsonObject>().Select(r => r[key]?.ToString()).Where(s => s is not null).Order(StringComparer.Ordinal).LastOrDefault();
         var coverage = new JsonObject { ["state"] = runtime["findings_state"]?.DeepClone(), ["event_at_utc"] = Latest("last_seen_utc"), ["published_at_utc"] = Latest("published_at_utc"), ["worker_checked_at_utc"] = runtime["heartbeat_at"]?.DeepClone() };
-        if (password is not null) coverage["password_detection"] = password;
         var result = ReportResult.Create(c.Definition.Key, state, rows, coverage, limitations: limitations);
         result["metrics"] = metrics; result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false);
         var last = (raw["items"] as JsonArray)?.LastOrDefault();

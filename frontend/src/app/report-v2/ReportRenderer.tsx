@@ -268,6 +268,16 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   const userPage = userPaging.params === baseParams ? userPaging.index : 0;
 
   const first = data.data?.pages[0];
+  const coverageDomain = new URLSearchParams(baseParams).get("domain");
+  const passwordCoverage = useQuery({
+    queryKey: ["report-v2", "problem-password-coverage", coverageDomain],
+    queryFn: ({ signal }) => api.problemPasswordCoverage(new URLSearchParams(coverageDomain ? { domain: coverageDomain } : {}), signal),
+    enabled: problemQueue && ready && !viewDenied && !data.error && !data.isPlaceholderData
+      && (first?.state === "ok" || first?.state === "empty" || first?.state === "partial" || first?.state === "stale"),
+    retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
   const viewBranches = definition.key === "vpn.connections" && first?.branches ? Object.fromEntries(views.map((item) => [
     item.key, first.branches![vpnViewBranchKey(item.key)],
   ])) : undefined;
@@ -337,13 +347,8 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     ? <button type="button" className="sli-ds-button" disabled={data.isFetching}
         onClick={() => void data.refetch()}>{t("state.retry")}</button> : undefined;
 
-  const passwordCoverage = definition.key === 'security.problems' && ready && !viewDenied
-    && state !== 'denied' && !data.error && !data.isPlaceholderData ? first?.coverage.password_detection : undefined;
-  if (passwordCoverage && (state === 'ok' || state === 'empty') && (
-    passwordCoverage.availability !== 'observed' || passwordCoverage.has_more || !passwordCoverage.rows.length
-    || passwordCoverage.rows.some((row) => row.policy_state === 'unknown' || row.policy_state === 'disabled_last_known'
-      || row.frozen_episode_count !== '0' || row.policy_state === 'enabled' && row.status !== 'healthy')
-  )) state = 'partial';
+  if (problemQueue && (state === "ok" || state === "empty") && !data.isPlaceholderData
+    && (passwordCoverage.data?.state === "partial" || passwordCoverage.isError)) state = "partial";
 
   const window_ = first?.window;
   const sourceReason = first?.coverage.reason;

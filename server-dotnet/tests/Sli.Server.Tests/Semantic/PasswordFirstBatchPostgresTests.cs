@@ -122,7 +122,7 @@ public sealed class PasswordFirstBatchPostgresTests(ITestOutputHelper output)
         return (r.GetFieldValue<DateTimeOffset>(0),r.GetInt64(1),r.GetInt64(2),r.GetInt64(3));
     }
 
-    internal static async Task SeedBacklog(NpgsqlConnection db,CancellationToken ct,int total=70000,double spacing=0.7,bool noise=false,int clients=40,bool standNoise=false,bool missingTargets=false)
+    internal static async Task SeedBacklog(NpgsqlConnection db,CancellationToken ct,int total=70000,double spacing=0.7,bool noise=false,int clients=40,bool standNoise=false,bool missingTargets=false,int? accountCount=null)
     {
         // Generate native receipt/inbox/representation/allocation rows, then use
         // the real provenance trigger. Small packets avoid quadratic TOAST reads.
@@ -131,7 +131,9 @@ public sealed class PasswordFirstBatchPostgresTests(ITestOutputHelper output)
             with template as (select i.event_rows->0 as doc from sli_agent_packet_inbox i limit 1),
             events as (select n,doc,(doc->>'time_created')::timestamptz+n*@spacing*(case when @stand and n<392 then 0.9 else 1 end)*interval '1 second' as at,
                 md5('password-test-packet:'||(n/100)::text)::uuid as packet_id,
-                case when @missing then '-' when @noise then case when n>=@total-10 then 'fresh' else 'noise'||n::text end else 'synthetic-user' end as account,
+                case when @missing then '-' when n%nullif(@accounts,0)>0 then 'noise'||(n%@accounts)::text
+                    when @accounts>0 then 'synthetic-user'
+                    when @noise then case when n>=@total-10 then 'fresh' else 'noise'||n::text end else 'synthetic-user' end as account,
                 case when @stand then case when n<392 or n>=@total-10 then '192.0.2.1' else '192.0.2.'||(n%(@clients-1)+2)::text end
                     when @noise and n<@total-10 then '192.0.2.'||(n%@clients+1)::text else '192.0.2.1' end as ip
                 from template,generate_series(1,@total-1) n),
@@ -160,6 +162,7 @@ public sealed class PasswordFirstBatchPostgresTests(ITestOutputHelper output)
             analyze event_hot;
             """,db){CommandTimeout=0};
         seed.Parameters.AddWithValue("total",total);seed.Parameters.AddWithValue("spacing",spacing);seed.Parameters.AddWithValue("noise",noise);seed.Parameters.AddWithValue("clients",clients);seed.Parameters.AddWithValue("stand",standNoise);seed.Parameters.AddWithValue("missing",missingTargets);
+        seed.Parameters.AddWithValue("accounts",accountCount??0);
         await seed.ExecuteNonQueryAsync(ct);
         await using var count=new NpgsqlCommand("select count(*),count(source_sha256) from event_hot where event_kind=4625",db);
         await using var r=await count.ExecuteReaderAsync(ct); Assert.True(await r.ReadAsync(ct));
