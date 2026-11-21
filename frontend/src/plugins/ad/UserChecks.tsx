@@ -65,7 +65,7 @@ function CheckObjects({ check, baseParams, onSelect }: { check: Row; baseParams:
   return <>
     {all && query.isLoading ? <p role="status">{t("table.loadingMore")}</p> : null}
     {all && (query.error || query.data?.state === "error") ? <p role="alert">
-      {t("reports.ad.users.objects_unavailable", { check: text(check.title) ?? missing() })}{" "}
+      {t("reports.ad.user_checks.objects_load_failed", { check: text(check.title) ?? missing() })}{" "}
       <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button>
     </p> : null}
     {rows.length ? <DataTable caption={String(check.title)} columns={columns} rows={rows} rowKey={(row) => `${row.domain_id}:${row.entity_id ?? row.name}`}

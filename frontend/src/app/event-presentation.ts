@@ -1,4 +1,3 @@
-import { EMPTY_VALUE } from "../shared/format";
 import { t } from "../i18n";
 import { investigationContext, investigationSearch, safeInvestigationReturnTo } from "./investigation-context";
 
@@ -11,11 +10,6 @@ type MachineRiskCarrier = {
 /** Machine risk is the only value accepted by filters and risk badges. */
 export function eventMachineRisk(event: MachineRiskCarrier | null | undefined): string {
   return String(event?.semantics?.final_risk ?? event?.final_risk ?? event?.severity ?? "unknown").trim().toLowerCase() || "unknown";
-}
-
-/** A missing auxiliary relation aggregate is unknown, never a proven zero. */
-export function auxiliaryCountText(items: readonly unknown[] | undefined, unavailable: boolean): string {
-  return unavailable || items === undefined ? EMPTY_VALUE : String(items.length);
 }
 
 type ОшибкаЗапроса = { status?: number; code?: string } | null | undefined;

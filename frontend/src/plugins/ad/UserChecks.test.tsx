@@ -68,7 +68,7 @@ it("keeps the check action and retries a failed user list without a callout", as
   expect(screen.queryByText("Synthetic remediation")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: t("reports.ad.users.open_all") }));
   const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toContain(t("reports.ad.users.objects_unavailable", { check: "Synthetic check" }));
+  expect(alert.textContent).toContain(t("reports.ad.user_checks.objects_load_failed", { check: "Synthetic check" }));
   expect(container.querySelector(".sli-ds-callout")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
   expect(await screen.findByRole("button", { name: "synthetic-user-two" })).toBeTruthy();
