@@ -403,22 +403,41 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (value is JsonArray a) return "["+string.Join(", ",a.Select(PythonJson))+"]";
         return value?.ToJsonString() ?? "null";
     }
-    internal static async Task<(long Server,string Name,long Domain,long? Site)?> ResolveDcAsync(NpgsqlConnection c,NpgsqlTransaction t,string name,CancellationToken ct,Guid? agent=null)
+    internal static async Task<(long Server,string Name,long Domain,long? Site)?> ResolveDcAsync(NpgsqlConnection c,NpgsqlTransaction t,string name,CancellationToken ct,Guid? agent=null,Action<string>? unresolved=null)
     {
         await using var query=new NpgsqlCommand("""
-            select id,hostname,domain_id,site_id from servers where role='domain_controller' and is_active and coalesce(
-                id::text=(select details->>'server_id' from sli_agent_audit where target=@agent and action='issue' order by id desc limit 1), (
-                lower(@name) in (lower(hostname),lower(fqdn))
-                or strpos(@name,'.')=0 and lower(@name)=split_part(lower(coalesce(nullif(fqdn,''),hostname)),'.',1)
-                or strpos(coalesce(nullif(fqdn,''),hostname),'.')=0 and lower(hostname)=split_part(lower(@name),'.',1)))
-            order by id limit 2
+            with pin as (
+                select coalesce(
+                    (select details->>'server_id' from sli_agent_audit where target=@agent and action='issue' order by id desc limit 1),
+                    (select details->>'server_id' from sli_agent_audit where target=@agent and action='module_assign'
+                        and actor='system:agent-registration' and details->>'module_id'='sli.windows.ad-dc'
+                        and details->>'source'='agent_reported' order by id desc limit 1)) as server_id
+            ), matches as (
+                select s.id,s.hostname,s.domain_id,s.site_id,
+                    case when not s.is_active then 'inactive_server' when s.role<>'domain_controller' then 'missing_role'
+                        when d.is_archived or lower(d.fqdn)='example.invalid' then 'missing_domain' end as failure,
+                    exists(select 1 from domain_controller_targets target
+                        where @agent is not null and target.enabled and target.domain_id=s.domain_id
+                          and lower(target.hostname)=lower(@name) and lower(target.connect_address)=lower(s.fqdn)) as configured
+                from servers s join domains d on d.id=s.domain_id cross join pin p
+                where coalesce(s.id::text=p.server_id, (
+                    lower(@name) in (lower(s.hostname),lower(s.fqdn))
+                    or strpos(@name,'.')=0 and lower(@name)=split_part(lower(coalesce(nullif(s.fqdn,''),s.hostname)),'.',1)
+                    or strpos(coalesce(nullif(s.fqdn,''),s.hostname),'.')=0 and lower(s.hostname)=split_part(lower(@name),'.',1)))
+            )
+            select id,hostname,domain_id,site_id,failure,configured from matches
+            order by (failure is null) desc,configured desc,id limit 2
             """,c,t);
         query.Parameters.AddWithValue("name",name);
         query.Parameters.Add("agent",NpgsqlDbType.Text).Value=(object?)agent?.ToString() ?? DBNull.Value;
         await using var reader=await query.ExecuteReaderAsync(ct);
-        if(!await reader.ReadAsync(ct))return null;
+        if(!await reader.ReadAsync(ct)) { unresolved?.Invoke("no_server"); return null; }
+        if (!reader.IsDBNull(4)) { unresolved?.Invoke(reader.GetString(4)); return null; }
         var result=(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?(long?)null:reader.GetInt64(3));
-        return await reader.ReadAsync(ct) ? null : result;
+        bool configured = reader.GetBoolean(5);
+        if (!await reader.ReadAsync(ct) || !reader.IsDBNull(4) || configured && !reader.GetBoolean(5)) return result;
+        unresolved?.Invoke("ambiguous_server");
+        return null;
     }
     private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server,Version? version,bool consoleEnrollment)
     {
