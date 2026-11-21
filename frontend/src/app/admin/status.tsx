@@ -4,7 +4,6 @@ import { api } from "../../api/client";
 import { DataTable, LoadingRegion, PageHeader, TableSkeleton, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
-import { localizeByteSize } from "../../shared/byte-size";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
@@ -55,13 +54,14 @@ export function SystemStatusPage() {
   ]);
   const workers = operations.data?.workers;
   const services = statusServices(workers?.items ?? [], timeZone);
-  const disk = storage.data?.storage.disk_pressure?.disk;
+  const disk = storage.data?.storage.postgres_volume;
   const backup = storage.data?.storage.footprint?.backups;
   const bytes = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0
     ? `${formatNumber(value / 1024 ** 3, { maximumFractionDigits: 1 })} ${t("operations.source.unit_gb")}` : EMPTY_VALUE;
   const diskRows = disk ? [{
-    used: localizeByteSize(disk.used_human) || bytes(disk.used_bytes),
-    free: localizeByteSize(disk.free_human) || bytes(disk.free_bytes),
+    mount: disk.mount_point,
+    used: bytes(disk.used_bytes),
+    free: bytes(disk.free_bytes),
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
@@ -134,14 +134,15 @@ export function SystemStatusPage() {
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },
         { key: "action", label: t("systemStatus.action"), render: (row) => <a href={row.href}>{row.action}</a> },
       ]} rows={auditChecks} rowKey={(row) => row.id} caption={t("systemStatus.auditChecks")} showFooter={false}/></> : null}
-    {storage.isPending ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2>{loading(2)}</>
+    {storage.isPending ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2>{loading(3)}</>
       : storage.isError ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2>{failed(t("systemStatus.disk"), storage.refetch)}</>
       : diskRows.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2><DataTable columns={[
+        { key: "mount", label: t("operations.disk.partition") },
         { key: "used", label: t("systemStatus.used") }, { key: "free", label: t("systemStatus.free") },
-      ]} rows={diskRows} rowKey={() => "disk"} caption={t("systemStatus.disk")} showFooter={false}/></> : null}
-    {backup && !storage.isError ? <p>{t(backup.same_disk_as_postgres === true && backup.last_backup_at_utc
+      ]} rows={diskRows} rowKey={(row) => row.mount} caption={t("systemStatus.disk")} showFooter={false}/></> : null}
+    {backup?.last_backup_at_utc && !storage.isError ? <p>{t(backup.same_disk_as_postgres === true
       ? "systemStatus.lastBackupSameDisk" : "systemStatus.lastBackup", {
-      time: backup.last_backup_at_utc ? formatDateTime(backup.last_backup_at_utc, timeZone) : EMPTY_VALUE,
+      time: formatDateTime(backup.last_backup_at_utc, timeZone),
     })}</p> : null}
     {storage.data?.storage.agent_inbox_capacity === "full" ? <p>{t("systemStatus.inboxDiskFull")}</p> : null}
     {storage.data?.storage.agent_inbox_capacity === "unavailable" ? <p>{t("systemStatus.inboxDiskUnavailable")}</p> : null}

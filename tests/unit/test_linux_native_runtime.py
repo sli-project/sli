@@ -647,6 +647,8 @@ def test_configure_retires_legacy_writers_before_reload_without_starting(config,
     assert json.loads(files[str(native.CONFIG)][0]) == config
     assert "f /run/sli-native-host.lock 0600 root root" in files["/usr/lib/tmpfiles.d/sli-runtime.conf"][0]
     assert ["systemctl", "daemon-reload"] in calls
+    assert calls.index(["systemctl", "daemon-reload"]) < calls.index(
+        ["systemctl", "reset-failed", "sli[-.]*"])
     assert not any(isinstance(c, list) and any(v in {"start", "enable", "restart", "apt"} for v in c) for c in calls)
     assert not any("/var/lib/sli/state" in str(c) for c in calls[1:])
 
