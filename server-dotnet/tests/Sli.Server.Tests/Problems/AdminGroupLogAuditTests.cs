@@ -160,6 +160,7 @@ public sealed class AdminGroupLogAuditTests
         await using var pg=new PostCollectionPostgres(); await pg.StartAsync(Ct);
         await using var db=new NpgsqlConnection(pg.ConnectionString); await db.OpenAsync(Ct);
         await PostCollectionPostgres.Sql(db,"""
+            create function public.password_problem_facts395(bigint,text) returns jsonb language sql as $$select null::jsonb$$;
             create table findings_active(id bigint,rule_code text,fingerprint text,target text,source text,severity text,status text,repeat_count int,first_seen_utc text,last_seen_utc text,evidence_count int default 0);
             create table semantic_security_scenarios(scenario_key bytea,scenario_kind text,partition_key text,strict_keys_json jsonb);
             create table finding_event_copies337(finding_id bigint,event_id bigint,time_created_utc timestamptz,evidence_role text,fields jsonb);

@@ -9,9 +9,38 @@ public class IdentitySprayTests
 {
     private static readonly PasswordScope Scope=new("00000000-0000-0000-0000-000000000001","sli.windows.ad-dc","synthetic","generation","");
     private static readonly DateTimeOffset Start=DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-    private static PasswordNative Event(int id,int seconds,string user,int eventId=4625)
+    private static PasswordNative Event(int id,int seconds,string user,int eventId=4625,string sid="",bool normalizeAccount=false)
     {
-        var at=Start.AddSeconds(seconds);string xml=$"<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><EventID>{eventId}</EventID><TimeCreated SystemTime='{PasswordJson.Stamp(at)}'/></System><EventData><Data Name='TargetUserName'>{user}</Data><Data Name='TargetDomainName'>fixture</Data><Data Name='IpAddress'>192.0.2.10</Data><Data Name='Status'>{(eventId==4624?"0x0":"0xc000006d")}</Data><Data Name='SubStatus'>{(eventId==4624?"0x0":"0xc000006a")}</Data><Data Name='LogonType'>3</Data></EventData></Event>";return PasswordNative.Parse(Scope,id,new('a',64),eventId,at,xml);
+        var at=Start.AddSeconds(seconds);string xml=$"<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><EventID>{eventId}</EventID><TimeCreated SystemTime='{PasswordJson.Stamp(at)}'/></System><EventData><Data Name='TargetUserName'>{user}</Data><Data Name='TargetDomainName'>fixture</Data><Data Name='TargetUserSid'>{sid}</Data><Data Name='IpAddress'>192.0.2.10</Data><Data Name='Status'>{(eventId==4624?"0x0":"0xc000006d")}</Data><Data Name='SubStatus'>{(eventId==4624?"0x0":"0xc000006a")}</Data><Data Name='LogonType'>3</Data></EventData></Event>";return PasswordNative.Parse(Scope,id,new('a',64),eventId,at,xml,normalizeAccount);
+    }
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void BruteForceUsesOneAccountAndEscalatesOnlyAfterSuccessfulLogon(bool failureSid, bool successSid)
+    {
+        const string sid="S-1-5-21-100000001-200000002-300000003-500";
+        string[] names=failureSid?["Administrator","ADMINISTRATOR","АДМИНИСТРАТОР","FIXTURE\\Administrator"]:
+            ["Administrator","ADMINISTRATOR","FIXTURE\\Administrator"];
+        var rule=new PasswordRule(Scope,revision:395);
+        var guesses=Enumerable.Range(1,10).Select(i=>Event(i,i,names[i%names.Length],sid:failureSid?sid:"",normalizeAccount:true)).ToArray();
+        var other=Event(20,12,"Admin",normalizeAccount:true);
+        var first=rule.Advance(new(),guesses.Append(other).ToArray(),Start.AddSeconds(150));
+        var root=Assert.Single(first.Emissions);
+        Assert.Equal(10,root.Occurrences.Count);
+        var initial=PasswordSignal.Create(rule,root,Assert.Single(root.Contexts(null)),Start.AddSeconds(150),guesses);
+        Assert.Equal("medium",initial["effective_severity"]!.ToString());
+
+        var unrelated=Event(21,31,"ADMIN",4624,normalizeAccount:true);
+        var success=Event(22,32,"Administrator",4624,successSid?sid:"",normalizeAccount:true);
+        var next=rule.Advance(first.State,[unrelated,success],Start.AddSeconds(160),first.Emissions,guesses);
+        var update=Assert.Single(next.Emissions);
+        Assert.Equal(root.EpisodeKey,update.EpisodeKey);
+        Assert.Equal(22,Assert.Single(update.NewEvents).NativeId);
+        var proof=guesses.Append(success).ToArray();
+        var signal=PasswordSignal.Create(rule,update,Assert.Single(update.Contexts(root.Id)),Start.AddSeconds(160),proof,first.Emissions);
+        Assert.Equal("critical",signal["effective_severity"]!.ToString());
+        PasswordRiskEpisode.Read([PasswordRiskSignal.Read(initial),PasswordRiskSignal.Read(signal)],PasswordSignal.Id(signal)).Verify(proof);
     }
     [Fact]public void Python_spray_success_continues_same_episode_with_critical_risk_and_exact_native_proof()
     {

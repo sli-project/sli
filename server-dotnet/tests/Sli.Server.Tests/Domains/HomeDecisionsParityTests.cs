@@ -59,7 +59,7 @@ public sealed class HomeDecisionsParityTests
             rule_code = $"synthetic-{i}", title = "Synthetic problem", importance = i % 4, total = i + 1,
             new_count = i < 2 ? 1 : 0, last_seen_utc = "2026-10-17T08:41:00Z", assigned_to = "synthetic-assignee",
             objects = new[] { new { name = "synthetic-object", domain = "example.test" } }, object_count = 1,
-            total_problems = 55, total_new = 2, total_groups = 10
+            total_problems = 10, total_new = 2, total_groups = 10
         })).ToArray();
         public IReadOnlyList<JsonObject> Labels { get; set; } = [];
 
@@ -103,10 +103,10 @@ public sealed class HomeDecisionsParityTests
         var payload = await Summary(rows, query: "&domain_id=7");
         Assert.Equal("sli.home-summary.v3", (string?)payload["contract_id"]);
         Assert.Equal("ok", (string?)payload["state"]);
-        Assert.Equal(55, (int?)payload["total"]);
+        Assert.Equal(10, (int?)payload["total"]);
         Assert.Equal(2, (int?)payload["new_count"]);
         Assert.Equal(2, (int?)payload["remaining_groups"]);
-        Assert.Equal(19, (int?)payload["remaining_problems"]);
+        Assert.Equal(2, (int?)payload["remaining_problems"]);
         Assert.Equal(8, payload["groups"]!.AsArray().Count);
         Assert.All(payload["groups"]!.AsArray(), group =>
         {
@@ -164,7 +164,7 @@ public sealed class HomeDecisionsParityTests
         var selected = await Summary(rows, queue, "&domain_id=7");
         var group = selected["groups"]![0]!;
         Assert.Equal("synthetic-object", (string?)group["objects"]![0]!["name"]);
-        Assert.Equal(55, (int?)selected["total"]); Assert.Equal(2, (int?)selected["remaining_groups"]);
+        Assert.Equal(10, (int?)selected["total"]); Assert.Equal(2, (int?)selected["remaining_groups"]);
         Assert.False(Link(group).ContainsKey("cohort"));
 
         // The declaration and validation used by both report data and detail keep the full issued scope.
@@ -219,7 +219,7 @@ public sealed class HomeDecisionsParityTests
     {
         var rows = new Rows(); var domains = new Domains { SnapshotState = "partial", ObservedAt = null };
         var payload = await Summary(rows, query: "&domain_id=7", domains: domains);
-        Assert.Equal(55, (int?)payload["total"]); Assert.Null(payload["updated_at_utc"]);
+        Assert.Equal(10, (int?)payload["total"]); Assert.Null(payload["updated_at_utc"]);
         var warning = Assert.Single(payload["warnings"]!.AsArray());
         Assert.Equal("domain-7.example.test", (string?)warning!["domain"]);
         Assert.Equal("home.queue.warning.source_incomplete", (string?)warning["reason_code"]);

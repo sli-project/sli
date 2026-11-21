@@ -172,12 +172,12 @@ public sealed partial class ProblemRepository
                 ProblemCohorts.Queue(population, where, EffectiveStatus, Accepted)[5..];
             population += " join queue_groups on queue_groups.id=findings.id";
             where = " where true"; summaryPopulation = "from queue_groups"; summaryWhere = "";
-            groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc";
+            groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc,queue_groups.severity as severity,queue_groups.password_facts - 'cohort_key' as presentation_facts";
         }
         else if (query.Cohort is {} cohort) {
             var key = ProblemCohorts.Parse(cohort);
             if (key[0]!.ToString() == "finding") { args["cohort_id"] = key[1]!.GetValue<long>(); where += " and findings.id=@cohort_id"; }
-            else { args["cohort_zone"] = query.Timezone; args["cohort"] = key.ToJsonString(); population += ProblemCohorts.Sql(key[0]!.ToString() == "queue" ? "legacy-queue-cohort" : key[0]!.ToString() is "rule-object" or "rule-source" or "rule-entity" ? "queue-cohort" : "cohort"); where += " and cohort.key=@cohort::jsonb"; }
+            else { args["cohort_zone"] = query.Timezone; args["cohort"] = key.ToJsonString(); population += ProblemCohorts.Sql(key[0]!.ToString() == "queue" ? "legacy-queue-cohort" : key[0]!.ToString() is "rule-object" or "rule-source" or "rule-entity" or "password" ? "queue-cohort" : "cohort"); where += " and cohort.key=@cohort::jsonb"; }
             summaryPopulation = population; summaryWhere = where;
         }
         if (populationOnly) return (prefix, "", args);
@@ -236,9 +236,9 @@ public sealed partial class ProblemRepository
         bool more = rows.Count > query.Limit; if (more) rows.RemoveAt(query.Limit);
         var passwordRows = rows.OfType<JsonObject>().Where(row => ProblemPresentation.IsPasswordFinding(ProblemJson.Text(row["rule_code"])))
             .ToDictionary(row => ProblemJson.Long(row["id"]));
-        if (passwordRows.Count > 0 && (!query.Compact || query.GroupQueue)) {
+        if (passwordRows.Count > 0 && !query.Compact && !query.GroupQueue) {
             var passwordFacts = await Rows(tx, $"""
-                select findings.id,{ProblemCohorts.PasswordFacts("findings")} as facts
+                select findings.id,({ProblemCohorts.PasswordFacts("findings")}) - 'cohort_key' as facts
                 from unnest(@ids::bigint[],@rules::text[]) findings(id,rule_code)
                 """, new() { ["ids"] = passwordRows.Keys.ToArray(),
                     ["rules"] = passwordRows.Values.Select(row => ProblemJson.Text(row["rule_code"])).ToArray() }, ct);

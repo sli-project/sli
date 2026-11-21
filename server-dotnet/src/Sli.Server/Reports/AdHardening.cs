@@ -38,8 +38,12 @@ public static class AdHardening
         bool Older(JsonNode? value, int days) => Instant(value) is { } when && when <= at && at - when > TimeSpan.FromDays(days);
         var lapsEligible = new List<string>(); var lapsObserved = false;
         foreach (var (key, obj) in objects) {
-            var kind = Kind(obj); if (kind is not ("ad_user" or "ad_computer")) continue;
-            var a = (JsonObject)obj["attributes"]!; var uac = Number(a["user_account_control"]); if (uac is null || (uac & 2) != 0) continue;
+            var kind = Kind(obj);
+            var a = (JsonObject)obj["attributes"]!;
+            if (kind == "domain" && Number(a["machine_account_quota"]) is > 0) Add("machine_account_quota", key, "low");
+            if (kind == "password_policy" && Number(a["lockout_threshold"]) == 0) Add("lockout_threshold", key, "low");
+            if (kind is not ("ad_user" or "ad_computer")) continue;
+            var uac = Number(a["user_account_control"]); if (uac is null || (uac & 2) != 0) continue;
             var spns = Strings(a["service_principal_names"]); bool managed = Strings(a["object_classes"]).Any(x => x.Equals("msds-managedserviceaccount", StringComparison.OrdinalIgnoreCase) || x.Equals("msds-groupmanagedserviceaccount", StringComparison.OrdinalIgnoreCase));
             if (kind == "ad_user" && spns.Length > 0 && !managed) Add("spn_users", key, privileged.Contains(key) ? "high" : "medium");
             var enc = Number(a["msds_supported_encryption_types"]);
@@ -54,7 +58,7 @@ public static class AdHardening
             }
             if (kind == "ad_user" && spns.Length > 0 && !managed && Older(a["password_last_set_utc"], servicePasswordDays)) Add("old_service_password", key, "medium");
             if (privileged.Contains(key)) {
-                if ((uac & 65536) != 0) Add("privileged_nonexpiring", key, "medium");
+                if ((uac & 65536) != 0) Add("privileged_nonexpiring", key, "low");
                 var activity = new[] { "last_logon_timestamp_utc", "last_logon_utc", "exact_last_logon_utc" }.Select(n => Instant(a[n])).Where(x => x.HasValue).Select(x => x!.Value).ToArray();
                 if (activity.Length > 0 && activity.Max() <= at && at - activity.Max() > TimeSpan.FromDays(inactiveDays)) Add("inactive_privileged", key, "high");
             }
@@ -63,10 +67,13 @@ public static class AdHardening
         foreach (var (key, entries) in members) if (Admin(objects[key]) && entries.Count > adminGroupMembers) Add("admin_group_size", key, "high");
         foreach (var (check, entry) in found) {
             var keys = entry.Keys.Order(StringComparer.Ordinal).ToArray(); bool allLapsMissing = check == "laps" && !lapsObserved;
+            bool domainPosture = check is "machine_account_quota" or "lockout_threshold";
+            var observed = domainPosture ? Instant(snapshot["posture_at"]) ?? at : at;
+            var run = domainPosture ? snapshot["posture_run"] ?? snapshot["run_id"] : snapshot["run_id"];
             var labels = new JsonArray();
             if (!allLapsMissing) foreach (var key in keys.Take(objectLimit)) { var a = objects[key]["attributes"]!; var label = S(a["sam_account_name"]); if (label == "") label = S(a["display_name"]); if (label == "") label = key; labels.Add(label[..Math.Min(label.Length, 160)]); }
             var counts = new JsonArray(); if (check == "admin_group_size") foreach (var key in keys.Take(objectLimit)) counts.Add(members[key].Count);
-            result.Add(new JsonObject { ["check"] = check, ["rule_code"] = "qw.ad-hardening." + check.Replace('_', '-'), ["severity"] = entry.Severity, ["count"] = keys.Length, ["objects"] = labels, ["objects_truncated"] = !allLapsMissing && keys.Length > objectLimit, ["laps_none_found"] = allLapsMissing, ["observed_at_utc"] = at.ToUniversalTime().ToString("O"), ["domain_id"] = snapshot["domain_id"]?.DeepClone(), ["source_run_id"] = snapshot["run_id"]?.DeepClone(), ["threshold"] = check switch { "old_service_password" => servicePasswordDays, "inactive_privileged" => inactiveDays, "admin_group_size" => adminGroupMembers, _ => (int?)null }, ["member_counts"] = counts });
+            result.Add(new JsonObject { ["check"] = check, ["rule_code"] = "qw.ad-hardening." + check.Replace('_', '-'), ["severity"] = entry.Severity, ["count"] = keys.Length, ["objects"] = labels, ["objects_truncated"] = !allLapsMissing && keys.Length > objectLimit, ["laps_none_found"] = allLapsMissing, ["observed_at_utc"] = observed.ToUniversalTime().ToString("O"), ["domain_id"] = snapshot["domain_id"]?.DeepClone(), ["source_run_id"] = run?.DeepClone(), ["threshold"] = check switch { "old_service_password" => servicePasswordDays, "inactive_privileged" => inactiveDays, "admin_group_size" => adminGroupMembers, _ => (int?)null }, ["member_counts"] = counts });
         }
         return result;
     }

@@ -53,9 +53,14 @@ internal sealed record PasswordRiskSignal(PasswordRule Rule,JsonObject Document,
             RiskJson.Require(RiskJson.String(document,"kind")=="threshold"&&(RiskJson.String(document,"rule_id") is PasswordRule.RuleId or "qw.password-spray")&&RiskJson.Int(document,"rule_version")>=2&&RiskJson.Int(document,"policy_revision")==1);
             RiskJson.Require(RiskJson.String(document,"evaluation_mode") is "enabled" or "shadow" or "test");
             var reasons=document["severity_reasons"]!.AsArray().Select(RiskJson.Text).ToArray();bool spray=RiskJson.String(document,"rule_id")=="qw.password-spray";
-            RiskJson.Require(reasons.Distinct().Count()==reasons.Length&&reasons.All(r=>spray&&r is "machine_tempo_spray" or "regular_intervals" or "success_after_spray")&&RiskJson.String(document,"base_severity")=="high"&&RiskJson.String(document,"effective_severity")== (reasons.Contains("success_after_spray")?"critical":"high")&&RiskJson.String(document,"quality")=="good"&&RiskJson.String(document,"conclusion_state")=="observed");
             var refs=document["evidence_refs"]!.AsArray();RiskJson.Require(refs.Count is >=1 and <=256);
             var rule=new PasswordRule(PasswordScope.Read(refs[0]!["scope"]),RiskJson.String(document,"rule_id")==PasswordRule.RuleId?"brute":"spray",RiskJson.Int(document,"rule_version"));var context=RiskJson.Obj(document["password_context"]);
+            string baseSeverity=rule.NormalizedAccounts?"medium":"high";
+            string successReason=spray?"success_after_spray":"success_after_brute_force";
+            RiskJson.Require(reasons.Distinct().Count()==reasons.Length&&
+                reasons.All(r=>spray&&(r is "machine_tempo_spray" or "regular_intervals" or "success_after_spray")||!spray&&rule.NormalizedAccounts&&r==successReason)&&
+                RiskJson.String(document,"base_severity")==baseSeverity&&RiskJson.String(document,"effective_severity")== (reasons.Contains(successReason)?"critical":baseSeverity)&&
+                RiskJson.String(document,"quality")=="good"&&RiskJson.String(document,"conclusion_state")=="observed");
             string[] contextKeys=["version","episode_key","pin","epoch","entity","sequence","emission_id","root_id","previous_id","seed","endpoint_ordinal","origin_count","root_from","root_count","new_from","new_count","occurrence_total","portion_total","known_bad_password","unknown_account","other_failure","distinct_names","portion_index","occurrence_from","occurrences"];
             RiskJson.Require(context.Count==contextKeys.Length&&contextKeys.All(context.ContainsKey)&&RiskJson.String(context,"version")=="sli.password.v2.portion.1");
             RiskJson.Require(RiskJson.String(document,"rule_sha256")==RiskJson.Text(rule.Execution["rule_sha256"])&&RiskJson.String(context,"pin")==rule.Pin&&RiskJson.String(context,"entity")==RiskJson.String(document,"entity_key")&&RiskJson.String(context,"episode_key")==RiskJson.String(document,"episode_key"));
@@ -130,8 +135,9 @@ internal sealed record PasswordRiskProposal(PasswordRiskPolicy Policy,PasswordRi
         string identity=RiskJson.Hash(new JsonObject{["scenario_kind"]=policy.Rule.Id,["result_class"]="security_incident",["partition_key"]=partition,["strict_keys"]=strict.DeepClone(),["merge_window_seconds"]=600});
         string contribution=$"risk-policy:{policy.Id}:{policy.Version}:qw_signal:{signal.Id}";
         var factors=new JsonObject{["identity_resolution"]="exact",["state_confirmed"]=false,["multi_source_confirmed"]=false,["sequence_completeness"]=Math.Min(100,100*signal.Refs.Count),["time_quality"]="good",["parser_quality"]="good"};
-        bool critical=RiskJson.String(signal.Document,"effective_severity")=="critical";
-        return new(policy,signal,partition,evidenceKey,strict,identity,RiskJson.Hash(Encoding.UTF8.GetBytes("policy-step:"+contribution)),RiskJson.Hash(Encoding.UTF8.GetBytes(contribution)),Assess(critical?80:60,critical?80:60,false,critical?"critical":"high",factors,"unknown"));
+        string severity=RiskJson.String(signal.Document,"effective_severity");
+        int points=severity switch { "critical"=>80,"medium"=>40,_=>60 };
+        return new(policy,signal,partition,evidenceKey,strict,identity,RiskJson.Hash(Encoding.UTF8.GetBytes("policy-step:"+contribution)),RiskJson.Hash(Encoding.UTF8.GetBytes(contribution)),Assess(points,points,false,severity,factors,"unknown"));
     }
     internal static RiskAssessment Assess(decimal raw,int display,bool hard,string risk,JsonObject factors,string coverage)
     {

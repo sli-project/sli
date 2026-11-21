@@ -82,14 +82,31 @@ public sealed record PasswordWitness(PasswordScope Scope,long NativeId,string Sh
 public sealed record PasswordMember(PasswordWitness Witness,string? ClientKind,string? ClientKey,string? TargetKey,string? Failure,string? Reason)
 {
     public string? Entity=>Reason!=null||Failure==null||ClientKey==null||TargetKey==null?null:PasswordJson.Hash(new JsonArray(ClientKind,ClientKey,TargetKey));
-    public string? EntityFor(PasswordRule rule)=>Reason=="successful_logon"?rule.Kind=="spray"&&ClientKind=="ip"&&TargetKey!=null?ClientKey:null:rule.Kind=="spray"?(Reason!=null||Failure==null||ClientKind!="ip"||ClientKey==null||TargetKey==null?null:ClientKey):Entity;
+    public string? EntityFor(PasswordRule rule)
+    {
+        if (Reason == "successful_logon") {
+            if (ClientKind != "ip" || ClientKey is null || TargetKey is null) return null;
+            if (rule.Kind == "spray") return ClientKey;
+            return rule.NormalizedAccounts ? PasswordJson.Hash(new JsonArray(ClientKind,ClientKey,TargetKey)) : null;
+        }
+        return rule.Kind == "spray" ? Reason == null && Failure != null && ClientKind == "ip" && TargetKey != null ? ClientKey : null : Entity;
+    }
     public JsonObject Document=>new(){["witness"]=Witness.Document,["client_kind"]=ClientKind,["client_key"]=ClientKey,["target_key"]=TargetKey,["failure"]=Failure,["reason"]=Reason};
     internal static PasswordMember Read(JsonNode? node)=>new(PasswordWitness.Read(node!["witness"]),node["client_kind"]?.GetValue<string>(),node["client_key"]?.GetValue<string>(),node["target_key"]?.GetValue<string>(),node["failure"]?.GetValue<string>(),node["reason"]?.GetValue<string>());
 }
 
 public sealed record PasswordNative(PasswordWitness Witness,int EventId,string SourceXml,PasswordMember Member)
 {
-    public static PasswordNative Parse(PasswordScope scope,long id,string hash,int eventId,DateTimeOffset at,string xml)
+    internal string? NameTargetKey { get; init; }
+    internal string? BruteSuccessNameEntity => Member.Reason == "successful_logon" && NameTargetKey is not null && NameTargetKey != Member.TargetKey
+        ? PasswordJson.Hash(new JsonArray(Member.ClientKind, Member.ClientKey, NameTargetKey)) : null;
+    internal bool SameTarget(PasswordNative other) => Member.TargetKey == other.Member.TargetKey ||
+        NameTargetKey is not null && NameTargetKey == other.NameTargetKey &&
+        (Member.TargetKey == NameTargetKey || other.Member.TargetKey == other.NameTargetKey);
+    internal bool ProvesEntity(PasswordRule rule, string entity) => Member.EntityFor(rule) == entity ||
+        rule.NormalizedAccounts && rule.Kind == "brute" && BruteSuccessNameEntity == entity;
+
+    public static PasswordNative Parse(PasswordScope scope,long id,string hash,int eventId,DateTimeOffset at,string xml,bool normalizeAccount=false)
     {
         scope.Validate();byte[] payload=new UTF8Encoding(false,true).GetBytes(xml);
         if(payload.Length>4194304||xml.Contains("<!DOCTYPE",StringComparison.OrdinalIgnoreCase)||xml.Contains("<!ENTITY",StringComparison.OrdinalIgnoreCase))throw new PasswordFailure("password_v2_native_invalid");
@@ -111,7 +128,16 @@ public sealed record PasswordNative(PasswordWitness Witness,int EventId,string S
         }
         string Get(string key)=>fields.GetValueOrDefault(key,"");
         string account=UnicodeCaseFold.TrimAndFold(Get("TargetUserName")),domain=UnicodeCaseFold.TrimAndFold(Get("TargetDomainName"));
+        if (normalizeAccount && account.IndexOf('\\') is int separator && separator > 0 && account[..separator] == domain)
+            account = account[(separator + 1)..];
         string? target=account is not ("" or "-" or "n/a")&&account.EnumerateRunes().Count()<=256&&domain.EnumerateRunes().Count()<=256?PasswordJson.Hash(new JsonArray(domain,account)):null;
+        string? nameTarget = normalizeAccount ? target : null;
+        if (normalizeAccount) {
+            string sid = Get("TargetUserSid").Trim().ToUpperInvariant();
+            if (sid is "" or "-" or "S-1-0-0") sid = Get("TargetSid").Trim().ToUpperInvariant();
+            if (System.Text.RegularExpressions.Regex.IsMatch(sid, @"\AS-1-5-21(?:-[0-9]{1,10}){4}\z"))
+                target = PasswordJson.Hash(new JsonArray("sid",sid));
+        }
         var addresses=new HashSet<string>(StringComparer.Ordinal);
         foreach(string key in new[]{"IpAddress","ClientAddress","SourceNetworkAddress"}) {
             string text=PasswordJson.Trim(Get(key));if(!StrictIp(text,out var ip,out var zone))continue;
@@ -129,7 +155,7 @@ public sealed record PasswordNative(PasswordWitness Witness,int EventId,string S
         var (failure,statusReason)=Classify(fields,eventId);reason=target==null?"missing_target":failure==null?statusReason:reason;
         if(eventId==4624){failure="other_failure";reason=target!=null&&client!=null&&kind=="ip"?"successful_logon":"missing_client";}
         var witness=new PasswordWitness(scope,id,hash,at.ToUniversalTime(),Convert.ToHexStringLower(SHA256.HashData(payload)),payload.Length);
-        return new(witness,eventId,xml,new(witness,kind,client,target,failure,reason));
+        return new(witness,eventId,xml,new(witness,kind,client,target,failure,reason)) { NameTargetKey = nameTarget };
     }
     internal static bool StrictIp(string text,out IPAddress? value,out string? zone)
     {
