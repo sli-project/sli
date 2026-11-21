@@ -1,5 +1,6 @@
 """Clean-install boot contracts; no host services, packages or data are touched."""
 from contextlib import nullcontext
+from datetime import datetime, timezone
 import json
 from types import SimpleNamespace
 
@@ -102,12 +103,16 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
     enable = ["systemctl", "enable", "sli.target"]
     if accepted:
         install.configure("test")
+        installed_path = state / "installed.json"
+        installed_at = json.loads(installed_path.read_text())["installed_at_utc"]
+        assert datetime.fromisoformat(installed_at).tzinfo == timezone.utc
         assert calls.index("acceptance") < calls.index("recovery") < calls.index(enable)
         assert json.loads((state / "package-install.json").read_text())["status"] == "configured"
         monkeypatch.setattr(install, "CURRENT", release)
         monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())
         calls.clear()
         install.configure("test")
+        assert json.loads(installed_path.read_text())["installed_at_utc"] == installed_at
         reset = ["systemctl", "reset-failed", "sli[-.]*"]
         assert calls.index(["systemctl", "stop", "sli-ready.service"]) < calls.index(reset)
         assert calls.index(reset) < calls.index(["systemctl", "start", "sli-ready.service"])

@@ -52,7 +52,7 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.free": "Free",
   "systemStatus.download": "Download diagnostics",
   "systemStatus.downloadFailed": "Could not download diagnostics",
-  "systemStatus.version": "SLI {version} · installed {date}",
+  "systemStatus.version": "SLI {version} · commit {commit} · installed {date}",
   "systemStatus.copy": "Copy",
   "systemStatus.copied": "Copied",
   "systemStatus.copyFailed": "Could not copy the update command",

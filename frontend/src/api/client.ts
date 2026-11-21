@@ -1482,15 +1482,24 @@ export type RuntimeCollectionRun = {
   duration_ms?: number | null; errors_json?: string[];
 };
 
+type ReleaseMetadata = {
+  project_version?: string | null;
+  release_tag?: string | null;
+  git_commit?: string | null;
+  installed_at_utc?: string | null;
+  [key: string]: unknown;
+};
+
 export type DiagnosticsOverview = {
   status: string;
-  release_metadata?: { project_version?: string; generated_at_utc?: string; build_id?: string; [key: string]: unknown };
+  release_metadata?: ReleaseMetadata;
   warnings?: string[];
   parsed_checks?: Record<string, { status?: string; duration_ms?: number; [key: string]: unknown } | null>;
   logs?: Record<string, string>;
 };
 
 export type SystemHealth = {
+  release_metadata?: ReleaseMetadata;
   password_catchup?: { from: string; to: string; cursor: string; heartbeat: string | null } | null;
   generated_at_utc?: string;
   status?: string;

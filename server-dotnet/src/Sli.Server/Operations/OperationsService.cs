@@ -106,7 +106,7 @@ public sealed partial class OperationsService(IOperationsQueries queries, Operat
     {
         var targets = await TargetsAsync(ct);
         return new() { ["status"] = "ok", ["active_backend"] = "postgres", ["postgres_dsn_present"] = true,
-            ["storage_v2"] = StorageSettings(), ["identity"] = Hosting.HealthHosting.RuntimeIdentity(),
+            ["storage_v2"] = StorageSettings(), ["identity"] = Hosting.HealthHosting.RuntimeIdentity(files.Release),
             ["scheduler"] = Scheduler(targets), ["collection"] = await CollectionAsync(ct) };
     }
     bool LegacyDisabled => files.Setting("SLI_LEGACY_COLLECTION_DISABLED", "0").Trim() != "0";

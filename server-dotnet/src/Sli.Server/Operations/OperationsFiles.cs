@@ -20,11 +20,13 @@ public partial class OperationsFiles
     private long healthCaptured;
     public string Root { get; }
     public string DataRoot { get; }
+    internal Hosting.ReleaseMetadata Release { get; }
     private readonly IConfiguration config;
     private readonly Storage.Lifecycle.LifecycleConfiguration legacyConfig;
     public OperationsFiles(IConfiguration config)
     {
         this.config = config;
+        Release = Hosting.ReleaseMetadata.Read(config);
         Root = Path.GetFullPath(config["Sli:ProjectRoot"] ?? FindRoot());
         legacyConfig = new(Root, name => config["Sli:Operations:" + name] ?? Environment.GetEnvironmentVariable(name));
         string sibling = Path.Combine(Directory.GetParent(Root)?.FullName ?? Root, "sli_data");
