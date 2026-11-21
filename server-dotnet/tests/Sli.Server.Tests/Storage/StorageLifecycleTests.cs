@@ -49,7 +49,7 @@ public sealed class StorageLifecycleTests
         using var state = new State(); var session = new Session();
         var result = await new StorageLifecycleWorker(session,state.Files,()=>Now).CycleAsync(new(),TestContext.Current.CancellationToken);
         Assert.Equal("ok", result["status"]?.ToString());
-        Assert.Equal(new[] {"partitions","inbox","receipts","outbox"},session.Phases);
+        Assert.Equal(new[] {"inbox","partitions","receipts","outbox"},session.Phases);
         Assert.Equal(Now.AddDays(-7),Assert.Single(session.InboxCalls).Cutoff);
     }
     [Fact]
@@ -132,6 +132,7 @@ public sealed class StorageLifecycleTests
         session.Partition=_=>throw new IOException("password=private AD");
         Assert.Equal(2,await new StorageLifecycleWorker(session,state.Files,()=>Now).RunAsync(new(Once:true),r=>output=r,TestContext.Current.CancellationToken));
         Assert.DoesNotContain("private",output!.ToJsonString()); Assert.Equal("purge_verification_or_io_failed",output["reason"]?.ToString());
+        Assert.Equal("complete", output["agent_inbox_retention"]?["status"]?.ToString());
         Assert.NotNull(output["last_successful_watermark"]);
     }
     [Fact]
