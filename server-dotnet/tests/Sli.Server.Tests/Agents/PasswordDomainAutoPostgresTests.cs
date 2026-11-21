@@ -2,12 +2,17 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Sli.Agent.Core;
+using Sli.Agent.Protocol;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.ClientControl;
 using Sli.Server.Agents.Consumer;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Agents.Registry;
+using Sli.Server.Agents.SnapshotPublication;
 using Sli.Server.Infrastructure;
 using Sli.Server.InstallationSetup;
 using Sli.Server.Semantic.Password;
@@ -31,10 +36,13 @@ public sealed class PasswordDomainAutoPostgresTests
     [InlineData("enrollment")]
     [InlineData("startup")]
     [InlineData("identity_report")]
+    [InlineData("known_domain")]
+    [InlineData("legacy_fqdn")]
     public async Task Dc_source_and_snapshot_policy_are_provisioned_and_retained_packets_import(string path)
     {
         var ct = TestContext.Current.CancellationToken;
-        const string computer = "LAB-DC01";
+        const string hostname = "LAB-DC01";
+        string computer = path == "legacy_fqdn" ? "LAB-DC01.example.test" : hostname;
         const string sid = "S-1-5-21-100000001-200000002-300000003";
         var host = Guid.NewGuid();
         using var environment = new SemanticProducerPostgresTests.Admission();
@@ -42,6 +50,10 @@ public sealed class PasswordDomainAutoPostgresTests
         await fixture.StartAsync(ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(owner, "update plugin_installations_v1 set desired_activation='enabled_manual' where plugin_id='sli.ad'", ct);
+        if (path == "known_domain")
+            await PostCollectionPostgres.Sql(owner, "update domains set domain_sid='S-1-5-21-100000001-200000002-300000003' where fqdn='example.test'", ct);
+        if (path == "legacy_fqdn")
+            await PostCollectionPostgres.Sql(owner, "update domains set fqdn='unregistered.example.test' where fqdn='example.test'", ct);
         await AgentInboxDeferralTests.AuthorizeStorageAsync(owner, fixture.Pg.Root, ct);
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var root = CaRequest("CN=synthetic root", rootKey, 1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
@@ -112,7 +124,20 @@ public sealed class PasswordDomainAutoPostgresTests
             await inventory.ExecuteNonQueryAsync(ct);
             await ReconcileStartup();
         }
-        if (path == "identity_report")
+        if (path == "legacy_fqdn")
+        {
+            await PostCollectionPostgres.Sql(owner, """
+                update domains set fqdn='example.test',domain_sid='S-1-5-21-100000001-200000002-300000003'
+                where fqdn='unregistered.example.test';
+                update sli_agent_certificates set revoked_at=clock_timestamp();
+                """, ct);
+            await ReconcileSources();
+            await using (var count = new NpgsqlCommand("select count(*) from servers", owner))
+                Assert.Equal(0L, await count.ExecuteScalarAsync(ct));
+            await PostCollectionPostgres.Sql(owner, "update sli_agent_certificates set revoked_at=null", ct);
+            await ReconcileSources();
+        }
+        if (path is "identity_report" or "known_domain")
         {
             using var cert = X509Certificate2.CreateFromPem((string)enrolled["certificate_pem"]!);
             await using (var tx = await app.BeginTransactionAsync(ct))
@@ -126,6 +151,20 @@ public sealed class PasswordDomainAutoPostgresTests
             wrongComputer["reported_hostname"] = "LAB-DC02";
             await ReportIdentity(wrongComputer);
             Assert.Equal(0, (await consumer.RunOnceAsync(1, ct)).Imported);
+            if (path == "identity_report")
+            {
+                var dnsOnly = report.DeepClone().AsObject();
+                dnsOnly.Remove("domain_sid");
+                await ReportIdentity(dnsOnly);
+                await using var intermediate = new NpgsqlCommand("""
+                    select (select count(*) from servers where fqdn='lab-dc01.example.test'),
+                           (select count(*) from sli_agent_snapshot_bindings)
+                    """, owner);
+                await using var row = await intermediate.ExecuteReaderAsync(ct);
+                Assert.True(await row.ReadAsync(ct));
+                Assert.Equal(1L, row.GetInt64(0));
+                Assert.Equal(0L, row.GetInt64(1));
+            }
             await ReportIdentity(report);
 
             async Task ReportIdentity(JsonObject dcIdentity)
@@ -143,23 +182,27 @@ public sealed class PasswordDomainAutoPostgresTests
             select t.connect_address,t.hostname,d.domain_sid,
                 (select count(*) from sli_agent_snapshot_policies p where p.agent_id=@agent and p.module_id='sli.ad-snapshot' and p.enabled),
                 (select policy_revision from sli_agents where id=@agent),
-                (select policy_revision from sli_agent_module_bindings where agent_id=@agent and module_id='sli.windows.ad-dc')
+                (select policy_revision from sli_agent_module_bindings where agent_id=@agent and module_id='sli.windows.ad-dc'),
+                (select count(*) from sli_agent_audit where action='module_assign' and target=@agent::text
+                    and details->>'source'='agent_reported')
             from domain_controller_targets t join domains d on d.id=t.domain_id
             """, app);
         configured.Parameters.AddWithValue("agent", agent);
-        await ReconcileStartup();
+        await ReconcileSources();
         await ReconcileStartup();
         await using (var row = await configured.ExecuteReaderAsync(ct))
         {
             Assert.True(await row.ReadAsync(ct));
             Assert.Equal("lab-dc01.example.test", row.GetString(0));
-            Assert.Equal(computer, row.GetString(1));
+            Assert.Equal(hostname, row.GetString(1));
             Assert.Equal(sid, row.GetString(2));
             Assert.Equal(1L, row.GetInt64(3));
             Assert.Equal(path == "enrollment" ? 2L : 3L, row.GetInt64(4));
             Assert.Equal("2", row.GetString(5));
+            Assert.Equal(path == "startup" ? 0L : 1L, row.GetInt64(6));
             Assert.False(await row.ReadAsync(ct));
         }
+        if (path == "enrollment") await PublishFirstSnapshot();
         int imported = 0;
         if (path != "enrollment")
         {
@@ -186,6 +229,76 @@ public sealed class PasswordDomainAutoPostgresTests
             await AgentEnrollmentService.ReconcileRegistrationsAsync(app, tx, ct);
             await tx.CommitAsync(ct);
         }
+
+        async Task ReconcileSources()
+        {
+            await using var tx = await app.BeginTransactionAsync(ct);
+            await AgentEnrollmentService.ReconcileDcSourcesAsync(app, tx, null, ct);
+            await tx.CommitAsync(ct);
+        }
+
+        async Task PublishFirstSnapshot()
+        {
+            using var cert = X509Certificate2.CreateFromPem((string)enrolled["certificate_pem"]!);
+            var vector = JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),
+                "server-dotnet/tests/Sli.Server.Tests/Agents/ad-publication-source-vector.json"))
+                .Replace("directory.invalid", "example.test").Replace("DC=directory,DC=invalid", "DC=example,DC=test")
+                .Replace("host.invalid", "lab-dc01.example.test").Replace("object-10001", "lab-dc01"))!;
+            var now = Iso8601.ParseUtc("2026-10-08T12:00:00+00:00");
+            var clock = new SnapshotClock(now);
+            var ingress = new AgentPacketService(clock, new AgentInboxLimits(4096, 268435456, 32768, 2147483648,
+                65536, 4294967296, 17179869184), new AgentIngressDiagnostics(fixture.Pg.Root,
+                NullLogger<AgentIngressDiagnostics>.Instance, clock));
+            var stream = new SnapshotStream(fixture.Pg.Root, SnapshotPolicy.Ad, new PhysicalDurableFiles());
+            Guid cycle;
+            await using (var tx = await app.BeginTransactionAsync(ct))
+            {
+                var authenticated = await identity.AuthenticateAsync(app, tx, cert, false, ct);
+                var response = await clients.CheckInAsync(app, tx, authenticated, ct);
+                var assignment = response["assigned_modules"]!.AsArray().Single(m => (string?)m?["module_id"] == SnapshotPolicy.Ad)!;
+                var policy = SnapshotPolicy.Parse(SnapshotPolicy.Ad, assignment["config"]!.AsObject());
+                var state = stream.Begin(policy, now)!;
+                cycle = Guid.Parse((string)state["cycle_id"]!);
+                var families = policy.Families.ToDictionary(family => family, family =>
+                {
+                    var data = vector["families"]![family]!.AsObject();
+                    data.Remove("bundle_sha256");
+                    return new SnapshotFamily(data, data[family == "computers_v6" ? "objects" : "records"]!.AsArray().Count);
+                });
+                stream.Freeze(state, families);
+                CapturedPosition? captured = null;
+                var signer = new EcdsaPacketSigner(key);
+                long sequence = 0;
+                while (stream.NextSample(captured) is { } sample)
+                {
+                    var packet = Packets.Make(signer, agent.ToString("D"), ++sequence, sample, now);
+                    var receipt = await ingress.ReceiveAsync(app, tx, authenticated, cert, packet.ToJson(), ct);
+                    Assert.Equal("committed", (string?)receipt["status"]);
+                    captured = new CapturedPosition(policy.SourceId, sample.CursorAfter);
+                }
+                Assert.True(sequence > 0);
+                await tx.CommitAsync(ct);
+            }
+            await using var worker = new NpgsqlConnection(fixture.Dsn("sli_context_login"));
+            await worker.OpenAsync(ct);
+            await PostCollectionPostgres.Sql(worker, "set role adlog_context_worker", ct);
+            var publication = await AdSnapshotPublisher.ProcessAsync(worker, cycle, ct);
+            Assert.True(publication.PublicationState == "published", publication.PendingReason);
+            await ReconcileSources();
+            await using var check = new NpgsqlCommand("""
+                select (select count(*) from servers where lower(fqdn)='lab-dc01.example.test'),
+                       (select count(*) from computers_v6_source_snapshots)
+                """, owner);
+            await using var row = await check.ExecuteReaderAsync(ct);
+            Assert.True(await row.ReadAsync(ct));
+            Assert.Equal(1L, row.GetInt64(0));
+            Assert.Equal(1L, row.GetInt64(1));
+        }
+    }
+
+    private sealed class SnapshotClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     [Theory]

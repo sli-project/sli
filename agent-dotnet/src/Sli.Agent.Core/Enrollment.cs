@@ -58,9 +58,11 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
 
     public JsonObject? ReadDcIdentity()
     {
-        if ((readProductType ?? ReadProductType)() != "LanmanNT" || (readDomain ?? ReadDcDomain)() is not { Sid: { } sid } domain) return null;
-        return new JsonObject { ["machine_role"] = "domain_controller", ["reported_hostname"] = Environment.MachineName,
-            ["domain_dns"] = domain.Dns, ["forest_dns"] = domain.Forest, ["domain_sid"] = sid };
+        if ((readProductType ?? ReadProductType)() != "LanmanNT" || (readDomain ?? ReadDcDomain)() is not { } domain) return null;
+        var report = new JsonObject { ["machine_role"] = "domain_controller", ["reported_hostname"] = Environment.MachineName,
+            ["domain_dns"] = domain.Dns, ["forest_dns"] = domain.Forest };
+        if (domain.Sid is not null) report["domain_sid"] = domain.Sid;
+        return report;
     }
 
     public async Task<AgentIdentity> EnrollAsync(string token, CancellationToken cancellationToken, string? instanceName = null)
