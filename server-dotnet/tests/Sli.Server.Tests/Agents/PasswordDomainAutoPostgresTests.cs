@@ -38,6 +38,7 @@ public sealed class PasswordDomainAutoPostgresTests
     [InlineData("identity_report")]
     [InlineData("known_domain")]
     [InlineData("legacy_fqdn")]
+    [InlineData("stand_upgrade")]
     public async Task Dc_source_and_snapshot_policy_are_provisioned_and_retained_packets_import(string path)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -54,6 +55,11 @@ public sealed class PasswordDomainAutoPostgresTests
             await PostCollectionPostgres.Sql(owner, "update domains set domain_sid='S-1-5-21-100000001-200000002-300000003' where fqdn='example.test'", ct);
         if (path == "legacy_fqdn")
             await PostCollectionPostgres.Sql(owner, "update domains set fqdn='unregistered.example.test' where fqdn='example.test'", ct);
+        if (path == "stand_upgrade")
+            await PostCollectionPostgres.Sql(owner, """
+                update forests set name='example.invalid' where name='example.test';
+                update domains set fqdn='example.invalid',netbios_name=null,domain_sid=null where fqdn='example.test';
+                """, ct);
         await AgentInboxDeferralTests.AuthorizeStorageAsync(owner, fixture.Pg.Root, ct);
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var root = CaRequest("CN=synthetic root", rootKey, 1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
@@ -90,12 +96,30 @@ public sealed class PasswordDomainAutoPostgresTests
             await tx.CommitAsync(ct);
         }
         var agent = Guid.Parse((string)enrolled["agent_id"]!);
-        int packets = path == "enrollment" ? 1 : 3;
+        if (path == "stand_upgrade")
+        {
+            await PostCollectionPostgres.Sql(owner, """
+                update sli_agents set source_host_id=null,applied_policy_revision=2,
+                    rights_probe='{"agent_version":"0.3.5","runtime_handoff_supported":true}';
+                """, ct);
+            await ReconcileStartup();
+            await using var before = new NpgsqlCommand("""
+                select exists(select 1 from domains where fqdn='example.invalid' and not is_archived)
+                    and not exists(select 1 from servers)
+                    and not exists(select 1 from domain_controller_targets)
+                    and not exists(select 1 from sli_agent_module_bindings where password_detection_domain_id is not null)
+                """, owner);
+            Assert.Equal(true, await before.ExecuteScalarAsync(ct));
+        }
+        int packets = path switch { "enrollment" => 1, "stand_upgrade" => 2, _ => 3 };
         await using (var tx = await owner.BeginTransactionAsync(ct))
         {
             for (int i = 1; i <= packets; i++)
             {
-                var sample = AgentInboxDeferralTests.Sample(agent, host, computer, i, policyRevision: "2");
+                var sample = path == "stand_upgrade"
+                    ? AgentInboxDeferralTests.Sample(agent, host, computer, i == 1 ? 24 : 49,
+                        policyRevision: "2", recordCount: i + 23, sequence: i)
+                    : AgentInboxDeferralTests.Sample(agent, host, computer, i, policyRevision: "2");
                 await AgentInboxDeferralTests.InsertAsync(owner, tx, sample, i, ct);
             }
             await tx.CommitAsync(ct);
@@ -137,7 +161,7 @@ public sealed class PasswordDomainAutoPostgresTests
             await PostCollectionPostgres.Sql(owner, "update sli_agent_certificates set revoked_at=null", ct);
             await ReconcileSources();
         }
-        if (path is "identity_report" or "known_domain")
+        if (path is "identity_report" or "known_domain" or "stand_upgrade")
         {
             using var cert = X509Certificate2.CreateFromPem((string)enrolled["certificate_pem"]!);
             await using (var tx = await app.BeginTransactionAsync(ct))
@@ -150,6 +174,15 @@ public sealed class PasswordDomainAutoPostgresTests
             var wrongComputer = report.DeepClone().AsObject();
             wrongComputer["reported_hostname"] = "LAB-DC02";
             await ReportIdentity(wrongComputer);
+            if (path == "stand_upgrade")
+            {
+                var missingRole = report.DeepClone().AsObject();
+                missingRole.Remove("machine_role");
+                await ReportIdentity(missingRole);
+                var missingDomain = report.DeepClone().AsObject();
+                missingDomain.Remove("domain_dns");
+                await ReportIdentity(missingDomain);
+            }
             Assert.Equal(0, (await consumer.RunOnceAsync(1, ct)).Imported);
             if (path == "identity_report")
             {
@@ -173,7 +206,7 @@ public sealed class PasswordDomainAutoPostgresTests
                 await AgentEnrollmentService.LockRegistrationAsync(app, tx, ct);
                 var authenticated = await identity.AuthenticateAsync(app, tx, cert, false, ct);
                 await clients.ReportAsync(app, tx, authenticated, new JsonObject { ["applied_policy_revision"] = 2,
-                    ["collection_state"] = "active", ["dc_identity"] = dcIdentity.DeepClone() }, ct);
+                    ["collection_state"] = "active", ["dc_identity"] = dcIdentity.DeepClone(), ["agent_version"] = "26.0.1000" }, ct);
                 await tx.CommitAsync(ct);
             }
         }
@@ -202,7 +235,7 @@ public sealed class PasswordDomainAutoPostgresTests
             Assert.Equal(path == "startup" ? 0L : 1L, row.GetInt64(6));
             Assert.False(await row.ReadAsync(ct));
         }
-        if (path == "enrollment") await PublishFirstSnapshot();
+        if (path is "enrollment" or "stand_upgrade") await PublishFirstSnapshot();
         int imported = 0;
         if (path != "enrollment")
         {
@@ -220,6 +253,25 @@ public sealed class PasswordDomainAutoPostgresTests
             imported += result.Imported;
         }
         Assert.Equal(packets, imported);
+        if (path == "stand_upgrade")
+        {
+            await using var recovered = new NpgsqlCommand("""
+                select d.fqdn,b.password_detection_domain_id=d.id,
+                    (select count(*) from event_hot where domain_id=d.id),
+                    (select rights_probe->>'agent_version' from sli_agents where id=b.agent_id),
+                    (select count(*) from domains where not is_archived)
+                from domains d join sli_agent_module_bindings b on b.password_detection_domain_id=d.id
+                where not d.is_archived
+                """, owner);
+            await using var row = await recovered.ExecuteReaderAsync(ct);
+            Assert.True(await row.ReadAsync(ct));
+            Assert.Equal("example.test", row.GetString(0));
+            Assert.True(row.GetBoolean(1));
+            Assert.Equal(49L, row.GetInt64(2));
+            Assert.Equal("26.0.1000", row.GetString(3));
+            Assert.Equal(1L, row.GetInt64(4));
+            Assert.False(await row.ReadAsync(ct));
+        }
         await using var remaining = new NpgsqlCommand("select count(*) from sli_agent_packet_inbox where imported_at is null", owner);
         Assert.Equal(0L, await remaining.ExecuteScalarAsync(ct));
 

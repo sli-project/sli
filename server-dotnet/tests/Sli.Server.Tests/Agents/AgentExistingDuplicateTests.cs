@@ -13,6 +13,34 @@ namespace Sli.Server.Tests.Agents;
 
 public sealed class AgentExistingDuplicateTests
 {
+    [Fact]
+    public void Unbound_diagnostics_are_limited_per_agent_for_ten_minutes()
+    {
+        var logger = new ReconciliationLogger();
+        var clock = new ReconciliationClock();
+        var diagnostics = new AgentDcSourceDiagnostics(logger, clock);
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        diagnostics.LogUnbound(first, "missing_domain");
+        clock.Seconds = 599;
+        diagnostics.LogUnbound(first, "missing_role");
+        diagnostics.LogUnbound(second, "no_server");
+        clock.Seconds = 600;
+        diagnostics.LogUnbound(first, "missing_role");
+        Assert.Equal(new[] {
+            $"agent_dc_source_unbound agent_id={first} reason=missing_domain",
+            $"agent_dc_source_unbound agent_id={second} reason=no_server",
+            $"agent_dc_source_unbound agent_id={first} reason=missing_role"
+        }, logger.Warnings);
+    }
+
+    private sealed class ReconciliationClock : TimeProvider
+    {
+        public long Seconds { get; set; }
+        public override long TimestampFrequency => 1;
+        public override long GetTimestamp() => Seconds;
+    }
+
     private sealed class Connections(string dsn) : IPostgresConnectionFactory
     {
         public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
@@ -272,6 +300,7 @@ public sealed class AgentExistingDuplicateTests
     private sealed class ReconciliationLogger : ILogger<AgentRegistrationReconciliation>
     {
         public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public List<string> Warnings { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -280,6 +309,7 @@ public sealed class AgentExistingDuplicateTests
         {
             if (eventId == AgentRegistrationReconciliation.ReconciliationCompleted)
                 Completed.TrySetResult();
+            if (logLevel == LogLevel.Warning) Warnings.Add(formatter(state, exception));
         }
     }
     private static Task SeedServers(NpgsqlConnection db,CancellationToken ct) => PostCollectionPostgres.Sql(db,"""

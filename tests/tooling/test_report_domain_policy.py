@@ -13,6 +13,14 @@ from scripts.maintenance.existing_postgres_bootstrap import (
 )
 
 
+def test_native_setup_renders_empty_directory_inventory(tmp_path: Path) -> None:
+    source = Path(__file__).resolve().parents[2] / "config/postgres_baseline/baseline.sql"
+    baseline = Baseline(version=166, roles_path=source.with_name("roles.sql"), schema_path=source)
+    rendered = render_baseline_schema(baseline, "example.invalid", tmp_path / "baseline.sql").read_text(encoding="utf-8")
+    for line, following in zip(rendered.splitlines(), rendered.splitlines()[1:]):
+        if line.startswith(("COPY public.domains ", "COPY public.forests ")):
+            assert following == r"\."
+
 
 def test_baseline_seeds_report_domain_in_database_without_changing_source(tmp_path: Path) -> None:
     source = tmp_path / "source.sql"

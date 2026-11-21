@@ -56,11 +56,14 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
     [DllImport("netapi32.dll", ExactSpelling = true)]
     private static extern void DsRoleFreeMemory(IntPtr buffer);
 
-    public JsonObject? ReadDcIdentity()
+    public JsonObject ReadDcIdentity()
     {
-        if ((readProductType ?? ReadProductType)() != "LanmanNT" || (readDomain ?? ReadDcDomain)() is not { } domain) return null;
-        var report = new JsonObject { ["machine_role"] = "domain_controller", ["reported_hostname"] = Environment.MachineName,
-            ["domain_dns"] = domain.Dns, ["forest_dns"] = domain.Forest };
+        var report = new JsonObject { ["reported_hostname"] = Environment.MachineName };
+        if ((readProductType ?? ReadProductType)() != "LanmanNT") return report;
+        report["machine_role"] = "domain_controller";
+        if ((readDomain ?? ReadDcDomain)() is not { } domain) return report;
+        report["domain_dns"] = domain.Dns;
+        report["forest_dns"] = domain.Forest;
         if (domain.Sid is not null) report["domain_sid"] = domain.Sid;
         return report;
     }

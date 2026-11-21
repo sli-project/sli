@@ -113,11 +113,29 @@ public sealed partial class AgentManagementService
     }
 }
 
-internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, string Digest)
+internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, string Digest, string ProductVersion = "")
 {
     public const string DownloadPath = "/api/v1/agent/installer/SliAgent.msi";
     private static string PackagePath(IConfiguration config) =>
         config["Sli:AgentInstallerPath"] ?? "/opt/sli/current/agent/SliAgent.msi";
+
+    private static async Task<string> ReadVersionAsync(string path, string digest, CancellationToken ct)
+    {
+        FileStream metadata;
+        try { metadata = File.OpenRead(path + ".json"); }
+        catch (FileNotFoundException) { return ""; } // MSI from a kit predating the version manifest.
+        await using (metadata)
+        {
+            using var document = await JsonDocument.ParseAsync(metadata, cancellationToken: ct);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("product_version", out var version) ||
+                version.ValueKind != JsonValueKind.String || !Version.TryParse(version.GetString(), out var parsed) ||
+                parsed.Major > 255 || parsed.Minor > 255 || parsed.Build is < 0 or > 65535 || parsed.Revision != -1 ||
+                !root.TryGetProperty("sha256", out var hash) || hash.ValueKind != JsonValueKind.String || hash.GetString() != digest)
+                throw new InvalidDataException("Invalid agent MSI metadata.");
+            return parsed.ToString(3);
+        }
+    }
 
     private static readonly string Script = ReadScript();
     private static string ReadScript()
@@ -134,14 +152,18 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
         FileStream? stream = null;
         try
         {
-            stream = File.OpenRead(PackagePath(configuration));
-            context.Response.Headers["X-SLI-Package-SHA256"] = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
+            string path = PackagePath(configuration);
+            stream = File.OpenRead(path);
+            string digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
+            string version = await ReadVersionAsync(path, digest, ct);
+            context.Response.Headers["X-SLI-Package-SHA256"] = digest;
+            if (version.Length > 0) context.Response.Headers["X-SLI-Package-Version"] = version;
             stream.Position = 0;
             var result = Results.File(stream, "application/octet-stream", "SliAgent.msi");
             stream = null; // The file result owns the stream.
             return result;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
             return Results.NotFound(new { error = "agent_console_package_unavailable", message = "The SLI server has no agent installation package." });
         }
@@ -161,11 +183,13 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
                 InstalledConfiguration.CredentialPath(config, caPath, "SLI_TLS_CA_FILE"), ct));
             if (root.Extensions.OfType<X509BasicConstraintsExtension>().SingleOrDefault()?.CertificateAuthority != true)
                 throw new CryptographicException();
-            await using var msi = File.OpenRead(PackagePath(config));
-            return new(origin, Convert.ToBase64String(root.RawData), Convert.ToHexStringLower(SHA256.HashData(root.RawData)),
-                Convert.ToHexStringLower(await SHA256.HashDataAsync(msi, ct)));
+            string path = PackagePath(config);
+            await using var msi = File.OpenRead(path);
+            string digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(msi, ct));
+            string version = await ReadVersionAsync(path, digest, ct);
+            return new(origin, Convert.ToBase64String(root.RawData), Convert.ToHexStringLower(SHA256.HashData(root.RawData)), digest, version);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or CryptographicException or ServerConfigurationException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or CryptographicException or ServerConfigurationException)
         {
             throw new AgentControlException("agent_console_package_unavailable", 503);
         }
@@ -193,7 +217,7 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
     }
 
     public string Command(string token) => "& {\n" + Script + "\n} "
-        + string.Join(' ', new[] { Origin.AbsoluteUri, token, Root, Pin, Digest }.Select(QuotePowerShell));
+        + string.Join(' ', new[] { Origin.AbsoluteUri, token, Root, Pin, Digest, ProductVersion }.Select(QuotePowerShell));
 
     internal static string QuotePowerShell(string value) => "'" + value
         .Replace("'", "''").Replace("\u2018", "\u2018\u2018").Replace("\u2019", "\u2019\u2019")

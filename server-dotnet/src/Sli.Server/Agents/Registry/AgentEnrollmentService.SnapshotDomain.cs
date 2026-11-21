@@ -28,7 +28,7 @@ public sealed partial class AgentEnrollmentService
             fqdn = InstallationSettings.Dns(hostname.Contains('.') ? hostname : $"{hostname}.{dns}");
         }
         catch (InstallationException) { return null; }
-        if (fqdn[(fqdn.IndexOf('.') + 1)..] != dns) return null;
+        if (dns == "example.invalid" || forest == "example.invalid" || fqdn[(fqdn.IndexOf('.') + 1)..] != dns) return null;
 
         long? domain = null;
         string? knownSid = null;
@@ -68,10 +68,27 @@ public sealed partial class AgentEnrollmentService
 
         // An owner-issued grant may establish the SID during first-domain setup.
         // An existing SID remains authoritative when registering another controller.
+        long placeholder = 0;
         if (sid is not null && knownSid is null)
         {
-            await using var other = new NpgsqlCommand("select exists(select 1 from domains where not is_archived and lower(fqdn)<>@dns)", db, tx);
+            // Older native setup seeded this pair without configuring AD. Keep
+            // its ID and history separate from the authenticated directory.
+            await using (var legacy = new NpgsqlCommand("""
+                select d.id from domains d join forests f on f.id=d.forest_id
+                where d.fqdn='example.invalid' and f.name='example.invalid' and not d.is_archived
+                    and d.domain_sid is null and d.netbios_name is null
+                    and not exists(select 1 from servers where domain_id=d.id)
+                    and not exists(select 1 from domain_controller_targets where domain_id=d.id)
+                    and not exists(select 1 from sli_agent_module_bindings where password_detection_domain_id=d.id)
+                    and not exists(select 1 from platform_settings where key='reports.domain_fqdn' and value=d.fqdn)
+                order by d.id limit 1 for update of d
+                """, db, tx))
+                if (await legacy.ExecuteScalarAsync(ct) is long id) placeholder = id;
+            await using var other = new NpgsqlCommand("""
+                select exists(select 1 from domains where not is_archived and lower(fqdn)<>@dns and id<>@placeholder)
+                """, db, tx);
             other.Parameters.AddWithValue("dns", dns);
+            other.Parameters.AddWithValue("placeholder", placeholder);
             if (await other.ExecuteScalarAsync(ct) is true) return null;
         }
         if (domain is null)
@@ -100,15 +117,25 @@ public sealed partial class AgentEnrollmentService
             bind.Parameters.AddWithValue("sid", sid);
             await bind.ExecuteNonQueryAsync(ct);
         }
-        if (dc is not null) return dc;
-        await using var register = new NpgsqlCommand("""
-            insert into servers(domain_id,hostname,fqdn,role) values(@domain,@host,@fqdn,'domain_controller')
-            on conflict(domain_id,hostname) do nothing returning id
-            """, db, tx);
-        register.Parameters.AddWithValue("domain", domain.Value);
-        register.Parameters.AddWithValue("host", hostname);
-        register.Parameters.AddWithValue("fqdn", fqdn);
-        return await register.ExecuteScalarAsync(ct) is long server ? (server, hostname, domain.Value, null) : null;
+        if (dc is null)
+        {
+            await using var register = new NpgsqlCommand("""
+                insert into servers(domain_id,hostname,fqdn,role) values(@domain,@host,@fqdn,'domain_controller')
+                on conflict(domain_id,hostname) do nothing returning id
+                """, db, tx);
+            register.Parameters.AddWithValue("domain", domain.Value);
+            register.Parameters.AddWithValue("host", hostname);
+            register.Parameters.AddWithValue("fqdn", fqdn);
+            if (await register.ExecuteScalarAsync(ct) is not long server) return null;
+            dc = (server, hostname, domain.Value, null);
+        }
+        if (placeholder != 0)
+        {
+            await using var archive = new NpgsqlCommand("update domains set is_archived=true where id=@placeholder", db, tx);
+            archive.Parameters.AddWithValue("placeholder", placeholder);
+            await archive.ExecuteNonQueryAsync(ct);
+        }
+        return dc;
     }
 
     private static Task RecordAgentReportedDcAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, long server, CancellationToken ct) =>

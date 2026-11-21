@@ -1,4 +1,4 @@
-param($Server, $RegistrationKey, $CaDer, $CaPin, $PackageSha256)
+param($Server, $RegistrationKey, $CaDer, $CaPin, $PackageSha256, $PackageVersion)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -117,7 +117,29 @@ function Move-PreviousAgentState($State, $Archive) {
     return $true
 }
 
-function Assert-AgentMsiUpgrade($Msi, $Product) {
+function Read-AgentMsiProperties($Msi) {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $null
+    $view = $null
+    try {
+        $package = @{}
+        $database = $installer.OpenDatabase($Msi, 0)
+        $view = $database.OpenView('SELECT `Property`, `Value` FROM `Property`')
+        [void]$view.Execute()
+        while ($record = $view.Fetch()) {
+            try { $package[$record.StringData(1)] = $record.StringData(2) }
+            finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+        }
+        [void]$view.Close()
+        return $package
+    } finally {
+        if ($view) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+        if ($database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    }
+}
+
+function Assert-AgentMsiUpgrade($Package, $Product) {
     foreach ($hive in 'HKLM:', 'HKCU:') {
         $policy = "$hive\SOFTWARE\Policies\Microsoft\Windows\Installer"
         if (Test-Path -LiteralPath $policy) {
@@ -129,33 +151,17 @@ function Assert-AgentMsiUpgrade($Msi, $Product) {
             } finally { $key.Dispose() }
         }
     }
-    # WiX detects earlier versions only. A rebuilt MSI with the same version
-    # and a different ProductCode would install a second product instead.
     $installer = New-Object -ComObject WindowsInstaller.Installer
-    $database = $null
-    $view = $null
-    try {
-        $installedVersion = [version]$installer.ProductInfo($Product.Code, 'VersionString')
-        $package = @{}
-        $database = $installer.OpenDatabase($Msi, 0)
-        $view = $database.OpenView('SELECT `Property`, `Value` FROM `Property`')
-        [void]$view.Execute()
-        while ($record = $view.Fetch()) {
-            try { $package[$record.StringData(1)] = $record.StringData(2) }
-            finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
-        }
-        [void]$view.Close()
-        $version = [version]$package['ProductVersion']
-        $sameProduct = $package['ProductCode'] -eq $Product.Code
-        if ($package['UpgradeCode'] -ne '{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}' -or
-            $version -lt $installedVersion -or ($version -eq $installedVersion) -ne $sameProduct) {
-            throw 'SLI Agent .NET update requires the installed MSI or a newer SLI Agent .NET MSI.'
-        }
-    } finally {
-        if ($view) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
-        if ($database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
-        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    try { $installedVersion = [version]$installer.ProductInfo($Product.Code, 'VersionString') }
+    finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
+    $version = [version]$Package['ProductVersion']
+    $sameProduct = $Package['ProductCode'] -eq $Product.Code
+    # A different ProductCode at the same version would create a second install.
+    if ($Package['UpgradeCode'] -ne '{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}' -or
+        $version -lt $installedVersion -or ($version -eq $installedVersion) -ne $sameProduct) {
+        throw 'SLI Agent .NET update requires the installed MSI or a newer SLI Agent .NET MSI.'
     }
+    return $sameProduct
 }
 
 function Copy-AgentState($Source, $Destination) {
@@ -179,11 +185,11 @@ function Install-AgentMsi($Arguments) {
     if ($process.ExitCode -notin 0, 3010) { throw "SLI Agent installation failed ($($process.ExitCode))." }
 }
 
-function Update-InstalledAgent($Products, $Msi, $State, $Work) {
+function Update-InstalledAgent($Products, $Msi, $State, $Work, $Package) {
     $net = @($Products | Where-Object { $_.Service -eq 'SLIAgentNet' })
     if (!$net.Count) { return $false }
     if ($net.Count -ne 1) { throw 'Multiple SLI Agent .NET installations were found.' }
-    Assert-AgentMsiUpgrade $Msi $net[0]
+    $repair = Assert-AgentMsiUpgrade $Package $net[0]
 
     $archive = Join-Path $Work 'previous-state'
     $failedState = Join-Path $Work 'failed-state'
@@ -199,10 +205,16 @@ function Update-InstalledAgent($Products, $Msi, $State, $Work) {
         }
         $snapshotReady = $true
         Remove-LegacyAgent $Products
-        Write-Host 'Updating SLI Agent .NET...'
+        $arguments = '/i "{0}" /qn /norestart' -f $Msi
+        if ($repair) {
+            Write-Host 'Repairing SLI Agent .NET...'
+            $arguments += ' REINSTALL=ALL REINSTALLMODE=vamus'
+        } else {
+            Write-Host 'Updating SLI Agent .NET...'
+        }
         # Retain the installed bootstrap settings and identity. WiX rolls back
         # the service and binaries if RemoveExistingProducts or installation fails.
-        Install-AgentMsi ('/i "{0}" /qn /norestart' -f $Msi)
+        Install-AgentMsi $arguments
     } catch {
         $installFailure = $_
         try {
@@ -220,7 +232,6 @@ function Update-InstalledAgent($Products, $Msi, $State, $Work) {
         }
         throw $installFailure
     }
-    # A repeat command using the installed ProductCode may run no MSI actions.
     if ($wasRunning) { Start-Service -Name 'SLIAgentNet' }
     if ([IO.Directory]::Exists($archive)) { [IO.Directory]::Delete($archive, $true) }
     return $true
@@ -354,11 +365,15 @@ try {
     if ($signature.Status -ne 'Valid' -and ($signature.Status -ne 'NotSigned' -or $signature.SignerCertificate)) {
         throw 'SLI installer Authenticode signature is invalid.'
     }
+    $package = Read-AgentMsiProperties $msi
+    if ($PackageVersion -and $package['ProductVersion'] -cne $PackageVersion) {
+        throw 'SLI installer product version does not match the server package.'
+    }
 
     $products = @(Get-InstalledAgentProducts)
     if (Test-Path -LiteralPath $state) { Assert-PrivateDirectory $state }
     if (Test-Path -LiteralPath (Join-Path $data 'agent.json')) { throw 'SLI Agent has custom machine settings.' }
-    if (Update-InstalledAgent $products $msi $state $work) {
+    if (Update-InstalledAgent $products $msi $state $work $package) {
         $committed = $true
         Write-Host 'SLI Agent service started. Check the Agents page for its last connection.'
         return

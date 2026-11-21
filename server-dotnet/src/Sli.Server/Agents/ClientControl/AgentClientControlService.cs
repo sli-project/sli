@@ -6,7 +6,8 @@ using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Registry;
 namespace Sli.Server.Agents.ClientControl;
 
-public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock,IConfiguration? configuration = null)
+public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock,IConfiguration? configuration = null,
+    AgentDcSourceDiagnostics? diagnostics = null)
 {
     // Authentication already locked the agent then certificate in this transaction.
     private static async Task<JsonObject> ReadAsync(NpgsqlConnection db,NpgsqlTransaction tx,Guid id,CancellationToken ct)
@@ -40,7 +41,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if (body is JsonObject report && report.TryGetPropertyValue("dc_identity", out var evidence))
         {
             if (evidence is not JsonObject dc ||
-                !dc.ContainsKey("machine_role") || !dc.ContainsKey("reported_hostname") || !dc.ContainsKey("domain_dns") ||
+                !dc.ContainsKey("reported_hostname") ||
                 dc.Any(field => field.Key is not ("machine_role" or "reported_hostname" or "domain_dns" or "forest_dns" or "domain_sid")))
                 throw new AgentControlException("invalid_agent_module_config");
             dcIdentity = dc;
@@ -66,7 +67,8 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if (dcIdentity is not null && AgentEnrollmentService.CollectionProfile(configuration) == "beta")
         {
             await AgentManagementService.LockImportAsync(db, tx, identity.Id, ct);
-            await AgentEnrollmentService.ReconcileDcSourceAsync(db, tx, identity.Id, configuration, ct, dcIdentity);
+            if (await AgentEnrollmentService.ReconcileDcSourceAsync(db, tx, identity.Id, configuration, ct, dcIdentity) is { } reason)
+                diagnostics?.LogUnbound(identity.Id, reason);
             await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, identity.Id, ct);
         }
         return change.Output;

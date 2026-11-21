@@ -1,9 +1,13 @@
 param(
     [Parameter(Mandatory)][string]$Msi,
     [Parameter(Mandatory)][string]$PublishDirectory,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$ExpectedVersion = '0.3.5'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$ExpectedVersion
 )
 $ErrorActionPreference = 'Stop'
+if (!$ExpectedVersion) {
+    $assembly = Join-Path $PublishDirectory 'SliAgent.dll'
+    $ExpectedVersion = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path -LiteralPath $assembly).Path).Version.ToString(3)
+}
 # OpenDatabase mode 0 is read-only. This does not install, register or execute the package.
 $installer = New-Object -ComObject WindowsInstaller.Installer
 $database = $installer.OpenDatabase((Resolve-Path -LiteralPath $Msi).Path, 0)

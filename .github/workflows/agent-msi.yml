@@ -24,8 +24,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: ${{ inputs.commit && '0' || '1' }}
+          fetch-depth: 0
           persist-credentials: false
+      - name: Keep the version script for historical kit builds
+        shell: pwsh
+        run: Copy-Item -LiteralPath ./agent-dotnet/tools/Get-MsiVersion.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'sli-msi-version.ps1')
       - name: Select the beta kit source commit
         if: inputs.commit
         shell: pwsh
@@ -37,6 +40,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Agent source commit is outside main.' }
           git checkout --detach $env:KIT_COMMIT
           if ($LASTEXITCODE -ne 0) { throw 'Agent source checkout failed.' }
+      - name: Resolve the agent product versions
+        shell: pwsh
+        run: |
+          $build = git rev-list --first-parent --count HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not determine the agent build number.' }
+          $versionScript = Join-Path $env:RUNNER_TEMP 'sli-msi-version.ps1'
+          $version = & $versionScript -BuildNumber $build -ReleaseFile VERSION
+          $upgrade = & $versionScript -BuildNumber ([int]$build + 1) -ReleaseFile VERSION
+          if ([version]$upgrade -le [version]$version) { throw 'The next MSI product version must increase.' }
+          "SLI_MSI_PRODUCT_VERSION=$version" >> $env:GITHUB_ENV
+          "SLI_MSI_UPGRADE_VERSION=$upgrade" >> $env:GITHUB_ENV
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: agent-dotnet/global.json
@@ -67,21 +81,21 @@ jobs:
         working-directory: agent-dotnet
         run: |
           ./tools/Build-Msi.ps1 -OutputRoot (Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet') `
-            -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
+            -Version $env:SLI_MSI_PRODUCT_VERSION -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
       - name: Verify MSI tables and complete payload
         shell: pwsh
         run: |
           $out = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet'
           ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
-            -PublishDirectory (Join-Path $out 'publish')
+            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion $env:SLI_MSI_PRODUCT_VERSION
       - name: Build and verify higher version for lifecycle test
         shell: pwsh
         run: |
           $out = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet-upgrade'
-          ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version 0.3.6 -NoRestore `
+          ./agent-dotnet/tools/Build-Msi.ps1 -OutputRoot $out -Version $env:SLI_MSI_UPGRADE_VERSION -NoRestore `
             -MsvcRoot $env:SLI_MSVC_ROOT -WindowsSdkRoot $env:SLI_WINDOWS_SDK_ROOT
           ./agent-dotnet/tools/Test-MsiTables.ps1 -Msi (Join-Path $out 'SliAgent.msi') `
-            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion 0.3.6
+            -PublishDirectory (Join-Path $out 'publish') -ExpectedVersion $env:SLI_MSI_UPGRADE_VERSION
       - name: Exercise quiet install, upgrade and uninstall with queue retention
         shell: pwsh
         working-directory: agent-dotnet
@@ -118,7 +132,7 @@ jobs:
           Copy-Item -LiteralPath (Join-Path $out 'SliAgent.msi') -Destination $file
           if ((Get-Item -LiteralPath $file).Length -eq 0) { throw "Empty artifact: $name" }
           $digest = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-          $manifest = @{ source_commit = $commit; sha256 = $digest; dotnet_sdk = $sdk } | ConvertTo-Json
+          $manifest = @{ source_commit = $commit; sha256 = $digest; dotnet_sdk = $sdk; product_version = $env:SLI_MSI_PRODUCT_VERSION } | ConvertTo-Json
           [IO.File]::WriteAllText("$file.json", $manifest + "`n")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

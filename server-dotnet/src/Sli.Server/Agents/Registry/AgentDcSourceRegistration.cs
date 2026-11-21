@@ -53,10 +53,10 @@ public sealed partial class AgentEnrollmentService
         return await read.ExecuteScalarAsync(ct) is true;
     }
 
-    internal static async Task ReconcileDcSourceAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent,
+    internal static async Task<string?> ReconcileDcSourceAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent,
         IConfiguration? configuration, CancellationToken ct, JsonObject? identityReport = null)
     {
-        if (await ReadDcRegistrationAsync(db, tx, agent, ct) is not { } registration) return;
+        if (await ReadDcRegistrationAsync(db, tx, agent, ct) is not { } registration) return null;
         var dc = await ResolveDcAsync(db, tx, registration.Source, ct, agent);
         var registeredHost = HostName(StringValue(registration.Agent, "registration_host_name"));
         bool canCreate = dc is null && registration.CanBootstrap && !registration.Pinned && registeredHost is { Length: <= 128 } &&
@@ -68,10 +68,13 @@ public sealed partial class AgentEnrollmentService
             // The authenticated report must agree with the owner-issued registration.
             string? reportedDns = HostName(StringValue(identityReport, "domain_dns"));
             if (!registration.CanBootstrap || dc is null && !canCreate || registeredHost is null || host is null ||
-                StringValue(identityReport, "machine_role") != "domain_controller" ||
                 !(string.Equals(host, registeredHost, StringComparison.OrdinalIgnoreCase) ||
                     !host.Contains('.') && reportedDns is not null &&
-                    string.Equals($"{host}.{reportedDns}", registeredHost, StringComparison.OrdinalIgnoreCase))) return;
+                    string.Equals($"{host}.{reportedDns}", registeredHost, StringComparison.OrdinalIgnoreCase)))
+                return dc is null ? "no_server" : null;
+            if (StringValue(identityReport, "machine_role") != "domain_controller")
+                return dc is null ? "missing_role" : null;
+            if (reportedDns is null) return dc is null ? "missing_domain" : null;
             dc = await BootstrapSnapshotDomainAsync(db, tx, identityReport, registeredHost, dc, ct) ?? dc;
         }
         else if (canCreate && !registration.DomainReported && registeredHost is not null && registeredHost.Contains('.'))
@@ -81,7 +84,9 @@ public sealed partial class AgentEnrollmentService
             var registeredDns = new JsonObject { ["domain_dns"] = registeredHost[(registeredHost.IndexOf('.') + 1)..] };
             dc = await BootstrapSnapshotDomainAsync(db, tx, registeredDns, registeredHost, null, ct);
         }
-        if (dc is null) return;
+        if (dc is null)
+            return identityReport is null && canCreate && !registration.DomainReported && registeredHost?.Contains('.') == false
+                ? "missing_domain" : "no_server";
         if (original is null)
             await RecordAgentReportedDcAsync(db, tx, agent, dc.Value.Server, ct);
 
@@ -104,11 +109,11 @@ public sealed partial class AgentEnrollmentService
         {
             configure.Parameters.AddWithValue("server", dc.Value.Server);
             await using var row = await configure.ExecuteReaderAsync(ct);
-            if (!await row.ReadAsync(ct)) return;
+            if (!await row.ReadAsync(ct)) return "no_server";
             sid = row.IsDBNull(0) ? null : row.GetString(0);
             dns = row.GetString(1);
         }
-        if (sid is null || CollectionProfile(configuration) != "beta") return;
+        if (sid is null || CollectionProfile(configuration) != "beta") return null;
 
         var modules = registration.Agent["assigned_modules"]!.AsArray();
         var updated = modules.DeepClone().AsArray();
@@ -130,7 +135,7 @@ public sealed partial class AgentEnrollmentService
             await AgentSnapshotAssignment.PublishAsync(db, tx, agent, module, config, true, ct, followServerTimezone: true);
             updated.Add(assignment);
         }
-        if (updated.Count == modules.Count) return;
+        if (updated.Count == modules.Count) return null;
 
         var control = AgentControlJson.Element(registration.Agent["collection_policy"]!);
         await AgentPolicyStore.SnapshotAsync(db, tx, agent, current, AgentControlJson.Element(modules), control, ct);
@@ -140,10 +145,11 @@ public sealed partial class AgentEnrollmentService
         update.Parameters.AddWithValue("modules", updated.ToJsonString());
         update.Parameters.AddWithValue("revision", revision);
         await update.ExecuteNonQueryAsync(ct);
+        return null;
     }
 
     internal static async Task ReconcileDcSourcesAsync(NpgsqlConnection db, NpgsqlTransaction tx,
-        IConfiguration? configuration, CancellationToken ct)
+        IConfiguration? configuration, CancellationToken ct, Action<Guid, string>? onUnbound = null)
     {
         await LockRegistrationAsync(db, tx, ct);
         var agents = new List<Guid>();
@@ -158,7 +164,8 @@ public sealed partial class AgentEnrollmentService
         foreach (var agent in agents)
         {
             await AgentManagementService.LockImportAsync(db, tx, agent, ct);
-            await ReconcileDcSourceAsync(db, tx, agent, configuration, ct);
+            if (await ReconcileDcSourceAsync(db, tx, agent, configuration, ct) is { } reason)
+                onUnbound?.Invoke(agent, reason);
             await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, agent, ct);
         }
     }
