@@ -20,6 +20,7 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
     Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null)
 {
     internal const string LockName = "ad_log_reports_runtime_storage_lifecycle_process";
+    internal const int InboxIntervalSeconds = 900;
     JsonObject? progress;
     void ReportProgress(string phase, JsonObject result)
     {
@@ -28,10 +29,12 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
     }
     private DateTime Now => (utcNow ?? (() => DateTime.UtcNow))();
 
-    // Imported packets, receipts and outbox jobs no longer depend on any history copy.
-    async Task ShortQueuesAsync(JsonObject state, int batch, Action<JsonObject>? output, CancellationToken ct)
+    internal async Task<JsonObject> CycleAsync(LifecycleOptions options, CancellationToken ct, Action<JsonObject>? output = null, bool inboxOnly = false)
     {
-        DateTime cutoff = Now.AddDays(-7);
+        DateTime started = Now;
+        DateTime cutoff = started.AddDays(-7);
+        var state = new JsonObject { ["status"] = "partial", ["cycle_id"] = LifecycleJson.Iso(started),
+            ["cutoff_utc"] = LifecycleJson.Iso(cutoff), ["inbox_only"] = inboxOnly };
         async Task Drain(string phase, string key, string cursor, Func<Guid, DateTime, Task<JsonObject>> run)
         {
             ReportProgress(phase, state);
@@ -72,18 +75,16 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             state[phase] = new JsonObject { ["status"] = "complete", ["selected_count"] = scanned, ["deleted_count"] = deleted, ["held_count"] = held, ["payloads_cleared"] = cleared, ["held_reasons"] = reasons, [cursor] = state[phase]?[cursor]?.DeepClone() };
             if (key == "inbox_retention") state[phase]!["last_scanned_received_at"] = LifecycleJson.Iso(afterReceivedAt);
         }
+        int batch = options.BatchSize;
+        // Drain the inbox at startup and independently of partition maintenance.
         await Drain("agent_inbox_retention", "inbox_retention", "last_scanned_packet_id", (a, received) => session.RetainInboxAsync(cutoff, received, a, batch, ct));
-        await Drain("agent_receipt_retention", "receipt_retention", "last_scanned_packet_id", (a, _) => session.RetainReceiptsAsync(cutoff, a, batch, ct));
-        await Drain("semantic_outbox_retention", "outbox_retention", "last_scanned_job_id", (a, _) => session.RetainOutboxAsync(cutoff, a, batch, ct));
-    }
-
-    internal async Task<JsonObject> CycleAsync(LifecycleOptions options, CancellationToken ct, Action<JsonObject>? output = null)
-    {
-        var state = new JsonObject { ["status"] = "partial", ["cycle_id"] = LifecycleJson.Iso(Now) };
-        ReportProgress("partition_retention", state);
-        await session.EnsureLocksAsync(ct);
-        state["partitions"] = await session.ExpirePartitionsAsync(Now, ct);
-        await ShortQueuesAsync(state, options.BatchSize, output, ct);
+        if (!inboxOnly) {
+            ReportProgress("partition_retention", state);
+            await session.EnsureLocksAsync(ct);
+            state["partitions"] = await session.ExpirePartitionsAsync(Now, ct);
+            await Drain("agent_receipt_retention", "receipt_retention", "last_scanned_packet_id", (a, _) => session.RetainReceiptsAsync(cutoff, a, batch, ct));
+            await Drain("semantic_outbox_retention", "outbox_retention", "last_scanned_job_id", (a, _) => session.RetainOutboxAsync(cutoff, a, batch, ct));
+        }
         await session.EnsureLocksAsync(ct);
         state["status"] = "ok";
         ReportProgress("completed", state);
@@ -94,16 +95,19 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
         if (!await session.TryLockAsync(LockName, ct)) { output(LifecycleJson.Result("skipped", "storage_lifecycle_lock_held")); return 9; }
         var prior = files.Read("storage-lifecycle-last.json");
         string? watermark = prior?["last_successful_watermark"]?.ToString(), updated = prior?["watermark_updated_at"]?.ToString();
-        await session.HeartbeatAsync("starting", "startup", options.IntervalSeconds, prior ?? new JsonObject(), ct);
+        DateTime nextFullCycle = DateTime.MinValue;
+        int interval = Math.Min(InboxIntervalSeconds, options.IntervalSeconds);
+        await session.HeartbeatAsync("starting", "startup", interval, prior ?? new JsonObject(), ct);
         while (!ct.IsCancellationRequested) {
             DateTime started = Now;
-            await session.HeartbeatAsync("running", "processing", options.IntervalSeconds, prior ?? new JsonObject(), ct);
+            bool inboxOnly = started < nextFullCycle;
+            await session.HeartbeatAsync("running", "processing", interval, prior ?? new JsonObject(), ct);
             // A long retention batch must not make an alive worker appear stale. The runtime uses a
             // separate heartbeat connection; the lock-owning session is never shared.
             using var pulseStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var pulse = PulseAsync(options.IntervalSeconds, prior ?? new JsonObject(), pulseStop.Token);
+            var pulse = PulseAsync(interval, prior ?? new JsonObject(), pulseStop.Token);
             JsonObject result;
-            try { result = await CycleAsync(options, ct, output); }
+            try { result = await CycleAsync(options, ct, output, inboxOnly); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception error) {
                 result = (JsonObject?)(Volatile.Read(ref progress)?.DeepClone()) ?? new JsonObject();
@@ -113,14 +117,19 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             finally { pulseStop.Cancel(); await pulse; }
             DateTime ended = Now;
             string status = LifecycleJson.Text(result, "status"), phase = status is "ok" or "disabled" ? "completed" : status;
-            if (phase == "completed" && result["cycle_id"] is { } cycle && cycle.ToString() != watermark) { watermark = cycle.ToString(); updated = LifecycleJson.Iso(ended); }
+            if (phase == "completed") {
+                if (!inboxOnly) nextFullCycle = ended.AddSeconds(options.IntervalSeconds);
+                if (result["cycle_id"] is { } cycle && cycle.ToString() != watermark) { watermark = cycle.ToString(); updated = LifecycleJson.Iso(ended); }
+            }
             result["contract"] = "sli.storage-lifecycle-result.v1"; result["phase"] = phase;
             result["started_at_utc"] = LifecycleJson.Iso(started); result["ended_at_utc"] = LifecycleJson.Iso(ended);
             result["cutoff_utc"] ??= null; result["error"] ??= null; result["error_type"] ??= null;
             result["last_successful_watermark"] = watermark; result["watermark_updated_at"] = updated;
             result["result_digest"] = LifecycleJson.Hash(result).ToLowerInvariant();
             files.Write("storage-lifecycle-last.json", result); output((JsonObject)result.DeepClone());
-            int wait = status == "partial" ? 0 : status == "blocked" ? 300 : options.IntervalSeconds;
+            int wait = status == "partial" ? 0 : status == "blocked" ? 300 : interval;
+            // Inbox-only cycles must also wake for the next full cycle when it falls between polls.
+            if (nextFullCycle > ended) wait = Math.Min(wait, (int)Math.Ceiling((nextFullCycle - ended).TotalSeconds));
             await session.HeartbeatAsync(status == "ok" ? result["warning_reason"] is null ? "idle" : "warning" : status,
                 status == "failed" ? "error" : "sleep", wait, result, ct);
             if (options.Once) return status is "ok" or "disabled" or "partial" ? 0 : 2;

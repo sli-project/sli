@@ -115,6 +115,60 @@ public sealed class InboxPayloadRetentionPostgresTests
     }
 
     [Fact]
+    public async Task Upgraded_worker_drains_the_backlog_at_startup_and_purges_new_imports_on_the_next_inbox_poll()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 391);
+        await using var db = await fixture.Pg.OpenAsync(ct);
+        const int backlog = 2300;
+        await Seed(db, backlog + 3, 10, ct);
+        // Pending and recent imports survive the first pass, even with old receipt timestamps.
+        await PostCollectionPostgres.Sql(db, $"""
+            update sli_agent_packet_inbox set imported_at=null where packet_id='{Packet(backlog+1)}';
+            update sli_agent_packet_inbox set imported_at=now() where packet_id='{Packet(backlog+2)}';
+            update sli_agent_packet_inbox set imported_at=now()+interval '1 day',
+                packet=jsonb_set(packet,array['header','channel'],'"System"') where packet_id='{Packet(backlog+3)}';
+            """, ct);
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/392_ad_snapshot_schedule.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+
+        using var state = new StorageLifecycleTests.State();
+        await using var runtime = new LifecycleRuntime(key => key switch {
+            "ADLOG_PG_DSN" => fixture.Dsn("sli_storage_lifecycle_login"),
+            "ADLOG_STORAGE_LIFECYCLE_DELETE_DSN" => fixture.Dsn("sli_storage_lifecycle_delete_login"),
+            _ => null
+        }, state.Files);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var now = DateTime.UtcNow.AddDays(7).AddMinutes(-5);
+        var cycles = new List<JsonObject>();
+        var worker = new StorageLifecycleWorker(runtime, state.Files, () => now, delay: async (wait, token) => {
+            if (cycles.Count == 2) { stop.Cancel(); return; }
+            Assert.Equal(TimeSpan.FromMinutes(15), wait);
+            Assert.Equal(3, await Count(db, "true", token));
+            // Commit an import from a previously pending packet near the retention cutoff.
+            await PostCollectionPostgres.Sql(db, $"""
+                update sli_agent_packet_inbox set imported_at=now() where packet_id='{Packet(backlog+1)}';
+                """, token);
+            now = now.Add(wait);
+        });
+
+        Assert.Equal(0, await worker.RunAsync(new(), cycles.Add, stop.Token));
+        Assert.Collection(cycles, startup => {
+            Assert.Equal("ok", startup["status"]?.ToString());
+            Assert.Equal(backlog, LifecycleJson.Number(startup, "inbox_rows_deleted"));
+            Assert.True(LifecycleJson.Number(startup, "inbox_retention_batches") > 1);
+        }, scheduled => {
+            Assert.Equal("ok", scheduled["status"]?.ToString());
+            Assert.Equal(true, scheduled["inbox_only"]?.GetValue<bool>());
+            Assert.Equal(2, LifecycleJson.Number(scheduled, "inbox_rows_deleted"));
+        });
+        Assert.Equal(1, await Count(db, "true", ct));
+        Assert.Equal(1, await Count(db, $"packet_id='{Packet(backlog+3)}'", ct));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
     public async Task Inbox_and_receipts_complete_after_legacy_events_are_removed()
     {
         var ct=TestContext.Current.CancellationToken;
