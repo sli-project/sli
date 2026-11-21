@@ -82,7 +82,8 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
             raise RuntimeError("synthetic_health_failed")
 
     monkeypatch.setattr(install, "wait_health", health)
-    monkeypatch.setattr(host, "Host", lambda: SimpleNamespace(receipt=lambda: None, configure=lambda: None))
+    monkeypatch.setattr(host, "Host", lambda: SimpleNamespace(receipt=lambda: None, configure=lambda: None,
+                                                             postgres_system_identifier=lambda: '123456789'))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
     monkeypatch.setattr(host, "validate_identity", lambda: None)
     monkeypatch.setattr(host, "MOUNT", str(tmp_path / "empty-data"))

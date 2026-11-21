@@ -1,3 +1,4 @@
+#!/usr/bin/python3 -I
 """Remove native SLI packages. Keep site data unless explicitly asked to erase it."""
 from __future__ import annotations
 
@@ -33,7 +34,6 @@ LOCAL_UNITS = {
     'sli-postgresql.service': 'ExecStart=/usr/lib/postgresql/18/bin/postgres -D /srv/sli-db/pgdata/18/main '
                               '-c config_file=/etc/postgresql/18/sli/postgresql.conf\n',
     'sli-bootstrap-pg.service': 'ExecStart=/usr/bin/python3 -B /usr/lib/sli/native_host.py bootstrap-pg\n',
-    DB_MOUNT: 'Where=/srv/sli-db\nType=none\nOptions=bind\n',
     BACKUP_MOUNT: 'Where=/var/backups/sli\nType=none\nOptions=bind\n',
 }
 RUNTIME_SERVICES = (
@@ -58,6 +58,24 @@ RUNTIME_UNITS = {
 DOTNET_TARGET = 'sli-dotnet.target'
 DOTNET_SERVICES = {f'sli-dotnet-{name}.service' for name in RUNTIME_SERVICES}
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'DEBIAN_FRONTEND': 'noninteractive'}
+
+
+def database_directory_path(value):
+    if (not isinstance(value, str)
+            or not (re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
+                    or re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)*sli-db(?:-2)?', value))
+            or value.startswith(('/srv/sli-db/', '/var/lib/sli/', '/var/lib/postgresql/',
+                                 '/var/lib/clickhouse/', '/var/backups/sli/', '/opt/sli/',
+                                 '/home/', '/root/', '/run/', '/tmp/', '/var/tmp/'))
+            or value in {'/srv/sli-db', '/var/lib/sli', '/var/lib/postgresql', '/var/lib/clickhouse'}):
+        raise ValueError('native_database_directory_invalid')
+    return value
+
+
+def directory_mount_unit(directory):
+    return ('[Unit]\nDescription=SLI database directory\nRequiresMountsFor=' + directory + '\n'
+            'Before=sli-postgresql.service\n'
+            '[Mount]\nWhat=' + directory + '\nWhere=/srv/sli-db\nType=none\nOptions=bind\n')
 
 
 def run(*argv, capture=False):
@@ -124,6 +142,11 @@ def unit_inventory(packages):
             path = directory / name
             if '\n' + directive in unit_text(path):
                 rendered.add(path)
+    database_mount = SYSTEM_UNITS / DB_MOUNT
+    body = unit_text(database_mount)
+    what = re.search(r'(?m)^What=(/[^\n]+)$', body)
+    if what is not None and body == directory_mount_unit(what[1]):
+        rendered.add(database_mount)
 
     generated = set()
     if DOTNET_GENERATOR in package_paths:
@@ -322,7 +345,7 @@ def receipt(path):
     return value
 
 
-def purge_paths(root=Path('/'), *, backup_unmount_pending=False):
+def purge_paths(root=Path('/'), *, backup_unmount_pending=False, database_unmounted=False):
     paths = [root / path for path in ('etc/sli', 'var/backups/sli', 'var/lib/sli-ca-offline', 'var/lib/sli')]
     postgres_config = root / 'etc/postgresql/18/sli'
     postgres_paths = (postgres_config, postgres_config.parent, postgres_config.parent.parent)
@@ -333,14 +356,20 @@ def purge_paths(root=Path('/'), *, backup_unmount_pending=False):
             raise RuntimeError('Invalid SLI database storage receipt')
         mode = saved.get('storage_mode', 'uuid')
         if mode == 'directory':
-            value = saved.get('directory', '')
-            if (not re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
-                    or value in {'/srv/sli-db', '/var/lib/sli', '/var/lib/postgresql', '/var/lib/clickhouse'}):
-                raise RuntimeError('Invalid SLI database directory')
+            try:
+                value = database_directory_path(saved.get('directory'))
+            except ValueError:
+                raise RuntimeError('Invalid SLI database directory') from None
             storage = root / value.lstrip('/')
             trusted(storage)
             if not storage.is_dir():
                 raise RuntimeError('SLI database directory is unavailable')
+            expected = saved.get('filesystem_uuid')
+            if not isinstance(expected, str) or not expected:
+                raise RuntimeError('SLI database storage receipt has no filesystem UUID')
+            volume = run('findmnt', '--noheadings', '--target', str(storage), '--output', 'UUID,FSTYPE', capture=True)
+            if volume.split() not in ([expected, 'ext4'], [expected, 'xfs']):
+                raise RuntimeError('SLI database volume does not match the storage receipt')
         elif mode == 'uuid':
             storage = root / 'srv/sli-db'
             value = run('findmnt', '--noheadings', '--mountpoint', str(storage), '--output', 'UUID,FSTYPE', capture=True)
@@ -368,6 +397,8 @@ def purge_paths(root=Path('/'), *, backup_unmount_pending=False):
 
     mount_rows = json.loads(run('findmnt', '--json', '--list', '--output', 'TARGET', capture=True))
     mounted = {Path(row['target']) for row in mount_rows['filesystems']}
+    if database_unmounted and root / 'srv/sli-db' in mounted:
+        raise RuntimeError('SLI database mount is still mounted')
     if empty_version in mounted:
         raise RuntimeError(f'Unexpected mount in SLI data directory: {empty_version}')
     for path in paths:
@@ -417,18 +448,19 @@ def remove(*, purge_data):
             raise RuntimeError(f'Unsafe SLI unit archive: {archive}')
     if purge_data:
         guard = cluster_guard_to_restore()
-        paths, empty_version = purge_paths(backup_unmount_pending=BACKUP_MOUNT in mounts)
+        purge_paths(backup_unmount_pending=BACKUP_MOUNT in mounts)
 
     stop_services(plan, disable=False)
     if mounts:
         run('systemctl', 'stop', *mounts)
         if purge_data:
-            paths, empty_version = purge_paths()
+            purge_paths(database_unmounted=DB_MOUNT in mounts)
     disable_services(plan)
     with park_legacy_state(legacy):
         delete_packages(packages)
     remove_units(unit_paths, archive)
     if purge_data:
+        paths, empty_version = purge_paths(database_unmounted=DB_MOUNT in mounts)
         if guard is not None and CLUSTER_GUARD.read_text(encoding='utf-8') == guard[1]:
             CLUSTER_GUARD.write_text(guard[0], encoding='utf-8')
         for path in paths:

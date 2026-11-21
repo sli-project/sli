@@ -21,6 +21,7 @@ DB_UUID = "11111111-2222-3333-4444-555555555555"
 def bootstrap_marker(tmp_path, monkeypatch):
     monkeypatch.setattr(host, "BOOTSTRAP_MARKER", tmp_path / "bootstrap.json")
     monkeypatch.setattr(host.clickhouse, "configured_mode", lambda root=Path("/"): "native")
+    monkeypatch.setattr(host, 'wait_bootstrap_postgres', lambda: None)
 
 
 @pytest.fixture

@@ -721,7 +721,8 @@ def lifecycle(tmp_path, monkeypatch):
     helpers = root / "deploy/linux"
     helpers.mkdir(parents=True)
     for name in ("native_host.py", "native_runtime.py", "native_install.py", "native_backup.py", "native_upgrade.py",
-                 "native_clickhouse_endpoint.py", "native_preinstall.py", "native_pins.json", "backup_policy.py", "operation_wait.py"):
+                 "native_clickhouse_endpoint.py", "native_preinstall.py", "native_remove.py", "native_pins.json",
+                 "backup_policy.py", "operation_wait.py"):
         (helpers / name).write_text("# accepted helper\n")
     manifest = {"schema_version": 1, "python": "/test/python", "roles": [], "plugins": {}, "migration_ledger": [],
                 "postgres_version": "18.6", "clickhouse_version": host.clickhouse.endpoint("history", "native").version}
@@ -741,7 +742,8 @@ def lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(native_upgrade, "save_recovery", lambda *args: calls.append("recovery-saved"))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
     monkeypatch.setattr(host, "validate_identity", lambda: calls.append("identity"))
-    machine = SimpleNamespace(receipt=lambda: calls.append("mount"), configure=lambda: calls.append("host-configure"))
+    machine = SimpleNamespace(receipt=lambda: calls.append("mount"), configure=lambda: calls.append("host-configure"),
+                              postgres_system_identifier=lambda: '123456789')
     monkeypatch.setattr(host, "Host", lambda: machine)
     monkeypatch.setattr(host, "MOUNT", str(tmp_path / "db"))
     monkeypatch.setattr(runtime, "no_transaction", lambda: calls.append("transactions"))

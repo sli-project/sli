@@ -467,7 +467,9 @@ def configure(args):
             uuid = saved.get('uuid') if saved else args.uuid
             directory = saved.get('directory', host.DIRECTORY) if saved else args.directory
             if not uuid and directory is None:
-                directory = machine.select_database_directory(backup_root=site.get('backup_root'))
+                uuid = machine.mounted_database_uuid()
+                if not uuid:
+                    directory = machine.select_database_directory(backup_root=site.get('backup_root'))
             directory = directory or host.DIRECTORY
             machine.check_setup_units(directory, uuid=uuid, backup=bool(site.get('backup_root')))
             machine.prepare(uuid, directory=directory)
