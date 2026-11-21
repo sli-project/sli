@@ -36,7 +36,7 @@ describe("i18n dictionaries", () => {
     "reports.v2.security.problems.params.population.options.attention",
     "reports.v2.security.problems.presets.{\"population\":\"attention\"}",
     "reports.v2.security.problems.columns.review_hint.label",
-    "reports.renderer.plugin_disabled", "reports.access.hidden_columns", "reports.access.denied_part",
+    "reports.access.hidden_columns", "reports.access.denied_part",
     "reports.filters.more", "reports.empty.latest_at", "reports.empty.original_period",
     "reports.empty.original_selection", "reports.empty.show_latest", "reports.empty.source_diagnostics",
   ] as const)("keeps %s in both dictionaries", (key) => {

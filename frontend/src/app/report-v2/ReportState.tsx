@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { ReportStateDetails } from "../../api/report-v2-types";
 import { formatDateTime, StateView, type ResultState } from "../../design-system";
 import { t } from "../../i18n";
-import type { ApiMessage } from "../../i18n/messages";
+import { resolveMessage, type ApiMessage } from "../../i18n/messages";
 import { knownTime } from "./FreshnessTimes";
 
 function sourceId(details?: ReportStateDetails): string | undefined {
@@ -29,11 +29,12 @@ function sourceIssues(details?: ReportStateDetails): NonNullable<ReportStateDeta
  * Persisted report state (docs/UI_STANDARD.md, rules 2 and 3).
  * A lagging or silent source is one plain line with its name and time; only a failed request is a block.
  */
-export function ReportState({ state: requestedState, message, details, detail, actions, onRetry, compact = false }: {
+export function ReportState({ state: requestedState, message, details, detail, subject, actions, onRetry, compact = false }: {
   state: ResultState;
   message?: ApiMessage;
   details?: ReportStateDetails;
   detail?: ReactNode;
+  subject?: string;
   actions?: ReactNode;
   onRetry?: () => void;
   compact?: boolean;
@@ -44,7 +45,15 @@ export function ReportState({ state: requestedState, message, details, detail, a
   const state = requestedState === "unavailable" ? "error" : requestedState;
   if (state === "ok") return null;
   if (state === "loading") return <StateView state="loading"/>;
-  if (state === "empty" || state === "denied" || state === "error") return <StateView state={state} titleMessage={message} compact={compact} onRetry={onRetry}
+  if (state === "error") {
+    const specific = message?.code && !message.code.startsWith("reports.states.error.") ? resolveMessage(message, "") : "";
+    return <div className="sli-ds-state" data-state="error" role="alert">
+      <div>{specific || detail || (subject ? t("reports.states.load_failed", { subject }) : t("reports.states.error.title"))}</div>
+      {actions}
+      {onRetry ? <button type="button" className="sli-ds-button" onClick={onRetry}>{t("state.retry")}</button> : null}
+    </div>;
+  }
+  if (state === "empty" || state === "denied") return <StateView state={state} titleMessage={message} compact={compact} onRetry={onRetry}
     actions={actions} message={t(`reports.states.${state}.text`)} detail={detail}/>;
   const silent = sourceIssues(details).find((issue) => knownTime(issue.since_utc));
   return silent ? <p className="sli-ds-muted" role="status">{t("reports.states.silent_source", {

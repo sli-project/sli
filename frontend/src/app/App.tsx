@@ -7,7 +7,6 @@ import { Button, Icon, IconSprite, OverlayProvider, useOverlays } from "../desig
 import { LOCALES, getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
 import { buildNavigation, globalSearchTarget, isActivePath } from "./navigation";
 import { AdminRelatedLinks, adminNavigationPath } from "./admin/navigation-pages";
-import { CollectionStatus } from "./CollectionStatus";
 import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "./theme";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { selectedDomain } from "./domain-navigation";
@@ -45,8 +44,6 @@ function ShellContent() {
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.bootstrap, staleTime: 60_000 });
   const access = useQuery({ queryKey: ["v4", "access", "shell"], queryFn: () => api.v4Access(), staleTime: 60_000, retry: false });
   const catalog = useQuery({ queryKey: ["report-v2", "catalog"], queryFn: api.reportsV2Catalog, staleTime: 30_000, retry: false });
-  const overview = useQuery({ queryKey: ["overview", "shell"], queryFn: () => api.agentCollection(), staleTime: 30_000,
-    refetchInterval: 30_000, retry: false });
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
@@ -160,8 +157,6 @@ function ShellContent() {
         {access.data?.capabilities.includes("workspace.view") ? <DomainSwitcher access={access.data}/> : null}
         <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}><Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/><input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); openSearch(event.currentTarget.value); } }} placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/></form>
         <div className="sli-ds-shell__spacer"/>
-        <CollectionStatus data={overview.isError ? null : overview.data?.agent_collection} timeZone={timeZone}
-          canManageAgents={!access.isError && Boolean(access.data?.platform_owner || access.data?.capabilities.includes("access.manage"))}/>
         {hasAdminView ? <div className="sli-ds-shell__profile" ref={settingsMenuRef}>
           <button className="sli-ds-button sli-ds-shell__control" type="button" aria-label={t("shell.admin")} title={t("shell.admin")} aria-pressed={inAdminZone} aria-haspopup="menu" aria-expanded={settingsMenuOpen} data-active={inAdminZone ? "true" : undefined} onClick={() => { setProfileMenuOpen(false); setSettingsMenuOpen((open) => !open); }}><Icon name="settings"/></button>
           {settingsMenuOpen ? <div className="sli-ds-shell__menu" role="menu">
