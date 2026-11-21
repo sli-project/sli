@@ -52,7 +52,8 @@ public sealed partial class AgentEnrollmentService
         {
             await using var known = new NpgsqlCommand("""
                 select exists(select 1 from servers where lower(hostname) in (@host,@fqdn) or lower(fqdn) in (@host,@fqdn)
-                    or (strpos(@host,'.')=0 and @host=split_part(lower(coalesce(nullif(fqdn,''),hostname)),'.',1)))
+                    or (strpos(@host,'.')=0 and @host=split_part(lower(coalesce(nullif(fqdn,''),hostname)),'.',1))
+                    or (strpos(coalesce(nullif(fqdn,''),hostname),'.')=0 and lower(hostname)=split_part(@host,'.',1)))
                 """, db, tx);
             known.Parameters.AddWithValue("host", hostname.ToLowerInvariant());
             known.Parameters.AddWithValue("fqdn", fqdn);

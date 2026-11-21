@@ -158,7 +158,9 @@ function PasswordDetectionDomainControls({ agent, disabled, change }: { agent: A
   </fieldset></form>;
 }
 
-export function AgentModuleControls({ agent, module, busy, change }: { agent: AgentItem; module: ModulePolicy; busy: boolean; change: Change }) {
+export function AgentModuleControls({ agent, module, busy, change, openPasswordDomain }: {
+  agent: AgentItem; module: ModulePolicy; busy: boolean; change: Change; openPasswordDomain?: boolean;
+}) {
   const disabled = busy || agent.status !== "active" || !module.enabled;
   const save = (settings: Record<string, unknown>) => change("modules", { agent_id: agent.id, module_id: module.module_id, enabled: module.enabled,
     config: { ...module.config, ...settings }, expected_revision: agent.policy_revision });
@@ -178,7 +180,7 @@ export function AgentModuleControls({ agent, module, busy, change }: { agent: Ag
   }
   if (module.module_id === "sli.windows.ad-dc") {
     const channels = object(module.config.channels);
-    return <details><summary>{t("agents.channelSettings")}</summary>
+    return <details open={openPasswordDomain}><summary>{t("agents.channelSettings")}</summary>
       <PasswordDetectionDomainControls agent={agent} disabled={disabled} change={change}/>
       {CHANNELS.map((channel) => <label key={channel}><input type="checkbox" checked={channels[channel] !== false} disabled={disabled} onChange={() => save({ channels: { ...channels, [channel]: channels[channel] === false } })}/>{channel}</label>)}
       <DCInitialReadControls settings={module.config} disabled={disabled} save={save} backfill={() => {

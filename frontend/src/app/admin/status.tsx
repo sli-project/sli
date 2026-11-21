@@ -45,7 +45,8 @@ export function SystemStatusPage() {
   const auditChecks = statusAuditChecks(health, setup.data?.domains ?? []);
   const agentIssues = (health?.items ?? []).flatMap((agent) => [
     ...(agent.password_domain_required ? [{ id: `${agent.id}:password-domain`, name: agent.name,
-      state: t("systemStatus.passwordDomainRequired", { name: agent.name }), action: EMPTY_VALUE, plain: true }] : []),
+      state: t("systemStatus.passwordDomainRequired", { name: agent.name }), plain: true,
+      action: <a href={`/app/agents?agent_id=${encodeURIComponent(agent.id)}&configure=password-domain`}>{t("systemStatus.setPasswordDomain")}</a> }] : []),
     ...(agent.duplicate_agents && agent.duplicate_agents > 1 ? [{ id: `${agent.id}:duplicate`, name: agent.name,
       state: t("agents.twoAgents", { name: agent.name }), action: t("agents.removeExtra"), plain: false }] : []),
     ...(agent.identity_conflict ? [{ id: `${agent.id}:identity`, name: agent.name,
@@ -127,7 +128,7 @@ export function SystemStatusPage() {
     {agentIssues.length ? <><h2 className="sli-ds-section-title">{t("agents.title")}</h2><DataTable columns={[
       { key: "name", label: t("systemStatus.computer") },
       { key: "state", label: t("systemStatus.state"), render: (row) => row.plain ? row.state : <Status tone="error">{row.state}</Status> },
-      { key: "action", label: t("systemStatus.action") },
+      { key: "action", label: t("systemStatus.action"), render: (row) => row.action },
     ]} rows={agentIssues} rowKey={(row) => row.id} caption={t("agents.title")} showFooter={false}/></> : null}
     <OldAgentsTable agents={health?.replaced_agents ?? []} canRemove={Boolean(access?.platform_owner)}/>
     <h2 className="sli-ds-section-title">{t("systemStatus.services")}</h2>
