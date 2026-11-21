@@ -65,11 +65,12 @@ public static class NotificationSetupCommand
             using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
             step = "SLI_TELEGRAM_SETUP_SOCKET:bind"; listener.Bind(new UnixDomainSocketEndPoint(path)); bound = true;
             step = "SLI_TELEGRAM_SETUP_SOCKET:protect"; NotificationSetupFiles.Protect(path, gid, (UnixFileMode)0x1b0); listener.Listen(16);
-            using var stop = new CancellationTokenSource();
-            using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stop.Cancel(); });
-            using var interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; stop.Cancel(); });
-            step = "serve"; try { await ServeAsync(listener, setup, native, stop.Token); } catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
-            return 0;
+            step = "serve";
+            return await WorkerShutdown.RunAsync(async stop =>
+            {
+                await ServeAsync(listener, setup, native, stop);
+                return 0;
+            });
         }
         catch (Exception error) { Console.Error.WriteLine("notification_setup_unavailable:" + WorkerFailure.Describe(error, step)); return 1; }
         finally { if (bound && path is not null) try { File.Delete(path); } catch { } }
