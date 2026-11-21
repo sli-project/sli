@@ -417,7 +417,7 @@
     "now": "2026-11-05T12:00:00+00:00",
     "diagnostics_available": true,
     "expected": {
-      "state": "partial",
+      "state": "current",
       "items": [
         {
           "id": "00000000-0000-4000-8000-000000000001",
@@ -426,7 +426,7 @@
           "domains": [
             "example.test"
           ],
-          "state": "lagging",
+          "state": "current",
           "connection": "online",
           "completeness": {
             "state": "not_assessed",
@@ -440,7 +440,7 @@
               "channels": [
                 {
                   "channel": "Security",
-                  "state": "lagging",
+                  "state": "current",
                   "failure_reason": null,
                   "issue_since_utc": null,
                   "issue_observed_at_utc": null,
@@ -464,7 +464,7 @@
         "state": "not_assessed"
       },
       "active_agents": 1,
-      "current_agents": 0
+      "current_agents": 1
     },
     "bindings": [
       {

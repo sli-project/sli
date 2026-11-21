@@ -382,6 +382,40 @@ it("shows a silent source with its name, last packet time and action", async () 
   expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet")).toBeTruthy();
 });
 
+it("keeps the source receiving and the controller step checked during a normal import wait", async () => {
+  const data = dcSource(true);
+  data.agent_collection!.items = [structuredClone(agent)];
+  data.agent_collection!.items[0].modules[0].channels[0].last_packet_at = "2026-11-14T01:14:40Z";
+  vi.mocked(api.setupStatus).mockResolvedValue(data);
+  renderPage();
+  const step = (await screen.findByText(t("systemStatus.step.agent"))).closest("li")!;
+  expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy();
+
+  const pending = structuredClone(data);
+  const channel = pending.agent_collection!.items[0].modules[0].channels[0];
+  channel.last_packet_at = "2026-11-14T01:15:40Z";
+  channel.import_lag_seconds = 20;
+  vi.mocked(api.setupStatus).mockResolvedValue(pending);
+  await clients.at(-1)!.invalidateQueries({ queryKey: ["setup-status"] });
+
+  const row = (await screen.findByText(t("systemStatus.source.receiving", { name: agent.name }))).closest("tr")!;
+  expect(within(row).getByText(formatDateTime(channel.last_packet_at, "UTC", { withYear: false }))).toBeTruthy();
+  expect(within(row).queryByText(t("systemStatus.action.agent"))).toBeNull();
+  expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy();
+});
+
+it("shows receiving without a service action when the server reports lagging", async () => {
+  const lagging = structuredClone(agent);
+  lagging.state = "lagging";
+  lagging.modules[0].channels[0].state = "lagging";
+  lagging.modules[0].channels[0].import_lag_seconds = 20;
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([lagging]));
+  renderPage();
+
+  const row = (await screen.findByText(t("systemStatus.source.receiving", { name: agent.name }))).closest("tr")!;
+  expect(within(row).queryByText(t("systemStatus.action.agent"))).toBeNull();
+});
+
 it("keeps services and disk visible when the sources request fails", async () => {
   vi.mocked(api.setupStatus).mockRejectedValue(new Error("fixture failure"));
   renderPage();

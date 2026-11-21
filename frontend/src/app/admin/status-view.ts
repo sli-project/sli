@@ -74,6 +74,10 @@ export function statusSources(health: AgentCollectionHealth | null | undefined, 
       // A stream the server expects but that never reported: the deadline time is its own, not another channel's packet.
       const missing = active.find((channel) => channel.channel && !channel.last_packet_at && channel.state === "error"
         && channel.failure_reason === "packet_missing" && Number.isFinite(Date.parse(channel.issue_since_utc ?? "")));
+      const stalePacket = active.filter((channel) => channel.failure_reason === "packet_stale")
+        .map((channel) => channel.last_packet_at)
+        .filter((value): value is string => Number.isFinite(Date.parse(value ?? "")))
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
       const readError = active.find((channel) => channel.failure_reason === "read_error");
       const importError = active.find((channel) => channel.failure_reason === "import_overdue");
       let state: MessageKey = "systemStatus.source.receiving";
@@ -93,8 +97,8 @@ export function statusSources(health: AgentCollectionHealth | null | undefined, 
         else if (importError) state = "systemStatus.source.importError";
         else if (missing) state = "systemStatus.source.channelSilent";
         else if (!lastData) state = "systemStatus.source.waiting";
-        else if (active.some((channel) => ["error", "lagging"].includes(channel.state))) state = "systemStatus.source.silent";
-        else if (active.some((channel) => ["unknown", "waiting"].includes(channel.state)) || agent.connection !== "online" || !active.length)
+        else if (stalePacket) state = "systemStatus.source.silent";
+        else if (active.some((channel) => ["error", "unknown", "waiting"].includes(channel.state)) || agent.connection !== "online" || !active.length)
           state = "systemStatus.source.check";
         if (state !== "systemStatus.source.receiving")
           action = state === "systemStatus.source.importError" ? "systemStatus.action.import" : "systemStatus.action.agent";
@@ -108,7 +112,7 @@ export function statusSources(health: AgentCollectionHealth | null | undefined, 
         href: state !== "systemStatus.source.receiving" || direct || agent.delivery_fallback ? `/app/agents?agent_id=${encodeURIComponent(agent.id)}` : null,
         collection: collected.map((module) => t(modules[module.module_id])).join(", ") || EMPTY_VALUE,
         state: agent.delivery_fallback ? t("agents.deliveryFallback", { name, version: agent.agent_version || EMPTY_VALUE, since: formatDateTime(agent.delivery_fallback.since, timeZone, { withYear: false }), until: formatDateTime(agent.delivery_fallback.last_packet_at, timeZone, { withYear: false }) }) : direct?.state ?? t(state, { name, channel: missing?.channel ?? "", time: state === "systemStatus.source.offline" ? formatDateTime(agent.last_seen, timeZone, { withYear: false })
-          : state === "systemStatus.source.silent" ? formatDateTime(active.filter((channel) => ["error", "lagging"].includes(channel.state)).map((channel) => channel.last_packet_at).filter((value): value is string => Number.isFinite(Date.parse(value ?? ""))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? lastData, timeZone, { withYear: false })
+          : state === "systemStatus.source.silent" ? formatDateTime(stalePacket, timeZone, { withYear: false })
           : rejected ? formatDateTime(rejected.import_failure_at, timeZone, { withYear: false })
           : state === "systemStatus.source.channelSilent" ? formatDateTime(missing?.issue_since_utc, timeZone, { withYear: false }) : time }) + observation,
         fallback: agent.delivery_fallback, currentAgent: agent.id,

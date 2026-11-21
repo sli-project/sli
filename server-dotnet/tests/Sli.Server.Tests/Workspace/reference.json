@@ -12243,14 +12243,14 @@
         }
       ],
       "expected": {
-        "state": "partial",
+        "state": "current",
         "items": [
           {
             "id": "00000000-0000-4000-8000-000000000002",
             "host_id": "00000000-0000-4000-9000-000000000002",
             "name": "host-1.example.test · agent-1",
             "domains": [],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "known_gaps",
@@ -12264,7 +12264,7 @@
                 "channels": [
                   {
                     "channel": "Security",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12277,7 +12277,7 @@
                   },
                   {
                     "channel": "System",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12290,7 +12290,7 @@
                   },
                   {
                     "channel": "Microsoft-Windows-Windows Defender/Operational",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12303,7 +12303,7 @@
                   },
                   {
                     "channel": "Microsoft-Windows-TaskScheduler/Operational",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12316,7 +12316,7 @@
                   },
                   {
                     "channel": "Microsoft-Windows-DriverFrameworks-UserMode/Operational",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12329,7 +12329,7 @@
                   },
                   {
                     "channel": "Microsoft-Windows-Kernel-PnP/Configuration",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12342,7 +12342,7 @@
                   },
                   {
                     "channel": "Microsoft-Windows-PowerShell/Operational",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12367,7 +12367,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12381,7 +12381,7 @@
                 "channels": [
                   {
                     "channel": "Security",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12394,7 +12394,7 @@
                   },
                   {
                     "channel": "System",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12407,7 +12407,7 @@
                   },
                   {
                     "channel": "Directory Service",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12432,7 +12432,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12446,7 +12446,7 @@
                 "channels": [
                   {
                     "channel": null,
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12471,7 +12471,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12485,7 +12485,7 @@
                 "channels": [
                   {
                     "channel": "Security",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12510,7 +12510,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12524,7 +12524,7 @@
                 "channels": [
                   {
                     "channel": "Security",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12549,7 +12549,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12563,7 +12563,7 @@
                 "channels": [
                   {
                     "channel": "radius-accounting",
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12588,7 +12588,7 @@
             "domains": [
               "example.test"
             ],
-            "state": "lagging",
+            "state": "current",
             "connection": "online",
             "completeness": {
               "state": "not_assessed",
@@ -12602,7 +12602,7 @@
                 "channels": [
                   {
                     "channel": null,
-                    "state": "lagging",
+                    "state": "current",
                     "failure_reason": null,
                     "issue_since_utc": null,
                     "issue_observed_at_utc": null,
@@ -12626,7 +12626,7 @@
           "state": "known_gaps"
         },
         "active_agents": 7,
-        "current_agents": 0
+        "current_agents": 7
       }
     }
   ],
