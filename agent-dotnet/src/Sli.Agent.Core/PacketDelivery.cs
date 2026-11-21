@@ -9,11 +9,15 @@ public interface IPacketTransport
     Task<JsonNode?> PostPacketAsync(SignedPacket packet, CancellationToken cancellationToken);
 }
 
-public sealed class TransportException(string code = "agent_transport_failed") : AgentException(code);
+public sealed class TransportException(string code = "agent_transport_failed", int? httpStatus = null) : AgentException(code)
+{
+    public string Detail => TransportErrors.Detail(Code, httpStatus);
+}
 
 public sealed record DeliveryResult(bool Success, int Attempted, int Acknowledged)
 {
     public IReadOnlySet<string> DisabledModules { get; init; } = new HashSet<string>();
+    public TransportException? TransportFailure { get; init; }
 }
 
 /// <summary>
@@ -31,6 +35,7 @@ public sealed class PacketDelivery(IPacketQueue queue, IPacketTransport transpor
         var success = true;
         var attempts = 0;
         var acknowledged = 0;
+        TransportException? transportFailure = null;
         // Historical backfill goes last so it never delays live evidence.
         var pending = queue.Pending().OrderBy(packet => packet.Envelope.ModuleId == FilePacketQueue.HistoryModuleId).ToList();
         foreach (var packet in pending)
@@ -55,6 +60,7 @@ public sealed class PacketDelivery(IPacketQueue queue, IPacketTransport transpor
             catch (AgentException exception) when (!TransportErrors.IsDiagnostic(exception.Code))
             {
                 // A failure is not a receipt: keep the packet and retry in the next cycle.
+                if (exception is TransportException transportError) transportFailure ??= transportError;
             }
             catch (HttpRequestException)
             {
@@ -70,6 +76,6 @@ public sealed class PacketDelivery(IPacketQueue queue, IPacketTransport transpor
             blocked.Add(module);
             if (module != FilePacketQueue.HistoryModuleId) success = false;
         }
-        return new DeliveryResult(success, attempts, acknowledged) { DisabledModules=disabled };
+        return new DeliveryResult(success, attempts, acknowledged) { DisabledModules = disabled, TransportFailure = transportFailure };
     }
 }
