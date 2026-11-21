@@ -25,6 +25,9 @@ public sealed class AgentEndpointTests
         try
         {
             await File.WriteAllBytesAsync(path, package, ct);
+            const string version = "26.0.1000";
+            string digest = Convert.ToHexStringLower(SHA256.HashData(package));
+            await File.WriteAllTextAsync(path + ".json", JsonSerializer.Serialize(new { product_version = version, sha256 = digest }), ct);
             using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
                 .ConfigureLogging(logging => logging.ClearProviders())
                 .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -40,9 +43,14 @@ public sealed class AgentEndpointTests
             using var https = await client.GetAsync(AgentConsolePackage.DownloadPath, ct);
             Assert.Equal(HttpStatusCode.OK, https.StatusCode);
             Assert.Equal("no-store", https.Headers.CacheControl?.ToString());
-            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(package)), Assert.Single(https.Headers.GetValues("X-SLI-Package-SHA256")));
+            Assert.Equal(digest, Assert.Single(https.Headers.GetValues("X-SLI-Package-SHA256")));
+            Assert.Equal(version, Assert.Single(https.Headers.GetValues("X-SLI-Package-Version")));
             Assert.Equal("SliAgent.msi", https.Content.Headers.ContentDisposition?.FileName);
             Assert.Equal(package, await https.Content.ReadAsByteArrayAsync(ct));
+
+            await File.WriteAllTextAsync(path + ".json", JsonSerializer.Serialize(new { product_version = version, sha256 = new string('0', 64) }), ct);
+            using var wrongDigest = await client.GetAsync(AgentConsolePackage.DownloadPath, ct);
+            Assert.Equal(HttpStatusCode.NotFound, wrongDigest.StatusCode);
 
             File.Delete(path);
             using var missing = await client.GetAsync(AgentConsolePackage.DownloadPath, ct);
@@ -50,7 +58,7 @@ public sealed class AgentEndpointTests
             using var error = JsonDocument.Parse(await missing.Content.ReadAsByteArrayAsync(ct));
             Assert.Equal("agent_console_package_unavailable", error.RootElement.GetProperty("error").GetString());
         }
-        finally { File.Delete(path); }
+        finally { File.Delete(path); File.Delete(path + ".json"); }
     }
 
     [Theory]

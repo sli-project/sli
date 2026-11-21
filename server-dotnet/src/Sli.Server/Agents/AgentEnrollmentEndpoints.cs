@@ -18,7 +18,8 @@ public static class AgentEnrollmentEndpoints
         services.AddScoped<AgentIdentityService>();
         services.AddScoped<IAgentIdentityService>(sp => sp.GetRequiredService<AgentIdentityService>());
         services.AddScoped<AgentEnrollmentService>();
-        services.AddHostedService<AgentRegistrationReconciliation>();
+        services.AddSingleton<AgentRegistrationReconciliation>();
+        services.AddHostedService(sp => sp.GetRequiredService<AgentRegistrationReconciliation>());
         return services;
     }
 

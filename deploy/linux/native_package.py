@@ -180,6 +180,10 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             agent = payload / "opt/sli/releases" / release / "agent/SliAgent.msi"
             agent.parent.mkdir(exist_ok=True)
             shutil.copyfile(agent_msi, agent)
+            metadata = agent_msi.with_suffix('.msi.json')
+            if metadata.exists() or metadata.is_symlink():
+                require(metadata.is_file() and not metadata.is_symlink(), "native_agent_msi_invalid")
+                shutil.copyfile(metadata, agent.with_suffix('.msi.json'))
         write(payload, f"opt/sli/releases/{release}/native-runtime.json",
               json.dumps(manifest, sort_keys=True) + "\n")
         write(payload, f"opt/sli/releases/{release}/native-package.json",

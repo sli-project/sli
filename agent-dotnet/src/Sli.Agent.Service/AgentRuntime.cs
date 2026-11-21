@@ -125,9 +125,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             if (state != "drain")
             {
                 var report = policy.Report(state, rights);
-                if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) &&
-                    requested && enrolled.ReadDcIdentity() is { } identityReport)
-                    report["dc_identity"] = identityReport;
+                if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) && requested)
+                    report["dc_identity"] = enrolled.ReadDcIdentity();
                 await _http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
             }
             // A DC audit command result must not wait for the event backlog.

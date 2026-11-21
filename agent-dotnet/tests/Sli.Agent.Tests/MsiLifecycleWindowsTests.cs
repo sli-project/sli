@@ -109,6 +109,10 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             Assert.Equal(packet.Envelope.PacketId + ".packet", Path.GetFileName(packetPath));
             Assert.Equal(Encoding.ASCII.GetBytes(packet.ToCanonical()), File.ReadAllBytes(packetPath));
             Assert.Equal("https://127.0.0.1:1", MsiConfiguration.ReadSettings()["Agent:ServerUrl"]);
+            await Msi("repair", "/i", upgrade, "/qn", "/norestart", "REINSTALL=ALL", "REINSTALLMODE=vamus");
+            AssertServiceRunning();
+            AssertState();
+            Assert.Equal(Encoding.ASCII.GetBytes(packet.ToCanonical()), File.ReadAllBytes(packetPath));
             // Uninstall starts with the service running; MSI itself must stop it before removing files.
             await Msi("uninstall", "/x", upgrade, "/qn", "/norestart");
             AssertServiceAbsent();

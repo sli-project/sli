@@ -652,7 +652,8 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
     }
 
     internal sealed record Packet(JsonObject Envelope,JsonObject Payload,JsonArray Rows);
-    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null,string policyRevision="1")
+    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null,string policyRevision="1",
+        int recordCount=1,int? sequence=null)
     {
         var scenario=JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),"agent-dotnet/tests/vectors/ad-dc-scenarios.json")))!
             .AsArray().Single(x=>(string?)x!["name"]=="security-initial-window-all")!;
@@ -661,10 +662,14 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
         var payload=JsonNode.Parse(((string)expected["payload_canonical"]!).Replace(old,host.ToString()).Replace("fixture-dc",source))!.AsObject();
         payload["context"]!["ad_dc"]!["policy_revision"] = policyRevision;
         payload["records"]!.AsArray().Clear();
-        string xml=$"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>{record}</EventRecordID><TimeCreated SystemTime='2026-10-07T00:00:00Z'/><Channel>Security</Channel><Computer>{computer ?? source}</Computer></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>";
-        payload["records"]!.AsArray().Add(new JsonObject { ["format"]="event_xml",["record_id"]=record,["payload"]=EventXml.Parse(xml,source,"fixture-endpoint","Security") });
+        int first = record - recordCount + 1;
+        for (int id = first; id <= record; id++)
+        {
+            string xml=$"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>{id}</EventRecordID><TimeCreated SystemTime='2026-10-07T00:00:00Z'/><Channel>Security</Channel><Computer>{computer ?? source}</Computer></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>";
+            payload["records"]!.AsArray().Add(new JsonObject { ["format"]="event_xml",["record_id"]=id,["payload"]=EventXml.Parse(xml,source,"fixture-endpoint","Security") });
+        }
         payload["header"]!["cursor"]!["last_record_id"]=record;
-        payload["header"]!["record_id_range"]!["first"]=record; payload["header"]!["record_id_range"]!["last"]=record;
+        payload["header"]!["record_id_range"]!["first"]=first; payload["header"]!["record_id_range"]!["last"]=record;
         var before=JsonNode.Parse(expected["cursor_before"]!.ToJsonString().Replace(old,host.ToString()));
         var after=JsonNode.Parse(expected["cursor_after"]!.ToJsonString().Replace(old,host.ToString()));
         var state=JsonNode.Parse((string)after!["token"]!)!;
@@ -672,8 +677,8 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
         state["channels"]!["Security"]!["bookmark"]=((string)state["channels"]!["Security"]!["bookmark"]!).Replace("RecordId='1'",$"RecordId='{record}'");
         after["token"]=CanonicalJson.Serialize(state);
         var envelope=new Envelope(Guid.NewGuid().ToString(),agent.ToString(),host.ToString(),AgentAdDcValidator.Live,
-            "1.0.0",policyRevision,"ad-dc",host.ToString(),record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
-            Packets.Digest(payload),1,CanonicalJson.Length(payload),(string)step["now"]!,"not_proven",0,0);
+            "1.0.0",policyRevision,"ad-dc",host.ToString(),sequence??record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
+            Packets.Digest(payload),recordCount,CanonicalJson.Length(payload),(string)step["now"]!,"not_proven",0,0);
         return new(envelope.ToJson(),payload,AgentAdDcValidator.Validate(envelope,payload,null,source));
     }
 
