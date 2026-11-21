@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Hosting;
 
 namespace Sli.Server.Agents.Control;
 
@@ -31,6 +32,26 @@ public sealed partial class AgentManagementService
                     (select details->>'agent_version' from sli_agent_audit v where v.target=sli_agents.id::text and v.action='issue' order by id desc limit 1)) as agent_version
             from sli_agents
             """ + "\n" + filter + "\norder by created_at desc,id limit 100", ct, parameters);
+        var lastRejections = new Dictionary<Guid, AgentCertificateRejections.Rejection>();
+        if (agents.Length > 0 && rejections?.Snapshot() is { Count: > 0 } observed)
+        {
+            await using var query = new NpgsqlCommand("""
+                select a.id,c.fingerprint,a.last_seen from sli_agent_certificates c
+                join sli_agents a on a.id=c.agent_id
+                where c.fingerprint=any(@fingerprints) and a.id=any(@ids)
+                """, db, tx);
+            query.Parameters.AddWithValue("fingerprints", observed.Keys.ToArray());
+            query.Parameters.AddWithValue("ids", agents.Select(a => Guid.Parse(a["id"]!.GetValue<string>())).ToArray());
+            await using var reader = await query.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var id = reader.GetGuid(0);
+                var rejection = observed[reader.GetString(1)];
+                if (!reader.IsDBNull(2) && reader.GetFieldValue<DateTimeOffset>(2) >= rejection.ObservedAt) continue;
+                if (!lastRejections.TryGetValue(id, out var previous) || previous.ObservedAt < rejection.ObservedAt)
+                    lastRejections[id] = rejection;
+            }
+        }
         var names = new Dictionary<Guid, (string? Name, string Source)>();
         if (agents.Length > 0)
         {
@@ -65,6 +86,7 @@ public sealed partial class AgentManagementService
         foreach (var agent in agents)
         {
             Guid id = Guid.Parse(agent["id"]!.GetValue<string>()); var name = names.GetValueOrDefault(id, (null, "unknown"));
+            if (lastRejections.TryGetValue(id, out var rejection)) agent["certificate_rejection_reason"] = rejection.Reason;
             agent["host_name"] = name.Item1; agent["host_name_source"] = name.Item2;
             var domain = (await RowsAsync(db, tx, """
                 select b.password_detection_domain_id as domain_id,d.fqdn as domain_fqdn,b.source_name

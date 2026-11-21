@@ -86,6 +86,7 @@ export function acceptedAgentFileAuditCommand(body: Record<string, unknown>, res
 }
 
 export type AgentItem = {
+  certificate_rejection_reason?: "untrusted_root" | "unexpected_chain_length" | "wrong_eku" | "expired" | "not_yet_valid" | "revoked" | "invalid_chain";
   delivery_diagnostics?: AgentDeliveryDiagnostics | null;
   password_detection_domain?: AgentPasswordDetectionDomain;
   eventlog_diagnostics?: { reported_at: string; items: Array<{
@@ -1484,6 +1485,7 @@ export type RuntimeCollectionRun = {
 
 export type DiagnosticsOverview = {
   status: string;
+  web_console?: { available: boolean; url: string | null };
   release_metadata?: { project_version?: string; generated_at_utc?: string; build_id?: string; [key: string]: unknown };
   warnings?: string[];
   parsed_checks?: Record<string, { status?: string; duration_ms?: number; [key: string]: unknown } | null>;

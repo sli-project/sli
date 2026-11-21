@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -176,6 +177,53 @@ def package_install(action, release, *, root=Path('/')):
     write_guard(marker, json.dumps({'schema_version': 1, 'release': release}) + '\n', 0o600)
 
 
+def retain_legacy_dotnet(*, root=Path('/')):
+    """Keep the accepted publication before dpkg replaces the unversioned package."""
+    current = root / 'opt/sli/current'
+    trusted(current.parent)
+    if not current.is_symlink():
+        return
+    accepted = current.readlink()
+    if accepted.parent != root / 'opt/sli/releases' or not re.fullmatch(r'[a-z0-9][a-z0-9.+-]{0,63}', accepted.name):
+        raise RuntimeError('native_release_invalid')
+    manifest = accepted / 'native-runtime.json'
+    trusted(manifest)
+    if not manifest.is_file():
+        raise RuntimeError('native_release_invalid')
+    source = root / 'opt/sli/dotnet' / accepted.name
+    saved = accepted / 'dotnet'
+    trusted(source)
+    trusted(saved)
+    if saved.exists() or not source.exists():
+        return
+    # New publications already belong to the retained, versioned release package.
+    owned = subprocess.run(['/usr/bin/dpkg-query', '-L', 'sli-release-' + accepted.name],
+                           check=True, capture_output=True, text=True).stdout.splitlines()
+    if str(source / 'Sli.Server') in owned:
+        return
+    for path in (source, *source.rglob('*')):
+        trusted(path)
+        if not (path.is_dir() or path.is_file()):
+            raise RuntimeError('native_dotnet_publish_invalid')
+    if not (source / 'Sli.Server').is_file():
+        raise RuntimeError('native_dotnet_publish_invalid')
+    with tempfile.TemporaryDirectory(dir=accepted, prefix='.dotnet-retain-') as staging:
+        copy = Path(staging) / 'dotnet'
+        shutil.copytree(source, copy, copy_function=os.link)
+        for directory in (*[path for path in copy.rglob('*') if path.is_dir()], copy):
+            descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        os.replace(copy, saved)
+        descriptor = os.open(accepted, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
 def recovery_required(*, root=Path('/'), state=None, current=None, releases=None, recovery=None):
     """Only a fresh or explicitly interrupted first start bypasses upgrade recovery."""
     state = root / 'var/lib/sli/state' if state is None else state
@@ -302,6 +350,8 @@ if __name__ == '__main__':
         os.umask(0o022)
         if len(sys.argv) == 4 and sys.argv[1] == '--package-install':
             package_install(sys.argv[2], sys.argv[3])
+        elif sys.argv[1:] == ['--retain-legacy-dotnet']:
+            retain_legacy_dotnet()
         elif sys.argv[1:] == ['--recovery-kind']:
             print('accepted' if recovery_required() else 'unfinished')
         elif len(sys.argv) == 3 and sys.argv[1] == '--clean-recovery':

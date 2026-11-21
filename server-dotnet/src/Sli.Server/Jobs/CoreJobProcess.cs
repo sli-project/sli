@@ -203,7 +203,16 @@ public static class CoreJobProcess
                 // exit first so it does not hide the exit code and stderr.
                 if (request.IsFaulted && request.Exception?.InnerException is not IOException) await request;
                 if (response.IsFaulted) await response;
-                process.Refresh(); peak = Math.Max(peak, process.PeakWorkingSet64);
+                try
+                {
+                    process.Refresh();
+                    peak = Math.Max(peak, process.PeakWorkingSet64);
+                }
+                catch (InvalidOperationException) when (process.HasExited)
+                {
+                    // The child can exit between the liveness check and reading its metrics.
+                    break;
+                }
                 if (peak > budget["memory_bytes"]!.GetValue<long>()) throw new InvalidOperationException("job_child_memory_exceeded");
                 if (heartbeat is not null && now >= nextHeartbeat)
                 {

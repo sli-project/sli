@@ -38,9 +38,11 @@ public sealed class OperationsEndpointTests
         public int FootprintReads, Scans, Inventories;
         public JsonObject? RuntimeStorageValue;
         public int RuntimeStorageReads;
+        public JsonObject? CockpitStatus;
         public Dictionary<string, JsonObject> Native = new();
         public override JsonObject? Json(string relative, int maxBytes = 2097152) => relative == "data/maintenance/postgres_backup_restore_last.json" ? new() { ["status"] = "verified" } : null;
         public override JsonArray LogTail(string name, int lines) => [];
+        internal override JsonObject? WebConsoleStatus() => CockpitStatus;
         internal override IEnumerable<string> CollectorLogLines() => [];
         public override JsonObject? PluginHeartbeat(string component) => null;
         public override JsonObject? NativeHeartbeat(string name) => Native.GetValueOrDefault(name)?.DeepClone().AsObject();
@@ -123,6 +125,22 @@ public sealed class OperationsEndpointTests
     }
     internal static Task<HttpResponseMessage> Request(App app, string method, string path, string body = """{"hostname":"DC2","connect_address":"dc2.example.test","channels":["Security"]}""") => app.Client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = method == "POST" ? new StringContent(body, Encoding.UTF8, "application/json") : null }, TestContext.Current.CancellationToken);
     internal static async Task<JsonObject> Body(HttpResponseMessage response) => JsonNode.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!.AsObject();
+
+    [Theory]
+    [InlineData("admin", "https://sli.example.test:9090/system/terminal", true)]
+    [InlineData("admin", null, false)]
+    [InlineData("admin", "http://sli.example.test:9090/system/terminal", false)]
+    [InlineData("operator", "https://sli.example.test:9090/system/terminal", false)]
+    public async Task Diagnostics_exposes_active_web_console_only_to_administrators(string role, string? url, bool visible)
+    {
+        using var app = await Start(role: role);
+        if (url is not null) app.Files.CockpitStatus = new JsonObject { ["url"] = url };
+        using var response = await Request(app, "GET", "/api/diagnostics/overview?run_checks=0");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var console = (await Body(response))["web_console"]!;
+        Assert.Equal(visible, (bool)console["available"]!);
+        Assert.Equal(visible ? url : null, (string?)console["url"]);
+    }
 
     [Fact]
     public async Task Round2DetailedHealthRequiresCapabilityWithAuthenticationDisabled()

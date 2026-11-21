@@ -4,10 +4,12 @@ using System.Security.Cryptography.X509Certificates;
 using Npgsql;
 using System.Text.Json.Nodes;
 using Sli.Server.Agents.Certificates;
+using Sli.Server.Hosting;
 
 namespace Sli.Server.Agents.Registry;
 
-public sealed class AgentIdentityService(AgentIssuingCa ca, AgentLinkHistory? links = null) : IAgentIdentityService
+public sealed class AgentIdentityService(AgentIssuingCa ca, AgentLinkHistory? links = null,
+    AgentCertificateRejections? rejections = null) : IAgentIdentityService
 {
     public Task<AgentIdentity> AuthenticateAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         X509Certificate2 certificate, bool lifecycle, CancellationToken cancellationToken) => AuthenticateCoreAsync(connection,transaction,certificate,lifecycle,false,cancellationToken);
@@ -66,12 +68,18 @@ public sealed class AgentIdentityService(AgentIssuingCa ca, AgentLinkHistory? li
         DateTime? revokedAt=null;
         await using (var reader = await certCommand.ExecuteReaderAsync(cancellationToken))
         {
-            if (!await reader.ReadAsync(cancellationToken) || !reader.IsDBNull(2) && !removalOnly || reader.GetFieldValue<DateTime>(1) <= DateTime.UtcNow) throw Reject();
+            if (!await reader.ReadAsync(cancellationToken) || reader.GetFieldValue<DateTime>(1) <= DateTime.UtcNow) throw Reject();
             revokedAt=reader.IsDBNull(2)?null:reader.GetDateTime(2);
             var stored = reader.GetString(0);
             byte[] bytes;
             try { bytes = Convert.FromHexString(stored); } catch (FormatException) { throw Reject(); }
             if (!CryptographicOperations.FixedTimeEquals(bytes, fingerprint)) throw Reject();
+            // Registry revocation is checked here because the listener's TLS chain policy is offline.
+            if (revokedAt is not null && !removalOnly)
+            {
+                rejections?.Record(certificate, "revoked");
+                throw Reject();
+            }
         }
         if(removalOnly) {
             await using var removal=new NpgsqlCommand("select state,requested_at from sli_agent_removals where agent_id=@id for update",connection,transaction);

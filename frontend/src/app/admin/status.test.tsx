@@ -9,7 +9,8 @@ import { formatDateTime } from "../../shared/date-time";
 import * as actions from "../operations-actions";
 import { SystemStatusPage } from "./status";
 
-vi.mock("../App", () => ({ useTimeZone: () => ({ timeZone: "UTC" }), useEffectiveAccess: () => ({ platform_owner: true }) }));
+const access = vi.hoisted(() => ({ platform_owner: true, subject: { coarse_role: "admin" }, capabilities: ["operations.view"] }));
+vi.mock("../App", () => ({ useTimeZone: () => ({ timeZone: "UTC" }), useEffectiveAccess: () => access }));
 
 const agent: AgentCollectionHealth["items"][number] = {
   id: "00000000-0000-4000-8000-000000000001", host_id: "00000000-0000-4000-8000-000000000002",
@@ -130,6 +131,27 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><SystemStatusPage/></QueryClientProvider>);
 }
 
+it.each([["ru", "Консоль сервера"], ["en", "Server console"]] as const)("opens the administrator's Cockpit terminal in a new tab (%s)", async (locale, label) => {
+  setLocale(locale);
+  const url = "https://sli.example.test:9090/system/terminal";
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok", web_console: { available: true, url } });
+  renderPage();
+  const link = await screen.findByRole("link", { name: label });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toContain("noopener");
+});
+
+it.each([["admin", false], ["operator", true], ["viewer", true]] as const)("hides the Cockpit terminal for %s when availability is %s", async (role, available) => {
+  access.subject.coarse_role = role;
+  access.platform_owner = role === "admin";
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok", release_metadata: { project_version: "1.0.0" },
+    web_console: { available, url: available ? "https://sli.example.test:9090/system/terminal" : null } });
+  renderPage();
+  await screen.findByText(/1\.0\.0/);
+  expect(screen.queryByRole("link", { name: t("systemStatus.serverConsole") })).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("shows one Security log full line with the exact record ID and action in %s", async (locale) => {
   setLocale(locale);
   const event = { server: "dc.example.test", time_created_utc: "2026-11-14T01:16:42Z", record_id: "9007199254740993" };
@@ -162,6 +184,8 @@ it.each(["ru", "en"] as const)("shows an unresolved password detection domain wi
 });
 
 beforeEach(() => {
+  access.subject.coarse_role = "admin";
+  access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(api, "setupStatus").mockResolvedValue(setup());
   vi.spyOn(api, "operations").mockResolvedValue(operations);

@@ -342,7 +342,7 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     assert kit.sha256(output / 'remove-beta-kit') == manifest['remover']['sha256']
     subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True)
     extracts = tmp_path / 'package'
-    server_package = next(output.glob('sli-server-dotnet_*.deb'))
+    server_package = next(output.glob('sli-release-fixture_*.deb'))
     subprocess.run(['dpkg-deb', '-x', server_package, extracts], check=True)
     server = extracts / 'opt/sli/dotnet/fixture/Sli.Server'
     result = subprocess.run([server], capture_output=True, text=True, check=True, env={'PATH': '/usr/bin:/bin'})

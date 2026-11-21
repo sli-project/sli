@@ -61,6 +61,8 @@ MESSAGES = {
     'native_setup_install_failed': 'SLI could not finish its first start. Run sudo journalctl -t sli-setup -u sli-ready.service -u sli-health.service -n 80 --no-pager. After fixing the cause, repeat sudo sli-setup with the same flags; a configured schema with an unclaimed owner can resume without a database reset. Preserve the database and configuration.',
     'native_api_tls_untrusted': 'SLI HTTPS certificate is not trusted by /var/lib/sli/tls-ca.crt. Check the server name and run sudo sli-setup again.',
     'native_setup_health_failed': 'SLI services are not ready. Check systemctl --failed and journalctl -u sli-health.service.',
+    'native_web_console_setup_failed': 'Could not set up Cockpit. Check APT, HTTPS port 9090 and sudo journalctl -u cockpit.socket -u cockpit.service.',
+    'native_web_console_disable_failed': 'Could not stop Cockpit. Check sudo journalctl -u cockpit.socket -u cockpit.service.',
     'native_initial_admin_unavailable': 'The initial administrator password is unavailable. Run sudo sli-setup --reset-admin-password to set a new one.',
     'native_backup_root_same_device': 'The external backup directory must be on another device. Omit --backup-root to use local beta backups, or attach a separate backup disk.',
     'native_backup_root_insufficient_space': 'The backup filesystem lacks space for recovery. Free space or use a larger backup disk.',

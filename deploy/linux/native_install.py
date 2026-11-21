@@ -154,6 +154,12 @@ def atomic(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
+class UnitCommandFailure(RuntimeError):
+    def __init__(self, unit, exit_code, line, *, code='native_install_command_failed'):
+        super().__init__(code)
+        self.detail = {'unit': unit, 'exit_code': exit_code, 'error': line}
+
+
 def command(argv, *, cwd=None, env=None, timeout=120):
     if len(argv) >= 2 and argv[-2:] == ['deploy.linux.entrypoint', 'migrate']:
         from deploy.linux import backup, native_backup, operation_wait
@@ -191,12 +197,22 @@ def command(argv, *, cwd=None, env=None, timeout=120):
         program = Path(argv[0]).name + (" " + argv[1] if len(argv) > 1 and argv[1] in {"start", "stop", "restart",
                                                                                       "enable", "disable", "daemon-reload"} else "")
         lines = result.stderr[-4096:].decode("utf-8", errors="replace").strip().splitlines()
-        # Only systemd's own messages are echoed verbatim; other programs
-        # (psql, pg_restore, helpers) may print SQL rows, so only our reason
-        # codes from them are kept.
+        # Keep recognized reason codes and validated systemctl messages.
         reason = re.compile(r"(?:[A-Za-z_.]+Error: )?native_[a-z_]+(?:: \S+)?")
         tail = [line for line in lines if reason.fullmatch(line.strip())][-3:]
-        if Path(argv[0]).name in {"systemctl", "systemd-run", "systemd-tmpfiles"}:
+        if Path(argv[0]).name == 'systemctl':
+            units = [unit for unit in argv[2:] if re.fullmatch(r'sli-[a-z0-9-]+\.(?:service|target|timer)', unit)]
+            for unit in units:
+                known = (f'Job for {unit} failed because the control process exited with error code.',
+                         f'Job for {unit} failed because a timeout was exceeded.',
+                         f'Unit {unit} not found.', f'Unit {unit} not loaded.',
+                         f"A dependency job for {unit} failed. See 'journalctl -xe' for details.")
+                line = next((line for line in lines if line in known), None)
+                if line is not None or len(units) == 1:
+                    line = line or f'{program} {unit} failed with exit code {result.returncode}.'
+                    print(line, file=sys.stderr, flush=True)
+                    raise UnitCommandFailure(unit, result.returncode, line)
+        elif Path(argv[0]).name in {"systemd-run", "systemd-tmpfiles"}:
             tail += lines[-3:]
         print("native_install_command_failed: " + program + " exit=" + str(result.returncode)
               + "".join("\n  " + line[:240] for line in tail), file=sys.stderr, flush=True)
@@ -451,6 +467,10 @@ def wait_health():
             try:
                 watch.check(pending, components=pending)
             except RuntimeError:
+                if isinstance(error, UnitCommandFailure):
+                    detail = error.detail
+                    raise UnitCommandFailure(detail['unit'], detail['exit_code'], detail['error'],
+                                             code='native_install_workers_unhealthy') from None
                 raise RuntimeError('native_install_workers_unhealthy') from None
             if not isinstance(error, subprocess.TimeoutExpired):
                 time.sleep(30)
@@ -548,6 +568,7 @@ def configure(release):
             writers_configured = True
             select(root)
             atomic(installed_path, dict(manifest, release=str(root), manifest_sha256=digest))
+            command(["systemctl", "daemon-reload"])
         else:
             require(CURRENT.resolve(strict=True) == root, "native_install_current_mismatch")
             # RemainAfterExit readiness must run again on reinstall, not reuse old success.

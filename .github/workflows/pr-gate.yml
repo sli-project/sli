@@ -13,11 +13,11 @@ concurrency:
 
 jobs:
   changes:
-    # PRs that touch only the React UI or docs skip the Python suites:
-    # tests then runs only Python tests that read frontend/, postgres is skipped.
     runs-on: ubuntu-latest
     outputs:
-      python: ${{ steps.diff.outputs.python }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+      postgres: ${{ steps.diff.outputs.postgres }}
+      unit: ${{ steps.diff.outputs.unit }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,19 +31,22 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          python=true
+          diff=()
           if [ "$EVENT" = pull_request ]; then
-            python=$(bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD")
+            diff=(--diff "$BASE" "$HEAD")
           fi
-          echo "python=$python" | tee -a "$GITHUB_OUTPUT"
+          python3 -m scripts.ci.pr_scope "${diff[@]}" --github-output "$GITHUB_OUTPUT"
 
   source:
     name: Source checks
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
       # Fetch setup actions over git: codeload archives time out during job setup.
       # Keep the same action revision and use the ignored artifacts directory.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -62,13 +65,39 @@ jobs:
       - run: python scripts/maintenance/github_sanitary_check.py --root . --json
       - run: python -m compileall -q server scripts tests
       - run: python -m ruff check --config .github/ruff-ci.toml deploy/linux/sli_secrets.py deploy/linux/installation.py deploy/linux/sli_update.py deploy/linux/updater_component.py deploy/linux/updater_launcher.py tests/unit/test_sli_secrets.py
+      - name: Select Python tests
+        if: needs.changes.outputs.unit == 'true'
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          diff=()
+          if [ "$EVENT" = pull_request ]; then
+            diff=(--diff "$BASE" "$HEAD")
+          fi
+          python -m scripts.ci.pr_scope "${diff[@]}" --argfiles "$RUNNER_TEMP/sli-pr-tests"
       - name: Domain binding, secrets, updater, plugin and event contracts
-        run: python -m pytest -q @scripts/ci/pr_source_tests.txt
-      - name: Verify installer checkpoint cleanup and recovery
+        if: needs.changes.outputs.unit == 'true'
         shell: bash
         run: |
+          args="$RUNNER_TEMP/sli-pr-tests/source.txt"
+          test -f "$args"
+          if [ -s "$args" ]; then
+            python -m pytest -q "@$args"
+          fi
+      - name: Verify installer checkpoint cleanup and recovery
+        if: needs.changes.outputs.unit == 'true'
+        shell: bash
+        run: |
+          args="$RUNNER_TEMP/sli-pr-tests/checkpoint.txt"
+          test -f "$args"
+          if [ ! -s "$args" ]; then
+            exit 0
+          fi
           report=$(mktemp "$RUNNER_TEMP/sli-checkpoint-cleanup.XXXXXX")
-          python -B -m pytest -q --junitxml="$report" @scripts/ci/pr_checkpoint_tests.txt
+          python -B -m pytest -q --junitxml="$report" "@$args"
           python - "$report" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
@@ -78,6 +107,8 @@ jobs:
               raise SystemExit('Installer checkpoint tests must run without skips')
           PY
       - name: Verify native Linux unit contracts
+        if: needs.changes.outputs.unit == 'true'
+        shell: bash
         env:
           ADLOG_DISABLE_SCHEDULER: "1"
           ADLOG_DISABLE_COLLECTION: "1"
@@ -85,35 +116,43 @@ jobs:
           ADLOG_AI_EXECUTE_ENABLED: "false"
           ADLOG_DB_BACKEND: postgres
           ADLOG_PG_DSN: "postgresql://sli-pytest.invalid:5432/sli_pytest_unreachable"
-        run: >-
-          python -m pytest -q -m "posix_only and not postgres_integration and not host_dependent"
-          tests/storage/test_raw_zip_durability.py
-          tests/storage/test_stabilization_runtime_security_ai.py::test_runtime_storage_cleanup_can_zip_archive_and_explain_exclusions
-          tests/unit/test_ad_credential_delivery.py tests/unit/test_ad_credential_secrets.py
-          tests/unit/test_ad_gpo_core_jobs.py tests/unit/test_ad_gpo_pilot_acceptance.py
-          tests/unit/test_ad_plugin_registration.py tests/unit/test_agent_group_bootstrap.py
-          tests/unit/test_core_job_queue.py
-          tests/unit/test_linux_backup_capacity.py tests/unit/test_linux_backup_health_assurance.py
-          tests/unit/test_linux_backup_pg_diagnostics.py tests/unit/test_linux_native_apt.py
-          tests/unit/test_linux_restore_sandbox.py
+        run: |
+          args="$RUNNER_TEMP/sli-pr-tests/posix.txt"
+          test -f "$args"
+          if [ -s "$args" ]; then
+            python -m pytest -q -m "posix_only and not postgres_integration and not host_dependent" "@$args"
+          fi
 
   gate:
     # Preserve the required status check name while the source checks run independently.
     name: source
-    needs: [changes, source, postgres]
+    needs: [changes, source, tests, frontend, postgres]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require source checks and applicable PostgreSQL integration
+      - name: Require source checks and applicable suites
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           SOURCE_RESULT: ${{ needs.source.result }}
-          PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
+          UNIT_REQUIRED: ${{ needs.changes.outputs.unit }}
+          UNIT_RESULT: ${{ needs.tests.result }}
+          FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          POSTGRES_REQUIRED: ${{ needs.changes.outputs.postgres }}
           POSTGRES_RESULT: ${{ needs.postgres.result }}
         run: |
           test "$CHANGES_RESULT" = success
           test "$SOURCE_RESULT" = success
-          test "$POSTGRES_RESULT" = success || { test "$PYTHON_CHANGED" = false && test "$POSTGRES_RESULT" = skipped; }
+          require_suite() {
+            if [ "$1" = true ]; then
+              test "$2" = success
+            else
+              test "$1" = false && test "$2" = skipped
+            fi
+          }
+          require_suite "$UNIT_REQUIRED" "$UNIT_RESULT"
+          require_suite "$FRONTEND_REQUIRED" "$FRONTEND_RESULT"
+          require_suite "$POSTGRES_REQUIRED" "$POSTGRES_RESULT"
 
   tests:
     # Shipped Python unit/contracts: live-PostgreSQL tests are
@@ -121,7 +160,7 @@ jobs:
     # host_dependent tests need operator-host software (RSAT) or idle capacity.
     # Native POSIX contracts run on Linux in the required source job.
     needs: changes
-    if: ${{ always() }}
+    if: ${{ needs.changes.outputs.unit == 'true' }}
     runs-on: ubuntu-latest
     env:
       ADLOG_DISABLE_SCHEDULER: "1"
@@ -147,27 +186,27 @@ jobs:
         with:
           node-version: "22"
       - run: python -m pip install --disable-pip-version-check -r requirements.txt
-      - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
       - name: Unit and contract tests
         shell: bash
         env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          test "$CHANGES_RESULT" = success
-          if [ "$PYTHON_CHANGED" = false ]; then
-            # UI-only change: run the Python tests that read frontend/ files.
-            mapfile -t selected < <(grep -rl --include='test_*.py' -e frontend tests | sort)
-            echo "UI-only change: ${#selected[@]} Python test files read frontend/"
-          else
-            # Tests of shipped code only (server/ removal, stage B).
-            selected=("@.ci-shipped-python-tests.txt")
+          diff=()
+          if [ "$EVENT" = pull_request ]; then
+            diff=(--diff "$BASE" "$HEAD")
           fi
-          mapfile -t dedicated < <(cat scripts/ci/pr_source_tests.txt scripts/ci/pr_checkpoint_tests.txt)
-          python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" \
-            "${dedicated[@]/#/--deselect=}" "${selected[@]}"
+          args="$RUNNER_TEMP/sli-pr-tests"
+          python -m scripts.ci.pr_scope "${diff[@]}" --argfiles "$args"
+          test -f "$args/unit.txt"
+          if [ -s "$args/unit.txt" ]; then
+            python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" "@$args/unit.txt"
+          fi
 
   frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -204,7 +243,7 @@ jobs:
   postgres:
     name: postgres (${{ matrix.shard }})
     needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
+    if: ${{ needs.changes.outputs.postgres == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
