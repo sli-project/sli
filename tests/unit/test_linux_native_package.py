@@ -487,6 +487,8 @@ def test_generator_follows_restored_release_after_candidate_unpack(tmp_path, mon
         binary = candidate if release == 'candidate' else accepted
         assert f'ExecStart={binary.as_posix()}/Sli.Server core-job-executor' in unit
         assert f'WorkingDirectory={binary.as_posix()}\n' in unit
+        setup = (destination / 'sli-dotnet-notification-setup.service').read_text()
+        assert f'ExecStartPre={binary.as_posix()}/Sli.Server notification-setup --repair-public-urls\n' in setup
 
 
 @pytest.mark.skipif(os.name != 'posix', reason='dpkg and POSIX file permissions; Linux CI')

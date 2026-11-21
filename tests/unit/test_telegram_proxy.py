@@ -190,7 +190,7 @@ def test_token_rotation_omission_preserves_and_explicit_empty_clears_proxy(tmp_p
     assert service.read()["recipients"] == {}  # Existing token rotation rule.
 
 
-def test_chats_use_saved_proxy_and_status_is_read_only(tmp_path, monkeypatch):
+def test_setup_uses_saved_proxy_for_verification_and_keeps_chat_discovery_local(tmp_path, monkeypatch):
     service = writer.Setup(tmp_path)
     monkeypatch.setattr(writer, "_publish", lambda path, data, **_: path.write_bytes(data))
     service.write({"base_url": "https://example.invalid/app", "recipients": {}, "proxy_url": PROXY})
@@ -198,10 +198,14 @@ def test_chats_use_saved_proxy_and_status_is_read_only(tmp_path, monkeypatch):
     before = (tmp_path / "telegram.json").read_bytes()
     assert service.handle({"action": "status", "user_id": 1})["proxy_url"] == PROXY
     assert (tmp_path / "telegram.json").read_bytes() == before
-    bot = Mock(return_value=[])
+    bot = Mock(return_value={"is_bot": True, "first_name": "Fixture bot"})
     monkeypatch.setattr(writer, "bot_request", bot)
-    assert service.handle({"action": "chats", "user_id": 1}) == {"chats": []}
-    assert bot.call_args.args[:2] == (TOKEN, "getUpdates") and bot.call_args.kwargs == {"proxy_url": PROXY}
+    generation = service.handle({"action": "chat_generation", "user_id": 1})["generation"]
+    assert service.handle({"action": "chats", "user_id": 1, "generation": generation, "observations": []}) == {"chats": []}
+    bot.assert_not_called()
+    assert service.handle({"action": "verify", "user_id": 1, "token": TOKEN}) == {"bot_name": "Fixture bot"}
+    bot.assert_called_once_with(TOKEN, "getMe", {}, proxy_url=PROXY)
+    assert (tmp_path / "telegram.json").read_bytes() == before
 
 
 def test_api_bad_proxy_is_denied_before_audit_socket_or_channel_disable(monkeypatch):

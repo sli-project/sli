@@ -8,7 +8,7 @@ namespace Sli.Server.Tests.Semantic;
 
 public class PasswordProducerRuntimeTests
 {
-    [Fact] public async Task Live_passes_precede_every_history_slice_and_failed_live_work_blocks_history()
+    [Fact] public async Task Live_passes_precede_history_and_failed_live_work_blocks_only_its_rule()
     {
         var scope=new PasswordScope("00000000-0000-0000-0000-000000000001","sli.windows.ad-dc","source","1","");
         var live=new[]{new PasswordRule(scope,revision:3),new PasswordRule(scope,"spray",3)};
@@ -21,9 +21,11 @@ public class PasswordProducerRuntimeTests
         Assert.Equal(new[]{"3:brute","3:spray","3:brute","3:spray","2:brute","3:brute","3:spray","2:spray"},order);
         order.Clear();
         await PasswordProducerPoller.RunPassesAsync(live,history,(rule,ct)=> {
-            order.Add(rule.Revision+":"+rule.Kind);return Task.FromResult(new PasswordProducerOutcome());
+            order.Add(rule.Revision+":"+rule.Kind);
+            return Task.FromResult(rule.Kind=="brute"?new PasswordProducerOutcome():new(Failed:false,Status:"committed"));
         },CancellationToken.None);
-        Assert.DoesNotContain(order,item=>item.StartsWith("2:",StringComparison.Ordinal));
+        Assert.DoesNotContain("2:brute",order);
+        Assert.Contains("2:spray",order);
     }
     [Fact] public async Task Disabled_rule_does_not_hold_the_other_rules_history()
     {

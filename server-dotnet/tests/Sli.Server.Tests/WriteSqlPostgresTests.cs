@@ -391,11 +391,16 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
     // subscription, schedule, queue, authorization and audit SQL stays real.
     private sealed class SetupTransport : INotificationSetupClient
     {
+        private static readonly string TelegramGeneration = new('a', 64);
+
         public Task<JsonObject> RequestAsync(string action, long user, JsonObject values, CancellationToken ct) => Task.FromResult(action switch {
             "status" => new JsonObject { ["secret_set"] = true, ["chat_bound"] = true, ["chat_name"] = "Synthetic", ["proxy_url"] = "" },
             "smtp_status" => new JsonObject { ["host"] = "mail.example.test", ["port"] = 587, ["username"] = "fixture", ["sender"] = "sender@example.test", ["recipients"] = new JsonObject { ["1"] = "recipient@example.test" }, ["secret_set"] = true, ["needs_save"] = false },
             "smtp_save" => new JsonObject { ["secret_set"] = true, ["needs_save"] = false },
-            "chats" => new JsonObject { ["chats"] = new JsonArray(new JsonObject { ["choice"] = "synthetic", ["name"] = "Synthetic" }) },
+            "chat_generation" => new JsonObject { ["generation"] = TelegramGeneration },
+            "chats" when values["generation"]?.GetValue<string>() == TelegramGeneration && values["observations"] is JsonArray
+                => new JsonObject { ["chats"] = new JsonArray(new JsonObject { ["choice"] = "synthetic", ["name"] = "Synthetic" }) },
+            "chats" => throw new InvalidOperationException("Expected a generation and chat observations"),
             _ => new JsonObject { ["status"] = "ok" }
         });
     }

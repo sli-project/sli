@@ -306,7 +306,7 @@ def environment(service, config, *, dotnet=False):
                "SLI_NATIVE_NOTIFICATION_SETUP": "1",
                "SLI_TELEGRAM_SECRET_DIR": "/etc/sli/secrets/notifications",
                "SLI_TELEGRAM_SETUP_SOCKET": "/run/sli/notification-setup/control.sock",
-               "SLI_PUBLIC_URL": config["health_url"].split("/api/")[0],
+               "SLI_PUBLIC_URL": config.get("public_url") or clickhouse.public_url(config),
                "SLI_NOTIFICATION_PROXY": config.get("notification_proxy", "")}
         secrets = {}
     env.update({key + "_FILE": "%d/" + value for key, value in secrets.items()})
@@ -352,6 +352,9 @@ def dotnet_unit(release, config, service="api"):
     command = " ".join((f"/opt/sli/dotnet/{release}/Sli.Server", *DOTNET_COMMANDS[service], *spec[2]))
     policy = policy.replace(f"ExecStart=/usr/bin/python3 -I -B {HELPER} launch {service}\n",
                             f"ExecStart={command}\n")
+    if service == "notification-setup":
+        # Complete the repair before dependent units load notification credentials.
+        policy += f"ExecStartPre={command} --repair-public-urls\n"
     policy = policy.replace("WorkingDirectory=/opt/sli/current\n", f"WorkingDirectory=/opt/sli/dotnet/{release}\n")
     # The Python entrypoint sets these before dispatching any native command.
     # Direct .NET ExecStart bypasses that entrypoint, so preserve its guards.
@@ -522,11 +525,11 @@ def configure(config):
     from deploy.linux import native_host as host
 
     # Candidate code can be invoked by an older retained upgrade coordinator.
-    # Read the optional setting here as well, so its old runtime JSON cannot
-    # silently discard a proxy explicitly configured on the destination host.
+    # Read the site here as well, so legacy runtime JSON picks up the public
+    # address and proxy before generating the candidate's notification units.
     if Path("/etc/sli/site.toml").exists():
         site = clickhouse.site_configuration()
-        config = dict(config)
+        config = dict(config, public_url=clickhouse.public_url(site))
         if "notification_proxy" in site:
             config["notification_proxy"] = site["notification_proxy"]
         else:
