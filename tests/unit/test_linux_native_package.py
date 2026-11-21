@@ -22,6 +22,21 @@ from deploy.linux import native_runtime as runtime
 VERSION = "1.0-1~deb13"
 
 
+def test_candidate_start_failure_records_unit_exit_and_safe_error_line(monkeypatch, capsys):
+    stderr = (b'Job for sli-health.service failed because the control process exited with error code.\n'
+              b'synthetic-private-data\n')
+    monkeypatch.setattr(install.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1, stderr=stderr))
+    with pytest.raises(RuntimeError) as caught:
+        install.command(['systemctl', 'start', 'sli-health.service'])
+    journal = SimpleNamespace(value={'status': 'candidate_testing'}, write=lambda: None)
+    native_upgrade.record_failure(journal, caught.value)
+    assert journal.value['failure_detail'] == {
+        'phase': 'candidate_testing', 'unit': 'sli-health.service', 'exit_code': 1,
+        'error': 'Job for sli-health.service failed because the control process exited with error code.',
+    }
+    assert 'synthetic-private-data' not in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("wrapped", [True, False])
 def test_wait_api_rejects_untrusted_tls_without_retry(monkeypatch, wrapped):
     import ssl
@@ -222,12 +237,14 @@ def test_required_dotnet_package_is_isolated_and_loads_required_credentials(payl
     result = package.build(payload, tmp_path / "out", "new", VERSION, VERSION, dotnet_project=project)
     assert len(result) == 5
     files = captured["sli-server-dotnet"]
+    release_files = captured["sli-release-new"]
+    assert "opt/sli/dotnet/new/Sli.Server" in release_files and "opt/sli/dotnet/new/Sli.Server" not in files
     if os.name != "nt":
-        assert files["opt/sli/dotnet/new/Sli.Server"][1] & 0o111
-        assert files["opt/sli/dotnet/new/Sli.Server.runtimeconfig.json"][1] & 0o022 == 0
+        assert release_files["opt/sli/dotnet/new/Sli.Server"][1] & 0o111
+        assert release_files["opt/sli/dotnet/new/Sli.Server.runtimeconfig.json"][1] & 0o022 == 0
     assert "usr/lib/systemd/system/sli-dotnet-api.service" not in files
     generator = files["usr/lib/systemd/system-generators/sli-dotnet-api"][0]
-    assert '/usr/bin/python3 -I -B /usr/lib/sli/native_dotnet_generator.py new "$@"' in generator
+    assert '/usr/bin/python3 -I -B /usr/lib/sli/native_dotnet_generator.py "$@"' in generator
     assert files["usr/lib/sli/native_dotnet_generator.py"][0] == Path(native_dotnet_generator.__file__).read_text(encoding="utf-8")
     from deploy.linux import native_plugin_runtime
     assert files["usr/lib/sli/native_plugin_runtime.py"][0] == Path(native_plugin_runtime.__file__).read_text(encoding="utf-8")
@@ -262,7 +279,9 @@ def test_dotnet_unit_uses_site_binding_api_credentials_and_data_paths(agents, ad
     if ad_credentials:
         secrets.add("ad_credentials_master_key")
     assert {line for line in unit.splitlines() if line.startswith("LoadCredential=")} == {
-        f"LoadCredential={secret}:/etc/sli/secrets/{secret}" for secret in secrets}
+        "LoadCredential=sli-installation:/var/lib/sli/state/installed.json",
+        *(f"LoadCredential={secret}:/etc/sli/secrets/{secret}" for secret in secrets),
+    }
     env, api_secrets = runtime.environment("api", config)
     assert secrets == api_secrets
     for key, value in env.items():
@@ -440,6 +459,55 @@ def test_dotnet_generator_reads_installed_config_and_refuses_untrusted_or_invali
     with pytest.raises(runtime.RuntimeErrorCode, match="native_path_untrusted"):
         native_dotnet_generator.generate(runtime, "new", destination)
     assert not unit.exists()
+
+
+def test_generator_follows_restored_release_after_candidate_unpack(tmp_path, monkeypatch):
+    config = {'schema_version': 1, 'profiles': ['light'], 'radius_pilot': False,
+              'bind': '192.0.2.20', 'health_url': 'https://192.0.2.20:8443/api/health/ready'}
+    monkeypatch.setattr(runtime, 'CONFIG', tmp_path / 'runtime.json')
+    monkeypatch.setattr(runtime, 'CURRENT', tmp_path / 'current')
+    monkeypatch.setattr(runtime, 'trusted', lambda path: path.read_bytes())
+    runtime.CONFIG.write_text(json.dumps(config))
+    runtime.CURRENT.mkdir()  # The release fixture below supplies the resolved pointer.
+    selected = {'release': 'candidate'}
+    monkeypatch.setattr(runtime, 'release', lambda: (tmp_path / 'releases' / selected['release'], {}, 'digest'))
+    monkeypatch.setattr(native_dotnet_generator, 'DOTNET', tmp_path / 'dotnet')
+    # The legacy .deb used to own this publication; APT removes it on unpack.
+    accepted = tmp_path / 'releases/accepted/dotnet'
+    candidate = tmp_path / 'dotnet/candidate'
+    for directory in (accepted, candidate):
+        directory.mkdir(parents=True)
+        (directory / 'Sli.Server').write_text(directory.parent.name)
+    for release in ('candidate', 'accepted'):
+        selected['release'] = release
+        destination = tmp_path / ('units-' + release)
+        destination.mkdir()
+        native_dotnet_generator.generate_installed(runtime, destination)
+        unit = (destination / 'sli-dotnet-executor-light.service').read_text()
+        binary = candidate if release == 'candidate' else accepted
+        assert f'ExecStart={binary.as_posix()}/Sli.Server core-job-executor' in unit
+        assert f'WorkingDirectory={binary.as_posix()}\n' in unit
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='dpkg and POSIX file permissions; Linux CI')
+def test_dotnet_preinst_preserves_legacy_publication_before_dpkg_removes_it(tmp_path, monkeypatch):
+    accepted = tmp_path / 'opt/sli/releases/accepted'
+    accepted.mkdir(parents=True)
+    (accepted / 'native-runtime.json').write_text('{}')
+    (tmp_path / 'opt/sli/current').symlink_to(accepted)
+    publication = tmp_path / 'opt/sli/dotnet/accepted'
+    publication.mkdir(parents=True)
+    (publication / 'Sli.Server').write_bytes(b'accepted apphost')
+    (publication / 'Sli.Server').chmod(0o755)
+    (publication / 'Sli.Server.dll').write_bytes(b'accepted assembly')
+    monkeypatch.setattr(native_preinstall, 'trusted', lambda path: None)
+    monkeypatch.setattr(native_preinstall.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout=''))
+    native_preinstall.retain_legacy_dotnet(root=tmp_path)
+    shutil.rmtree(publication)  # Simulate dpkg removing files owned by the old unversioned package.
+    native_preinstall.retain_legacy_dotnet(root=tmp_path)  # Safe to retry after unpack.
+    assert (accepted / 'dotnet/Sli.Server').read_bytes() == b'accepted apphost'
+    assert (accepted / 'dotnet/Sli.Server').stat().st_mode & 0o111
+    assert (accepted / 'dotnet/Sli.Server.dll').read_bytes() == b'accepted assembly'
 
 
 @pytest.mark.parametrize("name", ["secrets/password", ".env", "key.pem", "node_modules/code.js"])

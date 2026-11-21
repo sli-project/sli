@@ -43,16 +43,18 @@ PR_LEGACY_REPORT_TESTS = {
     # ComputersV6MetricsPartitionTests and AdComputerComparisonBatchTests.
     "tests/reporting/test_computers_v6_metrics_partition.py",
     "tests/reports/test_computers_v6_comparison_batch.py",
-    # GpoEffectiveAccessV2Tests.
-    "tests/reporting/test_gpo_effective_access_v2.py",
     # AdV2Tests.NewLogonPairs, NewLogonPairsContextFailuresTests,
-    # and NewLogonPairsReportPathTests. The .NET volume test runs nightly.
+    # and the .NET volume test runs nightly.
     "tests/reporting/test_new_logon_pairs_context_failures.py",
-    "tests/reporting/test_new_logon_pairs_report_path.py",
-    "tests/reporting/test_new_logon_pairs_v2.py",
     # UiLabelsTests and UsersActivityV2Tests.
     "tests/reporting/test_ui_labels.py",
     "tests/reporting/test_users_activity_v2.py",
+}
+# The legacy dispatch paths still have distinct access, export and history guards.
+REPORT_ACCESS_TESTS = {
+    "tests/reporting/test_gpo_effective_access_v2.py",
+    "tests/reporting/test_new_logon_pairs_report_path.py",
+    "tests/reporting/test_new_logon_pairs_v2.py",
 }
 SOURCE_ROOTS = ("server", "deploy", "scripts", "sli_agent", "sli_collect", "tools")
 SKIP_DIRS = {"__pycache__", ".venv", "node_modules", ".git"}
@@ -204,7 +206,9 @@ def select_tests(root: Path, *, include_legacy_reports: bool = False):
         groups["installer"] += installer
         groups["migrations"] += migrations
         groups["closure"] += shipped
-        if not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only and not migrations:
+        if path in REPORT_ACCESS_TESTS:
+            selected.append(path)
+        elif not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only and not migrations:
             groups["legacy_reports"] += 1
             excluded.append(path)
         elif installer or migrations or shipped:

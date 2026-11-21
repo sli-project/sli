@@ -1,7 +1,9 @@
 using System.Net;
 using System.ComponentModel;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -22,7 +24,7 @@ public interface IAgentControlTransport
     Task<JsonObject> GetAsync(string path, CancellationToken cancellationToken);
 }
 
-public sealed class AgentHttpClient(HttpClient http) : IPacketTransport, IAgentControlTransport, IDisposable
+public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfigured = false) : IPacketTransport, IAgentControlTransport, IDisposable
 {
     public const string PacketsPath = "/api/v1/agent/packets";
     public const int MaxResponseBytes = Packets.MaxPacketBytes;
@@ -41,6 +43,7 @@ public sealed class AgentHttpClient(HttpClient http) : IPacketTransport, IAgentC
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(http.Timeout > TimeSpan.Zero && http.Timeout < AgentHttp.Timeout ? http.Timeout : AgentHttp.Timeout);
         var token = deadline.Token;
+        int? rejectedStatus = null;
         try
         {
             using var request = new HttpRequestMessage(method, path);
@@ -53,9 +56,10 @@ public sealed class AgentHttpClient(HttpClient http) : IPacketTransport, IAgentC
             // These enrollment statuses require an administrator, not another attempt with the same one-use token.
             // Preserve the terminal one-use-token bootstrap contract.
             if (path == "/api/v1/agent/enroll" && response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Conflict)
-                throw new TransportException("agent_bootstrap_rejected");
+                throw new TransportException("agent_bootstrap_rejected", (int)response.StatusCode);
             var rejected = response.StatusCode != HttpStatusCode.OK;
-            var rejection = $"agent_server_rejected_{(int)response.StatusCode}";
+            rejectedStatus = rejected ? (int)response.StatusCode : null;
+            var rejection = TransportErrors.HttpCode((int)response.StatusCode);
             await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
             using var buffer = new MemoryStream();
             var chunk = new byte[8192];
@@ -63,7 +67,8 @@ public sealed class AgentHttpClient(HttpClient http) : IPacketTransport, IAgentC
             while ((read = await stream.ReadAsync(chunk, token).ConfigureAwait(false)) > 0)
             {
                 buffer.Write(chunk, 0, read);
-                if (buffer.Length > MaxResponseBytes) throw new TransportException(rejected ? rejection : "agent_transport_failed");
+                if (buffer.Length > MaxResponseBytes)
+                    throw new TransportException(rejected ? rejection : "agent_transport_failed", rejectedStatus);
             }
             if (rejected)
             {
@@ -76,17 +81,22 @@ public sealed class AgentHttpClient(HttpClient http) : IPacketTransport, IAgentC
                         rejection = code;
                 }
                 catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) { }
-                throw new TransportException(rejection);
+                throw new TransportException(rejection, rejectedStatus);
             }
             return JsonNode.Parse(buffer.ToArray()) as JsonObject ?? throw new TransportException();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TransportException("agent_http_timeout");
+            throw rejectedStatus is int status
+                ? new TransportException(TransportErrors.HttpCode(status), status)
+                : new TransportException("agent_http_timeout");
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or IOException or AuthenticationException)
         {
-            throw new TransportException(TransportErrors.Code(exception));
+            var httpStatus = rejectedStatus ?? (exception is HttpRequestException { StatusCode: { } status } ? (int)status : null);
+            throw httpStatus is int received
+                ? new TransportException(TransportErrors.HttpCode(received), received)
+                : new TransportException(TransportErrors.Code(exception, clientCertificateConfigured));
         }
     }
 
@@ -99,25 +109,78 @@ internal static class TransportErrors
     internal static bool IsDiagnostic(string code) => code is "agent_http_timeout" or "agent_tls_client_key_unusable"
         or "agent_tls_server_untrusted" or "agent_tls_name_mismatch";
 
-    internal static string Code(Exception exception)
+    internal static string HttpCode(int status) => "agent_server_rejected_" + status.ToString(CultureInfo.InvariantCulture);
+
+    internal static string Detail(string code, int? status) => status is int httpStatus
+        ? "Server returned HTTP " + httpStatus.ToString(CultureInfo.InvariantCulture) + "."
+        : code switch
+        {
+            "agent_dns_failed" => "Could not resolve the server name.",
+            "agent_tcp_refused" => "The server refused the TCP connection.",
+            "agent_http_timeout" => "The connection or response from the server timed out.",
+            "agent_tls_server_untrusted" => "The server certificate is not trusted.",
+            "agent_tls_name_mismatch" => "The server certificate does not match the server name.",
+            "agent_tls_server_expired" => "The server certificate chain has expired.",
+            "agent_tls_client_rejected" => "The server rejected the agent certificate during TLS.",
+            "agent_tls_client_key_unusable" => "The agent certificate private key is unavailable.",
+            "agent_tls_handshake_failed" => "The TLS handshake with the server failed.",
+            _ => "Communication with the server failed."
+        };
+
+    internal static string Code(Exception exception, bool clientCertificateConfigured)
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
-            if (current is TransportException transport && IsDiagnostic(transport.Code)) return transport.Code;
-            if (current is TimeoutException || current is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.TimedOut })
+            if (current is TransportException transport && (IsDiagnostic(transport.Code) || transport.Code == "agent_tls_server_expired"))
+                return transport.Code;
+            if (current is TimeoutException or SocketException { SocketErrorCode: SocketError.TimedOut })
                 return "agent_http_timeout";
+            if (current is HttpRequestException { HttpRequestError: HttpRequestError.NameResolutionError }
+                or SocketException { SocketErrorCode: SocketError.HostNotFound or SocketError.TryAgain or SocketError.NoData or SocketError.NoRecovery })
+                return "agent_dns_failed";
+            if (current is SocketException { SocketErrorCode: SocketError.ConnectionRefused }) return "agent_tcp_refused";
+            if (current is AuthenticationException or Win32Exception or IOException or CryptographicException
+                && IsCertificateAlert(current.Message))
+                return "agent_tls_client_rejected";
             var native = current is Win32Exception windows ? windows.NativeErrorCode : current.HResult;
             var code = unchecked((uint)native) switch
             {
                 // SEC_E_NO_CREDENTIALS / UNKNOWN_CREDENTIALS and unavailable Windows key containers.
                 0x8009030E or 0x8009030D or 0x80090016 or 0x8009000B or 0x8009000D => "agent_tls_client_key_unusable",
                 0x80090322 or 0x800B010F => "agent_tls_name_mismatch",
-                0x80090325 or 0x80090328 or 0x800B0109 or 0x800B010A or 0x800B0101 or 0x800B0110 or 0x800B010C => "agent_tls_server_untrusted",
+                // Schannel returns these statuses for peer alerts as well. AgentHttp handles
+                // local server trust failures in its callback using explicit transport codes.
+                0x80090325 or 0x80090328 or 0x80092010 when clientCertificateConfigured => "agent_tls_client_rejected",
+                0x80090325 or 0x800B0109 or 0x800B010A or 0x800B0110 or 0x800B010C => "agent_tls_server_untrusted",
+                0x80090328 or 0x800B0101 => "agent_tls_server_expired",
+                0x80090327 => "agent_tls_client_rejected", // Schannel SEC_E_CERT_UNKNOWN for peer certificate alerts.
                 _ => null,
             };
             if (code is not null) return code;
         }
-        return "agent_transport_failed";
+        return exception is HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError }
+            ? "agent_tls_handshake_failed" : "agent_transport_failed";
+    }
+
+    private static bool IsCertificateAlert(string message)
+    {
+        // .NET's managed alert names and the OpenSSL alert reason are invariant.
+        // Match the alert only, and never report native exception text.
+        if (message.Contains("sent a TLS alert:", StringComparison.Ordinal))
+            return message.Contains("'BadCertificate'", StringComparison.Ordinal)
+                || message.Contains("'CertificateUnknown'", StringComparison.Ordinal)
+                || message.Contains("'CertificateExpired'", StringComparison.Ordinal)
+                || message.Contains("'CertificateRevoked'", StringComparison.Ordinal)
+                || message.Contains("'UnsupportedCertificate'", StringComparison.Ordinal)
+                || message.Contains("'UnknownCA'", StringComparison.Ordinal)
+                || message.Contains("'CertificateRequired'", StringComparison.Ordinal);
+        return message.Contains("alert bad certificate", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert certificate unknown", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert certificate expired", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert certificate revoked", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert unsupported certificate", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert unknown ca", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("alert certificate required", StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -153,7 +216,14 @@ public static class AgentHttp
                     var trusted = caFingerprint is null ? trustedRoots.Count == 0 ? errors == SslPolicyErrors.None
                         : ServerTrust.IsTrusted(certificate, chain, errors, trustedRoots)
                         : ServerTrust.IsPinned(certificate, chain, errors, caFingerprint);
-                    if (!trusted) throw new TransportException("agent_tls_server_untrusted");
+                    if (!trusted)
+                    {
+                        var now = DateTime.UtcNow;
+                        var expired = certificate is X509Certificate2 leaf && leaf.NotAfter.ToUniversalTime() <= now
+                            || chain is not null && chain.ChainElements.Cast<X509ChainElement>()
+                                .Any(element => element.Certificate.NotAfter.ToUniversalTime() <= now);
+                        throw new TransportException(expired ? "agent_tls_server_expired" : "agent_tls_server_untrusted");
+                    }
                     return true;
                 },
             },

@@ -30,7 +30,7 @@ const finding: SecurityProblemFinding = {
 };
 
 describe("представление production finding", () => {
-  it.each(["ru", "en"] as const)("shows coded WATCH priority and confidence limits in %s", (locale) => {
+  it.each(["ru", "en"] as const)("shows coded WATCH priority without a wording caveat in %s", (locale) => {
     setLocale(locale);
     const view = problemPresentation({ ...finding, title: "Activity of an account under watch",
       presentation_code: "account_watch_activity", presentation_messages: {
@@ -42,9 +42,9 @@ describe("представление production finding", () => {
       } });
     expect(view.title).toBe(t("security.problems.presentation.watch_title"));
     expect(view.whyItMatters).toBe(t("security.problems.presentation.watch_why"));
-    expect(view.limitations).toEqual([t("security.problems.presentation.watch_limitation")]);
+    expect(view).not.toHaveProperty("limitations");
   });
-  it.each(["ru", "en"] as const)("shows coded account decoy evidence and coverage limits in %s", (locale) => {
+  it.each(["ru", "en"] as const)("shows coded account decoy facts and action in %s", (locale) => {
     vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
     setLocale(locale);
     const coded = { ...finding, title: "Registered decoy account used", presentation_code: "account_decoy_used",
@@ -60,7 +60,7 @@ describe("представление production finding", () => {
     expect(view.whatHappened).toBe(t("security.problems.presentation.decoy_what"));
     expect(view.whyItMatters).toBe(t("security.problems.presentation.decoy_why"));
     expect(view.nextAction).toBe(t("security.problems.presentation.decoy_next"));
-    expect(view.limitations).toEqual([t("security.problems.presentation.decoy_limitation")]);
+    expect(view).not.toHaveProperty("limitations");
   });
 
   it.each(["ru", "en"] as const)("prefers coded presentation in %s and preserves source observations", (locale) => {
@@ -74,7 +74,7 @@ describe("представление production finding", () => {
     expect(view.title).toBe(t("security.problems.presentation.default_title", { id: finding.id }));
     expect(problemPresentation({ ...coded, actor: undefined }).actor).toBe("—");
     expect(view.whatHappened).toBe("Source observation");
-    expect(view.limitations).toEqual([t("security.problems.presentation.wording_limitation")]);
+    expect(view).not.toHaveProperty("limitations");
     expect(coded.title).toBe("Future rule");
   });
 
@@ -95,12 +95,13 @@ describe("представление production finding", () => {
     expect(view.actor).toBe("Системная учётная запись DC1");
   });
 
-  it("не придумывает перевод для неизвестной будущей policy", () => {
-    const view = problemPresentation({ ...finding, title: "Unknown future rule", summary: "raw observation" });
+  it("shows a dash for an unknown rule without a concrete action", () => {
+    const view = problemPresentation({ ...finding, title: "Unknown future rule", summary: "raw observation", recommended_action: " " });
 
     expect(view.title).toBe("Unknown future rule");
     expect(view.whatHappened).toBe("raw observation");
-    expect(view.limitations).toContain("Пользовательское описание для этой policy не зарегистрировано.");
+    expect(view.nextAction).toBe("—");
+    expect(view).not.toHaveProperty("limitations");
   });
 });
 

@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import fixture from "../../../config/navigation_v3.json";
-import type { AgentCollectionHealth, OverviewWorkspace } from "../api/client";
+import type { AgentCollectionHealth } from "../api/client";
 import type { NavigationEntryDto } from "../api/report-v2-types";
 
 const registryState = vi.hoisted(() => ({ disabled: [] as string[] }));
 
 const state = vi.hoisted(() => ({
-  overview: { collection_freshness: { state: "current", label: "", collection_error: false } } as Partial<OverviewWorkspace>,
   access: {
     subject: { username: "test.operator" },
     capabilities: ["problem.view"],
@@ -30,7 +29,7 @@ vi.mock("../api/client", async (importOriginal) => {
         contract_id: "sli.report-catalog.v2", items: [],
         navigation: { ...fixture, enabled_plugins: fixture.enabled_plugins.filter((id) => !registryState.disabled.includes(id)) },
       })),
-      agentCollection: vi.fn().mockImplementation(async () => state.overview),
+      agentCollection: vi.fn(),
       plugins: vi.fn().mockResolvedValue({ items: [], can_manage: false }),
       setupStatus: vi.fn().mockResolvedValue({ sources: [], domains: [], domain_controllers: [] }),
       agents: vi.fn().mockResolvedValue({ items: [] }),
@@ -39,11 +38,12 @@ vi.mock("../api/client", async (importOriginal) => {
   };
 });
 
+import { api } from "../api/client";
 import { AppShell, useTimeZone } from "./App";
 import { useDateFormatters } from "../design-system/useDateFormatters";
 import { navigationBeforeLoad } from "./navigation";
 import { createAdminPlaceholderRoutes } from "./admin/navigation-pages";
-import { localeRuntime, setLocale, t } from "../i18n";
+import { localeRuntime, setLocale } from "../i18n";
 
 function TimeZoneProbe() {
   const { timeZone } = useTimeZone();
@@ -84,7 +84,6 @@ function setLocaleQuiet(locale: "ru" | "en") {
 afterEach(() => {
   cleanup();
   state.access = userAccess;
-  state.overview = { collection_freshness: { state: "current", label: "", collection_error: false } };
   registryState.disabled = [];
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
@@ -208,71 +207,20 @@ describe("AppShell", () => {
     expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
   });
 
-  it("refreshes collection status after a transient unavailable read without navigation", async () => {
-    state.overview = { agent_collection: { state: "unavailable", checked_at_utc: "2026-10-13T00:00:00Z", items: [], active_agents: 0, current_agents: 0 } };
-    const client = await renderShell();
-    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
-    vi.useFakeTimers();
-    await act(async () => { await client.invalidateQueries({ queryKey: ["overview", "shell"] }); });
-    state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-13T00:00:30Z", active_agents: 1, current_agents: 0,
-      items: [{ ...fixtureAgent, state: "lagging", connection: "online" }] } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_010); });
-    expect(within(screen.getByRole("banner")).getByRole("status").textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" }));
-    state.overview = { agent_collection: { state: "current", checked_at_utc: "2026-10-13T00:01:00Z", active_agents: 1, current_agents: 1,
-      items: [{ ...fixtureAgent, state: "current", connection: "online" }] } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_010); });
-    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
-  });
-
-  it("names the unregistered agent by host and domain with UUIDs only in its tooltip", async () => {
+  it.each(["error", "lagging"] as const)("keeps %s collection diagnostics out of the header", async (agentState) => {
     state.access = adminAccess;
-    state.overview = { agent_collection: { state: "error", checked_at_utc: "2026-10-10T12:00:00Z",
-      items: [fixtureAgent], active_agents: 1, current_agents: 0 } };
+    const readCollection = vi.mocked(api.agentCollection).mockClear().mockResolvedValue({
+      agent_collection: { state: agentState === "error" ? "error" : "partial", checked_at_utc: "2026-10-13T00:00:00Z",
+        items: [{ ...fixtureAgent, state: agentState }], active_agents: 1, current_agents: 0 },
+    });
     await renderShell();
-    const status = await within(screen.getByRole("banner")).findByRole("status");
-    await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
-    fireEvent.click(within(status).getByRole("button"));
-    const drawer = screen.getByRole("dialog");
-    expect(drawer.textContent).toContain("Агент fixture-host · example.test: агент не зарегистрирован");
-    expect(drawer.textContent).toContain("Сбор нарушен");
-    const link = within(drawer).getByRole("link", { name: t("operations.agent_collection.open") });
-    expect(link.getAttribute("href")).toBe(fixtureAgent.href);
-    expect(link.getAttribute("title")).toContain(fixtureAgent.id);
-    expect(link.getAttribute("title")).toContain(fixtureAgent.host_id);
-    expect(status.textContent).not.toContain(fixtureAgent.id);
-    expect(status.textContent).toContain("fixture-host");
+    const header = within(screen.getByRole("banner"));
+    expect(header.queryByRole("status")).toBeNull();
+    expect(header.queryByRole("button", { name: /fixture-host/ })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(readCollection).not.toHaveBeenCalled();
   });
 
-  it("keeps the data failure message after an agent has contacted the platform", async () => {
-    state.access = adminAccess;
-    state.overview = { agent_collection: { state: "error", checked_at_utc: "2026-10-10T12:00:00Z",
-      items: [{ ...fixtureAgent, connection: "offline", last_seen: "2026-10-09T12:00:00Z" }], active_agents: 1, current_agents: 0 } };
-    await renderShell();
-    const status = await within(screen.getByRole("banner")).findByRole("status");
-    await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
-    fireEvent.click(within(status).getByRole("button"));
-    const drawer = screen.getByRole("dialog");
-    expect(drawer.textContent).toContain("Агент fixture-host · example.test: нет данных или импорта");
-    expect(drawer.textContent).not.toContain("агент не зарегистрирован");
-  });
-
-  it("does not make an undated summary confirmation green", async () => {
-    await renderShell();
-    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
-  });
-
-  it("keeps confirmed collection when a module is paused in a healthy agent policy", async () => {
-    state.overview = { agent_collection: { state: "current", checked_at_utc: "2026-10-10T12:00:00Z",
-      items: [{ ...fixtureAgent, state: "current", connection: "online", modules: [
-        { module_id: "sli.vpn-nps", channels: [{ channel: "Security", state: "paused",
-          last_packet_at: null, last_import_at: null, import_lag_seconds: null, budget_seconds: 900 }] },
-        { module_id: "sli.workstations", channels: [{ channel: "Security", state: "current",
-          last_packet_at: "2026-10-10T12:00:00Z", last_import_at: "2026-10-10T12:00:00Z",
-          import_lag_seconds: 0, budget_seconds: 900 }] },
-      ] }], active_agents: 1, current_agents: 1 } };
-    await renderShell();
-    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
-  });
   it("exposes the search icon as a visible keyboard submit action", async () => {
     await renderShell();
     const search = screen.getByRole("search");
@@ -282,19 +230,6 @@ describe("AppShell", () => {
     expect(submit.classList.contains("sli-ds-shell__search-submit")).toBe(true);
     submit.focus();
     expect(document.activeElement).toBe(submit);
-  });
-
-  it.each(["current", "paused", "disabled"] as const)("ignores retired channel failures with %s agents", async (agentState) => {
-    state.overview = {
-      collection_freshness: { state: "error", label: "", collection_error: true },
-      collection_progress: { status: "blocked", block_reason: "windows_event_log_access_denied" },
-      sources: [{ hostname: "fixture-retired", collection_state: "error" }],
-      agent_collection: { state: agentState === "current" ? "current" : "unknown", checked_at_utc: "2026-10-10T12:00:00Z",
-        items: [{ ...fixtureAgent, state: agentState }], active_agents: agentState === "current" ? 1 : 0,
-        current_agents: agentState === "current" ? 1 : 0 },
-    };
-    await renderShell();
-    expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
   });
 
   it("renders the GPO section separately and removes it when GPO is disabled", async () => {
@@ -565,46 +500,3 @@ describe("AppShell", () => {
     await waitFor(() => expect(within(nav).getByRole("link", { name: /К работе/ })).toBeTruthy());
   });
 });
-
-
-
-it.each(["error", "lagging"] as const)("never links %s collection status to agents for operations-only access", async (agentState) => {
-  state.access = { ...userAccess, capabilities: ["operations.view"] };
-  state.overview = { agent_collection: { state: agentState === "error" ? "error" : "partial", checked_at_utc: "2026-10-10T12:00:00Z", items: [{ ...fixtureAgent, state: agentState }], active_agents: 1, current_agents: 0 } };
-  await renderShell();
-  const status = await within(screen.getByRole("banner")).findByRole("status");
-  await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
-  fireEvent.click(within(status).getByRole("button"));
-  const drawer = screen.getByRole("dialog");
-  expect(drawer.textContent).toContain("fixture-host");
-  expect(within(drawer).queryByRole("link")).toBeNull();
-});
-
-it("links collection status for a platform owner without access.manage", async () => {
-  state.access = Object.assign({ ...userAccess, capabilities: [] }, { platform_owner: true });
-  state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-10T12:00:00Z", items: [{ ...fixtureAgent, state: "lagging" }], active_agents: 1, current_agents: 0 } };
-  await renderShell();
-  const status = await within(screen.getByRole("banner")).findByRole("status");
-  await waitFor(() => expect(status.textContent).toContain(t("shell.collection.silent_one", { name: "fixture-host" })));
-  fireEvent.click(within(status).getByRole("button"));
-  const drawer = screen.getByRole("dialog");
-  expect(drawer.textContent).toContain("fixture-host");
-  expect(within(drawer).getByRole("link", { name: t("operations.agent_collection.open") }).getAttribute("href")).toBe(fixtureAgent.href);
-});
-
-
-it("counts several silent sources in the shell and opens their list", async () => {
-  state.access = adminAccess;
-  state.overview = { agent_collection: { state: "partial", checked_at_utc: "2026-10-13T00:00:00Z", active_agents: 3, current_agents: 1,
-    items: [{ ...fixtureAgent, state: "lagging" }, { ...fixtureAgent, id: "second-agent", name: "second-host", state: "unknown" },
-      { ...fixtureAgent, id: "healthy-agent", name: "healthy-host", state: "current" }] } };
-  await renderShell();
-  const status = await within(screen.getByRole("banner")).findByRole("status");
-  expect(status.textContent).toBe(t("shell.collection.silent_many", { count: 2 }));
-  fireEvent.click(within(status).getByRole("button"));
-  const drawer = screen.getByRole("dialog");
-  expect(within(drawer).getByRole("heading", { name: "fixture-host" })).toBeTruthy();
-  expect(within(drawer).getByRole("heading", { name: "second-host" })).toBeTruthy();
-  expect(drawer.textContent).not.toContain("healthy-host");
-});
-

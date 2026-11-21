@@ -210,11 +210,20 @@ def test_catalog_completeness_and_frontend_wording():
         "ad.computers.v6.name.alias.seed113", "notifications.deliveries.purpose.alias.seed225",
         "notifications.deliveries.purpose.alias.smtp226", "notifications.deliveries.purpose.alias.telegram227",
     )}
-    assert set(catalog("ru")) == set(catalog("en")) == expected
+    # The legacy API still supplies this wording to clients that use the old problem presentation.
+    legacy_problem_codes = {f"security.problems.presentation.{field}" for field in (
+        "watch_limitation", "decoy_limitation", "default_next", "audit_limitations", "wording_limitation",
+    )}
+    assert set(catalog("ru")) == set(catalog("en")) == expected | legacy_problem_codes
     for locale in ("ru", "en"):
         frontend = frontend_catalog(locale)
         for code, text in catalog(locale).items():
-            assert text and frontend[code] == text
+            assert text
+            if code in legacy_problem_codes:
+                assert code not in frontend
+                assert message(code, locale=locale)["text"] == text
+            else:
+                assert frontend[code] == text
             assert sorted(re.findall(r"\{\w+\}", text)) == sorted(re.findall(r"\{\w+\}", catalog("ru")[code]))
 
 

@@ -86,6 +86,7 @@ export function acceptedAgentFileAuditCommand(body: Record<string, unknown>, res
 }
 
 export type AgentItem = {
+  certificate_rejection_reason?: "untrusted_root" | "unexpected_chain_length" | "wrong_eku" | "expired" | "not_yet_valid" | "revoked" | "invalid_chain";
   delivery_diagnostics?: AgentDeliveryDiagnostics | null;
   password_detection_domain?: AgentPasswordDetectionDomain;
   eventlog_diagnostics?: { reported_at: string; items: Array<{

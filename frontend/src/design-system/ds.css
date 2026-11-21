@@ -294,7 +294,6 @@ body { margin: 0; overflow-x: hidden; background: var(--sli-bg); color: var(--sl
 .sli-ds-shell__search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--sli-text); font-size: var(--sli-text-sm); }
 .sli-ds-shell__spacer { flex: 1 1 0; }
 .sli-ds-shell__freshness { display: flex; align-items: center; gap: var(--sli-space-2); min-width: 0; }
-.sli-ds-shell__collection-link { justify-content: flex-start; min-height: 0; padding: 0; font-size: var(--sli-text-xs); color: var(--sli-text-muted); text-decoration: underline; }
 .sli-ds-shell__light { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--sli-border-strong); }
 .sli-ds-shell__freshness[data-state="current"] .sli-ds-shell__light { background: var(--sli-success); }
 .sli-ds-shell__freshness[data-state="partial"] .sli-ds-shell__light, .sli-ds-shell__freshness[data-state="lagging"] .sli-ds-shell__light { background: var(--sli-warning); }

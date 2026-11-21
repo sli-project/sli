@@ -79,12 +79,17 @@ Use a published beta release with both download files. Download into an empty
 directory you control. Leave space for the download, the unpacked kit and a
 temporary copy of the kit under `/tmp`.
 
-1. Download `sli-debian-beta-kit.tar.gz` and `SHA256SUMS` from the same
-   `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
+1. Copy the `beta-…` tag from the pre-release in
+   [Releases](https://github.com/sli-project/sli/releases) and replace
+   `beta-COMMIT12` in the command below.
    The release notes link to the GitHub Actions run and identify its source commit.
-   In the download directory, verify the archive before extracting it.
+   Run the command from the download directory to fetch `sli-debian-beta-kit.tar.gz`
+   and `SHA256SUMS` from the same release and verify the archive before extracting it.
 
    ```sh
+   tag=beta-COMMIT12
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/sli-debian-beta-kit.tar.gz" &&
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/SHA256SUMS" &&
    sha256sum --check SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
    ```
 

@@ -74,6 +74,43 @@ public sealed class AgentWorkerTests
         finally { Directory.Delete(directory, true); }
     }
 
+    [Fact]
+    public async Task LogsOnlyWhenTheTransportReasonChanges()
+    {
+        var directory = Helpers.TempDirectory();
+        try
+        {
+            var options = new AgentOptions { ServerUrl = "https://synthetic.example.test/", StateDir = Path.Combine(directory, "state"), TokenFile = Path.Combine(directory, "token") };
+            File.WriteAllText(options.TokenFile, new string('t', 43));
+            File.SetLastWriteTimeUtc(options.TokenFile, Helpers.Now.UtcDateTime);
+            using var handler = new ChangingFailureHandler();
+            using var runtime = new AgentRuntime(Options.Create(options), new TestClock(), _ =>
+                new AgentHttpClient(new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(options.ServerUrl) }));
+            var logger = new RecordingLogger();
+            using var worker = new AgentWorker(runtime, logger);
+            await worker.StartAsync(CancellationToken.None);
+            var first = await logger.Entry.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var second = await logger.SecondEntry.Task.WaitAsync(TimeSpan.FromSeconds(12));
+            await worker.StopAsync(CancellationToken.None);
+            Assert.Contains("agent_dns_failed", first.Message, StringComparison.Ordinal);
+            Assert.Contains("agent_tcp_refused", second.Message, StringComparison.Ordinal);
+            Assert.Equal("The server refused the TCP connection.", JsonNode.Parse(File.ReadAllText(
+                Path.Combine(options.StateDir, "status.json")))!["error_detail"]!.GetValue<string>());
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    private sealed class ChangingFailureHandler : HttpMessageHandler
+    {
+        private int attempts;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var code = ++attempts <= 2 ? System.Net.Sockets.SocketError.HostNotFound : System.Net.Sockets.SocketError.ConnectionRefused;
+            throw new HttpRequestException("synthetic", new System.Net.Sockets.SocketException((int)code));
+        }
+    }
+
     private sealed class FailingHandler(Exception failure) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => throw failure;
@@ -85,7 +122,7 @@ public sealed class AgentWorkerTests
     [InlineData(unchecked((int)0x80090322), "agent_tls_name_mismatch")]
     [InlineData(-1, "agent_http_timeout")]
     [InlineData(0, "agent_transport_failed")]
-    public async Task TransportDiagnosticsReachWarningAndLastCycleWithoutSecrets(int nativeCode, string expected)
+    public async Task TransportDiagnosticsReachWarningAndStatusWithoutSecrets(int nativeCode, string expected)
     {
         var directory = Helpers.TempDirectory();
         try
@@ -106,9 +143,11 @@ public sealed class AgentWorkerTests
             Assert.Equal(LogLevel.Warning, logged.Level);
             Assert.Contains(expected, logged.Message, StringComparison.Ordinal);
             Assert.Null(logged.Exception);
-            var raw = File.ReadAllText(Path.Combine(options.StateDir, "last-cycle.json"));
-            Assert.Equal(expected, JsonNode.Parse(raw)!["error_code"]!.GetValue<string>());
-            foreach (var secret in new[] { "private", "secret", directory, "synthetic.example.test", new string('t', 43) })
+            var raw = File.ReadAllText(Path.Combine(options.StateDir, "status.json"));
+            var status = JsonNode.Parse(raw)!;
+            Assert.Equal(expected, status["error_code"]!.GetValue<string>());
+            Assert.Contains(status["error_detail"]!.GetValue<string>(), logged.Message, StringComparison.Ordinal);
+            foreach (var secret in new[] { "private certificate", "private key path", "secret", directory, "synthetic.example.test", new string('t', 43) })
             {
                 Assert.DoesNotContain(secret, logged.Message, StringComparison.Ordinal);
                 Assert.DoesNotContain(secret, raw, StringComparison.Ordinal);

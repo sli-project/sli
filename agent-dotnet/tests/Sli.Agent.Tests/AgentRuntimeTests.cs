@@ -128,11 +128,11 @@ public sealed class AgentRuntimeTests : IDisposable
     }
 
     [Fact]
-    public void StatusCarriesOnlyCodesAndCounts()
+    public void StatusCarriesOnlySafeDiagnosticsAndCounts()
     {
-        // The status file has a fixed, small set of keys: no host names, paths, keys or event data can leak into it.
+        // The status model has a fixed, small set of fields to prevent leaking host names, paths, keys or event data.
         var keys = typeof(CycleStatus).GetProperties().Select(property => property.Name).Order().ToArray();
-        Assert.Equal(new[] { "CollectionActive", "Captured", "DeliveryFailed", "ErrorCode", "Pending" }.Order().ToArray(), keys);
+        Assert.Equal(new[] { "CollectionActive", "Captured", "DeliveryFailed", "ErrorCode", "ErrorDetail", "Pending" }.Order().ToArray(), keys);
     }
 
     [Theory]

@@ -168,6 +168,7 @@ COMPONENTS: dict[str, tuple[str, ...]] = {
         "scripts/package_admin_toolkit.py",
     ),
     "разработка_и_приёмка": (
+        "scripts/ci/pr_scope.py",
         "scripts/ci/server_dotnet_risk.py",
         "scripts/ci/server_dotnet_shard.py",
         "scripts/ci/server_test_durations.py",
