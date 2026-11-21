@@ -138,12 +138,8 @@ public sealed class ReportStatesV2Tests
         var raw = new JsonObject { ["state"] = rawState, ["items"] = new JsonArray(), ["semantic_runtime"] = O("""{"findings_state":"active"}""") };
         Assert.Equal(expected, State(EventsJournalReader.Render(Context("events.journal"), raw, [])));
         var problems = SecurityProblemsReader.Render(Context(), raw);
-        Assert.Equal(rawState == "empty" ? "partial" : expected, State(problems));
-        if (rawState == "empty")
-        {
-            Assert.Equal("unavailable", problems["coverage"]!["password_detection"]!["availability"]!.GetValue<string>());
-            Assert.Contains(problems["limitations"]!.AsArray(), n => n!["code"]!.GetValue<string>() == "password_coverage_incomplete");
-        }
+        Assert.Equal(expected, State(problems));
+        Assert.Null(problems["coverage"]!["password_detection"]);
     }
 
     [Theory]

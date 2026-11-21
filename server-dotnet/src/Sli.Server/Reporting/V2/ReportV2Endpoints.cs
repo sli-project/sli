@@ -15,7 +15,7 @@ namespace Sli.Server.Reporting.V2;
 public sealed class GpoReportSourceException : Exception;
 public static class ReportV2Endpoints
 {
-    private static readonly Regex Route = new(@"\A/api/v2/reports/(?<key>[a-z0-9][a-z0-9_.-]{1,79})(?:/(?<action>data|export\.csv)|/rows/(?<row>(?:[A-Za-z0-9_.:-]|%[a-fA-F0-9]{2}){1,128})/detail)?\z", RegexOptions.CultureInvariant);
+    private static readonly Regex Route = new(@"\A/api/v2/reports/(?<key>[a-z0-9][a-z0-9_.-]{1,79})(?:/(?<action>data|export\.csv|password-coverage)|/rows/(?<row>(?:[A-Za-z0-9_.:-]|%[a-fA-F0-9]{2}){1,128})/detail)?\z", RegexOptions.CultureInvariant);
     private static readonly Regex Row = new(@"\A[A-Za-z0-9_.:-]{1,128}\z", RegexOptions.CultureInvariant);
     public static IServiceCollection AddReportV2Engine(this IServiceCollection services)
     {
@@ -43,6 +43,7 @@ public static class ReportV2Endpoints
     {
         endpoints.MapGet("/api/v2/reports/{key}", HandleAsync);
         endpoints.MapGet("/api/v2/reports/{key}/data", HandleAsync);
+        endpoints.MapGet("/api/v2/reports/security.problems/password-coverage", HandleAsync);
         endpoints.MapGet("/api/v2/reports/{key}/export.csv", HandleAsync);
         endpoints.MapGet("/api/v2/reports/{key}/rows/{row}/detail", HandleAsync);
         endpoints.MapGet("/api/v2/reports/{key}/rows/{**tail}", InvalidRouteAsync);
@@ -85,6 +86,8 @@ public static class ReportV2Endpoints
             var grant = access.Reports.FirstOrDefault(r => r.ReportKey == definition.AccessKey && r.Allowed);
             if (grant is null) { await DomainHttp.WriteAsync(http, new { error = "report_access_denied" }, 403, ct); return; }
             bool export = match.Groups["action"].Value == "export.csv";
+            bool passwordCoverage = match.Groups["action"].Value == "password-coverage";
+            if (passwordCoverage && key != "security.problems") { await InvalidRouteAsync(http); return; }
             if (row is not null && !definition.HasDetail) throw new ReportRequestException("report_detail_not_available", 404);
             if (export && !definition.HasExport) throw new ReportRequestException("report_export_not_available", 404);
             string action = export ? definition.Rule.Text("export_action", "export") : "view";
@@ -198,6 +201,15 @@ public static class ReportV2Endpoints
             if (row is not null) paging = paging with { Limit = Math.Min(paging.Limit, definition.Detail?["default_limit"]?.GetValue<int>() ?? 50) };
             var context = new ReportQueryContext(definition, access, principal, parameters, paging, scope, domainIds, export ? "export" : "view", projection.FieldsAllowed, grant.Grants)
                 { RequestTime = requestTime, Domains = domains, DomainSelection = domainSelection, Language = http.Request.Headers.AcceptLanguage.ToString() };
+            if (passwordCoverage)
+            {
+                if (reader is not SecurityProblemsReader problems) throw new ReportRequestException("report_reader_unavailable", 503);
+                EnsureCurrent(catalog, captured, key);
+                var coverage = projection.Project(await problems.PasswordCoverageAsync(context, ct), false);
+                EnsureCurrent(catalog, captured, key);
+                SecurityProblemsReader.Localize(coverage, context.Language);
+                await WriteResult(http, coverage, ct); return;
+            }
             if (reader is null && !(export && BuiltinReportExports.Handles(key)))
             {
                 // Domain implementations are separately assigned in pieces 13–18. Absence of a reader

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sli.Server.Access;
+using Sli.Server.Auth;
 using Sli.Server.Problems;
 using Sli.Server.Reporting.V2;
 using Sli.Server.Tests.Problems;
@@ -27,17 +28,26 @@ public sealed partial class PasswordCoverageReportTests
         ["last_attempt_at"] = Stamp, ["last_completed_at"] = Stamp, ["last_successful_cutoff"] = Stamp,
         ["loss"] = new JsonObject(), ["frozen_episode_count"] = "0", ["evidence_snapshot_as_of"] = null
     };
-    internal static JsonObject Raw(JsonArray rows, string state = "empty") => new() {
-        ["state"] = state, ["items"] = new JsonArray(), ["semantic_runtime"] = new JsonObject { ["findings_state"] = "active" },
-        ["password_detection_coverage"] = new JsonObject { ["availability"] = "observed", ["as_of"] = Stamp, ["rows"] = rows, ["has_more"] = false }
-    };
+    internal static JsonObject Observed(JsonArray rows) =>
+        new() { ["availability"] = "observed", ["as_of"] = Stamp, ["rows"] = rows, ["has_more"] = false };
+    [Fact]
+    public void RestrictedReportKeyCanReadOnlyTheProblemsCoverageRoute()
+    {
+        var key = new Principal("api_key", 1, "viewer", ReportSubjectId: 7);
+        const string route = "/api/v2/reports/security.problems/password-coverage";
+        Assert.Null(PrincipalAuthenticator.CheckReportKeyRoute(key, "GET", route));
+        Assert.Equal(403, PrincipalAuthenticator.CheckReportKeyRoute(key, "POST", route)?.StatusCode);
+        Assert.Equal(403, PrincipalAuthenticator.CheckReportKeyRoute(key, "GET", "/api/v2/reports/events.journal/password-coverage")?.StatusCode);
+    }
     [Theory]
     [InlineData("error")][InlineData("stale")][InlineData("denied")]
-    public void CoveragePreservesExistingStateAndIsOmittedForDenied(string state)
+    public void QueuePreservesExistingStateWithoutCoverage(string state)
     {
-        var result = SecurityProblemsReader.Render(Context([7]), Raw([], state));
+        var result = SecurityProblemsReader.Render(Context([7]), new() {
+            ["state"] = state, ["semantic_runtime"] = new JsonObject { ["findings_state"] = "active" }
+        });
         Assert.Equal(state, result["state"]!.ToString());
-        if (state == "denied") Assert.Null(result["coverage"]!["password_detection"]);
+        Assert.Null(result["coverage"]!["password_detection"]);
     }
     [Fact]
     public void RestrictedProjectionIntersectsSelectedDomainsBeforeRepositoryRead()
@@ -48,27 +58,27 @@ public sealed partial class PasswordCoverageReportTests
     public void MissingOrUnhealthyCoverageCannotProveAnEmptyQueue(string? status)
     {
         var row = Row(); row["status"] = status;
-        var raw = Raw(status is null ? [] : new JsonArray(row));
-        var result = SecurityProblemsReader.Render(Context([7]), raw);
+        var coverage = Observed(status is null ? [] : new JsonArray(row));
+        var result = SecurityProblemsReader.RenderPasswordCoverage(Context([7]), coverage);
         Assert.Equal("partial", result["state"]!.ToString());
         Assert.Contains(result["limitations"]!.AsArray(), l => l!["code"]!.ToString() == "password_coverage_incomplete");
-        Assert.True(JsonNode.DeepEquals(raw["password_detection_coverage"], result["coverage"]!["password_detection"]));
+        Assert.True(JsonNode.DeepEquals(coverage, result["coverage"]!["password_detection"]));
     }
     [Theory]
-    [InlineData("disabled", "empty")][InlineData("disabled_last_known", "partial")][InlineData("unknown", "partial")]
+    [InlineData("disabled", "ok")][InlineData("disabled_last_known", "partial")][InlineData("unknown", "partial")]
     public void CurrentDisableIsDistinctFromUnconfirmedPolicy(string policy, string expected)
     {
         var row = Row(); row["policy_state"] = policy;
-        var result = SecurityProblemsReader.Render(Context([7]), Raw(new(row)));
+        var result = SecurityProblemsReader.RenderPasswordCoverage(Context([7]), Observed(new(row)));
         Assert.Equal(expected, result["state"]!.ToString());
         Assert.Equal(policy, result["coverage"]!["password_detection"]!["rows"]![0]!["policy_state"]!.ToString());
     }
     [Fact]
     public void EmptyScopeOmitsCoverageAndTruncatedHealthyPageIsPartial()
     {
-        Assert.Null(SecurityProblemsReader.Render(Context([]), Raw(new(Row())))["coverage"]!["password_detection"]);
+        Assert.Null(SecurityProblemsReader.RenderPasswordCoverage(Context([]), null)["coverage"]!["password_detection"]);
         var row = Row(); row["status"] = "healthy"; row["reason"] = null;
-        var raw = Raw(new(row)); raw["password_detection_coverage"]!["has_more"] = true;
-        Assert.Equal("partial", SecurityProblemsReader.Render(Context([7]), raw)["state"]!.ToString());
+        var coverage = Observed(new(row)); coverage["has_more"] = true;
+        Assert.Equal("partial", SecurityProblemsReader.RenderPasswordCoverage(Context([7]), coverage)["state"]!.ToString());
     }
 }
