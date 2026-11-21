@@ -29,9 +29,8 @@ public static class AgentImportCommand
                 return 1;
             }
             builder.Services.AddSingleton<IPostgresConnectionFactory>(connections!);
-            await using var direct = DirectAdDcRuntime.TryCreate(builder.Configuration);
-            if (direct is not null) builder.Services.AddSingleton(direct);
-            builder.Services.AddSingleton<AgentWorkstationInboxConsumer>();
+            await using var direct = DirectAdDcRuntime.TryCreate(builder.Configuration, out var issue);
+            builder.Services.AddSingleton(new AgentWorkstationInboxConsumer(connections!, direct) { DirectConfigurationIssue = issue });
             builder.Services.AddSingleton(new AgentImportOptions(parse.GetValue(once), interval, Math.Clamp(parse.GetValue(limit), 1, 10)));
             builder.Services.AddSingleton<AgentImportWorker>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentImportWorker>());
@@ -100,6 +99,7 @@ public sealed class AgentImportWorker(IPostgresConnectionFactory connections, Ag
             }
             try
             {
+                consumer.ReportDirectConfigurationIssue(stoppingToken);
                 ExitCode = await new PostCollectionRuntime(connection, connections, consumer)
                     .RunAsync(options, stoppingToken);
             }

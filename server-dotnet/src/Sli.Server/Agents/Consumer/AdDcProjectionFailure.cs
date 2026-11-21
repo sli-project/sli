@@ -14,8 +14,52 @@ internal enum AdDcProjectionStep
 
 // Like WorkerFailure: never serialize an exception, message, Detail, SQL or
 // event/packet identity. Even a constraint identifier is untrusted input.
-internal static class AdDcProjectionFailure
+internal sealed class AdDcProjectionFailure(TimeProvider clock)
 {
+    internal const string Code = "agent_ad_dc_projection_failed";
+    internal const string CatalogUnavailable = "agent_ad_dc_catalog_unavailable";
+    internal const string ConnectionUnconfigured = "agent_ad_dc_storage_connection_unconfigured";
+    internal const string AuthorizationMissing = "agent_ad_dc_storage_authorization_missing";
+    internal const string AuthorizationInvalid = "agent_ad_dc_storage_authorization_invalid";
+    internal const string AccessDenied = "agent_ad_dc_storage_access_denied";
+
+    private readonly Dictionary<string, (long LastLogged, long Suppressed)> failures = new(StringComparer.Ordinal);
+
+    internal bool CountAndAllow(JsonObject diagnostic)
+    {
+        if ((string?)diagnostic["code"] != Code) return true;
+        string reason = (string)diagnostic["reason"]!;
+        lock (failures)
+        {
+            long now = clock.GetTimestamp();
+            if (failures.TryGetValue(reason, out var previous) &&
+                clock.GetElapsedTime(previous.LastLogged, now) < TimeSpan.FromMinutes(1))
+            {
+                failures[reason] = (previous.LastLogged, previous.Suppressed + 1);
+                return false;
+            }
+            failures[reason] = (now, 0);
+            diagnostic["occurrences"] = previous.Suppressed + 1;
+            return true;
+        }
+    }
+
+    internal static bool IsStorageIssue(string? reason) => reason is CatalogUnavailable or ConnectionUnconfigured
+        or AuthorizationMissing or AuthorizationInvalid or AccessDenied;
+
+    internal static string? StorageIssue(Exception error, AdDcProjectionStep step)
+    {
+        for (Exception? current = error; current is not null; current = current.InnerException)
+        {
+            if (current is InvalidOperationException && current.Message == "storage_v2_admission_required") return AuthorizationInvalid;
+            if (step == AdDcProjectionStep.Authorization && current is InvalidOperationException &&
+                current.Message == "agent_storage_unavailable") return AuthorizationMissing;
+            if (current is PostgresException { SqlState: "42501" or "28000" or "28P01" } ||
+                current is InvalidOperationException && current.Message == "storage_v2_worker_role_required") return AccessDenied;
+            if (step == AdDcProjectionStep.Catalog && current is IOException or UnauthorizedAccessException) return CatalogUnavailable;
+        }
+        return null;
+    }
     private static readonly HashSet<string> Constraints = new(StringComparer.Ordinal) {
         "entities_v2_pkey", "entities_v2_natural_key_key", "entity_details_v2_pkey",
         "event_source_representations_v2_pkey", "storage_v2_event_identity_allocations_pkey",
@@ -35,7 +79,7 @@ internal static class AdDcProjectionFailure
     };
     internal static bool IsPermanent(Exception error) => error is InvalidOperationException &&
         error.Message is "short_event_summary_conflict" or "short_event_attestation_failed";
-    internal static string Describe(Exception error, AdDcProjectionStep step)
+    internal static JsonObject Describe(Exception error, AdDcProjectionStep step)
     {
         PostgresException? postgres = null;
         string reason = error is DirectSourceConflict conflict ? conflict.Reason : "operation_failed";
@@ -46,12 +90,12 @@ internal static class AdDcProjectionFailure
         string? sqlState = postgres?.SqlState;
         if (sqlState is not null && (sqlState.Length != 5 || sqlState.Any(c => c is not (>= '0' and <= '9' or >= 'A' and <= 'Z')))) sqlState = "unknown";
         return new JsonObject {
-            ["code"] = "agent_ad_dc_projection_failed",
+            ["code"] = Code,
             ["step"] = string.Concat(step.ToString().Select((c,i) => char.IsUpper(c) && i > 0 ? "_" + char.ToLowerInvariant(c) : char.ToLowerInvariant(c).ToString())),
             ["exception_type"] = error.GetType().Name,
             ["sql_state"] = sqlState,
             ["constraint"] = postgres?.ConstraintName is not { } constraint ? null : Constraints.Contains(constraint) ? constraint : "unrecognized",
-            ["reason"] = reason
-        }.ToJsonString();
+            ["reason"] = StorageIssue(error, step) ?? reason
+        };
     }
 }

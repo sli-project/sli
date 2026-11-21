@@ -57,6 +57,11 @@ public sealed partial class WorkerSqlPostgresTests(ITestOutputHelper output)
                     var db = new NpgsqlConnectionStringBuilder(fixture.Dsn(role));
                     value = $"host={db.Host} port={db.Port} dbname={db.Database} user={role}";
                 }
+                else if (key == "Sli__EventCatalogPath") {
+                    const string installedRoot = "/opt/sli/current/";
+                    Assert.StartsWith(installedRoot, value, StringComparison.Ordinal);
+                    value = Path.Combine(root, value[installedRoot.Length..]);
+                }
                 else if (key is "ADLOG_DATA_DIR" or "ADLOG_LOG_DIR" or "SLI_PLUGIN_RUNTIME_DIR" or "SLI_PLUGIN_LOCK_DIR" or "SLI_PLUGIN_HEARTBEAT_DIR" or "SLI_TELEGRAM_SECRET_DIR" or "SLI_EXECUTOR_STATUS_DIR") {
                     value = Path.Combine(fixture.Pg.Root, key); Directory.CreateDirectory(value);
                     if (key == "SLI_PLUGIN_LOCK_DIR") {

@@ -72,7 +72,9 @@ public sealed class PostCollectionLoop(
                 await Poll(token => Processing("accounting", accounting, progress, options, token), "agent_radius_import_failed", ct);
             progress["accounting"] = radius.ToJson();
             ct.ThrowIfCancellationRequested();
-            bool failed = post.Failed > 0 || Failed(packets, "agent_consumer_unavailable", "agent_projection_failed", "agent_ad_dc_projection_failed")
+            bool storageBlocked = packets.PendingReasons.Keys.Any(AdDcProjectionFailure.IsStorageIssue);
+            bool failed = post.Failed > 0 || Failed(packets, "agent_consumer_unavailable", "agent_projection_failed", AdDcProjectionFailure.Code)
+                || storageBlocked
                 || Failed(cycles, "agent_snapshot_import_unavailable") || Failed(radius, "agent_radius_import_failed");
             var snapshotDetails = cycles.ToJson(); snapshotDetails["completed"] = cycles.Imported; snapshotDetails.Remove("imported"); snapshotDetails.Remove("quarantined");
             var packetDetails = packets.ToJson(); packetDetails["snapshots"] = snapshotDetails.DeepClone();
@@ -85,7 +87,8 @@ public sealed class PostCollectionLoop(
             await heartbeat(failed ? "failed" : packets.Quarantined + radius.Quarantined > 0 ? "warning" : "idle", "sleep", details, ct);
             if (options.Once) return legacy is null ? failed ? 1 : 0 :
                 post.Failed > 0 || Failed(cycles, "agent_snapshot_import_unavailable") || Failed(radius, "agent_radius_import_failed") ? 1 : 0;
-            if (iterationFailed || packets.Scanned != 16) await delay(TimeSpan.FromSeconds(Math.Clamp(options.PollSeconds, 1, 300)), ct);
+            if (iterationFailed || packets.Scanned != 16 || (storageBlocked && packets.Imported == 0 && packets.Quarantined == 0))
+                await delay(TimeSpan.FromSeconds(Math.Clamp(options.PollSeconds, 1, 300)), ct);
         }
         return 0;
     }

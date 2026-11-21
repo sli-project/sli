@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Npgsql;
 using Sli.Server.Agents.SnapshotPublication;
+using Sli.Server.Hosting;
 
 namespace Sli.Server.Agents.Consumer;
 
@@ -11,7 +12,23 @@ public sealed class DirectAdDcRuntime : IAsyncDisposable
     internal NpgsqlDataSource Worker { get; }
     internal string CatalogPath { get; }
     internal DirectAdDcRuntime(NpgsqlDataSource worker,string catalogPath) { Worker=worker; CatalogPath=catalogPath; }
-    public static DirectAdDcRuntime? TryCreate(IConfiguration config) => TryCreate(Environment.GetEnvironmentVariable,ReadBounded,config["Sli:EventCatalogPath"]);
+    public static DirectAdDcRuntime? TryCreate(IConfiguration config) => TryCreate(config, out _);
+
+    internal static DirectAdDcRuntime? TryCreate(IConfiguration config, out string? issue)
+    {
+        string? catalog = config["Sli:EventCatalogPath"];
+        if (string.IsNullOrWhiteSpace(catalog) || !Path.IsPathFullyQualified(catalog) || !File.Exists(catalog))
+        {
+            issue = AdDcProjectionFailure.CatalogUnavailable;
+            return null;
+        }
+
+        string? GetSetting(string name) => config[name] is { } value && name.EndsWith("_FILE", StringComparison.Ordinal)
+            ? InstalledConfiguration.CredentialPath(config, value, name) : config[name];
+        var runtime = TryCreate(GetSetting, ReadBounded, catalog);
+        issue = runtime is null ? AdDcProjectionFailure.ConnectionUnconfigured : null;
+        return runtime;
+    }
     internal static DirectAdDcRuntime? TryCreate(Func<string,string?> get,Func<string,byte[]> read,string? catalog)
     {
         if (string.IsNullOrWhiteSpace(catalog) || !Path.IsPathFullyQualified(catalog)) return null;
