@@ -1,7 +1,14 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
+using Sli.Agent.Protocol;
+using Sli.Server.Agents;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Storage.Lifecycle;
 using Sli.Server.Tests.Agents;
 using Xunit;
@@ -15,7 +22,7 @@ public sealed class InboxPayloadRetentionPostgresTests
         new NpgsqlConnectionStringBuilder(fixture.Dsn("sli_storage_lifecycle_delete_login")) {
             Options = "-c role=adlog_storage_lifecycle_delete", CommandTimeout = 0 }.ConnectionString);
 
-    static async Task Seed(NpgsqlConnection db, int count, int days, CancellationToken ct)
+    static async Task Seed(NpgsqlConnection db, int count, int days, CancellationToken ct, string module = "sli.windows.ad-dc")
     {
         await using var command = new NpgsqlCommand("""
             insert into sli_agents(id,host_id,key_fingerprint,status)
@@ -24,9 +31,9 @@ public sealed class InboxPayloadRetentionPostgresTests
               case n when 2 then 'disabled' when 3 then 'replaced' else 'active' end from generate_series(1,3) n;
             insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt,received_at)
             select ('10000000-0000-4000-8000-'||lpad((case when n in (2,3) then n else 1 end)::text,12,'0'))::uuid,
-              'sli.windows.ad-dc',n,('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,repeat('a',64),
+              @module,n,('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,repeat('a',64),
               jsonb_build_object('agent_id','10000000-0000-4000-8000-'||lpad((case when n in (2,3) then n else 1 end)::text,12,'0'),
-                'module_id','sli.windows.ad-dc','policy_revision','1','channel','transport','source_instance_id','synthetic','generation','1'),
+                'module_id',@module,'policy_revision','1','channel','transport','source_instance_id','synthetic','generation','1'),
               '{"status":"committed"}',now()-make_interval(days=>@days)+n*interval '1 microsecond'
             from generate_series(1,@count) n;
             insert into sli_agent_packet_inbox(packet_id,envelope,packet,event_rows,received_at,imported_at)
@@ -35,6 +42,7 @@ public sealed class InboxPayloadRetentionPostgresTests
               '[{"record_id":1}]',received_at,received_at from sli_agent_receipts;
             """, db) { CommandTimeout = 0 };
         command.Parameters.AddWithValue("days", days); command.Parameters.AddWithValue("count", count);
+        command.Parameters.AddWithValue("module", module);
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -42,6 +50,68 @@ public sealed class InboxPayloadRetentionPostgresTests
     {
         await using var command = new NpgsqlCommand("select count(*) from sli_agent_packet_inbox where " + predicate, db);
         return (long)(await command.ExecuteScalarAsync(ct))!;
+    }
+
+    [Fact]
+    public async Task First_cleanup_purges_superseded_imports_and_preserves_duplicate_detection()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
+        await Seed(db, 0, 0, ct);
+        var agent = Guid.Parse("10000000-0000-4000-8000-000000000001");
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now.UtcDateTime.AddDays(-7);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var cert = new CertificateRequest("CN=synthetic", key, HashAlgorithmName.SHA256)
+            .CreateSelfSigned(now.AddDays(-1), now.AddDays(1));
+        SignedPacket Packet(long sequence, string channel) => Packets.Make(new EcdsaPacketSigner(key), agent.ToString(), sequence,
+            new Sample("sli.windows.ad-dc", agent.ToString(), "ad-dc", "synthetic",
+                new Cursor("record_id", (sequence - 1).ToString(CultureInfo.InvariantCulture)),
+                new Cursor("record_id", sequence.ToString(CultureInfo.InvariantCulture)),
+                new JsonObject {
+                    ["contract"] = "sli.collection-packet.v1",
+                    ["header"] = new JsonObject { ["channel"] = channel }
+                }), now);
+        var prior = Packet(1, "Security");
+        var latest = Packet(2, "Security");
+        var otherChannel = Packet(3, "System");
+        var pending = Packet(4, "Security");
+        using var state = new StorageLifecycleTests.State();
+        await using var deletion = Deletion(fixture);
+        var retention = new InboxRetention(deletion, state.Files);
+        await using (var tx = await db.BeginTransactionAsync(ct)) {
+            var ledger = new AgentPacketLedger(db, tx);
+            foreach (var packet in new[] { prior, latest, otherChannel, pending })
+                await ledger.StoreAsync(packet.Envelope, packet.Payload, new JsonArray(),
+                    AgentReceipt.Make(packet.Envelope, "committed", null, now), ct);
+            await tx.CommitAsync(ct);
+        }
+        await using (var tx = await db.BeginTransactionAsync(ct)) {
+            await using var mark = new NpgsqlCommand("""
+                update sli_agent_packet_inbox set imported_at=now() where packet_id<>@pending
+                """, db, tx);
+            mark.Parameters.AddWithValue("pending", Guid.Parse(pending.Envelope.PacketId));
+            Assert.Equal(3, await mark.ExecuteNonQueryAsync(ct));
+            Assert.Equal(0, LifecycleJson.Number(await retention.RunAsync(cutoff, Guid.Empty, 1000, ct), "deleted_count"));
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(1, LifecycleJson.Number(await retention.RunAsync(cutoff, Guid.Empty, 1000, ct), "deleted_count"));
+        Assert.Equal(3, await Count(db, "true", ct));
+        Assert.Equal(1, await Count(db, "imported_at is null", ct));
+        Assert.Equal(0, await Count(db, $"packet_id='{prior.Envelope.PacketId}'", ct));
+        Assert.Equal(0, LifecycleJson.Number(await retention.RunAsync(cutoff, Guid.Empty, 1000, ct), "deleted_count"));
+        var service = new AgentPacketService(TimeProvider.System, AgentInboxLimits.FromEnvironment(_ => null),
+            new AgentIngressDiagnostics(state.Path, NullLogger<AgentIngressDiagnostics>.Instance, TimeProvider.System));
+        var identity = new AgentIdentity(agent, agent, new string('a', 64), "active");
+        await using (var tx = await db.BeginTransactionAsync(ct)) {
+            var duplicate = await service.ReceiveAsync(db, tx, identity, cert, prior.ToJson(), ct);
+            Assert.Equal("duplicate", duplicate["status"]?.ToString());
+            await tx.CommitAsync(ct);
+        }
+        await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
     [Fact]
@@ -77,7 +147,7 @@ public sealed class InboxPayloadRetentionPostgresTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
         await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString); await db.OpenAsync(ct);
-        await Seed(db, 8, 0, ct);
+        await Seed(db, 8, 0, ct, "sli.windows-eventlog");
         await PostCollectionPostgres.Sql(db, """
             update sli_agent_packet_inbox set imported_at=null where packet_id='00000000-0000-4000-8000-000000000002';
             update sli_agents set status='active';
@@ -113,7 +183,7 @@ public sealed class InboxPayloadRetentionPostgresTests
         string query = await File.ReadAllTextAsync(Path.Combine(PostCollectionPostgres.Repository(), "server-dotnet/src/Sli.Server/Workspace/streams.sql"), ct);
         await using (var latest = new NpgsqlCommand(query, db)) {
             latest.Parameters.AddWithValue("requested", NpgsqlDbType.Jsonb,
-                """[{"agent_id":"10000000-0000-4000-8000-000000000001","module_id":"sli.windows.ad-dc","revision":"1","channel":"Security","snapshot":false}]""");
+                """[{"agent_id":"10000000-0000-4000-8000-000000000001","module_id":"sli.windows-eventlog","revision":"1","channel":"Security","snapshot":false}]""");
             await using var reader = await latest.ExecuteReaderAsync(ct);
             Assert.True(await reader.ReadAsync(ct)); Assert.False(reader.IsDBNull(reader.GetOrdinal("last_packet_at")));
             Assert.True(reader.GetBoolean(reader.GetOrdinal("read_error")));
