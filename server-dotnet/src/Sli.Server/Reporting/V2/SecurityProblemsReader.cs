@@ -26,18 +26,34 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         if (S("cohort") is {} cohort) { if (!c.FieldAccess(["security", "identity_basic"])) throw new ReportRequestException("report_field_categories_not_allowed", 403); _ = ProblemCohorts.Parse(cohort); }
         long? before = null;
+        string? workplace = S("queue_tab");
+        (int, DateTimeOffset, long)? position = null;
         if (rowId is null && c.Paging.Cursor is {} cursor) {
             string? value = ReportCursor.Decode(cursor, Binding(c));
-            if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long id) || id <= 0) throw new ReportRequestException("invalid_cursor"); before = id;
+            if (workplace is not null) {
+                string[] parts = value?.Split('|') ?? [];
+                if (parts.Length != 3 || !int.TryParse(parts[0], out int rank) || rank is < 1 or > 5 ||
+                    !ProblemJson.Stamp(JsonValue.Create(parts[1]), out var stamp) ||
+                    !long.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out long id) || id <= 0)
+                    throw new ReportRequestException("invalid_cursor");
+                position = (rank, stamp, id);
+            }
+            else {
+                if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long id) || id <= 0) throw new ReportRequestException("invalid_cursor");
+                before = id;
+            }
         }
         // Python's open queue depends on the original id filter, not the detail row id.
-        string? population = S("population") ?? "open";
+        if (workplace is not null && (rowId is not null || S("id") is not null)) workplace = "detail";
+        string? population = workplace is null ? S("population") ?? "open" : null;
         if (population == "open" && S("id") is not null) population = null;
         return new(S("status"), S("severity"), S("q"), S("time_from"), S("time_to"), S("risk"), Id("entity_id"), domains, c.Paging.Limit, S("show_suppressed") == "true") {
             FindingId = rowId is null ? Id("id") : long.TryParse(rowId, out long finding) && finding > 0 ? finding : throw new ReportRequestException("report_row_not_found", 404),
             RuleCode = S("rule_code"), CreatedFrom = S("created_from"), CreatedTo = S("created_to"), Cohort = S("cohort"),
             Population = population, BeforeId = before, PageQueue = true,
-            GroupQueue = rowId is null && S("cohort") is null && S("id") is null, Timezone = c.Paging.Timezone
+            GroupQueue = workplace is null && rowId is null && S("cohort") is null && S("id") is null, Timezone = c.Paging.Timezone,
+            WorkplaceTab = workplace, WorkplacePosition = position, SearchTechnical = c.FieldAccess(["security", "identity_basic", "technical"]) &&
+                new ProblemAccess(c.Access).Fields("identity_basic", "technical")
         };
     }
     private static long[]? CoverageDomains(ReportQueryContext c)
@@ -50,7 +66,7 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         try {
             var input = Input(c);
             var raw = await repository.FindingsAsync(input with { QueueList = input.FindingId is null }, new(c.Access), ct);
-            return Render(c, raw);
+            return Render(c, raw, input);
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
     }
@@ -107,11 +123,17 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
     }
-    internal static JsonObject Render(ReportQueryContext c, JsonObject raw)
+    internal static JsonObject Render(ReportQueryContext c, JsonObject raw, FindingQuery? input = null)
     {
         var rows = new JsonArray(); var access = new ProblemAccess(c.Access);
         bool includeDescription = c.Params["id"] is not null;
         foreach (var finding in (raw["items"] as JsonArray ?? []).OfType<JsonObject>()) {
+            if (input?.WorkplaceTab is not null) {
+                rows.Add(ProblemPresentation.Workplace(finding, access, c.Language, includeDescription,
+                    c.FieldAccess(["security", "identity_basic"]), c.FieldAccess(["security", "technical"]),
+                    c.FieldAccess(["security", "technical", "raw_evidence"])));
+                continue;
+            }
             var row = ProblemPresentation.Finding(finding, access, c.Language, queue: true, includeDescription: includeDescription);
             string status = row.Text("status");
             var transitions = raw["lifecycle"]?["allowed_transitions"]?[status] as JsonArray ?? [];
@@ -127,6 +149,18 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         long Count(params string[] statuses) => (raw["summary"] as JsonArray ?? []).OfType<JsonObject>().Where(r => statuses.Contains(r.Text("status")) && !r.Flag("risk_accepted")).Sum(r => long.TryParse(r["count"]?.ToString(), out long n) ? n : 0);
         long attention = Count("new", "confirmed", "repeated"), progress = Count("active", "review");
+        if (input?.WorkplaceTab is {} tab) {
+            long open = attention + progress, closed = Count("closed", "false_positive");
+            var workplace = ReportResult.Create(c.Definition.Key, rows.Count == 0 ? "empty" : "ok", rows);
+            workplace["queue_counts"] = new JsonObject { ["open"] = open, ["closed"] = closed };
+            workplace["filtered_count"] = tab == "closed" ? closed : tab == "open" ? open : rows.Count;
+            workplace["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false);
+            if (workplace.Flag("has_more") && ProblemJson.Array(raw["items"]).LastOrDefault() is JsonObject lastFinding) {
+                int rank = lastFinding.Text("severity") switch { "critical" => 1, "high" => 2, "medium" => 3, "low" => 4, _ => 5 };
+                workplace["next_cursor"] = ReportCursor.Encode(Binding(c), FormattableString.Invariant($"{rank}|{lastFinding["last_seen_utc"] ?? lastFinding["updated_at"]}|{lastFinding["id"]}"));
+            }
+            return workplace;
+        }
         var metrics = new JsonArray();
         foreach (var (key, count, tone, filter) in new (string, long, string, JsonObject?)[] { ("open", attention + progress, attention + progress > 0 ? "warning" : "neutral", null), ("attention", attention, attention > 0 ? "danger" : "neutral", new() { ["population"] = "attention" }), ("progress", progress, progress > 0 ? "accent" : "neutral", new() { ["status"] = "active" }), ("closed", Count("false_positive", "closed"), "success", new() { ["status"] = "closed" }) }) {
             var label = ProblemPresentation.Message($"reports.v2.security.problems.metrics.{key}.label", c.Language);
@@ -163,6 +197,8 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
                     }
         }
         const string prefix = "reports.v2.security.problems.";
+        if (declaration && body["views"] is JsonArray views)
+            views.Insert(0, new JsonObject { ["kind"] = "custom", ["key"] = "queue", ["component"] = "problems.workplace" });
         if (declaration) {
             Field(body, "title", prefix + "title");
             if (body["intent"] is JsonObject intent)

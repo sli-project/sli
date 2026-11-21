@@ -148,7 +148,12 @@ public sealed partial class SecurityProblemsV2Tests
         }
         var parameters = body["params"]!.AsArray().OfType<JsonObject>().ToDictionary(p => p["key"]!.ToString());
         foreach (var param in parameters.Values) {
-            string key = param["key"]!.ToString(); Message(param, "label", prefix + "params." + key + ".label", locale);
+            string key = param["key"]!.ToString();
+            if (key == "queue_tab") {
+                Assert.True(param["hidden"]!.GetValue<bool>());
+                continue;
+            }
+            Message(param, "label", prefix + "params." + key + ".label", locale);
             var before = definition.Params.Single(p => p["key"]!.ToString() == key);
             Assert.Equal((before["options"] as JsonArray ?? []).Select(o => o!["value"]!.ToString()), (param["options"] as JsonArray ?? []).Select(o => o!["value"]!.ToString()));
             foreach (var option in (param["options"] as JsonArray ?? []).OfType<JsonObject>()) Message(option, "label", prefix + "params." + key + ".options." + option["value"], locale);
@@ -168,6 +173,29 @@ public sealed partial class SecurityProblemsV2Tests
         foreach (string field in new[] { "question", "denominator", "freshness_expectation" }) Message(body["intent"]!.AsObject(), field, prefix + "intent." + field, locale);
         foreach (var (key, value) in definition.Declaration["intent"]!.AsObject().Where(p => p.Key is not ("question" or "denominator" or "freshness_expectation"))) Same(value, body["intent"]![key]);
         Assert.Equal(original, definition.Declaration.ToJsonString());
+    }
+
+    [Fact]
+    public async Task WorkplaceDeclarationAndClosedDataUseTheSameReportAccess()
+    {
+        var repository = new Repository { Result = O("""
+            {"state":"available","items":[{"id":7,"status":"closed","rule_code":"semantic.qw.audit-disabled","severity":"high",
+              "last_seen_utc":"2026-11-22T01:00:00Z","closed_at":"2026-11-22T02:00:00Z",
+              "presentation_facts":{"actor":"example.test\\operator","computer":"dc01.example.test"}}],
+             "summary":[{"status":"new","count":4},{"status":"closed","count":1}]}
+            """) };
+        await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), Definition, nativeReader: new SecurityProblemsReader(repository, new Evidence()));
+        using var declaration = await host.Client.GetAsync("/api/v2/reports/security.problems", Ct);
+        Assert.Equal(HttpStatusCode.OK, declaration.StatusCode);
+        Assert.Contains((await ReportFixture.Body(declaration))["views"]!.AsArray(),
+            view => view?["component"]?.ToString() == "problems.workplace");
+        using var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data?queue_tab=closed&severity=high", Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var page = await ReportFixture.Body(response);
+        Assert.Equal(4, page["queue_counts"]!["open"]!.GetValue<long>());
+        Assert.Equal(1, page["queue_counts"]!["closed"]!.GetValue<long>());
+        Assert.Equal("dc01.example.test", page["items"]![0]!["object"]!.ToString());
+        Assert.Equal("closed", Assert.Single(repository.Calls).WorkplaceTab);
     }
 
     [Fact]

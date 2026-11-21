@@ -32,6 +32,14 @@ public sealed partial class ProblemRepository
         var args = new Dictionary<string, object?> { ["id"] = id };
         var current = await One(tx, "select * from findings where id=@id for update", args, ct)
             ?? throw new ProblemException("not_found", 404, $"Finding {id} was not found");
+        var (updated, changed) = await ApplyStatus(tx, current, input, actor, ct);
+        updated["status_history"] = await Rows(tx, "select id,finding_id,old_status,new_status,changed_at,changed_by,note from finding_status_history where finding_id=@id order by id desc limit 50", args, ct);
+        await tx.CommitAsync(ct);
+        return new() { ["status"] = "ok", ["backend"] = "postgres", ["changed"] = changed, ["finding"] = updated };
+    }
+    private async Task<(JsonObject Updated, bool Changed)> ApplyStatus(NpgsqlTransaction tx, JsonObject current, FindingStatusInput input, string actor, CancellationToken ct)
+    {
+        var args = new Dictionary<string, object?> { ["id"] = ProblemJson.Long(current["id"]) };
         var change = input.Apply(current);
         args["status"] = input.Status; args["assignee"] = change.Assignee; args["reason"] = change.Reason;
         args["closed"] = input.Status == "closed" ? current["closed_at"]?.ToString() ?? ProblemJson.Iso(clock.GetUtcNow()) : null;
@@ -49,9 +57,35 @@ public sealed partial class ProblemRepository
                 values(@id,@old,@status,@actor,@note)
                 """, args, ct);
         }
-        updated["status_history"] = await Rows(tx, "select id,finding_id,old_status,new_status,changed_at,changed_by,note from finding_status_history where finding_id=@id order by id desc limit 50", args, ct);
+        return (updated, change.Changed);
+    }
+    public async Task<JsonObject> BulkStatusAsync(long[] ids, FindingStatusInput input, string actor, ProblemAccess access, CancellationToken ct)
+    {
+        var domains = access.Scope("security.queue").Domains();
+        await using var db = await connections.OpenAsync(ct);
+        await using var tx = await db.BeginTransactionAsync(ct);
+        await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);
+        var args = new Dictionary<string, object?> { ["ids"] = ids, ["domains"] = domains };
+        var locked = await Rows(tx, "select * from findings where id=any(@ids) order by id for update", args, ct);
+        var admitted = await Rows(tx, $"""
+            select findings.id {Population} where findings.id=any(@ids)
+              and is_semantic_finding_published_v1(findings.id) and not ({Accepted}) and not ({Suppressed})
+              and (@domains::bigint[] is null and findings.rule_code<>'semantic.qw.file-acl-broad-write'
+                   or semantic_finding_in_domains_v265(findings.id,@domains::bigint[]))
+            """, args, ct);
+        if (locked.Count != ids.Length || admitted.Count != ids.Length) throw new ProblemException("not_found", 404);
+        int changed = 0;
+        foreach (var row in locked.OfType<JsonObject>())
+        {
+            string status = ProblemJson.Text(row["status"]);
+            if (status == input.Status) continue;
+            if ((status is "closed" or "false_positive") != (input.Status == "active"))
+                throw new ProblemException("invalid_transition", 409);
+            await ApplyStatus(tx, row, input, actor, ct);
+            changed++;
+        }
         await tx.CommitAsync(ct);
-        return new() { ["status"] = "ok", ["backend"] = "postgres", ["changed"] = change.Changed, ["finding"] = updated };
+        return new() { ["status"] = "ok", ["changed"] = changed };
     }
     private static Task<JsonArray> AuditRows(NpgsqlTransaction tx, long id, long? before, bool page, CancellationToken ct) => Rows(tx, """
         select id,action,actor,occurred_at,details from semantic_control_audit
@@ -113,6 +147,8 @@ public sealed partial class ProblemRepository
 
     internal const string EffectiveStatus = "case when risk.state='active' and risk.expires_at<=statement_timestamp() then case when coalesce(findings.repeat_count,0)>0 then 'repeated' else 'new' end else findings.status end";
     internal const string Accepted = "coalesce(risk.state='active' and risk.expires_at>statement_timestamp(),false)";
+    private const string SeverityOrder = "case findings.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 when 'low' then 4 else 5 end";
+    private const string EventTime = "coalesce(findings.last_seen_utc,findings.updated_at::text)::timestamptz";
     // Most rules have no active exception. Only classify event witnesses when
     // a rule can actually suppress this finding; the authoritative check still
     // decides domain/subject coverage for every matching exception.
@@ -143,10 +179,29 @@ public sealed partial class ProblemRepository
             else if (query.PageQueue && query.Status == "active") clauses.Add($"({EffectiveStatus}) in ('active','review')");
             else { args["status"] = query.Status; clauses.Add($"({EffectiveStatus})=@status"); }
         }
-        if (!string.IsNullOrEmpty(query.Severity)) { args["severity"] = query.Severity; clauses.Add("findings.severity=@severity"); }
+        if (!string.IsNullOrEmpty(query.Severity)) {
+            args["severity"] = query.Severity;
+            clauses.Add(query.WorkplaceTab is not null && query.Severity == "high" ? "findings.severity in ('critical','high')" : "findings.severity=@severity");
+        }
         if (!string.IsNullOrEmpty(query.From)) { args["from"] = query.From; clauses.Add("findings.last_seen_utc::timestamptz>=@from::timestamptz"); }
         if (!string.IsNullOrEmpty(query.To)) { args["to"] = query.To; clauses.Add("findings.last_seen_utc::timestamptz<@to::timestamptz"); }
-        if (!string.IsNullOrEmpty(query.Search)) { args["q"] = "%" + query.Search + "%"; clauses.Add("(lower(coalesce(findings.title,'')) like lower(@q) or lower(coalesce(findings.actor,'')) like lower(@q) or lower(coalesce(findings.target,'')) like lower(@q) or lower(coalesce(findings.summary,'')) like lower(@q))"); }
+        if (!string.IsNullOrEmpty(query.Search)) {
+            if (query.WorkplaceTab is null) {
+                args["q"] = "%" + query.Search + "%";
+                clauses.Add("(lower(coalesce(findings.title,'')) like lower(@q) or lower(coalesce(findings.actor,'')) like lower(@q) or lower(coalesce(findings.target,'')) like lower(@q) or lower(coalesce(findings.summary,'')) like lower(@q))");
+            } else {
+                args["q"] = query.Search;
+                string source = query.SearchTechnical ? ",nullif(findings.source,'semantic-production')" : "";
+                string hosts = query.SearchTechnical ? ",e.ip_address,e.workstation_name,e.hostname" : "";
+                clauses.Add($"""
+                    (strpos(lower(concat_ws(' ',findings.actor,findings.target{source})),lower(@q))>0
+                     or exists(select 1 from finding_entities linked where linked.finding_id=findings.id and strpos(lower(linked.display_name),lower(@q))>0)
+                     or exists(select 1 from finding_event_details337 e where e.finding_id=findings.id
+                         and strpos(lower(concat_ws(' ',concat_ws('\',e.target_domain_name,e.target_user_name),
+                             concat_ws('\',e.subject_domain_name,e.subject_user_name){hosts})),lower(@q))>0))
+                    """);
+            }
+        }
         if (query.FindingId is {} finding) { args["finding"] = finding; clauses.Add("findings.id=@finding"); }
         if (query.RuleCode is {} rule) { args["rule"] = rule; clauses.Add("findings.rule_code=@rule"); }
         if (query.CreatedFrom is {} createdFrom) { args["created_from"] = createdFrom; clauses.Add("findings.created_at>=@created_from::timestamptz"); }
@@ -162,7 +217,22 @@ public sealed partial class ProblemRepository
             : " where " + string.Join(" and ", admission.Concat(clauses));
         args["limit"] = query.Limit + 1;
         string population = Population, prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
-        if (query.GroupQueue) {
+        if (!query.GroupQueue && query.Cohort is {} cohort) {
+            var key = ProblemCohorts.Parse(cohort);
+            if (key[0]!.ToString() == "finding") { args["cohort_id"] = key[1]!.GetValue<long>(); where += " and findings.id=@cohort_id"; }
+            else { args["cohort_zone"] = query.Timezone; args["cohort"] = key.ToJsonString(); population += ProblemCohorts.Sql(key[0]!.ToString() == "queue" ? "legacy-queue-cohort" : key[0]!.ToString() is "rule-object" or "rule-source" or "rule-entity" ? "queue-cohort" : "cohort"); where += " and cohort.key=@cohort::jsonb"; }
+            summaryPopulation = population; summaryWhere = where;
+        }
+        if (query.WorkplaceTab is not null) {
+            prefix = $"with workplace_findings as materialized (select findings.id,findings.severity,({EffectiveStatus}) as status {population}{where})";
+            population = Population + " join workplace_findings workplace on workplace.id=findings.id";
+            where = query.WorkplaceTab switch {
+                "open" => " where workplace.status in ('new','confirmed','repeated','active','review')",
+                "closed" => " where workplace.status in ('closed','false_positive')",
+                _ => " where true"
+            };
+        }
+        else if (query.GroupQueue) {
             args["cohort_zone"] = query.Timezone;
             // findings_active is a security-barrier view. Rejoining it for
             // every representative can rescan the full view per group. Keep
@@ -174,16 +244,17 @@ public sealed partial class ProblemRepository
             where = " where true"; summaryPopulation = "from queue_groups"; summaryWhere = "";
             groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc";
         }
-        else if (query.Cohort is {} cohort) {
-            var key = ProblemCohorts.Parse(cohort);
-            if (key[0]!.ToString() == "finding") { args["cohort_id"] = key[1]!.GetValue<long>(); where += " and findings.id=@cohort_id"; }
-            else { args["cohort_zone"] = query.Timezone; args["cohort"] = key.ToJsonString(); population += ProblemCohorts.Sql(key[0]!.ToString() == "queue" ? "legacy-queue-cohort" : key[0]!.ToString() is "rule-object" or "rule-source" or "rule-entity" ? "queue-cohort" : "cohort"); where += " and cohort.key=@cohort::jsonb"; }
-            summaryPopulation = population; summaryWhere = where;
-        }
         if (populationOnly) return (prefix, "", args);
         string pageWhere = where;
-        if (query.BeforeId is {} before) { args["before"] = before; pageWhere += query.GroupQueue ? " and queue_groups.queue_cursor_id<@before" : " and findings.id<@before"; }
-        string order = query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
+        if (query.BeforeId is {} before) {
+            args["before"] = before;
+            pageWhere += query.GroupQueue ? " and queue_groups.queue_cursor_id<@before" : " and findings.id<@before";
+        }
+        if (query.WorkplacePosition is {} position) {
+            args["position_rank"] = position.Severity; args["position_time"] = position.LastSeen; args["position_id"] = position.Id;
+            pageWhere += $" and (({SeverityOrder})>@position_rank or (({SeverityOrder})=@position_rank and ({EventTime},findings.id)<(@position_time,@position_id)))";
+        }
+        string order = query.WorkplaceTab is not null ? "" : query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
         string riskAudit = query.QueueList ? "null::jsonb" : """
             (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
                 select id,action,actor,occurred_at,details from semantic_control_audit where details->'rule'->>'kind'='risk_acceptance'
@@ -203,10 +274,10 @@ public sealed partial class ProblemRepository
               case when findings.rule_code in ('semantic.qw.account-decoy','semantic.qw.file-decoy') then public.finding_decoy_context(findings.id) end as decoy_label
             {population}{pageWhere}
             order by {order}
-              case findings.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 when 'low' then 4 else 5 end,
-              coalesce(findings.last_seen_utc,findings.updated_at::text)::timestamptz desc,findings.id desc limit @limit
+              {SeverityOrder},{EventTime} desc,findings.id desc limit @limit
             """;
-        string summary = query.GroupQueue ? $"{prefix} select severity,status,risk_accepted,count(*) as count,sum(occurrence_count) as occurrences from queue_groups group by severity,status,risk_accepted" :
+        string summary = query.WorkplaceTab is not null ? $"{prefix} select severity,status,count(*) as count from workplace_findings group by severity,status" :
+            query.GroupQueue ? $"{prefix} select severity,status,risk_accepted,count(*) as count,sum(occurrence_count) as occurrences from queue_groups group by severity,status,risk_accepted" :
             $"select findings.severity,({EffectiveStatus}) as status,({Accepted}) as risk_accepted,count(*) as count {summaryPopulation}{summaryWhere} group by findings.severity,({EffectiveStatus}),({Accepted})";
         return (page, summary, args);
     }
@@ -218,7 +289,7 @@ public sealed partial class ProblemRepository
         // Validate the persisted authorization before reading the population.
         await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);
         JsonArray rows, summary;
-        if (query.GroupQueue) {
+        if (query.GroupQueue || query.WorkplaceTab is not null) {
             // Page and counters share the same classified population and
             // statement snapshot. Do not evaluate every finding twice.
             string prefix = FindingsQueries(query, populationOnly: true).Page;
@@ -238,7 +309,7 @@ public sealed partial class ProblemRepository
             .ToDictionary(row => ProblemJson.Long(row["id"]));
         if (passwordRows.Count > 0 && (!query.Compact || query.GroupQueue)) {
             var passwordFacts = await Rows(tx, $"""
-                select findings.id,{ProblemCohorts.PasswordFacts("findings")} as facts
+                select findings.id,{ProblemCohorts.PasswordFacts("findings", workplace: query.WorkplaceTab is not null, breakdown: query.FindingId is not null)} as facts
                 from unnest(@ids::bigint[],@rules::text[]) findings(id,rule_code)
                 """, new() { ["ids"] = passwordRows.Keys.ToArray(),
                     ["rules"] = passwordRows.Values.Select(row => ProblemJson.Text(row["rule_code"])).ToArray() }, ct);

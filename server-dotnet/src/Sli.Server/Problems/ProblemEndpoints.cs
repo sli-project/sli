@@ -29,6 +29,7 @@ public static class ProblemEndpoints
         endpoints.MapGet("/api/findings/{**tail:regex((^|.*/)risk-audit$)}", HandleAsync);
         endpoints.MapGet("/reports/findings.html", Compatibility.LegacyHttpEndpoints.HandleAsync);
         endpoints.MapPost("/api/findings/{**tail:regex((^|.*/)(status|risk-acceptance)$)}", HandleAsync);
+        endpoints.MapPost("/api/findings/bulk-status", HandleAsync);
         endpoints.MapGet("/api/v1/watch", HandleAsync);
         endpoints.MapPost("/api/v1/watch", HandleAsync);
         endpoints.MapPost("/api/v1/watch/{**entry}", HandleAsync);
@@ -116,6 +117,19 @@ public static class ProblemEndpoints
                 response["items"] = new JsonArray(ProblemJson.Array(response["items"]).OfType<JsonObject>().Select(row => (JsonNode)ProblemPresentation.Finding(row, access, language)).ToArray());
             }
             else if (path == "/api/findings/risk-responsibles") response = await repository.ResponsiblesAsync(ct);
+            else if (path == "/api/findings/bulk-status")
+            {
+                using var body = await AuthJsonBody.ReadAsync(context, ct);
+                var value = JsonNode.Parse(body.RootElement.GetRawText()) as JsonObject;
+                if (value?.Count != 2 || value["ids"] is not JsonArray ids || ids.Count is < 1 or > 200 ||
+                    ProblemJson.Text(value["status"]) is not ("closed" or "active"))
+                    throw new ProblemException("invalid_bulk_status");
+                var selection = ids.Select(id => ProblemJson.Id(id, "invalid_finding_id", ProblemJson.SafeInteger)).Distinct().Order().ToArray();
+                string actor = ProblemJson.Actor(principal, false);
+                var decision = new JsonObject { ["status"] = value["status"]!.DeepClone() };
+                if (ProblemJson.Text(decision["status"]) == "active") decision["status_reason"] = "Reopened from the Problems queue";
+                response = await repository.BulkStatusAsync(selection, FindingStatusInput.Parse(decision, actor), actor, access, CancellationToken.None);
+            }
             else
             {
                 string raw = context.Features.Get<IHttpRequestFeature>()?.RawTarget is { Length: > 0 } target ? target.Split('?', 2)[0] : path;

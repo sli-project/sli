@@ -219,6 +219,9 @@ public sealed record FindingQuery(string? Status, string? Severity, string? Sear
     public bool Compact { get; init; }
     public bool QueueList { get; init; }
     public bool GroupQueue { get; init; }
+    public string? WorkplaceTab { get; init; }
+    public bool SearchTechnical { get; init; }
+    public (int Severity, DateTimeOffset LastSeen, long Id)? WorkplacePosition { get; init; }
     public string? Cohort { get; init; }
     public string Timezone { get; init; } = "UTC";
     public static FindingQuery Parse(IQueryCollection q, ProblemAccess access)

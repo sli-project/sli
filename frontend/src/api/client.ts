@@ -2513,6 +2513,8 @@ export const api = {
   createApiKey: (body: { label: string; role: string }) => requestMutation<CreatedApiKey>("/api/auth/api-keys", "POST", body),
   revokeApiKey: (id: number) => requestMutation<{ status: "revoked" }>(`/api/auth/api-keys/${id}/revoke`, "POST"),
   updateFinding: (id: number, body: { status: string; assigned_to?: string | null; note?: string | null; status_reason?: string | null }) => requestMutation<{ status: "ok"; changed: boolean; finding: FindingItem }>(`/api/findings/${id}/status`, "POST", body),
+  updateProblems: (ids: number[], status: "closed" | "active") =>
+    requestMutation<{ status: "ok"; changed: number }>("/api/findings/bulk-status", "POST", { ids, status }),
   riskResponsibles: () => request<{ items: Array<{ id: number; username: string }> }>("/api/findings/risk-responsibles"),
   findingRiskAudit: (id: number, before: number) => request<{ items: FindingRiskAudit[]; has_more: boolean }>(`/api/findings/${id}/risk-audit?before=${before}`),
   changeFindingRisk: (id: number, body: FindingRiskRequest) => requestMutation<{ status: "ok"; acceptance: FindingRiskAcceptance; risk_audit: FindingRiskAudit[] }>(`/api/findings/${id}/risk-acceptance`, "POST", body),

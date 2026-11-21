@@ -14,7 +14,7 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
 {
     internal DateTimeOffset ShortRetentionBoundary => EventReadService.ShortBoundary(configuration);
     private const string ProjectionLimitation = "Каждая строка содержит только проекцию одного неделимого назначения доступа.";
-    public async Task<JsonObject> ExecuteAsync(ReportCaller caller, string key, int limit, string[]? fields, string action, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    public async Task<JsonObject> ExecuteAsync(ReportCaller caller, string key, int limit, string[]? fields, string action, IReadOnlyDictionary<string, string> query, CancellationToken ct, long? problemId = null)
     {
         var report = caller.Access.Array("reports").OfType<JsonObject>().FirstOrDefault(r => r.Text("report_key") == key);
         Require(report is not null, "report_not_found"); Require(report!.Flag("allowed"), "report_access_denied", 403);
@@ -23,7 +23,7 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
         if (key == "ad.users.v2") await ReportDomain.ResolveIdAsync(db, ct);
         var definition = First(await Query(db, "select r.definition_json,d.dataset_key,d.fields_json from report_registry_v4 r join report_datasets_v4 d on d.id=r.dataset_id where r.report_key=@p0 and r.version=@p1", ct, key, report.Number("version")));
         Require(definition.Count > 0, "report_definition_not_found");
-        var result = await RunAsync(db, caller, report, definition, Math.Clamp(limit, 1, 200), fields, action, query, ct);
+        var result = await RunAsync(db, caller, report, definition, Math.Clamp(limit, 1, 200), fields, action, query, ct, problemId);
         if (action == "view" && key is "vpn.audit" or "vpn.accounts" or "vpn.connections")
         {
             string state = "unknown";
@@ -65,7 +65,7 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
         void Gate() { preview["sample_state"] = "gated"; preview["sample_missing_capabilities"] = new JsonArray(); preview["sample_gate_reason"] = "no_dataset_access"; }
     }
 
-    private async Task<JsonObject> RunAsync(IReportSession db, ReportCaller caller, JsonObject report, JsonObject definition, int limit, string[]? fields, string action, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    private async Task<JsonObject> RunAsync(IReportSession db, ReportCaller caller, JsonObject report, JsonObject definition, int limit, string[]? fields, string action, IReadOnlyDictionary<string, string> query, CancellationToken ct, long? problemId = null)
     {
         string dataset = definition.Text("dataset_key"); Require(ReportBuilder.Executable.Contains(dataset), "report_dataset_not_executable");
         var runtime = definition["definition_json"] as JsonObject ?? new();
@@ -101,7 +101,7 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
                 if (projection.Length == 0) continue;
                 var branchReport = report.Copy(); branchReport["grants"] = new JsonArray(grant.DeepClone());
                 branchReport["field_categories"] = grant["field_categories"]?.DeepClone(); branchReport["allowed_actions"] = grant["allowed_actions"]?.DeepClone(); branchReport["scopes"] = new JsonArray(grant["scope"]?.DeepClone());
-                var branch = await RunAsync(db, caller, branchReport, definition, limit, projection, action, branchQuery, ct);
+                var branch = await RunAsync(db, caller, branchReport, definition, limit, projection, action, branchQuery, ct, problemId);
                 branch["grant_branch"] = BranchKey(grant); branch["grant_branch_fields"] = Nodes(projection); branches.Add(branch);
             }
             Require(branches.Count > 0, "report_field_access_denied", 403);
@@ -165,8 +165,13 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
         }
         bool eventDataset = dataset == "events.v2";
         sql.Definition(dataset, runtime, days); sql.Interactive(dataset, query, days);
+        if (problemId is {} problem) {
+            Require(eventDataset && action == "view", "report_action_denied", 403);
+            sql.Predicates.Add("exists(select 1 from finding_event_details337 copy where copy.finding_id=" + sql.Parameter(problem) +
+                " and copy.event_db_id=event.id and copy.time_created_utc=event.time_created_utc and copy.domain_id=event.domain_id and copy.channel=event.channel)");
+        }
         string where = summaryWhere + (sql.Predicates.Count == 0 ? "" : (summaryWhere.Length > 0 ? " and " : " where ") + string.Join(" and ", sql.Predicates.Select(p => "(" + p + ")")));
-        JsonObject? summary = await ReportSummaries.ReadAsync(db, dataset, summaryWhere, scopeValues, categories.ToHashSet(), days, where, sql.Values, ct);
+        JsonObject? summary = problemId is null ? await ReportSummaries.ReadAsync(db, dataset, summaryWhere, scopeValues, categories.ToHashSet(), days, where, sql.Values, ct) : null;
         string template = dataset switch { "entities.v2" => "_execute_definition_0", "ad.audit.snapshot" => "_execute_definition_1", "security.problems" => "_execute_definition_3", "ad.accounts.privileged" => "_execute_definition_5", "ad.gpo.governance" => "_execute_definition_6", _ => "read_accounts_1" };
         long? count = null; string from = "";
         if (dataset == "ad.accounts.vpn")

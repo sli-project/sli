@@ -4,6 +4,14 @@ import { t } from "../i18n";
 import { PeriodPicker, type PeriodValue } from "./PeriodPicker";
 import { Button } from "./Primitives";
 import { SearchMultiSelect, type SearchOption } from "./SearchMultiSelect";
+import "./workplace.css";
+
+export function FilterToolbar({ children, actions, showActions }: { children: ReactNode; actions?: ReactNode; showActions: boolean }) {
+  return <div className="sli-ds-toolbar">
+    {children}
+    {actions && <div className="sli-ds-toolbar__actions" data-idle={!showActions || undefined} inert={!showActions}>{actions}</div>}
+  </div>;
+}
 
 export type FilterOption = { value: string; label: string; count?: number };
 

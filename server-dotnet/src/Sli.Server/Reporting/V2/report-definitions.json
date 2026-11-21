@@ -1972,6 +1972,12 @@
     "key": "events.journal",
     "params": [
       {
+        "key": "problem_id",
+        "kind": "int",
+        "hidden": true,
+        "field_categories": ["security", "raw_evidence", "technical"]
+      },
+      {
         "key": "domain",
         "label": "Домен",
         "kind": "domain",
@@ -4755,6 +4761,13 @@
   {
     "key": "security.problems",
     "params": [
+      {
+        "key": "queue_tab",
+        "kind": "choice",
+        "hidden": true,
+        "options": [{ "value": "open" }, { "value": "closed" }],
+        "field_categories": []
+      },
       {
         "key": "id",
         "label": "№",

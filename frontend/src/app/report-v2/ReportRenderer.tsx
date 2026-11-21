@@ -36,6 +36,7 @@ import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
 import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
+import { ProblemsUnavailable, ProblemsWorkplace } from "./ProblemsWorkplace";
 
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
@@ -90,6 +91,7 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
   if (definition.error || !definition.data) {
     const { state, detail } = errorState(definition.error);
     if (state === "denied") return <ReportDenied reportKey={reportKey} reason={detail} page/>;
+    if (reportKey === "security.problems") return <ProblemsUnavailable retry={() => void definition.refetch()}/>;
     if (reportKey === "events.journal" || reportKey === "security.events.chains") {
       return <ReportLayout title={t(reportKey === "events.journal" ? "reports.v2.events.journal.title" : "reports.v2.security.events.chains.title")}
         state={state} stateView={<EventListError reportKey={reportKey} onRetry={() => void definition.refetch()}/>}/>;
@@ -98,6 +100,7 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (definition.data.views.some((view) => view.component === "problems.workplace")) return <ProblemsWorkplace definition={definition.data}/>;
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} {...tabs}/>;
 }
 
@@ -368,7 +371,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   exportParams.delete("limit");
   if (exportsByTab) exportParams.set("tab", view.key);
   else exportParams.delete("tab");
-  const exportHref = definition.export && ready && !viewDenied ? `/api/v2/reports/${encodeURIComponent(definition.key)}/export.csv?${exportParams.toString()}` : null;
+  const exportHref = definition.export && ready && !viewDenied && !(eventsJournal && values.problem_id) ? `/api/v2/reports/${encodeURIComponent(definition.key)}/export.csv?${exportParams.toString()}` : null;
   const exportsSelectedView = view === mainView || exportsByTab;
   const PageAction = definition.page_actions ? PAGE_ACTIONS[definition.page_actions] : undefined;
   const toggleSort = (field: string) => setSort((current) => ({ field, direction: current?.field === field && current.direction === "asc" ? "desc" : "asc" }));

@@ -1,9 +1,16 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
+using Sli.Server.Auth;
 using Sli.Server.Infrastructure;
 using Sli.Server.Problems;
+using Sli.Server.Reporting;
 using Sli.Server.Reporting.V2;
+using Sli.Server.Semantic;
+using Sli.Server.Storage.Direct;
 using Sli.Server.Tests.Agents;
+using Sli.Server.Tests.Problems;
+using Sli.Server.Tests.Storage;
 using Xunit;
 
 namespace Sli.Server.Tests.Reporting;
@@ -211,6 +218,108 @@ public sealed partial class ProblemQueuePagingTests
         Assert.False(retry["changed"]!.GetValue<bool>());
         Assert.Single(retry["finding"]!["status_history"]!.AsArray());
         await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
+    public async Task WorkplaceSortsFiltersAndMovesSelectedProblemsWithAuditedAtomicUpdates()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var admin = await fixture.Pg.OpenAsync(ct);
+        await SeedPopulation(admin, ct);
+        await PostCollectionPostgres.Sql(admin, """
+            update findings set rule_code=case when id=207 then 'semantic.qw.password-brute-force' else rule_code end,
+                severity=case id when 207 then 'critical' when 209 then 'medium' else severity end where id in (207,209);
+            insert into finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,domain_id,actor,computer,method,outcome,fields,source_sha256,evidence_role)
+            select 207,ev.id,now(),4625,d.id,'synthetic-account','test-workstation.example.test',
+                jsonb_build_object('$server_id',1,'$channel','Security','$provider','Microsoft-Windows-Security-Auditing',
+                  '$principals',jsonb_build_object('TargetUserName','synthetic-account','TargetDomainName','example.test','IpAddress',ev.address)),
+                '{}','{}',sha256(ev.id::text::bytea),'semantic_scenario'
+            from (values (301,'203.0.113.20'),(302,'203.0.113.20'),(303,'203.0.113.21')) ev(id,address)
+            cross join domains d where d.fqdn='example.test';
+            """, ct);
+        await using var domain = new NpgsqlCommand("select id from domains where fqdn='example.test'", admin);
+        long domainId = Convert.ToInt64(await domain.ExecuteScalarAsync(ct));
+        var access = ProblemLifecycleTests.Access("security.queue", scope: $$"""{"mode":"restricted","clauses":[{"collection_scope_ids":["ad-domain:{{domainId}}"]}]}""");
+        var repository = new ProblemRepository(new ReaderConnections(fixture), TimeProvider.System);
+        var reader = new SecurityProblemsReader(repository, new NoEvidence());
+        var context = Context() with {
+            Access = access.Decision, DomainIds = [domainId], FieldAccess = fields => access.Fields(fields.ToArray())
+        };
+        Task<JsonObject> Read(string tab, string? severity = null, string? search = null, long? id = null, string? cursor = null) =>
+            reader.QueryAsync(context with { Params = new() { ["queue_tab"] = tab, ["severity"] = severity, ["q"] = search, ["id"] = id },
+                Paging = context.Paging with { Limit = 2, Cursor = cursor } }, ct);
+        static long Count(JsonObject page, string tab) => page["queue_counts"]![tab]!.GetValue<long>();
+        static long[] Ids(JsonObject page) => page["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()).ToArray();
+
+        var open = await Read("open");
+        Assert.Equal(207, Ids(open)[0]);
+        Assert.NotEmpty(Ids(await Read("open", cursor: open["next_cursor"]!.ToString())).Except(Ids(open)));
+        Assert.Equal(Count(open, "open") - 1, Count(await Read("open", severity: "high"), "open"));
+        Assert.Equal(new long[] { 207 }, Ids(await Read("open", severity: "critical")));
+        foreach (string search in new[] { "203.0.113.20", "SYNTHETIC-ACCOUNT", "test-workstation" })
+            Assert.Equal(new long[] { 207 }, Ids(await Read("open", search: search)));
+        var detail = Assert.Single((await Read("open", id: 207))["items"]!.AsArray())!;
+        var breakdown = detail["breakdown"]!.AsArray();
+        Assert.Equal(new[] { "203.0.113.20", "203.0.113.21" }, breakdown.Select(row => row!["source"]!.ToString()));
+        Assert.Equal(new long[] { 2, 1 }, breakdown.Select(row => row!["attempts"]!.GetValue<long>()));
+        await VerifyFilteredJournal(fixture, admin, repository, domainId, ct);
+
+        const string actor = "synthetic-operator";
+        var close = FindingStatusInput.Parse(new() { ["status"] = "closed" }, actor);
+        var reopen = FindingStatusInput.Parse(new() { ["status"] = "active", ["note"] = "Queue reopen" }, actor);
+        var denied = await Assert.ThrowsAsync<ProblemException>(() => repository.BulkStatusAsync([206, 210], close, actor, access, ct));
+        Assert.Equal(404, denied.Status);
+        Assert.Equal(Count(open, "open"), Count(await Read("open"), "open"));
+        Assert.Equal(2, (await repository.BulkStatusAsync([207, 208], close, actor, access, ct))["changed"]!.GetValue<int>());
+        Assert.Equal(0, (await repository.BulkStatusAsync([207, 208], close, actor, access, ct))["changed"]!.GetValue<int>());
+        var closed = await Read("closed", severity: "critical");
+        Assert.Equal(new long[] { 207 }, Ids(closed));
+        Assert.NotNull(closed["items"]![0]!["closed_at"]);
+        Assert.Equal(Count(open, "closed") + 2, Count(await Read("closed"), "closed"));
+        Assert.Equal(2, (await repository.BulkStatusAsync([207, 208], reopen, actor, access, ct))["changed"]!.GetValue<int>());
+        Assert.Equal(Count(open, "open"), Count(await Read("open"), "open"));
+        var history = await Rows(admin, "select finding_id,old_status,new_status,changed_by from finding_status_history where finding_id in (206,207,208) order by finding_id,id");
+        Assert.Equal(new[] { "closed", "active", "closed", "active" }, history.Select(row => row["new_status"]!.ToString()));
+        Assert.All(history, row => Assert.Equal(actor, row["changed_by"]!.ToString()));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    private static async Task VerifyFilteredJournal(SqlPostgresFixture fixture, NpgsqlConnection admin, IProblemRepository problems, long domain, CancellationToken ct)
+    {
+        await fixture.SeedOwnerAsync(ct);
+        await using var copy = new NpgsqlCommand("select time_created_utc from finding_event_details337 where finding_id=207 and event_db_id=301", admin);
+        var stamp = new DateTimeOffset(Assert.IsType<DateTime>(await copy.ExecuteScalarAsync(ct)));
+        var related = EventShortReadPostgresTests.Event(301, 4625, stamp, domain);
+        var unrelated = EventShortReadPostgresTests.Event(401, 4625, stamp, domain);
+        await using (var tx = await admin.BeginTransactionAsync(ct)) {
+            await PostCollectionPostgres.Sql(admin, "set local role adlog_storage_worker", ct);
+            await ShortEventWriter.WriteAsync(admin, tx, [related.Short, unrelated.Short], ct);
+            await tx.CommitAsync(ct);
+        }
+        var connections = new ReaderConnections(fixture);
+        var facts = new AccessFactsRepository(connections);
+        var runner = new ReportRunner(new ReportDatabase(connections));
+        var semantic = new SemanticDatabase(connections);
+        var journal = new EventsJournalReader(runner, facts, semantic, new BuiltinReportExports(runner, facts, null!, semantic), problems);
+        await using var owner = new NpgsqlCommand("select id from auth_users where username='platform-owner'", admin);
+        var principal = new Principal("session", Convert.ToInt64(await owner.ExecuteScalarAsync(ct)), "admin");
+        var subject = await facts.LoadAsync(principal, ct);
+        Assert.True(subject.IsOwner);
+        var access = new ReportEligibility().Compose(subject, new CapabilityComposer().Compose(subject));
+        var definition = new ReportDefinitionRegistry().Get("events.journal")!;
+        var parameters = new JsonObject { ["period"] = new JsonObject {
+            ["from_utc"] = stamp.AddMinutes(-1).ToString("O"), ["to_utc"] = stamp.AddMinutes(1).ToString("O")
+        } };
+        var context = new ReportQueryContext(definition, access, principal, parameters, new(null, 50, "UTC", null, "desc", null),
+            ReportScope.All, null, "view", _ => true, access.Reports.Single(report => report.ReportKey == "events.explorer").Grants);
+        Assert.Equal(2, (await journal.QueryAsync(context, ct))["items"]!.AsArray().Count);
+        parameters["problem_id"] = 207;
+        var matched = Assert.Single((await journal.QueryAsync(context, ct))["items"]!.AsArray())!;
+        Assert.Equal(301, matched["id"]!.GetValue<long>());
+        parameters["problem_id"] = 210;
+        Assert.Equal(404, (await Assert.ThrowsAsync<ReportRequestException>(() => journal.QueryAsync(context, ct))).Status);
     }
 
     internal static async Task SeedPopulation(NpgsqlConnection db, CancellationToken ct)

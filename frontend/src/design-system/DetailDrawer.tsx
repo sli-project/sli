@@ -1,31 +1,41 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
 import { Button } from "./Primitives";
 
 /** Side panel for a selected row or entity; traps focus and closes on Escape. */
-export function DetailDrawer({ open, title, subtitle, onClose, children, footer }: {
+export function DetailDrawer({ open, title, subtitle, onClose, children, footer, dock = false }: {
   open: boolean;
   title: string;
   subtitle?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  dock?: boolean;
 }) {
   const panel = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const titleId = useId();
+  const [docked, setDocked] = useState(false);
+  useEffect(() => {
+    if (!dock || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(min-width: 2200px)");
+    const update = () => setDocked(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [dock]);
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     const focusable = () => [...(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex='0']") ?? [])]
       .filter((element) => !element.closest('[hidden],[inert],[aria-hidden="true"]') && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
-    panel.current?.focus();
+    if (!docked) panel.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (panel.current?.closest("[inert]")) return;
       if (event.key === "Escape") { event.preventDefault(); closeRef.current(); return; }
-      if (event.key !== "Tab") return;
+      if (docked || event.key !== "Tab") return;
       const items = focusable();
       if (!items.length) { event.preventDefault(); return; }
       const first = items[0], last = items[items.length - 1];
@@ -35,12 +45,12 @@ export function DetailDrawer({ open, title, subtitle, onClose, children, footer 
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, [open]);
+  }, [open, docked]);
 
   if (!open) return null;
-  return <div className="sli-ds-drawer" data-open>
+  return <div className="sli-ds-drawer" data-open data-dockable={dock || undefined} data-dock={docked || undefined}>
     <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>
-    <aside ref={panel} className="sli-ds-drawer__panel" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+    <aside ref={panel} className="sli-ds-drawer__panel" role={docked ? undefined : "dialog"} aria-modal={docked ? undefined : true} aria-labelledby={titleId} tabIndex={-1}>
       <header className="sli-ds-drawer__header">
         <div>
           <h2 id={titleId}>{title}</h2>

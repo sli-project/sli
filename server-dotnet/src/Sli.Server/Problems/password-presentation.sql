@@ -1,5 +1,5 @@
 with native as (
-    select distinct e.event_db_id as id,e.event_id,e.time_created_utc,
+    select distinct e.event_db_id as id,e.event_id,e.time_created_utc,left(e.hostname,256) as computer,
         case when lower(btrim(e.target_user_name)) not in ('','-','n/a') then left(btrim(e.target_user_name),256) end as account,
         case when lower(btrim(e.target_domain_name)) not in ('','-','n/a') then left(btrim(e.target_domain_name),256) end as domain,
         case when lower(btrim(e.ip_address)) not in ('','-','n/a','::','::1','0.0.0.0','127.0.0.1')
@@ -29,4 +29,4 @@ select jsonb_strip_nulls(jsonb_build_object(
         else count(distinct (lower(domain),lower(account))) filter(where event_id<>4624 and account is not null) end,
     'time',regexp_replace(to_char(coalesce(max(success_at),min(time_created_utc)) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'),'\.000000$','')||'+00:00',
     'password_success',count(*) filter(where event_id=4624)>0
-)) from selected having count(*)>0
+) __WORKPLACE__) from selected having count(*)>0

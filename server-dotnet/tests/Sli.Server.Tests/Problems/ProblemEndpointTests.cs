@@ -44,10 +44,16 @@ public sealed class ProblemEndpointTests
         public Task<JsonObject> LegacyFindingsAsync(string query, int limit, CancellationToken ct) => Result("""{"items":[],"summary":[],"backend":"postgres"}""");
         public int Calls; public string? Error; public Exception? Failure; public int ErrorStatus = 409; public FindingStatusInput? Status; public RiskInput? Risk;
         public FindingQuery? Query; public (long Finding, long? Before)? AuditRequest;
+        public (long[] Ids, string Actor)? BulkRequest;
         public FindingQuery? FindingsQuery => Query;
         Task<JsonObject> Result(string json = "{}") { Calls++; if (Failure is not null) throw Failure; if (Error is not null) throw new ProblemException(Error, ErrorStatus); return Task.FromResult(JsonNode.Parse(json)!.AsObject()); }
         public Task<JsonObject> FindingsAsync(FindingQuery q, ProblemAccess a, CancellationToken ct) { Query = q; return Result("""{"items":[{"id":7,"rule_code":"semantic.security.audit_controls_changed","presentation_facts":{"computer":"dc1.example.test"},"title":"Audit policy was changed","status":"new","severity":"high","evidence_count":0,"evidence":[],"entities":[],"status_history":[],"risk_audit":[]}],"summary":[],"has_more":false}"""); }
         public Task<JsonObject> StatusAsync(long id, FindingStatusInput input, string actor, CancellationToken ct) { Status = input; return Result("""{"status":"ok","backend":"postgres","changed":true,"finding":{"id":7,"status":"active","status_history":[]}}"""); }
+        public Task<JsonObject> BulkStatusAsync(long[] ids, FindingStatusInput input, string actor, ProblemAccess access, CancellationToken ct)
+        {
+            BulkRequest = (ids, actor); Status = input;
+            return Result("""{"status":"ok","changed":2}""");
+        }
         public Task<JsonObject> RiskAsync(long id, RiskInput input, CancellationToken ct) { Risk = input; return Result("""{"status":"ok","acceptance":{"id":8},"risk_audit":[]}"""); }
         public Task<JsonObject> ResponsiblesAsync(CancellationToken ct) => Result("""{"items":[{"id":1,"username":"alice"}]}""");
         public Task<JsonObject> RiskAuditAsync(long id, long? before, CancellationToken ct) { AuditRequest = (id, before); return Result("""{"items":[],"has_more":false}"""); }
@@ -84,6 +90,7 @@ public sealed class ProblemEndpointTests
         yield return ["GET", "/api/findings/7/risk-audit?before=99", "", 200];
         yield return ["GET", "/reports/findings.html", "", 302];
         yield return ["POST", "/api/findings/7/status", """{"status":"active","note":"reason"}""", 200];
+        yield return ["POST", "/api/findings/bulk-status", """{"ids":[9,7],"status":"closed"}""", 200];
         yield return ["POST", "/api/findings/7/risk-acceptance", """{"action":"revoke","id":8}""", 200];
         yield return ["GET", "/api/v1/watch?entity_id=12", "", 200];
         yield return ["POST", "/api/v1/watch", WatchBody, 200];
@@ -123,6 +130,8 @@ public sealed class ProblemEndpointTests
     [InlineData("GET", "/api/findings/no/risk-audit", null, "invalid_cursor_or_finding")]
     [InlineData("GET", "/api/findings/7/risk-audit?before=0", null, "invalid_cursor_or_finding")]
     [InlineData("POST", "/api/findings/no/status", "{}", "invalid_finding_id")]
+    [InlineData("POST", "/api/findings/bulk-status", "{\"ids\":[0],\"status\":\"closed\"}", "invalid_finding_id")]
+    [InlineData("POST", "/api/findings/bulk-status", "{\"ids\":[7],\"status\":\"confirmed\"}", "invalid_bulk_status")]
     [InlineData("POST", "/api/findings/7/status", "{}", "invalid_status")]
     [InlineData("POST", "/api/findings/no/risk-acceptance", "{}", "invalid_finding_id")]
     [InlineData("POST", "/api/findings/7/risk-acceptance", "{}", "invalid_action")]
@@ -139,6 +148,17 @@ public sealed class ProblemEndpointTests
         await using var f = await Fixture.Start(); var response = await f.Send(method, path, body);
         Assert.Equal(400, response.Status); Assert.Equal(error, response.Json["error"]!.GetValue<string>()); Assert.Equal(0, f.Repo.Calls);
         if (path.Contains("/api/v1/")) Assert.NotNull(response.Json["message"]?["text"]);
+    }
+    [Fact]
+    public async Task BulkReopenUsesAuthenticatedActorAndDistinctIds()
+    {
+        await using var f = await Fixture.Start();
+        var result = await f.Send("POST", "/api/findings/bulk-status", """{"ids":[9,7,9],"status":"active"}""");
+        Assert.Equal(200, result.Status);
+        Assert.Equal(new long[] { 7, 9 }, f.Repo.BulkRequest?.Ids);
+        Assert.Equal("alice", f.Repo.BulkRequest?.Actor);
+        Assert.Equal("active", f.Repo.Status?.Status);
+        Assert.NotEmpty(f.Repo.Status?.Reason ?? "");
     }
     [Theory]
     [InlineData("/api/findings/risk-responsibles?before=invalid", 200)]

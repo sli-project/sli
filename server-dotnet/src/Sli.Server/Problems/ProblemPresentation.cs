@@ -129,12 +129,12 @@ public static class ProblemPresentation
         foreach (string key in parameters.Where(p => p.Value is null).Select(p => p.Key).ToArray()) parameters.Remove(key);
         return parameters;
     }
-    internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null)
+    internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null, JsonObject? visibleParameters = null)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
         bool password = IsPasswordFinding(rule);
         if (password && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
-        var parameters = RuleParameters(finding, access, language);
+        var parameters = visibleParameters ?? RuleParameters(finding, access, language);
         string code = RuleMessageCode(rule, suffix);
         if (suffix == "next" && (CatalogDetection(rule) || rule == "semantic.qw.agent-tamper") &&
             (parameters["actor"] is null || rule == "semantic.qw.privileged-group-addition" && parameters["member"] is null))
@@ -336,5 +336,83 @@ public static class ProblemPresentation
             if (IsPasswordFinding(rule)) queueRow.Remove("actor");
         }
         return queueRow;
+    }
+
+    internal static JsonObject Workplace(JsonObject finding, ProblemAccess access, string language, bool detail, bool identity, bool technical, bool journal)
+    {
+        identity &= access.Fields("identity_basic");
+        technical &= access.Fields("technical");
+        var parameters = RuleParameters(finding, access, language);
+        if (!identity)
+            foreach (string key in new[] { "actor", "target", "account", "member", "group", "category", "computer", "host" }) parameters.Remove(key);
+        if (!technical)
+            foreach (string key in new[] { "source", "computer", "host" }) parameters.Remove(key);
+        foreach (var (key, value) in parameters.ToArray())
+            if (value is JsonValue text && text.TryGetValue<string>(out _)) parameters[key] = ProblemJson.Clean(value, 256);
+        parameters.Remove("time");
+        var observedEvents = ProblemJson.Array(finding["evidence"]).OfType<JsonObject>().ToArray();
+        if (technical && ProblemJson.Text(parameters["source"]) is "" or "semantic-production") {
+            parameters.Remove("source");
+            var candidates = observedEvents.Select(e => IsAddress(e["ip_address"]) ? e["ip_address"] : e["workstation_name"])
+                .Select(value => ProblemJson.Clean(value, 256)).Where(value => value is not ("" or "-" or "—")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (candidates.Length == 1) parameters["source"] = candidates[0];
+        }
+        var facts = ProblemJson.Object(finding["presentation_facts"]);
+        var row = ProblemJson.Pick(finding, "id", "severity", "status", "first_seen_utc", "last_seen_utc", "closed_at");
+        string rule = ProblemJson.Text(finding["rule_code"]);
+        bool password = IsPasswordFinding(rule), success = password && ProblemJson.Bool(facts["password_success"]);
+        row["kind"] = success ? "success" : rule switch {
+            "semantic.qw.password-brute-force" => "brute",
+            "semantic.qw.password-spray" => "spray",
+            "semantic.qw.disabled-account-logon" => "disabled",
+            "semantic.qw.privileged-group-addition" or "semantic.security.privileged_group_member_added" => "member",
+            "semantic.qw.security-log-cleared" => "cleared",
+            "semantic.qw.audit-disabled" => "audit",
+            "semantic.qw.agent-tamper" => "agent",
+            _ => "other"
+        };
+        row["title"] = (HasRuleMessage(success ? "semantic.qw.password-success" : rule, "title", language)
+            ? RuleMessage(finding, "title", language, access, parameters.DeepClone().AsObject())["text"]?.ToString()
+            : identity && technical ? ProblemJson.Clean(finding["title"], 512) : null);
+        if (ProblemJson.Text(row["kind"]) == "other" && HasRuleMessage(rule, "next", language)) {
+            string guidance = ProblemJson.Text(RuleMessage(finding, "next", language, access, parameters.DeepClone().AsObject())["text"]);
+            if (!string.IsNullOrWhiteSpace(guidance) && guidance != rule) row["next"] = guidance;
+        }
+        row["account"] = identity ? (parameters["member"] ?? (CatalogDetection(rule) ? null : parameters["account"]))?.DeepClone() : null;
+        row["object"] = identity ? (parameters["member"] ?? (CatalogDetection(rule) ? parameters["computer"] : parameters["account"] ?? parameters["computer"] ?? parameters["target"]))?.DeepClone() : null;
+        row["actor"] = identity && !password ? parameters["actor"]?.DeepClone() : null;
+        row["source"] = technical && (!password || identity) ? parameters["source"]?.DeepClone() : null;
+        row["computer"] = identity && technical ? parameters["computer"]?.DeepClone() : null;
+        row["group"] = identity ? parameters["group"]?.DeepClone() : null;
+        row["category"] = identity ? parameters["category"]?.DeepClone() : null;
+        if (password && facts.Count > 0) {
+            row["attempts"] = facts["attempts"]?.DeepClone();
+            row["accounts"] = identity ? facts["account_count"]?.DeepClone() : null;
+            row["address_count"] = technical && identity ? facts["address_count"]?.DeepClone() : null;
+            row["first_attempt"] = facts["first_attempt"]?.DeepClone();
+            row["success_at"] = facts["success_at"]?.DeepClone();
+            if (detail && identity && technical) {
+                row["addresses"] = new JsonArray(ProblemJson.Array(facts["addresses"]).Where(a => IsAddress(a)).Select(a => a?.DeepClone()).ToArray());
+                row["breakdown"] = facts["breakdown"]?.DeepClone();
+            }
+        }
+        if (detail) {
+            if (technical && row["addresses"] is null && IsAddress(row["source"])) row["addresses"] = new JsonArray(row["source"]!.DeepClone());
+            if (journal && access.Fields("raw_evidence", "technical")) {
+                var events = observedEvents.Where(e => ProblemJson.Long(e["event_db_id"]) > 0).ToArray();
+                row["has_journal"] = events.Length > 0;
+                var channels = events.Select(e => ProblemJson.Clean(e["channel"], 256)).Where(s => s.Length > 0).Distinct().ToArray();
+                if (channels.Length == 1) row["log"] = channels[0];
+                var types = events.Select(e => ProblemJson.Long(e["event_id"])).Where(n => n > 0).Distinct().ToArray();
+                if (types.Length == 1) row["event_type"] = types[0];
+            }
+        }
+        return row;
+    }
+
+    private static bool IsAddress(JsonNode? value)
+    {
+        string text = ProblemJson.Text(value);
+        return (text.Contains(':') || text.Count(c => c == '.') == 3) && System.Net.IPAddress.TryParse(text, out _);
     }
 }

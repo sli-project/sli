@@ -6,23 +6,41 @@ using Sli.Server.Access.Administration;
 using Sli.Server.Semantic;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Entities;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Reporting.V2;
 
-public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsRepository facts, ISemanticDatabase database, BuiltinReportExports exports) : IReportV2Reader
+public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsRepository facts, ISemanticDatabase database, BuiltinReportExports exports, IProblemRepository? problems = null) : IReportV2Reader
 {
     public string OwnerId => "sli.core";
     public bool Handles(string key) => key == "events.journal";
-    public Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct) => exports.ExportAsync(c, ct);
+    public Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct) => c.Params["problem_id"] is null
+        ? exports.ExportAsync(c, ct) : throw new ReportRequestException("report_export_denied", 403);
     public async Task<JsonObject> QueryAsync(ReportQueryContext c, CancellationToken ct)
     {
         var subject = await facts.LoadAsync(c.Principal, ct);
         var projection = JsonSerializer.SerializeToNode(AccessReadProjection.Compose(c.Principal, subject, c.Access.Capabilities, c.Access, false))!.AsObject();
         var filters = new Dictionary<string, string> { ["time_from"] = c.Params["period"]!["from_utc"]!.ToString(), ["time_to"] = c.Params["period"]!["to_utc"]!.ToString() };
         foreach (string key in new[] { "view", "q", "server" }) if (c.Params[key]?.ToString() is { Length: > 0 } value && (key != "view" || value != "all")) filters[key] = value;
+        long? problemId = null;
+        if (c.Params["problem_id"] is {} requested) {
+            if (!Integer(requested, out long id) || id <= 0) throw new ReportRequestException("report_parameter_invalid:problem_id");
+            var access = new ProblemAccess(c.Access);
+            try {
+                access.Capability("evidence.exact");
+                if (!access.Fields("raw_evidence", "technical") || !c.FieldAccess(["security", "raw_evidence", "technical"]))
+                    throw new ProblemException("report_field_categories_not_allowed", 403);
+                var domains = access.Scope("security.queue").Domains();
+                var input = new FindingQuery(null, null, null, null, null, null, null, domains, 1, false) { FindingId = id, Compact = true, PageQueue = true };
+                var admitted = await (problems ?? throw new ReportRequestException("report_reader_unavailable", 503)).FindingsAsync(input, access, ct);
+                if (admitted["items"] is not JsonArray { Count: 1 }) throw new ReportRequestException("report_row_not_found", 404);
+            }
+            catch (ProblemException error) { throw new ReportRequestException(error.Code, error.Status); }
+            problemId = id;
+        }
         if (!string.IsNullOrEmpty(c.Paging.Cursor)) filters["cursor"] = c.Paging.Cursor;
         JsonObject raw;
-        try { raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", Math.Min(c.Paging.Limit, 200), null, "view", filters, ct); }
+        try { raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", Math.Min(c.Paging.Limit, 200), null, "view", filters, ct, problemId); }
         catch (ReportException e) { throw new ReportRequestException(e.Message, e.Status); }
         var rows = raw.Objects("items");
         // Dependencies belong to one projected row, never a union of grant branches.
