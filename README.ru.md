@@ -79,12 +79,17 @@ sudo apt update && sudo apt upgrade
 каталог под вашим управлением. Оставьте место для скачивания, распакованного
 комплекта и его временной копии в `/tmp`.
 
-1. Скачайте `sli-debian-beta-kit.tar.gz` и `SHA256SUMS` из одного выпуска
-   `beta-…` в разделе [Releases](https://github.com/sli-project/sli/releases).
+1. Скопируйте тег `beta-…` из предварительного выпуска в разделе
+   [Releases](https://github.com/sli-project/sli/releases) и подставьте его вместо
+   `beta-COMMIT12` в команде ниже.
    В описании выпуска указаны исходный коммит и ссылка на сборку GitHub Actions.
-   В каталоге загрузки проверьте архив перед распаковкой.
+   Выполните команду в каталоге загрузки, чтобы скачать `sli-debian-beta-kit.tar.gz`
+   и `SHA256SUMS` из одного выпуска и проверить архив перед распаковкой.
 
    ```sh
+   tag=beta-COMMIT12
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/sli-debian-beta-kit.tar.gz" &&
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/SHA256SUMS" &&
    sha256sum --check SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
    ```
 

@@ -12,9 +12,16 @@ on:
         default: false
         type: boolean
       release:
-        description: 'Create a draft GitHub release with the verified kit'
+        description: 'Create a GitHub release with the verified kit'
         default: false
         type: boolean
+      publish:
+        description: 'Release publication mode'
+        type: choice
+        default: draft
+        options:
+          - draft
+          - prerelease
 
 permissions: {}
 
@@ -39,13 +46,14 @@ jobs:
         with:
           name: sli-debian-beta-kit-${{ needs.build.outputs.commit }}
           path: release
-      - name: Create draft release
+      - name: Create GitHub release
         shell: bash
         working-directory: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           KIT_COMMIT: ${{ needs.build.outputs.commit }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
           [[ "$KIT_COMMIT" =~ ^[a-f0-9]{40}$ ]]
@@ -53,5 +61,10 @@ jobs:
           tag="beta-${KIT_COMMIT:0:12}"
           notes=$(printf 'Source commit: `%s`\n\nGitHub Actions build: %s/%s/actions/runs/%s\n' \
             "$KIT_COMMIT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          case "$PUBLISH" in
+            draft) release_flag=--draft ;;
+            prerelease) release_flag=--prerelease ;;
+            *) printf 'Invalid release publication mode\n' >&2; exit 1 ;;
+          esac
           gh release create "$tag" sli-debian-beta-kit.tar.gz SHA256SUMS \
-            --target "$KIT_COMMIT" --draft --title "$tag" --notes "$notes"
+            --target "$KIT_COMMIT" "$release_flag" --title "$tag" --notes "$notes"

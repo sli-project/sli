@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -74,6 +75,59 @@ def test_release_builds_use_fixed_hosted_runners(name, job_name, runner):
         assert jobs["build"]["uses"] == "./.github/workflows/beta-kit-build.yml"
     elif name == "beta-kit-build.yml":
         assert jobs["agent-msi"]["uses"] == "./.github/workflows/agent-msi.yml"
+
+
+@pytest.mark.parametrize(("selected_mode", "expected_flag"), [
+    (None, "--draft"),
+    ("prerelease", "--prerelease"),
+])
+def test_beta_kit_release_mode(selected_mode, expected_flag, tmp_path, monkeypatch):
+    source = (ROOT / ".github/workflows/beta-kit.yml").read_text(encoding="utf-8")
+    dispatch = yaml.load(source, Loader=yaml.BaseLoader)["on"]["workflow_dispatch"]
+    publish = dispatch["inputs"]["publish"]
+    assert publish["type"] == "choice"
+    mode = selected_mode or publish["default"]
+    assert mode in publish["options"]
+
+    jobs = workflow("beta-kit.yml")["jobs"]
+    step, = [step for step in jobs["release"]["steps"] if "run" in step]
+    variable, = [name for name, value in step["env"].items() if value == "${{ inputs.publish }}"]
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    archive = tmp_path / "sli-debian-beta-kit.tar.gz"
+    archive.write_bytes(b"synthetic beta kit")
+    monkeypatch.setenv(variable, mode)
+    monkeypatch.setenv("KIT_COMMIT", commit)
+    monkeypatch.setenv("GH_TOKEN", "synthetic-token")
+    monkeypatch.setenv("GH_REPO", "example.test/example/sli")
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://example.test")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/sli")
+    monkeypatch.setenv("GITHUB_RUN_ID", "1")
+    monkeypatch.delenv("BASH_ENV", raising=False)
+    bash = shutil.which("bash")
+    assert bash, "Bash is required to test the release step"
+    script = """sha256sum sli-debian-beta-kit.tar.gz > SHA256SUMS || exit 1
+gh() { printf '%s\\n' "$@"; }
+""" + step["run"]
+    result = subprocess.run([bash, "--noprofile", "--norc", "-c", script], cwd=tmp_path,
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    args = result.stdout.splitlines()
+    assert args[:5] == ["release", "create", "beta-0123456789ab", archive.name, "SHA256SUMS"]
+    assert args[args.index("--target") + 1] == commit
+    assert {"--draft", "--prerelease"}.intersection(args) == {expected_flag}
+
+
+@pytest.mark.parametrize(("name", "write_jobs"), [
+    ("beta-kit.yml", {"release"}),
+    ("beta-kit-build.yml", set()),
+])
+def test_beta_kit_contents_write_is_limited_to_publication(name, write_jobs):
+    config = workflow(name)
+    assert config["permissions"].get("contents") != "write"
+    assert {
+        job_name for job_name, job in config["jobs"].items()
+        if job.get("permissions", {}).get("contents") == "write"
+    } == write_jobs
 
 
 @pytest.mark.parametrize(("case", "status"), [
