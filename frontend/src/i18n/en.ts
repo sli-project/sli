@@ -1951,6 +1951,7 @@ export const en: Record<MessageKey, string> = {
   "security.problems.presentation.qw.password-success.why": "These attempts may indicate someone is trying to gain access to your systems.",
   "security.problems.presentation.qw.password-success.next": "1) Change the account password immediately. 2) End its sessions. 3) Check Domain changes for its actions after the sign-in.",
   "security.problems.presentation.spray_title": "Passwords tried across several accounts",
+  "security.problems.presentation.spray_object": "{source} ({count} accounts)",
   "security.problems.presentation.spray_what": "One source attempted to sign in to five or more accounts within ten minutes. One or two attempts per account can indicate an automated list attack; regular intervals are supporting evidence.",
   "security.problems.presentation.spray_success_title": "A successful sign-in followed a password spray",
   "security.problems.presentation.spray_success_what": "After repeated failures, the same source successfully signed in to an attacked account. An attacker may have gained access.",

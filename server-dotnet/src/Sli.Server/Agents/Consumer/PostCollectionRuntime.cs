@@ -24,7 +24,7 @@ internal sealed class PostCollectionRuntime(NpgsqlConnection processLock, IPostg
     public Task<int> RunAsync(AgentImportOptions options, CancellationToken ct) => new PostCollectionLoop(
         async token => {
             await CheckProcessSessionAsync(token);
-            var result = await consumer.RunOnceAsync(16, token, CheckProcessSessionAsync);
+            var result = await consumer.RunOnceAsync(PostCollectionLoop.EventBatchSize, token, CheckProcessSessionAsync);
             adDcImportIssue = consumer.DirectConfigurationIssue ?? result.PendingReasons.Keys.FirstOrDefault(AdDcProjectionFailure.IsStorageIssue);
             return new(result.Scanned, result.Imported, result.PendingReasons, result.Quarantined) { Cursor = consumer.Cursor, Skipped = result.Skipped };
         },

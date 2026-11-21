@@ -57,7 +57,8 @@ public sealed partial class AgentEnrollmentService
         IConfiguration? configuration, CancellationToken ct, JsonObject? identityReport = null)
     {
         if (await ReadDcRegistrationAsync(db, tx, agent, ct) is not { } registration) return null;
-        var dc = await ResolveDcAsync(db, tx, registration.Source, ct, agent);
+        string? missing = null;
+        var dc = await ResolveDcAsync(db, tx, registration.Source, ct, agent, reason => missing = reason);
         var registeredHost = HostName(StringValue(registration.Agent, "registration_host_name"));
         bool canCreate = dc is null && registration.CanBootstrap && !registration.Pinned && registeredHost is { Length: <= 128 } &&
             string.Equals(registeredHost, registration.Source, StringComparison.OrdinalIgnoreCase);
@@ -84,9 +85,7 @@ public sealed partial class AgentEnrollmentService
             var registeredDns = new JsonObject { ["domain_dns"] = registeredHost[(registeredHost.IndexOf('.') + 1)..] };
             dc = await BootstrapSnapshotDomainAsync(db, tx, registeredDns, registeredHost, null, ct);
         }
-        if (dc is null)
-            return identityReport is null && canCreate && !registration.DomainReported && registeredHost?.Contains('.') == false
-                ? "missing_domain" : "no_server";
+        if (dc is null) return missing;
         if (original is null)
             await RecordAgentReportedDcAsync(db, tx, agent, dc.Value.Server, ct);
 
@@ -168,5 +167,6 @@ public sealed partial class AgentEnrollmentService
                 onUnbound?.Invoke(agent, reason);
             await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, agent, ct);
         }
+        await RetireBootstrapDomainAsync(db, tx, ct);
     }
 }

@@ -177,7 +177,7 @@ public sealed partial class ProblemRepository
         string pageWhere = where;
         if (query.BeforeId is {} before) { args["before"] = before; pageWhere += query.GroupQueue ? " and queue_groups.queue_cursor_id<@before" : " and findings.id<@before"; }
         string order = query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
-        string riskAudit = query.QueueList || query.Compact ? "null::jsonb" : """
+        string riskAudit = query.QueueList ? "null::jsonb" : """
             (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
                 select id,action,actor,occurred_at,details from semantic_control_audit where details->'rule'->>'kind'='risk_acceptance'
                 and details->'rule'->>'finding_id'=findings.id::text order by id desc limit 50) a)

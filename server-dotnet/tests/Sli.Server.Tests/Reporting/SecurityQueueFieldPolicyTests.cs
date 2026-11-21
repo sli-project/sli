@@ -20,6 +20,7 @@ public sealed class SecurityQueueFieldPolicyTests
     const string Report = "/api/v2/reports/security.problems";
     const string Detail = Report + "/rows/7/detail";
     static string Queue(bool legacy) => legacy ? "/api/findings?source=semantic-production" : Report + "/data";
+    static string Finding(bool legacy) => legacy ? Queue(true) : With(Queue(false), "id=7");
     static string With(string path, string query) => path + (path.Contains('?') ? "&" : "?") + query;
     static CancellationToken Ct => TestContext.Current.CancellationToken;
     static JsonElement J(object value) => JsonSerializer.SerializeToElement(value);
@@ -128,7 +129,7 @@ public sealed class SecurityQueueFieldPolicyTests
     [Theory][InlineData(false)][InlineData(true)]
     public async Task SecurityOnlyPreservesSummaryAndCountsAndRemovesAllDetailMarkers(bool legacy)
     {
-        using var f = new Fixture(); var (status, body) = await f.Get(Queue(legacy)); Assert.Equal(200, status);
+        using var f = new Fixture(); var (status, body) = await f.Get(Finding(legacy)); Assert.Equal(200, status);
         var row = Row(body); Assert.Equal("Password guessing against an account", row["title"]!.ToString()); Assert.Equal(2, (int?)row["evidence_total"]);
         Assert.DoesNotContain("Synthetic summary", row.ToJsonString());
         Assert.True(row.ContainsKey("linked_case")); Assert.Null(row["linked_case"]);
@@ -142,8 +143,14 @@ public sealed class SecurityQueueFieldPolicyTests
     public async Task LocalizedCatalogEnvelopesRespectIdentityPolicy(bool legacy, string locale, bool identity)
     {
         using var f = new Fixture(Facts(identity ? ["security", "identity_basic"] : ["security"]));
-        f.Repo.Read = _ => { var raw = Raw(); raw["items"]![0]!["actor"] = "sid:fixture-host:S-1-5-18"; return raw; };
-        var (status, body) = await f.Get(Queue(legacy), locale); Assert.Equal(200, status); var row = Row(body);
+        f.Repo.Read = _ => {
+            var raw = Raw();
+            var row = raw["items"]![0]!;
+            row["actor"] = "sid:fixture-host:S-1-5-18";
+            if (!legacy) row["rule_code"] = "semantic.security.audit_controls_changed";
+            return raw;
+        };
+        var (status, body) = await f.Get(Finding(legacy), locale); Assert.Equal(200, status); var row = Row(body);
         foreach (string field in new[] { "actor_text", "entity_text", "entity_messages" }) Assert.Equal(identity, row.ContainsKey(field));
         Assert.Equal(identity, row["presentation_messages"]!.AsObject().ContainsKey("actor_text"));
         if (identity) {
@@ -166,7 +173,7 @@ public sealed class SecurityQueueFieldPolicyTests
     public async Task FullGrantKeepsExactEvidenceAndAllowListsNestedRiskAndHistory(bool legacy)
     {
         using var f = new Fixture(Facts(["security", "raw_evidence", "identity_basic", "technical"], cases: true));
-        var (status, body) = await f.Get(Queue(legacy)); Assert.Equal(200, status); var row = Row(body);
+        var (status, body) = await f.Get(Finding(legacy)); Assert.Equal(200, status); var row = Row(body);
         Assert.Equal(900001, (int?)row["evidence"]![0]!["event_db_id"]); Assert.Equal(900002, (int?)row["evidence"]![0]!["event_record_id"]);
         Assert.Equal("exact-marker", row["status_history"]![0]!["note"]!.ToString()); Assert.Equal("exact-marker", row["risk_acceptance"]!["reason"]!.ToString());
         Assert.Equal(900004, (int?)row["risk_acceptance"]!["responsible_user_id"]); Assert.Equal(900004, (int?)row["risk_audit"]![0]!["details"]!["rule"]!["responsible_user_id"]);
@@ -175,7 +182,7 @@ public sealed class SecurityQueueFieldPolicyTests
     [Theory][InlineData(false, "raw_evidence")][InlineData(true, "raw_evidence")][InlineData(false, "identity_basic")][InlineData(true, "identity_basic")]
     public async Task RiskReasonAndResponsibleHaveIndependentGrants(bool legacy, string category)
     {
-        using var f = new Fixture(Facts(["security", category])); var response = await f.Get(Queue(legacy)); Assert.Equal(200, response.Status);
+        using var f = new Fixture(Facts(["security", category])); var response = await f.Get(Finding(legacy)); Assert.Equal(200, response.Status);
         var row = Row(response.Body); var risk = row["risk_acceptance"]!.AsObject(); Assert.Equal("active", risk["state"]!.ToString());
         Assert.Equal(category == "raw_evidence", risk.ContainsKey("reason"));
         foreach (string key in new[] { "responsible_user_id", "responsible_username", "created_by", "changed_by" }) Assert.Equal(category == "identity_basic", risk.ContainsKey(key));
@@ -204,7 +211,8 @@ public sealed class SecurityQueueFieldPolicyTests
     {
         using var f = new Fixture(Facts(["security", "identity_basic"], "{\"kind\":\"domain\",\"ids\":[1,2]}"));
         foreach (string query in new[] { "", "entity_id=7&risk=accepted", "domain=1", "domain=2" }) {
-            var response = await f.Get(With(Queue(legacy), query)); Assert.Equal(200, response.Status); Assert.Equal(7, (int?)Row(response.Body)["id"]);
+            var path = query.StartsWith("entity_id") ? Finding(legacy) : Queue(legacy);
+            var response = await f.Get(With(path, query)); Assert.Equal(200, response.Status); Assert.Equal(7, (int?)Row(response.Body)["id"]);
             var input = f.Repo.Calls.Last(); Assert.Equal(query.StartsWith("domain=") ? [long.Parse(query[7..])] : new long[] { 1, 2 }, input.Domains);
             if (query.StartsWith("entity_id")) { Assert.Equal(7, input.EntityId); Assert.Equal("accepted", input.Risk); Assert.Equal(900004, (int?)Row(response.Body)["risk_acceptance"]!["responsible_user_id"]); Assert.DoesNotContain("exact-marker", response.Body.ToJsonString()); }
         }

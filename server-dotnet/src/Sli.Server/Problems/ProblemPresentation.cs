@@ -297,15 +297,19 @@ public static class ProblemPresentation
             if (IsPasswordFinding(rule)) {
                 var source = access.Fields("identity_basic", "technical") ? parameters["source"] : null;
                 row["actor_text"] = source?.DeepClone();
-                if (rule == "semantic.qw.password-brute-force") row["entity_text"] = parameters["account"]?.DeepClone();
-                else {
+                messages.Remove("actor_text");
+                JsonNode? entity = parameters["account"];
+                if (rule == "semantic.qw.password-spray") {
                     var count = finding["presentation_facts"]?["account_count"];
-                    row["entity_text"] = source is not null && ProblemJson.Long(count) > 0
-                        ? M("security.problems.presentation.spray_object", new() { ["source"] = source.DeepClone(), ["count"] = count!.DeepClone() })["text"]?.DeepClone()
-                        : source?.DeepClone();
+                    entity = source is not null && ProblemJson.Long(count) > 0
+                        ? M("security.problems.presentation.spray_object", new() { ["source"] = source.DeepClone(), ["count"] = count!.DeepClone() })
+                        : source;
                 }
+                row["entity_text"] = (entity is JsonObject message ? message["text"] : entity)?.DeepClone();
+                if (includeDescription) row["entity_messages"] = entity is null ? new JsonArray() : new JsonArray(entity.DeepClone());
             } else if (row["entity_text"] is null) {
                 row["entity_text"] = (parameters["target"] ?? parameters["member"] ?? parameters["computer"])?.DeepClone();
+                if (row["entity_text"] is not null) row.Remove("entity_messages");
             }
         }
         void Hide(string path, params string[] categories)
@@ -325,8 +329,9 @@ public static class ProblemPresentation
             "published_at_utc", "occurrence_count", "problem_cohort", "risk_acceptance", "review_hint_text", "suppressed", "assigned_to",
             "assigned_to_text", "evidence_total", "first_seen_utc", "repeat_count", "decoy_id", "decoy_revision");
         if (includeDescription) {
-            foreach (string field in new[] { "what_happened", "why_text", "next_text", "actor", "entity_identifiers",
-                "identity_sources_text", "status_history", "risk_audit", "linked_case" })
+            foreach (string field in new[] { "title", "what_happened", "why_text", "next_text", "actor", "entity_identifiers",
+                "identity_sources_text", "status_history", "risk_audit", "linked_case", "evidence", "presentation_messages",
+                "entity_messages", "status_message", "severity_message" })
                 if (row.TryGetPropertyValue(field, out var value)) queueRow[field] = value?.DeepClone();
             if (IsPasswordFinding(rule)) queueRow.Remove("actor");
         }

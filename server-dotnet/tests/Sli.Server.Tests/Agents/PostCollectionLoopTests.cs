@@ -39,16 +39,37 @@ public sealed class PostCollectionLoopTests
     }
 
     [Fact]
+    public async Task FullInboxPagesDrainWithinTheCycleBeforeOtherOwnersRun()
+    {
+        var elapsed = TimeSpan.Zero;
+        int pages = 0;
+        var loop = new PostCollectionLoop(_ => {
+            pages++;
+            elapsed += TimeSpan.FromSeconds(16);
+            return Task.FromResult(new PostCollectionBatch(128, 128, new Dictionary<string, int>()));
+        }, _ => {
+            Assert.Equal(2, pages);
+            return Task.FromResult(Batch());
+        }, _ => Task.FromResult(Batch()), (_, _, _, _) => Task.CompletedTask, () => elapsed, Task.Delay,
+            result => Assert.Equal(256, result["agent_packets"]!["imported"]!.GetValue<int>()));
+        Assert.Equal(0, await loop.RunAsync(new(true, 10), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task BusyInboxDoesNotStarveOwnersOrSpinFailedSnapshotRetry()
     {
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         int events = 0, snapshots = 0, accounting = 0, delays = 0; TimeSpan elapsed = TimeSpan.Zero;
-        var loop = new PostCollectionLoop(_ => { events++; return Task.FromResult(Batch(events <= 3 ? 16 : 0)); },
+        var loop = new PostCollectionLoop(_ => {
+            events++;
+            if (events > 3) return Task.FromResult(Batch());
+            return Task.FromResult(new PostCollectionBatch(128, 128, new Dictionary<string, int>()));
+        },
             _ => { snapshots++; return Task.FromResult(Batch(4, "agent_disabled")); },
             _ => { accounting++; return Task.FromResult(Batch()); }, (_, _, _, _) => Task.CompletedTask, () => elapsed,
             (wait, _) => { delays++; elapsed += wait; if (delays == 4) cancel.Cancel(); return Task.CompletedTask; });
         Assert.Equal(0, await loop.RunAsync(new(false, 10), cancel.Token));
-        Assert.Equal(7, events); Assert.Equal(7, accounting); Assert.Equal(2, snapshots); Assert.Equal(4, delays);
+        Assert.Equal(7, events); Assert.Equal(4, accounting); Assert.Equal(2, snapshots); Assert.Equal(4, delays);
     }
 
     [Theory]
@@ -75,10 +96,14 @@ public sealed class PostCollectionLoopTests
     {
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         int snapshots = 0, iterations = 0; var statuses = new List<string>();
-        var loop = new PostCollectionLoop(_ => Task.FromResult(Batch(iterations++ == 0 ? 16 : 0, quarantined: 1)),
+        var elapsed = TimeSpan.Zero;
+        var loop = new PostCollectionLoop(_ => {
+            elapsed += TimeSpan.FromSeconds(30);
+            return Task.FromResult(Batch(iterations++ == 0 ? 128 : 0, quarantined: 1));
+        },
             _ => { snapshots++; return Task.FromResult(Batch(4)); }, _ => Task.FromResult(Batch()),
             (status, phase, _, _) => { if (phase == "sleep") statuses.Add(status); return Task.CompletedTask; },
-            () => TimeSpan.Zero, (_, _) => { cancel.Cancel(); return Task.CompletedTask; });
+            () => elapsed, (_, _) => { cancel.Cancel(); return Task.CompletedTask; });
         Assert.Equal(0, await loop.RunAsync(new(false, 10), cancel.Token)); Assert.Equal(2, snapshots); Assert.All(statuses, s => Assert.Equal("warning", s));
     }
 

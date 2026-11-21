@@ -33,6 +33,80 @@ public sealed class PasswordDomainAutoPostgresTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Reconciliation_uses_the_real_domain_and_retires_only_the_unused_placeholder(bool ownsData)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var agent = Guid.NewGuid();
+        await using (var seed = new NpgsqlCommand("""
+            update forests set name='example.invalid' where name='example.test';
+            update domains set fqdn='example.invalid',netbios_name=null,domain_sid=null;
+            insert into forests(name) values('example.test');
+            insert into domains(forest_id,fqdn) select id,'example.test' from forests where name='example.test';
+            insert into servers(domain_id,hostname,fqdn,role)
+                select id,'lab-dc01.example.test','lab-dc01.example.test','domain_controller' from domains where fqdn='example.test';
+            insert into domain_controller_targets(hostname,connect_address,domain_id,created_by,updated_by)
+                select 'LAB-DC01','lab-dc01.example.test',id,'synthetic','synthetic' from domains where fqdn='example.test';
+            insert into platform_settings(key,value,updated_by) values('reports.domain_fqdn','example.invalid','installer')
+                on conflict(key) do update set value=excluded.value;
+            insert into sli_agents(id,host_id,key_fingerprint,registration_host_name,policy_revision,applied_policy_revision,assigned_modules)
+                values(@agent,@agent,repeat('a',64),'LAB-DC01',2,2,
+                '[{"module_id":"sli.windows.ad-dc","enabled":true,"config":{"source_name":"LAB-DC01","policy_revision":"2"}}]');
+            insert into sli_agent_module_bindings(agent_id,module_id,source_instance_id,source_name,channel,module_version,policy_revision)
+                values(@agent,'sli.windows.ad-dc',@agent::text,'LAB-DC01','ad-dc','1.0.0','2');
+            insert into sli_agent_audit(action,actor,target,details)
+                values('issue','synthetic',@agent::text,'{"console_token_id":"synthetic"}');
+            insert into sli_agent_certificates(agent_id,serial,fingerprint,not_before,not_after)
+                values(@agent,'10',repeat('b',64),now()-interval '1 day',now()+interval '1 day');
+            insert into sites(domain_id,name) select id,'synthetic' from domains where fqdn='example.invalid' and @owned;
+            """, owner))
+        {
+            seed.Parameters.AddWithValue("agent", agent);
+            seed.Parameters.AddWithValue("owned", ownsData);
+            await seed.ExecuteNonQueryAsync(ct);
+        }
+
+        var connections = new Connections(fixture.Dsn("adlog_user"));
+        await using var app = await connections.OpenAsync(ct);
+        List<string> warnings = [];
+        await using (var tx = await app.BeginTransactionAsync(ct))
+        {
+            await AgentEnrollmentService.ReconcileRegistrationsAsync(app, tx, ct, onUnbound: (_, reason) => warnings.Add(reason));
+            await tx.CommitAsync(ct);
+        }
+        // A second domain can have a controller with the same short name. The
+        // configured target identifies which inventory row belongs to this agent.
+        await PostCollectionPostgres.Sql(owner, """
+            insert into domains(forest_id,fqdn) select id,'other.example.test' from forests where name='example.test';
+            insert into servers(domain_id,hostname,fqdn,role)
+                select id,'lab-dc01.other.example.test','lab-dc01.other.example.test','domain_controller'
+                from domains where fqdn='other.example.test';
+            """, ct);
+        await using (var tx = await app.BeginTransactionAsync(ct))
+        {
+            await AgentEnrollmentService.ReconcileDcSourcesAsync(app, tx, null, ct, (_, reason) => warnings.Add(reason));
+            await tx.CommitAsync(ct);
+        }
+        Assert.Empty(warnings);
+        await using var state = new NpgsqlCommand("""
+            select (select value from platform_settings where key='reports.domain_fqdn'),
+                (select count(*) from domains where fqdn='example.invalid'),
+                (select count(*) from domains where fqdn='example.invalid' and not is_archived),
+                (select d.fqdn from sli_agent_module_bindings b join domains d on d.id=b.password_detection_domain_id)
+            """, app);
+        await using var row = await state.ExecuteReaderAsync(ct);
+        Assert.True(await row.ReadAsync(ct));
+        Assert.Equal("example.test", row.GetString(0));
+        Assert.Equal(ownsData ? 1L : 0L, row.GetInt64(1));
+        Assert.Equal(0L, row.GetInt64(2));
+        Assert.Equal("example.test", row.GetString(3));
+    }
+
+    [Theory]
     [InlineData("enrollment")]
     [InlineData("startup")]
     [InlineData("identity_report")]

@@ -1947,6 +1947,7 @@ export const ru = {
   "security.problems.presentation.qw.password-success.why": "Возможно, кто-то пытается получить доступ к вашим системам.",
   "security.problems.presentation.qw.password-success.next": "1) Немедленно смените пароль учётной записи. 2) Завершите её сеансы. 3) Проверьте в «Изменениях в домене», что она делала после входа.",
   "security.problems.presentation.spray_title": "Подбор паролей к нескольким учётным записям",
+  "security.problems.presentation.spray_object": "{source} (учётных записей: {count})",
   "security.problems.presentation.spray_what": "За десять минут с одного источника пытались войти в пять или более учёток. Одна-две попытки на учётку могут быть автоматическим подбором по списку; равные интервалы — дополнительный довод.",
   "security.problems.presentation.spray_success_title": "После массового подбора паролей произошёл успешный вход",
   "security.problems.presentation.spray_success_what": "После серии отказов с того же источника произошёл успешный вход в одну из атакованных учёток. Доступ мог получить злоумышленник.",
