@@ -22,23 +22,25 @@ internal sealed class AdDcProjectionFailure(TimeProvider clock)
     internal const string AuthorizationMissing = "agent_ad_dc_storage_authorization_missing";
     internal const string AuthorizationInvalid = "agent_ad_dc_storage_authorization_invalid";
     internal const string AccessDenied = "agent_ad_dc_storage_access_denied";
+    internal const string SourceNotConfigured = "agent_ad_dc_source_not_configured";
 
-    private readonly Dictionary<string, (long LastLogged, long Suppressed)> failures = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Reason, Guid? Agent), (long LastLogged, long Suppressed)> failures = new();
 
     internal bool CountAndAllow(JsonObject diagnostic)
     {
         if ((string?)diagnostic["code"] != Code) return true;
         string reason = (string)diagnostic["reason"]!;
+        var key = (reason, reason == SourceNotConfigured && Guid.TryParse((string?)diagnostic["agent_id"], out var agent) ? agent : (Guid?)null);
         lock (failures)
         {
             long now = clock.GetTimestamp();
-            if (failures.TryGetValue(reason, out var previous) &&
+            if (failures.TryGetValue(key, out var previous) &&
                 clock.GetElapsedTime(previous.LastLogged, now) < TimeSpan.FromMinutes(1))
             {
-                failures[reason] = (previous.LastLogged, previous.Suppressed + 1);
+                failures[key] = (previous.LastLogged, previous.Suppressed + 1);
                 return false;
             }
-            failures[reason] = (now, 0);
+            failures[key] = (now, 0);
             diagnostic["occurrences"] = previous.Suppressed + 1;
             return true;
         }

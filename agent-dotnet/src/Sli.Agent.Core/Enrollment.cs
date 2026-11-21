@@ -56,6 +56,13 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
     [DllImport("netapi32.dll", ExactSpelling = true)]
     private static extern void DsRoleFreeMemory(IntPtr buffer);
 
+    public JsonObject? ReadDcIdentity()
+    {
+        if ((readProductType ?? ReadProductType)() != "LanmanNT" || (readDomain ?? ReadDcDomain)() is not { Sid: { } sid } domain) return null;
+        return new JsonObject { ["machine_role"] = "domain_controller", ["reported_hostname"] = Environment.MachineName,
+            ["domain_dns"] = domain.Dns, ["forest_dns"] = domain.Forest, ["domain_sid"] = sid };
+    }
+
     public async Task<AgentIdentity> EnrollAsync(string token, CancellationToken cancellationToken, string? instanceName = null)
     {
         using var existing = store.Load();

@@ -61,10 +61,20 @@ public sealed class EnrollmentTests : IDisposable
             Assert.Equal(reportsDomain && hasSid ? sid : null, (string?)body["domain_sid"]);
             return _ca.Issue(Store);
         });
-        using var identity = await new Enrollment(Store, transport, _clock, () => productType,
-                () => hasDomain ? ("child.example.test", "example.test", hasSid ? sid : null) : null)
-            .EnrollAsync(new string('t', 43), CancellationToken.None);
+        var enrollment = new Enrollment(Store, transport, _clock, () => productType,
+            () => hasDomain ? ("child.example.test", "example.test", hasSid ? sid : null) : null);
+        using var identity = await enrollment.EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
+        var report = enrollment.ReadDcIdentity();
+        if (role != "domain_controller" || !hasSid) Assert.Null(report);
+        else
+        {
+            Assert.Equal(Environment.MachineName, (string?)report?["reported_hostname"]);
+            Assert.Equal(role, (string?)report?["machine_role"]);
+            Assert.Equal("child.example.test", (string?)report?["domain_dns"]);
+            Assert.Equal("example.test", (string?)report?["forest_dns"]);
+            Assert.Equal(sid, (string?)report?["domain_sid"]);
+        }
     }
 
     [Theory]

@@ -89,9 +89,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             { error = "agent_bootstrap_cleanup_failed"; }
             Use(identity);
             if (_identity!.Certificate.NotAfter.ToUniversalTime() <= clock.GetUtcNow()) throw new AgentException("agent_certificate_expired");
+            var enrolled = new Enrollment(store, _http!, clock);
             try
             {
-                if (await new Enrollment(store, _http!, clock).RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
+                if (await enrolled.RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
             }
             catch (AgentException exception) when (exception.Code != "agent_certificate_expired")
             {
@@ -121,7 +122,14 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             var fileResult = _fileAudit?.Reconcile(policy,_audit,clock.GetUtcNow());
             var auditReport = fileResult?.Audit ?? (_fileAudit is null ? _audit?.Reconcile(policy, clock.GetUtcNow()) : null);
             var rights = ProbeRights(policy, source, store.ReadHostId());
-            if (state != "drain") await _http.PostAsync("/api/v1/agent/policy-report", policy.Report(state, rights), cancellationToken).ConfigureAwait(false);
+            if (state != "drain")
+            {
+                var report = policy.Report(state, rights);
+                if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) &&
+                    requested && enrolled.ReadDcIdentity() is { } identityReport)
+                    report["dc_identity"] = identityReport;
+                await _http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
+            }
             // A DC audit command result must not wait for the event backlog.
             if (policy.AdDc is not null && auditReport is not null)
                 await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);

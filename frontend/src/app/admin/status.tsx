@@ -66,7 +66,11 @@ export function SystemStatusPage() {
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-  const connected = sources.some((source) => source.connected);
+  const dcTargets = setup.data?.domain_controllers ?? [];
+  const connected = setup.data?.sources.find((source) => source.pack_id === "sli.windows.ad-dc")?.instances?.some((instance) =>
+    instance.configured && instance.enabled && instance.data_received && dcTargets.some((target) =>
+      target.source === "db" && target.enabled && target.domain &&
+      [target.hostname, target.connect_address].some((name) => name.toLowerCase() === instance.source_instance_id.toLowerCase()))) ?? false;
   const channelReady = !notifications.isError && (notifications.data?.channels.some((channel) => channel.enabled && (channel.last_accepted_at
     || (channel.kind === "smtp" && !smtp.isError && smtp.data?.host && smtp.data.sender && smtp.data.secret_set && smtp.data.needs_save === false)
     || (channel.kind === "telegram" && !telegram.isError && telegram.data?.secret_set && telegram.data.chat_bound))) ?? false);

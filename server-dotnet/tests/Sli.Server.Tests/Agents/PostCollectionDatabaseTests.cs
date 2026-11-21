@@ -32,7 +32,8 @@ public sealed class PostCollectionDatabaseTests
         create table sli_agent_module_bindings(agent_id uuid references sli_agents(id),module_id text,
             source_instance_id text not null,source_name text not null,channel text not null,module_version text not null,
             primary key(agent_id,module_id));
-        create table servers(hostname text primary key,role text not null,is_active boolean not null);
+        create table servers(id bigint primary key,domain_id bigint not null,hostname text not null,
+            fqdn text,role text not null,is_active boolean not null);
         grant select on sli_agent_module_bindings,servers to adlog_user;
         """, ct);
 
