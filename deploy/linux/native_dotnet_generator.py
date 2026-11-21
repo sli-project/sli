@@ -17,7 +17,9 @@ DOTNET = Path('/opt/sli/dotnet')
 def generate(runtime, release, destination, *, publication=None):
     if not runtime.CONFIG.exists() and not runtime.CONFIG.is_symlink():
         return  # sli-host may be installed before the site is configured.
-    units = runtime.dotnet_units(release, runtime.configuration())
+    # The retained host helper may predate the notification origin setting.
+    configuration = getattr(runtime, "dotnet_configuration", runtime.configuration)
+    units = runtime.dotnet_units(release, configuration())
     # systemd supplies a fresh, root-owned generator directory. Never replace
     # an existing unit or follow a service-name symlink.
     for name, body in units.items():

@@ -167,6 +167,16 @@ def configuration():
     return config
 
 
+def dotnet_configuration():
+    config = configuration()
+    site = CONFIG.with_name("site.toml")
+    if "public_url" not in config and (site.exists() or site.is_symlink()):
+        # Older installations keep the public origin only in the site settings.
+        # Resolve it for the generated units without rewriting runtime.json.
+        config["public_url"] = clickhouse.public_url(clickhouse.parse_site(trusted(site).decode("utf-8")))
+    return config
+
+
 def selected(config):
     return tuple(name for name in (*SERVICES, *DOTNET_ONLY_SERVICES) if name not in BETA_EXCLUDED_SERVICES
                  if (not name.startswith("executor-") or name[9:] in config["profiles"])
@@ -525,11 +535,10 @@ def configure(config):
     from deploy.linux import native_host as host
 
     # Candidate code can be invoked by an older retained upgrade coordinator.
-    # Read the site here as well, so legacy runtime JSON picks up the public
-    # address and proxy before generating the candidate's notification units.
+    # Preserve a notification proxy explicitly configured on the destination.
     if Path("/etc/sli/site.toml").exists():
         site = clickhouse.site_configuration()
-        config = dict(config, public_url=clickhouse.public_url(site))
+        config = dict(config)
         if "notification_proxy" in site:
             config["notification_proxy"] = site["notification_proxy"]
         else:

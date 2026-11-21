@@ -103,15 +103,14 @@ def configuration_conflict(*paths):
     code = "native_existing_configuration_conflict"
     if not all(SYSTEMD_PATH.fullmatch(path) for path in paths):
         return GuardError(code, paths[0], "existing file differs from SLI's configuration",
-                          f"Run sudo stat -- {shlex.quote(paths[0])} and reconcile it with the installed kit before retrying")
+                          f"Run sudo stat -- {shlex.quote(paths[0])} and reconcile it with the installed kit before retrying",
+                          conflict_paths=paths)
     arguments = " ".join(map(shlex.quote, paths))
-    error = GuardError(code, ", ".join(paths), "existing systemd files conflict with SLI setup",
-                       "After verifying they belong to a retired installation, run "
-                       "sudo sh -c 'd=$(mktemp -d /etc/systemd/sli-before-setup.XXXXXX) || exit; "
-                       'for p; do t="$d${p%/*}"; mkdir -p -- "$t" && mv -t "$t" -- "$p" || exit; done; '
-                       "systemctl daemon-reload' sh " + arguments + " and retry")
-    error.conflict_paths = paths
-    return error
+    return GuardError(code, ", ".join(paths), "existing systemd files conflict with SLI setup",
+                      "After verifying they belong to a retired installation, run "
+                      "sudo sh -c 'd=$(mktemp -d /etc/systemd/sli-before-setup.XXXXXX) || exit; "
+                      'for p; do t="$d${p%/*}"; mkdir -p -- "$t" && mv -t "$t" -- "$p" || exit; done; '
+                      "systemctl daemon-reload' sh " + arguments + " and retry", conflict_paths=paths)
 
 
 def command_stderr(output, *, sensitive_input):

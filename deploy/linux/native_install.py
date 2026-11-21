@@ -200,7 +200,20 @@ def command(argv, *, cwd=None, env=None, timeout=120):
         lines = result.stderr[-4096:].decode("utf-8", errors="replace").strip().splitlines()
         # Keep recognized reason codes and validated systemctl messages.
         reason = re.compile(r"(?:[A-Za-z_.]+Error: )?native_[a-z_]+(?:: \S+)?")
+        conflict_prefix = "native_existing_configuration_conflict: "
+        lines = [line for line in lines if conflict_prefix not in line]
         tail = [line for line in lines if reason.fullmatch(line.strip())][-3:]
+        wire_prefix = conflict_prefix.encode()
+        if wire_prefix in result.stderr:
+            from deploy.linux.native_host import SYSTEMD_PATH
+
+            managed_files = {"/etc/postgresql-common/createcluster.conf", "/etc/sli/runtime.json",
+                             "/usr/lib/sli/native_runtime.py", "/usr/lib/tmpfiles.d/sli-runtime.conf"}
+            for line in dict.fromkeys(result.stderr.splitlines()):
+                if line.startswith(wire_prefix):
+                    path = line[len(wire_prefix):].decode("utf-8", errors="replace")
+                    if path in managed_files or (len(path) <= 300 and SYSTEMD_PATH.fullmatch(path)):
+                        print(conflict_prefix + path, file=sys.stderr, flush=True)
         if Path(argv[0]).name == 'systemctl':
             units = [unit for unit in argv[2:] if re.fullmatch(r'sli-[a-z0-9-]+\.(?:service|target|timer)', unit)]
             for unit in units:
@@ -733,10 +746,6 @@ def main(argv=None):
         diagnostics = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(diagnostics)
         diagnostics.failure(error, default='native_install_failed')
-        paths = getattr(error, 'conflict_paths', ())
-        if paths and args.action == 'configure' and os.environ.get(operations().PROGRESS_FD):
-            for path in paths:
-                print('native_existing_configuration_conflict: ' + path, file=sys.stderr)
         if str(error) in {'operation_stalled', 'operation_deadline_exceeded'}:
             print(str(error), file=sys.stderr)
         return 1

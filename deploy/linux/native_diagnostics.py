@@ -108,6 +108,11 @@ def failure(error, *, default='native_setup_failed'):
         return
     code = candidate if candidate in MESSAGES or re.fullmatch(r'native_[a-z_]{1,100}', candidate) else default
     log_code(code)
+    if code == 'native_existing_configuration_conflict':
+        for path in getattr(error, 'conflict_paths', ()):
+            line = code + ': ' + path
+            log_code(line)
+            print(line, file=sys.stderr, flush=True)
     if code == 'native_postgres_bootstrap_unready':
         for line in getattr(error, 'stderr', ()):
             log_code(f'pg_isready: {line}')
