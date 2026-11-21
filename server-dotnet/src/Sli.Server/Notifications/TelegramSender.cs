@@ -14,6 +14,7 @@ public sealed class TelegramSender(IHttpClientFactory clients,TelegramRequestSta
             using var request=new HttpRequestMessage(HttpMethod.Post,$"https://api.telegram.org/bot{settings.Token}/sendMessage");
             request.Version=HttpVersion.Version11;request.VersionPolicy=HttpVersionPolicy.RequestVersionExact;
             request.Headers.ConnectionClose=true;
+            // Telegram renders this as plain text when parse_mode is omitted.
             request.Content=JsonContent.Create(new { chat_id=settings.Chat,text,link_preview_options=new {is_disabled=true},protect_content=true });
             using var response=await clients.CreateClient("notification-telegram").SendAsync(request,HttpCompletionOption.ResponseHeadersRead,deadline.Token);
             if((int)response.StatusCode is >=300 and <400)return new("telegram_rejected");

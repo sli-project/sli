@@ -57,13 +57,14 @@ public class SmtpDeliveryTests
         var sender=new SmtpSender(new FakeFactory(session));
         var settings=new SmtpSettings("mail.invalid",465,"svc","svc@example.com","to@example.com","https://sli.invalid","synthetic","");
         var job=new NotificationJob(Guid.NewGuid(),Guid.NewGuid(),1,"test_problem",Guid.NewGuid(),7,1,Guid.NewGuid(),DateTime.UtcNow,null,"live",0);
-        var result=await sender.SendAsync(settings,"tls",job,"synthetic",CancellationToken.None);
+        string text=NotificationMessage.Format(job,"https://sli.invalid",null,null,"en");
+        var result=await sender.SendAsync(settings,"tls",job,text,CancellationToken.None);
         Assert.Equal(expected,result.Code);Assert.Equal(phase=="bug",result.InternalError);
         Assert.Equal(phase!="connect" && !phase.StartsWith("auth-"),session.SendCalled);
         if(phase=="ok") {
-            Assert.Equal("tls",session.Tls);Assert.Equal("SLI: simulated test problem",session.Message!.Subject);
+            Assert.Equal("tls",session.Tls);Assert.Equal("SLI: SLI test message: alerts work.",session.Message!.Subject);
             Assert.Equal(job.Id+"@notifications.sli.invalid",session.Message.MessageId);
-            Assert.Equal("synthetic",session.Message.TextBody);
+            Assert.Equal(text,Assert.IsType<string>(session.Message.TextBody).Replace("\r\n","\n",StringComparison.Ordinal));
         }
         if(phase=="bug")Assert.Equal("delivery_unknown",SmtpOutcome.State(result.Code));
     }

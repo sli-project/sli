@@ -30,7 +30,8 @@ public sealed class NotificationSetupBot : INotificationSetupBot
     }
     public async Task<JsonNode> RequestAsync(string token, string method, JsonObject values, string proxy, CancellationToken ct)
     {
-        if (method is not ("getMe" or "getUpdates")) throw NotificationException.Setup("telegram_setup_failed");
+        if (method is not ("getMe" or "getUpdates" or "sendMessage" or "answerCallbackQuery"))
+            throw NotificationException.Setup("telegram_setup_failed");
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromSeconds(30));

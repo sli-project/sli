@@ -4,6 +4,7 @@ using Sli.Server.Access.Administration;
 using Sli.Server.Auth;
 using Sli.Server.Domains;
 using Sli.Server.Infrastructure;
+using Sli.Server.Notifications;
 
 namespace Sli.Server.Workspace;
 
@@ -35,6 +36,11 @@ public static class WorkspaceEndpoints
                     }
                     if (route == "/api/v1/ui/bootstrap")
                     {
+                        string language = context.Request.Headers.AcceptLanguage.ToString();
+                        // The interface sends its selected locale explicitly on bootstrap after reloading.
+                        if (principal.Type == "session" && principal.Id > 0 && language is "en" or "ru" &&
+                            context.RequestServices.GetService<IPostgresConnectionFactory>() is {} database)
+                            await NotificationLanguages.RememberInterfaceAsync(database, principal.Id, language, ct);
                         await DomainHttp.WriteAsync(context, Bootstrap(principal, access), 200, ct);
                         return;
                     }

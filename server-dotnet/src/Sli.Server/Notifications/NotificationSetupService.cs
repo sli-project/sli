@@ -22,7 +22,7 @@ public interface INotificationSetupBot
 public sealed class NotificationSetupService(INotificationSetupFiles files, INotificationSetupBot bot, string publicUrl,
     bool native = false, string nativeProxy = "", TimeProvider? clock = null)
 {
-    private sealed record Candidate(DateTimeOffset Expires, Dictionary<string, (string Chat, string Name)> Choices);
+    private sealed record Candidate(DateTimeOffset Expires, string Generation, Dictionary<string, (string Chat, string Name)> Choices);
     private readonly Dictionary<long, Candidate> candidates = new();
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private static byte[] Bytes(JsonNode node) => JsonSerializer.SerializeToUtf8Bytes(node);
@@ -145,30 +145,38 @@ public sealed class NotificationSetupService(INotificationSetupFiles files, INot
                 files.Publish("notification_telegram_token", Encoding.UTF8.GetBytes(token)); candidates.Clear();
                 return new JsonObject { ["secret_set"] = true, ["bot_name"] = name };
             }
-            string saved = new UTF8Encoding(false, true).GetString(files.Read("notification_telegram_token"));
+            string saved = new UTF8Encoding(false, true).GetString(files.Read("notification_telegram_token")).TrimEnd('\r', '\n');
             Token(new JsonObject { ["token"] = saved });
-            if (action == "chats")
+            string generation = TelegramSettingsReader.BotGeneration(saved);
+            if (action == "chat_generation")
             {
                 NotificationInput.Keys(body, "action", "user_id");
-                var updates = await bot.RequestAsync(saved, "getUpdates", new JsonObject { ["timeout"] = 0, ["limit"] = 100, ["allowed_updates"] = new JsonArray("message") }, config["proxy_url"]?.GetValue<string>() ?? "", ct);
-                if (updates is not JsonArray rows) throw NotificationException.Setup("telegram_setup_protocol");
+                return new JsonObject { ["generation"] = generation };
+            }
+            if (action == "chats")
+            {
+                NotificationInput.Keys(body, "action", "user_id", "generation", "observations");
+                if (NotificationInput.Text(body, "generation") != generation || body["observations"] is not JsonArray { Count: <=100 } rows)
+                    throw NotificationException.Setup("telegram_setup_conflict");
                 var found = new Dictionary<string, string>();
-                foreach (var update in rows.OfType<JsonObject>())
+                foreach (var row in rows)
                 {
-                    if (update["message"] is not JsonObject message || message["chat"] is not JsonObject chat || chat["type"]?.ToString() != "private" ||
-                        chat["id"] is not JsonValue id || !id.TryGetValue<long>(out long number) || number is <= 0 or >= 10000000000000000 ||
-                        (message["text"]?.ToString() ?? "").Split(' ')[0] != "/start") continue;
-                    found[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] = Name(chat);
+                    if (row is not JsonObject chat) throw new FormatException();
+                    NotificationInput.Keys(chat, "id", "name");
+                    long id = NotificationInput.Positive(chat, "id", 9999999999999999);
+                    string name = NotificationMessage.Line(NotificationInput.Text(chat, "name"), 128);
+                    if (name.Length == 0) throw new FormatException();
+                    found[id.ToString(System.Globalization.CultureInfo.InvariantCulture)] = name;
                 }
                 var choices = found.ToDictionary(p => Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).TrimEnd('=').Replace('+', '-').Replace('/', '_'), p => (p.Key, p.Value));
-                candidates[user] = new(time.GetUtcNow().AddMinutes(5), choices);
+                candidates[user] = new(time.GetUtcNow().AddMinutes(5), generation, choices);
                 return new JsonObject { ["chats"] = new JsonArray(choices.Select(p => (JsonNode)new JsonObject { ["choice"] = p.Key, ["name"] = p.Value.Value }).ToArray()) };
             }
             if (action == "bind")
             {
                 NotificationInput.Keys(body, "action", "user_id", "choice");
                 string choice = NotificationInput.Text(body, "choice");
-                if (!candidates.TryGetValue(user, out var pending) || time.GetUtcNow() >= pending.Expires || !pending.Choices.TryGetValue(choice, out var selected)) throw NotificationException.Setup("telegram_setup_failed");
+                if (!candidates.TryGetValue(user, out var pending) || pending.Generation != generation || time.GetUtcNow() >= pending.Expires || !pending.Choices.TryGetValue(choice, out var selected)) throw NotificationException.Setup("telegram_setup_failed");
                 config["recipients"]![key] = selected.Chat; config["names"]![key] = selected.Name;
                 WriteTelegram(config); candidates.Remove(user);
                 return new JsonObject { ["chat_name"] = selected.Name, ["secret_set"] = true };

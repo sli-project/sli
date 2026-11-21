@@ -27,15 +27,11 @@ internal sealed class NotificationMemoryFiles : INotificationSetupFiles
 internal sealed class NotificationBotStub : INotificationSetupBot
 {
     public List<string> Calls = new(); public string? Error;
-    public JsonArray Updates = JsonNode.Parse("""
-        [{"message":{"text":"/start","chat":{"id":123,"type":"private","first_name":"Synthetic"}}},
-         {"message":{"text":"hello","chat":{"id":234,"type":"private","first_name":"Unsolicited"}}},
-         {"message":{"text":"/start","chat":{"id":345,"type":"group","first_name":"Group"}}}]
-        """)!.AsArray();
     public Task<JsonNode> RequestAsync(string token, string method, JsonObject values, string proxy, CancellationToken ct)
     {
         Calls.Add(method); if (Error is not null) throw NotificationException.Setup(Error);
-        return Task.FromResult<JsonNode>(method == "getMe" ? JsonNode.Parse("{\"is_bot\":true,\"first_name\":\"Synthetic bot\"}")! : Updates.DeepClone());
+        if (method != "getMe") throw new InvalidOperationException();
+        return Task.FromResult(JsonNode.Parse("{\"is_bot\":true,\"first_name\":\"Synthetic bot\"}")!);
     }
 }
 internal sealed class NotificationSetupStub(NotificationSetupService service) : INotificationSetupClient
@@ -55,6 +51,9 @@ internal sealed class NotificationRecipientsStub : INotificationRecipientAccess
 }
 internal sealed class NotificationRepositoryStub : INotificationAdministrationRepository
 {
+    public JsonArray DiscoveredChats = new(new JsonObject { ["id"] = 123L, ["name"] = "Synthetic" });
+    public Task<JsonArray> DiscoveredTelegramChatsAsync(string generation, CancellationToken ct) =>
+        Task.FromResult(DiscoveredChats.DeepClone().AsArray());
     public const string SubscriptionId = "00000000-0000-0000-0000-000000000007";
     public const string JobId = "00000000-0000-0000-0000-000000000008";
     public readonly List<string> Operations = new();

@@ -1,4 +1,7 @@
 using System.Text.Json;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 namespace Sli.Server.Notifications;
 public sealed record TelegramOutcome(string Code,int RetryAfter=0);
 public static class TelegramTransport
@@ -30,10 +33,24 @@ public static class TelegramTransport
     }
 }
 
-public sealed record TelegramSettings(string BaseUrl,string Chat,string Token,string Proxy);
+public sealed record TelegramSettings(string BaseUrl,string Chat,string Token,string Proxy)
+{
+    public override string ToString() => nameof(TelegramSettings);
+}
+internal sealed record TelegramBotSettings(string BaseUrl, string Token, string Proxy, Dictionary<long, long> Recipients)
+{
+    public override string ToString() => nameof(TelegramBotSettings);
+}
 public static class TelegramSettingsReader
 {
     public static TelegramSettings Read(long userId,Func<string,string?> get,Func<string,byte[]> read)
+    {
+        var settings = ReadBot(get, read);
+        if (!settings.Recipients.TryGetValue(userId, out long chat)) throw new FormatException();
+        return new(settings.BaseUrl, chat.ToString(CultureInfo.InvariantCulture), settings.Token, settings.Proxy);
+    }
+
+    internal static TelegramBotSettings ReadBot(Func<string,string?> get,Func<string,byte[]> read)
     {
         var path=get("SLI_NOTIFICATION_TELEGRAM_CONFIG_FILE") ?? throw new FormatException();
         var raw=read(path);if(raw.Length>65536)throw new FormatException();
@@ -44,9 +61,19 @@ public static class TelegramSettingsReader
         string url=root.GetProperty("base_url").GetString() ?? throw new FormatException();
         if(url.Length is 0 or >1024 || url.Any(c=>c<33 || c==127) || !Uri.TryCreate(url,UriKind.Absolute,out var uri) || uri.Scheme!="https" || string.IsNullOrEmpty(uri.Host) || uri.UserInfo.Length>0 || uri.Query.Length>0 || uri.Fragment.Length>0)throw new FormatException();
         var recipients=root.GetProperty("recipients");
-        if(recipients.ValueKind!=JsonValueKind.Object || !recipients.TryGetProperty(userId.ToString(System.Globalization.CultureInfo.InvariantCulture),out var item) || item.ValueKind!=JsonValueKind.String)throw new FormatException();
-        string chat=item.GetString()!;
-        if(!System.Text.RegularExpressions.Regex.IsMatch(chat,@"\A-?[1-9][0-9]{0,15}\z",System.Text.RegularExpressions.RegexOptions.CultureInvariant))throw new FormatException();
+        if(recipients.ValueKind!=JsonValueKind.Object)throw new FormatException();
+        var bindings = new Dictionary<long, long>();
+        foreach (var entry in recipients.EnumerateObject())
+        {
+            if (!long.TryParse(entry.Name, NumberStyles.None, CultureInfo.InvariantCulture, out long userId) || userId <= 0 ||
+                entry.Name != userId.ToString(CultureInfo.InvariantCulture)) continue;
+            if (entry.Value.ValueKind == JsonValueKind.String &&
+                System.Text.RegularExpressions.Regex.IsMatch(entry.Value.GetString()!, @"\A-?[1-9][0-9]{0,15}\z",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+                bindings[userId] = long.Parse(entry.Value.GetString()!, CultureInfo.InvariantCulture);
+            else
+                bindings.Remove(userId);
+        }
         string proxy=get("SLI_DEPLOYMENT_MODE")=="native" ? get("SLI_NOTIFICATION_PROXY") ?? "" : root.TryGetProperty("proxy_url",out var pv) ? pv.GetString() ?? throw new FormatException() : "";
         ValidateProxy(proxy);
         if(!string.IsNullOrEmpty(get("SLI_NOTIFICATION_TELEGRAM_TOKEN")))throw new FormatException();
@@ -54,8 +81,10 @@ public static class TelegramSettingsReader
         var bytes=read(tokenPath);if(bytes.Length>65536)throw new FormatException();
         string token=new System.Text.UTF8Encoding(false,true).GetString(bytes).TrimEnd('\r','\n');
         if(!System.Text.RegularExpressions.Regex.IsMatch(token,@"\A[1-9][0-9]*:[A-Za-z0-9_-]+\z",System.Text.RegularExpressions.RegexOptions.CultureInvariant))throw new FormatException();
-        return new(url.TrimEnd('/'),chat,token,proxy);
+        return new(url.TrimEnd('/'),token,proxy,bindings);
     }
+    internal static string BotId(string token) => token[..token.IndexOf(':')];
+    internal static string BotGeneration(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     public static void ValidateProxy(string proxy)
     {
         if(proxy=="")return;

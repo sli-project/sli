@@ -48,7 +48,9 @@ public sealed class SmtpSender(ISmtpSessionFactory factory)
         try {
             var sender=MailboxAddress.Parse(settings.Sender);var recipient=MailboxAddress.Parse(settings.Recipient);
             message=new MimeMessage();message.From.Add(sender);message.To.Add(recipient);
-            message.Subject=job.Kind=="report_schedule"?"SLI: "+ReportScheduleDelivery.Title(job.ReportRun??throw new FormatException()):job.Kind=="test_problem"?"SLI: simulated test problem":"SLI: security problem"+(job.Reason=="pipeline_delay"?" (delayed by "+job.Delay+" min)":"");
+            message.Subject="SLI: "+(job.Kind=="report_schedule"
+                ? ReportScheduleDelivery.Title(job.ReportRun??throw new FormatException())
+                : NotificationMessage.Line(text.Split('\n', 2)[0], 560));
             message.MessageId=job.Id+"@notifications.sli.invalid";message.Date=DateTimeOffset.UtcNow;
             message.Body=new TextPart("plain"){Text=text};
         } catch(Exception e) when(e is ParseException or ArgumentException or FormatException) {
