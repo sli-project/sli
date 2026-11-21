@@ -59,6 +59,17 @@ internal sealed class InboxRetention(NpgsqlDataSource maintenance, LifecycleFile
             Guid[] clearIds = payloads.Select(r => Guid.Parse(LifecycleJson.Text(r, "packet_id"))).ToArray();
             result["payloads_cleared"] = (long)await Execute(db, tx,
                 "update public.sli_agent_packet_inbox set packet=null,event_rows=null where packet_id=any(@ids) and (packet is not null or event_rows is not null)", ct, ("ids", clearIds));
+            Guid[] streamIds = rows.Where(r => LifecycleJson.Text(r, "classification") == "stream_metadata")
+                .Select(r => Guid.Parse(LifecycleJson.Text(r, "packet_id"))).ToArray();
+            result["payloads_cleared"] = LifecycleJson.Number(result, "payloads_cleared") + await Execute(db, tx, """
+                with metadata as materialized (
+                  select packet_id, jsonb_build_object('header',jsonb_build_object('channel',collection_channel)) ||
+                    case when collection_read_error then '{"context":{"ad_dc":{"read_error":true}}}'::jsonb else '{}'::jsonb end as packet
+                  from public.sli_agent_packet_inbox where packet_id=any(@ids) and packet is not null
+                )
+                update public.sli_agent_packet_inbox i set packet=m.packet,event_rows='[]'::jsonb
+                from metadata m where i.packet_id=m.packet_id and (i.packet,i.event_rows) is distinct from (m.packet,'[]'::jsonb)
+                """, ct, ("ids", streamIds));
             Guid[] ids = eligible.Select(r => Guid.Parse(LifecycleJson.Text(r, "packet_id"))).ToArray();
             var deleted = await Rows(db, tx, "delete from public.sli_agent_packet_inbox where packet_id=any(@ids) returning packet_id", ct, ("ids", ids));
             if (!deleted.Select(r => Guid.Parse(LifecycleJson.Text(r, "packet_id"))).Order().SequenceEqual(ids.Order()))
@@ -88,10 +99,10 @@ internal sealed class InboxRetention(NpgsqlDataSource maintenance, LifecycleFile
 
     // Imported short events already carry their attested origin and evidence.
     // Do not expand event_rows or resolve legacy allocations on this path.
-    // AD/DC stream receipts still cascade with the inbox. Keep the newest
-    // import and its channel until a committed import supersedes it or it ages
-    // out. Previously cleared bodies can only be aged out: their generated
-    // channel may have fallen back to the transport channel.
+    // Stream receipts cascade with the inbox. Keep the latest committed import
+    // per collection health key until it ages out. Its small packet document
+    // preserves the native channel and read-error flag in the generated columns
+    // used by this role. A null packet would fall back to the transport channel.
     internal const string ShortPacketSql = """
         with packets as materialized (
           select i.packet_id,i.received_at,i.imported_at,i.module_disabled_at,i.envelope,i.event_rows,
@@ -123,7 +134,7 @@ internal sealed class InboxRetention(NpgsqlDataSource maintenance, LifecycleFile
               where newer.agent_id=r.agent_id and newer.module_id=r.module_id and newer.received_at>=r.received_at
                 and (newer.received_at,newer.sequence)>(r.received_at,r.sequence)
                 and (next_packet.received_at>=@cutoff or next_packet.imported_at>=@cutoff)
-                and next_packet.imported_at>=i.imported_at and next_packet.module_disabled_at is null
+                and next_packet.imported_at is not null and next_packet.module_disabled_at is null
                 and next_packet.packet is not null
                 and next_packet.collection_revision is not distinct from i.collection_revision
                 and next_packet.collection_channel is not distinct from i.collection_channel

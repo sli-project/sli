@@ -22,7 +22,7 @@ public sealed class InboxPayloadRetentionPostgresTests
         new NpgsqlConnectionStringBuilder(fixture.Dsn("sli_storage_lifecycle_delete_login")) {
             Options = "-c role=adlog_storage_lifecycle_delete", CommandTimeout = 0 }.ConnectionString);
 
-    static async Task Seed(NpgsqlConnection db, int count, int days, CancellationToken ct, string module = "sli.windows.ad-dc")
+    static async Task Seed(NpgsqlConnection db, int count, int days, CancellationToken ct, string module = "sli.windows.ad-dc", bool singleStream = false)
     {
         await using var command = new NpgsqlCommand("""
             insert into sli_agents(id,host_id,key_fingerprint,status)
@@ -30,9 +30,9 @@ public sealed class InboxPayloadRetentionPostgresTests
               ('10000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,repeat('a',64),
               case n when 2 then 'disabled' when 3 then 'replaced' else 'active' end from generate_series(1,3) n;
             insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt,received_at)
-            select ('10000000-0000-4000-8000-'||lpad((case when n in (2,3) then n else 1 end)::text,12,'0'))::uuid,
+            select ('10000000-0000-4000-8000-'||lpad((case when not @single_stream and n in (2,3) then n else 1 end)::text,12,'0'))::uuid,
               @module,n,('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,repeat('a',64),
-              jsonb_build_object('agent_id','10000000-0000-4000-8000-'||lpad((case when n in (2,3) then n else 1 end)::text,12,'0'),
+              jsonb_build_object('agent_id','10000000-0000-4000-8000-'||lpad((case when not @single_stream and n in (2,3) then n else 1 end)::text,12,'0'),
                 'module_id',@module,'policy_revision','1','channel','transport','source_instance_id','synthetic','generation','1'),
               '{"status":"committed"}',now()-make_interval(days=>@days)+n*interval '1 microsecond'
             from generate_series(1,@count) n;
@@ -43,6 +43,7 @@ public sealed class InboxPayloadRetentionPostgresTests
             """, db) { CommandTimeout = 0 };
         command.Parameters.AddWithValue("days", days); command.Parameters.AddWithValue("count", count);
         command.Parameters.AddWithValue("module", module);
+        command.Parameters.AddWithValue("single_stream", singleStream);
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -111,6 +112,70 @@ public sealed class InboxPayloadRetentionPostgresTests
             Assert.Equal("duplicate", duplicate["status"]?.ToString());
             await tx.CommitAsync(ct);
         }
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
+    public async Task One_cycle_compacts_fifteen_thousand_imports_from_one_dc_stream()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
+        await using var db = await fixture.Pg.OpenAsync(ct);
+        const int packets = 15000;
+        await Seed(db, packets, 1, ct, singleStream: true);
+        await PostCollectionPostgres.Sql(db, $"""
+            update sli_agent_packet_inbox
+               set event_rows=jsonb_build_array(jsonb_build_object('record_id',1,'synthetic',repeat('x',40000)));
+            update sli_agent_packet_inbox set imported_at=now() where packet_id='{Packet(1)}';
+            """, ct);
+
+        async Task<(long Rows, long Bytes, long Quota)> Measure()
+        {
+            await using var command = new NpgsqlCommand("""
+                select count(*),sum(octet_length(packet::text)+octet_length(event_rows::text))::bigint,
+                       sum(quota_payload_bytes)::bigint
+                from sli_agent_packet_inbox where imported_at is not null
+                """, db);
+            await using var row = await command.ExecuteReaderAsync(ct);
+            Assert.True(await row.ReadAsync(ct));
+            return (row.GetInt64(0), row.GetInt64(1), row.GetInt64(2));
+        }
+
+        var before = await Measure();
+        using var state = new StorageLifecycleTests.State();
+        await using var runtime = new LifecycleRuntime(key => key switch {
+            "ADLOG_PG_DSN" => fixture.Dsn("sli_storage_lifecycle_login"),
+            "ADLOG_STORAGE_LIFECYCLE_DELETE_DSN" => fixture.Dsn("sli_storage_lifecycle_delete_login"),
+            _ => null
+        }, state.Files);
+        Assert.True(await runtime.TryLockAsync(StorageLifecycleWorker.LockName, ct));
+        var worker = new StorageLifecycleWorker(runtime, state.Files);
+        var cycle = await worker.CycleAsync(new(), ct, inboxOnly: true);
+        var after = await Measure();
+        TestContext.Current.TestOutputHelper!.WriteLine($"Imported inbox before {before}, after {after} (rows, body bytes, quota bytes)");
+        Assert.Equal(packets, before.Rows);
+        Assert.True(before.Bytes >= 600_000_000);
+        Assert.Equal(1, after.Rows);
+        Assert.InRange(after.Bytes, 1, 128);
+        Assert.InRange(after.Quota, after.Bytes, 2048);
+        Assert.Equal(packets - 1, LifecycleJson.Number(cycle, "inbox_rows_deleted"));
+        Assert.Equal(1, LifecycleJson.Number(cycle, "inbox_payloads_cleared"));
+        Assert.Equal(1, await Count(db, $"packet_id='{Packet(packets)}' and collection_channel='Security' and collection_read_error", ct));
+
+        var repeated = await worker.CycleAsync(new(), ct, inboxOnly: true);
+        Assert.Equal(0, LifecycleJson.Number(repeated, "inbox_payloads_cleared"));
+        // A newer committed import supersedes a previously compacted row.
+        await PostCollectionPostgres.Sql(db, $"""
+            insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt,received_at)
+            select agent_id,module_id,sequence+1,'{Packet(packets+1)}',envelope_sha256,envelope,receipt,now()
+            from sli_agent_receipts where packet_id='{Packet(packets)}';
+            insert into sli_agent_packet_inbox(packet_id,envelope,packet,event_rows,received_at,imported_at)
+            select packet_id,envelope,jsonb_build_object('header',jsonb_build_object('channel','Security')),'[]',received_at,received_at
+            from sli_agent_receipts where packet_id='{Packet(packets+1)}';
+            """, ct);
+        var next = await worker.CycleAsync(new(), ct, inboxOnly: true);
+        Assert.Equal(1, LifecycleJson.Number(next, "inbox_rows_deleted"));
+        Assert.Equal(1, await Count(db, $"packet_id='{Packet(packets+1)}'", ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
