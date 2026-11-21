@@ -248,6 +248,27 @@ def fake_databases(monkeypatch, root, volume_layout):
             return SimpleNamespace(fetchone=lambda: (False,))
         return SimpleNamespace(fetchone=lambda: (3,))
 
+    def pg_tool(command, _, *, watch=None):
+        calls.append(("postgres", command))
+        if command[0] != "pg_restore":
+            return
+        if "--list" in command:
+            Path(command[command.index("--file") + 1]).write_text(
+                "1; 1262 123 DATABASE - sli postgres\n"
+                "2; 0 0 ACL - DATABASE sli postgres\n",
+                encoding="utf-8",
+            )
+        elif "--use-list" in command:
+            selected = Path(command[command.index("--use-list") + 1])
+            assert selected.read_text(encoding="utf-8").splitlines() == ["2; 0 0 ACL - DATABASE sli postgres"]
+            Path(command[command.index("--file") + 1]).write_text(
+                "-- Name: DATABASE sli; Type: ACL; Schema: -; Owner: postgres\n"
+                "--\n\nREVOKE ALL ON DATABASE sli FROM PUBLIC;\n"
+                "GRANT CONNECT ON DATABASE sli TO adlog_user;\n\n"
+                "--\n-- PostgreSQL database dump complete\n",
+                encoding="utf-8",
+            )
+
     connection = SimpleNamespace(execute=execute)
     monkeypatch.setattr(backup, "dump_postgres", dump)
     monkeypatch.setattr(backup.ClickHouse, "query", query)
@@ -255,7 +276,7 @@ def fake_databases(monkeypatch, root, volume_layout):
     monkeypatch.setattr(backup, "read_secret", lambda _: "synthetic-only")
     monkeypatch.setattr(backup, "pg_connect", lambda *a, **kw: nullcontext(connection))
     monkeypatch.setattr(backup, "row_counts", lambda _: counts)
-    monkeypatch.setattr(backup, "pg_tool", lambda command, _, *, watch=None: calls.append(("postgres", command)))
+    monkeypatch.setattr(backup, "pg_tool", pg_tool)
     monkeypatch.setattr(migrate, "run_sql", lambda *a, **kw: None)
     from deploy.linux import backup_policy
     from tests.unit.test_linux_backup_capacity import GIB, point
@@ -295,7 +316,10 @@ def test_legacy_backup_reads_in_native_mode_without_manifest_rewrite(native, tmp
     current_components = ("postgres", "files") if with_files else ("postgres",)
     restore.restore_backup(source, current_components, files_root=destination if with_files else None)
     assert {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()} == before
-    assert any(name == "postgres" and isinstance(q, list) and q[0] == "pg_restore" for name, q in calls)
+    assert any(
+        name == "postgres" and isinstance(command, list) and command[0] == "pg_restore" and "--dbname=sli" in command
+        for name, command in calls
+    )
     assert {name for name, _ in calls} == {"postgres"}
     if with_files:
         assert (destination / "synthetic.bin").read_bytes() == b"synthetic-files"

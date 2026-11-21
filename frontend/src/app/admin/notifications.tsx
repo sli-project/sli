@@ -19,7 +19,7 @@ const processingLabel = (row: NotificationDelivery) => row.delivery_reason === "
   ? t("notifications.delivery.delayed", { minutes: row.delay_minutes! })
   : row.delivery_reason && ["live", "historical_replay", "history_import"].includes(row.delivery_reason)
     ? t(`reports.v2.notifications.deliveries.columns.delivery_reason.labels.${row.delivery_reason}` as MessageKey) : "—";
-const actionError = (error: Error | null) => error instanceof ApiResponseError && error.status === 409 ? t("notify.conflict") : error instanceof ApiResponseError && error.status === 403 ? t("notify.denied") : t("notify.failed");
+const ruleSaveError = (error: Error | null) => error instanceof ApiResponseError && error.status === 409 ? t("notify.conflict") : error instanceof ApiResponseError && error.status === 403 ? t("notify.denied") : t("notify.ruleSaveFailed");
 
 /** The API, rather than menu visibility, enforces both report grants. */
 export function NotificationsPage() {
@@ -69,7 +69,7 @@ export function NotificationsPage() {
     { key: "channel", label: t("notify.channel"), render: (item) => <Button variant="ghost" onClick={() => setEditing(item.kind)}>{kindLabel(item.kind)}</Button> },
     { key: "state", label: t("notify.state"), render: channelState },
     { key: "attempt", label: t("notify.lastAttempt"), mobile: false, render: (item) => item.last_attempt_at ? `${stamp(item.last_attempt_at)}, ${resultLabel(item.last_result_code)}` : "—" },
-    { key: "last", label: t("notify.lastDelivery"), mobile: false, render: (item) => item.last_accepted_at ? stamp(item.last_accepted_at) : t("notify.unconfirmed") },
+    { key: "last", label: t("notify.lastDelivery"), mobile: false, render: (item) => item.last_accepted_at ? stamp(item.last_accepted_at) : "—" },
     { key: "actions", label: t("notify.actions"), mobile: false, render: (item) => <div className="notify-channel-actions">
       <Button onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.edit")}</Button>
       <Button disabled={!data?.can_configure} onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.test")}</Button>
@@ -78,7 +78,10 @@ export function NotificationsPage() {
   return <section className="sli-ds-report">
     <PageHeader title={t("notify.title")} crumbs={[{ label: t("notify.management") }, { label: t("notify.title") }]}
       actions={tab === "rules" ? <Button variant="primary" disabled={!data?.can_configure} onClick={() => setBinding("new")}>{t("notify.addRule")}</Button> : undefined}/>
-    {query.isPending ? <StateView state="loading"/> : query.isError ? <StateView state={query.error instanceof ApiResponseError && query.error.status === 403 ? "denied" : "unavailable"} detail={actionError(query.error)} onRetry={() => void query.refetch()}/> : data ? <>
+    {query.isPending ? <StateView state="loading"/> : query.isError ? <div role="alert">
+      {t(query.error instanceof ApiResponseError && query.error.status === 403 ? "notify.denied" : "notify.failed")}{" "}
+      <Button disabled={query.isFetching} onClick={refresh}>{t("state.retry")}</Button>
+    </div> : data ? <>
       <Tabs items={["channels", "rules", "journal"].map((key) => ({ key, label: t(`notify.${key}` as MessageKey) }))} active={tab} onChange={setTab}>
         <TabList label={t("notify.title")}/><TabPanel>
           {tab === "channels" ? <div className="notify-channels"><DataTable columns={columns} rows={data.channels} rowKey={(item) => item.kind} onRowClick={(item) => setEditing(item.kind)} caption={t("notify.channels")}/></div>
@@ -146,7 +149,7 @@ function BindingEditor({ item, title, smtp, telegramDestination, canConfigure, o
         {item && !choices.some((row) => String(row.user_id) === recipient) && recipient ? <option value={recipient}>—</option> : null}
       </select></div>
     <label><input type="checkbox" checked={enabled} disabled={!canConfigure || mutation.isPending} onChange={(event) => setEnabled(event.target.checked)}/> {t("notify.enabled")}</label>
-    {mutation.isError ? <p role="alert">{actionError(mutation.error)}</p> : null}
+    {mutation.isError ? <p role="alert">{ruleSaveError(mutation.error)}</p> : null}
     {item ? <FactList facts={[{ label: t("notify.recipientId"), value: item.recipient_user_id }]}/> : null}
   </DetailDrawer>;
 }
