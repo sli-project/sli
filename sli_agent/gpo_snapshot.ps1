@@ -1,17 +1,28 @@
 #requires -Version 5.1
 # SPDX-License-Identifier: Apache-2.0
 # Service identity only. Policy is data on stdin; source XML never goes to disk.
+param($Policy, [string]$LocalDc, [string]$LocalSysvol)
+
+$captureStage = 'setup'
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.DirectoryServices
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-$policy = [Console]::In.ReadToEnd() | ConvertFrom-Json
-try {
-    if (-not (Get-Module -ListAvailable -Name GroupPolicy)) { throw 'missing' }
-    Import-Module GroupPolicy -ErrorAction Stop
-    if (-not (Get-Command Get-GPOReport, Get-GPPermission -ErrorAction Stop)) { throw 'missing' }
-} catch {
+$embedded = $null -ne $Policy
+if (-not $embedded) {
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+    $Policy = [Console]::In.ReadToEnd() | ConvertFrom-Json
+}
+function Import-GroupPolicyCommands {
+    $manifest = Join-Path $PSHOME 'Modules\GroupPolicy\GroupPolicy.psd1'
+    if (-not [IO.File]::Exists($manifest)) { return $false }
+    try {
+        Import-Module $manifest -ErrorAction Stop
+        return @(Get-Command Get-GPOReport, Get-GPPermission -ErrorAction Stop).Count -eq 2
+    } catch { return $false }
+}
+$groupPolicyAvailable = Import-GroupPolicyCommands
+if (-not $embedded -and -not $groupPolicyAvailable) {
     [Console]::Out.Write('{"error_code":"agent_gpo_group_policy_unavailable"}')
     exit 0
 }
@@ -21,7 +32,7 @@ $auth = [DirectoryServices.AuthenticationTypes]::Secure -bor
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $timeout = [TimeSpan]::FromSeconds([Math]::Min(30, [int]$policy.capture_seconds))
 $script:ObservedAt = (Get-Date).ToUniversalTime().ToString('o')
-$server = if (@($policy.dc).Count) { [string]$policy.dc[0] } else { [string]$policy.domain_dns }
+$server = if (@($policy.dc).Count) { [string]$policy.dc[0] } elseif ($LocalDc) { $LocalDc } else { [string]$policy.domain_dns }
 $domainDns = [string]$policy.domain_dns
 $overflow = $false
 $partial = $false
@@ -40,6 +51,7 @@ $errors = [Collections.Generic.List[object]]::new()
 function New-Entry([string]$Dn) {
     if ($server -notmatch '^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$') { throw 'agent_gpo_endpoint_invalid' }
     $entry = [DirectoryServices.DirectoryEntry]::new(('LDAP://' + $server + '/' + $Dn))
+    if ($server -ieq $LocalDc) { $auth = $auth -bor [DirectoryServices.AuthenticationTypes]::ServerBind }
     $entry.AuthenticationType = $auth
     return $entry
 }
@@ -136,12 +148,14 @@ function Get-ConfinedGptPath([string]$OriginalPath, [string]$PolicyGuid) {
     $hosts = '(?:' + $domainPattern + '|' + [regex]::Escape($server) + ')'
     $pattern = '^\\\\' + $hosts + '\\SYSVOL\\' + $domainPattern + '\\Policies\\\{' + [regex]::Escape($PolicyGuid) + '\}$'
     if ($OriginalPath -notmatch $pattern) { throw 'agent_gpo_sysvol_path_invalid' }
-    $root = '\\' + $server + '\SYSVOL\' + $domainDns + '\Policies\'
+    $share = if ($LocalSysvol -and $server -ieq $LocalDc) { $LocalSysvol.TrimEnd('\') } else { '\\' + $server + '\SYSVOL' }
+    $root = $share + '\' + $domainDns + '\Policies\'
     $path = $root + '{' + $PolicyGuid + '}\GPT.INI'
     if (-not [IO.Path]::GetFullPath($path).StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'agent_gpo_sysvol_path_invalid'
     }
-    # Refuse reparse points as well as lexical traversal; never enumerate SYSVOL.
+    # The domain entry under the SYSVOL share can be a Windows-managed junction.
+    # Refuse reparse points below it and never enumerate SYSVOL.
     foreach ($probe in @($root.TrimEnd('\'), ($root + '{' + $PolicyGuid + '}'), $path)) {
         if ([IO.File]::GetAttributes($probe) -band [IO.FileAttributes]::ReparsePoint) { throw 'agent_gpo_sysvol_path_invalid' }
     }
@@ -152,23 +166,27 @@ $rootStates = @{}
 foreach ($name in @('gpo_list','gpo_reports','gpc_directory','sysvol_gpt','links','permissions','wmi_filters')) {
     $rootStates[$name] = State 'not_evaluated' $name
 }
+$captureStage = 'ldap_root_dse'
+$root = New-Entry 'RootDSE'
 try {
-    $root = New-Entry 'RootDSE'
-    try {
-        $domainNc = [string]$root.Properties['defaultNamingContext'][0]
-        $configNc = [string]$root.Properties['configurationNamingContext'][0]
-        if (-not @($policy.dc).Count) { $server = [string]$root.Properties['dnsHostName'][0] }
-    } finally { $root.Dispose() }
-    $expectedNc = (@($domainDns.Split('.') | ForEach-Object { 'DC=' + $_ }) -join ',')
-    if ($domainNc -ine $expectedNc -or (@($policy.search_bases).Count -and
-        (@($policy.search_bases).Count -ne 1 -or $policy.search_bases[0] -ine $domainNc))) { throw 'agent_gpo_scope_mismatch' }
-    $domainRows = @(Search $domainNc '(objectClass=domainDNS)' @('objectsid','distinguishedname','name','gplink','gpoptions') $true)
-    if ($domainRows.Count -ne 1 -or $domainRows[0].objectsid -ne $policy.domain_sid) { throw 'agent_gpo_domain_mismatch' }
-} catch {
-    [Console]::Out.Write('{"error_code":"agent_gpo_capture_failed"}')
-    exit 0
+    $domainNc = [string]$root.Properties['defaultNamingContext'][0]
+    $configNc = [string]$root.Properties['configurationNamingContext'][0]
+    if (-not @($policy.dc).Count) { $server = [string]$root.Properties['dnsHostName'][0] }
+} finally { $root.Dispose() }
+$captureStage = 'ldap_domain'
+$expectedNc = (@($domainDns.Split('.') | ForEach-Object { 'DC=' + $_ }) -join ',')
+if ($domainNc -ine $expectedNc -or (@($policy.search_bases).Count -and
+    (@($policy.search_bases).Count -ne 1 -or $policy.search_bases[0] -ine $domainNc))) {
+    $captureStage = 'scope_mismatch'
+    throw 'agent_gpo_scope_mismatch'
+}
+$domainRows = @(Search $domainNc '(objectClass=domainDNS)' @('objectsid','distinguishedname','name','gplink','gpoptions') $true)
+if ($domainRows.Count -ne 1 -or $domainRows[0]['objectsid'] -ne $policy.domain_sid) {
+    $captureStage = 'domain_mismatch'
+    throw 'agent_gpo_domain_mismatch'
 }
 
+$captureStage = 'ldap_inventory'
 $gpcRows = @()
 try {
     $gpcRows = @(Search ('CN=Policies,CN=System,' + $domainNc) '(objectClass=groupPolicyContainer)' @(
@@ -177,6 +195,7 @@ try {
     $rootStates.gpo_list = State 'observed' 'LDAP groupPolicyContainer'
     $rootStates.gpc_directory = State 'observed' 'LDAP groupPolicyContainer'
 } catch {
+    if ($embedded) { throw }
     $rootStates.gpo_list = Failure 'gpc_directory' $_.Exception
     $rootStates.gpc_directory = $rootStates.gpo_list
 }
@@ -219,6 +238,7 @@ foreach ($gpc in $gpcRows) {
     }
     $reportFacts = $permissionFacts = $null
     try {
+        if (-not $groupPolicyAvailable) { throw [PlatformNotSupportedException]::new() }
         # Return XML in memory; the bounded helper that writes a raw temp XML is
         # deliberately not used. Python's capture deadline kills the whole tree.
         $xmlText = Get-GPOReport -Guid ([Guid]$guid) -Domain $domainDns -Server $server -ReportType Xml -ErrorAction Stop
@@ -241,7 +261,10 @@ foreach ($gpc in $gpcRows) {
         if ($reportStatus -ne 'observed') { $partial=$true }
         $reportsOk++
     } catch {
-        $sourceStates.report = Failure 'gpo_report' $_.Exception
+        $sourceStates.report = if ($groupPolicyAvailable) { Failure 'gpo_report' $_.Exception } else {
+            $partial = $true
+            State 'not_collected' 'Get-GPOReport XML'
+        }
         $row.computer.source_state = $row.user.source_state = $sourceStates.report
     } finally { $xmlText = $document = $null }
     if ($overflow) { break }
@@ -279,6 +302,7 @@ foreach ($gpc in $gpcRows) {
     } catch { $sourceStates.acl = Failure 'acl' $_.Exception }
     if ($overflow) { break }
     try {
+        if (-not $groupPolicyAvailable) { throw [PlatformNotSupportedException]::new() }
         $permissionFacts = ConvertFrom-SLIGpoPermissionObjects -PermissionObjects @(Get-GPPermission -Guid ([Guid]$guid) -All -Domain $domainDns -Server $server -ErrorAction Stop)
         foreach ($permission in @($permissionFacts.permissions)) {
             $permissionId = Stable-Id 'perm' ($id + '|' + $permission.trustee_sid + '|' + $permission.permission)
@@ -294,11 +318,15 @@ foreach ($gpc in $gpcRows) {
         }
         $sourceStates.permissions = State 'observed' 'Get-GPPermission -All'
         $permissionsOk++
-    } catch { $sourceStates.permissions = Failure 'permissions' $_.Exception }
+    } catch {
+        $sourceStates.permissions = if ($groupPolicyAvailable) { Failure 'permissions' $_.Exception } else {
+            State 'not_collected' 'Get-GPPermission -All'
+        }
+    }
     if ($overflow) { break }
     try {
         $path = Get-ConfinedGptPath ([string]$gpc['gpcfilesyspath']) $guid
-        $row.gpt.probe_path = Split-Path $path -Parent
+        $row.gpt.probe_path = '\\' + $server + '\SYSVOL\' + $domainDns + '\Policies\{' + $guid + '}'
         if ([IO.FileInfo]::new($path).Length -gt 65536) { throw 'agent_gpo_gpt_size_limit' }
         $ini = [IO.File]::ReadAllText($path)
         $match = [regex]::Match($ini, '(?im)^\s*Version\s*=\s*(\d+)\s*$')
@@ -329,7 +357,8 @@ foreach ($gpc in $gpcRows) {
     $byDn[([string]$gpc['distinguishedname']).ToLowerInvariant()]=$row
 }
 foreach ($pair in @(@('gpo_reports',$reportsOk),@('sysvol_gpt',$gptOk),@('permissions',$permissionsOk))) {
-    $rootStates[$pair[0]] = State $(if ($pair[1] -eq $gpos.Count) {'observed'} elseif ($pair[1] -gt 0) {'partial'} else {'failed'}) $pair[0]
+    $rootStates[$pair[0]] = State $(if (-not $groupPolicyAvailable -and $pair[0] -ne 'sysvol_gpt') {'not_collected'}
+        elseif ($pair[1] -eq $gpos.Count) {'observed'} elseif ($pair[1] -gt 0) {'partial'} else {'failed'}) $pair[0]
     $rootStates[$pair[0]].coverage = @{requested=$gpos.Count; successful=$pair[1]; failed=($gpos.Count-$pair[1])}
 }
 
@@ -410,6 +439,7 @@ try {
     foreach ($gpo in $gpos) { if ($gpo.wmi_filter_id) { $gpo.source_states.wmi_filter=$rootStates.wmi_filters } }
 }
 
+$captureStage = 'serialize'
 $snapshot=@{schema_version='sli.ad-gpo.snapshot/1.0'; collector_version='sli-agent/gpo-snapshot/1'; demo=$false;
     started_at=$script:ObservedAt; completed_at=(Get-Date).ToUniversalTime().ToString('o'); observed_at=$script:ObservedAt;
     collection_status=if ($partial -or $overflow) {'partial'} else {'complete'};
