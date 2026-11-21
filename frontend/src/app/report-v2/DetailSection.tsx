@@ -94,11 +94,9 @@ export function DetailSection({ definition, detail, row, baseParams }: {
   const RowComponent = detail.row_component ? ROW_COMPONENTS[detail.row_component] : undefined;
   const pick = RowComponent ? choose : undefined;
   const Actions = detail.actions ? ACTION_COMPONENTS[detail.actions] : undefined;
-  const problemEvidence = definition.key === "security.problems" && detail.kind === "sub";
+  const problemQueue = definition.key === "security.problems";
+  const problemEvidence = problemQueue && detail.kind === "sub";
   const total = problemEvidence ? latest?.filtered_count : first?.filtered_count;
-  const lowerBound = Math.max(latest?.coverage.evidence_total_lower_bound ?? 0, rows.length + (query.hasNextPage ? 1 : 0));
-  const missingSources = problemEvidence ? rows.filter((item) => item.storage_kind === "file_audit_snapshot"
-    ? item.availability === "unavailable" : item.event_db_id == null).length : 0;
   const hasNativeSnapshots = problemEvidence && rows.some((item) => item.storage_kind === "file_audit_snapshot");
   const columns = problemEvidence ? declaredColumns.map((column, index) => ({ ...column,
     label: index === 0 && hasNativeSnapshots ? detail.title : column.label,
@@ -106,7 +104,8 @@ export function DetailSection({ definition, detail, row, baseParams }: {
       ? index === 0 ? <button type="button" className="sli-ds-button" onClick={(event) => { event.stopPropagation(); choose(item); }}>{t("evidence.acl.snapshot")}</button> : EMPTY_VALUE
       : column.render ? column.render(item) : formatCell(column.value?.(item), column.kind, timeZone),
   })) : declaredColumns;
-  const emptyDetail = problemEvidence ? t("security.problems.evidence.empty") : t("reports.empty.detail", { detail: detail.title, report: definition.title });
+  const empty = problemEvidence ? <p role="status">{t("security.problems.evidence.empty")}</p>
+    : <ReportState state="empty" detail={t("reports.empty.detail", { detail: detail.title, report: definition.title })}/>;
 
   if (detail.access?.allowed === false || deniedError) return <section aria-label={detail.title} className="sli-ds-report__views">
     <h3 style={{ margin: 0 }}>{detail.title}</h3>
@@ -115,21 +114,19 @@ export function DetailSection({ definition, detail, row, baseParams }: {
 
   return <section aria-label={detail.title} className="sli-ds-report__views">
     <h3 style={{ margin: 0 }}>{detail.title}</h3>
-    {inlineRows ? (inlineRows.length ? <DataTable caption={detail.title} columns={columns} rows={inlineRows} rowKey={rowKey} onRowClick={pick} selectedKey={chosen ? rowKey(chosen) : null}/> : <ReportState state="empty" detail={emptyDetail}/>)
+    {inlineRows ? (inlineRows.length ? <DataTable caption={detail.title} columns={columns} rows={inlineRows} rowKey={rowKey} onRowClick={pick} selectedKey={chosen ? rowKey(chosen) : null}/> : empty)
       : query.isLoading ? <StateView state="loading"/>
-      : query.error && !rows.length ? <ReportState state="error" onRetry={() => void query.refetch()}/>
-      : first && first.state !== "ok" && (!rows.length || first.state === "denied" || first.state === "error" || first.state === "not_collected") ? <ReportState state={first.state} details={first.state_details} detail={first.state === "empty" ? emptyDetail : undefined}/>
-      : !rows.length ? <ReportState state="empty" detail={emptyDetail}/>
+      : query.error && !rows.length ? <ReportState state="error" subject={detail.title} onRetry={() => void query.refetch()}/>
+      : first && first.state !== "ok" && first.state !== "empty" && (!rows.length || first.state === "denied" || first.state === "error" || first.state === "not_collected") ? <ReportState state={first.state} subject={detail.title} details={problemQueue ? undefined : first.state_details} onRetry={() => void query.refetch()}/>
+      : !rows.length ? empty
       : <>
-        {first && first.state !== "ok" && first.state !== "empty" && !(problemEvidence && first.state === "partial" && first.coverage.evidence_missing_sources) ? <ReportState state={first.state} details={first.state_details} compact/> : null}
-        {problemEvidence && total == null ? <p className="sli-ds-note" aria-live="polite">{t("security.problems.evidence.lower_bound", { count: lowerBound })}</p> : null}
-        {missingSources ? <p className="sli-ds-note">{t("security.problems.evidence.partial", { count: missingSources })}</p> : null}
+        {!problemQueue && first && first.state !== "ok" && first.state !== "empty" ? <ReportState state={first.state} details={first.state_details} compact/> : null}
         <DataTable caption={detail.title} columns={columns} rows={rows} rowKey={rowKey} onRowClick={pick} selectedKey={chosen ? rowKey(chosen) : null}
           total={total ?? undefined} hasMore={Boolean(query.hasNextPage) && !query.isFetchNextPageError} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()}/>
-        {query.isFetchNextPageError ? <ReportState state="error" compact onRetry={() => void query.fetchNextPage()}/> : null}
+        {query.isFetchNextPageError ? <ReportState state="error" subject={detail.title} onRetry={() => void query.fetchNextPage()}/> : null}
       </>}
-    {RowComponent && chosen ? <div aria-label={t("reports.detail.selected_row_aria")}><RowComponent row={chosen} parent={row} params={new URLSearchParams(baseParams)}/></div> : RowComponent ? <p className="sli-ds-header__subtitle">{t("reports.detail.select_row_hint")}</p> : null}
-    {first?.limitations.length ? <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul> : null}
+    {RowComponent && chosen ? <div aria-label={t("reports.detail.selected_row_aria")}><RowComponent row={chosen} parent={row} params={new URLSearchParams(baseParams)}/></div> : RowComponent && !problemQueue ? <p className="sli-ds-header__subtitle">{t("reports.detail.select_row_hint")}</p> : null}
+    {!problemQueue && first?.limitations.length ? <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul> : null}
     {Actions ? <Actions row={row}/> : null}
   </section>;
 }

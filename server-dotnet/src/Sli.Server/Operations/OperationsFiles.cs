@@ -166,6 +166,31 @@ public partial class OperationsFiles
         var disk = new DriveInfo(Path.GetPathRoot(Root)!);
         return (disk.AvailableFreeSpace, disk.TotalSize);
     }
+
+    internal string? PostgresMount(IEnumerable<string> mounts)
+    {
+        string directory = Setting("SLI_POSTGRES_DATA_DIRECTORY");
+        if (!Path.IsPathFullyQualified(directory)) return null;
+        string path = Path.TrimEndingDirectorySeparator(directory) + Path.DirectorySeparatorChar;
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return mounts.Where(mount => path.StartsWith(
+                mount.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
+            .OrderByDescending(mount => mount.Length).FirstOrDefault();
+    }
+
+    internal JsonObject? PostgresVolume()
+    {
+        try
+        {
+            string? mount = PostgresMount(DriveInfo.GetDrives().Select(drive => drive.Name));
+            if (mount is null) return null;
+            var disk = new DriveInfo(mount);
+            long free = disk.AvailableFreeSpace;
+            long used = disk.TotalSize - disk.TotalFreeSpace;
+            return new() { ["mount_point"] = mount, ["used_bytes"] = used, ["free_bytes"] = free };
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
     internal JsonObject RecentRawGrowth(DateTimeOffset now)
     {
         var scan = Scan("data/raw", 20000, TimeSpan.FromSeconds(2), now.AddHours(-24));

@@ -7,7 +7,8 @@ type IssuedCommand = Awaited<ReturnType<typeof api.createAgentConsoleToken>>;
 
 export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
   const [serverUrl, setServerUrl] = useState(window.location.origin);
-  const [addressLoaded, setAddressLoaded] = useState(false);
+  const [addressStatus, setAddressStatus] = useState<"loading" | "loaded" | "failed">("loading");
+  const [addressAttempt, setAddressAttempt] = useState(0);
   const [addressError, setAddressError] = useState<string>();
   const [hostLimit, setHostLimit] = useState("1");
   const [manageWindowsAudit, setManageWindowsAudit] = useState(true);
@@ -20,12 +21,12 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
     api.agentConsoleSettings().then((settings) => {
       if (!active) return;
       setServerUrl(settings.server_url ?? window.location.origin);
-      setAddressLoaded(true);
+      setAddressStatus("loaded");
     }, () => {
-      if (active) setAddressError(t("agents.console.serverUrlLoadError"));
+      if (active) setAddressStatus("failed");
     });
     return () => { active = false; };
-  }, []);
+  }, [addressAttempt]);
   useEffect(() => {
     if (!issued) return;
     const timer = window.setTimeout(() => {
@@ -36,7 +37,7 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
     return () => window.clearTimeout(timer);
   }, [issued]);
   async function issue() {
-    if (busy || issued || !addressLoaded) return;
+    if (busy || issued || addressStatus === "loading") return;
     setBusy(true);
     setError(undefined);
     setAddressError(undefined);
@@ -81,10 +82,18 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
             <div className="sli-ds-field">
               <label htmlFor="agent-console-server-url">{t("agents.console.serverUrl")}</label>
               <input id="agent-console-server-url" type="text" inputMode="url" autoComplete="off" spellCheck={false} maxLength={1024}
-                value={serverUrl} disabled={busy || !addressLoaded} aria-invalid={addressLoaded && !!addressError}
-                aria-describedby={addressError ? "agent-console-address-error" : undefined}
+                value={serverUrl} disabled={busy || addressStatus === "loading"} aria-invalid={!!addressError}
+                aria-describedby={addressError ? "agent-console-address-error" : addressStatus === "failed" ? "agent-console-address-load-error" : undefined}
                 onChange={(event) => { setServerUrl(event.target.value); setAddressError(undefined); }}/>
               {addressError && <span className="sli-ds-field__error" id="agent-console-address-error" role="alert">{addressError}</span>}
+              {addressStatus === "failed" && <div>
+                <span className="sli-ds-field__error" id="agent-console-address-load-error" role="alert">{t("agents.console.serverUrlLoadError")}</span>{" "}
+                <button className="sli-ds-button" type="button" disabled={busy} onClick={() => {
+                  setAddressError(undefined);
+                  setAddressStatus("loading");
+                  setAddressAttempt((attempt) => attempt + 1);
+                }}>{t("state.retry")}</button>
+              </div>}
             </div>
             <div className="sli-ds-filters__fields">
               <div className="sli-ds-field">
@@ -92,7 +101,7 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
                 <input id="agent-console-limit" type="number" min={1} max={100} value={hostLimit}
                   style={{ boxSizing: "border-box" }} disabled={busy} onChange={(event) => setHostLimit(event.target.value)}/>
               </div>
-              <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy || !addressLoaded}>{t("agents.console.issue")}</button>
+              <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy || addressStatus === "loading"}>{t("agents.console.issue")}</button>
             </div>
             <label><input type="checkbox" checked={manageWindowsAudit} disabled={busy}
               onChange={(event) => setManageWindowsAudit(event.target.checked)}/>{t("agents.console.manageWindowsAudit")}</label>

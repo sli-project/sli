@@ -53,9 +53,6 @@ function actorLabel(value: string | null | undefined): string {
   return actor || EMPTY_VALUE;
 }
 
-// Built-in L1 rules with registered plain wording (server presentation codes).
-const L1_WORDING = new Set(["privileged_group", "scheduled_task", "eventlog_cleared"]);
-
 export function problemPresentation(finding: SecurityProblemFinding) {
   const auditPolicyChanged = finding.presentation_code === "audit_policy_changed" || finding.title === "Audit policy was changed";
   const text = (field: string, fallback: string) => resolveMessage(finding.presentation_messages?.[field], fallback);
@@ -67,11 +64,10 @@ export function problemPresentation(finding: SecurityProblemFinding) {
     whyItMatters: text("why_text", auditPolicyChanged
       ? t("security.problems.presentation.audit_why")
       : finding.why_it_matters || t("security.problems.presentation.default_why")),
-    nextAction: text("next_text", auditPolicyChanged
+    nextAction: finding.presentation_messages?.next_text?.code === "security.problems.presentation.default_next" ? EMPTY_VALUE : text("next_text", auditPolicyChanged
       ? t("security.problems.presentation.audit_next")
-      : finding.recommended_action || t("security.problems.presentation.default_next")),
+      : finding.recommended_action?.trim() || EMPTY_VALUE).trim() || EMPTY_VALUE,
     actor: text("actor_text", actorLabel(finding.actor)),
-    limitations: auditPolicyChanged || L1_WORDING.has(String(finding.presentation_code)) ? [] : [text("wording_limitation", t("security.problems.presentation.audit_limitations"))],
   };
 }
 

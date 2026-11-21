@@ -1,0 +1,239 @@
+name: Debian beta kit install and upgrade
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_release:
+        description: 'Base beta release tag (beta-<12 hex>)'
+        required: true
+        type: string
+      candidate:
+        description: 'Candidate beta release tag or full commit SHA on main'
+        required: true
+        type: string
+  schedule:
+    - cron: '37 19 * * *' # 02:37 in Bangkok
+
+permissions:
+  contents: read
+
+jobs:
+  kits:
+    runs-on: ubuntu-latest
+    outputs:
+      base_release: ${{ steps.select.outputs.base_release }}
+      base_commit: ${{ steps.select.outputs.base_commit }}
+      candidate_release: ${{ steps.select.outputs.candidate_release }}
+      candidate_commit: ${{ steps.select.outputs.candidate_commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the beta kits
+        id: select
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_RELEASE: ${{ inputs.base_release }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          beta_tag='^beta-[0-9a-f]{12}$'
+          if [[ $GITHUB_EVENT_NAME == schedule ]]; then
+            CANDIDATE=$GITHUB_SHA
+            tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            while IFS= read -r tag; do
+              if [[ $tag =~ $beta_tag && $tag != "beta-${CANDIDATE:0:12}" ]]; then
+                BASE_RELEASE=$tag
+                break
+              fi
+            done <<< "$tags"
+            # A repository with only private drafts can still exercise the previous main commit.
+            BASE_RELEASE=${BASE_RELEASE:-$(git rev-parse "$GITHUB_SHA^1")}
+          elif [[ ! $BASE_RELEASE =~ $beta_tag ]]; then
+            echo 'base_release must be a beta release tag (beta-<12 hex>)' >&2
+            exit 1
+          fi
+
+          select_kit() {
+            local role=$1 ref=$2 commit release='' assets
+            if [[ $ref =~ $beta_tag ]]; then
+              commit=$(git rev-parse --verify --end-of-options "${ref#beta-}^{commit}")
+              [[ $commit == "${ref#beta-}"* ]]
+              # A read-only token may not see draft releases. Use the canonical build in that case.
+              if assets=$(gh release view "$ref" --json assets --jq '.assets[].name') &&
+                grep -Fxq sli-debian-beta-kit.tar.gz <<< "$assets" && grep -Fxq SHA256SUMS <<< "$assets"; then
+                release=$ref
+              fi
+            elif [[ $ref =~ ^[0-9a-f]{40}$ ]]; then
+              commit=$(git rev-parse --verify --end-of-options "$ref^{commit}")
+            else
+              echo "$role must be a beta release tag or a full commit SHA" >&2
+              return 1
+            fi
+            [[ $commit =~ ^[0-9a-f]{40}$ ]]
+            git merge-base --is-ancestor "$commit" "$GITHUB_SHA"
+            if [[ -z $release && $GITHUB_REF != refs/heads/main ]]; then
+              echo "The reusable beta kit build for $role requires a dispatch on main." >&2
+              return 1
+            fi
+            printf '%s_commit=%s\n%s_release=%s\n' "$role" "$commit" "$role" "$release" >> "$GITHUB_OUTPUT"
+            printf '%s %s (%s)\n' "$role" "$commit" "${release:-built by beta-kit-build.yml}"
+            selected_commit=$commit
+          }
+
+          select_kit base "$BASE_RELEASE"
+          base_commit=$selected_commit
+          select_kit candidate "$CANDIDATE"
+          if [[ $base_commit == "$selected_commit" ]]; then
+            echo 'The base and candidate must be different commits.' >&2
+            exit 1
+          fi
+
+  build-base:
+    needs: kits
+    if: needs.kits.outputs.base_release == ''
+    uses: ./.github/workflows/beta-kit-build.yml
+    with:
+      commit: ${{ needs.kits.outputs.base_commit }}
+      upload_artifact: true
+
+  build-candidate:
+    needs: kits
+    if: needs.kits.outputs.candidate_release == ''
+    uses: ./.github/workflows/beta-kit-build.yml
+    with:
+      commit: ${{ needs.kits.outputs.candidate_commit }}
+      upload_artifact: true
+
+  install:
+    name: Scenario ${{ matrix.scenario }}
+    needs: [kits, build-base, build-candidate]
+    if: ${{ !cancelled() && needs.kits.result == 'success' && (needs.build-candidate.result == 'success' || needs.build-candidate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [A, B, C]
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+      BASE_RELEASE: ${{ needs.kits.outputs.base_release }}
+      BASE_COMMIT: ${{ needs.kits.outputs.base_commit }}
+      CANDIDATE_RELEASE: ${{ needs.kits.outputs.candidate_release }}
+      CANDIDATE_COMMIT: ${{ needs.kits.outputs.candidate_commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: matrix.scenario == 'B' && needs.kits.outputs.base_release == ''
+        with:
+          name: sli-debian-beta-kit-${{ needs.kits.outputs.base_commit }}
+          path: ${{ runner.temp }}/sli-kits/base
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.kits.outputs.candidate_release == ''
+        with:
+          name: sli-debian-beta-kit-${{ needs.kits.outputs.candidate_commit }}
+          path: ${{ runner.temp }}/sli-kits/candidate
+      - name: Download release kits
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          download_kit() {
+            gh release download "$2" --dir "$RUNNER_TEMP/sli-kits/$1" \
+              --pattern sli-debian-beta-kit.tar.gz --pattern SHA256SUMS
+          }
+          if [[ $SCENARIO == B && -n $BASE_RELEASE ]]; then
+            download_kit base "$BASE_RELEASE"
+          fi
+          if [[ -n $CANDIDATE_RELEASE ]]; then
+            download_kit candidate "$CANDIDATE_RELEASE"
+          fi
+      - name: Verify and unpack the kits
+        shell: bash
+        run: |
+          set -euo pipefail
+          unpack_kit() (
+            cd "$RUNNER_TEMP/sli-kits/$1"
+            sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
+            # Check archive members and hashes before exposing any files to the container.
+            PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -c \
+              'import sys; from pathlib import Path; from deploy.linux.build_beta_kit import verify_offline_kit; verify_offline_kit(Path(sys.argv[1]), sys.argv[2])' \
+              sli-debian-beta-kit.tar.gz "$2"
+            tar --extract --gzip --file=sli-debian-beta-kit.tar.gz
+            rm -- sli-debian-beta-kit.tar.gz
+          )
+          if [[ $SCENARIO == B ]]; then
+            unpack_kit base "$BASE_COMMIT"
+          fi
+          unpack_kit candidate "$CANDIDATE_COMMIT"
+      - name: Boot clean Debian 13 with systemd
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t sli-install-e2e - <<'DOCKERFILE'
+          FROM debian:trixie
+          RUN apt-get update && \
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                systemd systemd-sysv dbus sudo curl ca-certificates iproute2 && \
+              rm -f /usr/sbin/policy-rc.d && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+
+          # SLI requires 20 GiB available on ext4 or XFS. The runner needs to store
+          # only the blocks used by this disposable filesystem, with no customer data.
+          mkdir "$RUNNER_TEMP/sli-disk"
+          truncate -s 32G "$RUNNER_TEMP/sli-disk.img"
+          mkfs.ext4 -q -F "$RUNNER_TEMP/sli-disk.img"
+          sudo mount -o loop "$RUNNER_TEMP/sli-disk.img" "$RUNNER_TEMP/sli-disk"
+          sudo mkdir "$RUNNER_TEMP/sli-disk/database"
+
+          docker run --detach --name sli-install-e2e --hostname sli-e2e \
+            --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock --shm-size=1g \
+            --mount "type=bind,source=$RUNNER_TEMP/sli-disk/database,target=/var/lib/sli-db" \
+            --mount "type=bind,source=$RUNNER_TEMP/sli-kits,target=/kits,readonly" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/install_e2e.sh,target=/install-e2e.sh,readonly" \
+            sli-install-e2e /sbin/init
+          until docker exec sli-install-e2e systemctl show --property=Version --value; do
+            [[ $(docker inspect --format '{{.State.Running}}' sli-install-e2e) == true ]]
+            sleep 1
+          done
+          docker exec sli-install-e2e systemctl is-system-running --wait
+      - name: Run scenario ${{ matrix.scenario }}
+        shell: bash
+        run: docker exec sli-install-e2e bash /install-e2e.sh "$SCENARIO"
+      - name: Collect failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          logs="$RUNNER_TEMP/sli-install-logs"
+          mkdir -p "$logs"
+          docker logs sli-install-e2e > "$logs/container.log" 2>&1 || true
+          docker exec sli-install-e2e systemctl --failed --no-pager > "$logs/failed-units.log" 2>&1 || true
+          docker exec sli-install-e2e journalctl -b --no-pager -u 'sli*' -u 'postgresql*' \
+            > "$logs/services.log" 2>&1 || true
+          docker exec sli-install-e2e journalctl -b --no-pager -t sli-setup \
+            > "$logs/setup.log" 2>&1 || true
+          docker exec sli-install-e2e bash /install-e2e.sh diagnostics \
+            > "$logs/upgrade.log" 2>&1 || true
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sli-install-e2e-${{ matrix.scenario }}-logs
+          path: ${{ runner.temp }}/sli-install-logs/
+          retention-days: 7
+      - name: Remove the container and unmount the test volume
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker inspect sli-install-e2e >/dev/null 2>&1; then
+            docker rm --force sli-install-e2e
+          fi
+          if mountpoint -q "$RUNNER_TEMP/sli-disk"; then
+            sudo umount "$RUNNER_TEMP/sli-disk"
+          fi

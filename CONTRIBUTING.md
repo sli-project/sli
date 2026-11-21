@@ -4,6 +4,8 @@ Make one scoped change, use synthetic fixtures and run the smallest sufficient
 checks. Keep the English and Russian installation guides in sync. Do not create
 navigation `README.md` files in subdirectories.
 
+Start with the architecture overview ([English](docs/ARCHITECTURE.md) · [Русский](docs/ARCHITECTURE.ru.md)).
+
 ## Dev container workflow
 
 Use [deploy/dev](deploy/dev/docker-compose.yml), separately from

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Configuration;
 using Sli.Server.Operations;
 using Xunit;
 
@@ -7,6 +8,21 @@ namespace Sli.Server.Tests.Operations;
 
 public sealed class OperationsStorageViewTests
 {
+    [Fact]
+    public void PostgresVolumeUsesTheMountContainingTheConfiguredDataDirectory()
+    {
+        string root = Path.GetPathRoot(Path.GetTempPath())!;
+        string volume = Path.Combine(root, "srv", "sli-db");
+        string data = Path.Combine(volume, "pgdata", "18", "main");
+        var files = new OperationsFiles(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Sli:ProjectRoot"] = Path.Combine(root, "opt", "sli"),
+            ["Sli:Operations:SLI_POSTGRES_DATA_DIRECTORY"] = data,
+        }).Build());
+        Assert.Equal(volume, files.PostgresMount([root, volume, Path.Combine(root, "srv", "sli")]));
+        Assert.Equal(root, files.PostgresMount([root, Path.Combine(root, "srv", "sli")]));
+    }
+
     [Theory] [InlineData(false)] [InlineData(true)]
     public async Task ReadinessReportsForeignArchiveRootWithoutExposingPaths(bool foreign)
     {
@@ -51,7 +67,11 @@ public sealed class OperationsStorageViewTests
     [Fact]
     public async Task StorageViewReadsOnlyReadyMeasurementsEvenWhenDatabaseIsDown()
     {
-        using var app = await OperationsEndpointTests.Start();
+        string root = Path.GetPathRoot(Path.GetTempPath())!;
+        using var app = await OperationsEndpointTests.Start(settings: new()
+        {
+            ["Sli:Operations:SLI_POSTGRES_DATA_DIRECTORY"] = root,
+        });
         var before = Stopwatch.StartNew();
         var full = await app.Client.GetAsync("/api/v1/operations/overview", TestContext.Current.CancellationToken);
         await OperationsEndpointTests.Body(full);
@@ -73,6 +93,7 @@ public sealed class OperationsStorageViewTests
         Assert.True(response.IsSuccessStatusCode);
         Assert.Equal("9 GB", (string?)body["storage"]?["footprint"]?["components"]?[0]?["human"]);
         Assert.Equal(1000000000000L, (long?)body["storage"]?["disk_pressure"]?["disk"]?["free_bytes"]);
+        Assert.Equal(root, (string?)body["storage"]?["postgres_volume"]?["mount_point"]);
         Assert.Equal("2026-11-13T10:00:00Z", (string?)body["storage"]?["footprint"]?["backups"]?["last_backup_at_utc"]);
         Assert.True((bool?)body["storage"]?["footprint"]?["backups"]?["same_disk_as_postgres"]);
         Assert.Null(body["collector_health"]); Assert.Null(body["workers"]); Assert.Null(body["plugin_pilots"]);

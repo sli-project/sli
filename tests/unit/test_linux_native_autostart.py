@@ -104,6 +104,13 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
         install.configure("test")
         assert calls.index("acceptance") < calls.index("recovery") < calls.index(enable)
         assert json.loads((state / "package-install.json").read_text())["status"] == "configured"
+        monkeypatch.setattr(install, "CURRENT", release)
+        monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())
+        calls.clear()
+        install.configure("test")
+        reset = ["systemctl", "reset-failed", "sli[-.]*"]
+        assert calls.index(["systemctl", "stop", "sli-ready.service"]) < calls.index(reset)
+        assert calls.index(reset) < calls.index(["systemctl", "start", "sli-ready.service"])
     else:
         with pytest.raises(RuntimeError, match="synthetic_health_failed"):
             install.configure("test")

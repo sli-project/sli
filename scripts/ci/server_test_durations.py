@@ -55,7 +55,7 @@ def run_durations(reports: list[Path], kind: str) -> Counter:
     return totals
 
 
-def build_durations(runs: list[Path], kind: str) -> dict[str, float]:
+def build_durations(runs: list[Path], kind: str, *, expected_shards: int | None = None) -> dict[str, float]:
     distinct_runs = {run.resolve() for run in runs}
     if len(distinct_runs) < 3 or len(distinct_runs) != len(runs):
         raise ValueError("Supply at least three distinct run directories")
@@ -66,6 +66,8 @@ def build_durations(runs: list[Path], kind: str) -> dict[str, float]:
         paths = {report.resolve() for report in reports}
         if not reports or len(paths) != len(reports) or seen_reports & paths:
             raise ValueError(f"Expected distinct XML reports in {run}")
+        if expected_shards is not None and len(reports) != expected_shards:
+            raise ValueError(f"Expected {expected_shards} shard reports in {run}, found {len(reports)}")
         seen_reports.update(paths)
         for name, seconds in run_durations(reports, kind).items():
             samples[name].append(seconds)
@@ -75,11 +77,12 @@ def build_durations(runs: list[Path], kind: str) -> dict[str, float]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kind", choices=("dotnet", "postgres"), default="dotnet")
+    parser.add_argument("--expected-shards", type=int, help="Require this many XML reports per run")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("runs", nargs="+", type=Path)
     args = parser.parse_args()
     try:
-        durations = build_durations(args.runs, args.kind)
+        durations = build_durations(args.runs, args.kind, expected_shards=args.expected_shards)
     except (OSError, ValueError, KeyError, ET.ParseError) as error:
         parser.error(str(error))
     args.output.write_text(json.dumps(durations, indent=2) + "\n", encoding="utf-8")

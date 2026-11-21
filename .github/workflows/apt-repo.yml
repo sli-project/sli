@@ -7,6 +7,10 @@ on:
         description: 'Full SHA on main (default is the dispatched main commit)'
         required: false
         type: string
+      initialize:
+        description: 'Allow publication when the APT repository has never been published'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,25 +38,31 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sli-debian-beta-kit-${{ needs.build.outputs.commit }}
           path: ${{ runner.temp }}/sli-beta-kit
-      - name: Extract SLI packages from the verified kit
+      - name: Extract packages and locate the selected commit's pins
         shell: bash
-        working-directory: ${{ runner.temp }}/sli-beta-kit
+        env:
+          KIT_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           set -euo pipefail
+          [[ "$KIT_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          git show "$KIT_COMMIT:deploy/linux/native_pins.json" > "$RUNNER_TEMP/sli-apt-pins.json"
+          cd "$RUNNER_TEMP/sli-beta-kit"
           sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
           mkdir "$RUNNER_TEMP/sli-apt-debs"
           tar -xzf sli-debian-beta-kit.tar.gz -C "$RUNNER_TEMP/sli-apt-debs" \
             --strip-components=1 --wildcards --no-wildcards-match-slash -- \
-            'sli-debian-beta-kit/sli_*.deb' 'sli-debian-beta-kit/sli-*.deb'
+            'sli-debian-beta-kit/*.deb'
       - name: Sign the APT repository
         shell: bash
         env:
           SLI_APT_SIGNING_KEY: ${{ secrets.SLI_APT_SIGNING_KEY }}
+          APT_INITIALIZE: ${{ inputs.initialize }}
         run: |
           set -euo pipefail
           if [[ -z "$SLI_APT_SIGNING_KEY" ]]; then
@@ -63,10 +73,15 @@ jobs:
           trap 'rm -f -- "$key"' EXIT
           printf '%s\n' "$SLI_APT_SIGNING_KEY" > "$key"
           unset SLI_APT_SIGNING_KEY
+          initialize=()
+          if [[ "$APT_INITIALIZE" == true ]]; then
+            initialize+=(--initialize)
+          fi
           printf 'SLI APT package sizes (bytes)\n\n```\n' >> "$GITHUB_STEP_SUMMARY"
           python3 -m deploy.linux.build_apt_repo \
             --debs "$RUNNER_TEMP/sli-apt-debs" \
-            --output "$RUNNER_TEMP/sli-apt-site" --signing-key "$key" | tee -a "$GITHUB_STEP_SUMMARY"
+            --pins "$RUNNER_TEMP/sli-apt-pins.json" --previous-url https://sli-project.github.io/sli \
+            --output "$RUNNER_TEMP/sli-apt-site" --signing-key "$key" "${initialize[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
           printf '```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Name the Pages artifact
         id: artifact

@@ -11,6 +11,13 @@ import { ru } from "./ru";
 import { en } from "./en";
 
 const catalogRoot = existsSync("config/i18n") ? "config/i18n" : "../config/i18n";
+const legacyProblemMessages = new Set([
+  "security.problems.presentation.watch_limitation",
+  "security.problems.presentation.decoy_limitation",
+  "security.problems.presentation.default_next",
+  "security.problems.presentation.audit_limitations",
+  "security.problems.presentation.wording_limitation",
+]);
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { cleanup(); setLocale("ru"); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -33,10 +40,14 @@ describe("API message resolution", () => {
     expect(row.title_text).toBe("other language");
     expect(resolvePresentation({ presentation_messages: { title: { code: "future.code", params: {}, text: "future wording" } }, title: "legacy" }).title).toBe("future wording");
   });
-  it.each(["ru", "en"] as const)("resolves the complete server vocabulary in %s", (locale) => {
+  it.each(["ru", "en"] as const)("localizes shared API messages and accepts legacy problem messages in %s", (locale) => {
     setLocale(locale);
     const server: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${locale}.json`, "utf8"));
     for (const [code, text] of Object.entries(server)) {
+      if (legacyProblemMessages.has(code)) {
+        expect(resolveMessage({ code, params: {}, text: "Legacy server wording" }), code).toBe("Legacy server wording");
+        continue;
+      }
       expect(Object.hasOwn(ru, code), `Missing ru translation: ${code}`).toBe(true);
       expect(Object.hasOwn(en, code), `Missing en translation: ${code}`).toBe(true);
       expect(resolveMessage({ code, params: { seconds: 3 }, text: "other locale" }), code).toBe(text.replace("{seconds}", "3"));
