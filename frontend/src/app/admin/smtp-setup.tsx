@@ -6,13 +6,13 @@ import { Button, DetailDrawer, FactList, useOverlays } from "../../design-system
 import { t, type MessageKey } from "../../i18n";
 import { ChannelTest, useNotificationTime } from "./channel-test";
 
-function errorKey(error: unknown): MessageKey {
+function saveErrorKey(error: unknown): MessageKey {
   if (error instanceof ApiResponseError) {
     if (error.status === 403) return "notify.denied";
     if (error.status === 409) return "notify.conflict";
     if (error.status === 400) return "notify.smtp.invalid";
   }
-  return "notify.smtp.failed";
+  return "notify.smtp.saveFailed";
 }
 
 export function smtpStatusValid(value: SmtpSetup | undefined): value is SmtpSetup {
@@ -51,7 +51,7 @@ export function SmtpSetupPanel(props: Props) {
   return <DetailDrawer open title={t("notify.smtp.title")} onClose={props.onClose}
     footer={<Button onClick={props.onClose}>{t("notify.cancel")}</Button>}>
     {props.canConfigure && status.isPending ? <p role="status">{t("notify.smtp.loading")}</p> : <>
-      <p role="alert">{t(!props.canConfigure ? "notify.denied" : status.isError ? errorKey(status.error) : "notify.smtp.failed")}</p>
+      <p role="alert">{t(!props.canConfigure || status.error instanceof ApiResponseError && status.error.status === 403 ? "notify.denied" : "notify.smtp.loadFailed")}</p>
       {props.canConfigure ? <Button disabled={status.isFetching} onClick={() => void status.refetch()}>{t("notify.smtp.retry")}</Button> : null}
     </>}
   </DetailDrawer>;
@@ -92,7 +92,7 @@ function SmtpSetupForm({ initial, canConfigure, subscriptions, onClose, onSave, 
     setPassword("");
     try { await api.smtpSetupSave(body); await onSave(); }
     catch (error) {
-      const key = errorKey(error);
+      const key = saveErrorKey(error);
       setFailure(key); setUncertain(true);
       // A failed response may follow a committed disable/revision change.
       // Never retry or test against the stale snapshot; reload before editing.
