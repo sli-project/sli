@@ -115,7 +115,53 @@ jobs:
           postgres=$(bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD")
           echo "pr-postgres=$postgres" >> "$GITHUB_OUTPUT"
 
+  server-build:
+    timeout-minutes: 20
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest') }}
+    defaults:
+      run:
+        working-directory: server-dotnet
+        shell: bash
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_INSTALL_DIR: ${{ github.workspace }}/artifacts/dotnet
+      TZ: UTC
+      SLI_SNAPSHOT_DECIMAL_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-decimal-vectors.json
+      SLI_SNAPSHOT_CHUNK_VECTORS: ${{ github.workspace }}/server-dotnet/tests/Sli.Server.Tests/Agents/snapshot-chunk-vectors.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: server-dotnet/global.json
+      - name: Locked restore
+        run: dotnet restore tests/Sli.Server.Tests/Sli.Server.Tests.csproj --locked-mode --disable-build-servers
+      - name: Build Release
+        run: dotnet build tests/Sli.Server.Tests/Sli.Server.Tests.csproj --configuration Release --no-restore --disable-build-servers
+      - name: Discover tests and package the Linux build
+        run: |
+          bundle="$RUNNER_TEMP/server-dotnet-build"
+          mkdir -p "$bundle"
+          dotnet run --project tests/Sli.Server.Tests/Sli.Server.Tests.csproj --configuration Release --no-build -- \
+            -list full/json -noColor -preEnumerateTheories > "$bundle/test-cases.json"
+          # CallerFilePath and the ASP.NET test manifest refer to the checkout used at build time.
+          pwd -P > "$bundle/source-directory"
+          # Keep the executable bits on the apphost and other runtime files.
+          tar -cf "$bundle/test-binaries.tar" tests/Sli.Server.Tests/bin/Release
+      - name: Upload the Linux test build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: server-dotnet-linux-build
+          path: ${{ runner.temp }}/server-dotnet-build/
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
   source-vectors:
+    needs: server-build
     timeout-minutes: 20
     name: Source vectors (${{ matrix.os }})
     runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || (matrix.os == 'windows-latest' && (vars.SLI_TESTS_RUNNER || 'windows-latest') || (vars.SLI_LINUX_RUNNER || 'ubuntu-latest')) }}
@@ -143,15 +189,29 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.14"
-      - name: Locked restore
+      - name: Download the Linux test build
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: server-dotnet-linux-build
+          path: ${{ runner.temp }}/server-dotnet-build
+      - name: Verify the Linux checkout path and unpack the test binaries
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          bundle="$RUNNER_TEMP/server-dotnet-build"
+          diff -u "$bundle/source-directory" <(pwd -P)
+          tar -xf "$bundle/test-binaries.tar"
+      - name: Locked restore for Windows vectors
+        if: matrix.os == 'windows-latest'
         run: dotnet restore tests/Sli.Server.Tests/Sli.Server.Tests.csproj --locked-mode
-      - name: Build
-        run: dotnet build tests/Sli.Server.Tests/Sli.Server.Tests.csproj --no-restore
+      - name: Build Windows vectors
+        if: matrix.os == 'windows-latest'
+        run: dotnet build tests/Sli.Server.Tests/Sli.Server.Tests.csproj --configuration Release --no-restore
       # These existing tests hash the raw LF fixture bytes before validating Python source scenarios.
       # Keep the checkout bytes intact: normalization here would hide a Windows/Linux regression.
       - name: Source vector byte identity and parity
         run: >-
-          dotnet run --project tests/Sli.Server.Tests/Sli.Server.Tests.csproj --no-build --
+          dotnet run --project tests/Sli.Server.Tests/Sli.Server.Tests.csproj --configuration Release --no-build --
           -class Sli.Server.Tests.Agents.AgentFileAuditValidatorTests
           -class Sli.Server.Tests.Agents.AgentNpsValidatorTests
           -class Sli.Server.Tests.Agents.AgentWorkstationValidatorTests
@@ -197,8 +257,8 @@ jobs:
           test "$SOURCE_VECTORS_RESULT" = success
 
   server-tests:
-    needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result == 'success') }}
+    needs: [changes, server-build]
+    if: ${{ !cancelled() && needs.server-build.result == 'success' && (github.event_name != 'pull_request' || needs.changes.result == 'success') }}
     # Keep the existing ceiling for the full nightly suite. PR latency is
     # measured through the required check, including setup and runner wait.
     timeout-minutes: 90
@@ -238,11 +298,19 @@ jobs:
         if: matrix.shard == 1
         working-directory: .
         run: python -m pytest -q tests/tooling/test_server_dotnet_shard.py
-      - name: Locked restore
+      - name: Locked restore for the nested MTP CLI tests
         run: dotnet restore tests/Sli.Server.Tests/Sli.Server.Tests.csproj --locked-mode --disable-build-servers
-      - name: Build
-        # Keep the compiler service out of the test job's 2 GiB memory budget.
-        run: dotnet build tests/Sli.Server.Tests/Sli.Server.Tests.csproj --no-restore --disable-build-servers
+      - name: Download the Linux test build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: server-dotnet-linux-build
+          path: ${{ runner.temp }}/server-dotnet-build
+      - name: Verify the Linux checkout path and unpack the test binaries
+        shell: bash
+        run: |
+          bundle="$RUNNER_TEMP/server-dotnet-build"
+          diff -u "$bundle/source-directory" <(pwd -P)
+          tar -xf "$bundle/test-binaries.tar"
       - name: PostgreSQL 18 for tests on the real schema
         # The baseline uses settings newer than the image's default server.
         run: |
@@ -276,7 +344,8 @@ jobs:
               covered+=(--covered-by pr-postgres)
             fi
           fi
-          python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" --risk-areas "$RISK_AREAS" "${covered[@]}"
+          python ../scripts/ci/server_dotnet_shard.py "$SHARD" "$SHARD_COUNT" --profile "$PROFILE" --risk-areas "$RISK_AREAS" \
+            --configuration Release --discovery "$RUNNER_TEMP/server-dotnet-build/test-cases.json" "${covered[@]}"
       - name: Preserve per-case test results
         if: always()
         # A full artifact quota must not turn passed tests red.
