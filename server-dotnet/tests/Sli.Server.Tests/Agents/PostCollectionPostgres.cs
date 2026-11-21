@@ -222,6 +222,7 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
             .Replace("check(slot_start_utc=date_trunc('day',slot_start_utc)\n        or slot_start_utc=date_trunc('day',slot_start_utc)+interval '12 hours'),", "")
             .Replace("check(slot_start_utc=date_trunc('day',slot_start_utc)\r\n        or slot_start_utc=date_trunc('day',slot_start_utc)+interval '12 hours'),", "");
         await Sql(db, manifests, ct);
+        await Sql(db, "alter table ad_snapshot_manifests add column schedule_timezone text, add column scheduled_local_at timestamp", ct);
         foreach (string name in new[] { "ad_snapshot_manifest_sources", "ad_snapshot_projection_receipts" }) await Sql(db, Table("121_ad_snapshot_manifest_foundation.sql", name), ct);
         await Sql(db, Table("129_ad_snapshot_projection_retention.sql", "ad_snapshot_projection_outputs"), ct);
         await Sql(db, Table("116_gpo_report_v2_reference.sql", "gpo_report_v2_source_snapshots"), ct);

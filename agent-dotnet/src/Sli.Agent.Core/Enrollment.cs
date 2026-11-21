@@ -10,7 +10,7 @@ namespace Sli.Agent.Core;
 
 /// <summary>Enrollment and renewal use the existing server contract and the same key as the durable spool.</summary>
 public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport transport, TimeProvider clock,
-    Func<string?>? readProductType = null)
+    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string Sid)?>? readDomain = null)
 {
     private static string? ReadProductType()
     {
@@ -30,8 +30,15 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         if (!Regex.IsMatch(token, "^[A-Za-z0-9_-]{43}$")) throw new AgentException("agent_token_invalid");
         var request = new JsonObject { ["token"] = token, ["csr_pem"] = store.CreateCsrPem(), ["reported_hostname"] = Environment.MachineName };
         request["agent_version"]=typeof(Enrollment).Assembly.GetName().Version!.ToString(3);
-        // A local reader hint, never an AD scope or an authentication claim.
-        request["machine_role"] = (readProductType ?? ReadProductType)() == "LanmanNT" ? "domain_controller" : "workstation";
+        // Local discovery is a registration hint. The server owns scope authorization.
+        bool isDc = (readProductType ?? ReadProductType)() == "LanmanNT";
+        request["machine_role"] = isDc ? "domain_controller" : "workstation";
+        if (isDc && (readDomain is not null ? readDomain() : OperatingSystem.IsWindows() ? EnrollmentDomain.Read() : null) is { } domain)
+        {
+            request["domain_dns"] = domain.Dns;
+            request["forest_dns"] = domain.Forest;
+            request["domain_sid"] = domain.Sid;
+        }
         if (instanceName is not null) request["instance_name"] = instanceName;
         return store.Accept(await transport.PostAsync("/api/v1/agent/enroll", request, cancellationToken).ConfigureAwait(false), clock.GetUtcNow());
     }
