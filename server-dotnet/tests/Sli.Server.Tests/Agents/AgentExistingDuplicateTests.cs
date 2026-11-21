@@ -16,18 +16,17 @@ public sealed class AgentExistingDuplicateTests
     [Fact]
     public void Unbound_diagnostics_are_limited_per_agent_for_ten_minutes()
     {
-        using var provider = new ServiceCollection().BuildServiceProvider();
         var logger = new ReconciliationLogger();
         var clock = new ReconciliationClock();
-        using var worker = new AgentRegistrationReconciliation(provider.GetRequiredService<IServiceScopeFactory>(), logger, clock: clock);
+        var diagnostics = new AgentDcSourceDiagnostics(logger, clock);
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
-        worker.LogUnbound(first, "missing_domain");
+        diagnostics.LogUnbound(first, "missing_domain");
         clock.Seconds = 599;
-        worker.LogUnbound(first, "missing_role");
-        worker.LogUnbound(second, "no_server");
+        diagnostics.LogUnbound(first, "missing_role");
+        diagnostics.LogUnbound(second, "no_server");
         clock.Seconds = 600;
-        worker.LogUnbound(first, "missing_role");
+        diagnostics.LogUnbound(first, "missing_role");
         Assert.Equal(new[] {
             $"agent_dc_source_unbound agent_id={first} reason=missing_domain",
             $"agent_dc_source_unbound agent_id={second} reason=no_server",

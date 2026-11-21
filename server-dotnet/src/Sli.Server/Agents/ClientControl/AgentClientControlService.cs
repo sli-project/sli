@@ -7,7 +7,7 @@ using Sli.Server.Agents.Registry;
 namespace Sli.Server.Agents.ClientControl;
 
 public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock,IConfiguration? configuration = null,
-    AgentRegistrationReconciliation? reconciliation = null)
+    AgentDcSourceDiagnostics? diagnostics = null)
 {
     // Authentication already locked the agent then certificate in this transaction.
     private static async Task<JsonObject> ReadAsync(NpgsqlConnection db,NpgsqlTransaction tx,Guid id,CancellationToken ct)
@@ -68,7 +68,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         {
             await AgentManagementService.LockImportAsync(db, tx, identity.Id, ct);
             if (await AgentEnrollmentService.ReconcileDcSourceAsync(db, tx, identity.Id, configuration, ct, dcIdentity) is { } reason)
-                reconciliation?.LogUnbound(identity.Id, reason);
+                diagnostics?.LogUnbound(identity.Id, reason);
             await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, identity.Id, ct);
         }
         return change.Output;

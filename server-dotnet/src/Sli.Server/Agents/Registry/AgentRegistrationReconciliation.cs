@@ -128,12 +128,8 @@ public sealed partial class AgentEnrollmentService
     }
 }
 
-// Consolidation runs once after startup. Source provisioning also retries after
-// startup so later inventory changes can unblock an enrolled controller.
-public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,ILogger<AgentRegistrationReconciliation> logger,
-    IConfiguration? configuration = null, TimeProvider? clock = null) : BackgroundService
+public sealed class AgentDcSourceDiagnostics(ILogger<AgentRegistrationReconciliation> logger, TimeProvider? clock = null)
 {
-    internal static readonly EventId ReconciliationCompleted = new(1, nameof(ReconciliationCompleted));
     private static readonly TimeSpan DiagnosticInterval = TimeSpan.FromMinutes(10);
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly Dictionary<Guid, long> lastDiagnostic = new();
@@ -149,14 +145,30 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
         logger.LogWarning("agent_dc_source_unbound agent_id={AgentId} reason={Reason}", agent, reason);
     }
 
+    internal void RemoveExpired()
+    {
+        lock (lastDiagnostic)
+        {
+            foreach (var id in lastDiagnostic.Where(entry => time.GetElapsedTime(entry.Value) >= DiagnosticInterval).Select(entry => entry.Key).ToArray())
+                lastDiagnostic.Remove(id);
+        }
+    }
+}
+
+// Consolidation runs once after startup. Source provisioning also retries after
+// startup so later inventory changes can unblock an enrolled controller.
+public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes, ILogger<AgentRegistrationReconciliation> logger,
+    IConfiguration? configuration = null, AgentDcSourceDiagnostics? diagnostics = null) : BackgroundService
+{
+    internal static readonly EventId ReconciliationCompleted = new(1, nameof(ReconciliationCompleted));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        Action<Guid, string>? logUnbound = diagnostics is null ? null : diagnostics.LogUnbound;
         bool reconciled = false;
         while(!stoppingToken.IsCancellationRequested)
         {
-            lock (lastDiagnostic)
-                foreach (var id in lastDiagnostic.Where(entry => time.GetElapsedTime(entry.Value) >= DiagnosticInterval).Select(entry => entry.Key).ToArray())
-                    lastDiagnostic.Remove(id);
+            diagnostics?.RemoveExpired();
             int? reconciledRegistrations = null;
             string failure = "agent_registration_reconciliation_failed";
             try
@@ -167,7 +179,7 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
                 {
                     logger.LogInformation("agent_registration_reconciliation_started");
                     await using var tx=await db.BeginTransactionAsync(stoppingToken);
-                    int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken,configuration,LogUnbound);
+                    int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken,configuration,logUnbound);
                     await tx.CommitAsync(stoppingToken);
                     reconciled = true;
                     reconciledRegistrations = retired;
@@ -176,7 +188,7 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
                 {
                     failure = "agent_dc_source_reconciliation_failed";
                     await using var tx = await db.BeginTransactionAsync(stoppingToken);
-                    await AgentEnrollmentService.ReconcileDcSourcesAsync(db, tx, configuration, stoppingToken, LogUnbound);
+                    await AgentEnrollmentService.ReconcileDcSourcesAsync(db, tx, configuration, stoppingToken, logUnbound);
                     await tx.CommitAsync(stoppingToken);
                 }
                 failure = "agent_console_token_cleanup_failed";
