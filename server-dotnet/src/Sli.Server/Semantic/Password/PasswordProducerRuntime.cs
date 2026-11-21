@@ -72,6 +72,7 @@ public sealed record PasswordProducerBatch(int Sources,int Committed,int Failed,
 public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,PasswordProducer producer,DetectionProducer detections)
 {
     internal SemanticWork? Work { get; init; }
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
     internal async Task<IReadOnlyList<PasswordProducerOutcome>> RunSourceAsync(PasswordScope scope,CancellationToken ct)
     {
         await using var db=await runtime.OpenAsync(ct);
@@ -106,7 +107,7 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
                     if(plan["catchup"]!.AsArray().FirstOrDefault() is {} pending)
                         catchup.Add(new(scope,kind,pending["rule_version"]!.GetValue<int>()));
                 }
-                return await RunPassesAsync(live,catchup,Run,ct);
+                return await RunPassesAsync(live,catchup,Run,ct,Clock);
             } finally {
                 if(db.FullState==System.Data.ConnectionState.Open)await SourceLock(false,CancellationToken.None);
             }
@@ -117,50 +118,56 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
         }
     }
     internal static async Task<IReadOnlyList<PasswordProducerOutcome>> RunPassesAsync(IReadOnlyList<PasswordRule> live,
-        IReadOnlyList<PasswordRule> catchup,Func<PasswordRule,CancellationToken,Task<PasswordProducerOutcome>> run,CancellationToken ct)
+        IReadOnlyList<PasswordRule> catchup,Func<PasswordRule,CancellationToken,Task<PasswordProducerOutcome>> run,CancellationToken ct,TimeProvider? clock=null)
     {
-        var disabled=new HashSet<string>();
+        var liveStatus=new Dictionary<string,PasswordProducerOutcome>();
         async Task<PasswordProducerOutcome> RunLive(PasswordRule rule,CancellationToken token)
         {
             var outcome=await run(rule,token);
-            if(outcome.Status=="disabled")disabled.Add(rule.Kind);
-            else disabled.Remove(rule.Kind);
+            liveStatus[rule.Kind]=outcome;
             return outcome;
         }
-        static bool BlockHistory(PasswordProducerOutcome outcome)=>outcome.Failed||outcome.Status is not ("committed" or "disabled");
-        var results=(await RunBatchesAsync(live[0].Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120))).ToList();
-        if(results.Any(BlockHistory))return results;
+        bool CanCatchUp(PasswordRule rule)=>liveStatus.TryGetValue(rule.Kind,out var outcome)
+            && !outcome.Failed && outcome.Status=="committed";
+        var results=(await RunBatchesAsync(live[0].Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120),clock:clock)).ToList();
         foreach(var rule in catchup) {
-            if(disabled.Contains(rule.Kind))continue;
+            if(!CanCatchUp(rule))continue;
             // Recheck both live rules before every history slice, including
             // the second rule after a potentially expensive first history COMMIT.
-            var current=await RunBatchesAsync(rule.Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120));
-            results.AddRange(current);if(current.Any(BlockHistory))break;
-            if(disabled.Contains(rule.Kind))continue;
+            var current=await RunBatchesAsync(rule.Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120),clock:clock);
+            results.AddRange(current);
+            if(!CanCatchUp(rule))continue;
             var result=await run(rule,ct);results.Add(result);
             SemanticWork.Progress(new JsonObject{["cursor"]=new JsonObject{["pass"]="catchup",["rule"]=rule.Kind,
-                ["watermark"]=result.Work?["watermark"]?.DeepClone()},["heartbeat"]=SemanticJson.Stamp(DateTimeOffset.UtcNow)});
+                ["watermark"]=result.Work?["watermark"]?.DeepClone()},["heartbeat"]=SemanticJson.Stamp((clock??TimeProvider.System).GetUtcNow())});
         }
         return results;
     }
     internal static async Task<IReadOnlyList<PasswordProducerOutcome>> RunBatchesAsync(PasswordScope scope,
         Func<PasswordRule,CancellationToken,Task<PasswordProducerOutcome>> run,CancellationToken ct,Action<string>? write=null,
-        IReadOnlyList<PasswordRule>? rules=null,TimeSpan? targetAge=null)
+        IReadOnlyList<PasswordRule>? rules=null,TimeSpan? targetAge=null,TimeProvider? clock=null)
     {
         write??=Console.Error.WriteLine;
         var results=new List<PasswordProducerOutcome>();
-        rules??=[new PasswordRule(scope),new PasswordRule(scope,"spray")];var pending=new[]{true,true};
-        var retries=new int[2];
-        // Alternate rules until they are within twelve minutes. Only failed or
-        // contended attempts yield after four tries; successful catch-up has no deadline.
+        rules??=[new PasswordRule(scope),new PasswordRule(scope,"spray")];
+        var pending=new bool[rules.Count];
+        Array.Fill(pending,true);
+        var retries=new int[rules.Count];
+        var watermarks=new DateTimeOffset?[rules.Count];
+        var timeProvider=clock??TimeProvider.System;
+        var target=timeProvider.GetUtcNow()-(targetAge??TimeSpan.FromMinutes(12));
+        // Each live sweep has a fixed target so an advancing clock cannot keep
+        // history waiting. Successful batches continue while the cursor moves.
         while(pending.Any(p=>p))for(int i=0;i<rules.Count;i++) {
             if(!pending[i])continue;ct.ThrowIfCancellationRequested();
-            var target=DateTimeOffset.UtcNow-(targetAge??TimeSpan.FromMinutes(12));
             var result=await run(rules[i],ct);results.Add(result);
             if(result.Diagnostic is {} detail)detail["rule_id"]=rules[i].Id;
             if(result.Failed&&result.Diagnostic is {} diagnostic)write("password_producer_batch_failed:"+diagnostic.ToJsonString());
-            pending[i]=result.Failed||result.Status=="busy" ? ++retries[i]<4 : result.Status=="committed"&&result.Work?["watermark"] is {} watermark&&PasswordJson.Time(watermark)<target;
-            SemanticWork.Progress(new JsonObject{["cursor"]=new JsonObject{["rule"]=rules[i].Kind,["watermark"]=result.Work?["watermark"]?.DeepClone(),["batches"]=results.Count},["heartbeat"]=SemanticJson.Stamp(DateTimeOffset.UtcNow)});
+            var watermark=result.Work?["watermark"] is {} mark ? PasswordJson.Time(mark) : (DateTimeOffset?)null;
+            pending[i]=result.Failed||result.Status=="busy" ? ++retries[i]<4 :
+                result.Status=="committed"&&watermark<target&&(watermarks[i] is null||watermark>watermarks[i]);
+            if(watermark.HasValue)watermarks[i]=watermark;
+            SemanticWork.Progress(new JsonObject{["cursor"]=new JsonObject{["rule"]=rules[i].Kind,["watermark"]=result.Work?["watermark"]?.DeepClone(),["batches"]=results.Count},["heartbeat"]=SemanticJson.Stamp(timeProvider.GetUtcNow())});
         }
         return results;
     }
