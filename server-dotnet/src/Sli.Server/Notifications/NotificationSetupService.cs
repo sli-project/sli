@@ -28,11 +28,57 @@ public sealed class NotificationSetupService(INotificationSetupFiles files, INot
     private static byte[] Bytes(JsonNode node) => JsonSerializer.SerializeToUtf8Bytes(node);
     private string BaseUrl()
     {
-        if (!Uri.TryCreate(publicUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.Host.Length == 0 || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+        if (!Uri.TryCreate(publicUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.Host.Length == 0 || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0 ||
+            (native && uri.IsLoopback))
             throw NotificationException.Setup("telegram_setup_unavailable");
         string authority = publicUrl[(publicUrl.IndexOf("://", StringComparison.Ordinal) + 3)..].Split('/', '?', '#')[0];
         return "https://" + authority + "/app";
     }
+
+    public void RepairPublicUrls()
+    {
+        string baseUrl = BaseUrl();
+        foreach (string name in new[] { "telegram.json", "smtp.json" })
+        {
+            if (!files.Exists(name))
+                continue;
+            byte[] original = files.Read(name);
+            var reader = new Utf8JsonReader(original);
+            try
+            {
+                using var config = JsonDocument.Parse(original);
+                if (config.RootElement.ValueKind != JsonValueKind.Object ||
+                    !config.RootElement.TryGetProperty("base_url", out var value) || value.ValueKind != JsonValueKind.String ||
+                    !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var uri) || !uri.IsLoopback ||
+                    config.RootElement.EnumerateObject().Count(property => property.NameEquals("base_url")) != 1)
+                    continue;
+                while (reader.Read() && !(reader.CurrentDepth == 1 && reader.TokenType == JsonTokenType.PropertyName && reader.ValueTextEquals("base_url")))
+                {
+                }
+                reader.Read();
+            }
+            catch (JsonException)
+            {
+                // Leave malformed settings available to the existing setup flow.
+                continue;
+            }
+
+            var replacement = JsonSerializer.SerializeToUtf8Bytes(baseUrl);
+            var start = (int)reader.TokenStartIndex;
+            var end = (int)reader.BytesConsumed;
+            var repaired = new byte[start + replacement.Length + original.Length - end];
+            if (repaired.Length > 65536)
+                throw NotificationException.Setup("notification_setup_size_invalid");
+            original.AsSpan(0, start).CopyTo(repaired);
+            replacement.CopyTo(repaired.AsSpan(start));
+            original.AsSpan(end).CopyTo(repaired.AsSpan(start + replacement.Length));
+
+            if (name == "smtp.json")
+                SetupSmtpSnapshot.RepairMarker(files, original, repaired);
+            files.Publish(name, repaired);
+        }
+    }
+
     private JsonObject TelegramConfig()
     {
         JsonObject config;

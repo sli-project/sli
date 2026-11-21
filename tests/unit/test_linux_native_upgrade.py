@@ -859,6 +859,7 @@ def test_volatile_testing_overrides_are_scoped_and_removed(tmp_path, monkeypatch
     monkeypatch.setattr(install, 'command', lambda *a, **k: None)
     upgrade.testing_units(TX)
     assert (tmp_path / 'sli-dotnet-api.service.d/90-sli-upgrade.conf').read_text().endswith('SLI_NATIVE_UPGRADE_TESTING=1\n')
+    assert (tmp_path / 'sli-dotnet-notification-setup.service.d/90-sli-upgrade.conf').read_text().endswith('SLI_NATIVE_UPGRADE_TESTING=1\n')
     assert TX in (tmp_path / 'sli-ready.service.d/90-sli-upgrade.conf').read_text()
     upgrade.testing_units()
     assert not list(tmp_path.rglob('*.conf'))

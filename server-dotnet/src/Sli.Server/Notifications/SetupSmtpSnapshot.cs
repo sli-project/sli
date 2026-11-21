@@ -50,6 +50,36 @@ public static class SetupSmtpSnapshot
             "},\"sender\":" + Quote(config["sender"]!.GetValue<string>()) + ",\"username\":" + Quote(config["username"]!.GetValue<string>()) + "}";
     }
     public static string Digest(JsonObject config, string password) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Canonical(config) + "\0" + password)));
+
+    internal static void RepairMarker(INotificationSetupFiles files, byte[] original, byte[] repaired)
+    {
+        if (!files.Exists("smtp.ready") || !files.Exists("notification_smtp_password"))
+            return;
+
+        JsonObject marker;
+        try
+        {
+            var config = ValidateConfig(JsonNode.Parse(original)!.AsObject());
+            var newConfig = ValidateConfig(JsonNode.Parse(repaired)!.AsObject());
+            string password = ValidatePassword(new UTF8Encoding(false, true).GetString(files.Read("notification_smtp_password")));
+            marker = JsonNode.Parse(files.Read("smtp.ready")) as JsonObject ?? throw new FormatException();
+            NotificationInput.Keys(marker, "revision", "digest");
+            NotificationInput.Positive(marker, "revision", long.MaxValue);
+            if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(NotificationInput.Text(marker, "digest")), Encoding.UTF8.GetBytes(Digest(config, password))))
+                return;
+            marker["digest"] = Digest(newConfig, password);
+        }
+        catch (Exception error) when (error is NotificationException or JsonException or FormatException or DecoderFallbackException)
+        {
+            return;
+        }
+
+        // Publish the marker first. If interrupted, the old loopback URL makes
+        // the next run retry the config write, using the already updated marker.
+        files.Publish("smtp.ready", JsonSerializer.SerializeToUtf8Bytes(marker));
+    }
+
     public static (JsonObject Config, string Password) Read(INotificationSetupFiles files, long revision)
     {
         try

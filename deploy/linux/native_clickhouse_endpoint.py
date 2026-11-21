@@ -193,6 +193,26 @@ def server_name(value):
     return value
 
 
+def public_url(site):
+    """Return the origin used by administrators and native notifications."""
+    for name in (site.get("server_name"), site.get("bind"), site.get("domain_fqdn", "example.invalid")):
+        if not name or name.lower().rstrip(".") == "localhost":
+            continue
+        try:
+            address = ipaddress.ip_address(name)
+        except ValueError:
+            authority = server_name(name)
+        else:
+            endpoint = getattr(address, "ipv4_mapped", None) or address
+            if endpoint.is_loopback or endpoint.is_unspecified or endpoint.is_multicast:
+                continue
+            server_name(name)
+            authority = f"[{name}]" if address.version == 6 else name
+        port = site.get("https_port", 8443)
+        return f"https://{authority}" + ("" if port == 443 else f":{port}")
+    raise ValueError("native_setup_server_required")
+
+
 def site_configuration(root=Path("/")):
     site = root / "etc/sli/site.toml"
     return parse_site(trusted_text(site) if site.exists() or site.is_symlink() else "")

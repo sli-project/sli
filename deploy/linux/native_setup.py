@@ -121,11 +121,7 @@ def requested_site(existing, *, server, bind, port, mode):
     return existing
 
 
-def url(site):
-    name = site.get('server_name', site['bind'])
-    authority = '[' + name + ']' if ':' in name else name
-    port = site.get('https_port', 8443)
-    return 'https://' + authority + ('' if port == 443 else ':' + str(port))
+url = ch.public_url
 
 
 def command(argv, *, code, cwd=None, env=None, timeout=120):
