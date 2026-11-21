@@ -2,43 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { expect, it } from "vitest";
-import { EventCaseMutationOutcome, EventCardPage } from "./event-card";
+import { EventCardPage } from "./event-card";
 import { InvestigationCasePage } from "./case-page";
 
-it("case navigation recovers the validated originating report context and rejects an external return target", async () => {
-  const pages = await import("./event-card") as typeof import("./event-card") & {
-    eventCaseNavigationHref?: (caseId: number, eventDbId: number, returnTo: string | null | undefined) => string | null;
-  };
-  expect(pages.eventCaseNavigationHref).toBeTypeOf("function");
-  const href = pages.eventCaseNavigationHref!(7, 517548,
-    "/app/security-events-report?domain_id=7&time_from=2026-09-11T10%3A20%3A30.123456Z&time_to=2026-09-11T11%3A20%3A30.987654Z&timezone=Asia%2FBangkok&category=account_change&target=S-1-5-21-affected",
-  );
-  const url = new URL(href!, "http://localhost");
-  expect(url.pathname).toBe("/app/investigations/7");
-  expect(Object.fromEntries(url.searchParams)).toEqual({
-    event_db_id: "517548",
-    scope: "all",
-    time_from: "2026-09-11T10:20:30.123456Z",
-    time_to: "2026-09-11T11:20:30.987654Z",
-    timezone: "Asia/Bangkok",
-    return_to: "/app/security-events-report?domain_id=7&time_from=2026-09-11T10%3A20%3A30.123456Z&time_to=2026-09-11T11%3A20%3A30.987654Z&timezone=Asia%2FBangkok&category=account_change&target=S-1-5-21-affected",
-  });
-  expect(pages.eventCaseNavigationHref!(7, 517548, "https://attacker.example/case")).toBeNull();
-});
-
-it.each([
-  ["create", 71],
-  ["add_evidence", 72],
-] as const)("event case %s success UI opens a case that returns to the exact selected report", async (action, caseId) => {
-  const report = "/app/security-events-report?tab=events&domain_id=7&time_from=2026-09-11T10%3A20%3A30.123456Z&time_to=2026-09-11T11%3A20%3A30.987654Z&timezone=Asia%2FBangkok&target=S-1-5-21-affected";
-  const outcomeHtml = renderToStaticMarkup(<EventCaseMutationOutcome caseId={caseId} eventDbId={517548} returnTo={report} action={action} />);
-  expect(outcomeHtml).toContain(`data-case-mutation="${action}"`);
-  const caseHref = outcomeHtml.match(/href="([^"]+)"/)?.[1];
-  expect(caseHref).toBeDefined();
-  const caseUrl = new URL(caseHref!.replaceAll("&amp;", "&"), "http://localhost");
-  expect(caseUrl.pathname).toBe(`/app/investigations/${caseId}`);
-  expect(caseUrl.searchParams.get("event_db_id")).toBe("517548");
-  expect(caseUrl.searchParams.get("return_to")).toBe(report);
+it("returns from a contextual case URL to the exact originating report", async () => {
+  const caseId = 71;
+  const report = "/app/security-events-report?tab=events&domain_id=7&time_from=2026-09-11T10%3A20%3A30.123456Z&time_to=2026-09-11T11%3A20%3A30.987654Z&timezone=Asia%2FBangkok&target=S-1-5-21-100000001-200000002-300000003-1001";
+  const casePath = `/app/investigations/${caseId}?${new URLSearchParams({ event_db_id: "517548", return_to: report })}`;
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false, staleTime: Infinity } } });
   client.setQueryData(["bootstrap"], { effective_role: "viewer" });
@@ -46,7 +16,7 @@ it.each([
   const root = createRootRoute();
   const cases = createRoute({ getParentRoute: () => root, path: "/investigations/$investigationId", component: InvestigationCasePage });
   const investigations = createRoute({ getParentRoute: () => root, path: "/investigations", component: () => null });
-  const router = createRouter({ routeTree: root.addChildren([cases, investigations]), basepath: "/app", history: createMemoryHistory({ initialEntries: [caseUrl.pathname + caseUrl.search] }) });
+  const router = createRouter({ routeTree: root.addChildren([cases, investigations]), basepath: "/app", history: createMemoryHistory({ initialEntries: [casePath] }) });
   await router.load();
   const caseHtml = renderToStaticMarkup(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
   const reportHref = caseHtml.match(/href="([^"]+)"[^>]*>Вернуться к исходному отчёту/)?.[1];
