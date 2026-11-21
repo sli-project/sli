@@ -32,7 +32,9 @@ public sealed class NotificationAdministrationEndpointTests
         await using var h = new NotificationHarness();
         if (path.EndsWith("/bind", StringComparison.Ordinal))
         {
-            var choices = await h.Service.HandleAsync(JsonNode.Parse("{\"action\":\"chats\",\"user_id\":7}")!.AsObject(), TestContext.Current.CancellationToken);
+            using var discovery = await h.Request("POST", C + "/telegram/setup/chats", "{}");
+            discovery.EnsureSuccessStatusCode();
+            var choices = await Json(discovery);
             body = new JsonObject { ["choice"] = choices["chats"]![0]!["choice"]!.DeepClone() }.ToJsonString();
         }
         using var response = await h.Request(method, path, body);

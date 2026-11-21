@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Npgsql;
-using Sli.Server.Access;
-using Sli.Server.Access.Administration;
-using Sli.Server.Auth;
+using Sli.Server.Problems;
 namespace Sli.Server.Notifications;
 public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,ILogger<SmtpWorker> logger)
 {
@@ -54,24 +52,23 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
                 if(await cmd.ExecuteScalarAsync(ct) is null){await tx.CommitAsync(ct);return true;}
             }
             string state=job.Kind=="report_schedule"?"blocked":"cancelled",code=job.Kind=="report_schedule"?"recipient_denied":"subscription_changed";int retryAfter=0;bool internalSendError=false,recorded=false;
+            ProblemAccess? recipientAccess = null;
             if(valid) {
                 try {
                     if(job.Kind=="report_schedule") {
                         if(preparationFailed)throw new InvalidOperationException();
                         if(prepared is null){valid=false;state="blocked";code="recipient_denied";}
                         else {job=await ReportScheduleDelivery.AuthorizeAsync(database,job,prepared.Value,ct);state="";code="";}
-                    } else {valid=await Allowed(owner,ct) && await Allowed(job.Recipient,ct);state=valid?"":"blocked";code=valid?"":"recipient_denied";}
+                    } else {var recipientOwner=await NotificationAlert.QueueAccessAsync(database,owner,ct);
+                        valid=recipientOwner is not null;
+                        if(valid) recipientAccess=owner==job.Recipient ? recipientOwner : await NotificationAlert.QueueAccessAsync(database,job.Recipient,ct);
+                        valid=recipientAccess is not null;state=valid?"":"blocked";code=valid?"":"recipient_denied";}
                 }
                 catch(Exception e) when(e is UnauthorizedAccessException or FormatException){valid=false;state="blocked";code="recipient_denied";}
                 catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
                 catch {valid=false;state="retry";code="access_unavailable";}
                 if(valid) {
                     try {
-                        long? finding=null;string? kind=null;
-                        if(job.Kind=="semantic_finding") {
-                            await using var cmd=new NpgsqlCommand("select finding_id,notification_kind from public.notification_finding_brief(@object)",db,tx);cmd.Parameters.AddWithValue("object",job.ObjectId);
-                            await using var r=await cmd.ExecuteReaderAsync(ct);if(!await r.ReadAsync(ct) || r.IsDBNull(0))throw new FormatException();finding=r.GetInt64(0);kind=r.GetString(1);
-                        }
                         bool enabled=false;string? secret=null,tls=null;long channelRevision=0;
                         await using(var cmd=new NpgsqlCommand("select enabled,tls_mode,secret_ref,revision from notification_channels where kind='smtp' for share",db,tx)) {
                             await using var r=await cmd.ExecuteReaderAsync(ct);if(await r.ReadAsync(ct)){enabled=r.GetBoolean(0);tls=r.GetString(1);secret=r.GetString(2);channelRevision=r.GetInt64(3);}
@@ -80,8 +77,9 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
                         if(!enabled || tls is not ("tls" or "starttls") || secret!="SLI_NOTIFY_SMTP_PASSWORD")code="smtp_not_configured";
                         else {
                             SmtpSettings? settings=null;string? text=null;
-                            try {settings=SmtpSettingsReader.Read(job.Recipient,channelRevision,Environment.GetEnvironmentVariable,ReadBounded);text=NotificationMessage.Format(job,settings.BaseUrl,finding,kind);}
+                            try {settings=SmtpSettingsReader.Read(job.Recipient,channelRevision,Environment.GetEnvironmentVariable,ReadBounded);}
                             catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or ArgumentException or FormatException or JsonException or InvalidOperationException or System.Text.DecoderFallbackException){}
+                            if(settings is not null) text=await NotificationAlert.FormatAsync(db,tx,job,settings.BaseUrl,recipientAccess,null,ct);
                             if(settings is null || text is null)code="smtp_not_configured";
                             else {var outcome=await sender.SendAsync(settings,tls,job,text,ct);code=outcome.Code;internalSendError=outcome.InternalError;}
                         }
@@ -105,12 +103,6 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
             if(internalSendError && recorded) {try {logger.LogError("smtp_send_internal_error");} catch {}}
         }
         return true;
-    }
-    private async Task<bool> Allowed(long id,CancellationToken ct)
-    {
-        var access=new AccessReadService(database);var principal=await access.FindUserAsync(id,ct);if(principal is null)return false;
-        var facts=await new AccessFactsRepository(database).LoadAsync(principal,ct);var caps=new CapabilityComposer().Compose(facts);var reports=new ReportEligibility().Compose(facts,caps);
-        return ResourceAccessDecisions.ReportAction(reports,"security.queue","view",null,new HashSet<string>{"security"}).Allowed;
     }
     public static (string State,int Delay) Completion(string state,int attempt,int retryAfter)
     {

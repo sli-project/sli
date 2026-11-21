@@ -1,5 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Sli.Server.Problems;
 namespace Sli.Server.Notifications;
 public sealed record NotificationJob(Guid Id,Guid Subscription,long Revision,string Kind,Guid ObjectId,long Recipient,int Attempts,Guid Lease,DateTime Created,string? Severity,string Reason,int Delay)
 {
@@ -9,27 +12,65 @@ public sealed record NotificationJob(Guid Id,Guid Subscription,long Revision,str
 }
 public static class NotificationMessage
 {
-    private static readonly IReadOnlyDictionary<string,string> Russian=Load();
-    private static IReadOnlyDictionary<string,string> Load()
+    public static string Format(NotificationJob job, string baseUrl, JsonObject? finding, ProblemAccess? access,
+        string language = "ru", TimeZoneInfo? zone = null)
     {
-        using var stream=typeof(NotificationMessage).Assembly.GetManifestResourceStream("Sli.Server.Access.Administration.server.ru.json") ?? throw new InvalidOperationException();
-        return JsonSerializer.Deserialize<Dictionary<string,string>>(stream) ?? throw new InvalidOperationException();
+        if (job.Kind == "report_schedule") return ReportScheduleDelivery.Digest(job, baseUrl);
+        baseUrl = baseUrl.TrimEnd('/');
+        if (!baseUrl.EndsWith("/app", StringComparison.Ordinal)) baseUrl += "/app";
+        string M(string key, JsonObject? args = null) => ProblemJson.Text(ProblemPresentation.Message("notifications.message." + key, language, args)["text"]);
+        if (job.Kind == "test_problem") return $"{M("test")}\n{baseUrl}/report/notifications.deliveries";
+        if (job.Kind != "semantic_finding" || finding is null || access is null || ProblemJson.Long(finding["id"]) is not > 0)
+            throw new FormatException();
+
+        var row = ProblemPresentation.Finding(finding, access, language, queue: true, includeDescription: true);
+        string rule = ProblemJson.Text(finding["rule_code"]);
+        string title = ProblemPresentation.HasRuleMessage(rule, "title", language)
+            ? Line(ProblemJson.Text(row["title_text"]), 384) : M("problem");
+        if (title.Length == 0) title = M("problem");
+        string severity = ProblemJson.Text(row["severity"]);
+        string label = severity is "critical" or "high" or "medium" or "low"
+            ? ProblemJson.Text(row["severity_message"]?["text"]) : M("info");
+        var lines = new List<string> { $"{label} · {title}" };
+        var facts = new List<string>();
+        var parameters = ProblemPresentation.RuleParameters(finding, access, language);
+        void Fact(string key, string value)
+        {
+            value = Line(value, 160);
+            if (value.Length > 0) facts.Add(M(key, new() { ["value"] = value }));
+        }
+        if (ProblemPresentation.IsPasswordFinding(rule)) {
+            if (rule == "semantic.qw.password-brute-force") Fact("account", ProblemJson.Text(row["entity_text"]));
+            Fact("source", ProblemJson.Text(row["actor_text"]));
+        } else {
+            Fact("source", ProblemJson.Text(parameters["source"]));
+            Fact("computer", ProblemJson.Text(parameters["computer"]));
+        }
+        long count = ProblemJson.Long(row["occurrence_count"]);
+        if (count <= 0)
+            count = ProblemPresentation.IsPasswordFinding(rule)
+                ? Math.Max(ProblemJson.Long(finding["evidence_count"]), ProblemJson.Long(parameters["count"]))
+                : 1 + Math.Max(0, ProblemJson.Long(row["repeat_count"]));
+        if (count > 0) Fact("count", count.ToString(CultureInfo.InvariantCulture));
+        if (ProblemJson.Stamp(row["first_seen_utc"], out var first))
+            Fact("first", TimeZoneInfo.ConvertTime(first, zone ?? TimeZoneInfo.Local).ToString("dd.MM HH:mm", CultureInfo.InvariantCulture));
+        if (job.Reason == "pipeline_delay" && job.Delay > 0)
+            Fact("late", job.Delay.ToString(CultureInfo.InvariantCulture));
+        if (facts.Count > 0) lines.Add(string.Join(" · ", facts));
+        if (ProblemPresentation.HasRuleMessage(rule, "next", language) ||
+            ProblemJson.Text(row["presentation_messages"]?["next_text"]?["code"]).StartsWith("security.problems.presentation.", StringComparison.Ordinal)) {
+            string action = Line(ProblemJson.Text(row["next_text"]), 640);
+            if (action.Length > 0) lines.Add(action);
+        }
+        lines.Add($"{baseUrl}/report/security.problems?id={ProblemJson.Long(row["id"]).ToString(CultureInfo.InvariantCulture)}");
+        return string.Join('\n', lines);
     }
-    public static string Format(NotificationJob job,string baseUrl,long? finding,string? kind)
+
+    internal static string Line(string value, int limit)
     {
-        if(job.Kind=="report_schedule")return ReportScheduleDelivery.Digest(job,baseUrl);
-        string body,target,identity;
-        if(job.Kind=="test_problem") {body="Category: simulated test problem\nSeverity: informational\n";target="/report/notifications.deliveries";identity=job.ObjectId.ToString();}
-        else if(job.Kind=="semantic_finding" && finding is >0) {
-            string suffix=kind is "remote_access" or "account_decoy" or "file_decoy" or "account_watch" ? "."+kind : "";
-            body=Russian["notifications.problem"+suffix+".what"]+"\n"+Russian["notifications.problem"+suffix+".action"]+"\n";
-            if(job.Severity is not null) {if(job.Severity is not ("info" or "low" or "medium" or "high" or "critical"))throw new FormatException();body+=$"Severity: {job.Severity}\n";}
-            if(job.Reason=="pipeline_delay") {if(job.Delay<15)throw new FormatException();body+=("delayed by "+job.Delay.ToString(CultureInfo.InvariantCulture)+" min")+"\n";}
-            identity=finding.Value.ToString(CultureInfo.InvariantCulture);target="/report/security.problems?id="+identity;
-        } else throw new FormatException();
-        // Python str(datetime) omits fractional seconds only when exactly zero.
-        var time=job.Created.ToUniversalTime();string stamp=time.ToString("yyyy-MM-dd HH:mm:ss",CultureInfo.InvariantCulture);
-        if(time.Ticks%TimeSpan.TicksPerSecond!=0)stamp+="."+(time.Ticks%TimeSpan.TicksPerSecond/10).ToString("D6",CultureInfo.InvariantCulture);
-        return body+$"Time: {stamp}+00:00\nProblem: {identity}\nJob: {job.Id}\n{baseUrl.TrimEnd('/')}{target}\n";
+        value = Regex.Replace(value, @"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return string.Concat(value.EnumerateRunes().Where(r => System.Text.Rune.GetUnicodeCategory(r) is not
+            (UnicodeCategory.Format or UnicodeCategory.Surrogate)).Take(limit).Select(r =>
+                System.Text.Rune.IsControl(r) || System.Text.Rune.IsWhiteSpace(r) ? " " : r.ToString())).Trim();
     }
 }

@@ -60,7 +60,7 @@ def test_legacy_setup_status_preserves_optional_names_config(setup):
     assert result == {"secret_set": True, "chat_bound": True, "chat_name": None, "proxy_url": ""}
     assert str(chat) not in json.dumps(result)
     assert (service.directory / "telegram.json").read_bytes() == original
-    choices = service.handle({"action": "chats", "user_id": 1})
+    choices = discovered_chats(service, chat)
     service.handle({"action": "bind", "user_id": 1, "choice": choices["chats"][0]["choice"]})
     assert service.read()["recipients"] == config["recipients"]
     assert service.read()["names"] == {"1": "Fixture chat"}
@@ -202,20 +202,24 @@ def setup(monkeypatch, tmp_path):
         assert proxy_url == ""
         assert value == token
         calls.append(method)
-        if method == "getMe":
-            return {"is_bot": True, "first_name": "Fixture bot"}
-        return [{"message": {"text": "/start", "chat": {"id": chat, "type": "private", "first_name": "Fixture chat"}}},
-                {"message": {"text": "/start", "chat": {"id": -chat, "type": "group", "title": "Excluded"}}}]
+        assert method == "getMe"
+        return {"is_bot": True, "first_name": "Fixture bot"}
 
     monkeypatch.setattr(writer, "bot_request", bot)
     return writer.Setup(tmp_path), token, chat, calls
+
+
+def discovered_chats(service, chat):
+    generation = service.handle({"action": "chat_generation", "user_id": 1})["generation"]
+    return service.handle({"action": "chats", "user_id": 1, "generation": generation,
+                           "observations": [{"id": chat, "name": "Fixture chat"}]})
 
 
 def test_write_only_verify_discover_bind_and_rotation(setup):
     service, token, chat, calls = setup
     result = service.handle({"action": "token", "user_id": 1, "token": token})
     assert result == {"secret_set": True, "bot_name": "Fixture bot"}
-    choices = service.handle({"action": "chats", "user_id": 1})
+    choices = discovered_chats(service, chat)
     assert len(choices["chats"]) == 1
     assert str(chat) not in json.dumps(choices)
     selection = choices["chats"][0]["choice"]
@@ -228,13 +232,13 @@ def test_write_only_verify_discover_bind_and_rotation(setup):
     assert config["base_url"] == "https://example.invalid:8443/app"
     service.handle({"action": "token", "user_id": 1, "token": token})
     assert service.read()["recipients"] == {}
-    assert calls == ["getMe", "getUpdates", "getMe"]
+    assert calls == ["getMe", "getMe"]
 
 
 def test_expired_or_unoffered_chat_cannot_be_bound(setup, monkeypatch):
-    service, token, _, _ = setup
+    service, token, chat, _ = setup
     service.handle({"action": "token", "user_id": 1, "token": token})
-    choices = service.handle({"action": "chats", "user_id": 1})
+    choices = discovered_chats(service, chat)
     monkeypatch.setattr(writer.time, "monotonic", lambda: float("inf"))
     with pytest.raises(ValueError):
         service.handle({"action": "bind", "user_id": 1, "choice": choices["chats"][0]["choice"]})

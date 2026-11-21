@@ -36,6 +36,14 @@ public sealed class NotificationAdministration(INotificationAdministrationReposi
             var job = await repository.EnqueueAsync(actor, own["id"]!.GetValue<string>(), Guid.NewGuid(), ct, channelAudit: true);
             return new JsonObject { ["job_id"] = job["id"]!.DeepClone(), ["state"] = job["state"]!.DeepClone() };
         }
+        if (action == "chats")
+        {
+            var probe = await setup.RequestAsync("chat_generation", actor.Id, new(), ct);
+            if (probe.Count != 1 || probe["generation"] is not JsonValue value || !value.TryGetValue<string>(out var generation) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(generation, @"\A[a-f0-9]{64}\z"))
+                throw NotificationException.Setup("telegram_setup_unavailable");
+            body = new JsonObject { ["generation"] = generation, ["observations"] = await repository.DiscoveredTelegramChatsAsync(generation, ct) };
+        }
         var result = await setup.RequestAsync(action, actor.Id, body, ct);
         if (action is "token" or "chats") await repository.AuditSetupAsync(actor, "telegram", action, "completed", ct);
         if (action == "bind")

@@ -58,6 +58,7 @@ public static class NotificationDeliveryCommand
         builder.Services.AddSingleton<ISmtpSessionFactory,MailKitSmtpSessionFactory>();builder.Services.AddSingleton<SmtpSender>();builder.Services.AddSingleton<SmtpWorker>();builder.Services.AddSingleton<TelegramRequestState>();
         builder.Services.AddHttpClient("notification-telegram",client=>client.Timeout=Timeout.InfiniteTimeSpan).RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(sp=>TelegramWorkerCommand.CreateHandler(sp.GetRequiredService<TelegramRequestState>()));
         builder.Services.AddSingleton<TelegramSender>();builder.Services.AddSingleton<TelegramWorker>();builder.Services.AddSingleton<NotificationDeliveryWorker>();builder.Services.AddSingleton<NotificationDeliveryHostedService>();builder.Services.AddHostedService(sp=>sp.GetRequiredService<NotificationDeliveryHostedService>());
+        if (args.Length == 0) builder.Services.AddHostedService<TelegramUpdateWorker>();
         using var host=builder.Build();var service=host.Services.GetRequiredService<NotificationDeliveryHostedService>();await host.RunAsync();return service.ExitCode;
     }
 }

@@ -35,12 +35,29 @@ public interface INotificationAdministrationRepository
     Task AuditSetupAsync(Principal actor, string kind, string operation, string phase, CancellationToken ct);
     Task TelegramChannelAsync(Principal actor, bool enabled, string operation, string phase, CancellationToken ct);
     Task<JsonObject?> LatestTelegramTestAsync(long user, CancellationToken ct);
+    Task<JsonArray> DiscoveredTelegramChatsAsync(string generation, CancellationToken ct);
     Task<JsonObject> SmtpStatusAsync(Func<JsonObject, Task<JsonObject>> read, CancellationToken ct);
     Task<long> SmtpSaveAsync(Principal actor, JsonObject metadata, Func<Task> bindSelf, Func<long, Task> publish, CancellationToken ct);
 }
 
 public sealed class NotificationAdministrationRepository(IPostgresConnectionFactory database, INotificationRecipientAccess recipients) : INotificationAdministrationRepository
 {
+    public async Task<JsonArray> DiscoveredTelegramChatsAsync(string generation, CancellationToken ct)
+    {
+        await using var db = await database.OpenAsync(ct);
+        await using var command = new NpgsqlCommand("""
+            select chat_id,chat_name from public.telegram_discovered_chats
+            where bot_generation=@generation and seen_at >= statement_timestamp() - interval '10 minutes'
+            order by seen_at desc,chat_id limit 40
+            """, db);
+        command.Parameters.AddWithValue("generation", generation);
+        await using var rows = await command.ExecuteReaderAsync(ct);
+        var chats = new JsonArray();
+        while (await rows.ReadAsync(ct))
+            chats.Add(new JsonObject { ["id"] = rows.GetInt64(0), ["name"] = rows.GetString(1) });
+        return chats;
+    }
+
     public const string ChannelFields = "kind,enabled,tls_mode,secret_ref,state,revision,updated_at";
     public const string SubscriptionFields = "id,owner_user_id,recipient_user_id,channel,enabled,revision,updated_at";
     public const string JobFields = "id,subscription_id,object_id,channel,state,attempts,result_code,created_at,updated_at,delivery_reason,delay_minutes";

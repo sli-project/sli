@@ -7,9 +7,10 @@ namespace Sli.Server.Problems;
 internal static class ProblemCohorts
 {
     // Home callers retain their signature; the source is always the problem's event copies.
-    internal static string PasswordFacts(string alias, bool shortEvents = true)
+    internal static string PasswordFacts(string alias, bool shortEvents = true, string? eventSource = null)
     {
         string sql = Sql("password-presentation").Replace("\r\n", "\n");
+        if (eventSource is not null) sql = sql.Replace("finding_event_details337", eventSource, StringComparison.Ordinal);
         return $"case when {alias}.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray') then (" +
             sql.Replace("__FINDING__", alias + ".id").Replace("__RULE__", alias + ".rule_code") + ") end";
     }

@@ -1,5 +1,8 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Sli.Server.Notifications;
+using Sli.Server.Problems;
+using Sli.Server.Tests.Problems;
 using Xunit;
 namespace Sli.Server.Tests.Notifications;
 public class NotificationPolicyTests
@@ -27,14 +30,36 @@ public class NotificationPolicyTests
     [Fact] public void TestMessageContainsOnlyFixedReferences()
     {
         var j=new NotificationJob(Guid.Parse("00000000-0000-0000-0000-000000000001"),Guid.Empty,1,"test_problem",Guid.Parse("00000000-0000-0000-0000-000000000002"),7,1,Guid.Empty,new DateTime(2026,1,1,0,0,0,DateTimeKind.Utc),null,"live",0);
-        Assert.Equal("Category: simulated test problem\nSeverity: informational\nTime: 2026-01-01 00:00:00+00:00\nProblem: 00000000-0000-0000-0000-000000000002\nJob: 00000000-0000-0000-0000-000000000001\nhttps://sli.invalid/report/notifications.deliveries\n",NotificationMessage.Format(j,"https://sli.invalid",null,null));
+        Assert.Equal("SLI test message: alerts work.\nhttps://sli.invalid/app/report/notifications.deliveries",NotificationMessage.Format(j,"https://sli.invalid",null,null,"en"));
     }
-    [Fact] public void SemanticMessageMatchesFrozenPythonVector()
+    [Theory]
+    [InlineData("en", "High", "First seen", "delivered 15 min late")]
+    [InlineData("ru", "Высокая", "Впервые", "доставлено с задержкой на 15 мин")]
+    public void BruteForceAlertUsesTheQueueTitleAndAction(string language, string severity, string firstSeen, string delay)
     {
         var j=new NotificationJob(Guid.Parse("00000000-0000-0000-0000-000000000001"),Guid.Empty,1,"semantic_finding",Guid.Parse("00000000-0000-0000-0000-000000000002"),7,1,Guid.Empty,new DateTime(2026,1,1,0,0,0,DateTimeKind.Utc),"high","pipeline_delay",15);
-        string text=NotificationMessage.Format(j,"https://sli.invalid",42,"remote_access");
-        Assert.Equal("6ed35ada4d03fbccdcee4ea07a6d7c0681c4768b3b1006dbc80cbc9bceb14b3e",Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text))));
-    }    [Fact] public void RecipientRequiresAtomicGlobalSecurityQueueGrant()
+        var finding = JsonNode.Parse("""
+            {"id":42,"rule_code":"semantic.qw.password-brute-force","severity":"high",
+             "first_seen_utc":"2026-11-21T20:00:15.331082+00:00","occurrence_count":12,
+             "presentation_facts":{"account":"Administrator","source":"192.0.2.10","count":12}}
+            """)!.AsObject();
+        var access = ProblemLifecycleTests.Access("security.queue", fields: ["security", "identity_basic", "technical"]);
+        var queue = ProblemPresentation.Finding(finding, access, language, queue: true, includeDescription: true);
+        string text = NotificationMessage.Format(j, "https://sli.invalid/app", finding, access, language, TimeZoneInfo.FindSystemTimeZoneById("Asia/Bangkok"));
+        var lines = text.Split('\n');
+        Assert.Equal(4, lines.Length);
+        Assert.Equal($"{severity} · {queue["title_text"]}", lines[0]);
+        Assert.Contains("Administrator", lines[1]); Assert.Contains("192.0.2.10", lines[1]); Assert.Contains("12", lines[1]);
+        Assert.Contains($"{firstSeen}: 22.11 03:00", lines[1]); Assert.Contains(delay, lines[1]);
+        Assert.Equal(queue["next_text"]!.ToString(), lines[2]);
+        Assert.Equal("https://sli.invalid/app/report/security.problems?id=42", lines[3]);
+        Assert.DoesNotContain(j.Id.ToString(), text); Assert.DoesNotContain(j.ObjectId.ToString(), text);
+        Assert.DoesNotContain("+00:00", text);
+        var restricted = ProblemLifecycleTests.Access("security.queue", fields: ["security"]);
+        var redacted = NotificationMessage.Format(j, "https://sli.invalid/app", finding, restricted, language);
+        Assert.DoesNotContain("Administrator", redacted); Assert.DoesNotContain("192.0.2.10", redacted);
+    }
+    [Fact] public void RecipientRequiresAtomicGlobalSecurityQueueGrant()
     {
         var caps=new Sli.Server.Access.CapabilityDecisionSet(false,new HashSet<string>(),new HashSet<string>(),[],new Dictionary<string,System.Text.Json.JsonElement>());
         Sli.Server.Access.AccessDecision Decision(string scope,string field) => new("viewer",caps,[new("security.queue",true,[new(System.Text.Json.JsonSerializer.SerializeToElement(new {kind=scope}),new HashSet<string>{field},new HashSet<string>{"view"},1,1)])]);

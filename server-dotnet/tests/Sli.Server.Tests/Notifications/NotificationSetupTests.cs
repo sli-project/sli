@@ -92,7 +92,7 @@ public sealed class NotificationSetupTests
     [Fact] public async Task ChatChoicesOnlyIncludePrivateStartAndAreUserBoundAndSingleUse()
     {
         await using var h = new NotificationHarness();
-        var result = await h.Service.HandleAsync(J("{\"action\":\"chats\",\"user_id\":7}"), Ct);
+        var result = await new NotificationAdministration(h.Repository, h.Client, h.Recipients).TelegramAsync(h.Principal, "chats", new(), Ct);
         var chats = result["chats"]!.AsArray(); Assert.Single(chats); Assert.Equal("Synthetic", chats[0]!["name"]!.GetValue<string>());
         Assert.DoesNotContain("123", result.ToJsonString());
         string choice = chats[0]!["choice"]!.GetValue<string>();
@@ -107,7 +107,11 @@ public sealed class NotificationSetupTests
     {
         var files = new NotificationMemoryFiles(); files.Values["notification_telegram_token"] = Encoding.UTF8.GetBytes("1:synthetic"); var clock = new TestClock();
         var service = new NotificationSetupService(files, new NotificationBotStub(), "https://sli.invalid", clock: clock);
-        var chats = await service.HandleAsync(J("{\"action\":\"chats\",\"user_id\":7}"), Ct); clock.Now += TimeSpan.FromMinutes(5);
+        var probe = await service.HandleAsync(J("{\"action\":\"chat_generation\",\"user_id\":7}"), Ct);
+        var chats = await service.HandleAsync(new JsonObject { ["action"] = "chats", ["user_id"] = 7L,
+            ["generation"] = probe["generation"]!.DeepClone(),
+            ["observations"] = new JsonArray(J("{\"id\":123,\"name\":\"Synthetic\"}")) }, Ct);
+        clock.Now += TimeSpan.FromMinutes(5);
         var error = await Assert.ThrowsAsync<NotificationException>(() => service.HandleAsync(new JsonObject { ["action"] = "bind", ["user_id"] = 7L, ["choice"] = chats["chats"]![0]!["choice"]!.DeepClone() }, Ct));
         Assert.Equal("telegram_setup_failed", error.Code); Assert.Empty(files.Writes);
     }

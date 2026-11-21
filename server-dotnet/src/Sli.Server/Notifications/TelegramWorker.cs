@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Npgsql;
-using Sli.Server.Access;
-using Sli.Server.Access.Administration;
-using Sli.Server.Auth;
+using Sli.Server.Problems;
 namespace Sli.Server.Notifications;
 public sealed class TelegramWorker(NotificationDatabase database,TelegramSender sender)
 {
@@ -55,24 +53,23 @@ public sealed class TelegramWorker(NotificationDatabase database,TelegramSender 
                 if(await cmd.ExecuteScalarAsync(ct) is null){await tx.CommitAsync(ct);return true;}
             }
             string state=job.Kind=="report_schedule"?"blocked":"cancelled",code=job.Kind=="report_schedule"?"recipient_denied":"subscription_changed";int retryAfter=0;
+            ProblemAccess? recipientAccess = null;
             if(valid) {
                 try {
                     if(job.Kind=="report_schedule") {
                         if(preparationFailed)throw new InvalidOperationException();
                         if(prepared is null){valid=false;state="blocked";code="recipient_denied";}
                         else {job=await ReportScheduleDelivery.AuthorizeAsync(database,job,prepared.Value,ct);state="";code="";}
-                    } else {valid=await Allowed(owner,ct) && await Allowed(job.Recipient,ct);state=valid?"":"blocked";code=valid?"":"recipient_denied";}
+                    } else {var recipientOwner=await NotificationAlert.QueueAccessAsync(database,owner,ct);
+                        valid=recipientOwner is not null;
+                        if(valid) recipientAccess=owner==job.Recipient ? recipientOwner : await NotificationAlert.QueueAccessAsync(database,job.Recipient,ct);
+                        valid=recipientAccess is not null;state=valid?"":"blocked";code=valid?"":"recipient_denied";}
                 }
                 catch(Exception e) when(e is UnauthorizedAccessException or FormatException){valid=false;state="blocked";code="recipient_denied";}
                 catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
                 catch {valid=false;state="retry";code="access_unavailable";}
                 if(valid) {
                     try {
-                        long? finding=null;string? kind=null;
-                        if(job.Kind=="semantic_finding") {
-                            await using var cmd=new NpgsqlCommand("select finding_id,notification_kind from public.notification_finding_brief(@object)",db,tx);cmd.Parameters.AddWithValue("object",job.ObjectId);
-                            await using var r=await cmd.ExecuteReaderAsync(ct);if(!await r.ReadAsync(ct) || r.IsDBNull(0))throw new FormatException();finding=r.GetInt64(0);kind=r.GetString(1);
-                        }
                         bool enabled=false,cooling=false;string? secret=null,tls=null;long channelRevision=0;
                         await using(var cmd=new NpgsqlCommand("select enabled,tls_mode,secret_ref,next_delivery_at>clock_timestamp(),revision from notification_channels where kind='telegram' for update",db,tx)) {
                             await using var r=await cmd.ExecuteReaderAsync(ct);if(await r.ReadAsync(ct)){enabled=r.GetBoolean(0);tls=r.GetString(1);secret=r.GetString(2);cooling=r.GetBoolean(3);channelRevision=r.GetInt64(4);}
@@ -86,8 +83,9 @@ public sealed class TelegramWorker(NotificationDatabase database,TelegramSender 
                         if(!enabled || tls!="tls" || secret!="SLI_NOTIFY_TELEGRAM_TOKEN") outcome=new("telegram_not_configured");
                         else {
                             TelegramSettings? settings=null;string? text=null;
-                            try {settings=TelegramSettingsReader.Read(job.Recipient,Environment.GetEnvironmentVariable,ReadBounded);text=NotificationMessage.Format(job,settings.BaseUrl,finding,kind);}
+                            try {settings=TelegramSettingsReader.Read(job.Recipient,Environment.GetEnvironmentVariable,ReadBounded);}
                             catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or ArgumentException or FormatException or JsonException or InvalidOperationException or System.Text.DecoderFallbackException){}
+                            if(settings is not null) text=await NotificationAlert.FormatAsync(db,tx,job,settings.BaseUrl,recipientAccess,settings,ct);
                             outcome=settings is null || text is null ? new("telegram_not_configured") : await sender.SendAsync(settings,text,ct);
                         }
                         code=outcome.Code;retryAfter=outcome.RetryAfter;state=OutcomeState(code);
@@ -111,17 +109,11 @@ public sealed class TelegramWorker(NotificationDatabase database,TelegramSender 
         }
         return true;
     }
-    private async Task<bool> Allowed(long id,CancellationToken ct)
-    {
-        var access=new AccessReadService(database);var principal=await access.FindUserAsync(id,ct);if(principal is null)return false;
-        var facts=await new AccessFactsRepository(database).LoadAsync(principal,ct);var caps=new CapabilityComposer().Compose(facts);var reports=new ReportEligibility().Compose(facts,caps);
-        return ResourceAccessDecisions.ReportAction(reports,"security.queue","view",null,new HashSet<string>{"security"}).Allowed;
-    }
     public static (string State,int Delay) Completion(string state,int attempt,int retryAfter)
     {
         if(attempt<1 || retryAfter<0)throw new ArgumentOutOfRangeException();
         int[] delays=[60,300,900,3600];return (state=="retry" && attempt>=5 ? "failed" : state,Math.Max(delays[Math.Min(attempt-1,3)],retryAfter));
     }
     public static string OutcomeState(string code)=>code switch {"accepted"=>"accepted","telegram_rate_limited" or "telegram_unavailable"=>"retry","telegram_outcome_unknown"=>"delivery_unknown",_=>"blocked"};
-    private static byte[] ReadBounded(string path){using var f=File.OpenRead(path);var b=new byte[65537];int n=0,k;while(n<b.Length && (k=f.Read(b,n,b.Length-n))>0)n+=k;if(n>65536)throw new FormatException();return b[..n];}
+    internal static byte[] ReadBounded(string path){using var f=File.OpenRead(path);var b=new byte[65537];int n=0,k;while(n<b.Length && (k=f.Read(b,n,b.Length-n))>0)n+=k;if(n>65536)throw new FormatException();return b[..n];}
 }

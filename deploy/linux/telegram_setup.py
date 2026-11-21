@@ -4,6 +4,7 @@ Only the authenticated API container shares the private Unix socket. Credential
 publication uses sli-secrets' atomic, root-owned, group-readable file mechanism.
 The delivery container mounts this directory read-only; the API never mounts it.
 """
+import hashlib
 import json
 import os
 import re
@@ -95,29 +96,28 @@ class Setup:
             _publish(token_path, token.encode(), replace=True)
             self.candidates.clear()
             return {"secret_set": True, "bot_name": name}
-        token = token_path.read_text("utf-8")
+        token = token_path.read_text("utf-8").rstrip("\r\n")
         validate_notification_secret("notification_telegram_token", token)
-        if action == "chats" and set(body) == {"action", "user_id"}:
-            updates = bot_request(token, "getUpdates", {"timeout": 0, "limit": 100, "allowed_updates": ["message"]},
-                                  proxy_url=config.get("proxy_url", ""))
-            if not isinstance(updates, list):
-                raise TelegramSetupError(TelegramSetupCode.PROTOCOL)
+        generation = hashlib.sha256(token.encode()).hexdigest()
+        if action == "chat_generation" and set(body) == {"action", "user_id"}:
+            return {"generation": generation}
+        if action == "chats" and set(body) == {"action", "user_id", "generation", "observations"}:
+            observations = body["observations"]
+            if body["generation"] != generation or not isinstance(observations, list) or len(observations) > 100:
+                raise TelegramSetupError(TelegramSetupCode.CONFLICT)
             found = {}
-            for update in updates:
-                msg = update.get("message", {}) if isinstance(update, dict) else {}
-                chat = msg.get("chat", {})
-                chat_id = chat.get("id")
-                # Explicit /start only; never offer channels or unsolicited message senders.
-                if (chat.get("type") != "private" or type(chat_id) is not int or not 0 < chat_id < 10**16
-                        or str(msg.get("text", "")).split(" ")[0] != "/start"):
-                    continue
-                found[str(chat_id)] = str(chat.get("first_name") or chat.get("username") or "Telegram")[:128]
+            for chat in observations:
+                if (not isinstance(chat, dict) or set(chat) != {"id", "name"} or type(chat["id"]) is not int
+                        or not 0 < chat["id"] < 10**16 or not isinstance(chat["name"], str)
+                        or not 0 < len(chat["name"]) <= 128 or not chat["name"].isprintable()):
+                    raise TelegramSetupError(TelegramSetupCode.FAILED)
+                found[str(chat["id"])] = chat["name"]
             choices = {secrets.token_urlsafe(24): (chat, name) for chat, name in found.items()}
-            self.candidates[user] = (time.monotonic() + 300, choices)
+            self.candidates[user] = (time.monotonic() + 300, generation, choices)
             return {"chats": [{"choice": key, "name": value[1]} for key, value in choices.items()]}
         if action == "bind" and set(body) == {"action", "user_id", "choice"}:
-            expires, choices = self.candidates.get(user, (0, {}))
-            if time.monotonic() >= expires or body["choice"] not in choices:
+            expires, expected_generation, choices = self.candidates.get(user, (0, "", {}))
+            if time.monotonic() >= expires or expected_generation != generation or body["choice"] not in choices:
                 raise TelegramSetupError(TelegramSetupCode.FAILED)
             chat, name = choices[body["choice"]]
             config["recipients"][str(user)] = chat
