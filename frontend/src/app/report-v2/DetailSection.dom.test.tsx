@@ -56,18 +56,21 @@ it("keeps loaded evidence and offers retry when a later page fails", async () =>
   show();
   await screen.findByText(t("table.shown", { count: 20 }), { exact: false });
   fireEvent.click(screen.getByRole("button", { name: t("table.loadMore") }));
-  await screen.findByRole("button", { name: t("state.retry") });
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain(t("reports.states.load_failed", { subject: detail.title }));
+  expect(alert.hasAttribute("data-tone")).toBe(false);
   expect(screen.getAllByRole("link")).toHaveLength(20);
   fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
   await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(40));
 });
 
-it.each(["ru", "en"] as const)("shows a bounded count without using the finding's stored total (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("omits the lower bound without using the finding's stored total (%s)", async (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
   const bounded = { ...page(1, 20, true), filtered_count: null, coverage: { evidence_total_lower_bound: 10001 } };
   vi.spyOn(api, "reportV2Detail").mockResolvedValue(bounded);
   show();
-  expect(await screen.findByText(t("security.problems.evidence.lower_bound", { count: 10001 }))).toBeTruthy();
+  await screen.findByRole("table", { name: detail.title });
+  expect(screen.queryByText(/10001|10[ , ]001/)).toBeNull();
   expect(screen.getByRole("button", { name: t("table.loadMore") })).toBeTruthy();
   expect(screen.queryByText(/70/, { selector: ".sli-ds-table__footer span" })).toBeNull();
 });
@@ -81,7 +84,7 @@ it("uses the latest page's count when evidence is added between requests", async
   expect(screen.getAllByRole("link")).toHaveLength(40);
 });
 
-it.each(["ru", "en"] as const)("keeps unavailable source references on a later page with an informative partial state (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("keeps unavailable source references on a later page without a source caveat (%s)", async (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
   const partial = { ...page(21, 1, false), state: "partial" as const,
     items: [{ evidence_id: 21, event_db_id: null, event_id: null }],
@@ -90,17 +93,20 @@ it.each(["ru", "en"] as const)("keeps unavailable source references on a later p
   show();
   await screen.findByRole("button", { name: t("table.loadMore") });
   fireEvent.click(screen.getByRole("button", { name: t("table.loadMore") }));
-  expect(await screen.findByText(t("security.problems.evidence.partial", { count: 1 }))).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("button", { name: t("table.loadMore") })).toBeNull());
+  expect(screen.queryByText(/Источники для|sources? (for|are unavailable)/i)).toBeNull();
   expect(screen.getAllByRole("link")).toHaveLength(20);
   expect(screen.getAllByRole("row")).toHaveLength(22);
   expect(screen.queryByRole("button", { name: t("table.loadMore") })).toBeNull();
 });
 
-it.each(["ru", "en"] as const)("explains empty evidence without claiming the problem is absent (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("shows exactly one message for a problem with no linked events (%s)", async (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
   vi.spyOn(api, "reportV2Detail").mockResolvedValue({ ...page(1, 0, false), state: "empty", filtered_count: 0 });
   show();
-  expect(await screen.findByText(t("security.problems.evidence.empty"))).toBeTruthy();
+  const message = locale === "en" ? "No events are linked to this problem" : "У проблемы нет связанных событий";
+  await screen.findByText(message);
+  expect(screen.getByRole("status").textContent).toBe(message);
   expect(screen.queryByRole("link")).toBeNull();
   expect(screen.queryByRole("button", { name: t("table.loadMore") })).toBeNull();
 });
@@ -134,25 +140,28 @@ it.each([
   ["ru", "Сохранённый снимок прав", "Все", "Историческое назначение прав; текущие права и эффективный сетевой доступ не доказаны.", "Есть дополнительные назначения прав.", "Некоторые ограничения снимка не удалось описать."],
 ] as const)("opens historical native grants without an EventLog link (%s)", async (locale, snapshotLabel, everyone, historical, more, fallback) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
-  vi.spyOn(api, "reportV2Detail").mockResolvedValue({ ...page(1, 0, false), state: "partial", items: [nativeSnapshot()], filtered_count: 1 });
+  vi.spyOn(api, "reportV2Detail").mockResolvedValue({ ...page(1, 0, false), state: "partial", items: [nativeSnapshot()], filtered_count: 1,
+    limitations: [{ code: "synthetic", text: "Synthetic response limitation" }] });
   showNative();
-  fireEvent.click(await screen.findByRole("button", { name: snapshotLabel }));
+  const button = await screen.findByRole("button", { name: snapshotLabel });
+  expect(screen.queryByText(t("reports.detail.select_row_hint"))).toBeNull();
+  expect(screen.queryByText("Synthetic response limitation")).toBeNull();
+  fireEvent.click(button);
   expect(screen.getByText("/fixture-folder")).toBeTruthy();
   expect(screen.getByText(everyone)).toBeTruthy();
   expect(screen.getByText(t("security.scenarios.filters.risk.medium"))).toBeTruthy();
-  expect(screen.getByText(historical)).toBeTruthy();
-  expect(screen.getByText(more)).toBeTruthy();
-  expect(screen.getByText(fallback)).toBeTruthy();
+  expect(screen.queryByText(historical)).toBeNull();
+  expect(screen.queryByText(more)).toBeNull();
+  expect(screen.queryByText(fallback)).toBeNull();
   expect(screen.queryByText("<private-unregistered-reason>")).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
-  expect(screen.queryByText(t("security.problems.evidence.partial", { count: 1 }))).toBeNull();
   expect(screen.getByText(/NTFS/)).toBeTruthy();
-  expect(screen.getByText(locale === "en" ? "Partial inventory" : "Частичная инвентаризация")).toBeTruthy();
-  expect(screen.getByText(locale === "en" ? "Unread objects: 2." : "Непрочитанных объектов: 2.")).toBeTruthy();
+  expect(screen.queryByText(locale === "en" ? "Partial inventory" : "Частичная инвентаризация")).toBeNull();
+  expect(screen.queryByText(locale === "en" ? "Unread objects: 2." : "Непрочитанных объектов: 2.")).toBeNull();
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe("2026-01-02T03:04:05Z");
 });
 
-it.each(["ru", "en"] as const)("counts unavailable snapshots and missing events while retaining a real event link (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("keeps the real event link and names a failed permissions load (%s)", async (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
   const unavailable = nativeSnapshot({ evidence_key: "fixture-evidence-b", availability: "unavailable", observed_at_utc: null, resource: null,
     coverage: { state: "unknown", unread_objects: null, has_more: null }, grants: [], grants_has_more: false, limitations: ["native_source_unavailable"] });
@@ -161,13 +170,12 @@ it.each(["ru", "en"] as const)("counts unavailable snapshots and missing events 
       { storage_kind: "core_event", evidence_id: 10, event_db_id: null, evidence_role: "primary" }, nativeSnapshot(), unavailable],
     coverage: { evidence_missing_sources: 2 } });
   showNative();
-  expect(await screen.findByText(t("security.problems.evidence.partial", { count: 2 }))).toBeTruthy();
+  await screen.findByRole("link");
   expect(screen.getAllByRole("link")).toHaveLength(1);
   expect(new URL(screen.getByRole("link").getAttribute("href")!, window.location.origin).pathname).toBe("/app/events/901");
   fireEvent.click(screen.getAllByRole("button", { name: locale === "en" ? "Retained ACL snapshot" : "Сохранённый снимок прав" })[1]);
-  expect(screen.getByText(locale === "en" ? "The retained snapshot source is unavailable." : "Источник сохранённого снимка недоступен.")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe(locale === "en" ? "Could not load the saved permissions" : "Не удалось загрузить сохранённые права");
   expect(screen.queryByText("/fixture-folder")).toBeNull();
-  expect(screen.getByText(locale === "en" ? "Historical grant; current permissions and effective network access are not proven." : "Историческое назначение прав; текущие права и эффективный сетевой доступ не доказаны.")).toBeTruthy();
 });
 
 it("passes native cursors unchanged and retains selected domain across pages", async () => {
@@ -191,17 +199,17 @@ it("does not fetch native evidence or render snapshot metadata after a server ac
   expect(screen.queryByRole("link")).toBeNull();
 });
 
-it("keeps native unknown coverage distinct from zero unread objects", async () => {
+it("omits ACL coverage notes when coverage is unknown", async () => {
   vi.spyOn(api, "reportV2Detail").mockResolvedValue({ ...page(1, 0, false), items: [nativeSnapshot({
     coverage: { state: "unknown", unread_objects: null, has_more: null }, grants_has_more: false,
     limitations: ["__proto__"],
   })], filtered_count: 1 });
   showNative();
   fireEvent.click(await screen.findByRole("button", { name: "Сохранённый снимок прав" }));
-  expect(screen.getByText("Полнота инвентаризации неизвестна")).toBeTruthy();
+  expect(screen.queryByText("Полнота инвентаризации неизвестна")).toBeNull();
   expect(screen.queryByText("Непрочитанных объектов: 0.")).toBeNull();
   expect(screen.queryByText("Есть дополнительные назначения прав.")).toBeNull();
-  expect(screen.getByText("Некоторые ограничения снимка не удалось описать.")).toBeTruthy();
+  expect(screen.queryByText("Некоторые ограничения снимка не удалось описать.")).toBeNull();
 });
 
 function nativeSelectionHarness() {
@@ -225,13 +233,13 @@ it("removes selected snapshot metadata after a successful same-key unavailable r
   expect(screen.getByText("/fixture-folder")).toBeTruthy();
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe("2026-01-02T03:04:05Z");
   await act(async () => { await client.refetchQueries({ queryKey: ["report-v2", "detail"] }); });
-  await screen.findByText(t("security.problems.evidence.partial", { count: 1 }));
+  await waitFor(() => expect(screen.queryByText("/fixture-folder")).toBeNull());
   expect(screen.queryByText("/fixture-folder")).toBeNull();
   expect(document.querySelector("time")).toBeNull();
   expect(screen.queryByText("Все")).toBeNull();
   expect(screen.queryByText(t("security.scenarios.filters.risk.medium"))).toBeNull();
   expect(screen.queryByLabelText(t("reports.detail.selected_row_aria")) === null
-    || screen.queryByText("Источник сохранённого снимка недоступен.") !== null).toBe(true);
+    || screen.queryByText(t("evidence.acl.unavailable")) !== null).toBe(true);
 });
 
 it("clears snapshot selection when the row disappears after refetch", async () => {

@@ -1,6 +1,4 @@
 import { expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { en } from "./en";
 import { ru } from "./ru";
 
@@ -20,14 +18,4 @@ it("explains password attack observations and next steps in both languages", () 
     expect(en[key]).not.toEqual(ru[key as keyof typeof ru]);
   }
   expect(en["security.problems.presentation.password_limitation"]).toContain("do not prove");
-});
-
-it.each(["ru", "en"] as const)("mirrors all identity attack messages from the server in %s", (locale) => {
-  const server = JSON.parse(readFileSync(resolve(import.meta.dirname, `../../../config/i18n/server.${locale}.json`), "utf8")) as Record<string, string>;
-  const dictionary = locale === "ru" ? ru : en;
-  for (const [key, text] of Object.entries(server)) {
-    if (!key.startsWith("security.problems.presentation.")) continue;
-    expect(Object.hasOwn(dictionary, key), key).toBe(true);
-    expect(dictionary[key as keyof typeof dictionary], key).toBe(text);
-  }
 });

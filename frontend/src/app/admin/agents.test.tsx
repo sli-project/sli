@@ -335,6 +335,37 @@ it("loads the saved address and shows the certificate names beside a rejected ad
   expect(screen.queryByLabelText(t("agents.console.powerShell"))).toBeNull();
 });
 
+it("accepts a manually entered address after the saved address fails to load", async () => {
+  state.consoleSettings.mockRejectedValueOnce(new Error("fixture settings failure"));
+  mount(); await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+  expect(await panel.findByRole("alert")).toHaveProperty("textContent", t("agents.console.serverUrlLoadError"));
+  const address = panel.getByLabelText(t("agents.console.serverUrl"));
+  expect(address).toHaveProperty("disabled", false);
+  expect(address.getAttribute("aria-invalid")).toBe("false");
+  fireEvent.change(address, { target: { value: "https://manual.example.test" } });
+  const issue = panel.getByRole("button", { name: t("agents.console.issue") });
+  expect(issue).toHaveProperty("disabled", false);
+  fireEvent.click(issue);
+  expect(await panel.findByLabelText(t("agents.console.powerShell"))).toBeTruthy();
+  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(1, true, "https://manual.example.test");
+});
+
+it("can retry loading the saved address", async () => {
+  state.consoleSettings.mockRejectedValueOnce(new Error("fixture settings failure"))
+    .mockResolvedValueOnce({ server_url: "https://agents.example.test/" });
+  mount(); await screen.findByText(agent.host_name!);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
+  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+  fireEvent.click(await panel.findByRole("button", { name: t("state.retry") }));
+  const address = panel.getByLabelText(t("agents.console.serverUrl"));
+  await waitFor(() => expect(address).toHaveProperty("value", "https://agents.example.test/"));
+  expect(address).toHaveProperty("disabled", false);
+  expect(panel.queryByRole("alert")).toBeNull();
+  expect(state.consoleSettings).toHaveBeenCalledTimes(2);
+});
+
 it("reports when the server has no agent package", async () => {
   state.issueCommand.mockRejectedValue(new ApiResponseError(503, "agent_console_package_unavailable"));
   mount(); await screen.findByText(agent.host_name!);

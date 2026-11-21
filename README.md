@@ -41,10 +41,9 @@ port printed by setup.
 
 ### Install from the APT repository
 
-Use this path once the repository is published. You need `curl` and APT sources
-that provide the pinned PostgreSQL 18 packages from PGDG and the exact system
-library versions required by `sli-runtime`. The standard Debian 13 sources ship
-PostgreSQL 17. If the required versions are unavailable, use the archive below.
+Use this path once the repository is published. Keep the standard Debian 13
+sources enabled and have `curl` available. The signed SLI repository includes
+the pinned PostgreSQL 18 packages and the libraries required by `sli-runtime`.
 Use the published full signing key fingerprint for `<FINGERPRINT>`.
 
 ```sh
@@ -70,18 +69,27 @@ Update an existing installation:
 sudo apt update && sudo apt upgrade
 ```
 
+The repository keeps the current and previous SLI releases. Run `sudo sli-rollback`
+to restore the version installed before the update and its backup. If that version
+has left the repository, pass its extracted archive directory to `sudo sli-rollback`.
+
 ### Install from the archive
 
 Use a published beta release with both download files. Download into an empty
 directory you control. Leave space for the download, the unpacked kit and a
 temporary copy of the kit under `/tmp`.
 
-1. Download `sli-debian-beta-kit.tar.gz` and `SHA256SUMS` from the same
-   `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
+1. Copy the `beta-…` tag from the pre-release in
+   [Releases](https://github.com/sli-project/sli/releases) and replace
+   `beta-COMMIT12` in the command below.
    The release notes link to the GitHub Actions run and identify its source commit.
-   In the download directory, verify the archive before extracting it.
+   Run the command from the download directory to fetch `sli-debian-beta-kit.tar.gz`
+   and `SHA256SUMS` from the same release and verify the archive before extracting it.
 
    ```sh
+   tag=beta-COMMIT12
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/sli-debian-beta-kit.tar.gz" &&
+   curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/SHA256SUMS" &&
    sha256sum --check SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
    ```
 
