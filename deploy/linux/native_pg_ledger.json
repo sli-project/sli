@@ -571,6 +571,8 @@
     "config/postgres_migrations/391_agent_receipt_summary.sql": "a26249054f23dcacb2a0fff62d1900b4505950516ce7b9b1c9f64a12a635646c",
     "config/postgres_migrations/392_ad_snapshot_schedule.rollback.sql": "cd64171bf31b927b321929ae7fde95920e508ae12d466f7d3845668be00d84d1",
     "config/postgres_migrations/392_ad_snapshot_schedule.sql": "18efa097bd6e1959813ccdbd0fb84700958c921fb59a66f62c416201c0a518b0",
+    "config/postgres_migrations/393_password_pass_recovery.rollback.sql": "be87ec0ddd74659bb2653aa216ac2e17028ea631b6af60a247bd57b64fca1e35",
+    "config/postgres_migrations/393_password_pass_recovery.sql": "30a408e44dbb2feabe26d160a356a1809819a7e8fc821c422aeb2895706cedf6",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

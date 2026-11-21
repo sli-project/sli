@@ -49,7 +49,7 @@ public sealed class PasswordProducer
             }
             RequireOpen(db);return enabled?new(jobs,false,"committed",completed!["revision"]!.GetValue<long>(),PasswordJson.Obj(completed["health"]),Work:work):new(Failed:false,Status:"disabled");
         } catch(OperationCanceledException)when(ct.IsCancellationRequested){throw;}
-        catch (PostgresException error) when(error.SqlState==PostgresErrorCodes.LockNotAvailable) {RequireOpen(db);return new(Failed:false,Status:"busy",Diagnostic:DetectionDiagnostics.Describe(error,diagnostics.Step));}
+        catch (PostgresException error) when(error.SqlState is PostgresErrorCodes.LockNotAvailable or PostgresErrorCodes.SerializationFailure) {RequireOpen(db);return new(Failed:false,Status:"busy",Diagnostic:DetectionDiagnostics.Describe(error,diagnostics.Step));}
         catch (Exception error) {
             var diagnostic=DetectionDiagnostics.Describe(error,diagnostics.Step);if(db.FullState!=ConnectionState.Open)throw;bool observed=false;
             try {
