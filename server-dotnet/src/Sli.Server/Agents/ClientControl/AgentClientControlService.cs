@@ -40,7 +40,8 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if (body is JsonObject report && report.TryGetPropertyValue("dc_identity", out var evidence))
         {
             if (evidence is not JsonObject dc ||
-                !AgentClientPolicy.Keys(dc, "machine_role", "reported_hostname", "domain_dns", "forest_dns", "domain_sid"))
+                !dc.ContainsKey("machine_role") || !dc.ContainsKey("reported_hostname") || !dc.ContainsKey("domain_dns") ||
+                dc.Any(field => field.Key is not ("machine_role" or "reported_hostname" or "domain_dns" or "forest_dns" or "domain_sid")))
                 throw new AgentControlException("invalid_agent_module_config");
             dcIdentity = dc;
             report.Remove("dc_identity");

@@ -14,16 +14,19 @@ public sealed partial class AgentEnrollmentService
     internal static Task LockRegistrationAsync(NpgsqlConnection db, NpgsqlTransaction tx, CancellationToken ct) =>
         AdvisoryAsync(db, tx, "sli-agent-registration-reconcile", ct);
 
-    private static async Task<(JsonObject Agent, string Source, string SourceId, bool CanBootstrap, bool Pinned)?>
+    private static async Task<(JsonObject Agent, string Source, string SourceId, bool CanBootstrap, bool Pinned, bool DomainReported)?>
         ReadDcRegistrationAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, CancellationToken ct)
     {
         await using var read = new NpgsqlCommand("""
             select to_jsonb(a)::text,b.source_name,b.source_instance_id,
-                issued.details->>'console_token_id' is not null,issued.details->>'server_id' is not null
+                issued.details->>'console_token_id' is not null,issued.details->>'server_id' is not null,
+                issued.details ? 'dc_domain_reported'
             from sli_agents a join sli_agent_module_bindings b on b.agent_id=a.id and b.module_id='sli.windows.ad-dc'
             join lateral (select details,actor from sli_agent_audit where target=a.id::text and action='issue'
                 order by id desc limit 1) issued on true
             where a.id=@agent and a.status='active' and not a.rights_probe ? 'identity_conflict'
+              and exists(select 1 from sli_agent_certificates c where c.agent_id=a.id
+                  and c.revoked_at is null and c.not_after>statement_timestamp())
               and b.source_instance_id=coalesce(a.source_host_id,a.host_id)::text and b.channel='ad-dc'
               and (issued.details->>'console_token_id' is not null or (issued.details->>'server_id' is not null and exists (
                 select 1 from sli_agent_audit approved where approved.action='token_create'
@@ -37,7 +40,7 @@ public sealed partial class AgentEnrollmentService
         string source = row.GetString(1);
         var assignment = AgentPolicyAssignments.FindCurrent(state["assigned_modules"]!.AsArray(), AgentAdDcValidator.Live);
         if (StringValue(assignment?["config"] as JsonObject ?? new(), "source_name") != source) return null;
-        return (state, source, row.GetString(2), row.GetBoolean(3), row.GetBoolean(4));
+        return (state, source, row.GetString(2), row.GetBoolean(3), row.GetBoolean(4), row.GetBoolean(5));
     }
 
     internal static async Task<bool> NeedsDcIdentityAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, CancellationToken ct)
@@ -55,18 +58,32 @@ public sealed partial class AgentEnrollmentService
     {
         if (await ReadDcRegistrationAsync(db, tx, agent, ct) is not { } registration) return;
         var dc = await ResolveDcAsync(db, tx, registration.Source, ct, agent);
+        var registeredHost = HostName(StringValue(registration.Agent, "registration_host_name"));
+        bool canCreate = dc is null && registration.CanBootstrap && !registration.Pinned && registeredHost is { Length: <= 128 } &&
+            string.Equals(registeredHost, registration.Source, StringComparison.OrdinalIgnoreCase);
+        var original = dc;
         if (identityReport is not null)
         {
             var host = HostName(StringValue(identityReport, "reported_hostname"));
-            // A report can repair an owner-issued console registration. It must identify the
-            // same computer and cannot replace a pinned controller or a known domain SID.
-            if (!registration.CanBootstrap || dc is null && registration.Pinned || host is null ||
+            // The authenticated report must agree with the owner-issued registration.
+            string? reportedDns = HostName(StringValue(identityReport, "domain_dns"));
+            if (!registration.CanBootstrap || dc is null && !canCreate || registeredHost is null || host is null ||
                 StringValue(identityReport, "machine_role") != "domain_controller" ||
-                !string.Equals(host, StringValue(registration.Agent, "registration_host_name"), StringComparison.OrdinalIgnoreCase) ||
-                (dc is null && !string.Equals(host, registration.Source, StringComparison.OrdinalIgnoreCase))) return;
-            dc = await BootstrapSnapshotDomainAsync(db, tx, identityReport, host, dc, ct) ?? dc;
+                !(string.Equals(host, registeredHost, StringComparison.OrdinalIgnoreCase) ||
+                    !host.Contains('.') && reportedDns is not null &&
+                    string.Equals($"{host}.{reportedDns}", registeredHost, StringComparison.OrdinalIgnoreCase))) return;
+            dc = await BootstrapSnapshotDomainAsync(db, tx, identityReport, registeredHost, dc, ct) ?? dc;
+        }
+        else if (canCreate && !registration.DomainReported && registeredHost is not null && registeredHost.Contains('.'))
+        {
+            // Older registrations retained the name but no separate DNS identity.
+            // A qualified name can match an existing domain without authorizing a new one.
+            var registeredDns = new JsonObject { ["domain_dns"] = registeredHost[(registeredHost.IndexOf('.') + 1)..] };
+            dc = await BootstrapSnapshotDomainAsync(db, tx, registeredDns, registeredHost, null, ct);
         }
         if (dc is null) return;
+        if (original is null)
+            await RecordAgentReportedDcAsync(db, tx, agent, dc.Value.Server, ct);
 
         string? sid, dns;
         await using (var configure = new NpgsqlCommand("""
@@ -123,5 +140,26 @@ public sealed partial class AgentEnrollmentService
         update.Parameters.AddWithValue("modules", updated.ToJsonString());
         update.Parameters.AddWithValue("revision", revision);
         await update.ExecuteNonQueryAsync(ct);
+    }
+
+    internal static async Task ReconcileDcSourcesAsync(NpgsqlConnection db, NpgsqlTransaction tx,
+        IConfiguration? configuration, CancellationToken ct)
+    {
+        await LockRegistrationAsync(db, tx, ct);
+        var agents = new List<Guid>();
+        await using (var query = new NpgsqlCommand("""
+            select a.id from sli_agents a
+            join sli_agent_module_bindings b on b.agent_id=a.id and b.module_id='sli.windows.ad-dc'
+            where a.status='active' and not a.rights_probe ? 'identity_conflict'
+            order by a.id for update of a
+            """, db, tx))
+        await using (var rows = await query.ExecuteReaderAsync(ct))
+            while (await rows.ReadAsync(ct)) agents.Add(rows.GetGuid(0));
+        foreach (var agent in agents)
+        {
+            await AgentManagementService.LockImportAsync(db, tx, agent, ct);
+            await ReconcileDcSourceAsync(db, tx, agent, configuration, ct);
+            await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, agent, ct);
+        }
     }
 }

@@ -66,14 +66,14 @@ public sealed class EnrollmentTests : IDisposable
         using var identity = await enrollment.EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
         var report = enrollment.ReadDcIdentity();
-        if (role != "domain_controller" || !hasSid) Assert.Null(report);
+        if (role != "domain_controller" || !hasDomain) Assert.Null(report);
         else
         {
             Assert.Equal(Environment.MachineName, (string?)report?["reported_hostname"]);
             Assert.Equal(role, (string?)report?["machine_role"]);
             Assert.Equal("child.example.test", (string?)report?["domain_dns"]);
             Assert.Equal("example.test", (string?)report?["forest_dns"]);
-            Assert.Equal(sid, (string?)report?["domain_sid"]);
+            Assert.Equal(hasSid ? sid : null, (string?)report?["domain_sid"]);
         }
     }
 

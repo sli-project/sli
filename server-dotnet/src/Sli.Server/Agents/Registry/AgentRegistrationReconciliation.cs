@@ -127,9 +127,8 @@ public sealed partial class AgentEnrollmentService
     }
 }
 
-// Package upgrades apply the schema before restarting the API, so both a normal
-// startup and an upgraded installation run the same reconciliation. A temporarily
-// unavailable database is retried without needing an administrator's intervention.
+// Consolidation runs once after startup. Source provisioning also retries after
+// startup so later inventory changes can unblock an enrolled controller.
 public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,ILogger<AgentRegistrationReconciliation> logger,
     IConfiguration? configuration = null) : BackgroundService
 {
@@ -141,6 +140,7 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
         while(!stoppingToken.IsCancellationRequested)
         {
             int? reconciledRegistrations = null;
+            string failure = "agent_registration_reconciliation_failed";
             try
             {
                 await using var scope=scopes.CreateAsyncScope();
@@ -154,12 +154,20 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
                     reconciled = true;
                     reconciledRegistrations = retired;
                 }
+                else
+                {
+                    failure = "agent_dc_source_reconciliation_failed";
+                    await using var tx = await db.BeginTransactionAsync(stoppingToken);
+                    await AgentEnrollmentService.ReconcileDcSourcesAsync(db, tx, configuration, stoppingToken);
+                    await tx.CommitAsync(stoppingToken);
+                }
+                failure = "agent_console_token_cleanup_failed";
                 await using var cleanup = new NpgsqlCommand(
                     "delete from sli_agent_console_tokens where expires_at<=statement_timestamp()", db);
                 await cleanup.ExecuteNonQueryAsync(stoppingToken);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) { return; }
-            catch { logger.LogWarning(reconciled ? "agent_console_token_cleanup_failed" : "agent_registration_reconciliation_failed"); }
+            catch { logger.LogWarning("{Failure}", failure); }
             if (reconciledRegistrations is int retiredCount)
                 logger.LogInformation(ReconciliationCompleted, "agent_registration_reconciliation_completed retired={Retired}", retiredCount);
             try { await Task.Delay(reconciled ? TimeSpan.FromMinutes(1) : TimeSpan.FromSeconds(10),stoppingToken); }

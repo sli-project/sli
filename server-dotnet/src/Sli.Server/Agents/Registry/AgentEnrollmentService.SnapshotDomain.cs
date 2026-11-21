@@ -10,44 +10,50 @@ public sealed partial class AgentEnrollmentService
 {
     private static async Task<(long Server, string Name, long Domain, long? Site)?> BootstrapSnapshotDomainAsync(
         NpgsqlConnection db, NpgsqlTransaction tx, JsonObject body, string hostname,
-        (long Server, string Name, long Domain, long? Site)? dc, CancellationToken ct)
+        (long Server, string Name, long Domain, long? Site)? dc, CancellationToken ct, bool useDomainSid = true)
     {
-        string? sid = StringValue(body, "domain_sid");
-        if (sid is null || !Regex.IsMatch(sid, @"\AS-1-5-21-(?:[1-9][0-9]{0,9}|0)(?:-(?:[1-9][0-9]{0,9}|0)){2}\z")
-            || sid[9..].Split('-').Any(part => !uint.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out _)))
+        string? sid = useDomainSid ? StringValue(body, "domain_sid") : null;
+        if (useDomainSid && body.ContainsKey("domain_sid") &&
+            (sid is null || !Regex.IsMatch(sid, @"\AS-1-5-21-(?:[1-9][0-9]{0,9}|0)(?:-(?:[1-9][0-9]{0,9}|0)){2}\z")
+            || sid[9..].Split('-').Any(part => !uint.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out _))))
             return null;
+        if (dc is not null && sid is null) return dc;
 
-        string dns, forest, fqdn;
+        string dns, fqdn;
+        string? forest;
         try
         {
             dns = InstallationSettings.Dns(StringValue(body, "domain_dns") ?? "");
-            forest = InstallationSettings.Dns(StringValue(body, "forest_dns") ?? "");
+            forest = body.ContainsKey("forest_dns") ? InstallationSettings.Dns(StringValue(body, "forest_dns") ?? "") : null;
             fqdn = InstallationSettings.Dns(hostname.Contains('.') ? hostname : $"{hostname}.{dns}");
         }
         catch (InstallationException) { return null; }
-        if (fqdn.Length > 128 || !fqdn.EndsWith("." + dns, StringComparison.Ordinal)) return null;
+        if (fqdn[(fqdn.IndexOf('.') + 1)..] != dns) return null;
 
-        // The owner-issued console token authorizes bootstrapping a first domain.
-        // Once a SID is registered, console enrollment cannot take over that scope.
         long? domain = null;
+        string? knownSid = null;
         await using (var read = new NpgsqlCommand("""
-            select d.id,d.fqdn,d.domain_sid,f.name from domains d join forests f on f.id=d.forest_id
-            where not d.is_archived or d.domain_sid=@sid or lower(d.fqdn)=@dns
+            select d.id,lower(d.fqdn),d.domain_sid,lower(f.name),d.is_archived
+            from domains d join forests f on f.id=d.forest_id
+            where lower(d.fqdn)=@dns or d.domain_sid=@sid
             order by d.id limit 2 for update of d
             """, db, tx))
         {
-            read.Parameters.AddWithValue("sid", sid);
+            read.Parameters.Add("sid", NpgsqlTypes.NpgsqlDbType.Text).Value = (object?)sid ?? DBNull.Value;
             read.Parameters.AddWithValue("dns", dns);
             await using var rows = await read.ExecuteReaderAsync(ct);
             if (await rows.ReadAsync(ct))
             {
                 domain = rows.GetInt64(0);
-                if (!string.Equals(dns, rows.GetString(1), StringComparison.OrdinalIgnoreCase) || !rows.IsDBNull(2)
-                    || !string.Equals(forest, rows.GetString(3), StringComparison.OrdinalIgnoreCase)
+                knownSid = rows.IsDBNull(2) ? null : rows.GetString(2);
+                if (rows.GetString(1) != dns || rows.GetBoolean(4) ||
+                    forest is not null && rows.GetString(3) != forest ||
+                    sid is not null && knownSid is not null && knownSid != sid
                     || await rows.ReadAsync(ct)) return null;
             }
         }
         if (dc is { } configured && configured.Domain != domain) return null;
+        if (domain is null && forest is null) return null;
         if (dc is null)
         {
             await using var known = new NpgsqlCommand("""
@@ -60,28 +66,52 @@ public sealed partial class AgentEnrollmentService
             if (await known.ExecuteScalarAsync(ct) is true) return null;
         }
 
-        await using (var bind = new NpgsqlCommand(domain is null ? """
-            with forest as (insert into forests(name) values(@forest) on conflict(name) do update set name=excluded.name returning id)
-            insert into domains(forest_id,fqdn,domain_sid) select id,@dns,@sid from forest
-            on conflict(forest_id,fqdn) do nothing returning id
-            """ : """
-            update domains set domain_sid=@sid where id=@domain and not is_archived and domain_sid is null returning id
-            """, db, tx))
+        // An owner-issued grant may establish the SID during first-domain setup.
+        // An existing SID remains authoritative when registering another controller.
+        if (sid is not null && knownSid is null)
         {
-            bind.Parameters.AddWithValue("forest", forest);
-            bind.Parameters.AddWithValue("dns", dns);
+            await using var other = new NpgsqlCommand("select exists(select 1 from domains where not is_archived and lower(fqdn)<>@dns)", db, tx);
+            other.Parameters.AddWithValue("dns", dns);
+            if (await other.ExecuteScalarAsync(ct) is true) return null;
+        }
+        if (domain is null)
+        {
+            await using var create = new NpgsqlCommand("""
+                with known_forest as materialized (select id from forests where lower(name)=@forest),
+                     new_forest as (
+                         insert into forests(name) select @forest where not exists(select 1 from known_forest)
+                         on conflict(name) do update set name=excluded.name returning id
+                     )
+                insert into domains(forest_id,fqdn,domain_sid)
+                select id,@dns,@sid from new_forest
+                union all select id,@dns,@sid from known_forest where (select count(*) from known_forest)=1
+                on conflict(forest_id,fqdn) do nothing returning id
+                """, db, tx);
+            create.Parameters.AddWithValue("forest", forest!);
+            create.Parameters.AddWithValue("dns", dns);
+            create.Parameters.Add("sid", NpgsqlTypes.NpgsqlDbType.Text).Value = (object?)sid ?? DBNull.Value;
+            if (await create.ExecuteScalarAsync(ct) is not long created) return null;
+            domain = created;
+        }
+        else if (sid is not null && knownSid is null)
+        {
+            await using var bind = new NpgsqlCommand("update domains set domain_sid=@sid where id=@domain", db, tx);
+            bind.Parameters.AddWithValue("domain", domain.Value);
             bind.Parameters.AddWithValue("sid", sid);
-            if (domain is { } id) bind.Parameters.AddWithValue("domain", id);
-            if (await bind.ExecuteScalarAsync(ct) is not long idBound) return null;
-            domain = idBound;
+            await bind.ExecuteNonQueryAsync(ct);
         }
         if (dc is not null) return dc;
         await using var register = new NpgsqlCommand("""
-            insert into servers(domain_id,hostname,fqdn,role) values(@domain,@host,@fqdn,'domain_controller') returning id
+            insert into servers(domain_id,hostname,fqdn,role) values(@domain,@host,@fqdn,'domain_controller')
+            on conflict(domain_id,hostname) do nothing returning id
             """, db, tx);
         register.Parameters.AddWithValue("domain", domain.Value);
         register.Parameters.AddWithValue("host", hostname);
         register.Parameters.AddWithValue("fqdn", fqdn);
-        return ((long)(await register.ExecuteScalarAsync(ct))!, hostname, domain.Value, null);
+        return await register.ExecuteScalarAsync(ct) is long server ? (server, hostname, domain.Value, null) : null;
     }
+
+    private static Task RecordAgentReportedDcAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, long server, CancellationToken ct) =>
+        AuditAsync(db, tx, "module_assign", "system:agent-registration", agent.ToString("D"),
+            new JsonObject { ["module_id"] = "sli.windows.ad-dc", ["server_id"] = server, ["source"] = "agent_reported" }, ct);
 }
