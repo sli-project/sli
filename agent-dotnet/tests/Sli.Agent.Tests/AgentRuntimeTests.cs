@@ -9,6 +9,7 @@ using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Agent.Service;
 using Sli.Agent.Tests.Support;
+using Sli.Agent.Windows;
 using Xunit;
 
 namespace Sli.Agent.Tests;
@@ -130,9 +131,13 @@ public sealed class AgentRuntimeTests : IDisposable
     [Fact]
     public void StatusCarriesOnlySafeDiagnosticsAndCounts()
     {
-        // The status model has a fixed, small set of fields to prevent leaking host names, paths, keys or event data.
+        // Allow only counters and diagnostics at both levels of the status model.
         var keys = typeof(CycleStatus).GetProperties().Select(property => property.Name).Order().ToArray();
-        Assert.Equal(new[] { "CollectionActive", "Captured", "DeliveryFailed", "ErrorCode", "ErrorDetail", "Pending" }.Order().ToArray(), keys);
+        Assert.Equal(new[] { "Captured", "CollectionActive", "DeliveryFailed", "ErrorCode", "ErrorDetail", "Pending", "SnapshotFailures" }, keys);
+        Assert.Equal(typeof(IReadOnlyDictionary<string, SnapshotFailure>),
+            typeof(CycleStatus).GetProperty(nameof(CycleStatus.SnapshotFailures))!.PropertyType);
+        var snapshotKeys = typeof(SnapshotFailure).GetProperties().Select(property => property.Name).Order().ToArray();
+        Assert.Equal(new[] { "Code", "Detail" }, snapshotKeys);
     }
 
     [Theory]

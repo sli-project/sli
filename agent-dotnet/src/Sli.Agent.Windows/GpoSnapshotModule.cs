@@ -12,8 +12,10 @@ public sealed class GpoSnapshotModule(IDirectorySnapshotReader reader)
         var raw = await reader.ReadAsync(policy, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         try { return Normalize(raw, policy); }
+        catch (AgentException e)
+        { throw SnapshotCaptureException.Describe(policy.ModuleId, e.Code == "agent_gpo_size_limit" ? "size" : "normalize", e); }
         catch (Exception e) when (e is InvalidOperationException or NullReferenceException or FormatException or KeyNotFoundException)
-        { throw new AgentException("agent_gpo_capture_invalid"); }
+        { throw SnapshotCaptureException.Describe(policy.ModuleId, "normalize", e); }
     }
 
     public static IReadOnlyDictionary<string, SnapshotFamily> Normalize(JsonObject raw, SnapshotPolicy policy, Func<Guid>? newId = null)

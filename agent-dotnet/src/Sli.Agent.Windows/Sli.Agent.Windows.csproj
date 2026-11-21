@@ -9,6 +9,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Sli.Agent.Tests" />
     <EmbeddedResource Include="..\..\..\sli_agent\ad_snapshot.ps1" LogicalName="ad_snapshot.ps1" />
     <EmbeddedResource Include="..\..\..\sli_agent\gpo_snapshot.ps1" LogicalName="gpo_snapshot.ps1" />
     <EmbeddedResource Include="..\..\..\scripts\ad_context\GpoReportContract.psm1" LogicalName="GpoReportContract.psm1" />
