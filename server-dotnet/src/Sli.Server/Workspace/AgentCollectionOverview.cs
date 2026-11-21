@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Sli.Server.Access;
+using Sli.Server.InstallationSetup;
 using static Sli.Server.Workspace.WorkspaceJson;
 
 namespace Sli.Server.Workspace;
@@ -102,9 +103,9 @@ public sealed class AgentCollectionOverview(IWorkspaceRows rows)
                             if (state == "error") { reason = "packet_stale"; since = Later(packet?.AddSeconds(budget), deadline); }
                         }
                         else if (Age(imported, now) > budget) { state = "error"; reason = "import_overdue"; since = imported?.AddSeconds(budget); }
-                        else if (pending is not null) state = "lagging";
-                        else if (module == "sli.file-audit" && stream.Get("read_error").ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) state = "unknown";
-                        else state = imported is not null ? "current" : "unknown";
+                        else state = SetupCollectionHealth.FreshStreamState(pending,
+                            module == "sli.file-audit" && stream.Get("read_error").ValueKind is JsonValueKind.Undefined or JsonValueKind.Null,
+                            imported is not null);
                     }
                     if (since is not null) { if (!applied) since = Later(since, deadline); observed = now; }
                     long? lag = pending ?? (packet is not null && imported is not null ? Math.Max(0, (long)(imported.Value - packet.Value).TotalSeconds) : null);
@@ -119,7 +120,7 @@ public sealed class AgentCollectionOverview(IWorkspaceRows rows)
             var activeChecks = modules.SelectMany(m => m.channels).Where(c => c.state is not ("paused" or "disabled")).ToArray();
             string agentState = agent.Text("status") != "active" ? "disabled" : !enabled ? "paused" : !diagnosticsAvailable ? "unknown"
                 : activeChecks.Any(c => c.state == "error") ? "error" : !applied || activeChecks.Length == 0 ? "waiting"
-                : activeChecks.All(c => c.state == "current") ? "current" : activeChecks.Any(c => c.state == "lagging") ? "lagging"
+                : activeChecks.All(c => c.state == "current") ? "current"
                 : activeChecks.Any(c => c.state == "waiting") ? "waiting" : "unknown";
             string hostName = HumanName(agent.Text("host_name")) ?? ReportedName(agent.Text("registration_host_name"))
                 ?? agent.Get("assigned_modules").Items().FirstOrDefault(a => a.Text("module_id") == "sli.windows.ad-dc").Get("config").Text("source_name").Trim();

@@ -10,6 +10,42 @@ namespace Sli.Server.Tests.InstallationSetup;
 public sealed class SetupAgentCollectionTests
 {
     [Theory]
+    [InlineData(20, 20, "current", null)]
+    [InlineData(20, 900, "current", null)]
+    [InlineData(20, 901, "error", "import_overdue")]
+    [InlineData(901, null, "error", "packet_stale")]
+    public void Stream_health_distinguishes_normal_import_wait_from_overdue_import_and_stale_packets(
+        int packetAge, int? pendingAge, string expectedState, string? expectedReason)
+    {
+        var now = DateTimeOffset.Parse(Stamp);
+        var agents = Agents();
+        agents[0]!["last_seen"] = Stamp;
+        agents[0]!["created_at"] = now.AddHours(-1).ToString("O");
+        var streams = new JsonArray(new JsonObject {
+            ["agent_id"] = "agent-1", ["module_id"] = Dc, ["revision"] = "1", ["channel"] = "Security",
+            ["last_packet_at"] = now.AddSeconds(-packetAge).ToString("O"),
+            ["last_import_at"] = now.AddSeconds(-60).ToString("O"),
+            ["pending_since"] = pendingAge is int age ? now.AddSeconds(-age).ToString("O") : null
+        });
+        var setup = SetupCollectionHealth.View(agents, streams, now);
+        var workspace = JsonSerializer.SerializeToNode(AgentCollectionOverview.Compose(
+            JsonSerializer.SerializeToElement(agents).EnumerateArray().ToArray(),
+            JsonSerializer.SerializeToElement(streams).EnumerateArray().ToArray(), now))!.AsObject();
+        foreach (var view in new[] { setup, Sli.Server.Operations.OperationsService.AgentView(agents, streams, now), workspace })
+        {
+            var source = Assert.Single(view["items"]!.AsArray())!;
+            var channel = Assert.Single(source["modules"]![0]!["channels"]!.AsArray())!;
+            Assert.Equal("online", T(source["connection"]));
+            Assert.Equal(expectedState, T(source["state"]));
+            Assert.Equal(expectedState, T(channel["state"]));
+            Assert.Equal(expectedReason, channel["failure_reason"]?.GetValue<string>());
+            if (pendingAge is int wait) Assert.Equal((long)wait, channel["import_lag_seconds"]!.GetValue<long>());
+        }
+        Assert.Equal(expectedState == "current",
+            Instance(Project(setup, SetupCollectionHealth.Bindings(agents), Controllers()))["data_received"]!.GetValue<bool>());
+    }
+
+    [Theory]
     [InlineData("short_event_attestation_failed")]
     [InlineData("short_event_summary_conflict")]
     public void Packet_refusal_is_visible_immediately_even_after_a_new_successful_import(string reason)

@@ -23,6 +23,11 @@ public static class SetupCollectionHealth
         .Where(g => Time(g["from_utc"]) is {} from && Time(g["to_utc"]) is {} to && from <= to)
         .Select(g => (JsonNode?)g.DeepClone()).ToArray());
     internal static long ContactBudgetSeconds(long interval) => Math.Max(300, interval * 3);
+    internal static string FreshStreamState(long? pendingAge, bool missingReadEvidence, bool hasImport)
+    {
+        if (pendingAge is not null) return "current";
+        return !missingReadEvidence && hasImport ? "current" : "unknown";
+    }
     public static string?[] Channels(string module, JsonObject config)
     {
         if (Snapshot(module)) return [null];
@@ -135,9 +140,8 @@ public static class SetupCollectionHealth
                             if (state == "error") { failure = "packet_stale"; since = Time(stream["last_packet_at"])?.AddSeconds(budget); if (graceDeadline > since) since = graceDeadline; }
                         }
                         else if (Age(stream["last_import_at"], now) > budget) { state = "error"; failure = "import_overdue"; since = Time(stream["last_import_at"])?.AddSeconds(budget); }
-                        else if (pending is not null) state = "lagging";
-                        else if (module == "sli.file-audit" && stream["read_error"] is null) state = "unknown";
-                        else state = stream["last_import_at"] is not null ? "current" : "unknown";
+                        else state = FreshStreamState(pending, module == "sli.file-audit" && stream["read_error"] is null,
+                            stream["last_import_at"] is not null);
                     }
                     if (since is not null) { if (!applied && graceDeadline > since) since = graceDeadline; observed = now; }
                     long? lag = pending;
@@ -156,7 +160,7 @@ public static class SetupCollectionHealth
             var activeChecks = modules.OfType<JsonObject>().SelectMany(m => Array(m["channels"]).OfType<JsonObject>()).Where(c => T(c["state"]) is not ("paused" or "disabled")).ToArray();
             string stateForAgent = T(agent["status"]) != "active" ? "disabled" : !enabled ? "paused" : !diagnosticsAvailable ? "unknown"
                 : activeChecks.Any(c => T(c["state"]) == "error") ? "error" : !applied || activeChecks.Length == 0 ? "waiting"
-                : activeChecks.All(c => T(c["state"]) == "current") ? "current" : activeChecks.Any(c => T(c["state"]) == "lagging") ? "lagging"
+                : activeChecks.All(c => T(c["state"]) == "current") ? "current"
                 : activeChecks.Any(c => T(c["state"]) == "waiting") ? "waiting" : "unknown";
             string name = HumanName(T(agent["canonical_host_name"]));
             if(name.Length==0) name=HumanName(T(agent["host_name"]));

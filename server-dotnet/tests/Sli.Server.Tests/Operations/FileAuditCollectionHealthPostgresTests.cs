@@ -101,7 +101,7 @@ public sealed class FileAuditCollectionHealthPostgresTests
             (Rows: new[] { Row(2, 60, failed), Row(1, 30, clean) }, State: "current", Reason: (string?)null, Flag: (bool?)false),
             (Rows: new[] { Row(1, 30, clean), Row(2, 30, failed) }, State: "error", Reason: (string?)"read_error", Flag: (bool?)true),
             (Rows: new[] { Row(1, 30, unknown) }, State: "unknown", Reason: (string?)null, Flag: (bool?)null),
-            (Rows: new[] { Row(1, 30, clean, false) }, State: "lagging", Reason: (string?)null, Flag: (bool?)false),
+            (Rows: new[] { Row(1, 30, clean, false) }, State: "current", Reason: (string?)null, Flag: (bool?)false),
             (Rows: new[] { Row(1, 1000, failed, false), Row(2, 30, clean) }, State: "error", Reason: (string?)"import_overdue", Flag: (bool?)false)
         };
         await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
