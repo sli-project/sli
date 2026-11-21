@@ -132,10 +132,11 @@ public sealed partial class ProblemRepository
     internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true)
     {
         var args = new Dictionary<string, object?>();
-        var clauses = new List<string> { "is_semantic_finding_published_v1(findings.id)", "(findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))" };
+        var admission = new List<string> { "is_semantic_finding_published_v1(findings.id)", "(findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))" };
+        var clauses = new List<string>();
         if (query.Risk == "accepted") clauses.Add(Accepted); else if (query.Risk != "all") clauses.Add("not " + Accepted);
-        if (!query.Suppressed && query.Risk != "accepted") clauses.Add("not (" + Suppressed + ")");
-        if (query.Domains is not null) { args["domains"] = query.Domains; clauses.Add("semantic_finding_in_domains_v265(findings.id,@domains::bigint[])"); }
+        if (!query.Suppressed && query.Risk != "accepted") admission.Add("not (" + Suppressed + ")");
+        if (query.Domains is not null) { args["domains"] = query.Domains; admission.Add("semantic_finding_in_domains_v265(findings.id,@domains::bigint[])"); }
         if (query.EntityId is not null) { args["entity"] = query.EntityId; clauses.Add("exists(select 1 from finding_entities linked where linked.finding_id=findings.id and linked.entity_id=@entity)"); }
         if (!string.IsNullOrEmpty(query.Status)) {
             if (query.PageQueue && query.Status == "new") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
@@ -153,7 +154,13 @@ public sealed partial class ProblemRepository
         if (query.Population == "attention") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
         if (query.Population == "open" && string.IsNullOrEmpty(query.Status) && string.IsNullOrEmpty(query.Risk))
             clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated','active','review') and not ({Accepted})");
-        string where = " where " + string.Join(" and ", clauses); args["limit"] = query.Limit + 1;
+        // In the queue, apply status and risk filters before classifying event
+        // witnesses. In particular, closed findings should not incur suppression
+        // and domain checks just because an exception is active for their rule.
+        string where = query.QueueList && clauses.Count > 0
+            ? $" where case when {string.Join(" and ", clauses)} then {string.Join(" and ", admission)} else false end"
+            : " where " + string.Join(" and ", admission.Concat(clauses));
+        args["limit"] = query.Limit + 1;
         string population = Population, prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
         if (query.GroupQueue) {
             args["cohort_zone"] = query.Timezone;
