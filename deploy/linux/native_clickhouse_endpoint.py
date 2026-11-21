@@ -8,12 +8,24 @@ the Docker socket. SQL and backup formats do not depend on the implementation.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import re
 import tarfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
+
+try:
+    from deploy.linux.native_remove import database_directory_path as database_directory_path
+    from deploy.linux.native_remove import directory_mount_unit as directory_mount_unit
+except ModuleNotFoundError:  # Installed helpers run with isolated Python.
+    _spec = importlib.util.spec_from_file_location(
+        'sli_native_remove', Path(__file__).with_name('native_remove.py'))
+    _storage = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_storage)
+    database_directory_path = _storage.database_directory_path
+    directory_mount_unit = _storage.directory_mount_unit
 
 try:
     import tomllib
@@ -184,18 +196,6 @@ def server_name(value):
 def site_configuration(root=Path("/")):
     site = root / "etc/sli/site.toml"
     return parse_site(trusted_text(site) if site.exists() or site.is_symlink() else "")
-
-
-def database_directory_path(value):
-    require(isinstance(value, str)
-            and (re.fullmatch(r'/(?:var/lib|srv|mnt)/[A-Za-z0-9_-]+', value)
-                 or re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)*sli-db(?:-2)?', value))
-            and not value.startswith(('/srv/sli-db/', '/var/lib/sli/', '/var/lib/postgresql/',
-                                      '/var/lib/clickhouse/', '/var/backups/sli/', '/opt/sli/',
-                                      '/home/', '/root/', '/run/', '/tmp/', '/var/tmp/'))
-            and value not in {'/srv/sli-db', '/var/lib/sli', '/var/lib/postgresql', '/var/lib/clickhouse'},
-            'native_database_directory_invalid')
-    return value
 
 
 def database_directory(root=Path('/')):

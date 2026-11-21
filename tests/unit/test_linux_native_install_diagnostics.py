@@ -5,8 +5,53 @@ from types import SimpleNamespace
 import pytest
 
 from deploy.linux import native_install as install
+from deploy.linux import native_host as host
 from deploy.linux import native_setup as setup
 from deploy.linux import operation_wait as operation
+
+
+@pytest.mark.parametrize('outcomes', [(1, 2, 0), (1, 1)])
+def test_bootstrap_waits_for_postgres_before_sql(monkeypatch, outcomes):
+    pending = iter(outcomes)
+    ticks = iter([0, 0, 60 if outcomes[-1] else 1])
+    probes = []
+
+    def pg_isready(argv, **kwargs):
+        probes.append(argv)
+        return SimpleNamespace(returncode=next(pending), stderr='')
+
+    def psql(argv, **kwargs):
+        assert len(probes) == len(outcomes) and outcomes[-1] == 0
+        assert argv[0] == 'psql'
+        raise RuntimeError('sql-reached')
+
+    monkeypatch.setattr(subprocess, 'run', pg_isready)
+    monkeypatch.setattr(host, 'run', psql)
+    monkeypatch.setattr(host, 'time', SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda seconds: None))
+    reason = 'sql-reached' if outcomes[-1] == 0 else 'native_postgres_bootstrap_unready'
+    with pytest.raises(RuntimeError, match=reason):
+        host.bootstrap_pg()
+    assert len(probes) == len(outcomes)
+
+
+@pytest.mark.parametrize('sensitive_input', [False, True])
+def test_host_journals_sanitized_command_stderr(monkeypatch, capsys, sensitive_input):
+    cause = 'psql: FATAL: the database system is starting up'
+    stderr = '\n'.join([cause, 'Password: test-value-a', 'token=test-value-b',
+                        'DETAIL: Failing row contains (test-value-c)',
+                        *(['test-unlabelled-query-fragment'] if sensitive_input else [])])
+    monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(
+        returncode=1, stdout='test-private-stdout', stderr=stderr))
+    journal = []
+    monkeypatch.setattr(setup.diagnostics, 'log_code', journal.append)
+    with pytest.raises(host.HostError, match='native_command_failed') as caught:
+        host.run(['psql'], sensitive_input=sensitive_input)
+    setup.diagnostics.failure(caught.value)
+    logged = '\n'.join(journal)
+    assert '[redacted' in logged
+    assert (cause in logged) is not sensitive_input
+    assert 'test-' not in logged
+    assert capsys.readouterr().err.strip() == 'native_command_failed: psql'
 
 
 @pytest.mark.parametrize('argv,shown', [

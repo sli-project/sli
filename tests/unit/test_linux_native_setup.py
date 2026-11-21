@@ -271,6 +271,7 @@ def setup_host(tmp_path, monkeypatch):
     check_setup_units = setup.host.Host(tmp_path / 'host').check_setup_units
     machine = SimpleNamespace(write=write, prepare=prepare, receipt=lambda: calls.append('receipt'),
                               select_database_directory=lambda **kwargs: '/var/lib/sli-db',
+                              mounted_database_uuid=lambda: None,
                               check_setup_units=check_setup_units)
     monkeypatch.setattr(setup.host, 'Host', lambda: machine)
     monkeypatch.setattr(setup, 'check_port', lambda site, *, saved: calls.append('check-port'))
@@ -782,8 +783,17 @@ def first_start_install(tmp_path, monkeypatch):
     monkeypatch.setattr(native_host, 'administrative_lock', nullcontext)
     monkeypatch.setattr(native_host, 'validate_identity', lambda: None)
     calls = []
-    monkeypatch.setattr(native_host, 'Host', lambda: SimpleNamespace(
-        receipt=lambda: None, configure=lambda: calls.append('host-configure')))
+    pgdata = Path(native_host.MOUNT) / 'pgdata'
+
+    def configure_host():
+        calls.append('host-configure')
+        pgdata.mkdir(parents=True, exist_ok=False)
+        (pgdata / 'PG_VERSION').write_bytes(b'18\n')
+
+    control = {'fail': True, 'bootstrap_fails': False, 'owner': 'unclaimed', 'postgres_id': '123456789'}
+    machine = SimpleNamespace(receipt=lambda: None, configure=configure_host,
+                              postgres_system_identifier=lambda: control['postgres_id'])
+    monkeypatch.setattr(native_host, 'Host', lambda: machine)
     monkeypatch.setattr(runtime, 'no_transaction', lambda: None)
     monkeypatch.setattr(runtime, 'wait_databases', lambda: None)
     monkeypatch.setattr(runtime, 'configure', lambda config: calls.append('runtime-configure'))
@@ -794,9 +804,10 @@ def first_start_install(tmp_path, monkeypatch):
     monkeypatch.setattr(install, 'wait_health', lambda: calls.append('healthy'))
     monkeypatch.setattr(install, 'preserve_recovery', lambda *args: calls.append('recovery-saved'))
     monkeypatch.setattr(native_backup, 'configure', lambda: calls.append('backup-configured'))
-    control = {'fail': True, 'owner': 'unclaimed'}
     def command(argv, **kwargs):
         calls.append(argv)
+        if argv == ['systemctl', 'start', 'sli-bootstrap-pg.service'] and control['bootstrap_fails']:
+            raise RuntimeError('synthetic_bootstrap_failure')
         if argv == ['systemctl', 'start', 'sli-ready.service'] and control['fail']:
             raise RuntimeError('synthetic_first_start_failure')
         if '--initial-admin' in argv and 'check' in argv and control['owner'] != 'unclaimed':
@@ -832,6 +843,34 @@ def test_retry_after_early_configure_failure_preserves_existing_postgres(first_s
     else:
         install.configure('beta')
         assert json.loads((state / 'package-install.json').read_text())['status'] == 'configured'
+
+
+@pytest.mark.parametrize('replaced_cluster', [False, True])
+def test_retry_after_bootstrap_failure_verifies_and_reuses_prepared_cluster(first_start_install, replaced_cluster):
+    from deploy.linux import native_host
+
+    state, calls, control = first_start_install
+    control.update(fail=False, bootstrap_fails=True)
+    with pytest.raises(RuntimeError, match='synthetic_bootstrap_failure'):
+        install.configure('beta')
+    assert not (state / 'installed.json').exists()
+    data = Path(native_host.MOUNT) / 'pgdata/PG_VERSION'
+    assert data.read_bytes() == b'18\n'
+    control['bootstrap_fails'] = False
+    calls.clear()
+    if replaced_cluster:
+        control['postgres_id'] = '987654321'
+        with pytest.raises(RuntimeError, match='native_install_interrupted_requires_recovery'):
+            install.configure('beta')
+        assert not calls
+    else:
+        install.configure('beta')
+        assert json.loads((state / 'package-install.json').read_text())['status'] == 'configured'
+        assert 'host-configure' not in calls
+        bootstrap = calls.index(['systemctl', 'start', 'sli-bootstrap-pg.service'])
+        migration = next(i for i, call in enumerate(calls) if isinstance(call, list) and 'migrate' in call)
+        assert bootstrap < migration
+    assert data.read_bytes() == b'18\n'
 
 
 @pytest.mark.parametrize('legacy', [False, True])

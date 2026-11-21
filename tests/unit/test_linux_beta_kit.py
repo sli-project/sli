@@ -340,6 +340,11 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     }
     assert json.loads((output / 'manifest.json').read_text()) == manifest
     assert kit.sha256(output / 'remove-beta-kit') == manifest['remover']['sha256']
+    kit.archive_kit(output)
+    with tarfile.open(output / 'sli-debian-beta-kit.tar.gz') as archive:
+        assert archive.getmember('sli-debian-beta-kit/remove-beta-kit').mode & 0o111 == 0o111
+    remover = subprocess.run([output / 'remove-beta-kit', '--help'], capture_output=True, text=True, check=True)
+    assert '--purge-data' in remover.stdout
     subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True)
     extracts = tmp_path / 'package'
     server_package = next(output.glob('sli-release-fixture_*.deb'))

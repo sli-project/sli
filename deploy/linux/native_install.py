@@ -96,8 +96,8 @@ def setup_deadline():
 def configure_guarded(release):
     """A timed out reinstall may restart only the same accepted, unchanged DB.
 
-    First-start failures stay fenced. Schema-changing package upgrades use the
-    upgrade journal/checkpoint recovery boundary instead of this narrow path.
+    Setup verifies the saved intent before retrying first start. Schema-changing
+    upgrades use the upgrade journal and its recovery checkpoint.
     """
     previous = None
     if (STATE / 'installed.json').exists() and (STATE / 'package-install.json').exists():
@@ -488,6 +488,7 @@ def configure(release):
     config = runtime_settings(site)
     receipt_base = {"schema_version": 1, "release": release,
                     "site_sha256": site_digest(site), "first_start_pending": True}
+    preparation = {}
     machine = host.Host()
     # Before any write: validate preparation, mount, service identities and inventory.
     with host.administrative_lock():
@@ -516,17 +517,27 @@ def configure(release):
         else:
             require(not CURRENT.exists() and not CURRENT.is_symlink(), "native_install_foreign_current")
             intent = STATE / "package-install.json"
+            prepared_postgres = None
             if intent.exists() or intent.is_symlink():
                 previous = json.loads(trusted(intent))
                 require(previous.get("schema_version") == 1 and previous.get("first_start_pending") is True
                         and previous.get("status") in {"failed", "configuring"}
+                        and previous.get("release") == release
                         and previous.get("site_sha256") == receipt_base["site_sha256"],
                         "native_install_interrupted_requires_recovery")
-            # A pre-existing configured dataset is not implicitly adopted as fresh.
-            require(not any(path.exists() or path.is_symlink() for path in
-                            (Path(host.MOUNT) / "pgdata", Path(host.MOUNT) / "clickhouse")),
-                    "native_install_interrupted_requires_recovery" if intent.exists() else "native_install_foreign_data")
-            atomic(intent, dict(receipt_base, status="configuring"))
+                prepared_postgres = previous.get('postgres_system_identifier')
+            pgdata = Path(host.MOUNT) / 'pgdata'
+            clickhouse = Path(host.MOUNT) / 'clickhouse'
+            refusal = 'native_install_interrupted_requires_recovery' if intent.exists() else 'native_install_foreign_data'
+            require(not clickhouse.exists() and not clickhouse.is_symlink(), refusal)
+            if prepared_postgres is not None:
+                # Only a cluster recorded before the service started can be reopened.
+                require(previous.get('manifest_sha256') == digest and pgdata.is_dir() and not pgdata.is_symlink()
+                        and machine.postgres_system_identifier() == prepared_postgres, refusal)
+                preparation = {'manifest_sha256': digest, 'postgres_system_identifier': prepared_postgres}
+            else:
+                require(not pgdata.exists() and not pgdata.is_symlink(), refusal)
+            atomic(intent, dict(receipt_base, **preparation, status="configuring"))
     resuming = bool(installed) and receipt_base["first_start_pending"]
     if resuming:
         # Fence any writers left by a killed first start before checking owner
@@ -543,7 +554,12 @@ def configure(release):
     writers_configured = bool(installed)
     try:
         if not installed:
-            machine.configure()
+            if not preparation:
+                with host.administrative_lock():
+                    machine.configure()
+                    preparation = {'manifest_sha256': digest,
+                                   'postgres_system_identifier': machine.postgres_system_identifier()}
+                    atomic(intent, dict(receipt_base, **preparation, status='configuring'))
             env = environment()
             if site.get("owner_setup"):
                 env["SLI_NATIVE_OWNER_SETUP"] = "1"
@@ -602,7 +618,7 @@ def configure(release):
                 command(["systemctl", "stop", "sli-backup.service", "sli-backup-drill.service"], timeout=600)
                 runtime.stop_writers()
         finally:
-            atomic(STATE / "package-install.json", dict(receipt_base, status="failed"))
+            atomic(STATE / "package-install.json", dict(receipt_base, **preparation, status="failed"))
             if writers_configured:
                 command(["systemctl", "disable", "sli.target"])
         raise
@@ -616,7 +632,8 @@ def preserve_recovery(root, manifest, digest):
     ensure_directory(RECOVERY, 0o700)
     ensure_directory(recovery, 0o700)
     for name in ("native_host.py", "native_runtime.py", "native_install.py", "native_backup.py", "native_upgrade.py",
-                 "native_clickhouse_endpoint.py", "native_preinstall.py", "native_pins.json", "backup_policy.py", "operation_wait.py"):
+                 "native_clickhouse_endpoint.py", "native_preinstall.py", "native_remove.py", "native_pins.json",
+                 "backup_policy.py", "operation_wait.py"):
         destination = recovery / name
         body = trusted(root / "deploy/linux" / name)
         if destination.exists():

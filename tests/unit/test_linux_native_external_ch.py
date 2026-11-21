@@ -146,7 +146,8 @@ def test_fresh_lifecycle_waits_for_postgres_before_migration_and_readiness(tmp_p
     monkeypatch.setattr(native_install, "wait_api", lambda config: calls.append("api-ready"))
     monkeypatch.setattr(native_install, "wait_health", lambda: calls.append("healthy"))
     monkeypatch.setattr(native_install, "preserve_recovery", lambda *a: calls.append("recovery"))
-    monkeypatch.setattr(host, "Host", lambda: SimpleNamespace(receipt=lambda: None, configure=lambda: calls.append("host")))
+    monkeypatch.setattr(host, "Host", lambda: SimpleNamespace(receipt=lambda: None, configure=lambda: calls.append("host"),
+                                                             postgres_system_identifier=lambda: '123456789'))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
     monkeypatch.setattr(host, "validate_identity", lambda: None)
     monkeypatch.setattr(host, "MOUNT", str(tmp_path / "empty-data"))

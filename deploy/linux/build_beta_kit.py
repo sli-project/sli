@@ -402,6 +402,7 @@ def finish(output, commit, release, version, *, toolchain):
     remover = output / 'remove-beta-kit'
     remover_source = ROOT / 'deploy/linux/native_remove.py'
     remover.write_text(remover_source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+    remover.chmod(0o755)
     manifest = {'schema_version': 1, 'git_commit': commit, 'release': release, 'version': version,
                 'target': 'debian-13-amd64', 'toolchain': toolchain, 'packages': rows,
                 'installer': {'filename': installer.name, 'sha256': sha256(installer)},

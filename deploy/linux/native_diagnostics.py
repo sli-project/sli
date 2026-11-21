@@ -1,4 +1,4 @@
-"""Human CLI diagnostics; only bounded machine codes go to the journal."""
+"""Human CLI diagnostics and bounded journal records."""
 import re
 import sys
 
@@ -8,7 +8,8 @@ COMMAND_FAILURES = {
         'systemctl list-unit-files', 'systemctl list-units', 'systemctl stop',
         'systemctl disable', 'systemctl start', 'systemctl daemon-reload', 'systemctl reset-failed',
         'findmnt', 'runuser', 'dpkg-divert', 'groupadd', 'useradd', 'usermod',
-        'postgres', 'pg_lsclusters', 'pg_createcluster', 'dpkg-query', 'psql', 'systemd-tmpfiles',
+        'postgres', 'pg_lsclusters', 'pg_createcluster', 'pg_controldata', 'dpkg-query', 'psql',
+        'systemd-tmpfiles', 'ss', 'lsblk',
     )
 }
 COMMAND_FAILURES.update(
@@ -58,7 +59,8 @@ MESSAGES = {
     'native_reuse_installation_required': 'Retained SLI installation is incomplete. Preserve databases, secrets and registry; restore the missing configuration/recovery / Сохранённая установка SLI неполная. Сохраните БД, секреты и registry; восстановите недостающие настройки/recovery.',
     'native_setup_secrets_failed': 'TLS or agent certificate creation failed. Check journalctl -t sli-setup and protected directory permissions; do not delete existing keys.',
     'native_agents_secrets_missing': 'Agent certificates are missing. Run sudo sli-setup to generate the initial CA, or restore the complete protected issuer bundle.',
-    'native_setup_install_failed': 'SLI could not finish its first start. Run sudo journalctl -t sli-setup -u sli-ready.service -u sli-health.service -n 80 --no-pager. After fixing the cause, repeat sudo sli-setup with the same flags; a configured schema with an unclaimed owner can resume without a database reset. Preserve the database and configuration.',
+    'native_postgres_bootstrap_unready': 'PostgreSQL did not accept local connections for initial setup. Check sudo journalctl -u sli-postgresql.service -u sli-bootstrap-pg.service, then repeat sudo sli-setup with the same flags.',
+    'native_setup_install_failed': 'SLI could not finish its first start. Check sudo journalctl -t sli-setup and sudo journalctl -u sli-postgresql.service -u sli-bootstrap-pg.service -u sli-ready.service -u sli-health.service. After fixing the cause, repeat sudo sli-setup with the same flags. Preserve the database and configuration.',
     'native_api_tls_untrusted': 'SLI HTTPS certificate is not trusted by /var/lib/sli/tls-ca.crt. Check the server name and run sudo sli-setup again.',
     'native_setup_health_failed': 'SLI services are not ready. Check systemctl --failed and journalctl -u sli-health.service.',
     'native_web_console_setup_failed': 'Could not set up Cockpit. Check APT, HTTPS port 9090 and sudo journalctl -u cockpit.socket -u cockpit.service.',
@@ -95,6 +97,8 @@ def failure(error, *, default='native_setup_failed'):
             candidate = command
     if candidate in COMMAND_FAILURES:
         log_code('native_command_failed')
+        for line in getattr(error, 'stderr', ()):
+            log_code(f'{candidate}: {line}')
         print(candidate, file=sys.stderr)
         return
     health_reason = re.fullmatch(r'native_setup_health_failed:[A-Za-z_][A-Za-z0-9_]{0,63}', candidate)
@@ -104,5 +108,8 @@ def failure(error, *, default='native_setup_failed'):
         return
     code = candidate if candidate in MESSAGES or re.fullmatch(r'native_[a-z_]{1,100}', candidate) else default
     log_code(code)
+    if code == 'native_postgres_bootstrap_unready':
+        for line in getattr(error, 'stderr', ()):
+            log_code(f'pg_isready: {line}')
     message = getattr(error, 'console_message', None) or MESSAGES.get(code)
     print(message or 'SLI could not complete this operation. Run sudo journalctl -t sli-setup -n 80 --no-pager and systemctl --failed; preserve existing data and configuration.', file=sys.stderr)
