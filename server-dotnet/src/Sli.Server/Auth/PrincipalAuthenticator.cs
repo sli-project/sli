@@ -13,7 +13,7 @@ public sealed class PrincipalAuthenticator(IPostgresConnectionFactory connection
     private static readonly object CandidateKeyCache = new();
     private sealed record CandidateKeyResult(Principal? Principal);
     private static readonly Regex ReportRoutes = new(
-        @"\A(?:/api/v2/reports/(?:events\.journal|ad\.infrastructure|ad\.gpo\.v2|ad\.users\.v2|ad\.computers\.v6|security\.events\.chains|security\.problems|workstations\.(?:logons|processes|usb|protection)|file-audit\.(?:overview|actions|mass-operations|permission-changes|access-denials|out-of-hours|permissions|audit-state))(?:/data|/rows/[A-Za-z0-9_.:-]{1,128}/detail)?|/api/v2/reports/vpn\.(?:accounts|connections)/data|/api/v1/events/[0-9]+)\z",
+        @"\A(?:/api/v2/reports/(?:events\.journal|ad\.infrastructure|ad\.gpo\.v2|ad\.users\.v2|ad\.computers\.v6|security\.events\.chains|security\.problems|workstations\.(?:logons|processes|usb|protection)|file-audit\.(?:overview|actions|mass-operations|permission-changes|access-denials|out-of-hours|permissions|audit-state))(?:/data|/rows/[A-Za-z0-9_.:-]{1,128}/detail)?|/api/v2/reports/security\.problems/password-coverage|/api/v2/reports/vpn\.(?:accounts|connections)/data|/api/v1/events/[0-9]+)\z",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, TimeSpan.FromMilliseconds(100));
     // Source grammar: oracle Python 3.14.6 http.cookies._CookiePattern (ASCII).
     // Request.Cookies URL-decodes opaque tokens and does not preserve this legacy grammar.

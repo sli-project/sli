@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { api } from "../../api/client";
@@ -8,11 +8,14 @@ import { roleLabel } from "../report-labels";
 import { getLocale, setLocale, t, type Locale } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
-/** Язык и отображение времени для текущего пользователя. */
+const serverTimeZoneKey = "server.timezone";
+
 export function SettingsPage() {
   const { timeZone, setTimeZone } = useTimeZone();
   const [language, setLanguage] = useState(getLocale);
   const [zone, setZone] = useState(timeZone);
+  const [serverZone, setServerZone] = useState<string>();
+  const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | undefined>(() => {
     try {
       const value = sessionStorage.getItem("sli.profile.savedAt");
@@ -25,8 +28,14 @@ export function SettingsPage() {
   const options = [{ id: "browser", label: t("operations.settings.tz_browser") }, ...zones.map((id) => ({ id, label: id }))];
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.bootstrap, staleTime: 60_000 });
   const principal = bootstrap.data?.principal;
+  const canSetServerZone = principal?.role === "admin" && bootstrap.data?.capabilities?.includes("access.manage") === true;
+  const settings = useQuery({ queryKey: ["platform-settings"], queryFn: api.platformSettings, enabled: canSetServerZone });
+  const storedServerZone = canSetServerZone ? settings.data?.items.find(item => item.key === serverTimeZoneKey)?.value : undefined;
+  const serverZones = [...new Set([...zones, ...(storedServerZone && storedServerZone !== "host" ? [storedServerZone] : [])])];
+  const serverZoneChanged = storedServerZone !== undefined && serverZone !== undefined && serverZone !== storedServerZone;
+  const queryClient = useQueryClient();
   const logout = useMutation({ mutationFn: api.logout, onSuccess: () => window.location.assign("/login") });
-  const changed = language !== getLocale() || zone !== timeZone;
+  const changed = language !== getLocale() || zone !== timeZone || serverZoneChanged;
 
   return <section className="sli-ds-report">
     <PageHeader title={t("operations.settings.title")}
@@ -34,11 +43,18 @@ export function SettingsPage() {
     {principal ? <p className="sli-ds-header__subtitle">{principal.username ?? "—"} · {principal.role ? roleLabel(principal.role) : "—"}</p> : null}
     {bootstrap.isLoading ? <StateView state="loading" compact/> : bootstrap.error ? <p role="alert">{t("operations.settings.load_error")} <button type="button" className="sli-ds-button" onClick={() => void bootstrap.refetch()}>{t("state.retry")}</button></p> : null}
     {logout.isError ? <p role="alert">{t("shell.profile.logoutFailed")}</p> : null}
-    <form className="sli-ds-report__views" onSubmit={(event) => {
+    <form className="sli-ds-report__views" onSubmit={async (event) => {
       event.preventDefault();
-      if (!changed) return;
+      if (!changed || saving) return;
       setSaveError(false);
+      setSaving(true);
       try {
+        if (serverZoneChanged) {
+          const { item } = await api.updatePlatformSetting(serverTimeZoneKey, serverZone);
+          queryClient.setQueryData<Awaited<ReturnType<typeof api.platformSettings>>>(["platform-settings"], current =>
+            current && { items: current.items.map(setting => setting.key === item.key ? item : setting) });
+          setServerZone(undefined);
+        }
         setTimeZone(zone);
         const saved = new Date();
         // Keep the result visible after changing the interface language reloads the page.
@@ -48,6 +64,8 @@ export function SettingsPage() {
       } catch {
         setSaveError(true);
         setSavedAt(undefined);
+      } finally {
+        setSaving(false);
       }
     }}>
       <div className="sli-ds-field" data-layout="row"><label htmlFor="settings-language">{t("shell.profile.language.title")}</label>
@@ -66,9 +84,18 @@ export function SettingsPage() {
           </ListBox>
         </Popover>
       </ComboBox>
+      {storedServerZone !== undefined ? <div className="sli-ds-field" data-layout="row">
+        <label htmlFor="settings-server-time-zone">{t("operations.settings.server_tz_title")}</label>
+        <select id="settings-server-time-zone" value={serverZone ?? storedServerZone} disabled={saving}
+          aria-describedby={saveError ? "settings-save-error" : undefined} onChange={event => setServerZone(event.target.value)}>
+          <option value="host">{t("operations.settings.server_tz_host")}</option>
+          {serverZones.map(id => <option key={id} value={id}>{id}</option>)}
+        </select>
+      </div> : null}
+      {canSetServerZone && settings.isError ? <p role="alert">{t("operations.settings.server_tz_load_error")}</p> : null}
       {saveError ? <p id="settings-save-error" className="sli-ds-field__error" role="alert">{t("operations.settings.save_error")}</p> : null}
       <div className="sli-ds-state__actions">
-        <button type="submit" className="sli-ds-button" data-variant="primary" disabled={!changed}>{t("operations.settings.save")}</button>
+        <button type="submit" className="sli-ds-button" data-variant="primary" disabled={!changed || saving}>{t("operations.settings.save")}</button>
         {savedAt && !changed ? <span role="status">{t("operations.settings.saved", { time: formatDateTime(savedAt, timeZone) })}</span> : null}
       </div>
     </form>

@@ -31,7 +31,7 @@ public class DirectEventIdentityTests
         var rows = new JsonArray(Row(""), row, Row(""));
         var error = Assert.Throws<InvalidDataException>(() => DirectAdDcPacket.PrepareBatch(rows));
         Assert.Equal("storage_v2_event_profile_pending", error.Message);
-        var diagnostic = JsonNode.Parse(AdDcProjectionFailure.Describe(error, AdDcProjectionStep.PrepareBatch))!;
+        var diagnostic = AdDcProjectionFailure.Describe(error, AdDcProjectionStep.PrepareBatch);
         Assert.Equal("storage_v2_event_profile_pending", (string?)diagnostic["reason"]);
         Assert.Equal("prepare_batch", (string?)diagnostic["step"]);
     }

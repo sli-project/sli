@@ -50,6 +50,9 @@ public partial class OperationsFiles
             ? Path.Combine(DataRoot, portable[5..]) : Path.Combine(Root, portable));
     }
     public virtual JsonObject? Json(string relative, int maxBytes = 2097152) => ReadJson(Resolve(relative), maxBytes);
+    // systemd publishes this file after cockpit.socket starts listening and removes it when the socket stops.
+    internal virtual JsonObject? WebConsoleStatus() => OperatingSystem.IsLinux()
+        ? ReadJson("/run/sli-cockpit/terminal.json", 512) : null;
     internal static JsonObject? ReadJson(string path, int maxBytes)
     {
         try

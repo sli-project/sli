@@ -69,12 +69,14 @@ public sealed record SnapshotPolicy(string ModuleId, JsonObject Config)
     {
         var schedule = Config["schedule"]!;
         var zone = TimeZoneInfo.FindSystemTimeZoneById(schedule["timezone"]!.GetValue<string>());
-        var local = TimeZoneInfo.ConvertTime(now, zone).DateTime;
+        var date = TimeZoneInfo.ConvertTime(now, zone).Date;
         var slots = from day in new[] { 0, 1 }
                     from h in schedule["hours"]!.AsArray()
-                    let slot = local.Date.AddDays(-day).AddHours(h!.GetValue<int>())
-                    where slot <= local
-                    select slot;
-        return Iso8601.Format(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(slots.Max(), zone)));
+                    let local = date.AddDays(-day).AddHours(h!.GetValue<int>())
+                    where !zone.IsInvalidTime(local)
+                    let utc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone))
+                    where utc <= now
+                    select utc;
+        return Iso8601.Format(slots.Max());
     }
 }

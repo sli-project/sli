@@ -19,11 +19,13 @@ internal sealed class PostCollectionRuntime(NpgsqlConnection processLock, IPostg
     private readonly string worker = $"post-collection-{Environment.MachineName}-{Environment.ProcessId}";
     private readonly DateTime started = DateTime.UtcNow;
     private JsonObject? activeJob;
+    private string? adDcImportIssue = consumer.DirectConfigurationIssue;
 
     public Task<int> RunAsync(AgentImportOptions options, CancellationToken ct) => new PostCollectionLoop(
         async token => {
             await CheckProcessSessionAsync(token);
-            var result = await consumer.RunOnceAsync(16, token, CheckProcessSessionAsync);
+            var result = await consumer.RunOnceAsync(PostCollectionLoop.EventBatchSize, token, CheckProcessSessionAsync);
+            adDcImportIssue = consumer.DirectConfigurationIssue ?? result.PendingReasons.Keys.FirstOrDefault(AdDcProjectionFailure.IsStorageIssue);
             return new(result.Scanned, result.Imported, result.PendingReasons, result.Quarantined) { Cursor = consumer.Cursor, Skipped = result.Skipped };
         },
         async token => {
@@ -89,6 +91,7 @@ internal sealed class PostCollectionRuntime(NpgsqlConnection processLock, IPostg
             await using var monitoring = await connections.OpenAsync(ct);
             details["cursors"] = new JsonObject { ["events"] = consumer.Cursor?.DeepClone(),
                 ["snapshots"] = snapshots.Cursor?.DeepClone(), ["accounting"] = accounting.Cursor?.DeepClone() };
+            if (adDcImportIssue is { } issue) details["ad_dc_import_issue"] = issue;
             await using var command = new NpgsqlCommand("""
                 insert into runtime_worker_heartbeats(worker_name,worker_id,process_pid,status,phase,expected_interval_seconds,details_json,started_at,heartbeat_at,updated_at)
                 values('post_collection',@worker,@pid,@status,@phase,@interval,@details,@started,now(),now())

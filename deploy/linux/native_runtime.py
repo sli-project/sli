@@ -440,12 +440,63 @@ def units(config):
     return result
 
 
+def bootstrap_event_storage(connection):
+    """Authorize the native short-event store once, while it is provably empty."""
+    from psycopg import sql
+    from server.sli.storage.storage_v2_runtime_authorization import (
+        FRESH_BOOTSTRAP_AUTHORITY, runtime_authorization_digest,
+    )
+
+    tables = ("event_hot", "event_cold_facts", "event_cold_daily",
+              "storage_v2_event_identity_allocations", "storage_v2_outbox",
+              "storage_v2_archive_blocks", "storage_v2_archive_sets")
+    legacy = ("events", "event_entity_links", "observed_entities", "events_v2_core",
+              "event_facts_v2", "event_entity_link_blocks_v2", "raw_log_files")
+    with connection.transaction():
+        if not connection.execute("""select exists(select 1 from public.schema_migrations
+            where version=372 and name='drop_legacy_events')""").fetchone()[0]:
+            return
+        if connection.execute("select exists(select 1 from public.storage_v2_runtime_authorizations)").fetchone()[0]:
+            return
+        for lock in ("ad_log_reports_runtime_collection_process", "ad_log_reports_runtime_collection_worker",
+                     "ad_log_reports_runtime_post_collection_process"):
+            require(connection.execute("select pg_try_advisory_xact_lock(hashtext(%s))", (lock,)).fetchone()[0],
+                    "native_event_storage_worker_active")
+        connection.execute(sql.SQL("lock table {} in share row exclusive mode").format(sql.SQL(", ").join(
+            sql.Identifier("public", table) for table in ("storage_v2_runtime_authorizations", *tables))))
+        if connection.execute("select exists(select 1 from public.storage_v2_runtime_authorizations)").fetchone()[0]:
+            return
+        if connection.execute("select exists(select 1 from unnest(%s::text[]) n where to_regclass(n) is not null)",
+                              ([f"public.{name}" for name in legacy],)).fetchone()[0]:
+            return
+        for table in tables:
+            query = sql.SQL("select exists(select 1 from {})").format(sql.Identifier("public", table))
+            if connection.execute(query).fetchone()[0]:
+                return
+        database, issuer = connection.execute("select current_database(), session_user").fetchone()
+        archive_root = "/var/lib/sli/evidence/storage-v2-archive"
+        evidence = {"kind": "fresh-event-store", "version": 1, "archive_root": archive_root,
+                    "database": database, "issuer": issuer, "empty_event_tables": list(tables),
+                    "legacy_relations_absent": True, "historical_cutover_performed": False}
+        preflight = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        issued = datetime.now(UTC)
+        expires = issued + timedelta(days=365)
+        authorized_by = "sli-native-installer"
+        digest = runtime_authorization_digest(route="v2", authority=FRESH_BOOTSTRAP_AUTHORITY,
+                                              preflight_digest=preflight, archive_root=archive_root, evidence=evidence,
+                                              authorized_by=authorized_by, authorized_at=issued, expires_at=expires)
+        connection.execute("""insert into public.storage_v2_runtime_authorizations
+            (route,authority,preflight_digest,authorization_digest,archive_root,evidence,authorized_by,authorized_at,expires_at)
+            values ('v2',%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
+            (FRESH_BOOTSTRAP_AUTHORITY, preflight, digest, archive_root, json.dumps(evidence), authorized_by, issued, expires))
+
+
 def configure_worker_accounts():
-    """Reconcile candidate credentials even when the retained updater skips SQL.
+    """Reconcile candidate credentials and initialize empty native event storage.
 
     Use candidate settings/catalogs: the accepted coordinator may predate a
-    service and its password-file environment. Schema migrations remain gated
-    by the upgrade ledger; this only provisions existing worker roles.
+    service and its password-file environment. The coordinator applies and
+    verifies the schema before calling candidate configuration.
     """
     from deploy.linux import backup, native_backup, native_install
     from deploy.linux.migrate import configure_worker_logins
@@ -455,6 +506,14 @@ def configure_worker_accounts():
             with backup.pg_connect(passfile, autocommit=True) as connection:
                 connection.execute("select pg_advisory_lock(hashtext('sli_linux_stand_migrate'))")
                 configure_worker_logins(connection)
+                try:
+                    bootstrap_event_storage(connection)
+                except RuntimeErrorCode:
+                    raise
+                except Exception:
+                    raise RuntimeErrorCode("native_event_storage_bootstrap_failed") from None
+    except RuntimeErrorCode:
+        raise
     except Exception:
         raise RuntimeErrorCode("native_worker_logins_failed") from None
 

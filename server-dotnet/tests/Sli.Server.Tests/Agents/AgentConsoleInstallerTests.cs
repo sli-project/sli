@@ -9,6 +9,7 @@ public sealed class AgentConsoleInstallerTests
     [Theory]
     [InlineData("success")]
     [InlineData("failure")]
+    [InlineData("repair")]
     public async Task Generated_command_updates_in_place_and_recovers_from_an_msi_failure(string outcome)
     {
         var shell = OperatingSystem.IsWindows()
@@ -71,7 +72,7 @@ public sealed class AgentConsoleInstallerTests
         $script:running = $true
         $script:invoked = $false
 
-        function Assert-AgentMsiUpgrade($Msi, $Product) {}
+        function Assert-AgentMsiUpgrade($Package, $Product) { return $Outcome -eq 'repair' }
         function Assert-PrivateDirectory($Path) {}
         function New-PrivateDirectory($Path) { [void][IO.Directory]::CreateDirectory($Path) }
         function Get-Service($Name, $ErrorAction) {
@@ -89,7 +90,9 @@ public sealed class AgentConsoleInstallerTests
         function Remove-InstalledAgentMsi($Product) { throw 'The installed .NET MSI must not be explicitly removed.' }
         function Install-AgentMsi($Arguments) {
             if ($script:running) { throw 'Service was not stopped for the snapshot.' }
-            if ($Arguments -ne ('/i "{0}" /qn /norestart' -f $msi)) { throw 'Upgrade must keep the installed bootstrap settings.' }
+            $expected = '/i "{0}" /qn /norestart' -f $msi
+            if ($Outcome -eq 'repair') { $expected += ' REINSTALL=ALL REINSTALLMODE=vamus' }
+            if ($Arguments -ne $expected) { throw 'The MSI action must match the requested maintenance mode.' }
             $archive = Join-Path $work 'previous-state'
             if ([IO.File]::ReadAllText((Join-Path $archive 'identity.json')) -ne 'previous identity' -or
                 [IO.File]::ReadAllText((Join-Path (Join-Path $archive 'queue') 'cursor.json')) -ne 'previous cursor' -or

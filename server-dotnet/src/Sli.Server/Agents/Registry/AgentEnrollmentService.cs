@@ -22,7 +22,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         string? token = StringValue(body, "token");
         if (token is null || !Regex.IsMatch(token, "^[A-Za-z0-9_-]{43}\\z", RegexOptions.CultureInvariant)) throw RejectToken();
         var digest = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(token)));
-        await AdvisoryAsync(connection,transaction,"sli-agent-registration-reconcile",ct);
+        await LockRegistrationAsync(connection, transaction, ct);
         await LockGroupApprovalAsync(connection, transaction, digest, ct);
         Guid tokenId = Guid.NewGuid(), hostId = default;
         string? keyFingerprint = null;
@@ -118,6 +118,20 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             q.Parameters.AddWithValue("id", tokenId);
             if ((bool)(await q.ExecuteScalarAsync(ct) ?? false) == false) throw RejectToken();
         }
+        long? bootstrapDomain = null;
+        bool registeredDc = false;
+        // Only the administrator's console grant may bootstrap DC inventory.
+        // Group and replacement enrollment retain their existing enrollment scopes.
+        if (consoleToken is not null && role == "domain_controller" && hostName is { Length: <= 128 })
+        {
+            bool beta = CollectionProfile(configuration) == "beta";
+            if (await BootstrapSnapshotDomainAsync(connection, transaction, body, hostName, dc, ct, useDomainSid: beta) is { } observedDc)
+            {
+                registeredDc = dc is null;
+                dc = observedDc;
+                if (beta && body.ContainsKey("domain_sid")) bootstrapDomain = observedDc.Domain;
+            }
+        }
         var agentId = Guid.NewGuid();
         using var cert = ca.Issue(csr, agentId, hostId);
         int rate = role == "domain_controller" ? AdDcConfig.DefaultRateLimitPerMinute : 120;
@@ -142,14 +156,21 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if ((approved is not null || consoleToken is not null) && replacement is null)
             newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion,consoleToken is not null);
         if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct))
-            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null);
+            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null, bootstrapDomain);
         var serial = await StoreCertificateAsync(connection, transaction, agentId, cert, ct);
         if(newer is not null)await RetireRegistrationAsync(connection,transaction,agentId,newer.Value,"enrollment:"+tokenId,true,ct);
         await using (var q = new NpgsqlCommand("update sli_agent_enrollment_tokens set used_at=clock_timestamp(),enrolled_agent_id=@agent where id=@id; insert into sli_agent_group_members(agent_id,group_id) select @agent,t.group_id from sli_agent_group_approval_links a join sli_agent_group_requests r on r.id=a.request_id join sli_agent_group_tokens t on t.id=r.token_id where a.enrollment_token_id=@id", connection, transaction))
         { q.Parameters.AddWithValue("agent", agentId); q.Parameters.AddWithValue("id", tokenId); await q.ExecuteNonQueryAsync(ct); }
         var issued = new JsonObject { ["serial"] = serial, ["registration_ca_sha256"] = ca.RootFingerprint, ["agent_version"] = versionText, ["server_id"] = dc?.Server };
-        if (consoleToken is { } issuedFrom) issued["console_token_id"] = issuedFrom;
+        if (consoleToken is { } issuedFrom)
+        {
+            issued["console_token_id"] = issuedFrom;
+            if (role == "domain_controller" && (body.ContainsKey("domain_dns") || body.ContainsKey("forest_dns") || body.ContainsKey("domain_sid")))
+                issued["dc_domain_reported"] = true;
+        }
         await AuditAsync(connection, transaction, "issue", "enrollment:" + tokenId, agentId.ToString(), issued, ct);
+        if (registeredDc && dc is { } reportedDc)
+            await RecordAgentReportedDcAsync(connection, transaction, agentId, reportedDc.Server, ct);
         if(approved is not null && dc is {} recoveredDc && replacement is null && newer is null)
         {
             var recoveries=new List<(Guid Id,string Source)>();
@@ -167,6 +188,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                     clear.Parameters.AddWithValue("id",recovery.Id); await clear.ExecuteNonQueryAsync(ct);
                 }
         }
+        if (replacement is null && (consoleToken is not null || approved is not null))
+            await ReconcileDcSourceAsync(connection, transaction, agentId, configuration, ct);
         await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(connection,transaction,agentId,ct);
         return CertificateResponse(cert, agentId, serial);
     }
@@ -281,7 +304,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var profile=configuration?["Sli:CollectionProfile"] ?? configuration?["SLI_COLLECTION_PROFILE"] ?? "beta";
         return profile is "beta" or "full" ? profile : throw new ServerConfigurationException("Sli:CollectionProfile");
     }
-    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain)
+    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain, string? timezone = null)
     {
         var beta=CollectionProfile(configuration)=="beta";
         if(beta && role=="workstation") return new JsonArray();
@@ -299,14 +322,22 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         }
         var modules=new JsonArray(new JsonObject { ["module_id"]=module,["enabled"]=true,["config"]=config.DeepClone() });
         if(beta && role=="domain_controller" && domain is not null)
-            foreach(var snapshot in new[] { SnapshotPolicy.Ad,SnapshotPolicy.Gpo })
-            {
-                var input=new JsonObject { ["source_instance_id"]=host.ToString(),["domain_sid"]=domain["domain_sid"]!.DeepClone(),["domain_dns"]=domain["fqdn"]!.DeepClone(),["scope"]="domain",["policy_revision"]="2" };
-                if(snapshot==SnapshotPolicy.Ad) input["families"]=new JsonArray(SnapshotPolicy.AdFamilies.Where(f=>f!="ad_vpn_membership").Select(f=>(JsonNode?)JsonValue.Create(f)).ToArray());
-                var snapshotConfig=SnapshotIngressPolicy.Parse(snapshot,input).Config;
-                modules.Add(new JsonObject { ["module_id"]=snapshot,["enabled"]=true,["config"]=snapshotConfig });
-            }
+            foreach (string snapshot in new[] { SnapshotPolicy.Ad, SnapshotPolicy.Gpo })
+                modules.Add(DefaultSnapshotAssignment(snapshot, host.ToString("D"), domain["domain_sid"]!.GetValue<string>(),
+                    domain["fqdn"]!.GetValue<string>(), "2", timezone));
         return modules;
+    }
+
+    private static JsonObject DefaultSnapshotAssignment(string module, string source, string sid, string dns, string revision, string? timezone)
+    {
+        var input = new JsonObject { ["source_instance_id"] = source, ["domain_sid"] = sid, ["domain_dns"] = dns,
+            ["scope"] = "domain", ["policy_revision"] = revision,
+            ["schedule"] = new JsonObject { ["timezone"] = timezone ?? SnapshotPublication.AdSnapshotSchedule.HostZone,
+                ["hours"] = new JsonArray(6, 18) } };
+        if (module == SnapshotPolicy.Ad)
+            input["families"] = new JsonArray(SnapshotPolicy.AdFamilies.Where(f => f != "ad_vpn_membership")
+                .Select(f => (JsonNode?)JsonValue.Create(f)).ToArray());
+        return new JsonObject { ["module_id"] = module, ["enabled"] = true, ["config"] = SnapshotIngressPolicy.Parse(module, input).Config };
     }
     internal static int[] BetaEventIds()
     {
@@ -314,7 +345,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         return catalog.Channels.SelectMany(catalog.EventIds)
             .Distinct().Order().ToArray();
     }
-    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,CancellationToken ct,long? approvedServer)
+    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,CancellationToken ct,long? approvedServer,long? bootstrapDomain)
     {
         JsonObject? domain=null;
         if(CollectionProfile(configuration)=="beta" && role=="domain_controller")
@@ -324,7 +355,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             await using var read=new NpgsqlCommand("""
                 select distinct d.domain_sid,lower(d.fqdn) from domains d
                 where d.domain_sid is not null and (
-                    exists(select 1 from sli_agent_group_approval_links a
+                    d.id=@bootstrap or exists(select 1 from sli_agent_group_approval_links a
                         join sli_agent_group_requests r on r.id=a.request_id
                         join sli_agent_group_tokens g on g.id=r.token_id
                         where a.enrollment_token_id=@token and g.domain_id=d.id)
@@ -336,6 +367,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 """,c,t);
             read.Parameters.AddWithValue("token",token);
             read.Parameters.Add("server",NpgsqlDbType.Bigint).Value=(object?)approvedServer ?? DBNull.Value;
+            read.Parameters.Add("bootstrap",NpgsqlDbType.Bigint).Value=(object?)bootstrapDomain ?? DBNull.Value;
             await using var reader=await read.ExecuteReaderAsync(ct);
             if(await reader.ReadAsync(ct))
             {
@@ -343,7 +375,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 if(await reader.ReadAsync(ct)) domain=null;
             }
         }
-        var modules=DefaultModules(configuration,role,host,hostName,domain);
+        string? timezone = domain is null ? null : await SnapshotPublication.AdSnapshotSchedule.ReadZoneAsync(c,t,ct);
+        var modules=DefaultModules(configuration,role,host,hostName,domain,timezone);
         if(modules.Count==0) return;
         foreach(var item in modules.OfType<JsonObject>().Where(m=>m["module_id"]!.GetValue<string>() is SnapshotPolicy.Ad or SnapshotPolicy.Gpo).ToArray())
         {
@@ -351,7 +384,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             try { await AgentSnapshotAssignment.ValidateAsync(c,t,agent,module,config,true,ct); }
             catch(AgentControlException error) when(error.Message=="agent_snapshot_collector_conflict")
             { modules.Remove(item); continue; }
-            await AgentSnapshotAssignment.PublishAsync(c,t,agent,module,config,true,ct);
+            await AgentSnapshotAssignment.PublishAsync(c,t,agent,module,config,true,ct,followServerTimezone:true);
         }
         await using (var q=new NpgsqlCommand("insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(@id,1,'[]'::jsonb,@control::jsonb),(@id,2,@modules::jsonb,@control::jsonb) on conflict(agent_id,revision) do nothing; update sli_agents set assigned_modules=@modules::jsonb,policy_revision=2 where id=@id",c,t))
         { q.Parameters.AddWithValue("id",agent); q.Parameters.AddWithValue("control",control); q.Parameters.AddWithValue("modules",modules.ToJsonString()); await q.ExecuteNonQueryAsync(ct); }
@@ -370,22 +403,41 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (value is JsonArray a) return "["+string.Join(", ",a.Select(PythonJson))+"]";
         return value?.ToJsonString() ?? "null";
     }
-    internal static async Task<(long Server,string Name,long Domain,long? Site)?> ResolveDcAsync(NpgsqlConnection c,NpgsqlTransaction t,string name,CancellationToken ct,Guid? agent=null)
+    internal static async Task<(long Server,string Name,long Domain,long? Site)?> ResolveDcAsync(NpgsqlConnection c,NpgsqlTransaction t,string name,CancellationToken ct,Guid? agent=null,Action<string>? unresolved=null)
     {
         await using var query=new NpgsqlCommand("""
-            select id,hostname,domain_id,site_id from servers where role='domain_controller' and is_active and coalesce(
-                id::text=(select details->>'server_id' from sli_agent_audit where target=@agent and action='issue' order by id desc limit 1), (
-                lower(@name) in (lower(hostname),lower(fqdn))
-                or strpos(@name,'.')=0 and lower(@name)=split_part(lower(coalesce(nullif(fqdn,''),hostname)),'.',1)
-                or strpos(coalesce(nullif(fqdn,''),hostname),'.')=0 and lower(hostname)=split_part(lower(@name),'.',1)))
-            order by id limit 2
+            with pin as (
+                select coalesce(
+                    (select details->>'server_id' from sli_agent_audit where target=@agent and action='issue' order by id desc limit 1),
+                    (select details->>'server_id' from sli_agent_audit where target=@agent and action='module_assign'
+                        and actor='system:agent-registration' and details->>'module_id'='sli.windows.ad-dc'
+                        and details->>'source'='agent_reported' order by id desc limit 1)) as server_id
+            ), matches as (
+                select s.id,s.hostname,s.domain_id,s.site_id,
+                    case when not s.is_active then 'inactive_server' when s.role<>'domain_controller' then 'missing_role'
+                        when d.is_archived or lower(d.fqdn)='example.invalid' then 'missing_domain' end as failure,
+                    exists(select 1 from domain_controller_targets target
+                        where @agent is not null and target.enabled and target.domain_id=s.domain_id
+                          and lower(target.hostname)=lower(@name) and lower(target.connect_address)=lower(s.fqdn)) as configured
+                from servers s join domains d on d.id=s.domain_id cross join pin p
+                where coalesce(s.id::text=p.server_id, (
+                    lower(@name) in (lower(s.hostname),lower(s.fqdn))
+                    or strpos(@name,'.')=0 and lower(@name)=split_part(lower(coalesce(nullif(s.fqdn,''),s.hostname)),'.',1)
+                    or strpos(coalesce(nullif(s.fqdn,''),s.hostname),'.')=0 and lower(s.hostname)=split_part(lower(@name),'.',1)))
+            )
+            select id,hostname,domain_id,site_id,failure,configured from matches
+            order by (failure is null) desc,configured desc,id limit 2
             """,c,t);
         query.Parameters.AddWithValue("name",name);
         query.Parameters.Add("agent",NpgsqlDbType.Text).Value=(object?)agent?.ToString() ?? DBNull.Value;
         await using var reader=await query.ExecuteReaderAsync(ct);
-        if(!await reader.ReadAsync(ct))return null;
+        if(!await reader.ReadAsync(ct)) { unresolved?.Invoke("no_server"); return null; }
+        if (!reader.IsDBNull(4)) { unresolved?.Invoke(reader.GetString(4)); return null; }
         var result=(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?(long?)null:reader.GetInt64(3));
-        return await reader.ReadAsync(ct) ? null : result;
+        bool configured = reader.GetBoolean(5);
+        if (!await reader.ReadAsync(ct) || !reader.IsDBNull(4) || configured && !reader.GetBoolean(5)) return result;
+        unresolved?.Invoke("ambiguous_server");
+        return null;
     }
     private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server,Version? version,bool consoleEnrollment)
     {

@@ -1485,6 +1485,8 @@ export type RuntimeCollectionRun = {
 
 type ReleaseMetadata = {
   project_version?: string | null;
+  generated_at_utc?: string;
+  build_id?: string;
   release_tag?: string | null;
   git_commit?: string | null;
   installed_at_utc?: string | null;
@@ -1493,6 +1495,7 @@ type ReleaseMetadata = {
 
 export type DiagnosticsOverview = {
   status: string;
+  web_console?: { available: boolean; url: string | null };
   release_metadata?: ReleaseMetadata;
   warnings?: string[];
   parsed_checks?: Record<string, { status?: string; duration_ms?: number; [key: string]: unknown } | null>;
@@ -2214,8 +2217,8 @@ export type SetupStatus = {
   collection: { collection_enabled: boolean | null; block_reason: string | null; channels: number; last_success_utc: string | null } | null;
 };
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json", "Accept-Language": getLocale() } });
+async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json", "Accept-Language": getLocale() }, ...(signal ? { signal } : {}) });
   // Чтение бросает тот же структурированный ApiResponseError, что и изменение.
   // Прежде здесь создавался обычный Error со статусом, впечатанным в строку:
   // число превращалось в текст и переставало быть значением. Из-за этого
@@ -2329,6 +2332,8 @@ export const api = {
   reportV2Definition: (key: string) => request<ReportDefinitionDto>(`/api/v2/reports/${encodeURIComponent(key)}`).then(localizeReportDefinition),
   reportV2Detail: (key: string, rowId: string, params: URLSearchParams) => request<ReportResultDto>(`/api/v2/reports/${encodeURIComponent(key)}/rows/${encodeURIComponent(rowId)}/detail?${params.toString()}`).then((result) => localizeReportResult(result, params.get("tz") ?? undefined)),
   reportV2Data: (key: string, params: URLSearchParams) => request<ReportResultDto>(`/api/v2/reports/${encodeURIComponent(key)}/data?${params.toString()}`).then((result) => localizeReportResult(result, params.get("tz") ?? undefined)),
+  problemPasswordCoverage: (params: URLSearchParams, signal: AbortSignal) =>
+    request<ReportResultDto>(`/api/v2/reports/security.problems/password-coverage?${params.toString()}`, signal),
   bootstrap: () => request<Bootstrap>("/api/v1/ui/bootstrap"),
   v4Workspace: () => request<V4Workspace>("/api/v1/workspace"),
   v4Reports: () => request<{ api_version: "v4"; state: string; items: V4Report[]; allowed_count: number; total_count: number; explain_contract: string }>("/api/v1/reports/catalog"),

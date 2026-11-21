@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Sli.Server.Storage.Direct;
 
 namespace Sli.Server.Problems;
 
@@ -94,39 +95,27 @@ public sealed partial class ProblemRepository
             return PasswordCoverageUnavailable();
         }
     }
-    internal async Task<JsonObject?> ReadPasswordCoverageAsync(long[] domains, CancellationToken ct)
+    public async Task<JsonObject?> ReadQueuePasswordCoverageAsync(long[]? domains, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(domains);
-        if (domains.Any(d => d <= 0)) throw new ArgumentException("password_coverage_domain", nameof(domains));
-        if (domains.Length == 0) return null;
+        if (domains?.Any(d => d <= 0) == true) throw new ArgumentException("password_coverage_domain", nameof(domains));
+        if (domains is { Length: 0 }) return null;
         try {
             await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
-            await using var command = Command(tx, "select to_jsonb(row) from (select public.read_password_detection_coverage(@coverage_domains::bigint[]) as coverage) row",
-                new() { ["coverage_domains"] = domains.Distinct().Order().ToArray() });
-            command.CommandTimeout = 0;
-            var rows = await Read(command, ct);
+            // The coverage function's checkpoint validation maintains private bookkeeping.
+            await Execute(tx, "set local jit=off", new(), ct);
+            await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);
+            if (domains is null) {
+                var catalog = await Rows(tx, "select id from public.domains order by id", null, ct);
+                domains = catalog.Select(r => long.Parse(CoverageCount(CoverageShape(r, "id")["id"]), CultureInfo.InvariantCulture)).Distinct().Order().ToArray();
+                if (domains.Any(d => d <= 0)) throw new FormatException();
+                if (domains.Length == 0) return PasswordCoverageUnavailable();
+            }
+            var row = await One(tx, "select public.read_password_detection_coverage(@coverage_domains::bigint[]) as coverage",
+                new() { ["coverage_domains"] = domains.Distinct().Order().ToArray() }, ct);
             await tx.CommitAsync(ct);
-            return rows.Count == 1 && rows[0] is JsonObject row && row.Count == 1 && row.ContainsKey("coverage")
-                ? ProjectPasswordCoverage(row["coverage"], domains.ToHashSet()) : PasswordCoverageUnavailable();
+            return ProjectPasswordCoverage(row?["coverage"], domains.ToHashSet());
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { return PasswordCoverageUnavailable(); } // Owned context is disposed before this catch.
-    }
-    private async Task<JsonObject?> ReadQueuePasswordCoverageAsync(long[]? domains, CancellationToken ct)
-    {
-        try {
-            if (domains is null) {
-                await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
-                await using var command = Command(tx, "select to_jsonb(row) from (select id from public.domains order by id) row");
-                command.CommandTimeout = 0;
-                var rows = await Read(command, ct);
-                domains = rows.Select(r => long.Parse(CoverageCount(CoverageShape(r, "id")["id"]), CultureInfo.InvariantCulture)).Distinct().Order().ToArray();
-                if (domains.Any(d => d <= 0)) throw new FormatException();
-                await tx.CommitAsync(ct);
-            }
-            return await ReadPasswordCoverageAsync(domains, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception) { return PasswordCoverageUnavailable(); }
     }
 }

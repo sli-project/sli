@@ -9,6 +9,10 @@ from deploy.linux import native_backup, native_host, native_preinstall, native_r
 from deploy.linux import native_remove as removal
 
 
+DB_UUID = '11111111-2222-3333-4444-555555555555'
+REPLACEMENT_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+
 @pytest.fixture
 def site(tmp_path, monkeypatch):
     state = tmp_path / 'var/lib/sli/state'
@@ -23,6 +27,7 @@ def site(tmp_path, monkeypatch):
     installed.write_text('{"release": "/opt/sli/releases/fixture"}', encoding='utf-8')
     (state / 'host-prepared.json').write_text(json.dumps({
         'version': 1, 'mount': '/srv/sli-db', 'storage_mode': 'directory', 'directory': '/srv/data',
+        'filesystem_uuid': DB_UUID,
     }), encoding='utf-8')
     (data / 'fixture').write_text('database contents', encoding='utf-8')
     unrelated.write_text('unrelated contents', encoding='utf-8')
@@ -66,11 +71,13 @@ def site(tmp_path, monkeypatch):
 
 
 def mock_host(monkeypatch, installed, *, legacy=True, live_writer=False, mounts=(), fail_package=None,
-              foreign_dotnet=False, backup_mount=None, extra_unit=None):
+              foreign_dotnet=False, backup_mount=None, extra_unit=None, db_mount=None):
     calls = []
     mounts = list(mounts)
     if backup_mount is not None:
         mounts.append(backup_mount)
+    if db_mount is not None:
+        mounts.append(db_mount)
     packages = {
         'sli-host': '', 'sli-release-fixture': '', 'sli-runtime-fixture': '', 'sli': '',
         'sli-rollback-hold': 'yes' if legacy else '', 'sli-server-dotnet': '', 'postgresql-18': '',
@@ -92,6 +99,8 @@ def mock_host(monkeypatch, installed, *, legacy=True, live_writer=False, mounts=
         fragments[name].write_text('[Unit]\nDescription=Lab service\n', encoding='utf-8')
     if extra_unit is not None:
         fragments[extra_unit.name] = extra_unit
+    if db_mount is not None:
+        fragments[removal.DB_MOUNT] = removal.SYSTEM_UNITS / removal.DB_MOUNT
 
     def run(*argv, capture=False):
         calls.append(argv)
@@ -101,8 +110,10 @@ def mock_host(monkeypatch, installed, *, legacy=True, live_writer=False, mounts=
             return ''.join(f'{name} loaded active running fixture\n' for name in fragments if name != 'sli.target')
         if argv[:3] == ('systemctl', 'show', '-p'):
             return str(fragments[argv[-1]])
-        if argv == ('systemctl', 'stop', removal.BACKUP_MOUNT) and backup_mount is not None:
+        if argv[:2] == ('systemctl', 'stop') and removal.BACKUP_MOUNT in argv and backup_mount is not None:
             mounts.remove(backup_mount)
+        if argv[:2] == ('systemctl', 'stop') and removal.DB_MOUNT in argv and db_mount is not None:
+            mounts.remove(db_mount)
         if argv[:2] == ('systemctl', 'show'):
             if live_writer and argv[2] == 'sli-dotnet-api.service':
                 return 'MainPID=42\nActiveState=active\nControlGroup=\n'
@@ -121,6 +132,8 @@ def mock_host(monkeypatch, installed, *, legacy=True, live_writer=False, mounts=
                 installed_unit.unlink(missing_ok=True)
             del packages[argv[-1]]
         if argv[0] == 'findmnt':
+            if '--target' in argv or '--mountpoint' in argv:
+                return f'{DB_UUID} ext4\n'
             return json.dumps({'filesystems': [{'target': str(path)} for path in mounts]})
         return ''
 
@@ -248,6 +261,117 @@ def test_purge_postgres_owned_configuration_and_prepare_again(site, tmp_path, mo
                             lambda path, mode=0o755: path.mkdir(mode=mode, parents=True, exist_ok=True))
         native_preinstall.prepare(tmp_path)
         assert (installed.parent / 'vendor-prepared.json').is_file()
+
+
+@pytest.mark.parametrize('replace_after_stop', [False, True])
+def test_directory_purge_refuses_a_replacement_filesystem(site, monkeypatch, replace_after_stop):
+    installed, data, _, _ = site
+    calls, _ = mock_host(monkeypatch, installed)
+    run = removal.run
+
+    def mount_change(*argv, capture=False):
+        if argv[0] == 'findmnt' and '--target' in argv and (
+            not replace_after_stop or ('dpkg', '--purge', 'sli-host') in calls
+        ):
+            return f'{REPLACEMENT_UUID} ext4\n'
+        return run(*argv, capture=capture)
+
+    monkeypatch.setattr(removal, 'run', mount_change)
+    with pytest.raises(RuntimeError, match='volume does not match the storage receipt'):
+        removal.remove(purge_data=True)
+    assert any(call[:2] == ('systemctl', 'stop') for call in calls) is replace_after_stop
+    assert data.joinpath('fixture').read_text(encoding='utf-8') == 'database contents'
+    assert (installed.parent / 'host-prepared.json').exists()
+
+
+def test_nested_storage_prepare_purge_and_prepare_again(site, tmp_path, monkeypatch):
+    installed, original, _, units = site
+    # The escaped systemd filename uses a backslash, a path separator on Windows.
+    mount_unit = 'srv-sli-db-fixture.mount'
+    monkeypatch.setattr(native_host, 'MOUNT_UNIT', mount_unit)
+    monkeypatch.setattr(removal, 'DB_MOUNT', mount_unit)
+    monkeypatch.setattr(removal, 'MOUNTS', (mount_unit, removal.BACKUP_MOUNT))
+    original_receipt = installed.parent / 'host-prepared.json'
+    original_receipt.unlink()
+    target = tmp_path / 'srv/sli-db'
+    directory = '/mnt/data/sli-db'
+    machine = native_host.Host(tmp_path)
+    source = machine.path(directory)
+    source.parent.mkdir(parents=True)
+    mounted = False
+
+    def host_run(argv):
+        nonlocal mounted
+        if argv[0] == 'findmnt':
+            return json.dumps({'filesystems': [{'target': str(source.parent), 'uuid': DB_UUID,
+                                                'fstype': 'ext4', 'options': 'rw'}]})
+        if argv == ['systemctl', 'start', removal.DB_MOUNT]:
+            mounted = True
+        return ''
+
+    def write(name, body, *args):
+        path = machine.path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding='utf-8')
+
+    monkeypatch.setattr(native_host, 'run', host_run)
+    monkeypatch.setattr(native_host, 'validate_identity', lambda: None)
+    monkeypatch.setattr(native_host, 'check_ports', lambda: None)
+    monkeypatch.setattr(native_host, 'account', lambda name: True)
+    monkeypatch.setattr(native_host, 'group', lambda gid: True)
+    monkeypatch.setattr(native_host, 'ensure_directory', lambda path: path.mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr(native_host, 'write_guard', lambda path, body, mode: path.write_text(body, encoding='utf-8'))
+    monkeypatch.setattr(machine, 'backup_free', lambda path: native_host.MIN_DATABASE_FREE)
+    monkeypatch.setattr(machine, 'directory', lambda name, *args, **options:
+                        machine.path(name).mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr(machine, 'write', write)
+    monkeypatch.setattr(machine, 'backup_mounted', lambda source, target: mounted)
+
+    machine.prepare(directory=directory)
+    assert mounted
+    data = source / 'pgdata'
+    data.mkdir()
+    (data / 'fixture').touch()
+    calls, _ = mock_host(monkeypatch, installed, db_mount=target)
+    removal.remove(purge_data=True)
+
+    assert ('systemctl', 'stop', removal.DB_MOUNT, removal.BACKUP_MOUNT) in calls
+    assert not (units / removal.DB_MOUNT).exists()
+    assert source.is_dir() and not data.exists() and original.is_dir()
+    mounted = False
+    machine.prepare(directory=directory)
+    assert mounted and json.loads(original_receipt.read_text())['directory'] == directory
+
+
+def test_purge_preserves_administrator_mount_and_accepts_its_empty_ext4_root(site, tmp_path, monkeypatch):
+    installed, _, _, _ = site
+    target = tmp_path / 'srv/sli-db'
+    recovered = target / 'lost+found'
+    data = target / 'pgdata'
+    recovered.mkdir(parents=True)
+    data.mkdir()
+    (data / 'fixture').touch()
+    (installed.parent / 'host-prepared.json').write_text(json.dumps({
+        'version': 1, 'mount': native_host.MOUNT, 'storage_mode': 'uuid', 'uuid': DB_UUID,
+    }))
+    calls, _ = mock_host(monkeypatch, installed, mounts=(target,))
+    machine = native_host.Host(tmp_path)
+    filesystem = {'fstype': 'ext4', 'uuid': DB_UUID, 'options': 'rw'}
+    monkeypatch.setattr(native_host, 'run', lambda argv: json.dumps({'filesystems': [{
+        **filesystem, 'target': native_host.MOUNT if '--mountpoint' in argv else str(target),
+    }]}))
+    monkeypatch.setattr(native_host.os.path, 'ismount', lambda path: path == target)
+    monkeypatch.setattr(machine, 'backup_free', lambda path: native_host.MIN_DATABASE_FREE)
+
+    assert machine.mounted_database_uuid() == DB_UUID
+    with pytest.raises(RuntimeError, match='native_existing_database'):
+        machine.mount(DB_UUID, fresh=True)
+    removal.remove(purge_data=True)
+
+    assert not any(call[:2] == ('systemctl', 'stop') and removal.DB_MOUNT in call for call in calls)
+    assert list(target.iterdir()) == [recovered]
+    assert machine.mounted_database_uuid() == DB_UUID
+    machine.mount(DB_UUID, fresh=True)
 
 
 @pytest.mark.parametrize(('uid', 'mode'), [

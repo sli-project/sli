@@ -114,7 +114,7 @@ public sealed partial class SecurityProblemsV2Tests
     }
 
     [Theory][InlineData("ru")][InlineData("en")]
-    public async Task NativeEndpointLocalizesRuleWordingAndKeepsObservationFields(string locale)
+    public async Task NativeQueueLocalizesVisibleFactsAndLeavesDetailFieldsForTheDrawer(string locale)
     {
         var raw = O("""{"id":9,"rule_code":"semantic.security.audit_controls_changed","title":"Audit policy was changed","status":"repeated","severity":"critical","actor":"sid:fixture-host:S-1-5-18","review_hint":{"bucket":"machine_account"},"entities":[{"display_name":"42","entity_role":"source_host"},{"display_name":"source-observation"}],"linked_case":{"id":7,"status":"review"}}""");
         var repo = new Repository { Result = new() { ["state"] = "available", ["items"] = new JsonArray(raw.DeepClone()), ["semantic_runtime"] = new JsonObject { ["findings_state"] = "inactive" } } };
@@ -122,18 +122,12 @@ public sealed partial class SecurityProblemsV2Tests
         host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(locale);
         using var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data", Ct); Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await ReportFixture.Body(response); var row = body["items"]![0]!.AsObject();
-        foreach (string field in new[] { "id", "status", "severity", "actor", "review_hint", "entities" }) Same(raw[field], row[field]);
-        foreach (var (field, envelope) in row["presentation_messages"]!.AsObject()) {
-            var expected = ProblemPresentation.Message(envelope!["code"]!.ToString(), locale, envelope["params"]!.DeepClone().AsObject());
-            if (envelope["rendered"]?.ToString() == "true") {
-                Same(envelope["text"], row[field]); Assert.DoesNotContain("{actor}", row[field]?.ToString() ?? "");
-            } else { Same(expected, envelope); Same(expected["text"], row[field]); }
-        }
-        Assert.Equal(locale == "ru" ? "Изменена политика аудита Windows" : "Windows audit policy changed", row["title"]!.ToString());
-        Same(ProblemPresentation.Message("security.problems.status.repeated", locale), row["status_message"]);
-        Same(ProblemPresentation.Message("reports.v2.security.problems.columns.severity.labels.critical", locale), row["severity_message"]);
-        Same(ProblemPresentation.Message("investigations.caseStatus.review", locale), row["linked_case"]!["status_message"]);
+        foreach (string field in new[] { "id", "status", "severity" }) Same(raw[field], row[field]);
+        Assert.Equal(locale == "ru" ? "Изменена политика аудита Windows" : "Windows audit policy changed", row["title_text"]!.ToString());
+        Assert.Equal(locale == "ru" ? "Системная учётная запись FIXTURE-HOST" : "System account FIXTURE-HOST", row["actor_text"]!.ToString());
         Assert.Equal("source-observation", row["entity_text"]!.ToString());
+        foreach (string field in new[] { "evidence", "entities", "linked_case", "identity_context", "presentation_messages", "what_happened" })
+            Assert.False(row.ContainsKey(field));
         Message(body["limitations"]![0]!.AsObject(), "text", "reports.v2.security.problems.limitations.zero_is_not_safe", locale);
         Message(body["metrics"]![0]!.AsObject(), "label", "reports.v2.security.problems.metrics.open.label", locale);
         Same(raw, repo.Result["items"]![0]);

@@ -87,6 +87,7 @@ public static class ProblemPresentation
         "semantic.qw.file-acl-broad-write" => "file_acl_broad_write", "" => null, var rule => rule };
 
     internal static bool CatalogDetection(string rule) => rule is "semantic.qw.privileged-group-addition" or "semantic.qw.security-log-cleared" or "semantic.qw.audit-disabled";
+    internal static bool IsPasswordFinding(string rule) => rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
     internal static JsonObject RuleParameters(JsonObject finding, ProblemAccess? access = null, string language = "")
     {
         var parameters = new JsonObject();
@@ -131,7 +132,7 @@ public static class ProblemPresentation
     internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
-        bool password = rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
+        bool password = IsPasswordFinding(rule);
         if (password && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
         var parameters = RuleParameters(finding, access, language);
         string code = RuleMessageCode(rule, suffix);
@@ -206,7 +207,7 @@ public static class ProblemPresentation
         return new() { ["name"] = source is not null ? source["label"]?.DeepClone() : JsonValue.Create(identifier ? "" : value),
             ["name_state"] = state, ["identifier"] = value, ["source"] = source?.DeepClone(), ["domain"] = domain };
     }
-    public static JsonObject Finding(JsonObject finding, ProblemAccess access, string language, bool queue = false)
+    public static JsonObject Finding(JsonObject finding, ProblemAccess access, string language, bool queue = false, bool includeDescription = false)
     {
         JsonObject M(string key, JsonObject? args = null) => Message(key, language, args);
         JsonNode? Principal(string? value, bool sourceHost = false, bool hideSid = false)
@@ -224,18 +225,21 @@ public static class ProblemPresentation
         bool acl = rule == "semantic.qw.file-acl-broad-write";
         var fields = new Dictionary<string, JsonNode?> {
             ["title_text"] = RuleMessage(finding, "title", language, access),
-            ["what_happened"] = RuleMessage(finding, "what", language, access),
-            ["why_text"] = RuleMessage(finding, "why", language, access),
-            ["next_text"] = RuleMessage(finding, "next", language, access),
             ["actor_text"] = actor is not null ? M("security.problems.identity.name", new() { ["name"] = actor["label"]?.DeepClone() }) : Principal(actorRaw, hideSid: true) ?? RuleParameters(finding, access)["actor"]?.DeepClone(),
             ["wording_limitation"] = null };
+        if (!queue || includeDescription) {
+            fields["what_happened"] = RuleMessage(finding, "what", language, access);
+            fields["why_text"] = RuleMessage(finding, "why", language, access);
+            fields["next_text"] = RuleMessage(finding, "next", language, access);
+        }
         row["presentation_code"] = PresentationCode(finding);
         foreach (var (field, value) in fields)
         {
             row[field] = value is JsonObject message ? message["text"]?.DeepClone() : value?.DeepClone();
             if (value is JsonObject msg) messages[field] = msg.DeepClone();
         }
-        foreach (var (code, field) in new[] { ("title_code", "title_text"), ("what_code", "what_happened"), ("why_code", "why_text"), ("next_step_code", "next_text") }) row[code] = (fields[field] as JsonObject)?["code"]?.DeepClone();
+        foreach (var (code, field) in new[] { ("title_code", "title_text"), ("what_code", "what_happened"), ("why_code", "why_text"), ("next_step_code", "next_text") })
+            if (fields.TryGetValue(field, out var value)) row[code] = (value as JsonObject)?["code"]?.DeepClone();
         row["title"] = row["title_text"]?.DeepClone();
         row["summary"] = row["what_happened"]?.DeepClone();
         row["why_it_matters"] = row["why_text"]?.DeepClone();
@@ -251,7 +255,8 @@ public static class ProblemPresentation
             ("evidence", new[] { "event_db_id", "event_record_id", "event_id", "hostname", "channel", "time_created_utc", "evidence_role", "note" }),
             ("entities", new[] { "entity_type", "display_name", "entity_role" }), ("status_history", new[] { "id", "old_status", "new_status", "changed_at", "changed_by", "note" }) })
             row[key] = new JsonArray(ProblemJson.Array(finding[key]).OfType<JsonObject>().Select(r => (JsonNode)ProblemJson.Pick(r, fieldsToKeep)).ToArray());
-        row["risk_acceptance"] = finding["risk_acceptance"] is JsonObject risk ? ProblemJson.Pick(risk, RiskFields) : null;
+        row["risk_acceptance"] = finding["risk_acceptance"] is JsonObject risk
+            ? ProblemJson.Pick(risk, queue && !includeDescription ? ["state", "expires_at"] : RiskFields) : null;
         row["risk_audit"] = new JsonArray(ProblemJson.Array(finding["risk_audit"]).OfType<JsonObject>().Select(r => {
             var item = ProblemJson.Pick(r, "id", "action", "actor", "occurred_at"); item["details"] = new JsonObject { ["rule"] = ProblemJson.Pick(ProblemJson.Object(r["details"]?["rule"]), RiskFields) }; return (JsonNode)item;
         }).ToArray());
@@ -287,6 +292,26 @@ public static class ProblemPresentation
         row["linked_case"] = finding["linked_case"]?.DeepClone(); row["presentation_messages"] = messages;
         if (row["linked_case"] is JsonObject linked && linked["status"] is {} caseStatus)
             linked["status_message"] = M("investigations.caseStatus." + caseStatus);
+        if (queue) {
+            var parameters = RuleParameters(finding, access, language);
+            if (IsPasswordFinding(rule)) {
+                var source = access.Fields("identity_basic", "technical") ? parameters["source"] : null;
+                row["actor_text"] = source?.DeepClone();
+                messages.Remove("actor_text");
+                JsonNode? entity = parameters["account"];
+                if (rule == "semantic.qw.password-spray") {
+                    var count = finding["presentation_facts"]?["account_count"];
+                    entity = source is not null && ProblemJson.Long(count) > 0
+                        ? M("security.problems.presentation.spray_object", new() { ["source"] = source.DeepClone(), ["count"] = count!.DeepClone() })
+                        : source;
+                }
+                row["entity_text"] = (entity is JsonObject message ? message["text"] : entity)?.DeepClone();
+                if (includeDescription) row["entity_messages"] = entity is null ? new JsonArray() : new JsonArray(entity.DeepClone());
+            } else if (row["entity_text"] is null) {
+                row["entity_text"] = (parameters["target"] ?? parameters["member"] ?? parameters["computer"])?.DeepClone();
+                if (row["entity_text"] is not null) row.Remove("entity_messages");
+            }
+        }
         void Hide(string path, params string[] categories)
         {
             if (access.Fields(categories)) return;
@@ -299,6 +324,17 @@ public static class ProblemPresentation
         foreach (string field in new[] { "identity_context", "identity_sources_text", "presentation_messages.identity_sources_text", "risk_audit", "status_history" }) Hide(field, "identity_basic", "raw_evidence");
         foreach (string field in new[] { "evidence", "status_reason", "risk_acceptance.reason" }) Hide(field, "raw_evidence");
         if (!access.Fields("raw_evidence", "technical") && row["evidence"] is JsonArray visible) foreach (var e in visible.OfType<JsonObject>()) { e.Remove("hostname"); e.Remove("channel"); }
-        return row;
+        if (!queue) return row;
+        var queueRow = ProblemJson.Pick(row, "id", "status", "severity", "title_text", "entity_text", "actor_text", "last_seen_utc",
+            "published_at_utc", "occurrence_count", "problem_cohort", "risk_acceptance", "review_hint_text", "suppressed", "assigned_to",
+            "assigned_to_text", "evidence_total", "first_seen_utc", "repeat_count", "decoy_id", "decoy_revision");
+        if (includeDescription) {
+            foreach (string field in new[] { "title", "what_happened", "why_text", "next_text", "actor", "entity_identifiers",
+                "identity_sources_text", "status_history", "risk_audit", "linked_case", "evidence", "presentation_messages",
+                "entity_messages", "status_message", "severity_message" })
+                if (row.TryGetPropertyValue(field, out var value)) queueRow[field] = value?.DeepClone();
+            if (IsPasswordFinding(rule)) queueRow.Remove("actor");
+        }
+        return queueRow;
     }
 }

@@ -79,7 +79,6 @@ public sealed class AdCoordinatorTests
         await using var db = await pg.OpenAsync(Ct);
         // The fixture has the canonical tables; install the existing v2 schedule header.
         await PostCollectionPostgres.Sql(db, """
-            alter table ad_snapshot_manifests add column schedule_timezone text default 'Asia/Novosibirsk',add column scheduled_local_at timestamp;
             create function fixture_schedule() returns trigger language plpgsql as $$begin new.scheduled_local_at:=new.slot_start_utc at time zone 'Asia/Novosibirsk';return new;end$$;
             create trigger fixture_schedule before insert on ad_snapshot_manifests for each row execute function fixture_schedule();
             update domains set domain_sid='S-1-5-21-100000001-200000002-300000003',fqdn='example.test' where id=7;

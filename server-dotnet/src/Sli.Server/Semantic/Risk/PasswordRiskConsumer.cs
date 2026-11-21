@@ -102,18 +102,21 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
             catch(PasswordRiskFailure){continue;}
             if(policy.Sha256!=RiskJson.String(row,"sha256"))continue;
             Guid token=Guid.NewGuid();var rows=await sql.Rows("""
-                with candidate as(
-                  select j.job_id from public.semantic_risk_evaluation_jobs j
+                with eligible_policy as materialized (
+                  select p.policy_id,p.policy_version,public.semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status) as mode
+                  from public.semantic_risk_policies p where p.policy_id=@policy and p.policy_version=1
+                    and p.source_kind='qw_signal' and p.definition_sha256=@sha and p.definition_json=@definition::jsonb
+                  for share of p skip locked
+                ), candidate as (
+                  select j.job_id from eligible_policy p join public.semantic_risk_evaluation_jobs j using(policy_id,policy_version)
                   where j.policy_id=@policy and j.policy_version=1 and j.source_kind='qw_signal'
                     and j.qw_signal_id=j.source_reference and j.attempt_count<j.max_attempts and j.available_at<=now()
                     and j.evaluation_mode in ('test','shadow','enabled')
                     and (j.evaluation_status in ('queued','failed') or (j.evaluation_status='leased' and j.lease_until<now()))
-                    and exists(select 1 from public.semantic_risk_policies p where p.policy_id=j.policy_id and p.policy_version=j.policy_version
-                      and p.source_kind='qw_signal' and p.definition_sha256=@sha and p.definition_json=@definition::jsonb
-                      and public.semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status)=j.evaluation_mode
-                      and (j.evaluation_mode<>'enabled' or exists(select 1 from public.semantic_policy_admission a
-                        where a.policy_id=p.policy_id and a.policy_version=p.policy_version and a.enabled is true)))
-                  order by j.available_at,j.created_at,j.job_id for update skip locked limit 1)
+                    and p.mode=j.evaluation_mode
+                    and (j.evaluation_mode<>'enabled' or exists(select 1 from public.semantic_policy_admission a
+                      where a.policy_id=p.policy_id and a.policy_version=p.policy_version and a.enabled is true))
+                  order by j.available_at,j.created_at,j.job_id for update of j skip locked limit 1)
                 update public.semantic_risk_evaluation_jobs j set evaluation_status='leased',attempt_count=j.attempt_count+1,
                   lease_token=@token,lease_until=now()+(@seconds*interval '1 second'),heartbeat_at=now(),updated_at=now(),
                   last_error_code=null,last_error_detail=null from candidate where j.job_id=candidate.job_id
@@ -142,7 +145,7 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
               public.semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status) as lifecycle_status
             from public.semantic_risk_evaluation_jobs j join public.semantic_risk_policies p
               on p.policy_id=j.policy_id and p.policy_version=j.policy_version
-            where j.job_id=@job and j.evaluation_status='leased' and j.lease_token=@token for share of p
+            where j.job_id=@job and j.evaluation_status='leased' and j.lease_token=@token for share of p nowait
             """,ct,("job",lease.Id),("token",lease.Token));
         RiskJson.Require(rows.Count==1,"password_risk_lease_lost");var row=rows[0];string mode=RiskJson.String(row,"evaluation_mode");
         RiskJson.Require((mode is "test" or "shadow" or "enabled")&&RiskJson.String(row,"lifecycle_status")==mode,"password_risk_admission_changed");

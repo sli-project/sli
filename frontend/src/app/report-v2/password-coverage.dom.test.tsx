@@ -22,12 +22,17 @@ const page = (state: ReportResultDto["state"] = "partial"): ReportResultDto => (
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function renderReport(body: ReportResultDto, key = definition.key) {
+function renderReport(body: ReportResultDto, key = definition.key, loadCoverage?: () => Promise<ReportResultDto>) {
   window.history.replaceState(null, "", "/app/report/security.problems");
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
-    JSON.stringify(String(input).includes("/data?") ? body : { ...definition, key }),
-    { headers: { "Content-Type": "application/json" } },
-  )));
+  const { coverage, ...queue } = body;
+  const fetchReport = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const response = url.includes("/data?") ? { ...queue, coverage: {} }
+      : url.includes("/password-coverage?") ? await (loadCoverage?.() ?? Promise.resolve({ ...page("partial"), coverage }))
+      : { ...definition, key };
+    return new Response(JSON.stringify(response), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchReport);
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ReportRenderer reportKey={key}/></QueryClientProvider>);
 }
@@ -39,6 +44,16 @@ it.each(["ru", "en"] as const)("shows one empty state without a coverage block i
   expect(screen.queryByRole("region", { name: /покрыти|coverage/i })).toBeNull();
   expect(container.querySelector('[data-state="empty"]')).toBeTruthy();
   expect(screen.queryByRole("table")).toBeNull();
+});
+
+it("renders findings while password coverage is still loading", async () => {
+  const body = page("ok");
+  body.items = [{ id: "retained-finding" }];
+  const pending = new Promise<ReportResultDto>(() => {});
+  const loadCoverage = vi.fn(() => pending);
+  renderReport(body, definition.key, loadCoverage);
+  expect((await screen.findByRole("table")).textContent).toContain("retained-finding");
+  await waitFor(() => expect(loadCoverage).toHaveBeenCalledTimes(1));
 });
 
 const scopeRow = {

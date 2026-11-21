@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Service credentials only. Policy is data on stdin, never executable code.
+param($Policy, [string]$LocalDc)
+
+$captureStage = 'setup'
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.DirectoryServices
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-$policy = [Console]::In.ReadToEnd() | ConvertFrom-Json
+if ($null -eq $Policy) {
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+    $Policy = [Console]::In.ReadToEnd() | ConvertFrom-Json
+}
 $auth = [DirectoryServices.AuthenticationTypes]::Secure -bor
     [DirectoryServices.AuthenticationTypes]::Signing -bor [DirectoryServices.AuthenticationTypes]::Sealing
 $timeout = [TimeSpan]::FromSeconds([Math]::Min(30, [int]$policy.capture_seconds))
@@ -15,11 +20,12 @@ $states = @{}
 $limit = [int]$policy.max_objects
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $attributes = @($policy.ldap_attributes)
-$server = if (@($policy.dc).Count) { [string]$policy.dc[0] } else { [string]$policy.domain_dns }
+$server = if (@($policy.dc).Count) { [string]$policy.dc[0] } elseif ($LocalDc) { $LocalDc } else { [string]$policy.domain_dns }
 
 function New-Entry([string]$Dc, [string]$Dn) {
     if ($Dc -notmatch '^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$') { throw 'agent_ad_endpoint_invalid' }
     $entry = [DirectoryServices.DirectoryEntry]::new(('LDAP://' + $Dc + '/' + $Dn))
+    if ($Dc -ieq $LocalDc) { $auth = $auth -bor [DirectoryServices.AuthenticationTypes]::ServerBind }
     $entry.AuthenticationType = $auth
     return $entry
 }
@@ -142,6 +148,7 @@ function Collect([string]$Base, [string]$Filter, [string]$Kind, [string]$Section
     } catch { $states[$Section] = 'partial' }
 }
 
+$captureStage = 'ldap_root_dse'
 $root = New-Entry $server 'RootDSE'
 try {
     $root.RefreshCache(@('defaultNamingContext', 'configurationNamingContext', 'schemaNamingContext', 'rootDomainNamingContext'))
@@ -150,13 +157,21 @@ try {
     $schemaNc = [string]$root.Properties['schemaNamingContext'][0]
     $forestNc = [string]$root.Properties['rootDomainNamingContext'][0]
 } finally { $root.Dispose() }
+$captureStage = 'ldap_domain'
 $domainRows = @(Search-Rows $server $domainNc '(objectClass=domainDNS)' $attributes $true)
-if ($domainRows.Count -ne 1 -or $domainRows[0].objectsid -ne $policy.domain_sid) { throw 'agent_ad_domain_mismatch' }
+if ($domainRows.Count -ne 1 -or $domainRows[0]['objectsid'] -ne $policy.domain_sid) {
+    $captureStage = 'domain_mismatch'
+    throw 'agent_ad_domain_mismatch'
+}
 # Validate both domain identities, including a service bound to another forest.
 $domainDns = ($domainNc -split ',' | ForEach-Object { $_ -replace '^DC=', '' }) -join '.'
-if ($domainDns -ne $policy.domain_dns) { throw 'agent_ad_domain_mismatch' }
+if ($domainDns -ne $policy.domain_dns) {
+    $captureStage = 'domain_mismatch'
+    throw 'agent_ad_domain_mismatch'
+}
 $domain = @{ sid = $domainRows[0].objectsid; dns_name = $domainDns; default_nc = $domainNc;
              configuration_nc = $configNc; schema_nc = $schemaNc; forest_nc = $forestNc }
+$captureStage = 'ldap_inventory'
 $schemaAttributes = @{}
 $metadataNames = @('mslaps-passwordexpirationtime', 'ms-mcs-admpwdexpirationtime', 'msds-allowedtoactonbehalfofotheridentity')
 try {
@@ -170,6 +185,7 @@ $objects.Add(@{ kind = 'domain'; properties = $domainRows[0] })
 $bases = if (@($policy.search_bases).Count) { @($policy.search_bases) } else { @($domainNc) }
 foreach ($base in $bases) {
     if ($base -ne $domainNc -and -not $base.EndsWith(',' + $domainNc, [StringComparison]::OrdinalIgnoreCase)) {
+        $captureStage = 'scope_mismatch'
         throw 'agent_ad_search_base_invalid'
     }
     Collect $base '(|(&(objectCategory=person)(objectClass=user))(objectClass=msDS-ManagedServiceAccount)(objectClass=msDS-GroupManagedServiceAccount))' 'ad_user' 'directory_accounts'
@@ -355,6 +371,7 @@ if ($null -ne $policy.expensive_flags.PSObject.Properties['inventory'] -and $pol
         $optional['inventory'].values[$p.objectguid] = @{ status = $status; value = $disks }
     }
 }
+$captureStage = 'serialize'
 @{ domain = $domain; objects = @($objects.ToArray()); states = $states; surveys = @($surveys.ToArray());
    fsmo = $fsmo; optional = $optional; query_dc = $server; health = @($health.ToArray());
    replication = @($replication.ToArray()); schema_attributes = $schemaAttributes } | ConvertTo-Json -Depth 12 -Compress

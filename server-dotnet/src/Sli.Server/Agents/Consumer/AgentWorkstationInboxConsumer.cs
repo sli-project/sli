@@ -17,7 +17,7 @@ public sealed record AgentInboxStep(bool Scanned,bool Imported,string? PendingRe
 {
     internal string? AgentId { get; init; }
     internal string? ModuleId { get; init; }
-    internal string? Diagnostic { get; init; }
+    internal JsonObject? Diagnostic { get; init; }
     internal bool TransactionCompleted { get; init; }
     internal string? StreamKey { get; init; }
 }
@@ -27,12 +27,22 @@ public sealed record AgentInboxStep(bool Scanned,bool Imported,string? PendingRe
 public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFactory connections, DirectAdDcRuntime? direct = null)
 {
     internal JsonObject? Cursor { get; private set; }
+    internal string? DirectConfigurationIssue { get; init; }
+    private readonly AdDcProjectionFailure failures = new(TimeProvider.System);
+    private static readonly AdDcProjectionFailure BorrowedFailures = new(TimeProvider.System);
+
+    internal void ReportDirectConfigurationIssue(CancellationToken ct)
+    {
+        if (DirectConfigurationIssue is { } issue)
+            WriteDiagnostic(failures, new JsonObject { ["code"] = AdDcProjectionFailure.Code, ["step"] = "configuration", ["reason"] = issue }, ct);
+    }
     // Per-stream claim cursors survive between polls; each stream wraps independently at its tail.
     private readonly StreamFairness streams=new();
     private readonly SemaphoreSlim gate=new(1,1);
     // Packets whose binding mismatch repeats identically are not retried until the bindings or DC servers change.
     // Memory only: nothing is deleted or marked, and a restart retries each signature once.
     private readonly HashSet<string> unbound=new(StringComparer.Ordinal);
+    private readonly HashSet<string> awaitingDcSource=new(StringComparer.Ordinal);
     private string? bindingState;
     public async Task<AgentInboxBatchResult> RunOnceAsync(int limit,CancellationToken ct,Func<CancellationToken,Task>? checkOwnership=null)
     {
@@ -73,8 +83,11 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                 claimed.Dequeue();
                 using var npsAdmission=TryNpsAdmission();
                 await using var tx=await db.BeginTransactionAsync(ct);
-                var step=await ProcessNextCoreAsync(db,tx,null,ct,direct,npsAdmission,deferred.Keys,commitAdDc:true,skipped:unbound.ToArray(),
+                var step=await ProcessNextCoreAsync(db,tx,null,ct,direct,npsAdmission,failures,deferred.Keys,commitAdDc:true,skipped:unbound.ToArray(),
                     progress:value=>Cursor=new JsonObject { ["phase"]=value.ToString(),["phase_started_at"]=DateTime.UtcNow.ToString("O") },fairness:fairness,claimed:row);
+                if (DirectConfigurationIssue is { } issue && step.PendingReason == "agent_storage_unavailable" &&
+                    step.ModuleId is "sli.windows.ad-dc" or "sli.windows.ad-dc-history")
+                    step = step with { PendingReason = issue };
                 if(!step.Scanned) {
                     await tx.CommitAsync(ct);
                     return step;
@@ -83,6 +96,8 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                 if(!step.TransactionCompleted)await tx.CommitAsync(ct);
                 Cursor = new() { ["received_at"] = step.Received.ToString("O"), ["packet_id"] = step.PacketId.ToString("D") };
                 if(step.PendingReason=="agent_ad_dc_source_not_bound") await RememberUnboundAsync(db,step.PacketId,ct);
+                if(step.PendingReason==AdDcProjectionFailure.SourceNotConfigured && step.StreamKey is { } blocked)
+                    awaitingDcSource.Add(blocked);
                 if(IsConfigurationPending(step.PendingReason) && step.AgentId is { } agent && step.ModuleId is { } module)
                     deferred.Add((agent,module),step);
                 return step;
@@ -103,13 +118,15 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                     count.Parameters.AddWithValue("agent",key.Agent); count.Parameters.AddWithValue("module",key.Module);
                     count.Parameters.AddWithValue("received",step.Received); count.Parameters.AddWithValue("packet",step.PacketId);
                     long remaining=(long)(await count.ExecuteScalarAsync(ct))!; skipped+=remaining;
-                    var diagnostic=step.Diagnostic is null ? new JsonObject { ["code"]="agent_packets_pending",["reason"]=step.PendingReason }
-                        : JsonNode.Parse(step.Diagnostic)!.AsObject();
+                    if (step.Diagnostic is null && AdDcProjectionFailure.IsStorageIssue(step.PendingReason)) continue;
+                    var diagnostic=step.Diagnostic ?? new JsonObject { ["code"]="agent_packets_pending",["reason"]=step.PendingReason };
                     diagnostic["agent_id"]=key.Agent; diagnostic["module_id"]=key.Module; diagnostic["skipped"]=remaining;
                     if(!diagnostics.TryGetValue(key.Agent,out var entries)) diagnostics[key.Agent]=entries=[];
                     entries.Add(diagnostic);
                 }
                 foreach(var (agent,entries) in diagnostics) {
+                    entries.RemoveAll(entry => !failures.CountAndAllow(entry));
+                    if (entries.Count == 0) continue;
                     // One record per agent, retaining individual module/step diagnostics.
                     var diagnostic=entries.Count==1 ? entries[0] : new JsonObject {
                         ["code"]="agent_packets_pending",["agent_id"]=agent,
@@ -137,20 +154,21 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
     }
     // Caller owns transaction and commits the observation and inbox marker together.
     public static Task<AgentInboxStep> ProcessNextAsync(NpgsqlConnection db,NpgsqlTransaction tx,(DateTime Received,Guid Packet)? after,CancellationToken ct,DirectAdDcRuntime? direct=null)
-        => ProcessNextCoreAsync(db,tx,after,ct,direct,null);
-    private static async Task<AgentInboxStep> ProcessNextCoreAsync(NpgsqlConnection db,NpgsqlTransaction tx,(DateTime Received,Guid Packet)? after,CancellationToken ct,DirectAdDcRuntime? direct,AgentAssignmentPluginAdmission? npsAdmission,IEnumerable<(string Agent,string Module)>? deferred=null,bool commitAdDc=false,string[]? skipped=null,Action<AdDcProjectionStep>? progress=null,StreamFairness? fairness=null,Inbox? claimed=null)
+        => ProcessNextCoreAsync(db,tx,after,ct,direct,null,BorrowedFailures);
+    private static async Task<AgentInboxStep> ProcessNextCoreAsync(NpgsqlConnection db,NpgsqlTransaction tx,(DateTime Received,Guid Packet)? after,CancellationToken ct,DirectAdDcRuntime? direct,AgentAssignmentPluginAdmission? npsAdmission,AdDcProjectionFailure failures,IEnumerable<(string Agent,string Module)>? deferred=null,bool commitAdDc=false,string[]? skipped=null,Action<AdDcProjectionStep>? progress=null,StreamFairness? fairness=null,Inbox? claimed=null)
     {
         var row=claimed??await ClaimAsync(db,tx,after,ct,deferred,skipped,fairness);
         if(row is null) return new(false,false,null,default,default);
         if(commitAdDc && direct is not null && Text(row.Envelope["module_id"]) is "sli.windows.ad-dc" or "sli.windows.ad-dc-history")
-            return (await ProcessAdDcCommittedAsync(db,tx,row,direct,ct,progress)) with { StreamKey=StreamKeyOf(row) };
+            return (await ProcessAdDcCommittedAsync(db,tx,row,direct,ct,progress,failures)) with { StreamKey=StreamKeyOf(row) };
         if(claimed is not null) {
             await using var pending=new NpgsqlCommand("select imported_at is null and module_disabled_at is null and not exists(select 1 from sli_agent_packet_quarantine q where q.packet_id=i.packet_id) from sli_agent_packet_inbox i where packet_id=@packet for update",db,tx);
             pending.Parameters.AddWithValue("packet",row.PacketId);
             if(await pending.ExecuteScalarAsync(ct) is not true)return new(true,false,"agent_packet_already_processed",row.Received,row.PacketId) { StreamKey=StreamKeyOf(row) };
         }
-        await tx.SaveAsync("projection",ct); bool success=false,quarantined=false; string? reason=null,diagnostic=null;
-        try { await ImportAsync(db,tx,row,ct,direct,npsAdmission is not null); success=true; }
+        await tx.SaveAsync("projection",ct); bool success=false,quarantined=false; string? reason=null;
+        JsonObject? diagnostic=null;
+        try { await ImportAsync(db,tx,row,ct,direct,npsAdmission is not null,failures); success=true; }
         catch(WorkstationPendingException e) { reason=e.Code; await tx.RollbackAsync("projection",ct); }
         catch(FileAuditPending e) { reason=e.Code; await tx.RollbackAsync("projection",ct); }
         catch(DirectSourceConflict e) {
@@ -176,7 +194,11 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                 : "update sli_agent_packet_inbox set imported_at=clock_timestamp() where packet_id=@packet",db,tx);
             mark.Parameters.AddWithValue("packet",row.PacketId); if(await mark.ExecuteNonQueryAsync(ct)!=1) throw new InvalidOperationException();
         }
-        if(diagnostic is not null && (deferred is null || !IsConfigurationPending(reason))) WriteDiagnostic(diagnostic,ct);
+        if(diagnostic is not null && (deferred is null || !IsConfigurationPending(reason))) {
+            if(reason==AdDcProjectionFailure.SourceNotConfigured && Guid.TryParse(row.Envelope["agent_id"]?.ToString(),out var diagnosticAgent))
+                diagnostic["agent_id"]=diagnosticAgent.ToString("D");
+            WriteDiagnostic(failures,diagnostic,ct);
+        }
         return new(true,success,reason,row.Received,row.PacketId,quarantined) {
             AgentId=JsonRead.TryString(row.Envelope["agent_id"],out var agent) && Guid.TryParse(agent,out _) ? agent : null,
             ModuleId=JsonRead.TryString(row.Envelope["module_id"],out var module) ? module : null, Diagnostic=diagnostic, StreamKey=StreamKeyOf(row)
@@ -193,10 +215,19 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
         await using var command=new NpgsqlCommand("""
             select md5(coalesce(string_agg(x,'|' order by x),'')) from (
               select concat_ws(chr(31),'b',agent_id::text,module_id,source_instance_id,source_name,channel,module_version) x from sli_agent_module_bindings
-              union all select concat_ws(chr(31),'s',hostname) from servers where role='domain_controller' and is_active) t
+              union all select concat_ws(chr(31),'s',id::text,hostname,fqdn,domain_id::text) from servers where role='domain_controller' and is_active) t
             """,db);
         var state=(string?)await command.ExecuteScalarAsync(ct);
-        if(state!=bindingState) { unbound.Clear(); bindingState=state; }
+        if(state!=bindingState) {
+            unbound.Clear();
+            // Resume at the oldest held packet even if this stream keeps receiving data.
+            foreach (string stream in awaitingDcSource) {
+                streams.Passed.Remove(stream);
+                streams.Served.Remove(stream);
+            }
+            awaitingDcSource.Clear();
+            bindingState=state;
+        }
     }
     private async Task RememberUnboundAsync(NpgsqlConnection db,Guid packet,CancellationToken ct)
     {
@@ -274,7 +305,7 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
         command.Parameters.AddWithValue("deferred_agents",NpgsqlDbType.Array|NpgsqlDbType.Text,excluded.Select(x=>x.Agent).ToArray());
         command.Parameters.AddWithValue("deferred_modules",NpgsqlDbType.Array|NpgsqlDbType.Text,excluded.Select(x=>x.Module).ToArray());
     }
-    private static async Task ImportAsync(NpgsqlConnection db,NpgsqlTransaction tx,Inbox row,CancellationToken ct,DirectAdDcRuntime? direct,bool npsAdmission)
+    private static async Task ImportAsync(NpgsqlConnection db,NpgsqlTransaction tx,Inbox row,CancellationToken ct,DirectAdDcRuntime? direct,bool npsAdmission,AdDcProjectionFailure failures)
     {
         var envelope=row.Envelope;
         string module=Text(envelope["module_id"]);
@@ -307,7 +338,7 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
             var step=AdDcProjectionStep.Authorization;
             try { await DirectAdDcPacket.ImportAsync(db,tx,direct.Worker,row.PacketId,envelope,row.Packet,row.Rows,direct.CatalogPath,ct,value=>step=value); }
             catch (OperationCanceledException) when(ct.IsCancellationRequested) { throw; }
-            catch (DirectSourceConflict error) { WriteDiagnostic(AdDcProjectionFailure.Describe(error,step),ct); throw; }
+            catch (DirectSourceConflict error) { WriteDiagnostic(failures,AdDcProjectionFailure.Describe(error,step),ct); throw; }
             catch (Exception error) {
                 string code = error is InvalidOperationException && error.Message is "agent_storage_unavailable" or "agent_disabled" or "agent_module_not_assigned" or "agent_packet_attestation_invalid" or "agent_plugin_disabled" or "agent_ad_dc_source_not_bound" or "agent_ad_dc_source_not_configured" or "agent_ad_dc_channel_not_configured" ? error.Message : "agent_ad_dc_projection_failed";
                 throw new DirectAdDcPending(AdDcProjectionFailure.IsPermanent(error) ? error.Message : code,AdDcProjectionFailure.Describe(error,step),AdDcProjectionFailure.IsPermanent(error));
@@ -382,22 +413,22 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
         var existing=JsonNode.Parse(reader.GetString(1))!.AsObject();
         if(reader.GetString(0)!=Packets.Digest(existing) || Text(existing["source_sha256"])!=Text(observation.Document["source_sha256"])) throw new InvalidDataException();
     }
-    private static void WriteDiagnostic(string diagnostic,CancellationToken ct)
+    private static void WriteDiagnostic(AdDcProjectionFailure failures,JsonObject diagnostic,CancellationToken ct)
     {
-        try { Console.Error.WriteLine(diagnostic); }
+        try { if (failures.CountAndAllow(diagnostic)) Console.Error.WriteLine(diagnostic.ToJsonString()); }
         catch(OperationCanceledException) when(ct.IsCancellationRequested) { throw; }
         catch(Exception) { /* A failed diagnostic must not change the packet outcome. */ }
     }
     // Only current server/agent configuration shared by every packet of the pair.
     // Binding mismatches and channel lookup from the packet header are packet-specific.
-    private static bool IsConfigurationPending(string? code) => code is
+    private static bool IsConfigurationPending(string? code) => AdDcProjectionFailure.IsStorageIssue(code) || code is
         "agent_ad_dc_source_not_configured" or
         "agent_eventlog_source_not_configured" or
         "agent_disabled" or "agent_module_not_assigned" or "agent_identity_unavailable" or "agent_plugin_disabled" or
         "agent_nps_source_not_configured" or "agent_nps_import_disabled" or "agent_nps_import_config_invalid" or
         "file_audit_source_not_configured" or "file_audit_workstation_not_assigned";
-    private sealed class DirectAdDcPending(string code,string? diagnostic=null,bool permanent=false) : Exception(code) {
-        internal string? Diagnostic { get; }=diagnostic;
+    private sealed class DirectAdDcPending(string code,JsonObject? diagnostic=null,bool permanent=false) : Exception(code) {
+        internal JsonObject? Diagnostic { get; }=diagnostic;
         internal bool Permanent { get; }=permanent;
     }
     private static string Text(JsonNode? value)=>JsonRead.TryString(value,out var result)?result:throw new InvalidDataException();

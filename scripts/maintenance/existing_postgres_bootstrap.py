@@ -589,6 +589,14 @@ def render_baseline_schema(
     if len(labels) < 2 or len(domain) > 253 or any(_DNS_LABEL.fullmatch(label) is None for label in labels):
         raise BootstrapError("source_domain_config_invalid")
     sql = baseline.schema_path.read_text(encoding="utf-8")
+    if domain == "example.invalid" and not seed_report_domain:
+        # Native owner setup learns its directory from the first DC. Remove
+        # only the baseline directory seed rows, leaving the schema intact.
+        sql = re.sub(
+            r"(?m)^(COPY public\.(?:domains|forests) \([^\n]*\) FROM stdin;\n)"
+            rf"[0-9]+\t(?:[0-9]+\t)?{BASELINE_DOMAIN_PLACEHOLDER}\t[^\n]+\n",
+            r"\1", sql,
+        )
     sql = sql.replace(BASELINE_DOMAIN_PLACEHOLDER, domain)
     if seed_report_domain:
         # DNS validation above makes the literal safe. Linux runs this in the

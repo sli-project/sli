@@ -19,6 +19,18 @@ def workflow():
     return yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
+def test_successive_agent_builds_have_increasing_msi_versions():
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("PowerShell is required to compute MSI versions")
+    script = ROOT / "agent-dotnet/tools/Get-MsiVersion.ps1"
+    versions = [subprocess.check_output([pwsh, "-NoProfile", "-File", str(script),
+                                         "-BuildNumber", str(build)], text=True, timeout=30).strip()
+                for build in (65534, 65535)]
+    previous, current = (tuple(map(int, version.split("."))) for version in versions)
+    assert (0, 3, 5) < previous < current
+    assert all(0 <= component <= limit for component, limit in zip(current, (255, 255, 65534)))
+
 def test_msi_workflow_builds_and_checks_dotnet_before_upload():
     config = workflow()
     assert set(config["on"]) == {"workflow_dispatch", "workflow_call"}
@@ -106,6 +118,7 @@ def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path, s
             "GITHUB_WORKSPACE": str(checkout),
             "SOURCE_COMMIT": source_commit,
             "TEST_DOTNET_SDK": sdk,
+            "SLI_MSI_PRODUCT_VERSION": "26.0.1000",
         }, capture_output=True, text=True, timeout=30,
     )
 
@@ -124,6 +137,7 @@ def test_msi_artifact_contains_only_msi_and_matching_source_manifest(tmp_path, s
         "source_commit": commit,
         "sha256": hashlib.sha256(b"synthetic MSI").hexdigest(),
         "dotnet_sdk": sdk,
+        "product_version": "26.0.1000",
     }
 
 

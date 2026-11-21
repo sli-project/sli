@@ -7,7 +7,7 @@ import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { formatDate, formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
-import { statusAuditChecks, statusServices, statusSources } from "./status-view";
+import { statusAdDcImportIssue, statusAuditChecks, statusServices, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
 
@@ -45,7 +45,8 @@ export function SystemStatusPage() {
   const auditChecks = statusAuditChecks(health, setup.data?.domains ?? []);
   const agentIssues = (health?.items ?? []).flatMap((agent) => [
     ...(agent.password_domain_required ? [{ id: `${agent.id}:password-domain`, name: agent.name,
-      state: t("systemStatus.passwordDomainRequired", { name: agent.name }), action: EMPTY_VALUE, plain: true }] : []),
+      state: t("systemStatus.passwordDomainRequired", { name: agent.name }), plain: true,
+      action: <a href={`/app/agents?agent_id=${encodeURIComponent(agent.id)}&configure=password-domain`}>{t("systemStatus.setPasswordDomain")}</a> }] : []),
     ...(agent.duplicate_agents && agent.duplicate_agents > 1 ? [{ id: `${agent.id}:duplicate`, name: agent.name,
       state: t("agents.twoAgents", { name: agent.name }), action: t("agents.removeExtra"), plain: false }] : []),
     ...(agent.identity_conflict ? [{ id: `${agent.id}:identity`, name: agent.name,
@@ -53,6 +54,7 @@ export function SystemStatusPage() {
   ]);
   const workers = operations.data?.workers;
   const services = statusServices(workers?.items ?? [], timeZone);
+  const importIssue = statusAdDcImportIssue(workers?.items ?? []);
   const disk = storage.data?.storage.postgres_volume;
   const backup = storage.data?.storage.footprint?.backups;
   const bytes = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -64,13 +66,19 @@ export function SystemStatusPage() {
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-  const connected = sources.some((source) => source.connected);
+  const dcTargets = setup.data?.domain_controllers ?? [];
+  const connected = setup.data?.sources.find((source) => source.pack_id === "sli.windows.ad-dc")?.instances?.some((instance) =>
+    instance.configured && instance.enabled && instance.data_received && dcTargets.some((target) =>
+      target.source === "db" && target.enabled && target.domain &&
+      [target.hostname, target.connect_address].some((name) => name.toLowerCase() === instance.source_instance_id.toLowerCase()))) ?? false;
   const channelReady = !notifications.isError && (notifications.data?.channels.some((channel) => channel.enabled && (channel.last_accepted_at
     || (channel.kind === "smtp" && !smtp.isError && smtp.data?.host && smtp.data.sender && smtp.data.secret_set && smtp.data.needs_save === false)
     || (channel.kind === "telegram" && !telegram.isError && telegram.data?.secret_set && telegram.data.chat_bound))) ?? false);
   const sourcesReady = !setup.isError && health && health.state !== "unavailable" && !health.diagnostics;
   const showSteps = sourcesReady && !(connected && channelReady && latest);
   const release = diagnostics.data?.release_metadata;
+  const webConsole = diagnostics.data?.web_console;
+  const consoleUrl = access?.subject?.coarse_role === "admin" && !diagnostics.isError && webConsole?.available ? webConsole.url : null;
   const failed = (label: string, retry: () => unknown) => <p role="status">{t("systemStatus.failed", { table: label })} <button type="button" className="sli-ds-button" onClick={() => void retry()}>{t("systemStatus.retry")}</button></p>;
   const loading = (columns: number) => <LoadingRegion><TableSkeleton columns={columns}/></LoadingRegion>;
   const sourceColumns: TableColumn<(typeof sources)[number]>[] = [
@@ -88,11 +96,14 @@ export function SystemStatusPage() {
   ];
 
   return <section className="sli-ds-report">
-    <PageHeader title={t("shell.adminNav.status")} actions={<button type="button" className="sli-ds-button" disabled={exporting} onClick={() => {
-      setExporting(true);
-      void api.operations().then((data) => { downloadOperationsExport(data); setExportError(false); })
-        .catch(() => setExportError(true)).finally(() => setExporting(false));
-    }}>{t("systemStatus.download")}</button>} meta={<>
+    <PageHeader title={t("shell.adminNav.status")} actions={<>
+      {consoleUrl ? <a className="sli-ds-button" href={consoleUrl} target="_blank" rel="noopener noreferrer">{t("systemStatus.serverConsole")}</a> : null}
+      <button type="button" className="sli-ds-button" disabled={exporting} onClick={() => {
+        setExporting(true);
+        void api.operations().then((data) => { downloadOperationsExport(data); setExportError(false); })
+          .catch(() => setExportError(true)).finally(() => setExporting(false));
+      }}>{t("systemStatus.download")}</button>
+    </>} meta={<>
       <span>{t("systemStatus.version", {
         version: release?.release_tag || release?.project_version || EMPTY_VALUE,
         commit: release?.git_commit || EMPTY_VALUE,
@@ -125,13 +136,14 @@ export function SystemStatusPage() {
     {agentIssues.length ? <><h2 className="sli-ds-section-title">{t("agents.title")}</h2><DataTable columns={[
       { key: "name", label: t("systemStatus.computer") },
       { key: "state", label: t("systemStatus.state"), render: (row) => row.plain ? row.state : <Status tone="error">{row.state}</Status> },
-      { key: "action", label: t("systemStatus.action") },
+      { key: "action", label: t("systemStatus.action"), render: (row) => row.action },
     ]} rows={agentIssues} rowKey={(row) => row.id} caption={t("agents.title")} showFooter={false}/></> : null}
     <OldAgentsTable agents={health?.replaced_agents ?? []} canRemove={Boolean(access?.platform_owner)}/>
     <h2 className="sli-ds-section-title">{t("systemStatus.services")}</h2>
     {operations.isPending ? loading(serviceColumns.length) : workers && workers.status !== "unavailable" && workers.items && !operations.isError
       ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} caption={t("systemStatus.services")} showFooter={false}/>
       : failed(t("systemStatus.services"), operations.refetch)}
+    {importIssue ? <p>{importIssue}</p> : null}
     {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },

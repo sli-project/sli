@@ -21,6 +21,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -84,15 +85,18 @@ BOOTSTRAP_MARKER = Path(POSTGRES_DATA_DIRECTORY) / ".sli-bootstrap.json"
 COLD_TABLESPACE = "sli_temp_hdd"
 COLD_TABLES = ("sli_agent_packet_inbox", "event_source_representations_v2",
                "storage_v2_archive_sets", "storage_v2_archive_blocks")
+COMMAND_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"}
+directory_mount_unit = clickhouse.directory_mount_unit
 
 
 class HostError(RuntimeError):
-    """Fixed diagnostics only: subprocess output can contain private material."""
+    """Fixed reason code, with separately sanitized command diagnostics."""
 
-    def __init__(self, code, *, command=None, unit=None):
+    def __init__(self, code, *, command=None, unit=None, stderr=()):
         super().__init__(code)
         self.command = command
         self.unit = unit
+        self.stderr = stderr
 
 
 def configuration_conflict(*paths):
@@ -110,9 +114,30 @@ def configuration_conflict(*paths):
     return error
 
 
-def run(argv, *, input=None, allow_no_unit_files=False):
+def command_stderr(output, *, sensitive_input):
+    if sensitive_input:
+        # psql can echo entire credential-bearing SQL statements and continuations.
+        return ("[redacted: command received credentials]",) if output.strip() else ()
+    lines = []
+    private_key = False
+    for line in output.splitlines():
+        if re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", line):
+            private_key = True
+        if private_key or re.search(
+            r"password|passwd|passphrase|token|secret|credential|authorization|api[_ -]?key|"
+            r"(?:\w+://[^\s/]*@)|^\s*(?:LINE \d+|DETAIL|HINT|CONTEXT|STATEMENT)\s*:", line, re.I
+        ):
+            lines.append("[redacted]")
+        elif line.strip():
+            lines.append("".join(char if char.isprintable() else " " for char in line)[:400])
+        if re.search(r"-----END [A-Z ]*PRIVATE KEY-----", line):
+            private_key = False
+    return tuple(lines[-8:])
+
+
+def run(argv, *, input=None, allow_no_unit_files=False, sensitive_input=False):
     result = subprocess.run(argv, input=input, capture_output=True, text=True, check=False,
-                            timeout=150, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+                            errors="replace", timeout=150, env=COMMAND_ENV)
     if result.returncode:
         if allow_no_unit_files and result.returncode == 1 and not (result.stdout.strip() or result.stderr.strip()):
             return ""
@@ -123,7 +148,8 @@ def run(argv, *, input=None, allow_no_unit_files=False):
             if ((len(argv) == 3 and argv[1] in {"stop", "reset-failed"})
                     or (len(argv) == 4 and argv[1:3] == ["disable", "--now"])):
                 unit = argv[-1]
-        raise HostError("native_command_failed", command=command, unit=unit)
+        raise HostError("native_command_failed", command=command, unit=unit,
+                        stderr=command_stderr(result.stderr, sensitive_input=sensitive_input))
     return result.stdout
 
 
@@ -648,7 +674,22 @@ class Host:
             self.backup_trusted(source)
             if "rw" not in rows[0].get("options", "").split(","):
                 raise HostError("native_database_filesystem_readonly")
+            if source.is_dir() and any(entry.name != 'lost+found' or entry.is_symlink() or not entry.is_dir()
+                                       for entry in source.iterdir()):
+                raise existing_database(MOUNT)
             self.require_database_space(source, MOUNT)
+
+    def mounted_database_uuid(self):
+        target = self.path(MOUNT)
+        managed_unit = self.path(SYSTEMD_DIRECTORY + '/' + MOUNT_UNIT)
+        if not managed_unit.exists() and os.path.ismount(target):
+            filesystem = self.database_filesystem(target)
+            if filesystem.get('target') == str(target):
+                uuid = filesystem.get('uuid')
+                if filesystem['fstype'] != 'ext4' or not uuid or not UUID.fullmatch(uuid):
+                    raise HostError('native_database_mount_mismatch')
+                return uuid
+        return None
 
     def require_database_space(self, path, name):
         free = self.backup_free(path)
@@ -859,6 +900,8 @@ class Host:
             if target.exists() and (not target.is_dir() or any(target.iterdir()) or os.path.ismount(target)) and not resuming:
                 raise HostError("native_existing_database")
             filesystem_uuid = self.database_filesystem(source if source.exists() else source.parent).get('uuid')
+            if not filesystem_uuid:
+                raise HostError('native_database_mount_mismatch')
         config = self.path("/etc/postgresql-common/createcluster.conf")
         backup = self.path(STATE + "/createcluster.conf.before")
         original, current, managed = cluster_guard(config, backup)
@@ -904,6 +947,15 @@ class Host:
              **({"storage_mode": "directory", "directory": directory} if expected is None else {})},
             sort_keys=True) + "\n", 0o600)
 
+    def postgres_system_identifier(self):
+        data = self.path(POSTGRES_DATA_DIRECTORY)
+        self.path(POSTGRES_DATA_DIRECTORY + '/global/pg_control')
+        output = run(['/usr/lib/postgresql/18/bin/pg_controldata', str(data)])
+        identifier = re.search(r'(?m)^Database system identifier:\s+([1-9][0-9]{0,19})$', output)
+        if identifier is None:
+            raise HostError('native_install_interrupted_requires_recovery')
+        return identifier[1]
+
     def configure(self):
         self.receipt()
         validate_identity()
@@ -933,7 +985,8 @@ class Host:
                      "work_mem = '8MB'\nmax_connections = 40\n")
             self.path("/etc/postgresql/18/sli/postgresql.conf").write_text(data)
         self.write(HELPER, Path(__file__).read_text(encoding="utf-8"), 0o644)
-        for filename in ("native_clickhouse_endpoint.py", "native_preinstall.py", "native_pins.json", "backup_policy.py"):
+        for filename in ("native_clickhouse_endpoint.py", "native_preinstall.py", "native_remove.py",
+                         "native_pins.json", "backup_policy.py"):
             self.write("/usr/lib/sli/" + filename, Path(__file__).with_name(filename).read_text(encoding="utf-8"),
                        0o640 if filename.endswith(".json") else 0o644)
         self.write("/usr/lib/sli/secrets-manifest.json", Path(__file__).with_name("secrets-manifest.json").read_text())
@@ -964,12 +1017,6 @@ class Host:
             path = self.path("/etc/sli/secrets/" + name)
             if not path.exists():
                 self.write("/etc/sli/secrets/" + name, secrets.token_urlsafe(48), group_name="sli-secrets")
-
-
-def directory_mount_unit(directory):
-    return ("[Unit]\nDescription=SLI database directory\nRequiresMountsFor=" + directory + "\n"
-            "Before=sli-postgresql.service\n"
-            "[Mount]\nWhat=" + directory + "\nWhere=" + MOUNT + "\nType=none\nOptions=bind\n")
 
 
 def retire_clickhouse(root=Path("/")):
@@ -1135,7 +1182,23 @@ def stopped_ch(name):
     clickhouse.cleanup_container(run, "sli-clickhouse-" + name, name)
 
 
+def wait_bootstrap_postgres():
+    print('Waiting for PostgreSQL to accept local connections.', flush=True)
+    deadline = time.monotonic() + 60
+    while True:
+        result = subprocess.run(['/usr/lib/postgresql/18/bin/pg_isready', '-q', '-t', '1',
+                                 '-h', '/var/run/postgresql', '-p', '5432', '-d', 'postgres'],
+                                capture_output=True, text=True, errors='replace', env=COMMAND_ENV, timeout=5)
+        if result.returncode == 0:
+            return
+        if result.returncode not in {1, 2} or time.monotonic() >= deadline:
+            raise HostError('native_postgres_bootstrap_unready', command='pg_isready',
+                            stderr=command_stderr(result.stderr, sensitive_input=False))
+        time.sleep(1)
+
+
 def bootstrap_pg():
+    wait_bootstrap_postgres()
     # The private intent authorizes resuming between role/database creation, with
     # exactly the same secret values. It never authorizes adopting another DB.
     probe = run(["psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-c",
@@ -1176,7 +1239,7 @@ def bootstrap_pg():
               "AND (NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolinherit OR rolreplication "
               "OR rolbypassrls)) THEN RAISE EXCEPTION 'native_role_conflict'; END IF; END $$;\n"
               "COMMIT;\n")
-    run(["psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-d", "postgres"], input=script)
+    run(["psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-d", "postgres"], input=script, sensitive_input=True)
     run(["psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-d", "postgres"], input=
         "SELECT 'CREATE DATABASE sli OWNER sli_migration' WHERE NOT EXISTS "
         "(SELECT 1 FROM pg_database WHERE datname='sli')\\gexec\n"

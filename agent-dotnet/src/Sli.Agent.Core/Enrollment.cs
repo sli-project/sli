@@ -1,4 +1,5 @@
 using System.Formats.Asn1;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
@@ -10,7 +11,7 @@ namespace Sli.Agent.Core;
 
 /// <summary>Enrollment and renewal use the existing server contract and the same key as the durable spool.</summary>
 public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport transport, TimeProvider clock,
-    Func<string?>? readProductType = null)
+    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string? Sid)?>? readDomain = null)
 {
     private static string? ReadProductType()
     {
@@ -23,6 +24,50 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         { return null; }
     }
 
+    private static (string Dns, string Forest, string? Sid)? ReadDcDomain()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        if (EnrollmentDomain.Read() is { } identity) return (identity.Dns, identity.Forest, identity.Sid);
+        if (DsRoleGetPrimaryDomainInformation(IntPtr.Zero, 1, out var buffer) != 0) return null;
+        try
+        {
+            var info = Marshal.PtrToStructure<PrimaryDomainInfo>(buffer);
+            // The directory domain and forest can differ from the computer's primary DNS suffix.
+            return info.Role is 4 or 5 && Marshal.PtrToStringUni(info.DomainDns) is { Length: > 0 } domain &&
+                Marshal.PtrToStringUni(info.ForestDns) is { Length: > 0 } forest ? (domain, forest, null) : null;
+        }
+        finally { DsRoleFreeMemory(buffer); }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PrimaryDomainInfo
+    {
+        public int Role;
+        public uint Flags;
+        public IntPtr DomainFlat;
+        public IntPtr DomainDns;
+        public IntPtr ForestDns;
+        public Guid DomainGuid;
+    }
+
+    [DllImport("netapi32.dll", ExactSpelling = true)]
+    private static extern uint DsRoleGetPrimaryDomainInformation(IntPtr server, int level, out IntPtr buffer);
+
+    [DllImport("netapi32.dll", ExactSpelling = true)]
+    private static extern void DsRoleFreeMemory(IntPtr buffer);
+
+    public JsonObject ReadDcIdentity()
+    {
+        var report = new JsonObject { ["reported_hostname"] = Environment.MachineName };
+        if ((readProductType ?? ReadProductType)() != "LanmanNT") return report;
+        report["machine_role"] = "domain_controller";
+        if ((readDomain ?? ReadDcDomain)() is not { } domain) return report;
+        report["domain_dns"] = domain.Dns;
+        report["forest_dns"] = domain.Forest;
+        if (domain.Sid is not null) report["domain_sid"] = domain.Sid;
+        return report;
+    }
+
     public async Task<AgentIdentity> EnrollAsync(string token, CancellationToken cancellationToken, string? instanceName = null)
     {
         using var existing = store.Load();
@@ -30,8 +75,15 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         if (!Regex.IsMatch(token, "^[A-Za-z0-9_-]{43}$")) throw new AgentException("agent_token_invalid");
         var request = new JsonObject { ["token"] = token, ["csr_pem"] = store.CreateCsrPem(), ["reported_hostname"] = Environment.MachineName };
         request["agent_version"]=typeof(Enrollment).Assembly.GetName().Version!.ToString(3);
-        // A local reader hint, never an AD scope or an authentication claim.
-        request["machine_role"] = (readProductType ?? ReadProductType)() == "LanmanNT" ? "domain_controller" : "workstation";
+        // Local discovery is a registration hint. The server owns scope authorization.
+        bool isDc = (readProductType ?? ReadProductType)() == "LanmanNT";
+        request["machine_role"] = isDc ? "domain_controller" : "workstation";
+        if (isDc && (readDomain ?? ReadDcDomain)() is { } domain)
+        {
+            request["domain_dns"] = domain.Dns;
+            request["forest_dns"] = domain.Forest;
+            if (domain.Sid is not null) request["domain_sid"] = domain.Sid;
+        }
         if (instanceName is not null) request["instance_name"] = instanceName;
         return store.Accept(await transport.PostAsync("/api/v1/agent/enroll", request, cancellationToken).ConfigureAwait(false), clock.GetUtcNow());
     }

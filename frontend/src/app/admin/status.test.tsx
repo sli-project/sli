@@ -9,7 +9,8 @@ import { formatDateTime } from "../../shared/date-time";
 import * as actions from "../operations-actions";
 import { SystemStatusPage } from "./status";
 
-vi.mock("../App", () => ({ useTimeZone: () => ({ timeZone: "UTC" }), useEffectiveAccess: () => ({ platform_owner: true }) }));
+const access = vi.hoisted(() => ({ platform_owner: true, subject: { coarse_role: "admin" }, capabilities: ["operations.view"] }));
+vi.mock("../App", () => ({ useTimeZone: () => ({ timeZone: "UTC" }), useEffectiveAccess: () => access }));
 
 const agent: AgentCollectionHealth["items"][number] = {
   id: "00000000-0000-4000-8000-000000000001", host_id: "00000000-0000-4000-8000-000000000002",
@@ -21,6 +22,14 @@ const agent: AgentCollectionHealth["items"][number] = {
 const health = (items: typeof agent[]): AgentCollectionHealth => ({ state: items.length ? "current" : "unknown", checked_at_utc: "2026-11-14T01:16:00Z", active_agents: items.length, current_agents: items.length, items });
 const setup = (items: typeof agent[] = []): SetupStatus => ({ api_version: "v1", generated_at_utc: "2026-11-14T01:16:00Z", read_only: true,
   steps: [], sources: [], domains: [], domain_controllers: [], domain_controller_source: null, report_domain: null, collection: null, agent_collection: health(items) });
+const dcSource = (receiving: boolean): SetupStatus => ({ ...setup([agent]),
+  domain_controllers: [{ hostname: "LAB-DC01", connect_address: "lab-dc01.example.test", domain: "example.test",
+    enabled: true, source: "db", dns_readback: false }],
+  sources: [{ pack_id: "sli.windows.ad-dc", display_name: "AD", version: "1", source_kind: "event", enabled: true,
+    instances: [{ source_instance_id: "lab-dc01.example.test", configured: true, enabled: true, data_received: receiving,
+      data_state: receiving ? "fresh" : "never", last_data_utc: receiving ? agent.modules[0].channels[0].last_import_at : null,
+      next_action: receiving ? null : "check_data" }] }],
+});
 const operations = {
   api_version: "v1", read_only: true, generated_at_utc: "2026-11-14T01:16:00Z", collection: {}, collector_health: {}, postgres: {},
   workers: { status: "ok", items: [{ worker_name: "notification_delivery", label: "Internal label", state: "active", status: "running", started_at: "2026-11-13T12:00:00Z" }] },
@@ -79,6 +88,22 @@ it.each(["ru", "en"] as const)("names the failed disk measurement and action (%s
   expect(await screen.findByText(t("systemStatus.inboxDiskUnavailable"))).toBeTruthy();
 });
 
+it.each(["en", "ru"] as const)("names the missing authorization in one line and clears it after recovery (%s)", async (locale) => {
+  setLocale(locale);
+  const worker = { worker_name: "post_collection", label: "Post-collection", state: "warning", status: "failed",
+    details: { ad_dc_import_issue: "agent_ad_dc_storage_authorization_missing" } };
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { status: "ok", items: [worker] } });
+  renderPage();
+  const message = t("systemStatus.adDcImport.authorizationMissing");
+  await screen.findByText(message);
+  const line = screen.getAllByText(message);
+  expect(line).toHaveLength(1);
+  expect(line[0].tagName).toBe("P");
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { status: "ok", items: [{ ...worker, state: "active", status: "idle", details: {} }] } });
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["operations-workers"] });
+  await waitFor(() => expect(screen.queryByText(message)).toBeNull());
+});
+
 it.each(["ru", "en"] as const)("shows the retained packet refusal in the source row in %s", async (locale) => {
   setLocale(locale);
   const data = setup([{ ...agent, modules: [{ module_id: "sli.windows.ad-dc", channels: [{ ...agent.modules[0].channels[0],
@@ -114,6 +139,27 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><SystemStatusPage/></QueryClientProvider>);
 }
 
+it.each([["ru", "Консоль сервера"], ["en", "Server console"]] as const)("opens the administrator's Cockpit terminal in a new tab (%s)", async (locale, label) => {
+  setLocale(locale);
+  const url = "https://sli.example.test:9090/system/terminal";
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok", web_console: { available: true, url } });
+  renderPage();
+  const link = await screen.findByRole("link", { name: label });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toContain("noopener");
+});
+
+it.each([["admin", false], ["operator", true], ["viewer", true]] as const)("hides the Cockpit terminal for %s when availability is %s", async (role, available) => {
+  access.subject.coarse_role = role;
+  access.platform_owner = role === "admin";
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok", release_metadata: { project_version: "1.0.0" },
+    web_console: { available, url: available ? "https://sli.example.test:9090/system/terminal" : null } });
+  renderPage();
+  await screen.findByText(/1\.0\.0/);
+  expect(screen.queryByRole("link", { name: t("systemStatus.serverConsole") })).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("shows one Security log full line with the exact record ID and action in %s", async (locale) => {
   setLocale(locale);
   const event = { server: "dc.example.test", time_created_utc: "2026-11-14T01:16:42Z", record_id: "9007199254740993" };
@@ -139,13 +185,19 @@ it.each(["ru", "en"] as const)("shows an unresolved password detection domain wi
   vi.mocked(api.setupStatus).mockResolvedValue(setup([{ ...agent, password_domain_required: true }]));
   renderPage();
   const line = await screen.findByText(t("systemStatus.passwordDomainRequired", { name: agent.name }));
-  expect(line.closest("tr")).toBeTruthy();
+  const row = line.closest("tr")!;
   expect(line.textContent).toContain("LAB-DC01");
-  expect(line.textContent).toContain(locale === "ru" ? "проверьте домен контроллера" : "check the controller’s domain");
   expect(line.closest(".sli-ds-state--banner, details")).toBeNull();
+  expect(within(row).getByRole("link", { name: t("systemStatus.setPasswordDomain") }).getAttribute("href"))
+    .toBe(`/app/agents?agent_id=${agent.id}&configure=password-domain`);
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["setup-status"] });
+  await waitFor(() => expect(screen.queryByRole("link", { name: t("systemStatus.setPasswordDomain") })).toBeNull());
 });
 
 beforeEach(() => {
+  access.subject.coarse_role = "admin";
+  access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(api, "setupStatus").mockResolvedValue(setup());
   vi.spyOn(api, "operations").mockResolvedValue(operations);
@@ -289,13 +341,26 @@ it("shows actual launch times for running and disabled services", async () => {
 });
 
 it("hides onboarding when an agent has sent data and a channel is configured", async () => {
-  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
+  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(true));
   vi.mocked(api.notificationWorkspace).mockResolvedValue(notifications(true));
   renderPage();
   await waitFor(() => expect(api.telegramSetup).toHaveBeenCalledWith("status"));
   await waitFor(() => expect(screen.queryByRole("list", { name: "Первый запуск" })).toBeNull());
   expect(await screen.findByText("LAB-DC01 присылает данные")).toBeTruthy();
   expect(screen.getByRole("table", { name: "Диск" }).textContent).toContain("3 ГБ");
+});
+
+it("completes the controller step only for a configured target receiving data", async () => {
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
+  renderPage();
+  const step = (await screen.findByText(t("systemStatus.step.agent"))).closest("li")!;
+  expect(within(step).getByLabelText(t("systemStatus.pending"))).toBeTruthy();
+  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(false));
+  await clients.at(-1)!.invalidateQueries({ queryKey: ["setup-status"] });
+  expect(within(step).getByLabelText(t("systemStatus.pending"))).toBeTruthy();
+  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(true));
+  await clients.at(-1)!.invalidateQueries({ queryKey: ["setup-status"] });
+  await waitFor(() => expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy());
 });
 
 it("does not call an enabled channel configured without a saved token and chat", async () => {

@@ -8,6 +8,54 @@ namespace Sli.Server.Tests.Agents;
 
 public sealed class AdDcProjectionFailureTests
 {
+    [Fact]
+    public void Repeated_reasons_log_at_most_once_per_minute_and_count_suppressed_failures()
+    {
+        var clock = new ManualClock();
+        var failures = new AdDcProjectionFailure(clock);
+        JsonObject Diagnostic(string reason) => new() { ["code"] = AdDcProjectionFailure.Code, ["reason"] = reason };
+
+        var first = Diagnostic(AdDcProjectionFailure.AuthorizationMissing);
+        Assert.True(failures.CountAndAllow(first));
+        Assert.Equal(1L, (long?)first["occurrences"]);
+        clock.Advance(TimeSpan.FromSeconds(59));
+        Assert.False(failures.CountAndAllow(Diagnostic(AdDcProjectionFailure.AuthorizationMissing)));
+        Assert.False(failures.CountAndAllow(Diagnostic(AdDcProjectionFailure.AuthorizationMissing)));
+        Assert.True(failures.CountAndAllow(Diagnostic(AdDcProjectionFailure.AccessDenied)));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var next = Diagnostic(AdDcProjectionFailure.AuthorizationMissing);
+        Assert.True(failures.CountAndAllow(next));
+        Assert.Equal(3L, (long?)next["occurrences"]);
+        Assert.False(failures.CountAndAllow(Diagnostic(AdDcProjectionFailure.AccessDenied)));
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => timestamp;
+        internal void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
+    }
+
+    [Fact]
+    public void Missing_source_has_a_minute_window_and_counter_for_each_agent()
+    {
+        var clock = new ManualClock();
+        var failures = new AdDcProjectionFailure(clock);
+        JsonObject Diagnostic(Guid agent) => new() { ["code"] = AdDcProjectionFailure.Code,
+            ["reason"] = AdDcProjectionFailure.SourceNotConfigured, ["agent_id"] = agent.ToString("D") };
+        Guid first = Guid.NewGuid(), second = Guid.NewGuid();
+        Assert.True(failures.CountAndAllow(Diagnostic(first)));
+        clock.Advance(TimeSpan.FromSeconds(59));
+        Assert.True(failures.CountAndAllow(Diagnostic(second)));
+        Assert.False(failures.CountAndAllow(Diagnostic(first)));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var retry = Diagnostic(first);
+        Assert.True(failures.CountAndAllow(retry));
+        Assert.Equal(2L, (long?)retry["occurrences"]);
+        Assert.False(failures.CountAndAllow(Diagnostic(second)));
+    }
+
     [Theory]
     [InlineData("agent_inbox_marker_conflict",false)]
     [InlineData("short_event_summary_conflict",true)]
@@ -16,7 +64,7 @@ public sealed class AdDcProjectionFailureTests
     public void Short_store_failures_keep_their_safe_reason_and_only_deterministic_refusals_are_permanent(string reason,bool permanent)
     {
         var error=new InvalidOperationException(reason);
-        var diagnostic=JsonNode.Parse(AdDcProjectionFailure.Describe(error,AdDcProjectionStep.HotEvents))!;
+        var diagnostic=AdDcProjectionFailure.Describe(error,AdDcProjectionStep.HotEvents);
         Assert.Equal(reason,(string?)diagnostic["reason"]);
         Assert.Equal(permanent,AdDcProjectionFailure.IsPermanent(error));
         Assert.False(AdDcProjectionFailure.IsPermanent(new IOException(reason)));
@@ -64,7 +112,7 @@ public sealed class AdDcProjectionFailureTests
     public void Oversized_database_fields_are_diagnosed_without_their_values(string state,string expectedStep)
     {
         var error=new PostgresException(new string('x',4096),"ERROR","ERROR",state,detail:"private-field");
-        var diagnostic=JsonNode.Parse(AdDcProjectionFailure.Describe(error,AdDcProjectionStep.Dictionaries))!;
+        var diagnostic=AdDcProjectionFailure.Describe(error,AdDcProjectionStep.Dictionaries);
         Assert.Equal(state,(string?)diagnostic["sql_state"]);
         Assert.Equal(expectedStep,(string?)diagnostic["step"]);
         Assert.DoesNotContain("private",diagnostic.ToJsonString());
@@ -78,34 +126,33 @@ public sealed class AdDcProjectionFailureTests
             detail: "private-row", hint: "private-hint", where: "private-sql",
             schemaName: "private-schema", tableName: "private-table", columnName: "private-column",
             constraintName: "storage_v2_event_identity_allocations_pkey");
-        string text = AdDcProjectionFailure.Describe(new InvalidOperationException("private-wrapper", error), AdDcProjectionStep.Publication);
-        var diagnostic = JsonNode.Parse(text)!;
+        var diagnostic = AdDcProjectionFailure.Describe(new InvalidOperationException("private-wrapper", error), AdDcProjectionStep.Publication);
         Assert.Equal("agent_ad_dc_projection_failed", (string?)diagnostic["code"]);
         Assert.Equal("InvalidOperationException", (string?)diagnostic["exception_type"]);
         Assert.Equal("23505", (string?)diagnostic["sql_state"]);
         Assert.Equal("storage_v2_event_identity_allocations_pkey", (string?)diagnostic["constraint"]);
         Assert.Equal("publication", (string?)diagnostic["step"]);
-        Assert.DoesNotContain("private", text);
+        Assert.DoesNotContain("private", diagnostic.ToJsonString());
     }
 
     [Fact]
     public void Untrusted_constraint_and_exception_values_are_never_written()
     {
         var error = new PostgresException("private", "ERROR", "ERROR", "23514", constraintName: "private\nforged-log");
-        var diagnostic = JsonNode.Parse(AdDcProjectionFailure.Describe(error, AdDcProjectionStep.PrepareBatch))!;
+        var diagnostic = AdDcProjectionFailure.Describe(error, AdDcProjectionStep.PrepareBatch);
         Assert.Equal("unrecognized", (string?)diagnostic["constraint"]);
         Assert.DoesNotContain("private", diagnostic.ToJsonString());
-        diagnostic = JsonNode.Parse(AdDcProjectionFailure.Describe(new InvalidDataException("private-value"), AdDcProjectionStep.PrepareBatch))!;
+        diagnostic = AdDcProjectionFailure.Describe(new InvalidDataException("private-value"), AdDcProjectionStep.PrepareBatch);
         Assert.Null(diagnostic["sql_state"]);
         Assert.Equal("operation_failed", (string?)diagnostic["reason"]);
-        diagnostic = JsonNode.Parse(AdDcProjectionFailure.Describe(new InvalidDataException("storage_v2_event_profile_pending"), AdDcProjectionStep.PrepareBatch))!;
+        diagnostic = AdDcProjectionFailure.Describe(new InvalidDataException("storage_v2_event_profile_pending"), AdDcProjectionStep.PrepareBatch);
         Assert.Equal("storage_v2_event_profile_pending", (string?)diagnostic["reason"]);
     }
 
     [Fact]
     public void Representation_conflicts_and_native_tampering_remain_fail_closed()
     {
-        string Describe(Exception error)=>AdDcProjectionFailure.Describe(error,AdDcProjectionStep.EventReservation);
+        string? Describe(Exception error)=>(string?)AdDcProjectionFailure.Describe(error,AdDcProjectionStep.EventReservation)["reason"];
         Assert.Contains("published_source_event_hash_mismatch",Describe(new DirectSourceConflict(true)));
         Assert.Contains("event_representation_pending",Describe(new InvalidOperationException("event_representation_pending")));
         var fixture=JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),

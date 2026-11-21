@@ -21,7 +21,7 @@ public sealed partial class SecurityProblemsV2Tests
                 ["time"] = "2026-11-13T08:00:40+00:00", ["password_success"] = true }
         };
         var restricted = Sli.Server.Tests.Problems.ProblemLifecycleTests.Access("security.queue", fields: ["security"]);
-        var queue = ProblemPresentation.Finding(raw, restricted, language);
+        var queue = ProblemPresentation.Finding(raw, restricted, language, queue: true, includeDescription: true);
         var home = HomePresentation.Finding(raw, language, identity: false, technical: false);
         foreach (var view in new[] { queue, home }) {
             Assert.DoesNotContain("identity-marker", view.ToJsonString());

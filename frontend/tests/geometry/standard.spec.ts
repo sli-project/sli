@@ -105,6 +105,15 @@ async function installStandardFixtures(page: Page, count = 60) {
     else if (pathname === '/api/v1/overview') body = { collection_freshness: { state: 'partial' } };
     else if (pathname === '/api/v1/domains') body = { items: [{ id: 1, display_name: 'example.test',
       freshness: { snapshot_state: 'partial', observed_at_utc: observed } }] };
+    else if (pathname === '/api/v2/reports/security.problems/password-coverage' && route.request().method() === 'GET') {
+      body = {
+        contract_id: 'sli.report-result.v2', report_key: 'security.problems', state: 'partial',
+        items: [], has_more: false, next_cursor: null, filtered_count: null,
+        coverage: { password_detection: { availability: 'unavailable', as_of: null, rows: [], has_more: false } },
+        limitations: [{ code: 'password_coverage_incomplete', text: 'Password detection coverage is incomplete.' }],
+        metrics: [], series: {}, filter_options: {}, window: {},
+      } satisfies ReportResultDto;
+    }
     else {
       const match = pathname.match(/^\/api\/v2\/reports\/([^/]+)(\/data)?$/);
       const definition = match && definitions.get(decodeURIComponent(match[1]) as typeof screens[number]['key']);

@@ -64,15 +64,15 @@ public static class AgentInboxQuota
     {
         await using (var held = new NpgsqlCommand("select pg_advisory_xact_lock(157,1)", connection, tx)) await held.ExecuteNonQueryAsync(ct);
         await using var command = new NpgsqlCommand("""
-            with stored as (
-              select r.agent_id,r.module_id,i.packet_id is not null and i.imported_at is null as pending,
+            with pending as (
+              select r.agent_id,r.module_id,
                 1024 + octet_length(r.envelope::text) + octet_length(r.receipt::text)
                 + coalesce(i.quota_payload_bytes,1024 + octet_length(i.envelope::text) + octet_length(i.packet::text) + octet_length(i.event_rows::text)) as bytes
               from sli_agent_packet_inbox i join sli_agent_receipts r using(packet_id) where i.imported_at is null and i.module_disabled_at is null
-            ) select count(*) filter(where pending and agent_id=@agent),coalesce(sum(bytes) filter(where pending and agent_id=@agent),0),
-              count(*) filter(where pending and module_id=@module),coalesce(sum(bytes) filter(where pending and module_id=@module),0),
-              count(*) filter(where pending),coalesce(sum(bytes) filter(where pending),0),
-              (select greatest(count(*),1) from sli_agents where status='active') from stored
+            ) select count(*) filter(where agent_id=@agent),coalesce(sum(bytes) filter(where agent_id=@agent),0),
+              count(*) filter(where module_id=@module),coalesce(sum(bytes) filter(where module_id=@module),0),
+              count(*),coalesce(sum(bytes),0),
+              (select greatest(count(*),1) from sli_agents where status='active') from pending
             """, connection, tx);
         command.Parameters.AddWithValue("agent",Guid.Parse(e.AgentId)); command.Parameters.AddWithValue("module",e.ModuleId);
         long[] usage = new long[7];

@@ -317,19 +317,21 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   const raw = { ...definition, ...reportDefinitions.find((item) => item.key === "security.problems"),
     description: "Synthetic queue description", params: [], presets: [], row_links: [], detail: "fields",
   } as unknown as ReportDefinitionDto;
-  dataResponse.body = page({ report_key: raw.key, items: [{ id: 7, title: "Synthetic problem", title_text: "Synthetic problem",
-    severity: "high", actor: sid, actor_text: null, entity_text: "fixture-object", entity_identifiers: sid,
-    presentation_messages: {}, entity_messages: ["fixture-object"],
-    entities: [{ display_name: "42", entity_role: "source_host" }, { display_name: sid, entity_role: "target" }], last_seen_utc: "2026-11-13T01:00:00Z",
-    occurrence_count: 3, status: "new", what_happened: "Synthetic observation", why_text: "Synthetic impact", next_text: "Synthetic action",
-  }], metrics: [
+  const queueRow = { id: 7, title_text: "Synthetic problem", severity: "high", actor_text: null,
+    entity_text: "fixture-object", last_seen_utc: "2026-11-13T01:00:00Z", occurrence_count: 3, status: "new" };
+  dataResponse.body = page({ report_key: raw.key, items: [queueRow], metrics: [
     { key: "open", label: t("reports.v2.security.problems.metrics.open.label"), value: 3 },
     { key: "progress", label: t("reports.v2.security.problems.metrics.progress.label"), value: 0 },
     { key: "closed", label: t("reports.v2.security.problems.metrics.closed.label"), value: 0 },
   ] });
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(
-    String(input).includes("/data?") ? dataResponse.body : raw,
-  ), { headers: { "Content-Type": "application/json" } })));
+  const fetchReport = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    return Response.json(!url.pathname.endsWith("/data") ? raw : url.searchParams.get("id") === "7"
+      ? page({ report_key: raw.key, items: [{ ...queueRow, actor: sid, entity_identifiers: sid,
+        what_happened: "Synthetic observation", why_text: "Synthetic impact", next_text: "Synthetic action" }] })
+      : dataResponse.body);
+  });
+  vi.stubGlobal("fetch", fetchReport);
   renderReport(raw.key);
   await screen.findByText("Synthetic problem");
   expect(screen.queryByText(t("reports.passport.more"))).toBeNull();
@@ -347,12 +349,13 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
     expect(screen.queryByRole("checkbox", { name: t(`reports.v2.security.problems.columns.${key}.label`) })).toBeNull();
   }
   expect(within(table).queryByText(sid)).toBeNull();
+  expect(fetchReport.mock.calls.some(([input]) => String(input).includes("id=7"))).toBe(false);
   const riskLabel = locale === "ru" ? "Отложить" : "Snooze";
   fireEvent.click(screen.getByRole("checkbox", { name: riskLabel }));
   expect(within(table).getByRole("columnheader", { name: riskLabel })).toBeTruthy();
   fireEvent.click(within(table).getByText("Synthetic problem"));
   const drawer = screen.getByRole("dialog", { name: "Synthetic problem" });
-  expect(within(drawer).getAllByText(sid).length).toBeGreaterThan(0);
+  expect((await within(drawer).findAllByText(sid)).length).toBeGreaterThan(0);
   const labels = locale === "ru" ? ["Что случилось", "Почему важно", "Что сделать"] : ["What happened", "Why it matters", "What to do"];
   for (const [index, text] of ["Synthetic observation", "Synthetic impact", "Synthetic action"].entries()) {
     const paragraph = within(drawer).getByText(text, { exact: false }).closest("p");

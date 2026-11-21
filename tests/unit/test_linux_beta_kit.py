@@ -204,7 +204,7 @@ def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, e
     source = tmp_path / 'agent.msi' if explicit else cache / f'SliAgent-{commit}.msi'
     source.write_bytes(b'agent MSI bytes')
     kit.write_json(cache / f'SliAgent-{commit}.msi.json', {
-        'source_commit': commit, 'sha256': kit.sha256(source),
+        'source_commit': commit, 'sha256': kit.sha256(source), 'product_version': '26.0.1000',
     })
     work = tmp_path / 'work'
     work.mkdir()
@@ -213,6 +213,9 @@ def test_agent_msi_uses_trusted_manifest_for_cache_and_explicit_path(tmp_path, e
     source.write_bytes(b'changed after verification')
 
     assert staged.read_bytes() == b'agent MSI bytes'
+    assert json.loads(staged.with_suffix('.msi.json').read_text(encoding='utf-8')) == {
+        'product_version': '26.0.1000', 'sha256': kit.sha256(staged),
+    }
 
 
 @pytest.mark.parametrize('sdk', ['10.0.113', '10.0.112', None])
@@ -220,7 +223,7 @@ def test_hosted_agent_msi_manifest_matches_the_locked_sdk(tmp_path, sdk):
     commit = 'a' * 40
     source = tmp_path / f'SliAgent-{commit}.msi'
     source.write_bytes(b'agent MSI bytes')
-    metadata = {'source_commit': commit, 'sha256': kit.sha256(source)}
+    metadata = {'source_commit': commit, 'sha256': kit.sha256(source), 'product_version': '26.0.1000'}
     if sdk is not None:
         metadata['dotnet_sdk'] = sdk
     kit.write_json(tmp_path / f'{source.name}.json', metadata)
@@ -236,6 +239,7 @@ def test_hosted_agent_msi_manifest_matches_the_locked_sdk(tmp_path, sdk):
     ('missing', 'Missing trusted agent MSI manifest'),
     ('hash', 'Agent MSI SHA-256 mismatch'),
     ('commit', 'Agent MSI manifest does not identify source commit'),
+    ('version', 'Invalid agent MSI product version'),
 ])
 def test_beta_kit_rejects_unverified_agent_msi(tmp_path, monkeypatch, problem, message):
     commit = 'a' * 40
@@ -247,6 +251,7 @@ def test_beta_kit_rejects_unverified_agent_msi(tmp_path, monkeypatch, problem, m
         kit.write_json(cache / f'{source.name}.json', {
             'source_commit': 'b' * 40 if problem == 'commit' else commit,
             'sha256': '0' * 64 if problem == 'hash' else kit.sha256(source),
+            'product_version': '26.0.100000' if problem == 'version' else '26.0.1000',
         })
     monkeypatch.setattr(kit.platform, 'system', lambda: 'Linux')
     monkeypatch.setattr(kit.platform, 'machine', lambda: 'x86_64')
@@ -340,6 +345,11 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     }
     assert json.loads((output / 'manifest.json').read_text()) == manifest
     assert kit.sha256(output / 'remove-beta-kit') == manifest['remover']['sha256']
+    kit.archive_kit(output)
+    with tarfile.open(output / 'sli-debian-beta-kit.tar.gz') as archive:
+        assert archive.getmember('sli-debian-beta-kit/remove-beta-kit').mode & 0o111 == 0o111
+    remover = subprocess.run([output / 'remove-beta-kit', '--help'], capture_output=True, text=True, check=True)
+    assert '--purge-data' in remover.stdout
     subprocess.run(['sha256sum', '--check', 'SHA256SUMS'], cwd=output, check=True)
     extracts = tmp_path / 'package'
     server_package = next(output.glob('sli-release-fixture_*.deb'))

@@ -340,11 +340,11 @@ offline storage and distribute only public CA certificates to agents.
 
 `sudo sli-remove` stops SLI and removes its packages and systemd units. It
 retains databases, configuration, keys and recovery files. On an older
-installation without `sli-remove`, run `sudo python3 -I ./remove-beta-kit`
+installation without `sli-remove`, run `sudo ./remove-beta-kit`
 from inside the unpacked, verified current kit.
 
 To erase local SLI data as well, run `sudo sli-remove --purge-data` or
-`sudo python3 -I ./remove-beta-kit --purge-data` for the older installation.
+`sudo ./remove-beta-kit --purge-data` for the older installation.
 Verify that the intended database and cold-storage volumes are mounted first.
 The flag erases local databases, settings, keys, the offline CA on this host,
 local backups and the managed cold tablespace directory. It keeps shared Debian
@@ -451,6 +451,10 @@ When upgrading an older installation, keep its retained ClickHouse data through
 the rollback window. Before any cleanup, verify that the directory belongs to
 SLI on the intended mounted volume and that a separate recovery copy contains
 the needed ClickHouse history.
+
+## Administration
+
+Run `sudo sli-setup --web-console` to enable **Server console** on the **System status** page, then sign in with a Linux account that has sudo access.
 
 ## Security model
 

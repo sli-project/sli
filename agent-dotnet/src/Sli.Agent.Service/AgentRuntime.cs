@@ -13,6 +13,7 @@ namespace Sli.Agent.Service;
 public sealed record CycleStatus(string? ErrorCode, bool CollectionActive, int Captured, int Pending, bool DeliveryFailed)
 {
     public string? ErrorDetail { get; init; }
+    public IReadOnlyDictionary<string, SnapshotFailure>? SnapshotFailures { get; init; }
 }
 
 /// <summary>Revisioned check-in fails closed. Drain acknowledges paused only after durable delivery.</summary>
@@ -49,6 +50,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     {
         ContinueImmediately = false;
         string? error = null;
+        SnapshotFailure? snapshotFailure = null;
         TransportException? transportError = null;
         var captured = 0;
         var failed = false;
@@ -89,9 +91,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             { error = "agent_bootstrap_cleanup_failed"; }
             Use(identity);
             if (_identity!.Certificate.NotAfter.ToUniversalTime() <= clock.GetUtcNow()) throw new AgentException("agent_certificate_expired");
+            var enrolled = new Enrollment(store, _http!, clock);
             try
             {
-                if (await new Enrollment(store, _http!, clock).RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
+                if (await enrolled.RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
             }
             catch (AgentException exception) when (exception.Code != "agent_certificate_expired")
             {
@@ -107,7 +110,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             _queue.MaxBytes = policy.Control.SpoolMaxBytes;
             var state = policy.Control.State;
             _snapshots ??= new SnapshotCapture(Path.Combine(_options.StateDir, "snapshots"), _files, snapshotReader ?? new DirectorySnapshotReader(), clock);
-            if (state != "active") _snapshots.Cancel();
+            if (state != "active") _snapshots.Cancel(clearFailures: true);
             var source = eventSource ?? (OperatingSystem.IsWindows() ? new EventLogBookmarkSource(_catalog, filterSecurity: policy.AdDc is not null) : null);
             if (OperatingSystem.IsWindows()) _audit ??= new NativeWindowsAudit(Path.Combine(_options.StateDir, "audit"), _files);
             var fileDirectory = Path.Combine(_options.StateDir,"file-audit");
@@ -121,7 +124,13 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             var fileResult = _fileAudit?.Reconcile(policy,_audit,clock.GetUtcNow());
             var auditReport = fileResult?.Audit ?? (_fileAudit is null ? _audit?.Reconcile(policy, clock.GetUtcNow()) : null);
             var rights = ProbeRights(policy, source, store.ReadHostId());
-            if (state != "drain") await _http.PostAsync("/api/v1/agent/policy-report", policy.Report(state, rights), cancellationToken).ConfigureAwait(false);
+            if (state != "drain")
+            {
+                var report = policy.Report(state, rights);
+                if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) && requested)
+                    report["dc_identity"] = enrolled.ReadDcIdentity();
+                await _http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
+            }
             // A DC audit command result must not wait for the event backlog.
             if (policy.AdDc is not null && auditReport is not null)
                 await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
@@ -264,7 +273,12 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 try
                 {
                     var snapshotResult = _snapshots.Tick(policy.Snapshots, _queue, _identity.Signer, _identity.AgentId, clock.GetUtcNow(), policy.Control.BatchSize, cancellationToken);
-                    captured += snapshotResult.Captured; error ??= snapshotResult.Error;
+                    captured += snapshotResult.Captured;
+                    if (error is null && snapshotResult.Failure is { } failure)
+                    {
+                        snapshotFailure = failure;
+                        error = failure.Code;
+                    }
                     if (_snapshots.Busy) IntervalSeconds = Math.Min(IntervalSeconds, 1);
                 }
                 catch (QueueFullException exception) { error = exception.Code; }
@@ -288,7 +302,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         { error = "agent_cycle_failed"; transportError = null; failed = true; active = false; }
         if (transportError is not null && (error is null || error == transportError.Code || transportError.Code == "agent_bootstrap_rejected"))
             return Finish(error ?? transportError.Code, active, captured, failed, transportError.Detail);
-        return Finish(error ?? (failed ? "agent_delivery_pending" : null), active, captured, failed);
+        return Finish(error ?? (failed ? "agent_delivery_pending" : null), active, captured, failed,
+            snapshotFailure?.Code == error ? snapshotFailure?.Detail : null);
     }
 
     private string ProbeRights(AgentPolicy policy, IEventLogSource? source, string hostId)
@@ -383,6 +398,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     {
         var pending = _queue?.Pending().Count ?? 0;
         var observed = Iso8601.Format(clock.GetUtcNow());
+        var snapshotFailures = _snapshots?.Failures.ToDictionary();
         foreach (var name in new[] { "last-cycle.json", "status.json" })
         {
             try
@@ -390,13 +406,16 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var status = new JsonObject
                 { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending };
                 if (name == "status.json" && detail is not null) status["error_detail"] = detail;
+                if (name == "status.json" && snapshotFailures is { Count: > 0 })
+                    status["snapshot_errors"] = new JsonObject(snapshotFailures.Select(item => KeyValuePair.Create(item.Key,
+                        (JsonNode?)new JsonObject { ["error_code"] = item.Value.Code, ["error_detail"] = item.Value.Detail })));
                 _files.WriteAtomic(Path.Combine(_options.StateDir, name), CanonicalJson.ToBytes(status));
             }
             catch (Exception exception) when (exception is AgentException or IOException or UnauthorizedAccessException)
             { error ??= "agent_cycle_status_write_failed"; failed = true; }
         }
         if (error is not null || failed) ContinueImmediately = false;
-        return new(error, active, captured, pending, failed) { ErrorDetail = detail };
+        return new(error, active, captured, pending, failed) { ErrorDetail = detail, SnapshotFailures = snapshotFailures };
     }
 
     public void Dispose() { _snapshots?.Dispose(); _http?.Dispose(); _identity?.Dispose(); _queue?.Dispose(); }

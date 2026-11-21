@@ -295,6 +295,63 @@ public sealed class PolicyCycleTests : IDisposable
         Assert.Equal(0, _source.Reads);
     }
 
+    private sealed class FailedSnapshotReader : IDirectorySnapshotReader
+    {
+        public int Attempts;
+
+        public Task<JsonObject> ReadAsync(SnapshotPolicy policy, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref Attempts);
+            return Task.FromException<JsonObject>(SnapshotCaptureException.Describe(policy.ModuleId, "ldap_root_dse",
+                new System.ComponentModel.Win32Exception(5, "fixture private details")));
+        }
+    }
+
+    [Fact]
+    public async Task SnapshotReasonReachesWarningAndStaysInStatusBetweenIdenticalFailures()
+    {
+        var reader = new FailedSnapshotReader();
+        _snapshotReader = reader;
+        _assignment["assigned_modules"] = new JsonArray(new JsonObject
+        {
+            ["module_id"] = SnapshotPolicy.Ad, ["enabled"] = true, ["config"] = SnapshotModuleTests.Policy().Config
+        });
+        _assignment["collection_policy"]!["interval_seconds"] = 1;
+        var runtime = Runtime();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        const string code = "agent_ad_ldap_root_dse_failed";
+        CycleStatus cycle;
+        do
+        {
+            cycle = await runtime.RunCycleAsync(deadline.Token);
+            if (cycle.ErrorCode is null) await Task.Delay(10, deadline.Token);
+        } while (cycle.ErrorCode is null);
+        Assert.Equal(code, cycle.ErrorCode);
+        var detail = cycle.ErrorDetail;
+        Assert.NotNull(detail);
+        var betweenAttempts = await runtime.RunCycleAsync(deadline.Token);
+        Assert.Null(betweenAttempts.ErrorCode);
+
+        _clock.Now = _clock.Now.AddMinutes(2);
+        var logger = new RecordingLogger();
+        using var worker = new AgentWorker(runtime, logger);
+        await worker.StartAsync(deadline.Token);
+        var warning = await logger.Entry.Task.WaitAsync(deadline.Token);
+        var next = await logger.SecondEntry.Task.WaitAsync(deadline.Token);
+        await worker.StopAsync(deadline.Token);
+        Assert.Equal(2, Volatile.Read(ref reader.Attempts));
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Null(warning.Exception);
+        Assert.Contains(detail, warning.Message, StringComparison.Ordinal);
+        Assert.Equal(LogLevel.Information, next.Level);
+        var status = File.ReadAllText(Path.Combine(_options.StateDir, "status.json"));
+        var failure = JsonNode.Parse(status)!["snapshot_errors"]![SnapshotPolicy.Ad]!;
+        Assert.Equal(code, failure["error_code"]!.GetValue<string>());
+        Assert.Equal(detail, failure["error_detail"]!.GetValue<string>());
+        Assert.DoesNotContain("fixture private details", warning.Message);
+        Assert.DoesNotContain("fixture private details", status);
+    }
+
     [Fact]
     public async Task DisabledAssignmentStopsCaptureAndTerminalRefusalStopsTheCurrentCycle()
     {

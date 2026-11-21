@@ -1,9 +1,7 @@
-using System.Net;
 using System.Text.Json.Nodes;
 using Sli.Server.Infrastructure;
 using Sli.Server.Problems;
 using Sli.Server.Reporting.V2;
-using Sli.Server.Tests.Problems;
 using Xunit;
 
 namespace Sli.Server.Tests.Reporting;
@@ -80,8 +78,7 @@ public sealed partial class PasswordCoverageReportTests
         if (placement == "reason") Assert.Empty(item["loss"]!.AsObject());
         else { var expected = Summary(); expected["count_lower_bound"] = "9007199254740993"; Assert.True(JsonNode.DeepEquals(expected, item["loss"]![code])); }
         Assert.Null(item["loss"]!["xml_invalid"]); Assert.True(JsonNode.DeepEquals(before, page));
-        var raw = Raw([]); raw["password_detection_coverage"] = coverage.DeepClone();
-        var result = SecurityProblemsReader.Render(Context([7]), raw);
+        var result = SecurityProblemsReader.RenderPasswordCoverage(Context([7]), coverage);
         Assert.Equal("partial", result["state"]!.ToString()); Assert.Empty(result["items"]!.AsArray());
         Assert.True(JsonNode.DeepEquals(coverage, result["coverage"]!["password_detection"]));
     }
@@ -105,23 +102,15 @@ public sealed partial class PasswordCoverageReportTests
         AssertUnavailable(Project(page));
     }
     [Theory]
-    [InlineData("ru", "empty", 0, "empty")][InlineData("en", "empty", 0, "empty")]
-    [InlineData("ru", "ok", 0, "ok")][InlineData("en", "ok", 0, "ok")]
-    [InlineData("ru", "empty", 2, "partial")][InlineData("en", "empty", 2, "partial")]
-    [InlineData("ru", "ok", 2, "partial")][InlineData("en", "ok", 2, "partial")]
-    public async Task CurrentDisablePreservesFrozenCoverageAndLocalizedWarnings(string locale, string state, int frozen, string expected)
+    [InlineData("ru", 0, "ok")][InlineData("en", 0, "ok")]
+    [InlineData("ru", 2, "partial")][InlineData("en", 2, "partial")]
+    public void CurrentDisablePreservesFrozenCoverageAndLocalizedWarnings(string locale, int frozen, string expected)
     {
         var page = SqlPage(); var row = page["rows"]![0]!; row["policy_state"] = "disabled"; row["frozen_episode_count"] = frozen;
         row["evidence_snapshot_as_of"] = frozen == 0 ? null : "2026-10-18T00:00:00Z";
-        var coverage = Project(page); var before = coverage.DeepClone(); var raw = Raw([], state);
-        if (state == "ok") raw["items"] = new JsonArray(new JsonObject { ["id"] = 7, ["status"] = "new" });
-        raw["password_detection_coverage"] = coverage;
-        var reader = new ReportFixture.Reader { OwnerId = "sli.core", ReportKey = "security.problems", Query = c => SecurityProblemsReader.Render(c, raw) };
-        await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), new ReportDefinitionRegistry().Get("security.problems")!, suppliedReader: reader);
-        host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(locale);
-        using var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode); var result = await ReportFixture.Body(response);
-        Assert.Equal(expected, result["state"]!.ToString()); Assert.Equal(state == "ok" ? 1 : 0, result["items"]!.AsArray().Count);
+        var coverage = Project(page); var before = coverage.DeepClone();
+        var result = SecurityProblemsReader.RenderPasswordCoverage(Context([7]) with { Language = locale }, coverage);
+        Assert.Equal(expected, result["state"]!.ToString()); Assert.Empty(result["items"]!.AsArray());
         Assert.True(JsonNode.DeepEquals(before, result["coverage"]!["password_detection"]));
         var warnings = result["limitations"]!.AsArray().Where(l => l!["code"]!.ToString() == "password_coverage_incomplete").ToArray();
         if (frozen == 0) Assert.Empty(warnings);
@@ -129,13 +118,9 @@ public sealed partial class PasswordCoverageReportTests
         Assert.True(JsonNode.DeepEquals(before, coverage));
     }
     [Theory][InlineData("ru")][InlineData("en")]
-    public async Task MissingCoverageWarningNeverClaimsAbsenceProof(string locale)
+    public void MissingCoverageWarningNeverClaimsAbsenceProof(string locale)
     {
-        var reader = new ReportFixture.Reader { OwnerId = "sli.core", ReportKey = "security.problems", Query = c => SecurityProblemsReader.Render(c, Raw([])) };
-        await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), new ReportDefinitionRegistry().Get("security.problems")!, suppliedReader: reader);
-        host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(locale);
-        using var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data", TestContext.Current.CancellationToken);
-        var result = await ReportFixture.Body(response);
+        var result = SecurityProblemsReader.RenderPasswordCoverage(Context([7]) with { Language = locale }, ProblemRepository.PasswordCoverageUnavailable());
         var warning = Assert.Single(result["limitations"]!.AsArray(), l => l!["code"]!.ToString() == "password_coverage_incomplete");
         Assert.Contains(locale == "ru" ? "не доказывает" : "does not prove", warning!["text"]!.ToString());
     }
@@ -152,17 +137,18 @@ public sealed partial class PasswordCoverageReportTests
         var connections = new NoDatabase(); var reader = new SecurityProblemsReader(new ProblemRepository(connections, TimeProvider.System), new NoEvidence());
         var error = await Assert.ThrowsAsync<ReportRequestException>(() => reader.QueryAsync(c, TestContext.Current.CancellationToken));
         Assert.Equal(403, error.Status); Assert.Equal(0, connections.Calls);
+        error = await Assert.ThrowsAsync<ReportRequestException>(() => reader.PasswordCoverageAsync(c, TestContext.Current.CancellationToken));
+        Assert.Equal(403, error.Status); Assert.Equal(0, connections.Calls);
     }
     sealed class NoEvidence : ISecurityProblemEvidence
     {
         public Task<JsonObject> PageAsync(ReportQueryContext c, long id, JsonObject? cursor, CancellationToken ct) => throw new InvalidOperationException("unexpected_evidence");
     }
     [Fact]
-    public async Task NullInvalidAndEmptyDomainsNeverQueryCoverage()
+    public async Task InvalidAndEmptyDomainsNeverQueryCoverage()
     {
         var connections = new NoDatabase(); var repository = new ProblemRepository(connections, TimeProvider.System); var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.ReadPasswordCoverageAsync(null!, ct));
-        await Assert.ThrowsAsync<ArgumentException>(() => repository.ReadPasswordCoverageAsync([0], ct));
-        Assert.Null(await repository.ReadPasswordCoverageAsync([], ct)); Assert.Equal(0, connections.Calls);
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.ReadQueuePasswordCoverageAsync([0], ct));
+        Assert.Null(await repository.ReadQueuePasswordCoverageAsync([], ct)); Assert.Equal(0, connections.Calls);
     }
 }

@@ -118,6 +118,11 @@ def stage_agent_msi(cache, commit, output, source=None, *, expected_sdk=None):
     digest = metadata.get('sha256')
     if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
         raise ValueError(f'Invalid agent MSI SHA-256 in {manifest}')
+    version = metadata.get('product_version')
+    if version is not None or expected_sdk is not None:
+        if (not isinstance(version, str) or not re.fullmatch(r'(?:0|[1-9][0-9]{0,4})(?:\.(?:0|[1-9][0-9]{0,4})){2}', version)
+                or any(int(part) > limit for part, limit in zip(version.split('.'), (255, 255, 65535), strict=True))):
+            raise ValueError(f'Invalid agent MSI product version in {manifest}')
 
     source = source if source is not None else cache / name
     if source.suffix.lower() != '.msi' or source.is_symlink() or not source.is_file():
@@ -126,6 +131,8 @@ def stage_agent_msi(cache, commit, output, source=None, *, expected_sdk=None):
     shutil.copyfile(source, staged)
     if staged.stat().st_size == 0 or sha256(staged) != digest:
         raise ValueError(f'Agent MSI SHA-256 mismatch for {commit}: {source}')
+    if version is not None:
+        write_json(staged.with_suffix('.msi.json'), {'product_version': version, 'sha256': digest})
     return staged
 
 
@@ -402,6 +409,7 @@ def finish(output, commit, release, version, *, toolchain):
     remover = output / 'remove-beta-kit'
     remover_source = ROOT / 'deploy/linux/native_remove.py'
     remover.write_text(remover_source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+    remover.chmod(0o755)
     manifest = {'schema_version': 1, 'git_commit': commit, 'release': release, 'version': version,
                 'target': 'debian-13-amd64', 'toolchain': toolchain, 'packages': rows,
                 'installer': {'filename': installer.name, 'sha256': sha256(installer)},

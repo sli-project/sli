@@ -1,6 +1,6 @@
 param(
     [string]$OutputRoot = (Join-Path $PSScriptRoot '../../artifacts/agent-dotnet'),
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.5',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [switch]$NoRestore,
     [string]$MsvcRoot = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207',
     [string]$WindowsSdkRoot = 'C:\Program Files (x86)\Windows Kits\10',
@@ -13,6 +13,17 @@ $env:DOTNET_ADD_GLOBAL_TOOLS_TO_PATH = 'false'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') { throw 'MSI linking requires Windows; Linux CI cross-publishes the payload.' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if (!$Version) {
+    $shallow = git -C $projectRoot rev-parse --is-shallow-repository
+    if ($LASTEXITCODE -ne 0 -or $shallow -ne 'false') { throw 'A full source history or an explicit MSI version is required.' }
+    $build = git -C $projectRoot rev-list --first-parent --count HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Could not determine the agent build number.' }
+    $Version = & (Join-Path $PSScriptRoot 'Get-MsiVersion.ps1') -BuildNumber $build
+}
+$product = [version]$Version
+if ($product.Major -gt 255 -or $product.Minor -gt 255 -or $product.Build -gt 65535) { throw 'Version exceeds MSI field limits.' }
+# Rebuilding one product version must retain its ProductCode for maintenance.
+$productCode = '7DB1EE8A-94FE-4AA0-8E0D-{0:X2}{1:X2}{2:X4}0000' -f $product.Major, $product.Minor, $product.Build
 $output = [IO.Path]::GetFullPath($OutputRoot)
 New-Item -ItemType Directory -Force $output | Out-Null
 $publish = Join-Path $output 'publish'
@@ -44,7 +55,7 @@ try {
     [IO.File]::WriteAllText($harvest, '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"><Fragment><ComponentGroup Id="PublishedFiles">' + ($entries -join '') + '</ComponentGroup></Fragment></Wix>')
     $responseFile = Join-Path $output 'build.rsp'
     $arguments = @('build', ('"' + (Join-Path $projectRoot 'installer/SliAgent.wxs') + '"'), ('"' + (Join-Path $projectRoot 'installer/Registration.wxs') + '"'), ('"' + $harvest + '"'),
-        '-arch x64', ('-ext ' + $utilExtension), '-wx1149', ('-d "RegistrationCaPath=' + $native + '"'), ('-d "PublishDir=' + $publish + '"'), ('-d "ProductVersion=' + $Version + '"'), ('-o "' + (Join-Path $output 'SliAgent.msi') + '"'))
+        '-arch x64', ('-ext ' + $utilExtension), '-wx1149', ('-d "RegistrationCaPath=' + $native + '"'), ('-d "PublishDir=' + $publish + '"'), ('-d "ProductVersion=' + $Version + '"'), ('-d "ProductCode=' + $productCode + '"'), ('-o "' + (Join-Path $output 'SliAgent.msi') + '"'))
     [IO.File]::WriteAllText($responseFile, ($arguments -join ' '))
     & $dotnet tool run wix -- "@$responseFile"
     if ($LASTEXITCODE -ne 0) { throw 'MSI build failed' }

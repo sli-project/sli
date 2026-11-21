@@ -36,6 +36,8 @@ public static class AgentClientControlEndpoints
             await using var tx=await db.BeginTransactionAsync(ct);
             var auth=services.GetRequiredService<AgentIdentityService>();var service=services.GetRequiredService<AgentClientControlService>();JsonObject result;
             if(report) {
+                if (body is JsonObject reportBody && reportBody.ContainsKey("dc_identity"))
+                    await AgentEnrollmentService.LockRegistrationAsync(db, tx, ct);
                 var agent=await auth.AuthenticateAsync(db,tx,peer,false,ct);
                 result=await service.ReportAsync(db,tx,agent,body,ct);
             } else {

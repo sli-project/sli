@@ -237,7 +237,14 @@ public sealed class TransferGapTests
     public async Task SecurityQueueUsesRegisteredNativeReaderAndScopedDetailAndDeniesInvalidInput() {
         var repo = new ProblemEndpointTests.Repository(); var evidence = new Evidence(); var definition = new ReportDefinitionRegistry().Get("security.problems")!;
         await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), definition, nativeReader: new SecurityProblemsReader(repo, evidence));
-        using (var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data?tab=table", Ct)) { Assert.Equal(HttpStatusCode.OK, response.StatusCode); var body = await ReportFixture.Body(response); Assert.Single(body["items"]!.AsArray()); Assert.Equal(4, body["metrics"]!.AsArray().Count); Assert.Contains("password_coverage_incomplete", body.ToJsonString()); }
+        using (var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data?tab=table", Ct)) {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await ReportFixture.Body(response);
+            Assert.Equal("7", Assert.Single(body["items"]!.AsArray())!["id"]!.ToString());
+            Assert.Contains(body["metrics"]!.AsArray(), metric => metric?["key"]?.ToString() == "open");
+            Assert.Null(body["coverage"]!["password_detection"]);
+            Assert.DoesNotContain(body["limitations"]!.AsArray(), limitation => limitation?["code"]?.ToString() == "password_coverage_incomplete");
+        }
         using (var response = await host.Client.GetAsync("/api/v2/reports/security.problems/rows/7/detail", Ct)) { Assert.Equal(HttpStatusCode.OK, response.StatusCode); Assert.Equal("partial", (await ReportFixture.Body(response))["state"]!.ToString()); Assert.Equal(1, evidence.Calls); }
         int before = repo.Calls;
         using (var response = await host.Client.GetAsync("/api/v2/reports/security.problems/data?severity=invalid", Ct)) Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

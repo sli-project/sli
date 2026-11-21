@@ -271,6 +271,7 @@ def setup_host(tmp_path, monkeypatch):
     check_setup_units = setup.host.Host(tmp_path / 'host').check_setup_units
     machine = SimpleNamespace(write=write, prepare=prepare, receipt=lambda: calls.append('receipt'),
                               select_database_directory=lambda **kwargs: '/var/lib/sli-db',
+                              mounted_database_uuid=lambda: None,
                               check_setup_units=check_setup_units)
     monkeypatch.setattr(setup.host, 'Host', lambda: machine)
     monkeypatch.setattr(setup, 'check_port', lambda site, *, saved: calls.append('check-port'))
@@ -286,6 +287,94 @@ def setup_host(tmp_path, monkeypatch):
     args = SimpleNamespace(server='192.0.2.10', bind=None, port=None, clickhouse_mode=None,
                            directory=None, uuid=None, backup_root=None, non_interactive=True)
     return setup, args, calls, state, site_path
+
+
+def test_web_console_flags_configure_cockpit_and_can_be_repeated(setup_host, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    setup, _, calls, _, _ = setup_host
+    etc = tmp_path / 'cockpit'
+    certs = etc / 'ws-certs.d'
+    status = tmp_path / 'terminal.json'
+    unit = tmp_path / 'cockpit.socket'
+    source = tmp_path / 'synthetic-tls'
+    source.mkdir()
+    certs.mkdir(parents=True)
+    (etc / 'disallowed-users').write_text('another-user')
+    (source / 'tls_certificate').write_text('synthetic certificate')
+    (source / 'tls_key').write_text('synthetic private key')
+    monkeypatch.setattr(setup, 'COCKPIT_DIR', etc)
+    monkeypatch.setattr(setup, 'COCKPIT_STATUS', status)
+    monkeypatch.setattr(setup, 'COCKPIT_SOCKET', unit)
+    monkeypatch.setattr(setup.install, 'SECRETS', source)
+    monkeypatch.setattr(setup.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(setup, 'setup_lock', nullcontext)
+    real_stat = Path.stat
+
+    def stat_path(path, *args, **kwargs):
+        if path == certs:
+            return SimpleNamespace(st_uid=0, st_mode=0o40755)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'stat', stat_path)
+    machine = setup.host.Host()
+    original_write = machine.write
+
+    def write(path, body, *args):
+        if path == '/etc/systemd/system/cockpit.socket.d/50-sli.conf':
+            return
+        if Path(path).parent == etc:
+            Path(path).write_bytes(body.encode())
+        else:
+            original_write(path, body, *args)
+
+    monkeypatch.setattr(machine, 'write', write)
+    original_command = setup.command
+    apt = ['apt-get', 'install', '-y', '--no-install-recommends', 'cockpit-ws', 'cockpit-system', 'cockpit-bridge']
+    enable = ['systemctl', 'enable', '--now', 'cockpit.socket']
+    disable = ['systemctl', 'disable', '--now', 'cockpit.socket']
+
+    def command(argv, **kwargs):
+        if argv[0] == '/usr/bin/install':
+            calls.append(argv)
+            src, dest = map(Path, argv[-2:])
+            if dest.exists() and dest.read_bytes() == src.read_bytes():
+                return ''
+            dest.write_bytes(src.read_bytes())
+            return 'copied'
+        if argv == apt:
+            unit.touch()
+        if argv == enable:
+            assert 'root' in (etc / 'disallowed-users').read_text().splitlines()
+            assert (certs / '99-sli.cert').is_file() and (certs / '99-sli.key').is_file()
+            status.write_text((etc / 'sli-terminal.json').read_text())
+        if argv == disable:
+            status.unlink(missing_ok=True)
+        return original_command(argv, **kwargs)
+
+    monkeypatch.setattr(setup, 'command', command)
+    assert setup.main(['--no-web-console']) == 0
+    assert not calls
+    assert setup.main(['--server', '192.0.2.10', '--web-console']) == 0
+    assert calls.index(apt) < calls.index(enable)
+    assert (etc / 'disallowed-users').read_text().splitlines() == ['another-user', 'root']
+    assert json.loads(status.read_text()) == {'url': 'https://192.0.2.10:9090/system/terminal'}
+    for src_name, target_name in [('tls_certificate', '99-sli.cert'), ('tls_key', '99-sli.key')]:
+        assert ['/usr/bin/install', '-Cv', '-o', 'root', '-g', 'cockpit-ws', '-m', '0640',
+                str(source / src_name), str(certs / target_name)] in calls
+        assert (certs / target_name).read_bytes() == (source / src_name).read_bytes()
+
+    calls.clear()
+    assert setup.main(['--web-console']) == 0
+    assert (etc / 'disallowed-users').read_text().splitlines() == ['another-user', 'root']
+    assert ['systemctl', 'restart', 'cockpit.socket'] not in calls
+    assert ['systemctl', 'try-restart', 'cockpit.service'] not in calls
+    calls.clear()
+    assert setup.main(['--no-web-console']) == 0
+    assert setup.main(['--no-web-console']) == 0
+    assert calls == [disable, ['systemctl', 'stop', 'cockpit.service']] * 2
+    assert not status.exists()
 
 
 @pytest.mark.parametrize('dns', ['local', 'loopback', 'unresolved'])
@@ -694,8 +783,17 @@ def first_start_install(tmp_path, monkeypatch):
     monkeypatch.setattr(native_host, 'administrative_lock', nullcontext)
     monkeypatch.setattr(native_host, 'validate_identity', lambda: None)
     calls = []
-    monkeypatch.setattr(native_host, 'Host', lambda: SimpleNamespace(
-        receipt=lambda: None, configure=lambda: calls.append('host-configure')))
+    pgdata = Path(native_host.MOUNT) / 'pgdata'
+
+    def configure_host():
+        calls.append('host-configure')
+        pgdata.mkdir(parents=True, exist_ok=False)
+        (pgdata / 'PG_VERSION').write_bytes(b'18\n')
+
+    control = {'fail': True, 'bootstrap_fails': False, 'owner': 'unclaimed', 'postgres_id': '123456789'}
+    machine = SimpleNamespace(receipt=lambda: None, configure=configure_host,
+                              postgres_system_identifier=lambda: control['postgres_id'])
+    monkeypatch.setattr(native_host, 'Host', lambda: machine)
     monkeypatch.setattr(runtime, 'no_transaction', lambda: None)
     monkeypatch.setattr(runtime, 'wait_databases', lambda: None)
     monkeypatch.setattr(runtime, 'configure', lambda config: calls.append('runtime-configure'))
@@ -706,9 +804,10 @@ def first_start_install(tmp_path, monkeypatch):
     monkeypatch.setattr(install, 'wait_health', lambda: calls.append('healthy'))
     monkeypatch.setattr(install, 'preserve_recovery', lambda *args: calls.append('recovery-saved'))
     monkeypatch.setattr(native_backup, 'configure', lambda: calls.append('backup-configured'))
-    control = {'fail': True, 'owner': 'unclaimed'}
     def command(argv, **kwargs):
         calls.append(argv)
+        if argv == ['systemctl', 'start', 'sli-bootstrap-pg.service'] and control['bootstrap_fails']:
+            raise RuntimeError('synthetic_bootstrap_failure')
         if argv == ['systemctl', 'start', 'sli-ready.service'] and control['fail']:
             raise RuntimeError('synthetic_first_start_failure')
         if '--initial-admin' in argv and 'check' in argv and control['owner'] != 'unclaimed':
@@ -744,6 +843,34 @@ def test_retry_after_early_configure_failure_preserves_existing_postgres(first_s
     else:
         install.configure('beta')
         assert json.loads((state / 'package-install.json').read_text())['status'] == 'configured'
+
+
+@pytest.mark.parametrize('replaced_cluster', [False, True])
+def test_retry_after_bootstrap_failure_verifies_and_reuses_prepared_cluster(first_start_install, replaced_cluster):
+    from deploy.linux import native_host
+
+    state, calls, control = first_start_install
+    control.update(fail=False, bootstrap_fails=True)
+    with pytest.raises(RuntimeError, match='synthetic_bootstrap_failure'):
+        install.configure('beta')
+    assert not (state / 'installed.json').exists()
+    data = Path(native_host.MOUNT) / 'pgdata/PG_VERSION'
+    assert data.read_bytes() == b'18\n'
+    control['bootstrap_fails'] = False
+    calls.clear()
+    if replaced_cluster:
+        control['postgres_id'] = '987654321'
+        with pytest.raises(RuntimeError, match='native_install_interrupted_requires_recovery'):
+            install.configure('beta')
+        assert not calls
+    else:
+        install.configure('beta')
+        assert json.loads((state / 'package-install.json').read_text())['status'] == 'configured'
+        assert 'host-configure' not in calls
+        bootstrap = calls.index(['systemctl', 'start', 'sli-bootstrap-pg.service'])
+        migration = next(i for i, call in enumerate(calls) if isinstance(call, list) and 'migrate' in call)
+        assert bootstrap < migration
+    assert data.read_bytes() == b'18\n'
 
 
 @pytest.mark.parametrize('legacy', [False, True])

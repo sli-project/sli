@@ -19,6 +19,65 @@ public sealed class AgentInboxStderrCollection;
 [Collection("Agent inbox stderr")]
 public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
 {
+    [Fact]
+    public async Task Post_collection_drains_five_thousand_dc_packets_in_order()
+    {
+        const int packetCount = 5000;
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var admin = await fixture.Pg.OpenAsync(ct);
+        Guid agent = Guid.NewGuid(), host = Guid.NewGuid();
+        await SeedAsync(admin, fixture.Pg.Root, Guid.NewGuid(), agent, host, ct);
+        await using (var tx = await admin.BeginTransactionAsync(ct))
+        {
+            for (int i = 1; i <= packetCount; i++)
+                await InsertAsync(admin, tx, Sample(agent, host, "dc.example.test", i), i, ct);
+            await tx.CommitAsync(ct);
+        }
+
+        var settings = new Dictionary<string, string?> { ["ADLOG_STORAGE_V2_WORKER_DSN"] = fixture.Dsn("sli_storage_login") };
+        await using var storage = DirectAdDcRuntime.TryCreate(settings.GetValueOrDefault, _ => throw new InvalidOperationException(),
+            Path.Combine(PostCollectionPostgres.Repository(), "config/event_catalog.json"));
+        await using var source = NpgsqlDataSource.Create(fixture.Dsn("adlog_user"));
+        var connections = new TestConnections(source);
+        await using var processSession = await connections.OpenAsync(ct);
+        var consumer = new AgentWorkstationInboxConsumer(connections, storage);
+        int cycles = 0;
+        long remaining = packetCount;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var runtime = new PostCollectionRuntime(processSession, connections, consumer, async (_, _, token) => {
+            cycles++;
+            await using var pending = new NpgsqlCommand("select count(*) from sli_agent_packet_inbox where imported_at is null", admin);
+            long current = (long)(await pending.ExecuteScalarAsync(token))!;
+            if (current == 0 || current >= remaining) stop.Cancel();
+            remaining = current;
+            return new(0, 0, 0);
+        });
+        var stopwatch = Stopwatch.StartNew();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runtime.RunAsync(new(false, 1), stop.Token));
+        stopwatch.Stop();
+        double importedPerMinute = (packetCount - remaining) / stopwatch.Elapsed.TotalMinutes;
+        string measurement = $"DC inbox: {packetCount - remaining}/{packetCount} packets in {stopwatch.Elapsed.TotalSeconds:F2}s across {cycles} cycles, " +
+            $"{importedPerMinute:F0} packets/min against a default DC rate of {AdDcConfig.DefaultRateLimitPerMinute} packets/min.";
+        output.WriteLine(measurement);
+        Assert.True(remaining == 0, measurement);
+        Assert.True(importedPerMinute > AdDcConfig.DefaultRateLimitPerMinute, measurement);
+
+        await using (var ordered = new NpgsqlCommand("""
+            select array_agg((envelope->>'sequence')::int order by imported_at,received_at) from sli_agent_packet_inbox
+            """, admin))
+            Assert.Equal(Enumerable.Range(1, packetCount), (int[])(await ordered.ExecuteScalarAsync(ct))!);
+        Assert.Equal(0, (await consumer.RunOnceAsync(PostCollectionLoop.EventBatchSize, ct)).Scanned);
+        await using var persisted = new NpgsqlCommand("select count(*) from event_hot", admin);
+        Assert.Equal((long)packetCount, await persisted.ExecuteScalarAsync(ct));
+    }
+
+    private sealed class TestConnections(NpgsqlDataSource source) : IPostgresConnectionFactory
+    {
+        public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => await source.OpenConnectionAsync(ct);
+    }
+
     [Theory]
     [InlineData(true,false)]
     [InlineData(true,true)]
@@ -652,18 +711,24 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
     }
 
     internal sealed record Packet(JsonObject Envelope,JsonObject Payload,JsonArray Rows);
-    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null)
+    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null,string policyRevision="1",
+        int recordCount=1,int? sequence=null)
     {
         var scenario=JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),"agent-dotnet/tests/vectors/ad-dc-scenarios.json")))!
             .AsArray().Single(x=>(string?)x!["name"]=="security-initial-window-all")!;
         var step=scenario["steps"]![0]!; var expected=step["expected"]!;
         string old=(string)scenario["host_id"]!;
         var payload=JsonNode.Parse(((string)expected["payload_canonical"]!).Replace(old,host.ToString()).Replace("fixture-dc",source))!.AsObject();
+        payload["context"]!["ad_dc"]!["policy_revision"] = policyRevision;
         payload["records"]!.AsArray().Clear();
-        string xml=$"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>{record}</EventRecordID><TimeCreated SystemTime='2026-10-07T00:00:00Z'/><Channel>Security</Channel><Computer>{computer ?? source}</Computer></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>";
-        payload["records"]!.AsArray().Add(new JsonObject { ["format"]="event_xml",["record_id"]=record,["payload"]=EventXml.Parse(xml,source,"fixture-endpoint","Security") });
+        int first = record - recordCount + 1;
+        for (int id = first; id <= record; id++)
+        {
+            string xml=$"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>{id}</EventRecordID><TimeCreated SystemTime='2026-10-07T00:00:00Z'/><Channel>Security</Channel><Computer>{computer ?? source}</Computer></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>";
+            payload["records"]!.AsArray().Add(new JsonObject { ["format"]="event_xml",["record_id"]=id,["payload"]=EventXml.Parse(xml,source,"fixture-endpoint","Security") });
+        }
         payload["header"]!["cursor"]!["last_record_id"]=record;
-        payload["header"]!["record_id_range"]!["first"]=record; payload["header"]!["record_id_range"]!["last"]=record;
+        payload["header"]!["record_id_range"]!["first"]=first; payload["header"]!["record_id_range"]!["last"]=record;
         var before=JsonNode.Parse(expected["cursor_before"]!.ToJsonString().Replace(old,host.ToString()));
         var after=JsonNode.Parse(expected["cursor_after"]!.ToJsonString().Replace(old,host.ToString()));
         var state=JsonNode.Parse((string)after!["token"]!)!;
@@ -671,12 +736,12 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
         state["channels"]!["Security"]!["bookmark"]=((string)state["channels"]!["Security"]!["bookmark"]!).Replace("RecordId='1'",$"RecordId='{record}'");
         after["token"]=CanonicalJson.Serialize(state);
         var envelope=new Envelope(Guid.NewGuid().ToString(),agent.ToString(),host.ToString(),AgentAdDcValidator.Live,
-            "1.0.0","1","ad-dc",host.ToString(),record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
-            Packets.Digest(payload),1,CanonicalJson.Length(payload),(string)step["now"]!,"not_proven",0,0);
+            "1.0.0",policyRevision,"ad-dc",host.ToString(),sequence??record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
+            Packets.Digest(payload),recordCount,CanonicalJson.Length(payload),(string)step["now"]!,"not_proven",0,0);
         return new(envelope.ToJson(),payload,AgentAdDcValidator.Validate(envelope,payload,null,source));
     }
 
-    private static async Task InsertAsync(NpgsqlConnection db,NpgsqlTransaction tx,Packet sample,int index,CancellationToken ct)
+    internal static async Task InsertAsync(NpgsqlConnection db,NpgsqlTransaction tx,Packet sample,int index,CancellationToken ct)
     {
         await using var query=new NpgsqlCommand("""
             insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt)
@@ -718,6 +783,11 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
             }).ToJsonString());
             await query.ExecuteNonQueryAsync(ct);
         }
+        await AuthorizeStorageAsync(db, archive, ct);
+    }
+
+    internal static async Task AuthorizeStorageAsync(NpgsqlConnection db, string archive, CancellationToken ct)
+    {
         var record=new DirectRuntimeRecord("v2","storage-v2-fresh-bootstrap/v1",new string('a',64),archive,
             new JsonObject { ["kind"]="fresh-event-store",["version"]=1 },"synthetic",DateTime.UtcNow.AddMinutes(-1),DateTime.UtcNow.AddHours(1),null,"");
         await using var authorization=new NpgsqlCommand("""

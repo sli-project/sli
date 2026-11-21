@@ -10,10 +10,11 @@ public sealed partial class AgentEnrollmentService
     private static bool RecentContact(DateTime? seen,long interval,DateTime now) =>
         seen is {} at && at>=now.AddSeconds(-InstallationSetup.SetupCollectionHealth.ContactBudgetSeconds(interval));
 
-    internal static async Task<int> ReconcileRegistrationsAsync(NpgsqlConnection db,NpgsqlTransaction tx,CancellationToken ct)
+    internal static async Task<int> ReconcileRegistrationsAsync(NpgsqlConnection db,NpgsqlTransaction tx,CancellationToken ct,
+        IConfiguration? configuration = null, Action<Guid, string>? onUnbound = null)
     {
         // Registration and startup reconciliation must observe one committed registry.
-        await AdvisoryAsync(db,tx,"sli-agent-registration-reconcile",ct);
+        await LockRegistrationAsync(db, tx, ct);
         const string eligible="""
             status='active' or status='replaced'
                 and not exists(select 1 from sli_agent_removals r where r.agent_id=sli_agents.id)
@@ -27,8 +28,6 @@ public sealed partial class AgentEnrollmentService
         await using(var query=new NpgsqlCommand("select id from sli_agents where "+eligible+" order by id",db,tx))
         await using(var rows=await query.ExecuteReaderAsync(ct))
             while(await rows.ReadAsync(ct))ids.Add(rows.GetGuid(0));
-        // Import takes its advisory lock before touching the registry. Keep that order.
-        foreach(var id in ids) await AgentManagementService.LockImportAsync(db,tx,id,ct);
         var agents=new List<(Guid Id,Guid Host,string Key,string? Reported,string Source,Version? Version,DateTime? Seen,DateTime Created,bool Conflict,DateTime? Packet,bool Live,bool DotNet,string Status,DateTime ContactAt)>();
         await using(var query=new NpgsqlCommand("""
             select a.id,a.host_id,a.key_fingerprint,a.registration_host_name,
@@ -63,6 +62,8 @@ public sealed partial class AgentEnrollmentService
                     RecentContact(seen,policy["interval_seconds"]?.GetValue<long>()??60,rows.GetDateTime(10)),rows.GetBoolean(13),rows.GetString(12),rows.GetDateTime(10)));
             }
         }
+        // Keep the same lock order as import, revocation and policy updates.
+        foreach(var id in ids) await AgentManagementService.LockImportAsync(db,tx,id,ct);
         var computers=new Dictionary<Guid,(long Server,string Name)>();
         var conflicts=agents.Where(a=>a.Conflict).Select(a=>a.Id).ToHashSet();
         foreach(var agent in agents)
@@ -105,7 +106,13 @@ public sealed partial class AgentEnrollmentService
                 retired++;
             }
         }
-        foreach(var id in ids) await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db,tx,id,ct);
+        foreach (var id in ids)
+        {
+            if (await ReconcileDcSourceAsync(db, tx, id, configuration, ct) is { } reason)
+                onUnbound?.Invoke(id, reason);
+            await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db,tx,id,ct);
+        }
+        await RetireBootstrapDomainAsync(db, tx, ct);
         return retired;
 
         async Task Conflict(Guid id,string computer,string other)
@@ -122,19 +129,49 @@ public sealed partial class AgentEnrollmentService
     }
 }
 
-// Package upgrades apply the schema before restarting the API, so both a normal
-// startup and an upgraded installation run the same reconciliation. A temporarily
-// unavailable database is retried without needing an administrator's intervention.
-public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,ILogger<AgentRegistrationReconciliation> logger) : BackgroundService
+public sealed class AgentDcSourceDiagnostics(ILogger<AgentRegistrationReconciliation> logger, TimeProvider? clock = null)
+{
+    private static readonly TimeSpan DiagnosticInterval = TimeSpan.FromMinutes(10);
+    private readonly TimeProvider time = clock ?? TimeProvider.System;
+    private readonly Dictionary<Guid, long> lastDiagnostic = new();
+
+    internal void LogUnbound(Guid agent, string reason)
+    {
+        lock (lastDiagnostic)
+        {
+            if (lastDiagnostic.TryGetValue(agent, out long previous) && time.GetElapsedTime(previous) < DiagnosticInterval)
+                return;
+            lastDiagnostic[agent] = time.GetTimestamp();
+        }
+        logger.LogWarning("agent_dc_source_unbound agent_id={AgentId} reason={Reason}", agent, reason);
+    }
+
+    internal void RemoveExpired()
+    {
+        lock (lastDiagnostic)
+        {
+            foreach (var id in lastDiagnostic.Where(entry => time.GetElapsedTime(entry.Value) >= DiagnosticInterval).Select(entry => entry.Key).ToArray())
+                lastDiagnostic.Remove(id);
+        }
+    }
+}
+
+// Consolidation runs once after startup. Source provisioning also retries after
+// startup so later inventory changes can unblock an enrolled controller.
+public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes, ILogger<AgentRegistrationReconciliation> logger,
+    IConfiguration? configuration = null, AgentDcSourceDiagnostics? diagnostics = null) : BackgroundService
 {
     internal static readonly EventId ReconciliationCompleted = new(1, nameof(ReconciliationCompleted));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        Action<Guid, string>? logUnbound = diagnostics is null ? null : diagnostics.LogUnbound;
         bool reconciled = false;
         while(!stoppingToken.IsCancellationRequested)
         {
+            diagnostics?.RemoveExpired();
             int? reconciledRegistrations = null;
+            string failure = "agent_registration_reconciliation_failed";
             try
             {
                 await using var scope=scopes.CreateAsyncScope();
@@ -143,17 +180,25 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
                 {
                     logger.LogInformation("agent_registration_reconciliation_started");
                     await using var tx=await db.BeginTransactionAsync(stoppingToken);
-                    int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken);
+                    int retired=await AgentEnrollmentService.ReconcileRegistrationsAsync(db,tx,stoppingToken,configuration,logUnbound);
                     await tx.CommitAsync(stoppingToken);
                     reconciled = true;
                     reconciledRegistrations = retired;
                 }
+                else
+                {
+                    failure = "agent_dc_source_reconciliation_failed";
+                    await using var tx = await db.BeginTransactionAsync(stoppingToken);
+                    await AgentEnrollmentService.ReconcileDcSourcesAsync(db, tx, configuration, stoppingToken, logUnbound);
+                    await tx.CommitAsync(stoppingToken);
+                }
+                failure = "agent_console_token_cleanup_failed";
                 await using var cleanup = new NpgsqlCommand(
                     "delete from sli_agent_console_tokens where expires_at<=statement_timestamp()", db);
                 await cleanup.ExecuteNonQueryAsync(stoppingToken);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) { return; }
-            catch { logger.LogWarning(reconciled ? "agent_console_token_cleanup_failed" : "agent_registration_reconciliation_failed"); }
+            catch { logger.LogWarning("{Failure}", failure); }
             if (reconciledRegistrations is int retiredCount)
                 logger.LogInformation(ReconciliationCompleted, "agent_registration_reconciliation_completed retired={Retired}", retiredCount);
             try { await Task.Delay(reconciled ? TimeSpan.FromMinutes(1) : TimeSpan.FromSeconds(10),stoppingToken); }
