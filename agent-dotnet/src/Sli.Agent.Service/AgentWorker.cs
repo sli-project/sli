@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Sli.Agent.Windows;
 
 namespace Sli.Agent.Service;
 
@@ -12,22 +13,37 @@ public sealed class AgentWorker(AgentRuntime runtime, ILogger<AgentWorker> logge
     {
         var failures = 0;
         (string? Code, string? Detail) previous = default;
+        IReadOnlyDictionary<string, SnapshotFailure>? previousSnapshots = null;
         while (!stoppingToken.IsCancellationRequested)
         {
             CycleStatus status;
             try { status = await runtime.RunCycleAsync(stoppingToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             failures = status.DeliveryFailed ? Math.Min(failures + 1, 10) : 0;
-            if (status.ErrorDetail is not null)
+            var snapshotErrorLoggedSeparately = false;
+            if (status.SnapshotFailures is { } snapshots)
             {
-                if (previous != (status.ErrorCode, status.ErrorDetail))
-                    logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}. {Detail}",
-                        status.ErrorCode, status.Pending, status.CollectionActive, status.ErrorDetail);
+                foreach (var (module, failure) in snapshots)
+                {
+                    if (previousSnapshots?.GetValueOrDefault(module) != failure)
+                        logger.LogWarning("agent cycle: {Code}. {Detail}", failure.Code, failure.Detail);
+                    snapshotErrorLoggedSeparately |= failure.Code == status.ErrorCode && failure.Detail == status.ErrorDetail;
+                }
             }
-            else if (status.ErrorCode is not null)
-                logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}", status.ErrorCode, status.Pending, status.CollectionActive);
-            else
-                logger.LogInformation("agent cycle: {Code}, pending {Pending}, active {Active}", "ok", status.Pending, status.CollectionActive);
+            previousSnapshots = status.SnapshotFailures;
+            if (!snapshotErrorLoggedSeparately)
+            {
+                if (status.ErrorDetail is not null)
+                {
+                    if (previous != (status.ErrorCode, status.ErrorDetail))
+                        logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}. {Detail}",
+                            status.ErrorCode, status.Pending, status.CollectionActive, status.ErrorDetail);
+                }
+                else if (status.ErrorCode is not null)
+                    logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}", status.ErrorCode, status.Pending, status.CollectionActive);
+                else
+                    logger.LogInformation("agent cycle: {Code}, pending {Pending}, active {Active}", "ok", status.Pending, status.CollectionActive);
+            }
             previous = (status.ErrorCode, status.ErrorDetail);
             if (runtime.ContinueImmediately) continue;
             try

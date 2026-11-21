@@ -25,8 +25,10 @@ public sealed class AdSnapshotModule(IDirectorySnapshotReader reader, TimeProvid
         var raw = await reader.ReadAsync(policy, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         try { return Normalize(raw, policy, clock.GetUtcNow()); }
+        catch (AgentException e)
+        { throw SnapshotCaptureException.Describe(policy.ModuleId, e.Code == "agent_ad_size_limit" ? "size" : "normalize", e); }
         catch (Exception e) when (e is InvalidOperationException or NullReferenceException or FormatException or KeyNotFoundException or OverflowException or ArgumentException)
-        { throw new AgentException("agent_ad_capture_invalid"); }
+        { throw SnapshotCaptureException.Describe(policy.ModuleId, "normalize", e); }
     }
 
     public static IReadOnlyDictionary<string, SnapshotFamily> Normalize(JsonObject raw, SnapshotPolicy policy, DateTimeOffset observedAt, Func<Guid>? newId = null)
