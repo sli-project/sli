@@ -288,6 +288,94 @@ def setup_host(tmp_path, monkeypatch):
     return setup, args, calls, state, site_path
 
 
+def test_web_console_flags_configure_cockpit_and_can_be_repeated(setup_host, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    setup, _, calls, _, _ = setup_host
+    etc = tmp_path / 'cockpit'
+    certs = etc / 'ws-certs.d'
+    status = tmp_path / 'terminal.json'
+    unit = tmp_path / 'cockpit.socket'
+    source = tmp_path / 'synthetic-tls'
+    source.mkdir()
+    certs.mkdir(parents=True)
+    (etc / 'disallowed-users').write_text('another-user')
+    (source / 'tls_certificate').write_text('synthetic certificate')
+    (source / 'tls_key').write_text('synthetic private key')
+    monkeypatch.setattr(setup, 'COCKPIT_DIR', etc)
+    monkeypatch.setattr(setup, 'COCKPIT_STATUS', status)
+    monkeypatch.setattr(setup, 'COCKPIT_SOCKET', unit)
+    monkeypatch.setattr(setup.install, 'SECRETS', source)
+    monkeypatch.setattr(setup.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(setup, 'setup_lock', nullcontext)
+    real_stat = Path.stat
+
+    def stat_path(path, *args, **kwargs):
+        if path == certs:
+            return SimpleNamespace(st_uid=0, st_mode=0o40755)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'stat', stat_path)
+    machine = setup.host.Host()
+    original_write = machine.write
+
+    def write(path, body, *args):
+        if path == '/etc/systemd/system/cockpit.socket.d/50-sli.conf':
+            return
+        if Path(path).parent == etc:
+            Path(path).write_bytes(body.encode())
+        else:
+            original_write(path, body, *args)
+
+    monkeypatch.setattr(machine, 'write', write)
+    original_command = setup.command
+    apt = ['apt-get', 'install', '-y', '--no-install-recommends', 'cockpit-ws', 'cockpit-system', 'cockpit-bridge']
+    enable = ['systemctl', 'enable', '--now', 'cockpit.socket']
+    disable = ['systemctl', 'disable', '--now', 'cockpit.socket']
+
+    def command(argv, **kwargs):
+        if argv[0] == '/usr/bin/install':
+            calls.append(argv)
+            src, dest = map(Path, argv[-2:])
+            if dest.exists() and dest.read_bytes() == src.read_bytes():
+                return ''
+            dest.write_bytes(src.read_bytes())
+            return 'copied'
+        if argv == apt:
+            unit.touch()
+        if argv == enable:
+            assert 'root' in (etc / 'disallowed-users').read_text().splitlines()
+            assert (certs / '99-sli.cert').is_file() and (certs / '99-sli.key').is_file()
+            status.write_text((etc / 'sli-terminal.json').read_text())
+        if argv == disable:
+            status.unlink(missing_ok=True)
+        return original_command(argv, **kwargs)
+
+    monkeypatch.setattr(setup, 'command', command)
+    assert setup.main(['--no-web-console']) == 0
+    assert not calls
+    assert setup.main(['--server', '192.0.2.10', '--web-console']) == 0
+    assert calls.index(apt) < calls.index(enable)
+    assert (etc / 'disallowed-users').read_text().splitlines() == ['another-user', 'root']
+    assert json.loads(status.read_text()) == {'url': 'https://192.0.2.10:9090/system/terminal'}
+    for src_name, target_name in [('tls_certificate', '99-sli.cert'), ('tls_key', '99-sli.key')]:
+        assert ['/usr/bin/install', '-Cv', '-o', 'root', '-g', 'cockpit-ws', '-m', '0640',
+                str(source / src_name), str(certs / target_name)] in calls
+        assert (certs / target_name).read_bytes() == (source / src_name).read_bytes()
+
+    calls.clear()
+    assert setup.main(['--web-console']) == 0
+    assert (etc / 'disallowed-users').read_text().splitlines() == ['another-user', 'root']
+    assert ['systemctl', 'restart', 'cockpit.socket'] not in calls
+    assert ['systemctl', 'try-restart', 'cockpit.service'] not in calls
+    calls.clear()
+    assert setup.main(['--no-web-console']) == 0
+    assert setup.main(['--no-web-console']) == 0
+    assert calls == [disable, ['systemctl', 'stop', 'cockpit.service']] * 2
+    assert not status.exists()
+
+
 @pytest.mark.parametrize('dns', ['local', 'loopback', 'unresolved'])
 def test_setup_without_arguments_selects_address_and_never_prompts(setup_host, monkeypatch, capsys, dns):
     setup, args, calls, _, path = setup_host

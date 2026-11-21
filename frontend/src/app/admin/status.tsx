@@ -71,6 +71,8 @@ export function SystemStatusPage() {
   const sourcesReady = !setup.isError && health && health.state !== "unavailable" && !health.diagnostics;
   const showSteps = sourcesReady && !(connected && channelReady && latest);
   const version = diagnostics.data?.release_metadata?.project_version;
+  const webConsole = diagnostics.data?.web_console;
+  const consoleUrl = access?.subject?.coarse_role === "admin" && !diagnostics.isError && webConsole?.available ? webConsole.url : null;
   const failed = (label: string, retry: () => unknown) => <p role="status">{t("systemStatus.failed", { table: label })} <button type="button" className="sli-ds-button" onClick={() => void retry()}>{t("systemStatus.retry")}</button></p>;
   const loading = (columns: number) => <LoadingRegion><TableSkeleton columns={columns}/></LoadingRegion>;
   const sourceColumns: TableColumn<(typeof sources)[number]>[] = [
@@ -88,11 +90,14 @@ export function SystemStatusPage() {
   ];
 
   return <section className="sli-ds-report">
-    <PageHeader title={t("shell.adminNav.status")} actions={<button type="button" className="sli-ds-button" disabled={exporting} onClick={() => {
-      setExporting(true);
-      void api.operations().then((data) => { downloadOperationsExport(data); setExportError(false); })
-        .catch(() => setExportError(true)).finally(() => setExporting(false));
-    }}>{t("systemStatus.download")}</button>} meta={<>
+    <PageHeader title={t("shell.adminNav.status")} actions={<>
+      {consoleUrl ? <a className="sli-ds-button" href={consoleUrl} target="_blank" rel="noopener noreferrer">{t("systemStatus.serverConsole")}</a> : null}
+      <button type="button" className="sli-ds-button" disabled={exporting} onClick={() => {
+        setExporting(true);
+        void api.operations().then((data) => { downloadOperationsExport(data); setExportError(false); })
+          .catch(() => setExportError(true)).finally(() => setExporting(false));
+      }}>{t("systemStatus.download")}</button>
+    </>} meta={<>
       {version ? <span>{t("systemStatus.version", { version, date: EMPTY_VALUE })} · </span> : null}
       <code>{updateCommand}</code> <button type="button" className="sli-ds-button" onClick={() => {
         void (async () => {

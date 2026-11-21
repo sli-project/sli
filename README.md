@@ -452,6 +452,10 @@ the rollback window. Before any cleanup, verify that the directory belongs to
 SLI on the intended mounted volume and that a separate recovery copy contains
 the needed ClickHouse history.
 
+## Administration
+
+Run `sudo sli-setup --web-console` to enable **Server console** on the **System status** page, then sign in with a Linux account that has sudo access.
+
 ## Security model
 
 HTTPS protects operator and agent connections. The generated installation command
