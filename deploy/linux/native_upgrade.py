@@ -1184,11 +1184,12 @@ def switch(root, manifest, manifest_digest, previous_receipt_path=None):
 def testing_units(transaction=None):
     from deploy.linux import native_install as install
 
-    for unit in ('sli-ready.service', 'sli-health.service', 'sli-dotnet-api.service'):
+    for unit in ('sli-ready.service', 'sli-health.service', 'sli-dotnet-api.service',
+                 'sli-dotnet-notification-setup.service'):
         path = VOLATILE_UNITS / (unit + '.d') / '90-sli-upgrade.conf'
         if transaction:
             ensure_directory(path.parent)
-            value = ('SLI_NATIVE_UPGRADE_TESTING=1' if unit == 'sli-dotnet-api.service'
+            value = ('SLI_NATIVE_UPGRADE_TESTING=1' if unit.startswith('sli-dotnet-')
                      else 'SLI_NATIVE_UPGRADE_TRANSACTION=' + transaction)
             path.write_text('[Service]\nEnvironment=' + value + '\n')
             path.chmod(0o644)

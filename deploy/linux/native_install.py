@@ -313,12 +313,13 @@ def validate_agents(site):
 
 
 def runtime_settings(site):
-    from deploy.linux.native_clickhouse_endpoint import health_host
+    from deploy.linux.native_clickhouse_endpoint import health_host, public_url
     validate_agents(site)
     address = site["bind"]
     url_host = health_host(address)
     return {"schema_version": 1, "profiles": ["light"], "radius_pilot": False,
             "agents": site.get("agents", False), "bind": address,
+            "public_url": public_url(site),
             **({"https_port": site["https_port"]} if "https_port" in site else {}),
             **({"owner_setup": site["owner_setup"]} if "owner_setup" in site else {}),
             **({"notification_proxy": site["notification_proxy"]} if "notification_proxy" in site else {}),

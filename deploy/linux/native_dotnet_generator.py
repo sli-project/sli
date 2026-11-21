@@ -23,7 +23,8 @@ def generate(runtime, release, destination, *, publication=None):
     for name, body in units.items():
         if publication is not None:
             packaged = f'/opt/sli/dotnet/{release}'
-            body = body.replace(f'ExecStart={packaged}/Sli.Server', f'ExecStart={publication.as_posix()}/Sli.Server')
+            for directive in ('ExecStart', 'ExecStartPre'):
+                body = body.replace(f'{directive}={packaged}/Sli.Server', f'{directive}={publication.as_posix()}/Sli.Server')
             body = body.replace(f'WorkingDirectory={packaged}\n', f'WorkingDirectory={publication.as_posix()}\n')
         with (destination / name).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(body)

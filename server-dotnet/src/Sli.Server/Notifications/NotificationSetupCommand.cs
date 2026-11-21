@@ -47,16 +47,25 @@ public static class NotificationSetupCommand
     }
     public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length != 0) { Console.Error.WriteLine("notification_setup_arguments_invalid"); return 1; }
+        bool native = Environment.GetEnvironmentVariable("SLI_NATIVE_NOTIFICATION_SETUP") == "1";
+        bool repair = native && args is ["--repair-public-urls"];
+        if (args.Length != 0 && !repair) { Console.Error.WriteLine("notification_setup_arguments_invalid"); return 1; }
+        // The candidate may still be rolled back. Repair on the committed start.
+        if (repair && Environment.GetEnvironmentVariable("SLI_NATIVE_UPGRADE_TESTING") == "1") return 0;
         if (!OperatingSystem.IsLinux()) { Console.Error.WriteLine("notification_setup_root_required:platform"); return 1; }
         string? path = null; bool bound = false;
         string step = "SLI_TELEGRAM_SECRET_DIR";
         try
         {
-            bool native = Environment.GetEnvironmentVariable("SLI_NATIVE_NOTIFICATION_SETUP") == "1";
             var files = new NotificationSetupFiles(Environment.GetEnvironmentVariable("SLI_TELEGRAM_SECRET_DIR") ?? "/var/lib/notification-secrets");
             var setup = new NotificationSetupService(files, new NotificationSetupBot(), Environment.GetEnvironmentVariable("SLI_PUBLIC_URL") ?? "", native,
                 Environment.GetEnvironmentVariable("SLI_NOTIFICATION_PROXY") ?? "");
+            if (repair)
+            {
+                step = "repair_public_urls";
+                setup.RepairPublicUrls();
+                return 0;
+            }
             path = Environment.GetEnvironmentVariable("SLI_TELEGRAM_SETUP_SOCKET") ?? "/run/notification-setup/control.sock";
             step = "sli_api_group";
             uint gid = 10001;

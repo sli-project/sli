@@ -19,6 +19,18 @@ def config():
     return native_install.runtime_settings(site.parse_site('notification_proxy = "http://proxy.example:3128"'))
 
 
+@pytest.mark.parametrize(("name", "port", "origin"), [
+    ("sli.example.test", 443, "https://sli.example.test"),
+    ("sli.example.test", 8443, "https://sli.example.test:8443"),
+    ("2001:db8::10", 9443, "https://[2001:db8::10]:9443"),
+])
+def test_native_install_provisions_notification_public_origin(name, port, origin):
+    config = native_install.runtime_settings(site.parse_site(
+        f'bind = "0.0.0.0"\nserver_name = "{name}"\nhttps_port = {port}'))
+    unit = runtime.dotnet_units("test", config)["sli-dotnet-notification-setup.service"]
+    assert f'Environment="SLI_PUBLIC_URL={origin}"\n' in unit
+
+
 def test_notification_units_credentials_users_and_target(config):
     units = runtime.dotnet_units("test", config)
     body = units["sli-dotnet-notification-delivery.service"]

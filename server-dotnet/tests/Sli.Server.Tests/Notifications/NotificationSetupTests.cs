@@ -19,6 +19,69 @@ public sealed class NotificationSetupTests
         body["action"] = "smtp_save"; body["user_id"] = 7L; body["previous_revision"] = previous; body["revision"] = previous + 1; body["password"] = password;
         return body;
     }
+    [Fact]
+    public async Task FreshSetupUsesThePublicOriginForBothChannels()
+    {
+        var files = new NotificationMemoryFiles();
+        var service = new NotificationSetupService(files, new NotificationBotStub(), "https://sli.example.test", native: true);
+        await service.HandleAsync(J("""{"action":"token","user_id":7,"token":"1:synthetic"}"""), Ct);
+        await service.HandleAsync(SmtpRequest(), Ct);
+        foreach (string name in new[] { "telegram.json", "smtp.json" })
+            Assert.Equal("https://sli.example.test/app", JsonNode.Parse(files.Read(name))!["base_url"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("https://127.0.0.1:443/app", true)]
+    [InlineData("https://127.2.3.4/app", true)]
+    [InlineData("https://[::1]:443/app", true)]
+    [InlineData("https://localhost/app", true)]
+    [InlineData("https://admin.example.test/app", false)]
+    public async Task UpgradeRepairsOnlyLoopbackNotificationUrls(string oldUrl, bool repair)
+    {
+        const string publicOrigin = "https://sli.example.test";
+        var files = new NotificationMemoryFiles();
+        var bot = new NotificationBotStub();
+        await new NotificationSetupService(files, bot, oldUrl).HandleAsync(SmtpRequest(), Ct);
+        files.Values["telegram.json"] = Encoding.UTF8.GetBytes(
+            $$"""{"recipients": {"7":"123"}, "base_url" : "{{oldUrl}}", "names":{"7":"Example"}, "proxy_url":"http://proxy.example.test:3128"}""");
+        files.Values["notification_telegram_token"] = "1:synthetic"u8.ToArray();
+        var before = files.Values.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+        files.Writes.Clear();
+
+        new NotificationSetupService(files, bot, publicOrigin, native: true).RepairPublicUrls();
+
+        foreach (string name in new[] { "telegram.json", "smtp.json" })
+        {
+            var expected = repair ? Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(before[name])
+                .Replace(oldUrl, publicOrigin + "/app", StringComparison.Ordinal)) : before[name];
+            Assert.Equal(expected, files.Read(name));
+        }
+        Assert.Equal(before["notification_telegram_token"], files.Read("notification_telegram_token"));
+        Assert.Equal(before["notification_smtp_password"], files.Read("notification_smtp_password"));
+        Assert.DoesNotContain("notification_telegram_token", files.Writes);
+        Assert.DoesNotContain("notification_smtp_password", files.Writes);
+        Assert.Equal("synthetic-password", SetupSmtpSnapshot.Read(files, 2).Password);
+        if (!repair) Assert.Empty(files.Writes);
+    }
+
+    [Fact]
+    public async Task UpgradeCanResumeBetweenSmtpMarkerAndConfigWrites()
+    {
+        var files = new NotificationMemoryFiles();
+        var bot = new NotificationBotStub();
+        await new NotificationSetupService(files, bot, "https://localhost").HandleAsync(SmtpRequest(), Ct);
+        var service = new NotificationSetupService(files, bot, "https://sli.example.test", native: true);
+        files.FailOn = "smtp.json";
+        Assert.Throws<IOException>(service.RepairPublicUrls);
+        Assert.Throws<NotificationException>(() => SetupSmtpSnapshot.Read(files, 2));
+        files.FailOn = null;
+        service.RepairPublicUrls();
+        Assert.Equal("https://sli.example.test/app", SetupSmtpSnapshot.Read(files, 2).Config["base_url"]!.GetValue<string>());
+        files.Writes.Clear();
+        service.RepairPublicUrls();
+        Assert.Empty(files.Writes);
+    }
+
     [Fact] public async Task SmtpPublicationUsesReferenceDigestAndIsReadableByExistingSender()
     {
         var files = new NotificationMemoryFiles(); var service = new NotificationSetupService(files, new NotificationBotStub(), "https://sli.invalid");
