@@ -95,12 +95,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       risk-areas: ${{ steps.diff.outputs.risk-areas }}
-      pr-postgres: ${{ steps.diff.outputs.pr-postgres }}
+      pr-postgres: ${{ steps.diff.outputs.postgres }}
+      pr-checkpoint: ${{ steps.diff.outputs.checkpoint }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           filter: blob:none
       - id: diff
@@ -112,8 +112,7 @@ jobs:
           # Count both paths when a rename crosses a risk boundary.
           areas=$(git diff --name-only --no-renames -z "$BASE...$HEAD" | python3 scripts/ci/server_dotnet_risk.py)
           echo "risk-areas=$areas" >> "$GITHUB_OUTPUT"
-          postgres=$(bash scripts/ci/pr_python_scope.sh "$BASE" "$HEAD")
-          echo "pr-postgres=$postgres" >> "$GITHUB_OUTPUT"
+          python3 -m scripts.ci.pr_scope --diff "$BASE" "$HEAD" --github-output "$GITHUB_OUTPUT"
 
   server-build:
     timeout-minutes: 20
@@ -335,11 +334,14 @@ jobs:
           PROFILE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }}
           RISK_AREAS: ${{ needs.changes.outputs.risk-areas }}
           PR_POSTGRES: ${{ needs.changes.outputs.pr-postgres }}
+          PR_CHECKPOINT: ${{ needs.changes.outputs.pr-checkpoint }}
           EVENT: ${{ github.event_name }}
         run: |
           covered=(--covered-by source-vectors)
           if [ "$EVENT" = pull_request ]; then
-            covered+=(--covered-by pr-python)
+            if [ "$PR_CHECKPOINT" = true ]; then
+              covered+=(--covered-by pr-python)
+            fi
             if [ "$PR_POSTGRES" = true ]; then
               covered+=(--covered-by pr-postgres)
             fi
