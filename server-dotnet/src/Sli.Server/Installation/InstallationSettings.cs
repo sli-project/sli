@@ -36,6 +36,13 @@ public static class InstallationSettings
     {
         if (!Specs.ContainsKey(key)) throw new InstallationException("unknown_setting", 404);
         if (key == "reports.domain_fqdn") return Dns(value);
+        if (key == Agents.SnapshotPublication.AdSnapshotSchedule.SettingKey)
+        {
+            string zone = PythonText.Strip(value);
+            if (zone == Agents.SnapshotPublication.AdSnapshotSchedule.UseHost || Agents.SnapshotPublication.AdSnapshotSchedule.FindIanaZone(zone) is not null)
+                return zone;
+            throw new InstallationException("invalid_server_timezone");
+        }
         if (key == "security.working_time") return WorkingTime(value);
         if (key == "workstations.logon_policy") return LogonPolicy(value);
         if (key == "ad.service_account_exceptions") return Json(Exceptions(value));

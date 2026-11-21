@@ -18,10 +18,11 @@ public static class AdSnapshotPreparation
     static readonly HashSet<string> Blocking = ["directory_accounts_truncated", "directory_accounts_failed", "directory_group_graph_truncated", "directory_group_memberships_truncated", "directory_group_links_unresolved", "directory_group_graph_failed", "exact_last_logon_users_truncated", "exact_last_logon_dc_coverage_partial", "directory_exact_logon_failed"];
     public static IReadOnlyDictionary<string, JsonObject> Prepare(JsonObject policy, IReadOnlyDictionary<string, JsonObject> families)
     {
-        Require(families.Keys.ToHashSet().SetEquals(SnapshotPolicy.AdFamilies), "agent_ad_required_families_missing");
+        Agents.SnapshotPublication.AdPublicationPreparation.ValidateFamilies(policy, families.Keys);
         var bundles = new Dictionary<string, JsonObject>();
         foreach (var (family, sections) in Sections)
         {
+            if (!families.ContainsKey(family)) continue;
             var bundle = AdContextBundle.Normalize(families[family]);
             Require(bundle["domain"]!.Text("sid") == policy.Text("domain_sid") && bundle["domain"]!.Text("dns_name") == policy.Text("domain_dns") && bundle["sections"]!.AsArray().Select(s => s!.Text("name")).SequenceEqual(sections));
             bundles.Add(family, bundle);
@@ -60,7 +61,7 @@ public static class AdSnapshotPreparation
         foreach (var (family, area, key) in new[] { ("ad_privileged_membership", "privileged", "privileged_group_sids"), ("ad_vpn_membership", "vpn", "vpn_group_sids") })
         {
             var refs = policy["groups"]!.AsArray().Select(n => n!.GetValue<string>()).Where(s => area == "vpn" ? s.StartsWith("vpn:") : !s.StartsWith("vpn:")).Select(s => s.StartsWith("privileged:") ? s[11..] : s.StartsWith("vpn:") ? s[4..] : s).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var bundle = bundles[family];
+            if (!bundles.TryGetValue(family, out var bundle)) continue;
             var groups = bundle["records"]!.AsArray().Where(r => r!.Text("record_type") == "entity" && r!["identity"]!.Text("kind") == "ad_group").ToArray();
             var resolved = groups.Where(r => refs.Contains(r!["identity"]!.Text("object_sid") ?? "") || refs.Contains(r!["attributes"]!.Text("distinguished_name") ?? "")).Select(r => r!["identity"]!.Text("object_sid") ?? "").ToHashSet(StringComparer.OrdinalIgnoreCase);
             Require(resolved.SetEquals(bundle["scope"]![key]!.AsArray().Select(n => n!.ToString())), "agent_ad_group_scope_mismatch");
@@ -72,7 +73,7 @@ public static class AdSnapshotPreparation
         var expectedGuids = baseBundle["records"]!.AsArray().Where(r => r!.Text("record_type") == "entity" && r.Text("section") == "directory_accounts" && r!["identity"]!.Text("kind") == "ad_computer").Select(r => r!["identity"]!.Text("object_guid")).ToHashSet();
         Require(expectedGuids.SetEquals(computers["objects"]!.AsArray().Select(r => r!.Text("objectGuid"))), "agent_ad_computer_population_mismatch");
         long count = bundles.Values.Sum(b => b["records"]!.AsArray().Count) + computers["objects"]!.AsArray().Count;
-        long bytes = Sections.Keys.Sum(family => CanonicalJson.Length(families[family]));
+        long bytes = bundles.Keys.Sum(family => CanonicalJson.Length(families[family]));
         Require(count <= policy.Int("max_objects") && bytes <= policy.Int("max_bytes"), "agent_ad_size_limit");
         return bundles;
     }

@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Text.Json.Nodes;
-using System.Runtime.InteropServices;
 using Npgsql;
 using Sli.Server.Legacy;
 using Sli.Server.Hosting;
@@ -51,10 +50,7 @@ public static class AdCoordinatorCommand
         var once = new Option<bool>("--once"); var immediate = new Option<bool>("--no-initial-delay");
         var root = new RootCommand("Acquire, publish and verify exact AD snapshots at 06/18 Asia/Novosibirsk.");
         root.Options.Add(once); root.Options.Add(immediate);
-        root.SetAction(async (parse, invocation) => {
-            using var stop = CancellationTokenSource.CreateLinkedTokenSource(invocation);
-            using var signal = OperatingSystem.IsLinux() ? PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; stop.Cancel(); }) : null;
-            var ct = stop.Token;
+        root.SetAction((parse, invocation) => WorkerShutdown.RunAsync(async ct => {
             if ((Environment.GetEnvironmentVariable("SLI_LEGACY_COLLECTION_DISABLED") ?? "0").Trim() != "0")
                 throw new WorkerFailure("admission", "legacy_collection_disabled");
             if (Environment.GetEnvironmentVariable("SLI_CORE_JOB_AD_GPO_PILOT") == "1") return 0;
@@ -136,13 +132,12 @@ public static class AdCoordinatorCommand
                 catch (Exception error) { Console.Error.WriteLine("ad_snapshot_coordinator_heartbeat_unavailable:" + WorkerFailure.Describe(error, "heartbeat")); }
             }, Task.Delay);
             return await loop.RunAsync(parse.GetValue(once), parse.GetValue(immediate), ct);
-        });
+        }, invocation));
         try {
             var parsed = root.Parse(args, new ParserConfiguration { ResponseFileTokenReplacer = null });
-            int exit = await parsed.InvokeAsync(new InvocationConfiguration { EnableDefaultExceptionHandler = false });
+            int exit = await parsed.InvokeAsync(new InvocationConfiguration { EnableDefaultExceptionHandler = false, ProcessTerminationTimeout = null });
             return parsed.Errors.Count > 0 ? 2 : exit;
         }
-        catch (OperationCanceledException) { return 0; }
         catch (Exception error) { Console.Error.WriteLine("ad_snapshot_coordinator_failed:" + WorkerFailure.Describe(error, "coordinator_startup")); return 1; }
     }
 }

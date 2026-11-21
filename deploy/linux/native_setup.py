@@ -218,6 +218,81 @@ def replace_text(path, body, *, mode=0o600):
         Path(temporary).unlink(missing_ok=True)
 
 
+COCKPIT_DIR = Path('/etc/cockpit')
+COCKPIT_SOCKET = Path('/usr/lib/systemd/system/cockpit.socket')
+COCKPIT_STATUS = Path('/run/sli-cockpit/terminal.json')
+COCKPIT_DROP_IN = '''[Unit]
+ConditionPathExists=/etc/cockpit/ws-certs.d/99-sli.cert
+ConditionPathExists=/etc/cockpit/ws-certs.d/99-sli.key
+ConditionPathExists=/etc/cockpit/sli-terminal.json
+
+[Socket]
+ListenStream=
+ListenStream=9090
+RuntimeDirectory=sli-cockpit
+RuntimeDirectoryMode=0755
+ExecStartPre=/usr/bin/grep -qxF root /etc/cockpit/disallowed-users
+ExecStartPost=/usr/bin/install -m 0644 /etc/cockpit/sli-terminal.json /run/sli-cockpit/terminal.json
+ExecStopPost=-/usr/bin/rm -f /run/sli-cockpit/terminal.json
+'''
+
+
+def enable_web_console(machine, site):
+    code = 'native_web_console_setup_failed'
+    # APT can start a new socket. Require configured TLS and the root deny entry first.
+    machine.write('/etc/systemd/system/cockpit.socket.d/50-sli.conf', COCKPIT_DROP_IN, 0o644)
+    command(['systemctl', 'daemon-reload'], code=code)
+    command(['apt-get', 'install', '-y', '--no-install-recommends',
+             'cockpit-ws', 'cockpit-system', 'cockpit-bridge'], code=code, timeout=None)
+    command(['groupadd', '--force', '--system', 'cockpit-ws'], code=code)
+
+    disallowed = COCKPIT_DIR / 'disallowed-users'
+    policy = install.trusted(disallowed).decode() if disallowed.exists() or disallowed.is_symlink() else None
+    root_added = policy is None or 'root' not in policy.splitlines()
+    if policy is None:
+        machine.write(str(disallowed), 'root\n', 0o644)
+    elif root_added:
+        replace_text(disallowed, policy + ('\n' if policy and not policy.endswith('\n') else '') + 'root\n', mode=0o644)
+
+    terminal = COCKPIT_DIR / 'sli-terminal.json'
+    body = json.dumps({'url': url({**site, 'https_port': 9090}) + '/system/terminal'}) + '\n'
+    previous = install.trusted(terminal).decode() if terminal.exists() or terminal.is_symlink() else None
+    if previous is None:
+        machine.write(str(terminal), body, 0o644)
+    elif previous != body:
+        replace_text(terminal, body, mode=0o644)
+
+    certificates = COCKPIT_DIR / 'ws-certs.d'
+    host.ensure_directory(certificates)
+    info = certificates.stat()
+    require(info.st_uid == 0 and not info.st_mode & 0o022, code)
+    tls_changed = False
+    for source, name in (('tls_certificate', '99-sli.cert'), ('tls_key', '99-sli.key')):
+        target = certificates / name
+        if target.exists() or target.is_symlink():
+            install.trusted_path(target)
+        src = install.trusted_path(install.SECRETS / source)
+        copied = command(['/usr/bin/install', '-Cv', '-o', 'root', '-g', 'cockpit-ws', '-m', '0640',
+                          str(src), str(target)], code=code)
+        tls_changed |= bool(copied)
+
+    was_running = COCKPIT_STATUS.is_file()
+    command(['systemctl', 'enable', '--now', 'cockpit.socket'], code=code)
+    # An already running Cockpit socket may predate the SLI drop-in.
+    if not COCKPIT_STATUS.is_file() or (was_running and previous != body):
+        command(['systemctl', 'restart', 'cockpit.socket'], code=code)
+    require(COCKPIT_STATUS.is_file(), code)
+    if root_added or tls_changed:
+        command(['systemctl', 'try-restart', 'cockpit.service'], code=code)
+
+
+def disable_web_console():
+    if COCKPIT_SOCKET.is_file():
+        code = 'native_web_console_disable_failed'
+        command(['systemctl', 'disable', '--now', 'cockpit.socket'], code=code)
+        command(['systemctl', 'stop', 'cockpit.service'], code=code)
+
+
 def owner_recovery(username):
     """Issue only to the root terminal using the verified installed runtime."""
     require(sys.stdout.isatty(), 'native_owner_recovery_terminal_required')
@@ -425,6 +500,8 @@ def configure(args):
     browser_url = url(site) + '/app'
     print('SLI: ' + browser_url)
     wait_api()
+    if getattr(args, 'web_console', False):
+        enable_web_console(machine, site)
     print('Public TLS CA: /var/lib/sli/tls-ca.crt')
     certificate = ssl.PEM_cert_to_DER_cert(ca)
     fingerprint = hashlib.sha256(certificate).hexdigest().upper()
@@ -455,11 +532,15 @@ def main(argv=None):
     parser.add_argument('--cold-tablespace-root', help='Каталог ёмкого диска для холодных таблиц PostgreSQL')
     parser.add_argument('--non-interactive', action='store_true')
     parser.add_argument('--reuse-existing', action='store_true', help='Upgrade retained SLI data using the newly installed package release')
-    owner = parser.add_mutually_exclusive_group()
-    owner.add_argument('--reset-admin-password', action='store_true', help='Reset the primary owner password to admin and require a change')
-    owner.add_argument('--owner-recovery', metavar='USERNAME', help='Root terminal: issue a single-use recovery code (10 minutes; password still required)')
-    owner.add_argument('--initial-admin', nargs=2, metavar=('MODE', 'RELEASE'), help=argparse.SUPPRESS)
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument('--web-console', action='store_true', help='Install and enable the Cockpit web console on port 9090')
+    action.add_argument('--no-web-console', action='store_true', help='Disable the Cockpit web console')
+    action.add_argument('--reset-admin-password', action='store_true', help='Reset the primary owner password to admin and require a change')
+    action.add_argument('--owner-recovery', metavar='USERNAME', help='Root terminal: issue a single-use recovery code (10 minutes; password still required)')
+    action.add_argument('--initial-admin', nargs=2, metavar=('MODE', 'RELEASE'), help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.reuse_existing and (args.web_console or args.no_web_console):
+        parser.error('--reuse-existing cannot be combined with a web console option')
     try:
         require(os.geteuid() == 0, 'native_root_required')
         os.umask(0o022)
@@ -478,6 +559,9 @@ def main(argv=None):
         elif args.reset_admin_password:
             with setup_lock():
                 run_initial_admin('reset')
+        elif args.no_web_console:
+            with setup_lock():
+                disable_web_console()
         else:
             with setup_lock():
                 configure(args)

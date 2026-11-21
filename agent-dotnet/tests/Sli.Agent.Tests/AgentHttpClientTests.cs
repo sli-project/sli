@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.ComponentModel;
 using System.Security.Authentication;
 using System.Security.Cryptography;
@@ -26,7 +27,8 @@ public class AgentHttpClientTests
         }
     }
 
-    private static AgentHttpClient Client(StubHandler handler) => new(new HttpClient(handler) { BaseAddress = new Uri("https://core.example.test/") });
+    private static AgentHttpClient Client(StubHandler handler, bool clientCertificateConfigured = false) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("https://core.example.test/") }, clientCertificateConfigured);
 
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
@@ -60,6 +62,8 @@ public class AgentHttpClientTests
     [Theory]
     [InlineData(HttpStatusCode.BadRequest)]
     [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.Created)]
     public async Task UnknownServerErrorsExposeOnlyTheStatus(HttpStatusCode status)
@@ -67,6 +71,7 @@ public class AgentHttpClientTests
         using var client = Client(new StubHandler((_, _) => Task.FromResult(Json("{\"error\":\"agent_authentication_failed\"}", status))));
         var exception = await Assert.ThrowsAsync<TransportException>(() => client.PostAsync("/x", new JsonObject(), CancellationToken.None));
         Assert.Equal($"agent_server_rejected_{(int)status}", exception.Code);
+        Assert.Equal($"Server returned HTTP {(int)status}.", exception.Detail);
         Assert.DoesNotContain("authentication", exception.Message, StringComparison.Ordinal);
     }
 
@@ -83,6 +88,7 @@ public class AgentHttpClientTests
         var error = await Assert.ThrowsAsync<TransportException>(() => client.PostAsync("/api/v1/agent/enroll", new JsonObject(), CancellationToken.None));
         Assert.Equal(expected, error.Code);
         Assert.Equal(expected, error.Message);
+        Assert.Equal("Server returned HTTP 400.", error.Detail);
         Assert.Null(error.InnerException);
     }
 
@@ -128,7 +134,9 @@ public class AgentHttpClientTests
     [InlineData(unchecked((int)0x8009000B), "agent_tls_client_key_unusable")]
     [InlineData(unchecked((int)0x80090325), "agent_tls_server_untrusted")]
     [InlineData(unchecked((int)0x800B0109), "agent_tls_server_untrusted")]
-    [InlineData(unchecked((int)0x80090328), "agent_tls_server_untrusted")]
+    [InlineData(unchecked((int)0x80090328), "agent_tls_server_expired")]
+    [InlineData(unchecked((int)0x800B0101), "agent_tls_server_expired")]
+    [InlineData(unchecked((int)0x80090327), "agent_tls_client_rejected")]
     [InlineData(unchecked((int)0x80090322), "agent_tls_name_mismatch")]
     [InlineData(unchecked((int)0x800B010F), "agent_tls_name_mismatch")]
     [InlineData(unchecked((int)0x80090326), "agent_transport_failed")]
@@ -140,6 +148,48 @@ public class AgentHttpClientTests
         var error = await Assert.ThrowsAsync<TransportException>(() => client.GetAsync("/x", CancellationToken.None));
         Assert.Equal(expected, error.Code);
         Assert.Equal(expected, error.Message);
+        Assert.Null(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80090325))]
+    [InlineData(unchecked((int)0x80090328))]
+    [InlineData(unchecked((int)0x80092010))]
+    public async Task NativePeerTrustAlertsIdentifyTheClientCertificateOnMutualTls(int nativeCode)
+    {
+        var failure = new HttpRequestException(HttpRequestError.SecureConnectionError, "secret URL",
+            new AuthenticationException("private TLS details", new Win32Exception(nativeCode)));
+        using var client = Client(new StubHandler((_, _) => throw failure), clientCertificateConfigured: true);
+        var error = await Assert.ThrowsAsync<TransportException>(() => client.GetAsync("/x", CancellationToken.None));
+        Assert.Equal("agent_tls_client_rejected", error.Code);
+        Assert.Equal("The server rejected the agent certificate during TLS.", error.Detail);
+    }
+
+    [Theory]
+    [InlineData(SocketError.HostNotFound, "agent_dns_failed", "Could not resolve the server name.")]
+    [InlineData(SocketError.ConnectionRefused, "agent_tcp_refused", "The server refused the TCP connection.")]
+    [InlineData(SocketError.TimedOut, "agent_http_timeout", "The connection or response from the server timed out.")]
+    public async Task SocketFailuresHaveSafeDetails(SocketError socketError, string code, string detail)
+    {
+        using var client = Client(new StubHandler((_, _) => throw new HttpRequestException("secret URL", new SocketException((int)socketError))));
+        var error = await Assert.ThrowsAsync<TransportException>(() => client.GetAsync("/x", CancellationToken.None));
+        Assert.Equal(code, error.Code);
+        Assert.Equal(detail, error.Detail);
+        Assert.Null(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData("Authentication failed because the remote party sent a TLS alert: 'BadCertificate'.", "agent_tls_client_rejected")]
+    [InlineData("SSL routines:tlsv1 alert unknown ca", "agent_tls_client_rejected")]
+    [InlineData("SSL routines:tlsv13 alert certificate required", "agent_tls_client_rejected")]
+    [InlineData("Authentication failed because the remote party sent a TLS alert: 'HandshakeFailure'.", "agent_tls_handshake_failed")]
+    public async Task OnlyExplicitPeerCertificateAlertsIdentifyClientCertificateRejection(string alert, string expected)
+    {
+        using var client = Client(new StubHandler((_, _) => throw new HttpRequestException(HttpRequestError.SecureConnectionError,
+            "secret URL", new AuthenticationException("TLS failed", new CryptographicException(alert + " private certificate data")))));
+        var error = await Assert.ThrowsAsync<TransportException>(() => client.GetAsync("/x", CancellationToken.None));
+        Assert.Equal(expected, error.Code);
+        Assert.DoesNotContain("private", error.Detail, StringComparison.Ordinal);
         Assert.Null(error.InnerException);
     }
 
@@ -156,11 +206,12 @@ public class AgentHttpClientTests
     [InlineData("agent_tls_client_key_unusable", "agent_tls_client_key_unusable")]
     [InlineData("agent_tls_server_untrusted", "agent_tls_server_untrusted")]
     [InlineData("agent_tls_name_mismatch", "agent_tls_name_mismatch")]
+    [InlineData("agent_tls_server_expired", "agent_tls_server_expired")]
     [InlineData("private certificate details", "agent_transport_failed")]
     public async Task ValidationCallbackDiagnosticsAreAllowlisted(string innerCode, string expected)
     {
         var failure = new HttpRequestException("secret", new AuthenticationException("private", new TransportException(innerCode)));
-        using var client = Client(new StubHandler((_, _) => throw failure));
+        using var client = Client(new StubHandler((_, _) => throw failure), clientCertificateConfigured: true);
         var error = await Assert.ThrowsAsync<TransportException>(() => client.GetAsync("/x", CancellationToken.None));
         Assert.Equal(expected, error.Message);
         Assert.Null(error.InnerException);
@@ -197,6 +248,7 @@ public class AgentHttpClientTests
         using var client = Client(new StubHandler((_, _) => Task.FromResult(Json("private server response", status))));
         var error = await Assert.ThrowsAsync<TransportException>(() => client.PostAsync("/api/v1/agent/enroll", new JsonObject(), CancellationToken.None));
         Assert.Equal("agent_bootstrap_rejected", error.Code);
+        Assert.Equal($"Server returned HTTP {(int)status}.", error.Detail);
         Assert.DoesNotContain("private", error.Message, StringComparison.Ordinal);
     }
 

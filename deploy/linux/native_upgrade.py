@@ -78,6 +78,7 @@ FAILURE_MESSAGES = {
     'native_host_busy': 'Another native administrative operation is running. Retry the upgrade after it finishes.',
     'native_backup_secret_missing': 'A required online backup credential is missing.',
     'native_install_api_unready': 'The candidate API did not become ready.',
+    'native_api_tls_untrusted': 'The candidate API TLS certificate failed verification.',
     'native_install_workers_unhealthy': 'The candidate worker health checks did not pass.',
     'native_install_command_failed': 'A required native service or migration command failed.',
     'native_upgrade_service_unready': 'A required application service is not running.',
@@ -100,6 +101,8 @@ FAILURE_MESSAGES = {
     'native_upgrade_recovery_pending': 'Checkpoint recovery is incomplete; run resume-package again to finish restoring the previous release.',
     'native_upgrade_candidate_missing': 'The unpacked candidate release is missing; repeat the package installation before resuming.',
     'native_upgrade_restore_databases_unready': 'The database engines are still recovering or unavailable; retry resume-package when they are ready.',
+    'linux_restore_invalid_postgres_database_acl': 'The checkpoint has no readable PostgreSQL database privileges.',
+    'linux_restore_postgres_database_acl_failed': 'PostgreSQL did not restore the checkpoint database privileges.',
     'native_upgrade_package_recovery_failed': 'The interrupted package state could not be finalized; check package manager diagnostics and retry resume-package.',
     'native_upgrade_service_failed': 'The upgrade service failed; inspect journalctl -u sli-upgrade-* and resume the transaction.',
 }
@@ -165,7 +168,8 @@ def recover_service_failure(unit, transaction):
         return None  # The ordinary exception handler already recovered/published.
     if journal.value['status'] == 'aborted_before_checkpoint' and journal.value.get('services_restored'):
         return None
-    state = subprocess.run(['/usr/bin/systemctl', 'show', unit, '--property=ActiveState,MainPID,Result,ControlGroup'],
+    state = subprocess.run(['/usr/bin/systemctl', 'show', unit,
+                            '--property=ActiveState,MainPID,Result,ControlGroup,ExecMainStatus'],
                            capture_output=True, text=True, check=False, timeout=10)
     fields = dict(line.split('=', 1) for line in state.stdout.splitlines() if '=' in line)
     if fields.get('ActiveState') not in {'inactive', 'failed'} or fields.get('MainPID') != '0':
@@ -183,8 +187,10 @@ def recover_service_failure(unit, transaction):
         journal = Journal(journal.path)
         value = journal.value
         code = 'operation_stalled' if fields.get('Result') == 'watchdog' else 'native_upgrade_service_failed'
-        value['failure_reason_code'] = code
-        journal.write()
+        exit_code = fields.get('ExecMainStatus', '')
+        record_failure(journal, install.UnitCommandFailure(unit, int(exit_code) if exit_code.isdigit() else None,
+                                                          failure_message(code), code=code),
+                       recovery=bool(value.get('recovery_in_progress')))
         if value['status'] in {'preflight', 'fenced', 'aborted_before_checkpoint'}:
             require(runtime.release()[0].name == value['previous'], 'native_upgrade_intent_mismatch')
             value.update(status='aborted_before_checkpoint', step='before', services_restored=False)
@@ -215,6 +221,20 @@ def failure_code(error):
 
 def failure_message(code):
     return FAILURE_MESSAGES.get(code, 'The native upgrade could not be completed; inspect its transaction result.')
+
+
+def record_failure(journal, error, *, recovery=False):
+    from deploy.linux.native_install import UnitCommandFailure
+
+    code = failure_code(error)
+    detail = (error.detail if isinstance(error, UnitCommandFailure) else
+              {'error': failure_message(code) if code != 'native_upgrade_failed' else type(error).__name__})
+    prefix = 'recovery_failure' if recovery else 'failure'
+    if not recovery and 'activation_stage' in journal.value:
+        detail = dict(detail, operation=journal.value['activation_stage'])
+    journal.value.update({prefix + '_reason_code': code,
+                          prefix + '_detail': {'phase': journal.value['status'], **detail}})
+    journal.write()
 
 
 def digest(path, *, progress=False):
@@ -439,6 +459,7 @@ def fence():
     # Stop scheduling before draining; stopping API gives clients a retryable
     # transport failure and never acknowledges an uncommitted import.
     stop_units(('sli-backup.timer', 'sli-health.timer'))
+    stop_units(('sli-health.service',))
     stop_units(('sli-backup.service', 'sli-backup-drill.service'), timeout=600)
     runtime.stop_services(('api',), timeout=180)
     runtime.stop_writers()  # Cooperative SIGTERM plus every MainPID/cgroup readback.
@@ -1186,12 +1207,22 @@ def start_checked(checked_runtime=None):
     install.command(['systemctl', 'start', 'sli-ready.service'])
     target = 'sli-dotnet.target' if unit_name('api').startswith('sli-dotnet-') else 'sli-runtime.target'
     install.command(['systemctl', 'start', target])
-    install.wait_api(config)
+    try:
+        install.wait_api(config)
+    except RuntimeError as error:
+        code = failure_code(error)
+        if code not in {'native_install_api_unready', 'native_api_tls_untrusted'}:
+            raise
+        unit = unit_name('api')
+        raise install.UnitCommandFailure(unit, None, failure_message(code), code=code) from None
     install.wait_health()
     for service in runtime.selected(config):
         row = runtime.systemd(service)
-        require(row.get('ActiveState') == 'active' and int(row.get('MainPID', '0')) > 1,
-                'native_upgrade_service_unready')
+        if row.get('ActiveState') != 'active' or int(row.get('MainPID', '0')) <= 1:
+            unit = unit_name(service)
+            exit_code = int(row['ExecMainStatus']) if row.get('ExecMainStatus', '').isdigit() else None
+            raise install.UnitCommandFailure(unit, exit_code, f'{unit} has no active main process.',
+                                             code='native_upgrade_service_unready')
 
 
 def publish(journal, status, *, terminal=True, reason_code=None, **values):
@@ -1200,6 +1231,9 @@ def publish(journal, status, *, terminal=True, reason_code=None, **values):
     if reason_code or 'failure_reason_code' in journal.value:
         code = reason_code or journal.value['failure_reason_code']
         values.update(reason_code=code, message=failure_message(code))
+    for name in ('failure_detail', 'recovery_failure_detail'):
+        if name in journal.value:
+            values[name] = journal.value[name]
     if journal.value.get('operation_durations'):
         values['operation_durations'] = journal.value['operation_durations']
     verification = journal.value.get('checkpoint_verification', 'restore')
@@ -1312,14 +1346,20 @@ def activate(journal, candidate):
     journal.write()
     if not prepared:
         fence()
+    journal.value['activation_stage'] = 'configuring_candidate'
     configure_candidate(root, manifest)
     switch(root, manifest, manifest_digest)
     testing_units(journal.path.name)
+    journal.value['activation_stage'] = 'checking_candidate_readiness'
     start_checked()
     # Save accepted management code without the temporary test overrides.
+    # stop_writers accepts a failed stop exit only after proving every writer dead.
+    journal.value['activation_stage'] = 'stopping_verified_candidate'
     fence()
     testing_units()
+    journal.value['activation_stage'] = 'saving_candidate_recovery'
     install.preserve_recovery(root, manifest, manifest_digest)
+    journal.value.pop('activation_stage')
     if journal.value['step'] == 'before':
         journal.complete()
     journal.transition('committed')
@@ -1389,7 +1429,7 @@ def recover_compatible(journal):
     # The same closed-ingress health gate validates the restored release.
     journal.value.update(testing_release=root.name)
     journal.transition('candidate_testing')
-    if journal.value.get('reuse_existing'):
+    if journal.value.get('reuse_existing') or journal.value.get('dotnet_coordinator'):
         start_checked(retained_runtime(recovery))
     else:
         start_checked()
@@ -1409,7 +1449,7 @@ def finish_rollback(journal):
     if journal.value['step'] == 'before':
         journal.complete(accepted_release=journal.value['previous'])
     publish(journal, 'rolled_back', accepted_release=journal.value['previous'], package_reconciliation_required=True)
-    if journal.value.get('reuse_existing'):
+    if journal.value.get('reuse_existing') or journal.value.get('dotnet_coordinator'):
         recovery, _ = verify_recovery(journal.value['previous'])
         start_checked(retained_runtime(recovery))
     else:
@@ -1452,14 +1492,14 @@ def configure_package(release, version):
             with install.setup_deadline():
                 _configure_package(journal, release)
         except Exception as error:
-            journal.value['failure_reason_code'] = failure_code(error)
-            journal.write()
+            record_failure(journal, error, recovery=bool(journal.value.get('recovery_in_progress')))
             if journal.value['status'] != 'committed':
                 try:
                     # Recovery is outside the expired watchdog. Its operations
                     # retain their own progress watches and cancellation cleanup.
                     recover_compatible(journal)
-                except Exception:
+                except Exception as recovery_error:
+                    record_failure(journal, recovery_error, recovery=True)
                     fenced = False
                     try:
                         fence()

@@ -67,6 +67,21 @@ it("denies before loading inventory without owner or access.manage", () => {
 });
 
 it.each([
+  ["en", "Agent certificate was revoked. Register the agent again."],
+  ["ru", "Сертификат агента отозван. Зарегистрируйте агент заново."],
+] as const)("shows the certificate rejection in the action cell for the matched agent (%s)", async (locale, message) => {
+  setLocale(locale);
+  const other = { ...agent, id: "00000000-0000-4000-8000-000000000003", host_id: "00000000-0000-4000-8000-000000000004",
+    host_name: "other-fixture" };
+  state.list.mockResolvedValue({ items: [{ ...agent, last_seen: new Date().toISOString(), certificate_rejection_reason: "revoked" }, other] });
+  mount();
+  const row = (await screen.findByText("fixture-host")).closest("tr")!;
+  expect(within(row).getByRole("cell", { name: message })).toBeTruthy();
+  const otherRow = (await screen.findByText("other-fixture")).closest("tr")!;
+  expect(within(otherRow).getByRole("cell", { name: t("systemStatus.action.agent") })).toBeTruthy();
+});
+
+it.each([
   [5, "Нет доступа к журналу Security", "Проверьте права службы SLIAgentNet"],
   [1502, "Журнал Security переполнен", "Увеличьте размер журнала Windows"],
 ])("shows the reported journal failure with its time and action (%s)", async (winerror, reason, action) => {

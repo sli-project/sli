@@ -18,9 +18,11 @@ public static class AdSnapshotManifest
             throw new ProtocolException("agent_ad_schedule_unsupported");
         Require(DateTimeOffset.Parse(assembled, CultureInfo.InvariantCulture) >= slot);
         var schedule = policy["schedule"]!.AsObject();
-        bool defaults = Text(schedule["timezone"]) == "Asia/Novosibirsk" && schedule["hours"]!.AsArray().Select(n => n!.GetValue<int>()).SequenceEqual(new[] { 6, 18 });
-        string contract = "sli.ad-snapshot-manifest/" + (defaults ? "2.0" : "3.0"), timezone = defaults ? "Asia/Novosibirsk" : "UTC";
-        string local = (defaults ? TimeZoneInfo.ConvertTime(slot, TimeZoneInfo.FindSystemTimeZoneById(timezone)) : slot.ToUniversalTime()).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
+        string timezone = Text(schedule["timezone"]);
+        bool standard = JsonNode.DeepEquals(schedule["hours"], new JsonArray(6, 18)) && AdSnapshotSchedule.FindIanaZone(timezone) is not null;
+        string contract = standard ? "sli.ad-snapshot-manifest/2.0" : "sli.ad-snapshot-manifest/3.0";
+        if (!standard) timezone = "UTC";
+        string local = TimeZoneInfo.ConvertTime(slot, TimeZoneInfo.FindSystemTimeZoneById(timezone)).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
         string slotUtc = slot.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
         var ordered = sources.OrderBy(s => Text(s["family"]), StringComparer.Ordinal).ToArray();
         var identity = new JsonObject { ["contract"] = contract, ["domain_id"] = domain, ["slot"] = slotUtc, ["schedule"] = new JsonObject { ["timezone"] = timezone, ["local_at"] = local }, ["members"] = new JsonArray(ordered.Select(s => (JsonNode?)new JsonObject { ["family"] = s["family"]!.DeepClone(), ["source_id"] = s["source_id"]!.DeepClone(), ["sha256"] = s["payload_sha256"]!.DeepClone() }).ToArray()) };
@@ -34,10 +36,10 @@ public static class AdSnapshotManifest
     {
         Guid id = Guid.Parse(Text(manifest["manifest_id"])); byte[] hash = Convert.FromHexString(Text(manifest["manifest_sha256"]));
         await Execute(db, tx, """
-            insert into ad_snapshot_manifests(manifest_id,domain_id,domain_sid,domain_dns,slot_start_utc,assembled_at_utc,contract_version,coverage_state,manifest_sha256)
-            values(@id,@domain,@sid,@dns,@slot,@assembled,@contract,@state,@hash)
+            insert into ad_snapshot_manifests(manifest_id,domain_id,domain_sid,domain_dns,slot_start_utc,assembled_at_utc,contract_version,coverage_state,manifest_sha256,schedule_timezone,scheduled_local_at)
+            values(@id,@domain,@sid,@dns,@slot,@assembled,@contract,@state,@hash,@zone,cast(@local as timestamp))
             on conflict(domain_id,slot_start_utc,contract_version) do nothing
-            """, ct, ("id", id), ("domain", manifest["domain_id"]!.GetValue<long>()), ("sid", Text(manifest["domain_sid"])), ("dns", Text(manifest["domain_dns"])), ("slot", Time(manifest["slot_start_utc"])), ("assembled", Time(manifest["assembled_at_utc"])), ("contract", Text(manifest["contract_version"])), ("state", Text(manifest["coverage_state"])), ("hash", hash));
+            """, ct, ("id", id), ("domain", manifest["domain_id"]!.GetValue<long>()), ("sid", Text(manifest["domain_sid"])), ("dns", Text(manifest["domain_dns"])), ("slot", Time(manifest["slot_start_utc"])), ("assembled", Time(manifest["assembled_at_utc"])), ("contract", Text(manifest["contract_version"])), ("state", Text(manifest["coverage_state"])), ("hash", hash), ("zone", Text(manifest["schedule_timezone"])), ("local", Text(manifest["scheduled_local_at"])));
         await using (var c = Command(db, tx, "select manifest_id,manifest_sha256 from ad_snapshot_manifests where domain_id=@domain and slot_start_utc=@slot and contract_version=@contract", ("domain", manifest["domain_id"]!.GetValue<long>()), ("slot", Time(manifest["slot_start_utc"])), ("contract", Text(manifest["contract_version"])))) {
             await using var r = await c.ExecuteReaderAsync(ct); Require(await r.ReadAsync(ct) && r.GetGuid(0) == id && ((byte[])r.GetValue(1)).AsSpan().SequenceEqual(hash));
         }

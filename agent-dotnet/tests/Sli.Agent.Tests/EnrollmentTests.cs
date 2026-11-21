@@ -40,24 +40,29 @@ public sealed class EnrollmentTests : IDisposable
     }
 
     [Theory]
-    [InlineData("WinNT", "workstation", true)]
-    [InlineData("ServerNT", "workstation", true)]
-    [InlineData("LanmanNT", "domain_controller", true)]
-    [InlineData("LanmanNT", "domain_controller", false)]
-    [InlineData(null, "workstation", false)]
-    public async Task EnrollmentReportsDirectoryDnsNamesOnlyForADomainController(string? productType, string role, bool hasDomain)
+    [InlineData("WinNT", "workstation", true, true)]
+    [InlineData("ServerNT", "workstation", true, true)]
+    [InlineData("LanmanNT", "domain_controller", true, true)]
+    [InlineData("LanmanNT", "domain_controller", true, false)]
+    [InlineData("LanmanNT", "domain_controller", false, false)]
+    [InlineData(null, "workstation", false, false)]
+    public async Task EnrollmentReportsDirectoryIdentityOnlyForADomainController(
+        string? productType, string role, bool hasDomain, bool hasSid)
     {
         Store.Prepare();
+        const string sid = "S-1-5-21-100000001-200000002-300000003";
         var transport = new Transport((path, body) =>
         {
             Assert.Equal("/api/v1/agent/enroll", path);
             Assert.Equal(role, body["machine_role"]!.GetValue<string>());
-            Assert.Equal(role == "domain_controller" && hasDomain ? "child.example.test" : null, (string?)body["domain_dns"]);
-            Assert.Equal(role == "domain_controller" && hasDomain ? "example.test" : null, (string?)body["forest_dns"]);
+            bool reportsDomain = role == "domain_controller" && hasDomain;
+            Assert.Equal(reportsDomain ? "child.example.test" : null, (string?)body["domain_dns"]);
+            Assert.Equal(reportsDomain ? "example.test" : null, (string?)body["forest_dns"]);
+            Assert.Equal(reportsDomain && hasSid ? sid : null, (string?)body["domain_sid"]);
             return _ca.Issue(Store);
         });
         using var identity = await new Enrollment(Store, transport, _clock, () => productType,
-                () => hasDomain ? ("child.example.test", "example.test") : null)
+                () => hasDomain ? ("child.example.test", "example.test", hasSid ? sid : null) : null)
             .EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
     }

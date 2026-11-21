@@ -109,6 +109,12 @@ public static class OperationsEndpoints
                 output = service.Job(id) ?? throw new OperationsInputException("job_not_found", 404);
             }
             else output = await service.ReadAsync(path, query, ct);
+            if (path == "/api/diagnostics/overview")
+            {
+                string? url = principal.Role == "admin"
+                    ? WebConsoleUrl(services.GetRequiredService<OperationsFiles>().WebConsoleStatus()) : null;
+                output!["web_console"] = new JsonObject { ["available"] = url is not null, ["url"] = url };
+            }
             await DomainHttp.WriteAsync(context, output!, 200, ct);
         }
         catch (OperationsInputException error) { await Error(context, error.Message, error.Status); }
@@ -116,6 +122,14 @@ public static class OperationsEndpoints
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception error) { if (context.Response.HasStarted) throw; await AuthResponse.UnexpectedAsync(context, error, ct, login: false); }
     }
+
+    static string? WebConsoleUrl(JsonObject? status) =>
+        status?["url"] is JsonValue value && value.TryGetValue<string>(out string? raw)
+        && Uri.TryCreate(raw, UriKind.Absolute, out var url)
+        && url.Scheme == Uri.UriSchemeHttps && url.Port == 9090
+        && url.HostNameType is UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6
+        && url.AbsolutePath == "/system/terminal" && url.UserInfo.Length == 0
+        && url.Query.Length == 0 && url.Fragment.Length == 0 ? url.AbsoluteUri : null;
 
     internal static Dictionary<string, string[]> Query(HttpContext context) => context.Request.Query
         .Select(pair => (pair.Key, Values: pair.Value.Where(v => !string.IsNullOrEmpty(v)).Select(v => v!).ToArray()))

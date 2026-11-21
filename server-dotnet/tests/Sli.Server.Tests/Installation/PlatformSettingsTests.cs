@@ -40,7 +40,6 @@ public sealed class PlatformSettingsTests
         Assert.Equal("corp.example.test", T(item["value"])); Assert.Equal("corp.example.test", T(item["effective_value"]));
         Assert.Equal("available", T(item["effective_state"])); Assert.Equal("database", T(item["source"]));
         Assert.Equal("alice", T(item["updated_by"])); Assert.Equal("2026-01-01 00:00:00+00", T(item["updated_at"]));
-        Assert.Equal(Report, T(result.Body["items"]![0]!["key"]));
     }
 
     [Theory]

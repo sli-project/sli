@@ -26,12 +26,14 @@ public sealed class PasswordDomainAutoPostgresTests
     }
 
     [Theory]
-    [InlineData("example.test", "example.test", true)]
-    [InlineData("child.forest.example.test", "forest.example.test", true)]
-    [InlineData("example.test", "other.example.test", false)]
-    [InlineData(null, null, false)]
+    [InlineData("example.test", "example.test", true, null)]
+    [InlineData("child.forest.example.test", "forest.example.test", true, null)]
+    [InlineData("example.test", "other.example.test", false, null)]
+    [InlineData(null, null, false, null)]
+    [InlineData("example.test", "example.test", true, "S-1-5-21-100000001-200000002-300000003")]
+    [InlineData("example.test", "example.test", false, "invalid-sid")]
     public async Task Console_enrollment_uses_directory_dns_names_without_a_preconfigured_controller(
-        string? dns, string? forest, bool configured)
+        string? dns, string? forest, bool configured, string? sid)
     {
         var ct = TestContext.Current.CancellationToken;
         using var environment = new SemanticProducerPostgresTests.Admission();
@@ -71,10 +73,19 @@ public sealed class PasswordDomainAutoPostgresTests
         };
         if (dns is not null) request["domain_dns"] = dns.ToUpperInvariant();
         if (forest is not null) request["forest_dns"] = forest.ToUpperInvariant();
+        if (sid is not null) request["domain_sid"] = sid;
         var result = await enrollment.EnrollAsync(app, tx, request, ct);
         var id = Guid.Parse((string)result["agent_id"]!);
         var dc = await AgentEnrollmentService.ResolveDcAsync(app, tx, computer, ct, id);
         await tx.CommitAsync(ct);
+
+        await using (var snapshots = new NpgsqlCommand("""
+            select exists(select 1 from sli_agent_snapshot_bindings where agent_id=@agent and enabled)
+            """, app))
+        {
+            snapshots.Parameters.AddWithValue("agent", id);
+            Assert.Equal(configured && sid is not null, Assert.IsType<bool>(await snapshots.ExecuteScalarAsync(ct)));
+        }
 
         var health = await SetupCollectionHealth.ReadAsync(new InstallationDatabase(new Connections(fixture.Dsn("adlog_user"))), ct);
         Assert.Null(health["diagnostics"]);

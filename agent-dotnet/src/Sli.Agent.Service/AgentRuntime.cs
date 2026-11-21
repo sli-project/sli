@@ -10,7 +10,10 @@ using Sli.Agent.Windows;
 
 namespace Sli.Agent.Service;
 
-public sealed record CycleStatus(string? ErrorCode, bool CollectionActive, int Captured, int Pending, bool DeliveryFailed);
+public sealed record CycleStatus(string? ErrorCode, bool CollectionActive, int Captured, int Pending, bool DeliveryFailed)
+{
+    public string? ErrorDetail { get; init; }
+}
 
 /// <summary>Revisioned check-in fails closed. Drain acknowledges paused only after durable delivery.</summary>
 public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider clock,
@@ -46,6 +49,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     {
         ContinueImmediately = false;
         string? error = null;
+        TransportException? transportError = null;
         var captured = 0;
         var failed = false;
         var active = false;
@@ -90,7 +94,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (await new Enrollment(store, _http!, clock).RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
             }
             catch (AgentException exception) when (exception.Code != "agent_certificate_expired")
-            { error = exception is TransportException || IssuedCertificate.IsValidationError(exception.Code) ? exception.Code : "agent_renewal_pending"; }
+            {
+                transportError = exception as TransportException;
+                error = transportError is not null || IssuedCertificate.IsValidationError(exception.Code) ? exception.Code : "agent_renewal_pending";
+            }
             var assignment = await _http!.GetAsync("/api/v1/agent/identity", cancellationToken).ConfigureAwait(false);
             if (assignment["agent_removal"] is not null) throw new AgentException("agent_removal_requires_admin");
             var policy = AgentPolicy.Parse(assignment, _identity.AgentId, _catalog);
@@ -125,6 +132,11 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var result = await new PacketDelivery(_queue, _http, _identity.Signer).DeliverOnceAsync(limit: Math.Max(0, policy.Control.RateLimitPerMinute - _attempts.Count), cancellationToken: cancellationToken).ConfigureAwait(false);
                 for (var i = 0; i < result.Attempted; i++) _attempts.Enqueue(now);
                 failed = !result.Success;
+                if (result.TransportFailure is { } deliveryError)
+                {
+                    transportError = deliveryError;
+                    error = deliveryError.Code;
+                }
                 if(result.DisabledModules.Count>0) {
                     foreach(var item in assignment["assigned_modules"]!.AsArray().OfType<JsonObject>())
                         if(result.DisabledModules.Contains(item["module_id"]!.GetValue<string>())) item["enabled"]=false;
@@ -266,12 +278,16 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         catch (Exception exception) when (exception is AgentException or ProtocolException)
         {
             _snapshots?.Cancel();
+            transportError = exception as TransportException;
             error = exception is AgentException agent ? agent.Code : ((ProtocolException)exception).Code;
             if (error is "agent_bootstrap_expired" or "agent_bootstrap_rejected") error = "agent_identity_missing_reenroll_required";
             failed = true;
             active = false;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException) { error = "agent_cycle_failed"; failed = true; active = false; }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        { error = "agent_cycle_failed"; transportError = null; failed = true; active = false; }
+        if (transportError is not null && (error is null || error == transportError.Code || transportError.Code == "agent_bootstrap_rejected"))
+            return Finish(error ?? transportError.Code, active, captured, failed, transportError.Detail);
         return Finish(error ?? (failed ? "agent_delivery_pending" : null), active, captured, failed);
     }
 
@@ -347,7 +363,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         if (transportFactory is not null) return transportFactory(identity);
         var roots = new X509Certificate2Collection();
         if (!string.IsNullOrEmpty(_options.CaBundle)) roots.ImportFromPemFile(_options.CaBundle);
-        return new AgentHttpClient(AgentHttp.Create(new Uri(_options.ServerUrl), identity?.Certificate, roots, _options.CaFingerprint));
+        return new AgentHttpClient(AgentHttp.Create(new Uri(_options.ServerUrl), identity?.Certificate, roots, _options.CaFingerprint),
+            clientCertificateConfigured: identity is not null);
     }
 
     private void Use(AgentIdentity identity)
@@ -362,7 +379,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         _http = next;
     }
 
-    private CycleStatus Finish(string? error, bool active, int captured, bool failed)
+    private CycleStatus Finish(string? error, bool active, int captured, bool failed, string? detail = null)
     {
         var pending = _queue?.Pending().Count ?? 0;
         var observed = Iso8601.Format(clock.GetUtcNow());
@@ -370,14 +387,16 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         {
             try
             {
-                _files.WriteAtomic(Path.Combine(_options.StateDir, name), CanonicalJson.ToBytes(new JsonObject
-                { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending }));
+                var status = new JsonObject
+                { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending };
+                if (name == "status.json" && detail is not null) status["error_detail"] = detail;
+                _files.WriteAtomic(Path.Combine(_options.StateDir, name), CanonicalJson.ToBytes(status));
             }
             catch (Exception exception) when (exception is AgentException or IOException or UnauthorizedAccessException)
             { error ??= "agent_cycle_status_write_failed"; failed = true; }
         }
         if (error is not null || failed) ContinueImmediately = false;
-        return new(error, active, captured, pending, failed);
+        return new(error, active, captured, pending, failed) { ErrorDetail = detail };
     }
 
     public void Dispose() { _snapshots?.Dispose(); _http?.Dispose(); _identity?.Dispose(); _queue?.Dispose(); }

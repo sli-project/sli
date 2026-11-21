@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Security;
 using System.Text;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Hosting;
@@ -11,6 +12,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
+using Sli.Server.Agents.Certificates;
+using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Registry;
 using Sli.Server.Hosting;
 using Xunit;
 
@@ -50,6 +55,7 @@ public sealed class AgentTlsTests
         await File.WriteAllTextAsync(Path.Combine(temp, "login.html"), "<html>synthetic login</html>", ct);
         string? priorCa = Environment.GetEnvironmentVariable("SLI_AGENT_MTLS_CA_FILE");
         string? priorIssuer = Environment.GetEnvironmentVariable("SLI_AGENT_CA_ISSUER_CERT_FILE");
+        var warnings = new RejectionLogger();
         try
         {
             Environment.SetEnvironmentVariable("SLI_AGENT_MTLS_CA_FILE", path);
@@ -60,6 +66,7 @@ public sealed class AgentTlsTests
                     ["Sli:AgentMtlsCaFile"] = path, ["Sli:WebRoot"] = temp, ["urls"] = "http://127.0.0.1:0", ["Sli:TrustedProxies"] = "",
                     ["Sli:AuthRequired"] = "1", ["Sli:OwnerSetup"] = "0", ["ConnectionStrings:Sli"] = ""
                 }))).WithWebHostBuilder(b => b.ConfigureLogging(logging => logging.ClearProviders()).ConfigureServices(services => {
+            services.AddSingleton<ILogger<AgentCertificateRejections>>(warnings);
             foreach (var worker in services.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
                 && (d.ImplementationType == typeof(Sli.Server.Workspace.DashboardWarmupService)
                     || d.ImplementationType == typeof(Sli.Server.Legacy.LegacyJobWorker)
@@ -87,6 +94,9 @@ public sealed class AgentTlsTests
             await Assert.ThrowsAsync<HttpRequestException>(() => untrusted.GetAsync("/login", ct));
             using var invalidBody = new StringContent("{}", Encoding.UTF8, "application/json");
             await Assert.ThrowsAsync<HttpRequestException>(() => untrusted.PostAsync("/api/v1/agent/enroll", invalidBody, ct));
+            var line = Assert.Single(warnings.Messages);
+            Assert.Contains("CN=foreign client", line, StringComparison.Ordinal);
+            Assert.Contains(invalid.GetCertHashString(HashAlgorithmName.SHA256).ToLowerInvariant(), line, StringComparison.Ordinal);
         }
         finally
         {
@@ -129,7 +139,7 @@ public sealed class AgentTlsTests
             {
                 var https = new HttpsConnectionAdapterOptions();
                 var ssl = new SslServerAuthenticationOptions();
-                trust.Configure(https);
+                trust.Configure(https, new AgentCertificateRejections(new RejectionLogger()));
                 https.OnAuthenticate!(null!, ssl);
                 using var chain = new X509Chain { ChainPolicy = ssl.CertificateChainPolicy! };
                 Assert.True(chain.Build(leaf));
@@ -141,6 +151,145 @@ public sealed class AgentTlsTests
             Assert.Null(rejected);
         }
         finally { temp.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void RejectedChainsLogTheirReasonAndPublicIdentityOnce()
+    {
+        using var rootKey = RSA.Create(2048);
+        using var foreignRootKey = RSA.Create(2048);
+        using var issuerKey = RSA.Create(2048);
+        using var leafKey = RSA.Create(2048);
+        using var root = Root(rootKey, "CN=Owned listener root");
+        using var foreignRoot = Root(foreignRootKey, "CN=Foreign listener root");
+        using var issuer = Issuer(root, issuerKey);
+        using var foreign = Leaf(foreignRoot, leafKey, "CN=foreign client", server: false);
+        using var incomplete = Leaf(issuer, leafKey, "CN=incomplete client", server: false);
+        using var wrongUsage = Leaf(root, leafKey, "CN=wrong usage", server: true);
+        using var expired = Leaf(root, leafKey, "CN=expired client", server: false, expired: true);
+        var temp = Directory.CreateTempSubdirectory("sli-agent-listener-");
+        try
+        {
+            string rootPath = Path.Combine(temp.FullName, "root.pem");
+            File.WriteAllText(rootPath, root.ExportCertificatePem());
+            using var trust = new AgentTlsTrust(rootPath);
+            var logger = new RejectionLogger();
+            var rejections = new AgentCertificateRejections(logger);
+            var https = new HttpsConnectionAdapterOptions();
+            trust.Configure(https, rejections);
+
+            Check(foreign, "untrusted_root", "untrusted root", foreignRoot);
+            Check(incomplete, "unexpected_chain_length", "unexpected chain length");
+            Check(wrongUsage, "wrong_eku", "wrong extended key usage");
+            Check(expired, "expired", "expired");
+            Assert.Equal(4, logger.Messages.Count);
+
+            void Check(X509Certificate2 cert, string reason, string detail, X509Certificate2? extra = null)
+            {
+                var ssl = new SslServerAuthenticationOptions();
+                https.OnAuthenticate!(null!, ssl);
+                using var chain = new X509Chain { ChainPolicy = ssl.CertificateChainPolicy! };
+                if (extra is not null) chain.ChainPolicy.ExtraStore.Add(extra);
+                Assert.False(chain.Build(cert));
+                for (int attempt = 0; attempt < 2; attempt++)
+                    Assert.False(https.ClientCertificateValidation!(cert, chain, SslPolicyErrors.RemoteCertificateChainErrors));
+                string thumbprint = cert.GetCertHashString(HashAlgorithmName.SHA256).ToLowerInvariant();
+                Assert.Equal(reason, rejections.Snapshot()[thumbprint].Reason);
+                string warning = Assert.Single(logger.Messages, message => message.Contains(thumbprint, StringComparison.Ordinal));
+                Assert.Contains($"({detail})", warning, StringComparison.Ordinal);
+                Assert.Contains(cert.Subject, warning, StringComparison.Ordinal);
+                Assert.DoesNotContain("PRIVATE KEY", warning, StringComparison.Ordinal);
+                Assert.DoesNotContain(cert.ExportCertificatePem(), warning, StringComparison.Ordinal);
+                Assert.DoesNotContain(temp.FullName, warning, StringComparison.Ordinal);
+            }
+        }
+        finally { temp.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task InventoryMatchesOnlyRegisteredFingerprintsAndClearsAfterContact()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await db.OpenAsync(ct);
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var now = DateTimeOffset.UtcNow;
+        using var root = SigningCa("CN=Synthetic root", rootKey, 1).CreateSelfSigned(now.AddDays(-2), now.AddYears(2));
+        using var issuer = SigningCa("CN=Synthetic issuer", issuerKey, 0).Create(root, now.AddDays(-1), now.AddYears(1), RandomNumberGenerator.GetBytes(16));
+        using var ca = new AgentIssuingCa(new X509Certificate2(root), issuer.CopyWithPrivateKey(issuerKey));
+        var id = Guid.NewGuid();
+        var host = Guid.NewGuid();
+        var csr = new CertificateRequest($"CN={host}", leafKey, HashAlgorithmName.SHA256);
+        var validatedCsr = AgentCertificateAuthority.ParseCsr(csr.CreateSigningRequestPem(), host);
+        using var revoked = ca.Issue(validatedCsr, id, host);
+        using var registered = ca.Issue(validatedCsr, id, host);
+        using var unknown = ca.Issue(validatedCsr, id, host);
+        var logger = new RejectionLogger();
+        var rejections = new AgentCertificateRejections(logger);
+        var identity = new AgentIdentityService(ca, rejections: rejections);
+        var management = new AgentManagementService(new AgentControlAudit(), rejections);
+        await using var tx = await db.BeginTransactionAsync(ct);
+        await using (var insert = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint) values(@id,@host,@key)", db, tx))
+        {
+            insert.Parameters.AddWithValue("id", id);
+            insert.Parameters.AddWithValue("host", host);
+            insert.Parameters.AddWithValue("key", Convert.ToHexStringLower(SHA256.HashData(csr.PublicKey.ExportSubjectPublicKeyInfo())));
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+        await Save(revoked, true);
+        await Save(registered, false);
+        var rejection = await Assert.ThrowsAsync<AgentCertificateException>(() => identity.AuthenticateAsync(db, tx, revoked, false, ct));
+        Assert.Equal(401, rejection.Status);
+        Assert.Contains("(revoked)", Assert.Single(logger.Messages), StringComparison.Ordinal);
+        rejections.Record(unknown, "wrong_eku");
+        var row = (await management.ListAgentsAsync(db, tx, id.ToString(), "synthetic", ct)).GetProperty("items")[0];
+        Assert.Equal("revoked", row.GetProperty("certificate_rejection_reason").GetString());
+        Assert.All(row.GetProperty("certificates").EnumerateArray(), cert => Assert.False(cert.TryGetProperty("fingerprint", out _)));
+        await identity.AuthenticateAsync(db, tx, registered, false, ct);
+        row = (await management.ListAgentsAsync(db, tx, id.ToString(), "synthetic", ct)).GetProperty("items")[0];
+        Assert.False(row.TryGetProperty("certificate_rejection_reason", out _));
+        await tx.RollbackAsync(ct);
+
+        static CertificateRequest SigningCa(string subject, ECDsa key, int pathLength)
+        {
+            var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, pathLength, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") }, true));
+            return request;
+        }
+
+        async Task Save(X509Certificate2 cert, bool isRevoked)
+        {
+            await using var insert = new NpgsqlCommand("""
+                insert into sli_agent_certificates(agent_id,serial,fingerprint,not_before,not_after,revoked_at)
+                values(@id,@serial,@fingerprint,@before,@after,case when @revoked then clock_timestamp() end)
+                """, db, tx);
+            insert.Parameters.AddWithValue("id", id);
+            insert.Parameters.AddWithValue("serial", cert.SerialNumber.TrimStart('0').ToLowerInvariant());
+            insert.Parameters.AddWithValue("fingerprint", cert.GetCertHashString(HashAlgorithmName.SHA256).ToLowerInvariant());
+            insert.Parameters.AddWithValue("before", cert.NotBefore.ToUniversalTime());
+            insert.Parameters.AddWithValue("after", cert.NotAfter.ToUniversalTime());
+            insert.Parameters.AddWithValue("revoked", isRevoked);
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private sealed class RejectionLogger : ILogger<AgentCertificateRejections>
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            Assert.Equal(LogLevel.Warning, logLevel);
+            Assert.Null(exception);
+            Messages.Enqueue(formatter(state, exception));
+        }
     }
 
     private static HttpClient Client(string address, X509Certificate2? cert)
@@ -167,7 +316,7 @@ public sealed class AgentTlsTests
         return issuer.CopyWithPrivateKey(key);
     }
 
-    private static X509Certificate2 Leaf(X509Certificate2 issuer, RSA key, string name, bool server)
+    private static X509Certificate2 Leaf(X509Certificate2 issuer, RSA key, string name, bool server, bool expired = false)
     {
         var request = new CertificateRequest(name, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
@@ -175,7 +324,8 @@ public sealed class AgentTlsTests
         var purposes = new OidCollection { new Oid(server ? "1.3.6.1.5.5.7.3.1" : "1.3.6.1.5.5.7.3.2") };
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(purposes, true));
         if (server) { var san = new SubjectAlternativeNameBuilder(); san.AddDnsName("localhost"); request.CertificateExtensions.Add(san.Build()); }
-        using var leaf = request.Create(issuer, DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
+        var now = DateTimeOffset.UtcNow;
+        using var leaf = request.Create(issuer, now.AddMinutes(-2), expired ? now.AddMinutes(-1) : now.AddDays(1), RandomNumberGenerator.GetBytes(16));
         return leaf.CopyWithPrivateKey(key);
     }
 }

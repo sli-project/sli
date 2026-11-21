@@ -31,6 +31,15 @@ export function AgentsPage() {
 }
 
 type AgentFilter = "all" | "silent" | "auditOff" | "disabled";
+const certificateRejectionActions = {
+  untrusted_root: "agents.certificateRejection.untrustedRoot",
+  unexpected_chain_length: "agents.certificateRejection.chainLength",
+  wrong_eku: "agents.certificateRejection.wrongUsage",
+  expired: "agents.certificateRejection.expired",
+  not_yet_valid: "agents.certificateRejection.notYetValid",
+  revoked: "agents.certificateRejection.revoked",
+  invalid_chain: "agents.certificateRejection.invalidChain",
+} as const satisfies Record<NonNullable<AgentItem["certificate_rejection_reason"]>, string>;
 const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen
   || Date.now() - Date.parse(agent.last_seen) > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000);
 
@@ -144,7 +153,11 @@ function AgentsContent() {
     { key: "role", label: t("agents.computerRole"), render: (agent) => agent.assigned_modules.some((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(moduleId(module)))
       ? t("agents.roleDc") : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? t("agents.roleWorkstation") : "—" },
     { key: "status", label: t("agents.status"), render: (agent) => collectionState(agent).state },
-    { key: "action", label: t("systemStatus.action"), render: (agent) => collectionState(agent).action },
+    { key: "action", label: t("systemStatus.action"), render: (agent) => {
+      const reason = agent.certificate_rejection_reason;
+      return reason && Object.hasOwn(certificateRejectionActions, reason)
+        ? t(certificateRejectionActions[reason]) : collectionState(agent).action;
+    } },
     { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (agent) =>
       <span title={date(agent.last_seen)}>{formatDateTime(agent.last_seen, timeZone, { withYear: false })}</span> },
     { key: "windows_audit", label: t("agents.windowsAudit"), render: (agent) => {
