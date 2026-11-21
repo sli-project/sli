@@ -1,13 +1,12 @@
 import { formatNumber } from "../shared/format";
 import { useState, type ReactNode } from "react";
 import { t } from "../i18n";
-import { Badge, type Tone } from "./Primitives";
+import { SeverityBadge } from "./SeverityBadge";
 
 export type ReviewItem = {
   key: string;
   title: string;
-  severity: string;
-  tone: Tone;
+  severity: unknown;
   objects?: ReactNode;
   status: string;
   newCount: number | null;
@@ -29,7 +28,7 @@ export function ReviewList({ items, compact = false, summaryOnly = false }: { it
       setExpanded((current) => ({ ...current, [item.key]: open }));
     } : undefined}>
       <summary className="sli-ds-review-list__summary">
-        <span><Badge tone={item.tone}>{item.severity}</Badge></span>
+        <span><SeverityBadge severity={item.severity}/></span>
         <span><strong>{item.title}</strong>{!compact && item.objects ? <span className="sli-ds-review-list__objects">{item.objects}</span> : null}</span>
         <span className="sli-ds-review-list__status">{item.status}</span>
         <span className="sli-ds-review-list__new" aria-label={t("reports.ad.checks.column.new_count")}>{count(item.newCount)}</span>

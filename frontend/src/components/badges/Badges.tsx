@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Tone } from "../../design-system";
+import { SeverityBadge, type Tone } from "../../design-system";
 import { t } from "../../i18n";
 
 type KnownTone = "critical" | "high" | "medium" | "low" | "unknown";
@@ -33,7 +33,6 @@ export function operationalTone(value: unknown): OperationalTone {
   return "unknown";
 }
 
-const RISK_TONE: Record<KnownTone, Tone> = { critical: "danger", high: "danger", medium: "warning", low: "success", unknown: "neutral" };
 const CONFIDENCE_TONE: Record<KnownTone, Tone> = { critical: "neutral", high: "success", medium: "warning", low: "neutral", unknown: "neutral" };
 const OPERATIONAL_TONE: Record<OperationalTone, Tone> = { ok: "success", running: "accent", warning: "warning", failed: "danger", unknown: "neutral" };
 
@@ -42,9 +41,8 @@ function Badge({ tone, children, label }: { tone: Tone; children: ReactNode; lab
 }
 
 export function RiskBadge({ value }: { value: unknown }) {
-  const val = String(value ?? t("events.badges.unknown"));
-  const text = t("events.badges.riskPrefix", { value: val });
-  return <Badge tone={RISK_TONE[riskTone(value)]} label={text}>{text}</Badge>;
+  const severity = riskTone(value);
+  return <SeverityBadge severity={severity} label={severity === "unknown" ? undefined : t("events.badges.riskPrefix", { value: t(`shell.severity.${severity}`) })}/>;
 }
 
 export function ConfidenceBadge({ value }: { value: unknown }) {
@@ -74,7 +72,7 @@ export function EventClassificationBadge({ value, origin }: { value: unknown; or
       : t("events.badges.classEvent");
   const classification = eventClassificationLabel(value);
   const label = t("events.badges.classificationLabel", { prefix, classification });
-  return <Badge tone={RISK_TONE[riskTone(value)]} label={label}>{label}</Badge>;
+  return <SeverityBadge severity={riskTone(value)} label={label}/>;
 }
 
 export function EventCardCompletenessBadge({ completeness }: { completeness?: EventCardCompleteness }) {

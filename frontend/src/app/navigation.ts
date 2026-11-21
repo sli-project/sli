@@ -4,7 +4,7 @@
  */
 import type { NavigationEntryDto, NavigationRegistryDto } from "../api/report-v2-types";
 import declarations from "../../../config/navigation_v3.json";
-import { redirect } from "@tanstack/react-router";
+import { defaultParseSearch, defaultStringifySearch, redirect } from "@tanstack/react-router";
 import { t, type MessageKey } from "../i18n";
 
 export type NavLink = { id: string; label: string; path: string; icon: string };
@@ -50,9 +50,26 @@ export function navigationBeforeLoad(location: { pathname: string; search: Recor
   if (target) throw redirect({ ...target, search: target.search as never, hash: target.to === "/" ? "" : location.hash });
 }
 
+export const objectSearchPath = declarations.global_search.path;
+export const journalSearchPath = "/report/events.journal";
+
 export function globalSearchTarget(rawValue: string) {
   const q = rawValue.trim();
-  return { to: declarations.global_search.path, search: q ? { q } : {} };
+  return { to: journalSearchPath, search: q ? { q } : {} };
+}
+
+export function parseShellSearch(search: string) {
+  const query = defaultParseSearch(search);
+  const q = new URLSearchParams(search).get("q");
+  return q === null ? query : { ...query, q };
+}
+
+export function stringifyShellSearch(search: Record<string, unknown>) {
+  const { q, ...rest } = search;
+  if (typeof q !== "string") return defaultStringifySearch(search);
+  const params = new URLSearchParams({ q });
+  const other = defaultStringifySearch(rest);
+  return other ? `${other}&${params}` : `?${params}`;
 }
 
 export function reportWorkspace(reportKey: string): NavigationEntryDto | undefined {
@@ -85,7 +102,7 @@ export function buildNavigation(access: NavAccess, registry?: NavigationRegistry
           || ["operations.readiness", "decoys.registry", "watch.registry"].some((key) => access.reports.has(key)))
         && (!entry.plugin_id || enabled.has(entry.plugin_id)) && navigationEntryAllowed(entry, access)
       ).sort((a, b) => betaOrder.get(a.id)! - betaOrder.get(b.id)!)
-        .map(destination).map(({ id, label, path, icon }) => ({ id, label: t(label as MessageKey), path, icon })),
+        .map(destination).map(({ id, label, path, icon }) => ({ id, label: t(label as MessageKey), path, icon: id === "computers-report" ? "computer" : icon })),
     })).filter((group) => group.items.length > 0)
       .sort((a, b) => betaOrder.get(a.items[0].id)! - betaOrder.get(b.items[0].id)!),
   })).filter((section) => section.groups.length > 0)

@@ -65,9 +65,9 @@ describe("registry compatibility redirects", () => {
     expect(navigationRedirect(path, {})).toBeNull();
   });
 
-  it("uses the registry destination for the top search", () => {
-    expect(globalSearchTarget(" synthetic ")).toEqual({ to: "/search", search: { q: "synthetic" } });
-    expect(globalSearchTarget(" ")).toEqual({ to: "/search", search: {} });
+  it("opens the event journal with a trimmed query from the shell", () => {
+    expect(globalSearchTarget(" synthetic ")).toEqual({ to: "/report/events.journal", search: { q: "synthetic" } });
+    expect(globalSearchTarget(" ")).toEqual({ to: "/report/events.journal", search: {} });
   });
 
   it("keeps the workspace selection independent of the report's internal tabs", () => {
