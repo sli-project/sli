@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 START_FILES = ('/lib/systemd/system/clickhouse-server.service', '/etc/init.d/clickhouse-server')
+POSTGRES_DATA_DIRECTORY = '/srv/sli-db/pgdata/18/main'
 
 
 def ensure_directory(path, mode=0o755, uid=0, gid=0, *, parent_mode=0o755, exist_ok=True):

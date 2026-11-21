@@ -406,6 +406,16 @@ it("shows a denial instead of cached rows or zero counts", async () => {
   expect(screen.queryByRole("table")).toBeNull();
 });
 
+it("names a notification loading failure in a plain retry line", async () => {
+  mock.list.mockRejectedValueOnce(new ApiResponseError(500));
+  const { container } = mount();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Не удалось загрузить оповещения");
+  expect(container.querySelector(".sli-ds-state")).toBeNull();
+  fireEvent.click(within(alert).getByRole("button", { name: t("state.retry") }));
+  expect(await screen.findByRole("table", { name: t("notify.channels") })).toBeTruthy();
+});
+
 it("keeps delivery actions disabled without the configuration grant and never loads removed schedules", async () => {
   const data = fixture(); data.can_configure = false; mock.list.mockResolvedValue(data);
   mount();
@@ -455,6 +465,17 @@ it("edits a rule through its row and confirms disabling it by name", async () =>
   await waitFor(() => expect(mock.save).toHaveBeenCalledWith("fixture-subscription", {
     recipient_user_id: 2, channel: "smtp", enabled: false, revision: 4,
   }));
+});
+
+it("names the rule save operation when the server rejects it", async () => {
+  mock.save.mockRejectedValueOnce(new ApiResponseError(500));
+  mount();
+  fireEvent.click(await screen.findByRole("tab", { name: t("notify.rules") }));
+  fireEvent.click(screen.getByRole("button", { name: t("notify.addRule") }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText(t("notify.destination")), { target: { value: "2" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: t("notify.save") }));
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("Не удалось сохранить правило оповещений");
 });
 
 it("does not label a dry run as delivered and reuses the test identity on retry", async () => {

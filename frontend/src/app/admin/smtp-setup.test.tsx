@@ -71,7 +71,8 @@ it("sends the test in the SMTP panel and waits for the exact job's result", asyn
 
 it("fails closed for denied or malformed status without editable credential fields", async () => {
   mock.status.mockResolvedValue({ ...status(), tls_mode: "none" });
-  const view = mount(); await screen.findByRole("alert");
+  const view = mount();
+  expect((await screen.findByRole("alert")).textContent).toBe("Не удалось загрузить настройки почты");
   expect(screen.queryByLabelText(t("notify.smtp.password"))).toBeNull();
   expect(mock.save).not.toHaveBeenCalled(); view.unmount();
   mount(false); await screen.findByRole("alert"); expect(mock.status).toHaveBeenCalledTimes(1);
@@ -82,7 +83,8 @@ it("does not render raw provider errors or retain a failed password", async () =
   mount(); const password = await screen.findByLabelText(t("notify.smtp.password")) as HTMLInputElement;
   fireEvent.change(password, { target: { value: "synthetic-only-password" } });
   fireEvent.click(screen.getByRole("button", { name: t("notify.save") }));
-  await screen.findByRole("alert"); expect(password.value).toBe("");
+  expect((await screen.findByRole("alert")).textContent).toBe("Не удалось сохранить настройки почты");
+  expect(password.value).toBe("");
   expect(screen.queryByText("synthetic-private-provider-reply")).toBeNull();
   expect(screen.queryByText("synthetic-only-password")).toBeNull();
 });

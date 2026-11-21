@@ -30,6 +30,22 @@ const notifications = (enabled = false): NotificationWorkspace => ({ channels: [
   tls_mode: "tls", revision: 1, updated_at: "2026-11-14T01:16:00Z", last_accepted_at: null, last_attempt_at: null, last_result_code: null, secret_status: null }],
   can_configure: true, subscriptions: [], counts: { total: 0, new_count: 0, accepted: 0, errors: 0, waiting: 0, other: 0 }, items: [], has_more: false, next_cursor: null, previous_login_at: null });
 const clients: QueryClient[] = [];
+const postgresVolume = { mount_point: "/srv/sli-db", used_bytes: 2 * 1024 ** 3, free_bytes: 3 * 1024 ** 3 };
+
+it("shows the PostgreSQL mount and omits the backup line until a copy exists", async () => {
+  vi.mocked(api.storageOverview).mockResolvedValue({ storage: {
+    postgres_volume: { ...postgresVolume, free_bytes: 98 * 1024 ** 3 },
+    disk_pressure: { disk: { free_human: "16 GB" } },
+    footprint: { components: [], backups: { last_backup_at_utc: null } },
+  } });
+  renderPage();
+  const table = await screen.findByRole("table", { name: "Диск" });
+  const row = within(table).getByText("/srv/sli-db").closest("tr")!;
+  expect(within(row).getByText("98 ГБ")).toBeTruthy();
+  expect(within(row).getByText("2 ГБ")).toBeTruthy();
+  expect(screen.queryByText(/^Последняя копия:/)).toBeNull();
+});
+
 it.each([true, false, null])("shows the latest backup and reports a shared disk only when confirmed (%s)", async (sameDisk) => {
   setLocale("ru");
   const time = "2026-11-14T01:16:00Z";
@@ -134,7 +150,7 @@ beforeEach(() => {
   vi.spyOn(api, "setupStatus").mockResolvedValue(setup());
   vi.spyOn(api, "operations").mockResolvedValue(operations);
   vi.spyOn(api, "operationsWorkers").mockResolvedValue({ workers: operations.workers });
-  vi.spyOn(api, "storageOverview").mockResolvedValue({ storage: operations.storage });
+  vi.spyOn(api, "storageOverview").mockResolvedValue({ storage: { ...operations.storage, postgres_volume: postgresVolume } });
   vi.spyOn(api, "diagnostics").mockResolvedValue({ status: "ok", release_metadata: { project_version: "1.0.0", generated_at_utc: "2026-11-01T01:00:00Z" } });
   vi.spyOn(api, "securityLogFull").mockResolvedValue({ items: [] });
   vi.spyOn(api, "notificationWorkspace").mockResolvedValue(notifications());
