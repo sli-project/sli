@@ -88,9 +88,14 @@ internal sealed class InboxRetention(NpgsqlDataSource maintenance, LifecycleFile
 
     // Imported short events already carry their attested origin and evidence.
     // Do not expand event_rows or resolve legacy allocations on this path.
+    // AD/DC stream receipts still cascade with the inbox. Keep the newest
+    // import and its channel until a committed import supersedes it or it ages
+    // out. Previously cleared bodies can only be aged out: their generated
+    // channel may have fallen back to the transport channel.
     internal const string ShortPacketSql = """
         with packets as materialized (
-          select i.packet_id,i.received_at,i.imported_at,i.module_disabled_at,i.envelope,i.event_rows
+          select i.packet_id,i.received_at,i.imported_at,i.module_disabled_at,i.envelope,i.event_rows,
+                 i.collection_revision,i.collection_channel,i.packet is not null as has_payload
           from public.sli_agent_packet_inbox i
           where (i.received_at,i.packet_id)>(@after_received,@after)
           order by i.received_at,i.packet_id limit @limit for update of i skip locked
@@ -107,14 +112,28 @@ internal sealed class InboxRetention(NpgsqlDataSource maintenance, LifecycleFile
             where o.agent_id::text=i.envelope->>'agent_id' and o.source_instance_id=i.envelope->>'source_instance_id'
               and o.generation=i.envelope->>'generation' and exists(
                 select 1 from jsonb_array_elements(i.event_rows) r where r->>'record_id'=o.record_id::text)) then 'evidence_reference'
-          when not exists(select 1 from public.sli_agent_receipts r where r.packet_id=i.packet_id
-            and r.receipt->>'status'='committed' and r.envelope=i.envelope) then 'receipt_unconfirmed'
+          when r.receipt->>'status' is distinct from 'committed' or r.envelope is distinct from i.envelope then 'receipt_unconfirmed'
           when i.envelope->>'module_id'='sli.file-audit' and i.module_disabled_at is null and not exists(
             select 1 from sli_plugin_file_audit.payload_expirations x where x.packet_id=i.packet_id) then 'file_payload_pending'
           when i.received_at<@cutoff and (coalesce(i.imported_at,i.module_disabled_at) is null or coalesce(i.imported_at,i.module_disabled_at)<@cutoff) then 'eligible'
+          when i.imported_at is not null and r.module_id in ('sli.windows.ad-dc','sli.windows.ad-dc-history') then
+            case when i.has_payload and exists(
+              select 1 from public.sli_agent_receipts newer
+              join public.sli_agent_packet_inbox next_packet using(packet_id)
+              where newer.agent_id=r.agent_id and newer.module_id=r.module_id and newer.received_at>=r.received_at
+                and (newer.received_at,newer.sequence)>(r.received_at,r.sequence)
+                and (next_packet.received_at>=@cutoff or next_packet.imported_at>=@cutoff)
+                and next_packet.imported_at>=i.imported_at and next_packet.module_disabled_at is null
+                and next_packet.packet is not null
+                and next_packet.collection_revision is not distinct from i.collection_revision
+                and next_packet.collection_channel is not distinct from i.collection_channel
+                and newer.receipt->>'status'='committed' and newer.envelope=next_packet.envelope
+                and not exists(select 1 from public.sli_agent_packet_quarantine q where q.packet_id=next_packet.packet_id)
+            ) then 'eligible' else 'stream_metadata' end
           when i.imported_at is not null then 'payload_only'
           else 'within_seven_days' end as classification
-        from packets i order by i.received_at,i.packet_id
+        from packets i left join public.sli_agent_receipts r using(packet_id)
+        order by i.received_at,i.packet_id
         """;
 
 }

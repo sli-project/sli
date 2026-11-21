@@ -51,6 +51,11 @@ public sealed class AgentInboxCapacityTests
         var explicitLimit = AgentInboxLimits.FromEnvironment(name => name == "SLI_AGENT_INBOX_AGENT_BYTES" ? "268435456" : null)
             with { FreeDiskBytes = () => free };
         Assert.Equal("agent_inbox_agent_bytes_limit", await AgentInboxQuota.CheckAsync(db, tx, packet.Envelope, packet.Payload, rows, receipt, explicitLimit, diagnostics, ct));
+        var pendingLimits = limits with { AgentCount = 2, AgentBytes = 256 * 1024 };
+        Assert.Equal("agent_inbox_agent_count_limit", await AgentInboxQuota.CheckAsync(db, tx, packet.Envelope, packet.Payload, rows, receipt, pendingLimits with { AgentBytes = long.MaxValue }, diagnostics, ct));
+        await using (var mark = new NpgsqlCommand("update sli_agent_packet_inbox set imported_at=now() where packet_id<>md5('1')::uuid", db, tx))
+            Assert.Equal(2999, await mark.ExecuteNonQueryAsync(ct));
+        Assert.Null(await AgentInboxQuota.CheckAsync(db, tx, packet.Envelope, packet.Payload, rows, receipt, pendingLimits, diagnostics, ct));
         free = 100 * 1024;
         Assert.Equal("agent_inbox_disk_bytes_limit", await AgentInboxQuota.CheckAsync(db, tx, packet.Envelope, packet.Payload, rows, receipt, limits, diagnostics, ct));
         Assert.Equal("full", limits.CapacityStatus());
