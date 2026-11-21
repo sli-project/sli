@@ -52,13 +52,19 @@ public sealed class AdDcImportParityTests
         await using var db=new NpgsqlConnection(fixture.ConnectionString);await db.OpenAsync(ct);
         await PostCollectionPostgres.Sql(db,"""
             create table servers(id bigint,domain_id bigint,site_id bigint,hostname text,role text,is_active boolean,fqdn text);
-            create table sli_agent_audit(id bigint,target text,action text,details jsonb);
+            create table sli_agent_audit(id bigint,target text,action text,actor text not null,details jsonb);
+            create table domains(id bigint primary key,fqdn text not null,is_archived boolean not null default false);
+            create table domain_controller_targets(domain_id bigint,hostname text not null,connect_address text not null,enabled boolean not null default true);
             """,ct);
         var configurations=JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),"server-dotnet/tests/Sli.Server.Tests/Agents/ad-dc-configuration-source.json")))!.AsArray();
         foreach(var config in configurations) {
             await using var tx=await db.BeginTransactionAsync(ct);
             foreach(var source in config!["sources"]!.AsArray()) {
-                await using var insert=new NpgsqlCommand("insert into servers(id,domain_id,hostname,role,is_active) values(@id,@domain,'dc-fixture.example.test','domain_controller',true)",db,tx);
+                await using var insert=new NpgsqlCommand("""
+                    insert into domains(id,fqdn) values(@domain, @domain::text || '.example.test') on conflict(id) do nothing;
+                    insert into servers(id,domain_id,hostname,role,is_active)
+                    values(@id,@domain,'dc-fixture.example.test','domain_controller',true);
+                    """,db,tx);
                 insert.Parameters.AddWithValue("id",(long)source!["server_id"]!);insert.Parameters.AddWithValue("domain",(long)source["domain_id"]!);await insert.ExecuteNonQueryAsync(ct);
             }
             if(config["error"] is not null) {

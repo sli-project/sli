@@ -80,7 +80,6 @@ public sealed partial class AgentEnrollmentService
                     and not exists(select 1 from servers where domain_id=d.id)
                     and not exists(select 1 from domain_controller_targets where domain_id=d.id)
                     and not exists(select 1 from sli_agent_module_bindings where password_detection_domain_id=d.id)
-                    and not exists(select 1 from platform_settings where key='reports.domain_fqdn' and value=d.fqdn)
                 order by d.id limit 1 for update of d
                 """, db, tx))
                 if (await legacy.ExecuteScalarAsync(ct) is long id) placeholder = id;
@@ -136,6 +135,76 @@ public sealed partial class AgentEnrollmentService
             await archive.ExecuteNonQueryAsync(ct);
         }
         return dc;
+    }
+
+    private static async Task RetireBootstrapDomainAsync(NpgsqlConnection db, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        long placeholder;
+        string replacement;
+        await using (var read = new NpgsqlCommand("""
+            with preferred as (select lower(btrim(value)) as fqdn from platform_settings where key='reports.domain_fqdn')
+            select d.id, (select coalesce(min(real.fqdn) filter(where lower(real.fqdn)=p.fqdn), min(real.fqdn))
+                from domains real left join preferred p on true
+                where not real.is_archived and lower(real.fqdn)<>'example.invalid'
+                having count(*)=1 or count(*) filter(where lower(real.fqdn)=p.fqdn)=1)
+            from domains d join forests f on f.id=d.forest_id
+            where d.fqdn='example.invalid' and f.name='example.invalid'
+                and d.domain_sid is null and d.netbios_name is null
+            for update of d
+            """, db, tx))
+        await using (var rows = await read.ExecuteReaderAsync(ct))
+        {
+            if (!await rows.ReadAsync(ct) || rows.IsDBNull(1)) return;
+            placeholder = rows.GetInt64(0);
+            replacement = rows.GetString(1);
+        }
+
+        await using (var setting = new NpgsqlCommand("""
+            insert into platform_settings(key,value,updated_by) values('reports.domain_fqdn',@replacement,'system:agent-registration')
+            on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=clock_timestamp()
+            where lower(btrim(platform_settings.value))='example.invalid'
+            """, db, tx))
+        {
+            setting.Parameters.AddWithValue("replacement", replacement);
+            await setting.ExecuteNonQueryAsync(ct);
+        }
+
+        // History can use the numeric domain ID without a foreign key. Preserve
+        // that history and let restrictive foreign keys protect other owners.
+        const string savepoint = "retire_bootstrap_domain";
+        await tx.SaveAsync(savepoint, ct);
+        try
+        {
+            await using var delete = new NpgsqlCommand("""
+                delete from domains d where d.id=@id
+                    and not exists(select 1 from servers where domain_id=d.id)
+                    and not exists(select 1 from sites where domain_id=d.id)
+                    and not exists(select 1 from domain_controller_targets where domain_id=d.id)
+                    and not exists(select 1 from sli_agent_module_bindings where password_detection_domain_id=d.id)
+                    and not exists(select 1 from entities_v2 where domain_id=d.id)
+                    and not exists(select 1 from event_hot where domain_id=d.id)
+                    and not exists(select 1 from event_cold_facts where domain_id=d.id)
+                    and not exists(select 1 from event_cold_daily where domain_id=d.id)
+                    and not exists(select 1 from semantic_processing_outbox where domain_id=d.id)
+                    and not exists(select 1 from finding_event_copies337 where domain_id=d.id)
+                    and not exists(select 1 from ad_snapshot_history_confirmations where domain_id=d.id)
+                    and not exists(select 1 from ad_snapshot_change_history where domain_id=d.id)
+                """, db, tx);
+            delete.Parameters.AddWithValue("id", placeholder);
+            if (await delete.ExecuteNonQueryAsync(ct) != 0)
+            {
+                await tx.ReleaseAsync(savepoint, ct);
+                return;
+            }
+        }
+        catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        {
+            await tx.RollbackAsync(savepoint, ct);
+        }
+        await tx.ReleaseAsync(savepoint, ct);
+        await using var archive = new NpgsqlCommand("update domains set is_archived=true where id=@id and not is_archived", db, tx);
+        archive.Parameters.AddWithValue("id", placeholder);
+        await archive.ExecuteNonQueryAsync(ct);
     }
 
     private static Task RecordAgentReportedDcAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, long server, CancellationToken ct) =>

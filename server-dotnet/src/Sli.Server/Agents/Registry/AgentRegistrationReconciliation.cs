@@ -112,6 +112,7 @@ public sealed partial class AgentEnrollmentService
                 onUnbound?.Invoke(id, reason);
             await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db,tx,id,ct);
         }
+        await RetireBootstrapDomainAsync(db, tx, ct);
         return retired;
 
         async Task Conflict(Guid id,string computer,string other)
