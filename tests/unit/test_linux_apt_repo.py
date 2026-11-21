@@ -1,5 +1,6 @@
 import gzip
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import pytest
 import yaml
 
 from deploy.linux import build_apt_repo as apt_repo
+from deploy.linux import native_restore
 
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / '.github/workflows'
@@ -55,58 +57,198 @@ def test_release_signatures_use_the_exported_public_key(tmp_path, signing_key):
     release.write_bytes(b'Origin: SLI\n')
     keyring = tmp_path / apt_repo.KEYRING
 
-    apt_repo.sign_release(release, signing_key, keyring)
+    with apt_repo.signing_context(signing_key) as (gpg, home, signer):
+        apt_repo.sign_release(release, keyring, gpg, home, signer)
 
     verify_signatures(release, keyring)
 
 
-@pytest.mark.skipif(not shutil.which('dpkg-deb'), reason='Debian packaging tools required')
-def test_build_indexes_and_signs_sli_packages(tmp_path, signing_key, monkeypatch):
-    debs = tmp_path / 'debs'
-    debs.mkdir()
-    for package, architecture in [('sli', 'amd64'), ('sli-fixture', 'all'), ('libfixture', 'amd64')]:
-        control = tmp_path / package / 'DEBIAN/control'
-        control.parent.mkdir(parents=True)
-        control.write_bytes((f'Package: {package}\nVersion: 1.0-1\nArchitecture: {architecture}\n'
-                             'Maintainer: Fixture <apt@example.test>\nDepends: libfixture\n'
-                             'Description: Test package\n More details.\n').encode('ascii'))
-        subprocess.run(['dpkg-deb', '--root-owner-group', '--build', control.parent.parent,
-                        debs / f'{package}_1.0-1_{architecture}.deb'], check=True)
-    output = tmp_path / 'repo'
-    apt_repo.build(debs, output, signing_key)
+@pytest.fixture
+def debian_tools(monkeypatch):
+    if shutil.which('dpkg-deb') and shutil.which('dpkg'):
+        return True
+    monkeypatch.setattr(apt_repo, 'package_control', lambda path: path.read_text(encoding='ascii').rstrip('\n'))
+    run = subprocess.run
 
-    assert {path.name for path in (output / 'pool').iterdir()} == {
-        'sli_1.0-1_amd64.deb', 'sli-fixture_1.0-1_all.deb',
+    def compare_versions(args, **kwargs):
+        if args[:2] == ['dpkg', '--compare-versions']:
+            return subprocess.CompletedProcess(args, int(not args[2] < args[4]))
+        return run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', compare_versions)
+    return False
+
+
+def make_kit(debs, version, debian_tools):
+    debs.mkdir()
+    revision = version.split('-')[1][0]
+    packages = {
+        'sli': ('amd64', version, f'sli-host (= {version}), sli-rollback-hold (= {version}), '
+                'postgresql-18, postgresql-client-18'),
+        'sli-host': ('amd64', version, 'postgresql-common'),
+        'sli-rollback-hold': ('amd64', version, f'sli-server-dotnet (= {version}), sli-release-beta-{revision}'),
+        'sli-server-dotnet': ('amd64', version, ''),
+        f'sli-release-beta-{revision}': ('amd64', version, 'sli-runtime-fixture (= 1.0-1)'),
+        'sli-runtime-fixture': ('amd64', '1.0-1', 'libfixture (= 1.0-1)'),
+        'postgresql-18': ('amd64', '18.1-1', 'postgresql-common'),
+        'postgresql-client-18': ('amd64', '18.1-1', 'postgresql-common'),
+        'postgresql-common': ('all', '1.0-1', ''),
+        'libfixture': ('amd64', '1.0-1', ''),
     }
+    pinned = {}
+    for package, (architecture, package_version, depends) in packages.items():
+        destination = debs / f'{package}_{package_version}_{architecture}.deb'
+        data = (f'Package: {package}\nVersion: {package_version}\nArchitecture: {architecture}\n'
+                'Maintainer: Fixture <apt@example.test>\n')
+        if depends:
+            data += f'Depends: {depends}\n'
+        data += 'Description: Test package\n More details.\n'
+        if debian_tools:
+            control = debs.parent / f'{debs.name}-{package}/DEBIAN/control'
+            control.parent.mkdir(parents=True)
+            control.write_bytes(data.encode('ascii'))
+            subprocess.run(['dpkg-deb', '--root-owner-group', '--build', control.parent.parent, destination],
+                           env={**os.environ, 'SOURCE_DATE_EPOCH': '1'}, check=True)
+        else:
+            destination.write_bytes(data.encode('ascii'))
+        if package_version != version:
+            pinned[destination.name] = apt_repo.sha256(destination)
+    return pinned
+
+
+def read_index(output):
+    index = output / 'dists/trixie' / apt_repo.INDEX_PATH
+    return [dict(line.split(': ', 1) for line in stanza.splitlines() if not line.startswith(' '))
+            for stanza in index.read_text().strip().split('\n\n')]
+
+
+def assert_apt_install_resolves(tmp_path, output, version):
+    root = tmp_path / 'apt'
+    for component in ('etc', 'state', 'cache'):
+        (root / component).mkdir(parents=True)
+    (root / 'state/status').touch()
+    sources = root / 'etc/sources.list'
+    sources.write_text(f'deb [signed-by={output / apt_repo.KEYRING}] {output.as_uri()} trixie main\n')
+    config = root / 'apt.conf'
+    config.write_text(f'Dir::Etc "{root}/etc";\nDir::State "{root}/state";\n'
+                      f'Dir::State::status "{root}/state/status";\nDir::Cache "{root}/cache";\n'
+                      'APT::Architecture "amd64";\nAcquire::Languages "none";\n')
+    env = {**os.environ, 'APT_CONFIG': str(config), 'LC_ALL': 'C'}
+    subprocess.run(['apt-get', 'update'], env=env, check=True)
+    simulation = subprocess.check_output(['apt-get', '-s', 'install', 'sli'], env=env, text=True)
+    assert f'Inst sli ({version} ' in simulation
+    installed = {line.split()[1] for line in simulation.splitlines() if line.startswith('Inst ')}
+    assert {'postgresql-18', 'postgresql-client-18', 'libfixture'} <= installed
+
+
+def test_signed_pool_retains_the_previous_rollback_version(tmp_path, signing_key, debian_tools, monkeypatch):
+    published = tmp_path / 'published'
+    url = 'https://apt.example.test'
+
+    def download(url_path, destination, limit):
+        source = published / url_path.removeprefix(url + '/')
+        if not source.is_file():
+            return False
+        assert source.stat().st_size <= limit
+        shutil.copyfile(source, destination)
+        return True
+
+    monkeypatch.setattr(apt_repo, 'download', download)
+    old, new, latest = [f'1.0-{revision}~deb13' for revision in range(1, 4)]
+    debs = tmp_path / 'debs-old'
+    pins = make_kit(debs, old, debian_tools)
+    with pytest.raises(ValueError, match='No previous APT publication'):
+        apt_repo.build(debs, published, signing_key, pins, previous_url=url)
+    apt_repo.build(debs, published, signing_key, pins, previous_url=url, initialize=True)
+
+    debs = tmp_path / 'debs-new'
+    pins = make_kit(debs, new, debian_tools)
+    output = tmp_path / 'repo'
+    apt_repo.build(debs, output, signing_key, pins, previous_url=url)
+
     release = output / 'dists/trixie/Release'
     verify_signatures(release, output / apt_repo.KEYRING)
-    index = release.parent / 'main/binary-amd64/Packages'
+    index = release.parent / apt_repo.INDEX_PATH
     assert gzip.decompress(index.with_suffix('.gz').read_bytes()) == index.read_bytes()
-    for metadata in index.read_text().strip().split('\n\n'):
-        fields = dict(line.split(': ', 1) for line in metadata.splitlines() if not line.startswith(' '))
+    entries = read_index(output)
+    for fields in entries:
         file = output / fields['Filename']
-        assert file.read_bytes() == (debs / file.name).read_bytes()
+        original = debs / file.name
+        if not original.exists():
+            original = published / fields['Filename']
+        assert file.read_bytes() == original.read_bytes()
         assert fields['Size'] == str(file.stat().st_size)
         assert fields['SHA256'] == hashlib.sha256(file.read_bytes()).hexdigest()
-        assert fields['Depends'] == 'libfixture'
-        assert '\n More details.\n' in metadata
+    assert '\n More details.\n' in index.read_text()
+    indexed = {f'{fields["Package"]}={fields["Version"]}' for fields in entries}
+    assert {'postgresql-18=18.1-1', 'postgresql-client-18=18.1-1',
+            'postgresql-common=1.0-1', 'libfixture=1.0-1'} <= indexed
+    assert {entry['Version'] for entry in entries if entry['Package'] == 'sli'} == {old, new}
     for checksum in release.read_text().split('SHA256:\n')[1].splitlines():
         digest, size, filename = checksum.split()
         file = release.parent / filename
         assert int(size) == file.stat().st_size
         assert digest == hashlib.sha256(file.read_bytes()).hexdigest()
+    if debian_tools and shutil.which('apt-get'):
+        assert_apt_install_resolves(tmp_path, output, new)
 
+    requested = []
+
+    def apt_install(command, **kwargs):
+        assert command[:2] == ['apt-get', '-y']
+        requested.append(command[command.index('install') + 1:])
+        assert set(requested[-1]) <= indexed
+
+    monkeypatch.setattr(native_restore.install, 'command', apt_install)
+    monkeypatch.setattr(native_restore.native, 'command', lambda _: f'install ok installed\t{old}'.encode())
+    previous = native_restore.rollback_packages(old, None)
+    native_restore.apt_rollback(old, previous, download_only=True)
+    native_restore.apt_rollback(old, previous)
+    expected = [f'{package}={old}' for package in ('sli', 'sli-host', 'sli-rollback-hold', 'sli-server-dotnet')]
+    assert requested == [expected, expected]
+
+    published = output
+    retry = tmp_path / 'retry'
+    apt_repo.build(debs, retry, signing_key, pins, previous_url=url)
+    assert read_index(retry) == entries
+
+    debs = tmp_path / 'debs-latest'
+    pins = make_kit(debs, latest, debian_tools)
+    next_release = tmp_path / 'next'
+    original_release = release.read_bytes()
+    release.write_bytes(original_release.replace(b'Origin: SLI', b'Origin: Fixture'))
+    with pytest.raises(subprocess.CalledProcessError):
+        apt_repo.build(debs, next_release, signing_key, pins, previous_url=url)
+    assert not next_release.exists()
+    release.write_bytes(original_release)
+    previous_deb = published / 'pool' / f'sli_{new}_amd64.deb'
+    original = previous_deb.read_bytes()
+    previous_deb.write_bytes(b'X' * len(original))
+    with pytest.raises(ValueError, match='Previous package SHA-256'):
+        apt_repo.build(debs, next_release, signing_key, pins, previous_url=url)
+    assert not next_release.exists()
+    previous_deb.write_bytes(original)
+    apt_repo.build(debs, next_release, signing_key, pins, previous_url=url)
+    assert {entry['Version'] for entry in read_index(next_release) if entry['Package'] == 'sli'} == {new, latest}
+
+    dependency = debs / 'postgresql-18_18.1-1_amd64.deb'
+    original = dependency.read_bytes()
+    dependency.write_bytes(b'invalid')
+    with pytest.raises(ValueError, match='Pinned package SHA-256 mismatch'):
+        apt_repo.build(debs, tmp_path / 'bad-pin', signing_key, pins)
+    dependency.write_bytes(original)
     monkeypatch.setattr(apt_repo, 'MAX_FILE_SIZE', 1)
     rejected = tmp_path / 'rejected'
     with pytest.raises(ValueError, match='Pages file limit'):
-        apt_repo.build(debs, rejected, signing_key)
+        apt_repo.build(debs, rejected, signing_key, pins)
     assert not rejected.exists()
 
 
 @pytest.mark.parametrize('key_argument', [False, True])
 def test_cli_rejects_missing_signing_key(tmp_path, key_argument):
     output = tmp_path / 'repo'
-    command = [sys.executable, '-m', 'deploy.linux.build_apt_repo', '--debs', tmp_path, '--output', output]
+    command = [sys.executable, '-m', 'deploy.linux.build_apt_repo', '--debs', tmp_path, '--output', output,
+               '--pins', Path(__file__).resolve().parents[2] / 'deploy/linux/native_pins.json']
     if key_argument:
         command.extend(['--signing-key', tmp_path / 'missing.asc'])
     result = subprocess.run(command, capture_output=True, text=True, check=False)
