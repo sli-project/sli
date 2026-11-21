@@ -53,7 +53,7 @@ it("renders the English decision form and standard history while preserving comm
 
 it("submits unchanged comments and shows English success and failure notifications", async () => {
   const update = vi.spyOn(api, "updateFinding").mockResolvedValue({ status: "ok", changed: true, finding: {} } as never);
-  mount();
+  mount({ title_text: "Fixture problem" });
   expect(screen.queryByRole("heading", { name: "Decision history" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Комментарий пользователя" } });
   fireEvent.change(screen.getByLabelText("Status"), { target: { value: "active" } });
@@ -62,7 +62,7 @@ it("submits unchanged comments and shows English success and failure notificatio
   await waitFor(() => expect(state.toast).toHaveBeenCalledWith("Decision saved", "Status, owner and history confirmed by reading the report again."));
   update.mockRejectedValue(new Error("fixture failure"));
   fireEvent.click(screen.getByRole("button", { name: "Save decision" }));
-  await waitFor(() => expect(state.toast).toHaveBeenCalledWith("Decision not saved", "fixture failure"));
+  await waitFor(() => expect(state.toast).toHaveBeenCalledWith("Could not change the problem status", "Fixture problem"));
 });
 
 it.each([

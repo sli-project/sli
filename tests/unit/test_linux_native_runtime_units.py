@@ -272,6 +272,15 @@ def test_dotnet_preserves_native_entrypoint_acquisition_guards(monkeypatch):
     assert 'CapabilityBoundingSet=CAP_CHOWN\n' in setup
 
 
+def test_api_receives_the_configured_postgres_data_directory():
+    config = dict(profiles=['light'], radius_pilot=False, bind='192.0.2.1',
+                  health_url='https://192.0.2.1:8443/api/health/ready')
+    postgres = native_host.units()['sli-postgresql.service']
+    directory = next(line for line in postgres.splitlines() if line.startswith('ExecStart=')).split()[2]
+    api, _ = runtime.environment('api', config, dotnet=True)
+    assert api['SLI_POSTGRES_DATA_DIRECTORY'] == directory
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX ownership checks; Linux CI')
 def test_only_accepted_release_rendered_units_are_replaced(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, 'trusted', lambda path: path.read_bytes())

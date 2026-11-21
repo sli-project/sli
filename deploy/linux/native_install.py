@@ -554,6 +554,7 @@ def configure(release):
             if not resuming:
                 runtime.stop_writers()
                 command(["systemctl", "stop", "sli-ready.service"])
+            command(list(runtime.RESET_FAILED_UNITS))
         # The readiness adapter requires systemd-delivered administrative credentials.
         command(["systemctl", "start", "sli-ready.service"])
         # Fresh candidates may run for acceptance, but must not autostart on reboot yet.

@@ -7,6 +7,7 @@ import { resolveMessage } from "../i18n/messages";
 import { useAccessStatus, useEffectiveAccess, useTimeZone } from "./App";
 import { homeAssignee, homeDay, homeObjects, homeOccurrences, homeParams, homeTime } from "./home-view";
 import { errorState } from "./report-v2/ReportRenderer";
+import { ReportState } from "./report-v2/ReportState";
 
 const severityKeys: Record<string, MessageKey> = {
   critical: "home.queue.critical", high: "home.queue.high", medium: "home.queue.medium", low: "home.queue.low",
@@ -55,9 +56,7 @@ export function HomeComposition({ data, onRetry, actions }: { data: HomeDecision
         })}</a></p> : null}
       </> : data.state === "empty" && data.total === 0 ? <div className="sli-ds-state" data-state="empty" role="status">
         <div className="sli-ds-state__title">{t("home.queue.empty")}</div>
-        <p>{t("home.queue.updated", { time: homeTime(data.updated_at_utc, data.time_zone) })}</p>
-      </div> : unconfirmed ? <p><a href={data.warnings[0]?.href ?? "/app/operations"}>{t("home.queue.awaitingAnalysis")}</a></p>
-        : <StateView state={data.state === "error" ? "error" : "unavailable"} message={t("home.queue.load_failed")} onRetry={onRetry}/>}
+      </div> : unconfirmed ? null : <ReportState state="error" detail={t("home.queue.load_failed")} onRetry={onRetry}/>}
     </>}
   </>;
 }
@@ -81,8 +80,8 @@ export function HomePage() {
   return <section className="sli-ds-report sli-ds-home">
     {actions && !summary.data?.groups.length ? <PageHeader title={t("home.title")} actions={actions}/>
       : accessStatus === "загружается" || summary.isLoading || inventory.isLoading && !summary.data?.groups.length ? <><PageHeader title={t("home.title")}/><StateView state="loading" compact skeleton="table"/></>
-      : accessStatus === "отказ" ? <><PageHeader title={t("home.title")}/><StateView state="error" compact/></>
-      : failure ? <><PageHeader title={t("home.title")}/>{failure.state === "denied" ? <HomeDenied/> : <StateView {...failure} compact onRetry={() => void summary.refetch()}/>}</>
+      : accessStatus === "отказ" ? <><PageHeader title={t("home.title")}/><p role="alert">{t("home.queue.access_failed")}</p></>
+      : failure ? <><PageHeader title={t("home.title")}/>{failure.state === "denied" ? <HomeDenied/> : <ReportState state="error" detail={failure.detail ?? t("home.queue.load_failed")} onRetry={() => void summary.refetch()}/>}</>
       : summary.data ? <HomeComposition data={summary.data} actions={actions} onRetry={() => void summary.refetch()}/> : null}
   </section>;
 }

@@ -8,6 +8,7 @@ import {
   type FilterValues, type PeriodValue, type ResultState, type SortState,
 } from "../../design-system";
 import { t } from "../../i18n";
+import { reportMetadataText } from "../../i18n/report-metadata";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { useEffectiveAccess, useTimeZone } from "../App";
@@ -92,7 +93,8 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
       return <ReportLayout title={t(reportKey === "events.journal" ? "reports.v2.events.journal.title" : "reports.v2.security.events.chains.title")}
         state={state} stateView={<EventListError reportKey={reportKey} onRetry={() => void definition.refetch()}/>}/>;
     }
-    return <ReportLayout title={t("reports.renderer.default_title")} state={state} stateView={<ReportState state={state} detail={detail} onRetry={() => void definition.refetch()}/>}/>;
+    const title = reportMetadataText(reportKey, "title", t("reports.renderer.default_title"));
+    return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} {...tabs}/>;
@@ -341,7 +343,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     ? typeof snapshotAt === "string" && snapshotAt ? t("reports.renderer.snapshot_at", { time: formatDateTime(snapshotAt) }) : null
     : window_?.from_utc ? t("reports.renderer.period_range", { from: formatDateTime(window_.from_utc), to: formatDateTime(window_.to_utc_exclusive ?? window_.to_utc ?? "") }) : null;
   // A chip that repeats a clickable metric is the same action twice: keep the metric.
-  const presets = gpoReport ? definition.presets : visiblePresets(definition, values, (first?.metrics ?? []).flatMap((metric) => metric.filter ? [metric.filter] : []));
+  const presets = gpoReport ? definition.presets : visiblePresets(definition, values, problemQueue ? [] : (first?.metrics ?? []).flatMap((metric) => metric.filter ? [metric.filter] : []));
   const exportsByTab = independentUsers || computerReport || definition.key === "ad.infrastructure" || definition.key === "ad.gpo.v2";
   const exportParams = new URLSearchParams(baseParams);
   exportParams.delete("limit");
@@ -405,11 +407,10 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     crumbs={[{ label: getSectionCrumb(definition.section) }]}
     meta={infrastructure ? undefined : computerReport ? <span>{computerSummary(qualityResult)}</span> : domainEvents || eventsJournal ? null : <>{independentUsers ? <span>{userSummary(qualityResult)}</span> : null}{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
     actions={<>
-      {(first?.plugin ?? definition.plugin)?.state === "disabled" ? <span className="sli-ds-badge" data-tone="warning" role="status">{t("reports.renderer.plugin_disabled")}</span> : null}
       {PageAction && state !== "denied" && !(first?.plugin ?? definition.plugin)?.read_only ? <PageAction rows={rows as Record<string, unknown>[]} result={first}/> : null}
       {exportHref ? <a className="sli-ds-button" href={exportHref} download>{exportsSelectedView ? t("reports.renderer.export_csv") : t("reports.renderer.export_csv_all", { view: mainView.title ?? mainView.key })}</a> : null}
     </>}
-    metrics={!eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.filter((metric) => !problemQueue || !["progress", "closed"].includes(metric.key) || metric.value !== 0).map((metric) => ({
+    metrics={!problemQueue && !eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.map((metric) => ({
       key: metric.key, label: metric.label,
       value: metric.quality === "unknown" ? t("reports.metrics.no_data") : metric.value,
       tone: metric.quality && metric.quality !== "complete" ? "warning" : metric.tone,
@@ -448,7 +449,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
       : (eventsJournal || domainEvents) && state === "empty" ? eventsJournal ? journalEmpty : domainEventsEmpty
       : (eventsJournal || domainEvents || problemQueue || infrastructure || computerReport || independentUsers || adListState) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
-      canDiagnose={access?.capabilities.includes("operations.view") ?? false}
+      subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
       detail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : definition.key === "workstations.usb" && state === "not_collected" ? undefined : stateDetail} actions={state === "empty" ? emptyActions : vpnTimeoutRetry}
       onRetry={() => void data.refetch()} compact={state === "partial" || state === "stale" || state === "processing"}/>}{vpnTimeoutRetry}</>)}
     staleAge={first?.coverage?.observed_at_utc ? formatDateTime(String(first.coverage.observed_at_utc)) : undefined}
@@ -475,7 +476,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     {state === "denied" ? <ReportDenied reportKey={definition.key} title={definition.title} reason={stateDetail}/>
       : branch && (branch.state === "error" || branch.state === "denied")
       ? <ReportState state={branch.state} details={{ reason: branch.reason, limitations: branch.limitations }}
-        detail={branchDetail} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
+        detail={branchDetail} subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
       : adListState && !adTabRows?.length ? adEmpty
       : independentUsers && view.key === "checks"
       ? <UserChecks key={baseParams} result={first} baseParams={baseParams} onSelect={setSelected}/>

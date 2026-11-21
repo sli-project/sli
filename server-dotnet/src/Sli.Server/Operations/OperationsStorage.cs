@@ -75,6 +75,7 @@ public sealed partial class OperationsService
             ["storage"] = new JsonObject {
                 ["agent_inbox_capacity"] = inboxLimits?.CapacityStatus(),
                 ["retired_clickhouse_data"] = OperatingSystem.IsLinux() && Directory.Exists("/srv/sli-db/clickhouse"),
+                ["postgres_volume"] = files.PostgresVolume(),
                 ["disk_pressure"] = new JsonObject { ["disk"] = measurements },
                 ["footprint"] = new JsonObject { ["components"] = components,
                     ["backups"] = new JsonObject { ["last_backup_at_utc"] = Copy(footprint["backups"]?["last_backup_at_utc"]),

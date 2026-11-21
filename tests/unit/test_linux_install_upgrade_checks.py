@@ -1,6 +1,7 @@
 """Beta package acceptance on a private filesystem and a stateful service double."""
 
 from contextlib import contextmanager, nullcontext
+from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
@@ -78,6 +79,11 @@ def runtime_host(tmp_path, monkeypatch):
         if action == "list-units":
             return "\n".join(name + " loaded active running SLI" for name, state in states.items()
                              if name in argv[2:] and state["active"])
+        if action == "reset-failed":
+            for name, state in states.items():
+                if not argv[2:] or any(fnmatchcase(name, pattern) for pattern in argv[2:]):
+                    state.pop("failed", None)
+            return ""
         if action in {"disable", "stop"}:
             for name in argv[2:]:
                 if name.startswith("--"):
@@ -164,6 +170,8 @@ def test_beta_configuration_creates_dotnet_services_without_database_containers(
 
 def test_runtime_upgrade_retires_both_clickhouse_services_and_preserves_all_data(runtime_host):
     system = runtime_host
+    for name in ("sli-backup.service", "unrelated.service"):
+        system.states[name] = {"enabled": False, "active": False, "failed": True}
     retained = {}
     for name in ("history", "warm"):
         unit = "sli-clickhouse-" + name + ".service"
@@ -182,6 +190,8 @@ def test_runtime_upgrade_retires_both_clickhouse_services_and_preserves_all_data
     for _ in range(2):
         runtime.configure(config)
         assert all((system.root / name).read_bytes() == content for name, content in retained.items())
+        assert not system.states["sli-backup.service"].get("failed", False)
+        assert system.states["unrelated.service"]["failed"]
         assert system.states["sli-postgresql.service"] == {"enabled": True, "active": True}
         for name in ("history", "warm"):
             unit = "sli-clickhouse-" + name + ".service"

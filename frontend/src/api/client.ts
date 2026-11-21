@@ -1257,6 +1257,7 @@ export type StorageOverview = {
   storage: {
     agent_inbox_capacity?: "ok" | "full" | "unavailable" | null;
     disk_pressure?: { disk?: { used_bytes?: number; free_bytes?: number; used_human?: string; free_human?: string } };
+    postgres_volume?: { mount_point: string; used_bytes: number; free_bytes: number } | null;
     retired_clickhouse_data?: boolean;
     footprint?: Pick<StorageFootprint, "components" | "backups">;
   };

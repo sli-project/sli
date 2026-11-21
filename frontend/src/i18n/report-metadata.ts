@@ -136,7 +136,15 @@ export function localizeReportCatalog(value: ReportCatalogV2Dto): ReportCatalogV
 }
 
 export function localizeReportRow(report: string, row: Record<string, unknown>, timeZone?: string): Record<string, unknown> {
-  if (report === "security.problems" && row.presentation_messages) return resolvePresentation(row, timeZone);
+  if (report === "security.problems") {
+    const { presentation_messages: messages } = row as unknown as SecurityProblemFinding;
+    if (row.next_step_code === "security.problems.presentation.default_next" ||
+        messages?.next_text?.code === "security.problems.presentation.default_next") {
+      return { ...resolvePresentation(row, timeZone), next_text: null };
+    }
+    if (messages) return resolvePresentation(row, timeZone);
+    if (getLocale() !== "en") return row;
+  }
   const missingADValue = report === "ad.infrastructure" && ("actual_value" in row || "actual_text" in row) && (row.actual_value == null
     || ["not_collected", "not_evaluated", "unknown", "unavailable", "timeout", "partial"].includes(String(row.actual_value).toLowerCase()));
   if (missingADValue) row = { ...row, actual_text: "—" };
@@ -286,7 +294,7 @@ export function localizeReportResult(value: ReportResultDto, timeZone?: string):
     }) };
   }
   if (CODED_REPORTS.has(value.report_key)) value = resolvePresentation(value, timeZone);
-  if (getLocale() !== "en" && value.report_key === "ad.infrastructure") {
+  if (getLocale() !== "en" && ["ad.infrastructure", "security.problems"].includes(value.report_key)) {
     return { ...value, items: value.items.map((row) => localizeReportRow(value.report_key, row, timeZone)) };
   }
   if (getLocale() !== "en") return value;
