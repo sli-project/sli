@@ -279,7 +279,9 @@ def test_dotnet_unit_uses_site_binding_api_credentials_and_data_paths(agents, ad
     if ad_credentials:
         secrets.add("ad_credentials_master_key")
     assert {line for line in unit.splitlines() if line.startswith("LoadCredential=")} == {
-        f"LoadCredential={secret}:/etc/sli/secrets/{secret}" for secret in secrets}
+        "LoadCredential=sli-installation:/var/lib/sli/state/installed.json",
+        *(f"LoadCredential={secret}:/etc/sli/secrets/{secret}" for secret in secrets),
+    }
     env, api_secrets = runtime.environment("api", config)
     assert secrets == api_secrets
     for key, value in env.items():

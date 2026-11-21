@@ -55,7 +55,7 @@ export const ru = {
   "systemStatus.free": "Свободно",
   "systemStatus.download": "Скачать диагностику",
   "systemStatus.downloadFailed": "Не удалось скачать диагностику",
-  "systemStatus.version": "SLI {version} · установлена {date}",
+  "systemStatus.version": "SLI {version} · коммит {commit} · установлена {date}",
   "systemStatus.copy": "Скопировать",
   "systemStatus.serverConsole": "Консоль сервера",
   "systemStatus.copied": "Скопировано",

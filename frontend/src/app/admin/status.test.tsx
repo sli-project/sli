@@ -211,6 +211,28 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale("ru"); vi.restoreAllMocks(); });
 
+it.each([
+  ["en", "Nov 21, 2026"],
+  ["ru", "21.11.2026"],
+] as const)("shows the installed release, commit and date in the %s heading", async (locale, date) => {
+  setLocale(locale);
+  const release_tag = "beta1-0123456789ab";
+  const git_commit = "0123456789abcdef0123456789abcdef01234567";
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok", release_metadata: {
+    project_version: "2026.10.16", release_tag, git_commit, installed_at_utc: "2026-11-21T01:02:03Z",
+  } });
+  renderPage();
+  expect(await screen.findByText(t("systemStatus.version", { version: release_tag, commit: git_commit, date }),
+    { exact: false })).toBeTruthy();
+});
+
+it("shows dashes for missing release metadata", async () => {
+  setLocale("en");
+  vi.mocked(api.diagnostics).mockResolvedValue({ status: "ok" });
+  renderPage();
+  expect(await screen.findByText("SLI — · commit — · installed —", { exact: false })).toBeTruthy();
+});
+
 it.each(["ru", "en"] as const)("keeps one source and shows duplicate, identity conflict and old-version actions as table rows (%s)", async (locale) => {
   setLocale(locale);
   const data = setup([{ ...agent, duplicate_agents: 2, identity_conflict: true }]);

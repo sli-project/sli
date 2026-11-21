@@ -57,6 +57,9 @@ def test_all_writers_have_dependencies_credentials_and_sandbox(config):
         assert "SupplementaryGroups=sli-secrets" not in body
         assert "postgres_password" not in body and "platform_owner_password" not in body
         loaded = {line.split("=", 2)[1].split(":")[0] for line in body.splitlines() if line.startswith("LoadCredential=")}
+        if service == "api":
+            assert "LoadCredential=sli-installation:/var/lib/sli/state/installed.json\n" in body
+            loaded.remove("sli-installation")
         if service == "notification-delivery":
             assert "LoadCredential=notifications:/etc/sli/secrets/notifications\n" in body
             assert {name for name, spec in inventory.items() if spec["group"] == "notifications"} == {

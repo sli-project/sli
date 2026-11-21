@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -583,7 +584,8 @@ def configure(release):
             runtime.configure(config)
             writers_configured = True
             select(root)
-            atomic(installed_path, dict(manifest, release=str(root), manifest_sha256=digest))
+            atomic(installed_path, dict(manifest, release=str(root), manifest_sha256=digest,
+                                        installed_at_utc=datetime.now(timezone.utc).isoformat()))
             command(["systemctl", "daemon-reload"])
         else:
             require(CURRENT.resolve(strict=True) == root, "native_install_current_mismatch")
@@ -644,7 +646,11 @@ def preserve_recovery(root, manifest, digest):
                 stream.flush()
                 os.fsync(stream.fileno())
             destination.chmod(0o600)
-    atomic(recovery / "installed.json", dict(manifest, release=str(root), manifest_sha256=digest))
+    installed = json.loads(trusted(STATE / "installed.json"))
+    recovery_receipt = dict(manifest, release=str(root), manifest_sha256=digest)
+    if installed.get("installed_at_utc") is not None:
+        recovery_receipt["installed_at_utc"] = installed["installed_at_utc"]
+    atomic(recovery / "installed.json", recovery_receipt)
     from deploy.linux import native_upgrade
     native_upgrade.save_recovery(root, manifest, digest)
 

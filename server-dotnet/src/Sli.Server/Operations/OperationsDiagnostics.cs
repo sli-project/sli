@@ -21,7 +21,6 @@ public sealed partial class OperationsService
         catch (Exception) when (!ct.IsCancellationRequested) { return new() { ["status"] = "unavailable" }; }
     }
     static readonly string[] ExpectedTables = ["schema_migrations", "log_sources", "collection_channel_state", "collector_channel_runs", "collector_stage_metrics", "events", "findings", "ai_api_runs"];
-    JsonObject ReleaseMetadata() => new() { ["project_version"] = "2026.07.19-pg-product-sli-v4", ["baseline_id"] = "pg-product-sli-v4-20260719", ["build_id"] = files.Setting("ADLOG_BUILD_ID", "pg-product-sli-v4-20260719"), ["git_commit"] = null };
     async Task<JsonObject> DbStatusAsync(bool connect, CancellationToken ct)
     {
         var started = Stopwatch.StartNew();
@@ -30,7 +29,7 @@ public sealed partial class OperationsService
         var checks = new JsonObject { ["dsn"] = configured ? new JsonObject { ["status"] = "ok" } : new JsonObject { ["status"] = "warn", ["reason"] = "PostgreSQL DSN is not set" }, ["npgsql"] = new JsonObject { ["status"] = "ok", ["module"] = "Npgsql" } };
         var result = new JsonObject { ["status"] = "ok", ["mode"] = "db0_readiness", ["duration_ms"] = 0, ["active_backend"] = "postgres",
             ["postgres"] = new JsonObject { ["configured"] = configured, ["dsn"] = PostgresDsn.Redact(dsn), ["connect_timeout_seconds"] = 3 },
-            ["safety"] = new JsonObject { ["backend_switched"] = false, ["migration_running"] = false, ["cursor_or_watermark_changed"] = false }, ["checks"] = checks, ["release_metadata"] = ReleaseMetadata() };
+            ["safety"] = new JsonObject { ["backend_switched"] = false, ["migration_running"] = false, ["cursor_or_watermark_changed"] = false }, ["checks"] = checks, ["release_metadata"] = files.Release.ToJson() };
         if (!configured) result["status"] = "warn";
         if (!connect || !configured) checks["connection"] = new JsonObject { ["status"] = "skipped", ["reason"] = !connect ? "connect=false" : "PostgreSQL DSN is not set" };
         else try
@@ -214,6 +213,7 @@ public sealed partial class OperationsService
             ["disk_pressure"] = new JsonObject { ["free_percent"] = Copy(runtimeStorage["disk"]?["free_percent"]), ["free_bytes"] = Copy(runtimeStorage["disk"]?["free_bytes"]), ["free_human"] = Copy(runtimeStorage["disk"]?["free_human"]) }, ["source"] = "runtime_storage_single_pass", ["detail_endpoint"] = "/api/storage/health", ["deep_diagnostics_deferred"] = true };
         return new() { ["generated_at_utc"] = Generated, ["status"] = warnings.Count > 0 ? "warn" : "ok", ["warnings"] = warnings,
             ["password_catchup"] = Copy(password.FirstOrDefault()?["progress"]),
+            ["release_metadata"] = files.Release.ToJson(),
             ["config"] = new JsonObject { ["db_backend"] = "postgres", ["retention"] = StoragePolicy() }, ["db"] = db, ["storage"] = sizes, ["runtime_storage"] = runtimeStorage, ["storage_health"] = health,
             ["retention"] = new JsonObject { ["candidates"] = Copy(cleanup["total_candidates"]), ["bytes"] = Copy(cleanup["total_bytes"]), ["bytes_human"] = Copy(cleanup["total_human"]) }, ["collector_summary"] = Copy(collector["summary"]),
             ["performance"] = new JsonObject { ["total_duration_ms"] = timer.ElapsedMilliseconds, ["component_duration_ms"] = new JsonObject(), ["bounded_db_timeout_ms"] = 3000 }, ["cache"] = new JsonObject { ["hit"] = false, ["ttl_seconds"] = 0, ["age_ms"] = 0 } };
@@ -239,7 +239,7 @@ public sealed partial class OperationsService
         }
         var errors = InternalErrors(S(logs["internal_errors_tail"]), string.Concat(files.LogTail("adlog-monitor.log", 1000).Select(n => S(n))), Now);
         if (N(errors["active_count"]) > 0) warnings.Add($"internal-errors.log has {N(errors["active_count"])} active errors in the last 30 minutes");
-        return new() { ["status"] = warnings.Count > 0 ? "warn" : "ok", ["release_metadata"] = ReleaseMetadata(), ["checks"] = checks, ["parsed_checks"] = parsed, ["logs"] = logs, ["internal_errors"] = errors, ["warnings"] = warnings };
+        return new() { ["status"] = warnings.Count > 0 ? "warn" : "ok", ["release_metadata"] = files.Release.ToJson(), ["checks"] = checks, ["parsed_checks"] = parsed, ["logs"] = logs, ["internal_errors"] = errors, ["warnings"] = warnings };
     }
     internal static JsonObject InternalErrors(string text, string activity, DateTimeOffset now)
     {
@@ -291,7 +291,7 @@ public sealed partial class OperationsService
         var cleanup = await CleanupPreviewAsync(ct, compact: true);
         int exitCode = S(cleanup["status"]) is "ok" or "warn" ? 0 : 1;
         if (exitCode != 0) issues.Add("storage_cleanup_preview_unavailable");
-        return new() { ["status"] = issues.Count == 0 && S(database["status"]) == "ok" ? "ok" : "warn", ["issues"] = issues, ["database"] = database, ["release_metadata"] = ReleaseMetadata(),
+        return new() { ["status"] = issues.Count == 0 && S(database["status"]) == "ok" ? "ok" : "warn", ["issues"] = issues, ["database"] = database, ["release_metadata"] = files.Release.ToJson(),
             ["role_views"] = new JsonArray(roleViews.Select(view => view!["id"]!.DeepClone()).ToArray()),
             ["storage_cleanup_dry_run"] = new JsonObject { ["exit_code"] = exitCode, ["stdout_tail"] = cleanup.ToJsonString(), ["timed_out"] = false } };
     }

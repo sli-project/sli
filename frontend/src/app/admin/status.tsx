@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { DataTable, LoadingRegion, PageHeader, TableSkeleton, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
-import { formatDateTime } from "../../shared/date-time";
+import { formatDate, formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
 import { statusAdDcImportIssue, statusAuditChecks, statusServices, statusSources } from "./status-view";
@@ -76,7 +76,7 @@ export function SystemStatusPage() {
     || (channel.kind === "telegram" && !telegram.isError && telegram.data?.secret_set && telegram.data.chat_bound))) ?? false);
   const sourcesReady = !setup.isError && health && health.state !== "unavailable" && !health.diagnostics;
   const showSteps = sourcesReady && !(connected && channelReady && latest);
-  const version = diagnostics.data?.release_metadata?.project_version;
+  const release = diagnostics.data?.release_metadata;
   const webConsole = diagnostics.data?.web_console;
   const consoleUrl = access?.subject?.coarse_role === "admin" && !diagnostics.isError && webConsole?.available ? webConsole.url : null;
   const failed = (label: string, retry: () => unknown) => <p role="status">{t("systemStatus.failed", { table: label })} <button type="button" className="sli-ds-button" onClick={() => void retry()}>{t("systemStatus.retry")}</button></p>;
@@ -104,7 +104,11 @@ export function SystemStatusPage() {
           .catch(() => setExportError(true)).finally(() => setExporting(false));
       }}>{t("systemStatus.download")}</button>
     </>} meta={<>
-      {version ? <span>{t("systemStatus.version", { version, date: EMPTY_VALUE })} · </span> : null}
+      <span>{t("systemStatus.version", {
+        version: release?.release_tag || release?.project_version || EMPTY_VALUE,
+        commit: release?.git_commit || EMPTY_VALUE,
+        date: formatDate(release?.installed_at_utc, timeZone),
+      })} · </span>
       <code>{updateCommand}</code> <button type="button" className="sli-ds-button" onClick={() => {
         void (async () => {
           try { await navigator.clipboard.writeText(updateCommand); setCopied(true); setCopyError(false); }

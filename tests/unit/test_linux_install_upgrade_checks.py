@@ -281,9 +281,12 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
     current = [old]
     restored = []
 
-    def switch(root, inventory, digest):
+    def switch(root, inventory, digest, previous_receipt_path=None):
         if migration_failure:
             assert root == old and restored, "Only the checkpoint's previous release may start after SQL failure"
+            assert previous_receipt_path == recovery / "installed.json"
+        else:
+            assert previous_receipt_path is None
         current[0] = root
         install.atomic(state / "installed.json", {**inventory, "release": str(root), "manifest_sha256": digest})
 

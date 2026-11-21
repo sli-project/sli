@@ -28,8 +28,7 @@
     <PackageReference Include="System.IO.Hashing" />
     <EmbeddedResource Include="Access/frozen-report-rules.json" />
     <EmbeddedResource Include="../../../server/sli/ops/version.py" LogicalName="Sli.Server.Hosting.release-version.py" />
-    <AssemblyMetadata Include="GitCommit" Value="$(SourceRevisionId)" Condition="'$(SourceRevisionId)' != ''" />
-    <AssemblyMetadata Include="GitCommit" Value="$(GITHUB_SHA)" Condition="'$(SourceRevisionId)' == '' and '$(GITHUB_SHA)' != ''" />
+    <EmbeddedResource Include="../../../VERSION" LogicalName="Sli.Server.Hosting.VERSION" />
     <EmbeddedResource Include="Installation/settings-catalog.json" LogicalName="Sli.Installation.settings-catalog.json" />
     <EmbeddedResource Include="Installation/*.sql" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/stage9_ad_dc_dataset_report_parity_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
@@ -75,4 +74,10 @@
     <EmbeddedResource Include="../../../config/i18n/date-params.json" LogicalName="Sli.Server.Reporting.V2.date-params.json" />
     <EmbeddedResource Include="../../../config/i18n/server.en.json" LogicalName="Sli.Server.Access.Administration.server.en.json" WithCulture="false" />
   </ItemGroup>
+  <Target Name="AddSliBuildCommit" BeforeTargets="GetAssemblyAttributes" DependsOnTargets="InitializeSourceControlInformation">
+    <ItemGroup>
+      <AssemblyMetadata Include="GitCommit" Value="$(SourceRevisionId)" Condition="'$(SourceRevisionId)' != ''" />
+      <AssemblyMetadata Include="GitCommit" Value="$(GITHUB_SHA)" Condition="'$(SourceRevisionId)' == '' and '$(GITHUB_SHA)' != ''" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
+using Sli.Server.Hosting;
 using Sli.Server.Operations;
 using Xunit;
 
@@ -115,7 +116,7 @@ public sealed class OperationsEndpointTests
             services.AddSingleton<IPrincipalAuthenticator>(new Auth(role, authenticated)); services.AddSingleton<IAccessFactsRepository>(new Facts(allow, owner, effect, scoped));
             services.AddSingleton<IOperationsQueries>(postgresQueries ?? queries); services.AddSingleton<OperationsFiles>(files); services.AddSingleton(jobs); services.AddSingleton<TimeProvider>(clock ?? new Clock()); services.AddOperations();
             if (catalog is not null) services.AddSingleton(catalog);
-        }).Configure(app => { app.UseRouting(); app.UseReadRoleRequestGate(); app.UseEndpoints(endpoints => endpoints.MapOperations()); })).StartAsync(TestContext.Current.CancellationToken);
+        }).Configure(app => { app.UseRouting(); app.UseReadRoleRequestGate(); app.UseEndpoints(endpoints => { endpoints.MapOperations(); endpoints.MapSliHealth(); }); })).StartAsync(TestContext.Current.CancellationToken);
         return new(host, host.GetTestClient(), queries, files, jobs);
     }
     public static IEnumerable<object[]> Routes()
@@ -125,6 +126,55 @@ public sealed class OperationsEndpointTests
     }
     internal static Task<HttpResponseMessage> Request(App app, string method, string path, string body = """{"hostname":"DC2","connect_address":"dc2.example.test","channels":["Security"]}""") => app.Client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = method == "POST" ? new StringContent(body, Encoding.UTF8, "application/json") : null }, TestContext.Current.CancellationToken);
     internal static async Task<JsonObject> Body(HttpResponseMessage response) => JsonNode.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!.AsObject();
+
+    [Theory]
+    [InlineData("matching")]
+    [InlineData("other-release")]
+    [InlineData("missing")]
+    public async Task Health_and_diagnostics_report_the_selected_release(string receiptState)
+    {
+        const string tag = "beta1-0123456789ab";
+        const string commit = "0123456789abcdef0123456789abcdef01234567";
+        const string installedAt = "2026-11-21T01:02:03.456789+00:00";
+        var root = Directory.CreateTempSubdirectory("sli-release-test-");
+        try
+        {
+            if (receiptState != "missing")
+            {
+                File.WriteAllText(Path.Combine(root.FullName, "native-package.json"),
+                    new JsonObject { ["release"] = tag }.ToJsonString());
+                File.WriteAllText(Path.Combine(root.FullName, "native-runtime.json"),
+                    new JsonObject { ["provenance"] = new JsonObject { ["source_commit"] = commit } }.ToJsonString());
+                File.WriteAllText(Path.Combine(root.FullName, "sli-installation"), new JsonObject
+                {
+                    ["release"] = receiptState == "matching" ? root.FullName : Path.Combine(root.FullName, "previous"),
+                    ["installed_at_utc"] = installedAt
+                }.ToJsonString());
+            }
+            using var app = await Start(settings: new()
+            {
+                ["Sli:Release:PackageRoot"] = root.FullName,
+                ["CREDENTIALS_DIRECTORY"] = root.FullName
+            });
+
+            foreach (var (path, key) in new[]
+            {
+                ("/api/health/live", "runtime_identity"),
+                ("/api/diagnostics/overview", "release_metadata"),
+                ("/api/system/health", "release_metadata")
+            })
+            {
+                using var response = await Request(app, "GET", path);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var release = (await Body(response))[key]!;
+                Assert.Equal(receiptState == "missing" ? null : tag, (string?)release["release_tag"]);
+                if (receiptState != "missing")
+                    Assert.Equal(commit, (string?)release["git_commit"]);
+                Assert.Equal(receiptState == "matching" ? installedAt : null, (string?)release["installed_at_utc"]);
+            }
+        }
+        finally { root.Delete(recursive: true); }
+    }
 
     [Theory]
     [InlineData("admin", "https://sli.example.test:9090/system/terminal", true)]

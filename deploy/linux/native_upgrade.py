@@ -1156,9 +1156,13 @@ def restore_checkpoint(journal, *, committed_source=None):
         journal.write()
 
 
-def switch(root, manifest, manifest_digest):
+def switch(root, manifest, manifest_digest, previous_receipt_path=None):
     from deploy.linux import native_install as install
 
+    installed_path = install.STATE / 'installed.json'
+    receipt = json.loads(install.trusted(previous_receipt_path or installed_path))
+    installed_at = (receipt.get('installed_at_utc') if receipt.get('release') == str(root)
+                    else datetime.now(timezone.utc).isoformat())
     temporary = install.CURRENT.with_name('.upgrade-current')
     if temporary.is_symlink():
         require(os.readlink(temporary) == str(root), 'native_upgrade_pointer_busy')
@@ -1171,7 +1175,10 @@ def switch(root, manifest, manifest_digest):
         os.fsync(directory)
     finally:
         os.close(directory)
-    install.atomic(install.STATE / 'installed.json', dict(manifest, release=str(root), manifest_sha256=manifest_digest))
+    selected_receipt = dict(manifest, release=str(root), manifest_sha256=manifest_digest)
+    if installed_at is not None:
+        selected_receipt['installed_at_utc'] = installed_at
+    install.atomic(installed_path, selected_receipt)
 
 
 def testing_units(transaction=None):
@@ -1414,7 +1421,7 @@ def recover_compatible(journal):
         restore_checkpoint(journal)
         journal.value['checkpoint_restored'] = True
         journal.write()
-    switch(root, manifest, manifest_digest)
+    switch(root, manifest, manifest_digest, recovery / 'installed.json')
     restore_helpers(recovery, bool(journal.value.get('reuse_existing')))
     # Restore the saved vendor definitions. Local overrides were never changed.
     for path in (recovery / 'units').iterdir():

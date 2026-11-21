@@ -24,7 +24,6 @@ public sealed class UiNavigationRolesTests
         Assert.Equal("ok", data["status"]!.ToString());
         string version = data["release_metadata"]!["project_version"]!.ToString();
         Assert.StartsWith("2026.", version);
-        Assert.Contains(new[] { "stage4-", "db0", "pg-stable", "pg-product" }, marker => version.Contains(marker, StringComparison.Ordinal));
         Assert.Equal(new[] { "it", "security", "technical" }, data["roles"]!.AsArray().Select(r => r!["id"]!.ToString()).Order(StringComparer.Ordinal));
         var items = data["items"]!.AsArray();
         Assert.Contains(items, item => item!["url"]!.ToString() == "/reports/ui-navigation.html");

@@ -361,6 +361,8 @@ def dotnet_unit(release, config, service="api"):
         policy += f'Environment="{setting}={int(setting == "ADLOG_ACQUISITION_DISABLED")}"\n'
     if service == "api":
         policy += f'Environment="SLI_BIND={config["bind"]}"\n'
+        policy += f'Environment="Sli__Release__PackageRoot=/opt/sli/releases/{release}"\n'
+        policy += "LoadCredential=sli-installation:/var/lib/sli/state/installed.json\n"
     if service == "post-collection":
         # Python resolves the frozen source catalog relative to /opt/sli/current.
         policy += 'Environment="Sli__EventCatalogPath=/opt/sli/current/config/event_catalog.json"\n'
