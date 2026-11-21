@@ -48,7 +48,8 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
     public async Task<JsonObject> QueryAsync(ReportQueryContext c, CancellationToken ct)
     {
         try {
-            var raw = await repository.FindingsAsync(Input(c), new(c.Access), ct);
+            var input = Input(c);
+            var raw = await repository.FindingsAsync(input with { QueueList = input.FindingId is null }, new(c.Access), ct);
             return Render(c, raw);
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
@@ -84,8 +85,9 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
     internal static JsonObject Render(ReportQueryContext c, JsonObject raw)
     {
         var rows = new JsonArray(); var access = new ProblemAccess(c.Access);
+        bool includeDescription = c.Params["id"] is not null;
         foreach (var finding in (raw["items"] as JsonArray ?? []).OfType<JsonObject>()) {
-            var row = ProblemPresentation.Finding(finding, access, c.Language, queue: true);
+            var row = ProblemPresentation.Finding(finding, access, c.Language, queue: true, includeDescription: includeDescription);
             string status = row.Text("status");
             var transitions = raw["lifecycle"]?["allowed_transitions"]?[status] as JsonArray ?? [];
             row["allowed_statuses"] = new JsonArray(new[] { status }.Concat(transitions.Select(s => s!.ToString())).Distinct().Select(s => (JsonNode?)JsonValue.Create(s)).ToArray());

@@ -267,6 +267,7 @@ public static class ReportV2Endpoints
     {
         payload["state_message"] = ReportResult.Message("reports.state." + payload.Text("state"), DomainHttp.SelectEnglish(http.Request.Headers.AcceptLanguage.ToString()));
         if (payload.Text("report_key") == "events.journal") EventsJournalReader.Localize(payload, DomainHttp.SelectEnglish(http.Request.Headers.AcceptLanguage.ToString()));
-        return DomainHttp.WriteAsync(http, ReportPresentation.Apply(payload, DomainHttp.SelectEnglish(http.Request.Headers.AcceptLanguage.ToString())), 200, ct);
+        return DomainHttp.WriteAsync(http, ReportPresentation.Apply(payload, DomainHttp.SelectEnglish(http.Request.Headers.AcceptLanguage.ToString())),
+            200, ct, compact: payload.Text("report_key") == "security.problems");
     }
 }

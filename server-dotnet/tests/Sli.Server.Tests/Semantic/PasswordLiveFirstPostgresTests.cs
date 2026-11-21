@@ -70,6 +70,20 @@ public sealed class PasswordLiveFirstPostgresTests
         Assert.False(initial.Failed,initial.Diagnostic?.ToJsonString());
         Assert.Equal(2,initial.Jobs);
         var consumer=new PasswordRiskConsumer(runtime,new());
+        await using (var producerTransaction = await owner.BeginTransactionAsync(ct)) {
+            await using var lockedPolicy = new NpgsqlCommand("""
+                select p.policy_id from semantic_risk_policies p where p.policy_id in (
+                    select j.policy_id from semantic_risk_evaluation_jobs j where j.evaluation_status='queued'
+                ) for update of p
+                """, owner, producerTransaction);
+            Assert.NotNull(await lockedPolicy.ExecuteScalarAsync(ct));
+            using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            probe.CancelAfter(TimeSpan.FromSeconds(5));
+            var blocked = await consumer.RunOnceAsync(probe.Token);
+            Assert.Equal(0, blocked.Claimed);
+            Assert.Equal(0, blocked.Failed);
+            await producerTransaction.RollbackAsync(ct);
+        }
         var legacy=await consumer.RunOnceAsync(ct);
         Assert.Equal(0,legacy.Failed);Assert.Equal(2,legacy.Published);
         async Task<(Guid Scenario,long Finding,int Evidence)[]> Publications()

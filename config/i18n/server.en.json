@@ -176,6 +176,7 @@
   "setup.agentCollection.unknown": "Check agent assignments and status.",
   "setup.agentCollection.unavailable": "Could not check collection — try again.",
   "reports.v2.security.problems.columns.occurrence_count.label": "Times",
+  "security.problems.presentation.spray_object": "{source} ({count} accounts)",
   "reports.v2.security.problems.params.population.options.open": "Open",
   "reports.v2.security.problems.params.population.options.all": "All",
   "domain_archive_must_be_boolean": "Choose whether the domain is archived.",

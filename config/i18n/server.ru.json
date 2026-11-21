@@ -176,6 +176,7 @@
   "setup.agentCollection.unknown": "Проверьте назначение и состояние агентов.",
   "setup.agentCollection.unavailable": "Не удалось проверить сбор — повторите проверку.",
   "reports.v2.security.problems.columns.occurrence_count.label": "Раз",
+  "security.problems.presentation.spray_object": "{source} (учётных записей: {count})",
   "reports.v2.security.problems.params.population.options.open": "Открытые",
   "reports.v2.security.problems.params.population.options.all": "Все",
   "domain_archive_must_be_boolean": "Укажите, является ли домен архивным.",

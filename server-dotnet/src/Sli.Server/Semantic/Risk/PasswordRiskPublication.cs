@@ -13,14 +13,14 @@ internal static class PasswordRiskPublication
             from public.semantic_risk_evaluation_results result join public.semantic_risk_evaluation_jobs job on job.job_id=result.job_id
             join public.semantic_risk_policies p on p.policy_id=job.policy_id and p.policy_version=job.policy_version
             join public.semantic_policy_admission a on a.policy_id=p.policy_id and a.policy_version=p.policy_version and a.enabled is true
-            where result.job_id=@job and public.semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status)='enabled' for share of p
+            where result.job_id=@job and public.semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status)='enabled' for share of p nowait
             """,ct,("job",work.Lease.Id));
         RiskJson.Require(results.Count==1&&RiskJson.String(results[0],"evaluation_mode")=="enabled"&&RiskJson.String(results[0],"conclusion_state")=="observed"&&RiskJson.String(results[0],"scenario_id")==sid.ToString()&&results[0]["policy_admitted"]?.GetValue<bool>()==true,"password_risk_publication_admission_required");
-        // Acquire every contributing policy lock, then inspect admission in a FRESH statement after any wait.
+        // Lock all contributing policies before rechecking admission in a fresh statement.
         await sql.Rows("""
             select p.policy_id,p.policy_version from public.semantic_risk_contributions c join public.semantic_risk_policies p
               on p.policy_id=c.policy_id and p.policy_version=c.policy_version
-            where c.scenario_id=@scenario order by p.policy_id,p.policy_version for share of p
+            where c.scenario_id=@scenario order by p.policy_id,p.policy_version for share of p nowait
             """,ct,("scenario",sid));
         var contributions=await sql.Rows("""
             select encode(c.policy_sha256,'hex') as contribution_sha,encode(p.definition_sha256,'hex') as policy_sha,
