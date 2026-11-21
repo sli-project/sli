@@ -76,6 +76,12 @@ function replaceUrl(search: URLSearchParams) {
   if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state, "", next);
 }
 
+function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: () => void }) {
+  return <div role="alert">{t(reportKey === "events.journal" ? "reports.v2.events.journal.load_failed" : "reports.domain_events.load_failed")}{" "}
+    <button className="sli-ds-button" type="button" onClick={onRetry}>{t("state.retry")}</button>
+  </div>;
+}
+
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
 export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
@@ -83,6 +89,10 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
   if (definition.error || !definition.data) {
     const { state, detail } = errorState(definition.error);
     if (state === "denied") return <ReportDenied reportKey={reportKey} reason={detail} page/>;
+    if (reportKey === "events.journal" || reportKey === "security.events.chains") {
+      return <ReportLayout title={t(reportKey === "events.journal" ? "reports.v2.events.journal.title" : "reports.v2.security.events.chains.title")}
+        state={state} stateView={<EventListError reportKey={reportKey} onRetry={() => void definition.refetch()}/>}/>;
+    }
     const title = reportMetadataText(reportKey, "title", t("reports.renderer.default_title"));
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
@@ -371,6 +381,8 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
   </div> : null;
   const journalEmpty = <p role="status">{t(state === "not_collected" ? "reports.v2.events.journal.not_loaded" : "reports.v2.events.journal.empty")}</p>;
+  const domainEventsEmpty = state === "ok" || state === "empty" ? <p role="status">{t("reports.domain_events.empty")}</p> : null;
+  const eventListFailure = (eventsJournal || domainEvents) && (state === "error" || state === "unavailable");
 
   return <ResultWindowContext.Provider value={first?.window}><Tabs items={displayedViews.map((item) => {
     const itemBranch = viewBranches?.[item.key];
@@ -416,12 +428,13 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     tabs={<ViewTabs views={displayedViews}/>}
     tabbed={views.length > 1}
     // A custom view loads its own data: an empty main table is not its state.
-    state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? domainEvents ? "empty" : "partial" : state}
+    state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
     stateMessage={first?.state === state ? first.state_message : undefined}
     stateDetail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : stateDetail}
     stateActions={state === "empty" ? emptyActions : vpnTimeoutRetry}
-    stateView={eventsJournal && state === "empty" ? journalEmpty : eventsJournal && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : (problemQueue || infrastructure || computerReport || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : domainEvents ? state === "error" || state === "unavailable" ? <div role="alert">{t("reports.domain_events.load_failed")} <button className="sli-ds-button" type="button" onClick={() => void data.refetch()}>{t("state.retry")}</button></div>
-      : state === "empty" || state === "not_collected" ? <div role="status">{t("reports.domain_events.empty")}</div> : <></>
+    stateView={eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
+      : (eventsJournal || domainEvents) && state === "empty" ? eventsJournal ? journalEmpty : domainEventsEmpty
+      : (eventsJournal || domainEvents || problemQueue || infrastructure || computerReport || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
       subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
       detail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : definition.key === "workstations.usb" && state === "not_collected" ? undefined : stateDetail} actions={state === "empty" ? emptyActions : vpnTimeoutRetry}
@@ -468,7 +481,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
       ? (() => { const Custom = view.component ? VIEW_COMPONENTS[view.component] : undefined; return Custom ? <Custom params={new URLSearchParams(baseParams)} result={first}/> : <ReportState state="error" detail={t("reports.renderer.view_not_registered")}/>; })()
       : (view.source ?? "items") === "items"
       ? (rows.length === 0 && !data.isLoading && !data.error
-        ? (eventsJournal ? journalEmpty : domainEvents ? <div role="status">{t("reports.domain_events.empty")}</div> : gpoReport ? state === "not_collected" ? null : gpoEmpty : state !== "error" ? <ReportState state="empty" detail={<>{definition.key === "workstations.usb" ? t(state === "partial" || state === "stale" ? "workstations.usb.empty_unverified" : "workstations.usb.empty") : reportEmptyText(view, definition.title)}{emptyDetail}</>} actions={emptyActions}/> : null)
+        ? (eventsJournal ? journalEmpty : domainEvents ? domainEventsEmpty : gpoReport ? state === "not_collected" ? null : gpoEmpty : state !== "error" ? <ReportState state="empty" detail={<>{definition.key === "workstations.usb" ? t(state === "partial" || state === "stale" ? "workstations.usb.empty_unverified" : "workstations.usb.empty") : reportEmptyText(view, definition.title)}{emptyDetail}</>} actions={emptyActions}/> : null)
         : <><DataTable caption={view.title || definition.title} columns={computerReport ? computerTableColumns(definition.columns, setSelected, rows, timeZone) : columns} rows={rows} rowKey={(row) => String(row[definition.row_key] ?? JSON.stringify(row))}
           sort={sort} onSort={toggleSort} onRowClick={definition.detail === "none" ? undefined : setSelected}
           selectedKey={selected ? String(selected[definition.row_key]) : null}

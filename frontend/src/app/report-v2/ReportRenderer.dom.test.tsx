@@ -244,18 +244,26 @@ it.each([false, true])("shows domain event optional columns only when the page h
     expect(Boolean(within(table).queryByRole("columnheader", { name }))).toBe(populated);
 });
 
-it.each((["ru", "en"] as const).flatMap(locale => ["http-error", "error"].map(failure => ({ locale, failure }))))("names the failed domain events request and offers retry ($locale / $failure)", async ({ locale, failure }) => {
+it.each((["ru", "en"] as const).flatMap(locale => ["definition", "http-error", "error"].map(failure => ({ locale, failure }))))("names the failed domain events request and offers retry ($locale / $failure)", async ({ locale, failure }) => {
   setLocale(locale);
   const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"), filter_options: {} };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/data?")
-    ? failure === "http-error" ? { error: "synthetic_failure" } : page({ state: "error", items: [] }) : raw),
-    { status: String(input).includes("/data?") && failure === "http-error" ? 500 : 200, headers: { "Content-Type": "application/json" } })));
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const data = String(input).includes("/data?");
+    const failed = data ? failure === "http-error" : failure === "definition";
+    return new Response(JSON.stringify(failed ? { error: "synthetic_failure" } : data ? page({ state: "error", items: [] }) : raw),
+      { status: failed ? 500 : 200, headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetch);
   renderReport("security.events.chains");
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain(t("reports.domain_events.load_failed"));
-  expect(within(alert).getByRole("button", { name: t("state.retry") })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(t("reports.v2.security.events.chains.title"));
+  expect(document.querySelector(".sli-ds-state")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
   expect(screen.queryByText(t("reports.domain_events.empty"))).toBeNull();
+  const failedRequest = fetch.mock.calls.at(-1)?.[0];
+  await userEvent.click(within(alert).getByRole("button", { name: t("state.retry") }));
+  await waitFor(() => expect(fetch.mock.calls.filter(([request]) => request === failedRequest)).toHaveLength(2));
 });
 
 it.each((["ru", "en"] as const).flatMap(locale =>
@@ -267,8 +275,9 @@ it.each((["ru", "en"] as const).flatMap(locale =>
       String(input).includes("/data?") ? page({ report_key: "security.events.chains", state, items: [], filtered_count: 0 }) : raw,
     ), { headers: { "Content-Type": "application/json" } })));
     const { container } = renderReport("security.events.chains");
-    expect(await screen.findByText(t("reports.domain_events.empty"))).toBeTruthy();
-    expect(screen.getAllByText(t("reports.domain_events.empty"))).toHaveLength(1);
+    await waitFor(() => expect(container.querySelector(".sli-ds-report")?.getAttribute("data-state"))
+      .toBe(state === "not_collected" ? "partial" : state));
+    expect(screen.queryAllByText(t("reports.domain_events.empty"))).toHaveLength(state === "ok" || state === "empty" ? 1 : 0);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: t("state.retry") })).toBeNull();
     expect(container.querySelector('[data-state="error"]')).toBeNull();
