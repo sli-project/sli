@@ -33,6 +33,7 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     files = {}
     secrets = set()
     sql = []
+    bootstrapped = []
 
     class Connection:
         def transaction(self):
@@ -60,6 +61,7 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
         assert 'sli-report' in users
         assert 'report_producer_password' in secrets
         assert any('insert into public.report_producer_principals' in query for query, _ in sql)
+        assert len(bootstrapped) == 1
         files[path] = body
 
     machine = SimpleNamespace(receipt=lambda: None, directory=lambda *a, **kw: None, write=write)
@@ -80,6 +82,7 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     monkeypatch.setattr(install, 'trusted', lambda path: b'validated')
     monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(tmp_path / 'synthetic-passfile'))
     monkeypatch.setattr(backup, 'pg_connect', lambda *a, **kw: nullcontext(Connection()))
+    monkeypatch.setattr(runtime, 'bootstrap_event_storage', bootstrapped.append)
     monkeypatch.setattr(migrate, 'secret_value', lambda setting: 'synthetic-password')
     monkeypatch.setattr(sli_secrets, 'ensure', lambda directory, *, names: secrets.update(names))
 

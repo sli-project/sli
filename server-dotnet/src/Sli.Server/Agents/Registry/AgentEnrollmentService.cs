@@ -118,6 +118,13 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             q.Parameters.AddWithValue("id", tokenId);
             if ((bool)(await q.ExecuteScalarAsync(ct) ?? false) == false) throw RejectToken();
         }
+        long? bootstrapDomain = null;
+        if (consoleToken is not null && role == "domain_controller" && hostName is not null && CollectionProfile(configuration) == "beta"
+            && await BootstrapSnapshotDomainAsync(connection, transaction, body, hostName, dc, ct) is { } firstDc)
+        {
+            dc = firstDc;
+            bootstrapDomain = firstDc.Domain;
+        }
         var agentId = Guid.NewGuid();
         using var cert = ca.Issue(csr, agentId, hostId);
         int rate = role == "domain_controller" ? AdDcConfig.DefaultRateLimitPerMinute : 120;
@@ -142,7 +149,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if ((approved is not null || consoleToken is not null) && replacement is null)
             newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion,consoleToken is not null);
         if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct))
-            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null);
+            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null, bootstrapDomain);
         var serial = await StoreCertificateAsync(connection, transaction, agentId, cert, ct);
         if(newer is not null)await RetireRegistrationAsync(connection,transaction,agentId,newer.Value,"enrollment:"+tokenId,true,ct);
         await using (var q = new NpgsqlCommand("update sli_agent_enrollment_tokens set used_at=clock_timestamp(),enrolled_agent_id=@agent where id=@id; insert into sli_agent_group_members(agent_id,group_id) select @agent,t.group_id from sli_agent_group_approval_links a join sli_agent_group_requests r on r.id=a.request_id join sli_agent_group_tokens t on t.id=r.token_id where a.enrollment_token_id=@id", connection, transaction))
@@ -281,7 +288,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var profile=configuration?["Sli:CollectionProfile"] ?? configuration?["SLI_COLLECTION_PROFILE"] ?? "beta";
         return profile is "beta" or "full" ? profile : throw new ServerConfigurationException("Sli:CollectionProfile");
     }
-    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain)
+    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain, string? timezone = null)
     {
         var beta=CollectionProfile(configuration)=="beta";
         if(beta && role=="workstation") return new JsonArray();
@@ -302,6 +309,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             foreach(var snapshot in new[] { SnapshotPolicy.Ad,SnapshotPolicy.Gpo })
             {
                 var input=new JsonObject { ["source_instance_id"]=host.ToString(),["domain_sid"]=domain["domain_sid"]!.DeepClone(),["domain_dns"]=domain["fqdn"]!.DeepClone(),["scope"]="domain",["policy_revision"]="2" };
+                input["schedule"] = new JsonObject { ["timezone"] = timezone ?? SnapshotPublication.AdSnapshotSchedule.HostZone, ["hours"] = new JsonArray(6, 18) };
                 if(snapshot==SnapshotPolicy.Ad) input["families"]=new JsonArray(SnapshotPolicy.AdFamilies.Where(f=>f!="ad_vpn_membership").Select(f=>(JsonNode?)JsonValue.Create(f)).ToArray());
                 var snapshotConfig=SnapshotIngressPolicy.Parse(snapshot,input).Config;
                 modules.Add(new JsonObject { ["module_id"]=snapshot,["enabled"]=true,["config"]=snapshotConfig });
@@ -314,7 +322,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         return catalog.Channels.SelectMany(catalog.EventIds)
             .Distinct().Order().ToArray();
     }
-    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,CancellationToken ct,long? approvedServer)
+    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,CancellationToken ct,long? approvedServer,long? bootstrapDomain)
     {
         JsonObject? domain=null;
         if(CollectionProfile(configuration)=="beta" && role=="domain_controller")
@@ -324,7 +332,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             await using var read=new NpgsqlCommand("""
                 select distinct d.domain_sid,lower(d.fqdn) from domains d
                 where d.domain_sid is not null and (
-                    exists(select 1 from sli_agent_group_approval_links a
+                    d.id=@bootstrap or exists(select 1 from sli_agent_group_approval_links a
                         join sli_agent_group_requests r on r.id=a.request_id
                         join sli_agent_group_tokens g on g.id=r.token_id
                         where a.enrollment_token_id=@token and g.domain_id=d.id)
@@ -336,6 +344,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 """,c,t);
             read.Parameters.AddWithValue("token",token);
             read.Parameters.Add("server",NpgsqlDbType.Bigint).Value=(object?)approvedServer ?? DBNull.Value;
+            read.Parameters.Add("bootstrap",NpgsqlDbType.Bigint).Value=(object?)bootstrapDomain ?? DBNull.Value;
             await using var reader=await read.ExecuteReaderAsync(ct);
             if(await reader.ReadAsync(ct))
             {
@@ -343,7 +352,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 if(await reader.ReadAsync(ct)) domain=null;
             }
         }
-        var modules=DefaultModules(configuration,role,host,hostName,domain);
+        string? timezone = domain is null ? null : await SnapshotPublication.AdSnapshotSchedule.ReadZoneAsync(c,t,ct);
+        var modules=DefaultModules(configuration,role,host,hostName,domain,timezone);
         if(modules.Count==0) return;
         foreach(var item in modules.OfType<JsonObject>().Where(m=>m["module_id"]!.GetValue<string>() is SnapshotPolicy.Ad or SnapshotPolicy.Gpo).ToArray())
         {
@@ -351,7 +361,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             try { await AgentSnapshotAssignment.ValidateAsync(c,t,agent,module,config,true,ct); }
             catch(AgentControlException error) when(error.Message=="agent_snapshot_collector_conflict")
             { modules.Remove(item); continue; }
-            await AgentSnapshotAssignment.PublishAsync(c,t,agent,module,config,true,ct);
+            await AgentSnapshotAssignment.PublishAsync(c,t,agent,module,config,true,ct,followServerTimezone:true);
         }
         await using (var q=new NpgsqlCommand("insert into sli_agent_policy_history(agent_id,revision,assigned_modules,collection_policy) values(@id,1,'[]'::jsonb,@control::jsonb),(@id,2,@modules::jsonb,@control::jsonb) on conflict(agent_id,revision) do nothing; update sli_agents set assigned_modules=@modules::jsonb,policy_revision=2 where id=@id",c,t))
         { q.Parameters.AddWithValue("id",agent); q.Parameters.AddWithValue("control",control); q.Parameters.AddWithValue("modules",modules.ToJsonString()); await q.ExecuteNonQueryAsync(ct); }

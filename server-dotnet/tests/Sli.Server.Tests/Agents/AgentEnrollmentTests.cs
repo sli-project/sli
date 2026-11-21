@@ -631,7 +631,7 @@ public class AgentEnrollmentTests
         var bytes = certificate.GetSerialNumber(); Array.Reverse(bytes);
         return Convert.ToHexStringLower(bytes).TrimStart('0');
     }
-    private static CertificateRequest CaRequest(string name, ECDsa key, int pathLength)
+    internal static CertificateRequest CaRequest(string name, ECDsa key, int pathLength)
     {
         var r = new CertificateRequest(name, key, HashAlgorithmName.SHA256);
         r.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, pathLength, true));

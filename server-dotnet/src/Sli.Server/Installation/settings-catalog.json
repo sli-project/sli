@@ -1,5 +1,12 @@
 [
   {
+    "key": "server.timezone",
+    "label": "Server time zone",
+    "description": "Sets the time zone for scheduled Active Directory collection.",
+    "environment": "",
+    "default": "host"
+  },
+  {
     "key": "reports.domain_fqdn",
     "label": "Домен отчётов",
     "description": "DNS-имя домена Active Directory, по которому строятся отчёты каталога: пользователи, компьютеры, состояние AD, «кто, где, когда».",

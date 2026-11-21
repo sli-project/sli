@@ -23,6 +23,19 @@ const services: Record<string, MessageKey> = {
   core_job_executor_long: "systemStatus.service.long",
 };
 
+const adDcImportIssues: Record<string, MessageKey> = {
+  agent_ad_dc_catalog_unavailable: "systemStatus.adDcImport.catalog",
+  agent_ad_dc_storage_connection_unconfigured: "systemStatus.adDcImport.connection",
+  agent_ad_dc_storage_authorization_missing: "systemStatus.adDcImport.authorizationMissing",
+  agent_ad_dc_storage_authorization_invalid: "systemStatus.adDcImport.authorizationInvalid",
+  agent_ad_dc_storage_access_denied: "systemStatus.adDcImport.accessDenied",
+};
+
+export function statusAdDcImportIssue(workers: RuntimeWorker[]) {
+  const issue = workers.find((worker) => worker.worker_name === "post_collection")?.details?.ad_dc_import_issue;
+  return typeof issue === "string" && Object.hasOwn(adDcImportIssues, issue) ? t(adDcImportIssues[issue]) : null;
+}
+
 function missingAudit(agent: AgentCollectionHealth["items"][number]) {
   if (agent.windows_audit?.policy_revision !== agent.policy_revision || ["disabled", "paused"].includes(agent.state)) return [];
   return (agent.windows_audit?.families.domain_controller?.required ?? []).filter(missingAuditSetting);

@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 ID = re.compile(r"[a-z0-9][a-z0-9.+-]{0,63}")
 VERSION = re.compile(r"[0-9][a-zA-Z0-9.+~]*-[0-9]+~deb13")
 HELPERS = ("native_host.py", "native_runtime.py", "native_install.py", "native_backup.py", "native_upgrade.py",
-           "operation_wait.py",
+           "operation_wait.py", "native_remove.py",
            "native_clickhouse_endpoint.py", "native_setup.py", "native_diagnostics.py", "native_preinstall.py", "native_pins.json", "secrets-manifest.json", "backup_policy.py")
 
 
@@ -169,7 +169,6 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
         write(host, "usr/sbin/sli-backup", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup capture \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-restore", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-backup restore \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-native-upgrade", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_upgrade.py launch \"$@\"\n", 0o755)
-        write(host, "usr/lib/sli/native_remove.py", (helpers / 'native_remove.py').read_text(encoding='utf-8'))
         write(host, "usr/sbin/sli-remove", "#!/bin/sh\nset -eu\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_remove.py \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-rollback", "#!/bin/sh\nset -eu\nexec /usr/sbin/sli-native-upgrade rollback latest \"$@\"\n", 0o755)
         write(host, "DEBIAN/prerm", retain_recovery_prerm(), 0o755)

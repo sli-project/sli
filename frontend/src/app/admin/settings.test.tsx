@@ -9,10 +9,11 @@ import { TimeZoneContext } from "../../shared/time-zone";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { roleLabel } from "../report-labels";
 
-const state = vi.hoisted(() => ({ bootstrap: vi.fn(), logout: vi.fn() }));
+const state = vi.hoisted(() => ({ bootstrap: vi.fn(), logout: vi.fn(), settings: vi.fn(), saveSetting: vi.fn() }));
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
-  return { ...actual, api: { ...actual.api, bootstrap: () => state.bootstrap(), logout: () => state.logout() } };
+  return { ...actual, api: { ...actual.api, bootstrap: () => state.bootstrap(), logout: () => state.logout(),
+    platformSettings: () => state.settings(), updatePlatformSetting: (key: string, value: string) => state.saveSetting(key, value) } };
 });
 import { SettingsPage } from "./settings";
 
@@ -116,6 +117,22 @@ it("names a profile load failure and retries without exposing server error text"
   expect(screen.queryByText("fixture_internal_failure")).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: t("state.retry") }));
   expect(await screen.findByText(`fixture-user · ${roleLabel("operator")}`)).toBeTruthy();
+});
+
+it("saves the server schedule time zone through platform settings", async () => {
+  state.bootstrap.mockResolvedValue({ principal: { username: "fixture-user", role: "admin" }, capabilities: ["access.manage"] });
+  state.settings.mockResolvedValue({ items: [{ key: "server.timezone", value: "host" }] });
+  state.saveSetting.mockResolvedValue({ item: { key: "server.timezone", value: "Europe/Berlin" } });
+  renderProfile();
+  const input = await screen.findByLabelText(t("operations.settings.server_tz_title")) as HTMLSelectElement;
+  expect(input.value).toBe("host");
+  fireEvent.change(input, { target: { value: "Europe/Berlin" } });
+  expect(state.saveSetting).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: t("operations.settings.save") }));
+  expect(state.saveSetting).toHaveBeenCalledWith("server.timezone", "Europe/Berlin");
+  await screen.findByRole("status");
+  expect(input.value).toBe("Europe/Berlin");
+  expect((screen.getByRole("combobox", { name: t("operations.settings.tz_title") }) as HTMLInputElement).value).toBe("UTC");
 });
 
 it("calls logout, disables it while pending and names a failure", async () => {

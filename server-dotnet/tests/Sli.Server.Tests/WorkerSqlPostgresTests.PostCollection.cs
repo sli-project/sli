@@ -5,7 +5,6 @@ using NpgsqlTypes;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Agents.Ingress;
-using Sli.Server.Storage.Direct;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Infrastructure;
 using Sli.Server.Operations;
@@ -26,7 +25,9 @@ public sealed partial class WorkerSqlPostgresTests
         await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
         string root = SqlPostgresFixture.Repository();
         await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString); await db.OpenAsync(ct);
-        await SeedInstalledPackets(db, root, fixture.Pg.Root, ct);
+        await SeedInstalledPackets(db, root, ct);
+        await using (var domain = new NpgsqlCommand("select password_detection_domain_id is null from sli_agent_module_bindings where module_id='sli.windows.ad-dc'", db))
+            Assert.True(await domain.ExecuteScalarAsync(ct) is true);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
             ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
             ["Sli:ProjectRoot"] = root, ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "ADLOG_DATA_DIR")
@@ -38,8 +39,8 @@ public sealed partial class WorkerSqlPostgresTests
             ["revision"] = "1", ["channel"] = "Security", ["snapshot"] = false
         }).ToArray());
         await queries.ReadAsync(OperationsSql.Streams, ct, ("requested", requested.ToJsonString()));
-        var render = ProcessInfo(Environment.GetEnvironmentVariable("SLI_TEST_PYTHON") ?? (OperatingSystem.IsWindows()
-            ? "python" : "python3"), root);
+        string python = Environment.GetEnvironmentVariable("SLI_TEST_PYTHON") ?? (OperatingSystem.IsWindows() ? "python" : "python3");
+        var render = ProcessInfo(python, root);
         render.ArgumentList.Add("-B"); render.ArgumentList.Add("-c");
         render.ArgumentList.Add("from deploy.linux import native_runtime as n; import json; n.clickhouse.configured_mode=lambda: 'native'; print(json.dumps(n.dotnet_units('synthetic',dict(profiles=['light'],radius_pilot=False,bind='192.0.2.1',health_url='https://192.0.2.1:8443/api/health/ready'))))");
         var rendered = await RunProcess(render, ct); Assert.Equal(0, rendered.Exit);
@@ -47,13 +48,14 @@ public sealed partial class WorkerSqlPostgresTests
         var info = ProcessInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", root);
         info.ArgumentList.Add(typeof(Program).Assembly.Location); info.ArgumentList.Add("post-collection-worker"); info.ArgumentList.Add("--once");
         string credentials = Path.Combine(fixture.Pg.Root, "credentials"); Directory.CreateDirectory(credentials);
+        info.Environment["CREDENTIALS_DIRECTORY"] = credentials;
         var loaded = Regex.Matches(unit, @"(?m)^LoadCredential=([^:]+):").Select(m => m.Groups[1].Value).ToHashSet();
         Assert.Equal(new[] { "context_password", "runtime_password", "storage_password" }, loaded.Order());
         foreach (string name in loaded) await File.WriteAllTextAsync(Path.Combine(credentials, name), "synthetic-test-password\n", ct);
         foreach (Match setting in Regex.Matches(unit, "(?m)^Environment=\"([^=]+)=(.*)\"$"))
         {
             string key = setting.Groups[1].Value, value = setting.Groups[2].Value;
-            if (value.StartsWith("%d/", StringComparison.Ordinal)) { Assert.Contains(value[3..], loaded); value = Path.Combine(credentials, value[3..]); }
+            if (value.StartsWith("%d/", StringComparison.Ordinal)) Assert.Contains(value[3..], loaded);
             else if (key.EndsWith("_DSN", StringComparison.Ordinal)) {
                 string role = Regex.Match(value, @"user=([^ ]+)").Groups[1].Value;
                 var target = new NpgsqlConnectionStringBuilder(fixture.Dsn(role));
@@ -75,8 +77,30 @@ public sealed partial class WorkerSqlPostgresTests
         Assert.NotNull(catalog);
         info.Environment.Remove("Sli__EventCatalogPath");
         var unavailable = await RunProcess(info, ct);
-        Assert.Contains("agent_storage_unavailable", unavailable.Out);
+        Assert.Equal(1, unavailable.Exit);
+        Assert.Contains("agent_ad_dc_catalog_unavailable", unavailable.Error);
         info.Environment["Sli__EventCatalogPath"] = catalog;
+        var missing = await RunProcess(info, ct);
+        Assert.Equal(1, missing.Exit);
+        Assert.Contains("\"step\":\"authorization\"", missing.Error);
+        Assert.Contains("agent_ad_dc_storage_authorization_missing", missing.Error);
+        var issue = await queries.ReadAsync("select details_json->>'ad_dc_import_issue' as issue from runtime_worker_heartbeats where worker_name='post_collection'", ct);
+        Assert.Equal("agent_ad_dc_storage_authorization_missing", (string?)Assert.Single(issue)!["issue"]);
+        Assert.False((bool)Assert.Single(await queries.ReadAsync("""
+            select has_table_privilege(current_user,'public.storage_v2_runtime_authorizations','INSERT') as can_authorize
+            """, ct))!["can_authorize"]!);
+
+        var bootstrap = ProcessInfo(python, root);
+        bootstrap.ArgumentList.Add("-B"); bootstrap.ArgumentList.Add("-c");
+        bootstrap.ArgumentList.Add("import psycopg; from deploy.linux.native_runtime import bootstrap_event_storage; " +
+            "connection = psycopg.connect(autocommit=True); bootstrap_event_storage(connection); connection.close()");
+        var admin = new NpgsqlConnectionStringBuilder(fixture.Pg.ConnectionString);
+        bootstrap.Environment["PGHOST"] = admin.Host;
+        bootstrap.Environment["PGPORT"] = admin.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        bootstrap.Environment["PGDATABASE"] = admin.Database;
+        bootstrap.Environment["PGUSER"] = admin.Username;
+        var admitted = await RunProcess(bootstrap, ct);
+        Assert.True(admitted.Exit == 0, admitted.Out + admitted.Error);
         var result = await RunProcess(info, ct);
         output.WriteLine(result.Out + result.Error); Assert.Equal(0, result.Exit);
         Assert.DoesNotContain("_failed", result.Error);
@@ -108,8 +132,9 @@ public sealed partial class WorkerSqlPostgresTests
         }
         // The worker's cycle fact remains in PostgreSQL; its process observation
         // correctly reports that this --once invocation has now exited.
-        var durable = await queries.ReadAsync("select status,phase from runtime_worker_heartbeats where worker_name='post_collection'", ct);
+        var durable = await queries.ReadAsync("select status,phase,details_json->>'ad_dc_import_issue' as issue from runtime_worker_heartbeats where worker_name='post_collection'", ct);
         Assert.Equal("idle", Assert.Single(durable)!["status"]!.ToString());
+        Assert.Null(Assert.Single(durable)!["issue"]);
         using (var host = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(Domains.SafeTestEnvironment.ConfigureApiHost).WithWebHostBuilder(b => b
             .ConfigureLogging(l => l.ClearProviders())
@@ -152,6 +177,16 @@ public sealed partial class WorkerSqlPostgresTests
             Assert.Equal(2L, rows.GetInt64(1));
             Assert.Equal(new[] { eventId }, rows.GetFieldValue<long[]>(2));
         }
+        await PostCollectionPostgres.Sql(db, "update storage_v2_runtime_authorizations set revoked_at=now()", ct);
+        admitted = await RunProcess(bootstrap, ct);
+        Assert.True(admitted.Exit == 0, admitted.Out + admitted.Error);
+        await using (var check = new NpgsqlCommand("select revoked_at is not null from storage_v2_runtime_authorizations", db))
+            Assert.True(await check.ExecuteScalarAsync(ct) is true);
+        await PostCollectionPostgres.Sql(db, "delete from storage_v2_runtime_authorizations", ct);
+        admitted = await RunProcess(bootstrap, ct);
+        Assert.True(admitted.Exit == 0, admitted.Out + admitted.Error);
+        await using (var check = new NpgsqlCommand("select count(*) from storage_v2_runtime_authorizations", db))
+            Assert.Equal(0L, await check.ExecuteScalarAsync(ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
@@ -181,7 +216,7 @@ public sealed partial class WorkerSqlPostgresTests
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
-    private static async Task SeedInstalledPackets(NpgsqlConnection db, string root, string archive, CancellationToken ct)
+    private static async Task SeedInstalledPackets(NpgsqlConnection db, string root, CancellationToken ct)
     {
         await PostCollectionPostgres.Sql(db, """
             insert into servers(id,domain_id,hostname,fqdn,role)
@@ -190,18 +225,6 @@ public sealed partial class WorkerSqlPostgresTests
             update plugin_installations_v1 set package_lifecycle='registered',desired_activation='enabled_manual'
               where plugin_id in ('sli.ad','sli.file-audit','sli.workstations');
             """, ct);
-        DateTime now = new(DateTime.UtcNow.Ticks / 10 * 10, DateTimeKind.Utc);
-        var auth = new DirectRuntimeRecord("v2", "storage-v2-fresh-bootstrap/v1", new string('a',64), archive,
-            new JsonObject { ["kind"]="fresh-event-store", ["version"]=1 }, "synthetic-test", now, now.AddHours(1), null, "");
-        await using (var command = new NpgsqlCommand("""
-            insert into storage_v2_runtime_authorizations(route,authority,preflight_digest,authorization_digest,archive_root,evidence,authorized_by,authorized_at,expires_at)
-            values(@route,@authority,@preflight,@digest,@archive,@evidence,'synthetic-test',@at,@expires)
-            """, db)) {
-            command.Parameters.AddWithValue("route",auth.Route); command.Parameters.AddWithValue("authority",auth.Authority);
-            command.Parameters.AddWithValue("preflight",auth.PreflightDigest); command.Parameters.AddWithValue("digest",DirectRuntimeAuthorization.Digest(auth));
-            command.Parameters.AddWithValue("archive",archive); command.Parameters.AddWithValue("evidence",NpgsqlDbType.Jsonb,auth.Evidence.ToJsonString());
-            command.Parameters.AddWithValue("at",now); command.Parameters.AddWithValue("expires",auth.ExpiresAt); await command.ExecuteNonQueryAsync(ct);
-        }
         async Task Store(Guid agent, Guid host, string module, JsonObject body, JsonObject envelope, JsonArray assignments, string channel, string source, int sequence = 1)
         {
             Guid packet = Guid.Parse(envelope["packet_id"]!.GetValue<string>());
