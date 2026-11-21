@@ -177,14 +177,21 @@ public sealed partial class ProblemRepository
         string pageWhere = where;
         if (query.BeforeId is {} before) { args["before"] = before; pageWhere += query.GroupQueue ? " and queue_groups.queue_cursor_id<@before" : " and findings.id<@before"; }
         string order = query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
+        string riskAudit = query.QueueList || query.Compact ? "null::jsonb" : """
+            (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
+                select id,action,actor,occurred_at,details from semantic_control_audit where details->'rule'->>'kind'='risk_acceptance'
+                and details->'rule'->>'finding_id'=findings.id::text order by id desc limit 50) a)
+            """;
+        const string review = "semantic_finding_review_v160(findings.id)";
+        string reviewHint = query.QueueList
+            ? $"case when findings.rule_code not in ('semantic.qw.password-brute-force','semantic.qw.password-spray') then {review} end"
+            : review;
         string page = $"""
             {prefix}
             select findings.*,({EffectiveStatus}) as status{groupFields},
               case when risk.id is not null then to_jsonb(risk)||jsonb_build_object('state',case when risk.state='active' and risk.expires_at<=statement_timestamp() then 'expired' else risk.state end) else null end as risk_acceptance,
-              (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
-                select id,action,actor,occurred_at,details from semantic_control_audit where details->'rule'->>'kind'='risk_acceptance'
-                and details->'rule'->>'finding_id'=findings.id::text order by id desc limit 50) a) as risk_audit,
-              semantic_finding_review_v160(findings.id) as review_hint,
+              {riskAudit} as risk_audit,
+              {reviewHint} as review_hint,
               ({Suppressed}) as suppressed,
               case when findings.rule_code in ('semantic.qw.account-decoy','semantic.qw.file-decoy') then public.finding_decoy_context(findings.id) end as decoy_label
             {population}{pageWhere}
@@ -223,13 +230,16 @@ public sealed partial class ProblemRepository
             summary = await Rows(tx, summarySql, args, ct);
         }
         bool more = rows.Count > query.Limit; if (more) rows.RemoveAt(query.Limit);
-        var passwordIds = rows.OfType<JsonObject>().Where(row => ProblemJson.Text(row["rule_code"]) is
-            "semantic.qw.password-brute-force" or "semantic.qw.password-spray").Select(row => ProblemJson.Long(row["id"])).ToArray();
-        if (passwordIds.Length > 0) {
-            var passwordFacts = await Rows(tx, $"select findings.id,{ProblemCohorts.PasswordFacts("findings")} as facts from findings_active findings where findings.id=any(@password_ids)",
-                new() { ["password_ids"] = passwordIds }, ct);
-            foreach (var row in rows.OfType<JsonObject>())
-                row["presentation_facts"] = passwordFacts.OfType<JsonObject>().FirstOrDefault(f => ProblemJson.Long(f["id"]) == ProblemJson.Long(row["id"]))?["facts"]?.DeepClone();
+        var passwordRows = rows.OfType<JsonObject>().Where(row => ProblemPresentation.IsPasswordFinding(ProblemJson.Text(row["rule_code"])))
+            .ToDictionary(row => ProblemJson.Long(row["id"]));
+        if (passwordRows.Count > 0 && (!query.Compact || query.GroupQueue)) {
+            var passwordFacts = await Rows(tx, $"""
+                select findings.id,{ProblemCohorts.PasswordFacts("findings")} as facts
+                from unnest(@ids::bigint[],@rules::text[]) findings(id,rule_code)
+                """, new() { ["ids"] = passwordRows.Keys.ToArray(),
+                    ["rules"] = passwordRows.Values.Select(row => ProblemJson.Text(row["rule_code"])).ToArray() }, ct);
+            foreach (var fact in passwordFacts.OfType<JsonObject>())
+                passwordRows[ProblemJson.Long(fact["id"])]["presentation_facts"] = fact["facts"]?.DeepClone();
         }
         foreach (var row in rows.OfType<JsonObject>())
             if (row["review_hint"] is JsonObject hint)
@@ -256,13 +266,13 @@ public sealed partial class ProblemRepository
             row.Remove("decoy_label");
         }
         if (!query.Compact) {
-            await AttachDetails(tx, rows, ct);
+            await AttachDetails(tx, rows, ct, query.QueueList);
             if (query.PageQueue) await AttachQueueNames(rows, (family, domains, token) => Sli.Server.Ad.AdV2Store.Snapshots(db, family, domains, token), ct);
             var detectionIds = rows.OfType<JsonObject>().Where(r => ProblemPresentation.CatalogDetection(ProblemJson.Text(r["rule_code"]))).Select(r => ProblemJson.Long(r["id"])).ToArray();
             if (detectionIds.Length > 0) AttachDetectionPresentation(rows.OfType<JsonObject>(), (await Rows(tx,
                 DetectionPresentationSql, new() { ["ids"] = detectionIds }, ct)).OfType<JsonObject>());
             await AttachIdentities(tx, rows, ct);
-            await AttachCases(tx, rows, access, ct);
+            if (!query.QueueList) await AttachCases(tx, rows, access, ct);
         }
         await AttachKerberosFacts(tx, rows.OfType<JsonObject>().ToArray(), ct);
         await tx.CommitAsync(ct);
@@ -275,10 +285,12 @@ public sealed partial class ProblemRepository
         if (query.PageQueue) result["password_detection_coverage"] = passwordCoverage;
         return result;
     }
-    internal static async Task AttachDetails(NpgsqlTransaction tx, JsonArray rows, CancellationToken ct)
+    internal static async Task AttachDetails(NpgsqlTransaction tx, JsonArray rows, CancellationToken ct, bool queueList = false)
     {
-        if (rows.Count == 0) return;
-        var args = new Dictionary<string, object?> { ["ids"] = rows.Select(r => ProblemJson.Long(r!["id"])).ToArray() };
+        var ids = rows.OfType<JsonObject>().Where(r => !queueList || !ProblemPresentation.IsPasswordFinding(ProblemJson.Text(r["rule_code"])))
+            .Select(r => ProblemJson.Long(r["id"])).ToArray();
+        if (ids.Length == 0) return;
+        var args = new Dictionary<string, object?> { ["ids"] = ids };
         var evidence = await Rows(tx, """
             select * from (select e.*,
                 min(domain_id) over(partition by finding_id) as identity_domain_min,
@@ -293,7 +305,7 @@ public sealed partial class ProblemRepository
             ranked as(select *,row_number() over(partition by finding_id order by case entity_role when 'actor' then 1 when 'target' then 2 when 'source' then 3 else 4 end,display_name) as rn from deduplicated)
             select finding_id,entity_type,display_name,entity_role from ranked where rn<=25 order by finding_id,rn
             """, args, ct);
-        var history = await Rows(tx, """
+        var history = queueList ? new JsonArray() : await Rows(tx, """
             select id,finding_id,old_status,new_status,changed_at,changed_by,note from (
               select *,row_number() over(partition by finding_id order by id desc) as rn from finding_status_history where finding_id=any(@ids)
             ) ranked where rn<=20 order by finding_id,id desc

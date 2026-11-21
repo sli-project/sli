@@ -13,6 +13,7 @@ public static class DomainHttp
         NewLine = "\n",
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
+    private static readonly JsonSerializerOptions CompactJsonOptions = new(JsonOptions) { WriteIndented = false };
 
     public static Task WriteFailureAsync(HttpContext context, AuthenticationFailure failure, CancellationToken ct)
     {
@@ -58,9 +59,9 @@ public static class DomainHttp
             StatusCodes.Status500InternalServerError, ct);
     }
 
-    public static async Task WriteAsync(HttpContext context, object body, int statusCode, CancellationToken ct)
+    public static async Task WriteAsync(HttpContext context, object body, int statusCode, CancellationToken ct, bool compact = false)
     {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(body, JsonOptions);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(body, compact ? CompactJsonOptions : JsonOptions);
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
         context.Response.ContentLength = bytes.Length;

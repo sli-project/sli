@@ -41,9 +41,12 @@ public sealed partial class ProblemQueuePagingTests
         };
         foreach (bool named in new[] { true, false }) {
             var raw = new JsonObject { ["items"] = new JsonArray(Finding(named)) };
-            var row = SecurityProblemsReader.Render(Context() with { Language = locale }, raw)["items"]![0]!;
+            var context = Context() with { Language = locale };
+            var row = SecurityProblemsReader.Render(context, raw)["items"]![0]!;
             Assert.Equal(named ? "fixture-admin" : unknown, row["entity_text"]!.ToString());
-            Assert.Contains(sid, row["entity_identifiers"]!.ToString());
+            Assert.Null(row["entity_identifiers"]);
+            var detail = SecurityProblemsReader.Render(context with { Params = new() { ["id"] = "7" } }, raw)["items"]![0]!;
+            Assert.Contains(sid, detail["entity_identifiers"]!.ToString());
             var hidden = SecurityProblemsReader.Render(Context(identity: false), raw)["items"]![0]!;
             Assert.Null(hidden["entity_text"]);
         }

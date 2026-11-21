@@ -217,6 +217,7 @@ public sealed record FindingQuery(string? Status, string? Severity, string? Sear
     public string? Population { get; init; }
     public bool PageQueue { get; init; }
     public bool Compact { get; init; }
+    public bool QueueList { get; init; }
     public bool GroupQueue { get; init; }
     public string? Cohort { get; init; }
     public string Timezone { get; init; } = "UTC";

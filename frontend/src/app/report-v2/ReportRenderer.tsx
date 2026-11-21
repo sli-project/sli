@@ -39,6 +39,7 @@ import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
+const problemDescriptionColumns = ["what", "why", "next"];
 
 const WORKSTATION_SOURCE_REASONS = {
   source_timeout: "reports.workstations.source_timeout",
@@ -247,6 +248,22 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     refetchOnWindowFocus: false,
   });
 
+  const selectedId = String(selected?.id ?? "");
+  const hasProblemDescription = selected !== null && ["what_happened", "why_text", "next_text"].some((key) => Object.hasOwn(selected, key));
+  const problemDetails = useQuery({
+    queryKey: ["report-v2", "data", definition.key, "finding", selectedId, baseParams],
+    queryFn: async () => {
+      const params = new URLSearchParams(baseParams);
+      params.set("id", selectedId);
+      params.set("limit", "1");
+      return (await api.reportV2Data(definition.key, params)).items.find((item) => String(item.id) === selectedId) ?? null;
+    },
+    enabled: problemQueue && Boolean(selectedId) && !hasProblemDescription && !viewDenied,
+    retry: false,
+  });
+  const problemDetailsReady = hasProblemDescription || Boolean(problemDetails.data);
+  const selectedFacts = selected && problemQueue && problemDetails.data ? { ...selected, ...problemDetails.data } : selected;
+
   const [userPaging, setUserPaging] = useState({ params: "", index: 0 });
   const userPage = userPaging.params === baseParams ? userPaging.index : 0;
 
@@ -279,7 +296,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
       : !computerReport || (view.key === "computers" || (view.key === "changes" && field.key === "q"))), [definition, liveOptions, activeView, computerReport, independentUsers, view.key]);
   const declaredColumns = useMemo(() => independentUsers ? userTableColumns(definition.columns, setSelected, view.key === "privileged", timeZone)
     : workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
-      (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources"].includes(column.key))
+      (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
       && !(domainEvents && ["change", "actor", "group"].includes(column.key) && rows.length > 0
         && rows.every((row) => {
           const value = columnValue(column, row);
@@ -449,13 +466,14 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
           const href = fillTemplate(link.href, selected);
           return href ? <a key={link.label} className="sli-ds-button" data-variant="primary" href={withReturnTo(href, `${window.location.pathname}${window.location.search}`)}>{link.label}</a> : null;
         })}
-        <CopyFactsButton text={rowFactsText(definition.title, definition.columns, selected, timeZone)}/>
+        <CopyFactsButton text={rowFactsText(definition.title, definition.columns, selectedFacts ?? selected, timeZone)}/>
       </> : undefined}>
-      {selected && problemQueue ? definition.columns.filter((column) => ["what", "why", "next"].includes(column.key)).map((column) =>
-        <p key={column.key}><strong>{column.label}</strong>{": "}{formatCell(columnValue(column, selected), cellKind(column))}</p>) : null}
-      {selected && !independentUsers ? <FactList facts={(computerReport && view.key === "changes" ? view.columns ?? [] : definition.columns).filter((column) => (!problemQueue || !["what", "why", "next"].includes(column.key)) && (!computerReport || view.key === "changes" || ["computer_type", "operating_system", "enabled", "last_logon_utc", "ou_path", "laps_state", "observed", "ip_addresses", "sli_agent"].includes(column.key))).map((column) => ({ label: column.label, value: computerReport ? computerFactValue(column, selected, timeZone) : column.component ? <CellComponent name={column.component} row={selected}/> : formatCell(columnValue(column, selected), cellKind(column)) }))}/> : null}
+      {selectedFacts && problemQueue && problemDetailsReady ? definition.columns.filter((column) => problemDescriptionColumns.includes(column.key)).map((column) =>
+        <p key={column.key}><strong>{column.label}</strong>{": "}{formatCell(columnValue(column, selectedFacts), cellKind(column))}</p>) : null}
+      {selected && problemQueue && problemDetails.isError ? <ReportState state="error" subject={definition.title} onRetry={() => void problemDetails.refetch()}/> : null}
+      {selectedFacts && !independentUsers ? <FactList facts={(computerReport && view.key === "changes" ? view.columns ?? [] : definition.columns).filter((column) => (!problemQueue || !problemDescriptionColumns.includes(column.key)) && (!computerReport || view.key === "changes" || ["computer_type", "operating_system", "enabled", "last_logon_utc", "ou_path", "laps_state", "observed", "ip_addresses", "sli_agent"].includes(column.key))).map((column) => ({ label: column.label, value: computerReport ? computerFactValue(column, selectedFacts, timeZone) : column.component ? <CellComponent name={column.component} row={selectedFacts}/> : formatCell(columnValue(column, selectedFacts), cellKind(column)) }))}/> : null}
       {selected && independentUsers ? <><FactList facts={definition.columns.filter((column) => ["state", "ou", "password_last_set"].includes(column.key)).map((column) => ({ label: column.label, value: columnValue(column, selected) == null ? t("reports.metrics.no_data") : formatCell(columnValue(column, selected), cellKind(column)) }))}/><UserReasons row={selected}/></> : null}
-      {selected && computerReport ? <ComputerReasons row={selected}/> : selected && !independentUsers && typeof definition.detail === "object" ? <DetailSection definition={definition} detail={definition.detail} row={selected} baseParams={baseParams}/> : null}
+      {selected && computerReport ? <ComputerReasons row={selected}/> : selectedFacts && !independentUsers && typeof definition.detail === "object" && (!problemQueue || problemDetailsReady) ? <DetailSection definition={definition} detail={definition.detail} row={selectedFacts} baseParams={baseParams}/> : null}
     </DetailDrawer>}
   >
     {!domainEvents && !eventsJournal && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? <PairsWindowState result={first} onShowLatest={showLatest}
