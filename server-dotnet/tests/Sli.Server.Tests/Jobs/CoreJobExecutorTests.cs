@@ -435,16 +435,68 @@ public class CoreJobExecutorTests
         string payload = mode == "oversized" ? new string('x', 5000) : mode == "invalid" ? "[]" : "{\"status\":\"success\"}";
         string executable = OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe") : "/bin/sh";
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        const string readyDirectory = "SLI_TEST_JOB_READY_DIRECTORY";
+        string script;
         if (OperatingSystem.IsWindows())
         {
             start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
-            start.ArgumentList.Add("[void][Console]::In.ReadToEnd(); " + (mode == "memory" ? "Start-Sleep -Seconds 30" : mode == "timeout" ? "Start-Sleep -Seconds 1; [Console]::Out.Write('" + payload + "')" : mode == "cpu" ? "for ($i=0; $i -lt 100000; $i++) { }; [Console]::Out.Write('" + payload + "')" : mode == "crash" ? "exit 1" : "[Console]::Out.Write('" + payload + "')"));
+            script = "[void][Console]::In.ReadToEnd(); " + (mode switch
+            {
+                "timeout" => "[void][IO.Directory]::CreateDirectory((Join-Path $env:" + readyDirectory + " $PID)); [Threading.Thread]::Sleep(-1)",
+                "memory" => "[Threading.Thread]::Sleep(-1)",
+                "crash" => "exit 1",
+                "cpu" => "for ($i=0; $i -lt 100000; $i++) { }; [Console]::Out.Write('" + payload + "')",
+                _ => "[Console]::Out.Write('" + payload + "')"
+            });
         }
-        else { start.ArgumentList.Add("-c"); start.ArgumentList.Add("cat >/dev/null; " + (mode == "memory" ? "sleep 30" : mode == "timeout" ? "sleep 1; printf '%s' '" + payload + "'" : mode == "cpu" ? "i=0; while [ $i -lt 100000 ]; do i=$((i+1)); done; printf '%s' '" + payload + "'" : mode == "crash" ? "exit 1" : "printf '%s' '" + payload + "'")); }
+        else
+        {
+            start.ArgumentList.Add("-c");
+            script = "cat >/dev/null; " + (mode switch
+            {
+                "timeout" => "mkdir \"$" + readyDirectory + "/$$\" && exec sleep infinity",
+                "memory" => "exec sleep infinity",
+                "crash" => "exit 1",
+                "cpu" => "i=0; while [ $i -lt 100000 ]; do i=$((i+1)); done; printf '%s' '" + payload + "'",
+                _ => "printf '%s' '" + payload + "'"
+            });
+        }
+        start.ArgumentList.Add(script);
         var budget = JsonNode.Parse("{\"max_result_bytes\":4096,\"memory_bytes\":268435456,\"cpu_seconds\":30}")!.AsObject();
         if (mode == "memory") budget["memory_bytes"] = 1L;
         if (mode == "cpu") budget["cpu_seconds"] = 0L;
-        Task<JsonObject> Run() => CoreJobProcess.RunAsync(start, budget, mode == "timeout" ? TimeSpan.FromMilliseconds(150) : TimeSpan.FromSeconds(10), null, TestContext.Current.CancellationToken, new());
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        Task<JsonObject> Run() => CoreJobProcess.RunAsync(start, budget, Timeout.InfiniteTimeSpan, null, deadline.Token, new());
+        if (mode == "timeout")
+        {
+            var ready = Directory.CreateTempSubdirectory("sli-job-ready-");
+            start.Environment[readyDirectory] = ready.FullName;
+            var execution = Run();
+            try
+            {
+                // Arm the caller's deadline after the child has consumed stdin and signaled readiness.
+                string? childDirectory;
+                while ((childDirectory = Directory.EnumerateDirectories(ready.FullName).SingleOrDefault()) is null)
+                {
+                    if (execution.IsCompleted) await execution;
+                    await Task.Delay(20, deadline.Token);
+                }
+                using var child = Process.GetProcessById(int.Parse(Path.GetFileName(childDirectory)));
+                Assert.False(child.HasExited);
+                deadline.CancelAfter(TimeSpan.FromMilliseconds(150));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+                Assert.True(child.HasExited);
+            }
+            finally
+            {
+                deadline.Cancel();
+                try { await execution; }
+                catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
+                finally { ready.Delete(recursive: true); }
+            }
+            return;
+        }
         if (mode is "invalid" or "oversized") await Assert.ThrowsAsync<CoreJobContractException>(Run);
         else if (mode == "crash") Assert.Equal("job_child_exited", (await Assert.ThrowsAsync<CoreJobProcess.ExitFailure>(Run)).Message);
         else if (mode == "memory") Assert.Equal("job_child_memory_exceeded", (await Assert.ThrowsAsync<InvalidOperationException>(Run)).Message);
