@@ -652,13 +652,14 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
     }
 
     internal sealed record Packet(JsonObject Envelope,JsonObject Payload,JsonArray Rows);
-    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null)
+    internal static Packet Sample(Guid agent,Guid host,string source,int record,string? computer=null,string policyRevision="1")
     {
         var scenario=JsonNode.Parse(File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(),"agent-dotnet/tests/vectors/ad-dc-scenarios.json")))!
             .AsArray().Single(x=>(string?)x!["name"]=="security-initial-window-all")!;
         var step=scenario["steps"]![0]!; var expected=step["expected"]!;
         string old=(string)scenario["host_id"]!;
         var payload=JsonNode.Parse(((string)expected["payload_canonical"]!).Replace(old,host.ToString()).Replace("fixture-dc",source))!.AsObject();
+        payload["context"]!["ad_dc"]!["policy_revision"] = policyRevision;
         payload["records"]!.AsArray().Clear();
         string xml=$"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4624</EventID><EventRecordID>{record}</EventRecordID><TimeCreated SystemTime='2026-10-07T00:00:00Z'/><Channel>Security</Channel><Computer>{computer ?? source}</Computer></System><EventData><Data Name='LogonType'>3</Data></EventData></Event>";
         payload["records"]!.AsArray().Add(new JsonObject { ["format"]="event_xml",["record_id"]=record,["payload"]=EventXml.Parse(xml,source,"fixture-endpoint","Security") });
@@ -671,12 +672,12 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
         state["channels"]!["Security"]!["bookmark"]=((string)state["channels"]!["Security"]!["bookmark"]!).Replace("RecordId='1'",$"RecordId='{record}'");
         after["token"]=CanonicalJson.Serialize(state);
         var envelope=new Envelope(Guid.NewGuid().ToString(),agent.ToString(),host.ToString(),AgentAdDcValidator.Live,
-            "1.0.0","1","ad-dc",host.ToString(),record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
+            "1.0.0",policyRevision,"ad-dc",host.ToString(),record,Cursor.FromJson(before),Cursor.FromJson(after),CollectionPacket.Contract,
             Packets.Digest(payload),1,CanonicalJson.Length(payload),(string)step["now"]!,"not_proven",0,0);
         return new(envelope.ToJson(),payload,AgentAdDcValidator.Validate(envelope,payload,null,source));
     }
 
-    private static async Task InsertAsync(NpgsqlConnection db,NpgsqlTransaction tx,Packet sample,int index,CancellationToken ct)
+    internal static async Task InsertAsync(NpgsqlConnection db,NpgsqlTransaction tx,Packet sample,int index,CancellationToken ct)
     {
         await using var query=new NpgsqlCommand("""
             insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt)
@@ -718,6 +719,11 @@ public sealed class AgentInboxDeferralTests(ITestOutputHelper output)
             }).ToJsonString());
             await query.ExecuteNonQueryAsync(ct);
         }
+        await AuthorizeStorageAsync(db, archive, ct);
+    }
+
+    internal static async Task AuthorizeStorageAsync(NpgsqlConnection db, string archive, CancellationToken ct)
+    {
         var record=new DirectRuntimeRecord("v2","storage-v2-fresh-bootstrap/v1",new string('a',64),archive,
             new JsonObject { ["kind"]="fresh-event-store",["version"]=1 },"synthetic",DateTime.UtcNow.AddMinutes(-1),DateTime.UtcNow.AddHours(1),null,"");
         await using var authorization=new NpgsqlCommand("""

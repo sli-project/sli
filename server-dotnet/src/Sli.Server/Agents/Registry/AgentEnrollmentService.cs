@@ -22,7 +22,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         string? token = StringValue(body, "token");
         if (token is null || !Regex.IsMatch(token, "^[A-Za-z0-9_-]{43}\\z", RegexOptions.CultureInvariant)) throw RejectToken();
         var digest = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(token)));
-        await AdvisoryAsync(connection,transaction,"sli-agent-registration-reconcile",ct);
+        await LockRegistrationAsync(connection, transaction, ct);
         await LockGroupApprovalAsync(connection, transaction, digest, ct);
         Guid tokenId = Guid.NewGuid(), hostId = default;
         string? keyFingerprint = null;
@@ -186,6 +186,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                     clear.Parameters.AddWithValue("id",recovery.Id); await clear.ExecuteNonQueryAsync(ct);
                 }
         }
+        if (replacement is null && (consoleToken is not null || approved is not null))
+            await ReconcileDcSourceAsync(connection, transaction, agentId, configuration, ct);
         await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(connection,transaction,agentId,ct);
         return CertificateResponse(cert, agentId, serial);
     }
@@ -318,15 +320,22 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         }
         var modules=new JsonArray(new JsonObject { ["module_id"]=module,["enabled"]=true,["config"]=config.DeepClone() });
         if(beta && role=="domain_controller" && domain is not null)
-            foreach(var snapshot in new[] { SnapshotPolicy.Ad,SnapshotPolicy.Gpo })
-            {
-                var input=new JsonObject { ["source_instance_id"]=host.ToString(),["domain_sid"]=domain["domain_sid"]!.DeepClone(),["domain_dns"]=domain["fqdn"]!.DeepClone(),["scope"]="domain",["policy_revision"]="2" };
-                input["schedule"] = new JsonObject { ["timezone"] = timezone ?? SnapshotPublication.AdSnapshotSchedule.HostZone, ["hours"] = new JsonArray(6, 18) };
-                if(snapshot==SnapshotPolicy.Ad) input["families"]=new JsonArray(SnapshotPolicy.AdFamilies.Where(f=>f!="ad_vpn_membership").Select(f=>(JsonNode?)JsonValue.Create(f)).ToArray());
-                var snapshotConfig=SnapshotIngressPolicy.Parse(snapshot,input).Config;
-                modules.Add(new JsonObject { ["module_id"]=snapshot,["enabled"]=true,["config"]=snapshotConfig });
-            }
+            foreach (string snapshot in new[] { SnapshotPolicy.Ad, SnapshotPolicy.Gpo })
+                modules.Add(DefaultSnapshotAssignment(snapshot, host.ToString("D"), domain["domain_sid"]!.GetValue<string>(),
+                    domain["fqdn"]!.GetValue<string>(), "2", timezone));
         return modules;
+    }
+
+    private static JsonObject DefaultSnapshotAssignment(string module, string source, string sid, string dns, string revision, string? timezone)
+    {
+        var input = new JsonObject { ["source_instance_id"] = source, ["domain_sid"] = sid, ["domain_dns"] = dns,
+            ["scope"] = "domain", ["policy_revision"] = revision,
+            ["schedule"] = new JsonObject { ["timezone"] = timezone ?? SnapshotPublication.AdSnapshotSchedule.HostZone,
+                ["hours"] = new JsonArray(6, 18) } };
+        if (module == SnapshotPolicy.Ad)
+            input["families"] = new JsonArray(SnapshotPolicy.AdFamilies.Where(f => f != "ad_vpn_membership")
+                .Select(f => (JsonNode?)JsonValue.Create(f)).ToArray());
+        return new JsonObject { ["module_id"] = module, ["enabled"] = true, ["config"] = SnapshotIngressPolicy.Parse(module, input).Config };
     }
     internal static int[] BetaEventIds()
     {

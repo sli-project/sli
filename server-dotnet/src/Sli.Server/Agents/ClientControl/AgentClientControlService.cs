@@ -3,9 +3,10 @@ using Npgsql;
 using NpgsqlTypes;
 using Sli.Server.Access;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Registry;
 namespace Sli.Server.Agents.ClientControl;
 
-public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock)
+public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock,IConfiguration? configuration = null)
 {
     // Authentication already locked the agent then certificate in this transaction.
     private static async Task<JsonObject> ReadAsync(NpgsqlConnection db,NpgsqlTransaction tx,Guid id,CancellationToken ct)
@@ -25,6 +26,9 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if(agent["file_audit"]?["request"] is JsonObject request && request.Count>0 && new PluginGenerationReader().Read("sli.file-audit").Generation is not null)
             throw new InvalidOperationException("agent_plugin_generation_unavailable");
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
+        if (AgentEnrollmentService.CollectionProfile(configuration) == "beta" &&
+            await AgentEnrollmentService.NeedsDcIdentityAsync(db, tx, identity.Id, ct))
+            result["dc_identity_required"] = true;
         await using var advertisement=new NpgsqlCommand("select p.sha256,p.version from sli_agent_update_packages p join sli_agent_update_policy a on a.package_sha256=p.sha256 where a.agent_id=@id",db,tx);
         advertisement.Parameters.AddWithValue("id",identity.Id);await using var reader=await advertisement.ExecuteReaderAsync(ct);
         result["agent_update"]=await reader.ReadAsync(ct)?new JsonObject { ["sha256"]=reader.GetString(0),["version"]=reader.GetString(1) }:null;
@@ -32,6 +36,15 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
     }
     public async Task<JsonObject> ReportAsync(NpgsqlConnection db,NpgsqlTransaction tx,AgentIdentity identity,JsonNode? body,CancellationToken ct)
     {
+        JsonObject? dcIdentity = null;
+        if (body is JsonObject report && report.TryGetPropertyValue("dc_identity", out var evidence))
+        {
+            if (evidence is not JsonObject dc ||
+                !AgentClientPolicy.Keys(dc, "machine_role", "reported_hostname", "domain_dns", "forest_dns", "domain_sid"))
+                throw new AgentControlException("invalid_agent_module_config");
+            dcIdentity = dc;
+            report.Remove("dc_identity");
+        }
         var agent=await ReadAsync(db,tx,identity.Id,ct);var change=AgentClientPolicy.Report(agent,body,clock.GetUtcNow());
         await using(var command=new NpgsqlCommand(change.AppliedRevision is null ? "update sli_agents set rights_probe=@probe where id=@id" :
             "update sli_agents set rights_probe=@probe,applied_policy_revision=@revision where id=@id",db,tx)) {
@@ -48,6 +61,12 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if(change.ProbeResult is not null) {
             var details=(JsonObject)change.ProbeResult.DeepClone();details["revision"]=body!["applied_policy_revision"]!.DeepClone();
             await audit.AppendAsync(db,tx,"probe_report","agent:"+id,id,details,ct);
+        }
+        if (dcIdentity is not null && AgentEnrollmentService.CollectionProfile(configuration) == "beta")
+        {
+            await AgentManagementService.LockImportAsync(db, tx, identity.Id, ct);
+            await AgentEnrollmentService.ReconcileDcSourceAsync(db, tx, identity.Id, configuration, ct, dcIdentity);
+            await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db, tx, identity.Id, ct);
         }
         return change.Output;
     }

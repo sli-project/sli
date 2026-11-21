@@ -37,6 +37,25 @@ public sealed class AdDcProjectionFailureTests
         internal void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
     }
 
+    [Fact]
+    public void Missing_source_has_a_minute_window_and_counter_for_each_agent()
+    {
+        var clock = new ManualClock();
+        var failures = new AdDcProjectionFailure(clock);
+        JsonObject Diagnostic(Guid agent) => new() { ["code"] = AdDcProjectionFailure.Code,
+            ["reason"] = AdDcProjectionFailure.SourceNotConfigured, ["agent_id"] = agent.ToString("D") };
+        Guid first = Guid.NewGuid(), second = Guid.NewGuid();
+        Assert.True(failures.CountAndAllow(Diagnostic(first)));
+        clock.Advance(TimeSpan.FromSeconds(59));
+        Assert.True(failures.CountAndAllow(Diagnostic(second)));
+        Assert.False(failures.CountAndAllow(Diagnostic(first)));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var retry = Diagnostic(first);
+        Assert.True(failures.CountAndAllow(retry));
+        Assert.Equal(2L, (long?)retry["occurrences"]);
+        Assert.False(failures.CountAndAllow(Diagnostic(second)));
+    }
+
     [Theory]
     [InlineData("agent_inbox_marker_conflict",false)]
     [InlineData("short_event_summary_conflict",true)]

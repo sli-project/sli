@@ -42,6 +42,7 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
     // Packets whose binding mismatch repeats identically are not retried until the bindings or DC servers change.
     // Memory only: nothing is deleted or marked, and a restart retries each signature once.
     private readonly HashSet<string> unbound=new(StringComparer.Ordinal);
+    private readonly HashSet<string> awaitingDcSource=new(StringComparer.Ordinal);
     private string? bindingState;
     public async Task<AgentInboxBatchResult> RunOnceAsync(int limit,CancellationToken ct,Func<CancellationToken,Task>? checkOwnership=null)
     {
@@ -95,6 +96,8 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                 if(!step.TransactionCompleted)await tx.CommitAsync(ct);
                 Cursor = new() { ["received_at"] = step.Received.ToString("O"), ["packet_id"] = step.PacketId.ToString("D") };
                 if(step.PendingReason=="agent_ad_dc_source_not_bound") await RememberUnboundAsync(db,step.PacketId,ct);
+                if(step.PendingReason==AdDcProjectionFailure.SourceNotConfigured && step.StreamKey is { } blocked)
+                    awaitingDcSource.Add(blocked);
                 if(IsConfigurationPending(step.PendingReason) && step.AgentId is { } agent && step.ModuleId is { } module)
                     deferred.Add((agent,module),step);
                 return step;
@@ -191,7 +194,11 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
                 : "update sli_agent_packet_inbox set imported_at=clock_timestamp() where packet_id=@packet",db,tx);
             mark.Parameters.AddWithValue("packet",row.PacketId); if(await mark.ExecuteNonQueryAsync(ct)!=1) throw new InvalidOperationException();
         }
-        if(diagnostic is not null && (deferred is null || !IsConfigurationPending(reason))) WriteDiagnostic(failures,diagnostic,ct);
+        if(diagnostic is not null && (deferred is null || !IsConfigurationPending(reason))) {
+            if(reason==AdDcProjectionFailure.SourceNotConfigured && Guid.TryParse(row.Envelope["agent_id"]?.ToString(),out var diagnosticAgent))
+                diagnostic["agent_id"]=diagnosticAgent.ToString("D");
+            WriteDiagnostic(failures,diagnostic,ct);
+        }
         return new(true,success,reason,row.Received,row.PacketId,quarantined) {
             AgentId=JsonRead.TryString(row.Envelope["agent_id"],out var agent) && Guid.TryParse(agent,out _) ? agent : null,
             ModuleId=JsonRead.TryString(row.Envelope["module_id"],out var module) ? module : null, Diagnostic=diagnostic, StreamKey=StreamKeyOf(row)
@@ -208,10 +215,19 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
         await using var command=new NpgsqlCommand("""
             select md5(coalesce(string_agg(x,'|' order by x),'')) from (
               select concat_ws(chr(31),'b',agent_id::text,module_id,source_instance_id,source_name,channel,module_version) x from sli_agent_module_bindings
-              union all select concat_ws(chr(31),'s',hostname) from servers where role='domain_controller' and is_active) t
+              union all select concat_ws(chr(31),'s',id::text,hostname,fqdn,domain_id::text) from servers where role='domain_controller' and is_active) t
             """,db);
         var state=(string?)await command.ExecuteScalarAsync(ct);
-        if(state!=bindingState) { unbound.Clear(); bindingState=state; }
+        if(state!=bindingState) {
+            unbound.Clear();
+            // Resume at the oldest held packet even if this stream keeps receiving data.
+            foreach (string stream in awaitingDcSource) {
+                streams.Passed.Remove(stream);
+                streams.Served.Remove(stream);
+            }
+            awaitingDcSource.Clear();
+            bindingState=state;
+        }
     }
     private async Task RememberUnboundAsync(NpgsqlConnection db,Guid packet,CancellationToken ct)
     {
