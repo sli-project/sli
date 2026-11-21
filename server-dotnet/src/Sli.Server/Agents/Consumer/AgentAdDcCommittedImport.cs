@@ -10,14 +10,15 @@ namespace Sli.Server.Agents.Consumer;
 public sealed partial class AgentWorkstationInboxConsumer
 {
     private static async Task<AgentInboxStep> ProcessAdDcCommittedAsync(NpgsqlConnection db,NpgsqlTransaction claim,
-        Inbox row,DirectAdDcRuntime direct,CancellationToken ct,Action<AdDcProjectionStep>? progress)
+        Inbox row,DirectAdDcRuntime direct,CancellationToken ct,Action<AdDcProjectionStep>? progress,AdDcProjectionFailure failures)
     {
         // The host retains its separate process/session lock. Do not leave an
         // inbox transaction open while waiting for the OS import queue.
         await claim.CommitAsync(ct);
         Guid agent=Guid.Empty;
         bool locked=false,lockAttempted=false,pluginLockAttempted=false,success=false,quarantined=false;
-        string? reason=null,diagnostic=null;
+        string? reason=null;
+        JsonObject? diagnostic=null;
         var clock=Stopwatch.StartNew(); var timings=new JsonObject(); double last=0;
         var step=AdDcProjectionStep.ImportQueueWait;
         void Report(AdDcProjectionStep next) {
@@ -92,6 +93,7 @@ public sealed partial class AgentWorkstationInboxConsumer
         catch(Exception error) {
             reason=error is InvalidOperationException && error.Message is "agent_storage_unavailable" or "agent_disabled" or "agent_module_not_assigned" or "agent_packet_attestation_invalid" or "agent_plugin_disabled" or "agent_ad_dc_source_not_bound" or "agent_ad_dc_source_not_configured" or "agent_ad_dc_channel_not_configured"
                 ? error.Message : "agent_ad_dc_projection_failed";
+            reason = AdDcProjectionFailure.StorageIssue(error, step) ?? reason;
             diagnostic=AdDcProjectionFailure.Describe(error,step);
             if(AdDcProjectionFailure.IsPermanent(error)) {
                 reason=error.Message;
@@ -113,10 +115,10 @@ public sealed partial class AgentWorkstationInboxConsumer
                 if(lockAttempted)await AgentManagementService.UnlockImportAsync(db,agent,locked);
             }
             Report(step);
-            Console.WriteLine(new JsonObject { ["component"]="agent_ad_dc_import",["imported"]=success,
+            if (success) Console.WriteLine(new JsonObject { ["component"]="agent_ad_dc_import",["imported"]=true,
                 ["elapsed_ms"]=clock.Elapsed.TotalMilliseconds,["steps_ms"]=timings }.ToJsonString());
         }
-        if(diagnostic is not null && !IsConfigurationPending(reason))WriteDiagnostic(diagnostic,ct);
+        if(diagnostic is not null && !IsConfigurationPending(reason))WriteDiagnostic(failures,diagnostic,ct);
         return new(true,success,reason,row.Received,row.PacketId,quarantined) {
             AgentId=agent.ToString("D"),ModuleId=Text(row.Envelope["module_id"]),Diagnostic=diagnostic,TransactionCompleted=true
         };

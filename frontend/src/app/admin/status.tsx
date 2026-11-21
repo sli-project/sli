@@ -7,7 +7,7 @@ import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
-import { statusAuditChecks, statusServices, statusSources } from "./status-view";
+import { statusAdDcImportIssue, statusAuditChecks, statusServices, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
 
@@ -53,6 +53,7 @@ export function SystemStatusPage() {
   ]);
   const workers = operations.data?.workers;
   const services = statusServices(workers?.items ?? [], timeZone);
+  const importIssue = statusAdDcImportIssue(workers?.items ?? []);
   const disk = storage.data?.storage.postgres_volume;
   const backup = storage.data?.storage.footprint?.backups;
   const bytes = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -128,6 +129,7 @@ export function SystemStatusPage() {
     {operations.isPending ? loading(serviceColumns.length) : workers && workers.status !== "unavailable" && workers.items && !operations.isError
       ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} caption={t("systemStatus.services")} showFooter={false}/>
       : failed(t("systemStatus.services"), operations.refetch)}
+    {importIssue ? <p>{importIssue}</p> : null}
     {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },

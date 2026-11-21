@@ -79,6 +79,22 @@ it.each(["ru", "en"] as const)("names the failed disk measurement and action (%s
   expect(await screen.findByText(t("systemStatus.inboxDiskUnavailable"))).toBeTruthy();
 });
 
+it.each(["en", "ru"] as const)("names the missing authorization in one line and clears it after recovery (%s)", async (locale) => {
+  setLocale(locale);
+  const worker = { worker_name: "post_collection", label: "Post-collection", state: "warning", status: "failed",
+    details: { ad_dc_import_issue: "agent_ad_dc_storage_authorization_missing" } };
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { status: "ok", items: [worker] } });
+  renderPage();
+  const message = t("systemStatus.adDcImport.authorizationMissing");
+  await screen.findByText(message);
+  const line = screen.getAllByText(message);
+  expect(line).toHaveLength(1);
+  expect(line[0].tagName).toBe("P");
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { status: "ok", items: [{ ...worker, state: "active", status: "idle", details: {} }] } });
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["operations-workers"] });
+  await waitFor(() => expect(screen.queryByText(message)).toBeNull());
+});
+
 it.each(["ru", "en"] as const)("shows the retained packet refusal in the source row in %s", async (locale) => {
   setLocale(locale);
   const data = setup([{ ...agent, modules: [{ module_id: "sli.windows.ad-dc", channels: [{ ...agent.modules[0].channels[0],
