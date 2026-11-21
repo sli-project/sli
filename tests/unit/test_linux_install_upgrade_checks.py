@@ -1,7 +1,8 @@
 """Beta package acceptance on a private filesystem and a stateful service double."""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, redirect_stderr
 from fnmatch import fnmatchcase
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import secrets
 import shutil
 import stat
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +39,7 @@ def atomic_json(path, value):
 @pytest.fixture
 def runtime_host(tmp_path, monkeypatch):
     """Only OS account/DB operations are doubled; rendering and retirement are real."""
+    guarded_write = host.Host(tmp_path).write
     config = tmp_path / "etc/sli/runtime.json"
     monkeypatch.setattr(runtime, "CONFIG", config)
     if os.name == "nt":
@@ -142,7 +145,8 @@ def runtime_host(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runtime, "release_rendered_unit", release_rendered_unit)
     monkeypatch.setattr(runtime, "trusted", lambda path: path.read_bytes())
-    return SimpleNamespace(root=tmp_path, states=states, commands=commands, write=write, command=command)
+    return SimpleNamespace(root=tmp_path, states=states, commands=commands, write=write, command=command,
+                           machine=machine, guarded_write=guarded_write)
 
 
 def test_beta_configuration_creates_dotnet_services_without_database_containers(runtime_host):
@@ -198,6 +202,105 @@ def test_runtime_upgrade_retires_both_clickhouse_services_and_preserves_all_data
             assert system.states[unit] == {"enabled": False, "active": False}
             assert not (system.root / "etc/systemd/system" / unit).exists()
     assert json.loads(runtime.CONFIG.read_text())["profiles"] == ["light"]
+
+
+@pytest.mark.parametrize("foreign_edit", [False, True])
+def test_notification_upgrade_accepts_retained_layout(runtime_host, monkeypatch, capsys, foreign_edit):
+    system = runtime_host
+    site_path = system.root / "etc/sli/site.toml"
+    site_text = 'bind = "0.0.0.0"\nserver_name = "sli.example.test"\nhttps_port = 443\n'
+    site = runtime.clickhouse.parse_site(site_text)
+    system.write("/etc/sli/site.toml", site_text)
+    config = install.runtime_settings(site)
+    config.pop("public_url")  # The accepted release did not persist the notification origin.
+    runtime_path = "/etc/sli/runtime.json"
+    previous_body = json.dumps(config, sort_keys=True) + "\n"
+    system.write(runtime_path, previous_body)
+    previous_bytes = runtime.CONFIG.read_bytes()
+    old_unit = runtime.dotnet_unit("beta1-f6f433e7ada0", config, "notification-setup")
+    old_unit = "\n".join(line for line in old_unit.split("\n") if not line.startswith("ExecStartPre="))
+    old_unit = old_unit.replace('Environment="SLI_PUBLIC_URL=' + runtime.clickhouse.public_url(config),
+                                'Environment="SLI_PUBLIC_URL=' + config["health_url"].split("/api/")[0])
+    unit_name = "sli-dotnet-notification-setup.service"
+    system.write("/run/systemd/generator/" + unit_name, old_unit)
+    for name, body in host.units().items():
+        system.write("/etc/systemd/system/" + name, body)
+    for name, body in runtime.units(config).items():
+        system.write("/usr/lib/systemd/system/" + name, body)
+    unrelated = "[Service]\nExecStart=/synthetic-routing\n"
+    system.write("/etc/systemd/system/telegram-via-vpn.service", unrelated)
+    foreign_path = "/usr/lib/systemd/system/sli-ready.service"
+    foreign_body = "[Service]\nExecStart=/synthetic-operator-edit\n"
+    if foreign_edit:
+        system.write(foreign_path, foreign_body)
+
+    # Exercise the real refusal for changed bytes, with service accounts and
+    # file publication doubled by the private-host fixture.
+    def checked_write(name, body, mode):
+        if name == str(runtime.CONFIG):
+            name = runtime_path
+        path = system.root / name.lstrip("/")
+        if path.exists() and path.read_text(encoding="utf-8") != body:
+            system.guarded_write(name, body, mode)
+        system.write(name, body, mode)
+
+    monkeypatch.setattr(system.machine, "write", checked_write)
+    monkeypatch.setattr(host, "ensure_directory", lambda path: None)
+    monkeypatch.setattr(runtime.clickhouse, "site_configuration", lambda: site)
+    original_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda path: original_exists(site_path if path == Path("/etc/sli/site.toml")
+                                                                     else path))
+    monkeypatch.setattr(install, "site_configuration", lambda: site)
+    monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())
+    candidate = system.root / "beta1-3a6828ff4db8"
+    source = candidate / "deploy/linux/native_runtime.py"
+    source.parent.mkdir(parents=True)
+    shutil.copyfile(runtime.__file__, source)
+
+    def run_candidate(argv, **kwargs):
+        if argv[0] != "/synthetic/python":
+            system.command(argv, **kwargs)
+            return subprocess.CompletedProcess(argv, 0, stderr=b"")
+        output = StringIO()
+        with monkeypatch.context() as child, redirect_stderr(output):
+            child.setattr(sys, "argv", ["-c", *argv[5:]])
+            child.setattr(sys, "path", sys.path.copy())
+            try:
+                exec(argv[4], {})
+            except SystemExit as error:
+                return subprocess.CompletedProcess(argv, error.code, stderr=output.getvalue().encode())
+        return subprocess.CompletedProcess(argv, 0, stderr=b"")
+
+    monkeypatch.setattr(install.subprocess, "run", run_candidate)
+    monkeypatch.delenv(install.operations().PROGRESS_FD, raising=False)
+    manifest = {"python": "/synthetic/python"}
+    if foreign_edit:
+        with pytest.raises(RuntimeError, match="native_install_command_failed"):
+            upgrade.configure_candidate(candidate, manifest)
+        journal = capsys.readouterr().err
+        assert "native_existing_configuration_conflict: " + foreign_path in journal
+        assert "synthetic-operator-edit" not in journal
+        assert (system.root / foreign_path.lstrip("/")).read_text() == foreign_body
+        return
+
+    upgrade.configure_candidate(candidate, manifest)
+    assert runtime.CONFIG.read_bytes() == previous_bytes
+    assert (system.root / "etc/systemd/system/telegram-via-vpn.service").read_text() == unrelated
+    destination = system.root / "generated-candidate"
+    destination.mkdir()
+    generator.generate(runtime, candidate.name, destination)
+    unit = (destination / unit_name).read_text()
+    assert 'Environment="SLI_PUBLIC_URL=https://sli.example.test"' in unit
+    assert f"ExecStartPre=/opt/sli/dotnet/{candidate.name}/Sli.Server notification-setup --repair-public-urls" in unit
+    volatile_units = system.root / "run/systemd/system"
+    monkeypatch.setattr(upgrade, "VOLATILE_UNITS", volatile_units)
+    monkeypatch.setattr(upgrade, "ensure_directory", lambda path: path.mkdir(parents=True, exist_ok=True))
+    upgrade.testing_units("a" * 32)
+    drop_in = volatile_units / (unit_name + ".d") / "90-sli-upgrade.conf"
+    assert drop_in.read_text() == "[Service]\nEnvironment=SLI_NATIVE_UPGRADE_TESTING=1\n"
+    upgrade.configure_candidate(candidate, manifest)
+    upgrade.testing_units()
+    assert not drop_in.exists()
 
 
 @pytest.mark.parametrize("migration_failure", [False, True])

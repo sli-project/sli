@@ -50,9 +50,10 @@ def ensure_directory(path, mode=0o755, uid=0, gid=0, *, parent_mode=0o755, exist
 class GuardError(RuntimeError):
     """Only installer-owned path labels and fixed diagnostics may be displayed."""
 
-    def __init__(self, code, name, reason, remedy):
+    def __init__(self, code, name, reason, remedy, *, conflict_paths=()):
         super().__init__(code)
         self.console_message = f'{name}: {reason}. {remedy}'
+        self.conflict_paths = conflict_paths
 
 
 def checked_trusted(path, name):
@@ -125,7 +126,7 @@ def cluster_guard(config, backup):
             and legacy_suffix.sub('', current.rstrip()).rstrip() != original_base):
         raise GuardError('native_existing_configuration_conflict', name, 'settings changed after SLI saved them',
                          'Run sudo diff -u /var/lib/sli/state/createcluster.conf.before '
-                         f'{name} and reconcile the settings before retrying')
+                         f'{name} and reconcile the settings before retrying', conflict_paths=(name,))
     return original, current, managed
 
 

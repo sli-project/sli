@@ -1257,8 +1257,21 @@ def configure_candidate(root, manifest):
     # Generate candidate units with candidate code, never overwrite its host
     # helper with the coordinator's older module after APT has unpacked it.
     install.trusted(root / 'deploy/linux/native_runtime.py')
-    code = ('import json,sys; sys.path.insert(0,sys.argv[1]); '
-            'from deploy.linux.native_runtime import configure; configure(json.loads(sys.argv[2]))')
+    code = (
+        'import json, sys\n'
+        'sys.path.insert(0, sys.argv[1])\n'
+        'from deploy.linux.native_preinstall import GuardError\n'
+        'from deploy.linux.native_runtime import configure\n'
+        'try:\n'
+        '    configure(json.loads(sys.argv[2]))\n'
+        'except GuardError as error:\n'
+        '    paths = getattr(error, "conflict_paths", ())\n'
+        '    if not paths:\n'
+        '        raise\n'
+        '    for path in paths:\n'
+        '        print("native_existing_configuration_conflict: " + path, file=sys.stderr)\n'
+        '    sys.exit(1)\n'
+    )
     config = runtime.configuration()
     site = install.site_configuration()
     if 'notification_proxy' in site:

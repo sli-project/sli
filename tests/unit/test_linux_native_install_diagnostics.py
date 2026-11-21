@@ -60,8 +60,17 @@ def test_host_journals_sanitized_command_stderr(monkeypatch, capsys, sensitive_i
      'native_existing_configuration_conflict: /usr/lib/systemd/system/sli-ready.service'),
 ])
 def test_failed_command_reports_codes_but_not_foreign_stderr(monkeypatch, capsys, argv, shown):
-    stderr = '\n'.join([
+    paths = (
+        'native_existing_configuration_conflict: /etc/sli/runtime.json',
         'native_existing_configuration_conflict: /usr/lib/systemd/system/sli-ready.service',
+        'native_existing_configuration_conflict: /etc/systemd/system/sli-postgresql.service',
+        'native_existing_configuration_conflict: /etc/systemd/system/sli-postgresql.service.d',
+    )
+    stderr = '\n'.join([
+        *paths,
+        'native_existing_configuration_conflict: synthetic-private-value',
+        'GuardError: native_existing_configuration_conflict: synthetic-private-value',
+        'native_existing_configuration_conflict: /usr/lib/systemd/system/sli-ready.service extra',
         'DETAIL:  Failing row contains (secret-value).',
         'Unit sli-other.service not loaded.',
         'Unit sli-x.service not loaded.',
@@ -71,6 +80,8 @@ def test_failed_command_reports_codes_but_not_foreign_stderr(monkeypatch, capsys
         install.command(argv)
     err = capsys.readouterr().err
     assert shown in err
+    assert all(path in err.splitlines() for path in paths)
+    assert 'synthetic-private-value' not in err and 'service extra' not in err
     assert 'secret-value' not in err
     assert 'Unit sli-other.service not loaded.' not in err
     assert 'never-logged' not in err
