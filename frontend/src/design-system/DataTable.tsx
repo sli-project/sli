@@ -28,7 +28,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
-  compact, expanded, footerControls, rowGroup, rowDetail, emptyContent, renderExpandedRow,
+  compact, density, expanded, afterRow, footerControls, rowGroup, rowDetail, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -52,7 +52,9 @@ export function DataTable<Row>({
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
   compact?: boolean;
+  density?: "compact" | "standard";
   expanded?: (row: Row) => ReactNode;
+  afterRow?: (row: Row) => ReactNode;
   footerControls?: ReactNode;
 }) {
   const { formatCell } = useDateFormatters();
@@ -72,7 +74,7 @@ export function DataTable<Row>({
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
-  return <div className="sli-ds-table" data-compact={compact || undefined}>
+  return <div className="sli-ds-table" data-compact={compact || undefined} data-density={density}>
     {toggleable.length ? <details className="sli-ds-table__columns">
       <summary>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
@@ -105,6 +107,7 @@ export function DataTable<Row>({
           const detail = group?.collapsed ? null : rowDetail?.(row.original);
           const selected = selectedKey === row.id;
           const expansion = group?.collapsed ? null : expanded?.(row.original);
+          const extra = group?.collapsed ? null : afterRow?.(row.original);
           return <Fragment key={row.id}>
             {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
             {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
@@ -123,6 +126,7 @@ export function DataTable<Row>({
             })}
           </tr>}
             {expansion ? <tr><td colSpan={columnCount} className="sli-ds-table__expanded">{expansion}</td></tr> : null}
+            {extra ? <tr><td colSpan={columnCount}>{extra}</td></tr> : null}
             {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
             {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
           </Fragment>;

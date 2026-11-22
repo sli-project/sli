@@ -4873,6 +4873,36 @@
     "key": "security.problems",
     "params": [
       {
+        "key": "queue_view",
+        "label": "Вид очереди",
+        "kind": "choice",
+        "hidden": true,
+        "options": [
+          { "value": "all", "label": "Все" },
+          { "value": "open", "label": "Открытые" },
+          { "value": "active", "label": "В работе" },
+          { "value": "deferred", "label": "Отложенные" },
+          { "value": "resolved", "label": "Решённые" }
+        ],
+        "field_categories": []
+      },
+      {
+        "key": "queue_assignee",
+        "label": "Ответственный",
+        "kind": "text",
+        "hidden": true,
+        "max_length": 300,
+        "field_categories": ["identity_basic"]
+      },
+      {
+        "key": "fold",
+        "label": "Свернуть повторы",
+        "kind": "choice",
+        "hidden": true,
+        "options": [{ "value": "false", "label": "Нет" }],
+        "field_categories": []
+      },
+      {
         "key": "id",
         "label": "№",
         "kind": "int",
@@ -5120,6 +5150,7 @@
         "label": "Последнее событие",
         "kind": "datetime",
         "path": "last_seen_utc",
+        "sortable": true,
         "field_categories": [],
         "hidden_by_default": false
       },
@@ -5424,6 +5455,11 @@
       "problem_cohort": [
         "identity_basic"
       ],
+      "queue_participant": ["identity_basic"],
+      "queue_group": ["identity_basic"],
+      "queue_attack.accounts": ["identity_basic"],
+      "queue_attack.account_count": ["identity_basic"],
+      "queue_attack.addresses": ["identity_basic", "technical"],
       "entities": [
         "identity_basic"
       ],
@@ -5514,7 +5550,7 @@
         "Supplemental: exact retained evidence events and rule-runtime diagnostics."
       ],
       "freshness_expectation": "Время публикации результатов проверки показывается отдельно от времени исходных событий и загрузки данных.",
-      "rights": "security.queue view grant; engine-enforced finding and evidence scope; lifecycle actions and exports require independent grants.",
+      "rights": "security.queue view grant; engine-enforced finding and evidence scope; lifecycle actions require independent authority; export is unavailable.",
       "field_classes": [
         "security",
         "identity_basic",
@@ -5533,7 +5569,7 @@
       "fallback": "Preserve missing-source and evidence-expired limitations; no findings is not a clean security assessment.",
       "acceptance_lanes": {
         "product_user": "Published findings support a human triage and lifecycle decision.",
-        "authorization": "security.queue scope, evidence access, export and lifecycle permissions remain independent.",
+        "authorization": "security.queue scope, evidence access and lifecycle permissions remain independent.",
         "deterministic_interpretation": "Finding severity and policy identity come from published records; no new scoring is computed.",
         "api_view_model": "Finding filters, lifecycle fields and evidence cursors preserve the existing reader contract.",
         "ui_honest_states": "Empty queue, denied grant, partial evaluation, stale and unavailable sources stay distinct.",

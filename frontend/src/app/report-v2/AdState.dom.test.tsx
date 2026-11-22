@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import definitions from "../../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json";
 import { api } from "../../api/client";
@@ -39,7 +39,7 @@ beforeEach(() => {
   ]));
 });
 
-afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function renderReport() {
   return render(<QueryClientProvider client={new QueryClient()}><ReportRenderer reportKey={definition.key}/></QueryClientProvider>);
@@ -75,11 +75,60 @@ it("expands and collapses a parameter with history from the same domain", async 
   expect(api.reportV2Detail).not.toHaveBeenCalled();
   fireEvent.click(toggle);
   const history = await screen.findByRole("table", { name: "Value history · Minimum password length · example.test" });
-  expect(within(history).getByText(/14/)).toBeTruthy();
+  expect(await within(history).findByText(/14 characters/)).toBeTruthy();
   expect(vi.mocked(api.reportV2Detail).mock.calls[0][2].get("domain")).toBe("2");
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   fireEvent.click(toggle);
   expect(screen.queryByRole("table", { name: /Value history/ })).toBeNull();
+});
+
+it.each([
+  { entry: "selection", locale: "en", label: "Lockout threshold", title: "Value history", loading: "Loading data…", value: "20 attempts" },
+  { entry: "deep link", locale: "ru", label: "Порог блокировки", title: "История значения", loading: "Загружаем данные…", value: "20 поп." },
+] as const)("loads one lockout threshold observation from a cold $entry", async ({ entry, locale, label, title, loading, value }) => {
+  const parameter = { ...controls[1], label, actual_value: 20, actual_text: "20", expected_condition: "5–10" };
+  const address = "/app/report/ad.infrastructure?domain=2&period=24h";
+  window.history.replaceState(null, "", entry === "deep link" ? `${address}&row_id=${encodeURIComponent(parameter.row_id)}` : address);
+  setLocale(locale);
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => result(params.get("tab") === "controls" ? [parameter] : []));
+  vi.mocked(api.reportV2Detail).mockRestore();
+  let sendResponse!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => { sendResponse = resolve; });
+  const fetchDetail = vi.fn<typeof fetch>(() => response);
+  vi.stubGlobal("fetch", fetchDetail);
+
+  renderReport();
+  const toggle = await screen.findByRole("button", { name: label });
+  if (entry === "selection") fireEvent.click(toggle);
+  const heading = await screen.findByRole("heading", { name: `${title} · ${label} · example.test` });
+  const history = within(heading.closest("section")!);
+  const loadingState = { hasTable: Boolean(history.queryByRole("table")), announcement: history.queryByRole("status")?.textContent };
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  await waitFor(() => expect(fetchDetail).toHaveBeenCalledTimes(1));
+  const request = new URL(String(fetchDetail.mock.calls[0][0]), window.location.origin);
+  expect(request.pathname).toBe("/api/v2/reports/ad.infrastructure/rows/7%3Apassword.lockout_threshold/detail");
+  expect(request.searchParams.get("domain")).toBe("2");
+  expect(request.searchParams.has("row_id")).toBe(false);
+
+  sendResponse(Response.json(result([{ row_id: 1, observed_at_utc: observed, actual_value: 20, actual_text: "20" }])));
+  const table = await history.findByRole("table");
+  expect(await within(table).findByRole("cell", { name: value })).toBeTruthy();
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  expect(history.queryByRole("status")).toBeNull();
+  expect(loadingState).toEqual({ hasTable: false, announcement: loading });
+});
+
+it("keeps a failed history distinct from a settled empty result after retry", async () => {
+  vi.mocked(api.reportV2Detail).mockRejectedValueOnce(new Error("History request failed"))
+    .mockResolvedValueOnce({ ...result(), state: "empty" });
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  const error = await screen.findByRole("alert");
+  expect(screen.queryByRole("table", { name: /Value history/ })).toBeNull();
+  fireEvent.click(within(error).getByRole("button", { name: "Retry" }));
+  const history = await screen.findByRole("table", { name: /Value history · Minimum password length/ });
+  expect(within(history).getByRole("cell", { name: "—" })).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("switches to SPN collisions and linked findings using their report collections", async () => {

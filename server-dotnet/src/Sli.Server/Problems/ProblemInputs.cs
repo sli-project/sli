@@ -211,6 +211,8 @@ public sealed record FindingQuery(string? Status, string? Severity, string? Sear
 {
     public long? FindingId { get; init; }
     public long? BeforeId { get; init; }
+    public DateTimeOffset? BeforeSeen { get; init; }
+    public bool OldestFirst { get; init; }
     public string? RuleCode { get; init; }
     public string? CreatedFrom { get; init; }
     public string? CreatedTo { get; init; }
@@ -219,6 +221,10 @@ public sealed record FindingQuery(string? Status, string? Severity, string? Sear
     public bool Compact { get; init; }
     public bool QueueList { get; init; }
     public bool GroupQueue { get; init; }
+    public string? QueueView { get; init; }
+    public string? QueueAssignee { get; init; }
+    public bool QueueAssigneesVisible { get; init; }
+    public bool ExcludeDeferred { get; init; }
     public string? Cohort { get; init; }
     public string Timezone { get; init; } = "UTC";
     public static FindingQuery Parse(IQueryCollection q, ProblemAccess access)

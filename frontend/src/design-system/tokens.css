@@ -69,9 +69,9 @@
   --sli-table-heading-height: 32px;
   --sli-cell-text-width: 48ch;
   --sli-severity-critical: light-dark(#a3211b, #ff6868);
-  --sli-severity-high: light-dark(#914200, #ff9a3c);
-  --sli-severity-medium: light-dark(#795800, #f2c230);
-  --sli-severity-low: light-dark(#345876, #9bbbd9);
+  --sli-severity-high: light-dark(#9e2736, #ef6472);
+  --sli-severity-medium: light-dark(#914200, #ff9a3c);
+  --sli-severity-low: light-dark(#555c68, #afb8c6);
 
   /* Chart palette (categorical), validated for both themes */
   --sli-chart-1: #0868e8;
@@ -116,6 +116,7 @@
   --sli-cell-pad-x: 10px;
   --sli-drawer-width: min(560px, 100vw);
   --sli-report-drawer-offset: 200px;
+  --sli-list-viewport-inset: 280px;
   --sli-motion: 120ms ease-out;
   --sli-focus-width: 2px;
   --sli-focus-offset: 2px;
