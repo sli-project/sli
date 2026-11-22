@@ -8774,24 +8774,24 @@
       ],
       "row_key": "row_id",
       "detail": {
-        "kind": "inline",
-        "title": "Контекст объекта",
+        "kind": "sub",
+        "title": "История значения",
         "key": "row_id",
-        "inline": "context",
+        "inline": null,
         "row_component": null,
         "actions": null,
         "columns": [
           {
-            "key": "label",
-            "label": "Атрибут",
-            "kind": "text",
-            "path": "label"
+            "key": "observed_at_utc",
+            "label": "С какого момента",
+            "kind": "datetime",
+            "path": "observed_at_utc"
           },
           {
-            "key": "value",
+            "key": "actual_text",
             "label": "Значение",
             "kind": "text",
-            "path": "value"
+            "path": "actual_text"
           }
         ],
         "row_links": [],
