@@ -23,6 +23,13 @@ function EmptyRow() {
   return <div className="sli-ds-home-empty">{EMPTY_VALUE}</div>;
 }
 
+function LoadError({ message, retry, fetching }: { message: string; retry: () => void; fetching: boolean }) {
+  return <div>
+    <p role="alert">{message}</p>
+    <Button disabled={fetching} onClick={retry}>{t("state.retry")}</Button>
+  </div>;
+}
+
 function eventFact(id: number) {
   switch (id) {
     case 4624: return t("home.event.4624");
@@ -39,7 +46,7 @@ function eventFact(id: number) {
   }
 }
 
-function Problems({ data, zone }: { data: HomePeriod["problems"]; zone: string }) {
+function Problems({ data, zone }: { data: NonNullable<HomePeriod["problems"]>; zone: string }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const title = t("home.problems");
   const counters = [
@@ -92,7 +99,7 @@ function RowLimit({ limit, setLimit }: { limit: number; setLimit: (limit: number
 
 type ControllerRow = { controller: HomeController; check?: HomeController["failures"][number] };
 
-function Controllers({ data, zone }: { data: HomePeriod["controllers"]; zone: string }) {
+function Controllers({ data, zone }: { data: NonNullable<HomePeriod["controllers"]>; zone: string }) {
   const [limit, setLimit] = useState(50);
   const title = t("home.controllers");
   const name = (row: ControllerRow) => link(row.controller.href, row.controller.name ?? EMPTY_VALUE);
@@ -113,7 +120,7 @@ function Controllers({ data, zone }: { data: HomePeriod["controllers"]; zone: st
       });
     } },
     { key: "expected", label: t("home.expected"), wrap: true, render: ({ check }) => check
-      ? t(check.key === "os" ? "home.supported" : check.key === "time" ? "home.running" : "home.passedState") : null },
+      ? t(check.key === "os" ? "home.supported" : check.key === "time" ? "home.running" : "home.passedState") : EMPTY_VALUE },
     { key: "observed", label: t("home.observed"), wrap: true, render: ({ controller, check }) => {
       const actual = check?.actual === "failed" ? t("home.failedState") : check?.actual === "stopped" ? t("home.stopped") : check?.actual;
       return [actual, clock(controller.at, zone)].filter(Boolean).join(" · ");
@@ -144,7 +151,7 @@ function changeFact(row: HomeChange) {
   return [row.label, row.before !== null || row.after !== null ? `${row.before ?? EMPTY_VALUE} → ${row.after ?? EMPTY_VALUE}` : operation].filter(Boolean).join(" · ");
 }
 
-function Changes({ data, zone }: { data: HomePeriod["changes"]; zone: string }) {
+function Changes({ data, zone }: { data: NonNullable<HomePeriod["changes"]>; zone: string }) {
   const [limit, setLimit] = useState(50);
   const title = t("home.changes");
   return <div data-home-block="changes"><Panel title={title}
@@ -161,22 +168,27 @@ function Changes({ data, zone }: { data: HomePeriod["changes"]; zone: string }) 
   </Panel></div>;
 }
 
-export function HomeComposition({ data, zone }: { data: HomePeriod; zone: string }) {
+function HomeComposition({ data, zone, fetching, retry }: { data: HomePeriod; zone: string; fetching: boolean; retry: () => void }) {
   const activity = data.activity;
+  const failure = (block: "problems" | "controllers" | "changes" | "activity") => <div data-home-block={block}>
+    <Panel title={t(`home.${block}`)}>
+      <LoadError message={t(`home.loadFailed.${block}`)} fetching={fetching} retry={retry}/>
+    </Panel>
+  </div>;
   const series = [
     { key: "failed", style: "bar", name: t("home.activity.failed") },
     { key: "succeeded", style: "line", name: t("home.activity.succeeded") },
     { key: "typical", style: "dashed", name: t("home.activity.typical") },
   ] as const;
   return <div className="sli-ds-report__views sli-ds-home-main">
-    <Problems key={`${data.domain_id}:${data.from}`} data={data.problems} zone={zone}/>
-    <Controllers data={data.controllers} zone={zone}/>
-    <Changes data={data.changes} zone={zone}/>
-    <div data-home-block="activity"><Chart title={t("home.activity")} height="100%" emptyValue={EMPTY_VALUE} spec={{
+    {data.problems ? <Problems key={`${data.domain_id}:${data.from}`} data={data.problems} zone={zone}/> : failure("problems")}
+    {data.controllers ? <Controllers data={data.controllers} zone={zone}/> : failure("controllers")}
+    {data.changes ? <Changes data={data.changes} zone={zone}/> : failure("changes")}
+    {activity ? <div data-home-block="activity"><Chart title={t("home.activity")} height="100%" emptyValue={EMPTY_VALUE} spec={{
       kind: "timeseries", range: [data.from, data.to],
       series: series.map(({ key, style, name }) => ({ name, style, points: activity.hours.map((hour) => ({ x: hour.at, y: hour[key] })) })),
       markers: activity.markers.map((marker) => ({ ...marker, label: [clock(marker.at, zone), t(`home.severity.${marker.severity}`), marker.name, marker.fact].filter(Boolean).join(" · ") })),
-    }}/></div>
+    }}/></div> : failure("activity")}
   </div>;
 }
 
@@ -201,6 +213,7 @@ export function HomePage() {
     queryFn: () => api.homePeriod(params), staleTime: 30_000, retry: false, enabled: accessStatus === "получены",
   });
   const data = summary.data;
+  const retry = () => void summary.refetch();
   const togglePrevious = () => {
     if (previous) setPrevious(null);
     else if (data) {
@@ -221,12 +234,15 @@ export function HomePage() {
     <Button aria-pressed={previous !== null} disabled={!data && !previous} onClick={togglePrevious}>{t("home.period.previous")}</Button>
     {data ? <span>{formatDateTime(data.from, actualZone, { withYear: false })} → {formatDateTime(data.to, actualZone, { withYear: false })}</span> : null}
     {data ? <span data-home-updated>{t("home.updated", { time: clock(data.updated_at, actualZone) })}</span> : null}
-    <Button disabled={accessStatus !== "получены" || summary.isFetching} onClick={() => void summary.refetch()}>{t("home.refresh")}</Button>
+    <Button disabled={accessStatus !== "получены" || summary.isFetching} onClick={retry}>{t("home.refresh")}</Button>
   </>;
   return <section className="sli-ds-report sli-ds-home">
     <PageHeader title={t("home.title")} actions={actions}/>
-    {accessStatus === "загружается" || summary.isLoading ? <StateView state="loading" compact skeleton="table"/>
-      : accessStatus === "отказ" || summary.isError ? <p role="alert">{t("home.loadFailed")}</p>
-      : data ? <HomeComposition data={data} zone={actualZone}/> : null}
+    {accessStatus === "загружается" || summary.isLoading ? <StateView state="loading" compact skeleton="table"/> : null}
+    {accessStatus === "отказ" ? <p role="alert">{t("home.loadFailed")}</p> : null}
+    {accessStatus === "получены" && <>
+      {summary.isError ? <LoadError message={t("home.loadFailed")} fetching={summary.isFetching} retry={retry}/> : null}
+      {data ? <HomeComposition data={data} zone={actualZone} fetching={summary.isFetching} retry={retry}/> : null}
+    </>}
   </section>;
 }
