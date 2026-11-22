@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from deploy.linux import backup_policy as policy, native_host as host
-from deploy.linux import native_backup, native_install, native_runtime, native_upgrade
+from deploy.linux import native_backup, native_install, native_preinstall, native_runtime, native_upgrade
 from deploy.linux import backup, backup_restore_check, restore_existing
 
 GIB = policy.GIB
@@ -124,8 +124,8 @@ def test_host_admission_uses_capture_only_budget(tmp_path, monkeypatch, capsys):
     assert str(budget['capture_bytes']) in message and str(source) in message
 
 
-@pytest.mark.parametrize('shortfall', [0, 1])
-def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys, shortfall):
+@pytest.mark.parametrize('early_shortfall,late_shortfall', [(0, 0), (1, 1), (0, 1)])
+def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys, early_shortfall, late_shortfall):
     machine = host.Host(tmp_path)
     source = machine.path('/mnt/copies')
     root = source / 'native'
@@ -137,11 +137,17 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     data.mkdir(parents=True)
     monkeypatch.setattr(policy, 'tree_bytes', lambda p, **kw: 76 * GIB if p == data else 0)
     estimate = machine.backup_space_estimate(root)
-    free = estimate['capture_bytes'] - shortfall
+    free = estimate['capture_bytes'] - early_shortfall
     monkeypatch.setattr(machine, 'backup_trusted', lambda p: None)
     monkeypatch.setattr(machine, 'backup_device', lambda p: 1 if p == data else 2)
     monkeypatch.setattr(machine, 'backup_free', lambda p: free)
-    monkeypatch.setattr(policy.shutil, 'disk_usage', lambda p: SimpleNamespace(free=free))
+    volume_checks = []
+
+    def disk_usage(path):
+        volume_checks.append(path)
+        return SimpleNamespace(free=free)
+
+    monkeypatch.setattr(policy.shutil, 'disk_usage', disk_usage)
     monkeypatch.setattr(host, 'Host', lambda: machine)
     monkeypatch.setattr(native_backup, 'ROOT', root)
     monkeypatch.setattr(native_backup, 'DRILLS', source / 'restore-check')
@@ -149,7 +155,12 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(native_upgrade, 'systemd_available', lambda: False)
     monkeypatch.setattr(native_upgrade, 'operation_lock', lambda p: nullcontext())
     monkeypatch.setattr(native_upgrade, 'preflight', lambda: (Path('/old'), Path('/recovery')))
+    monkeypatch.setattr(native_preinstall, 'recovery_required', lambda: True)
+    monkeypatch.setattr(native_runtime, 'release', lambda: (Path('/old'), {}, ''))
+    monkeypatch.setattr(native_upgrade, 'package_metadata', lambda p: {'version': '1.0-1~deb13'})
     monkeypatch.setattr(native_runtime, 'no_transaction', lambda: None)
+    monkeypatch.setattr(native_runtime, 'stop_writers', lambda: pytest.fail('admission must leave writers running'))
+    monkeypatch.setattr(native_install, 'command', lambda *args: pytest.fail('admission must not change services'))
     monkeypatch.setattr(native_install, 'wait_health', lambda: None)
 
     class AdmissionComplete(Exception):
@@ -159,19 +170,57 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
         raise AdmissionComplete
 
     monkeypatch.setattr(native_upgrade, 'ensure_directory', after_admission)
-    if shortfall:
+    if early_shortfall:
         with pytest.raises(host.HostError, match='insufficient_space'):
             machine.validate_backup_root('/mnt/copies')
         with pytest.raises(RuntimeError, match='native_upgrade_insufficient_space'):
-            native_upgrade.prepare('new', 'a' * 32)
-        message = capsys.readouterr().out
-        assert message.count(f'required={estimate["capture_bytes"]} bytes') == 2
-        assert message.count(f'free={free} bytes') == 2
+            native_upgrade.check_package_space('1.0-2~deb13')
     else:
         assert machine.validate_backup_root('/mnt/copies') == source
+        native_upgrade.check_package_space('1.0-2~deb13')
+    free = estimate['capture_bytes'] - late_shortfall
+    if late_shortfall:
+        with pytest.raises(RuntimeError, match='native_upgrade_insufficient_space'):
+            native_upgrade.prepare('new', 'a' * 32)
+        message = capsys.readouterr().out
+        assert message.count(f'required={estimate["capture_bytes"]} bytes') == (3 if early_shortfall else 1)
+        assert message.count(f'free={free} bytes') == (3 if early_shortfall else 1)
+        assert f'volume={root}' in message
+    else:
         with pytest.raises(AdmissionComplete):
             native_upgrade.prepare('new', 'a' * 32)
+    assert volume_checks == [root, root]
     assert not (tmp_path / 'transactions').exists()
+
+
+@pytest.mark.parametrize('installed,version,journal_status,restored,needs_space', [
+    (False, '1.0-2~deb13', None, False, False),
+    (True, '1.0-1~deb13', None, False, False),
+    (True, '1.0-2~deb13', None, False, True),
+    (True, '1.0-2~deb13', 'checkpoint_verified', False, False),
+    (True, '1.0-2~deb13', 'rolled_back', True, False),
+    (True, '1.0-2~deb13', 'aborted_before_checkpoint', False, False),
+    (True, '1.0-2~deb13', 'aborted_before_checkpoint', True, True),
+    (True, '1.0-2~deb13', 'committed', True, True),
+])
+def test_early_package_space_is_required_only_for_a_new_checkpoint(
+        monkeypatch, installed, version, journal_status, restored, needs_space):
+    monkeypatch.setattr(native_preinstall, 'recovery_required', lambda: installed)
+
+    def release():
+        assert installed
+        return (Path('/old'), {}, '')
+
+    monkeypatch.setattr(native_runtime, 'release', release)
+    monkeypatch.setattr(native_upgrade, 'package_metadata', lambda p: {'version': '1.0-1~deb13'})
+    journal = None
+    if journal_status:
+        journal = SimpleNamespace(value={'status': journal_status, 'services_restored': restored})
+    monkeypatch.setattr(native_upgrade, 'latest_package_transaction', lambda version: journal)
+    checks = []
+    monkeypatch.setattr(native_upgrade, 'check_checkpoint_space', lambda: checks.append('checkpoint'))
+    native_upgrade.check_package_space(version)
+    assert checks == (['checkpoint'] if needs_space else [])
 
 
 @pytest.mark.parametrize('free,expected', [(20, 'admitted'), (11, 'skipped')])

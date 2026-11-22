@@ -395,7 +395,7 @@ def prepare_release(checkout, release, runtime_path, artifact, postgres_version,
     })
 
 
-def finish(output, commit, release, version, *, toolchain):
+def finish(output, commit, release, version, *, toolchain, installer_root=ROOT):
     rows = []
     for path in sorted(output.glob('*.deb')):
         command(['dpkg-deb', '--info', path], stdout=subprocess.DEVNULL)
@@ -404,7 +404,7 @@ def finish(output, commit, release, version, *, toolchain):
         rows.append({'filename': path.name, 'package': name, 'version': deb_version,
                      'architecture': arch, 'size': path.stat().st_size, 'sha256': sha256(path)})
     installer = output / 'install-beta-kit'
-    installer_source = ROOT / 'deploy/linux/install-beta-kit'
+    installer_source = installer_root / 'deploy/linux/install-beta-kit'
     installer.write_text(installer_source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
     remover = output / 'remove-beta-kit'
     remover_source = ROOT / 'deploy/linux/native_remove.py'
@@ -572,7 +572,7 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
                  '--dotnet-published', published, *agent_args], cwd=checkout, env=env)
-        finish(packages, commit, release, version, toolchain=toolchain)
+        finish(packages, commit, release, version, toolchain=toolchain, installer_root=checkout)
         archive_kit(packages)
         packages.rename(output)
     return output

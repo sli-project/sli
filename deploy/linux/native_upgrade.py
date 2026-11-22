@@ -96,7 +96,8 @@ FAILURE_MESSAGES = {
     'native_upgrade_no_previous_release': 'No completed update of this release is available to roll back.',
     'native_upgrade_previous_packages_unavailable': 'Run sudo sli-rollback with the path to the previous trusted Debian kit, or make that version available to APT.',
     'native_upgrade_rollback_package_failed': 'The previous data is restored. Check APT diagnostics and repeat sudo sli-rollback to finish installing the previous kit.',
-    'native_upgrade_insufficient_space': 'There is not enough space for the checkpoint and isolated restore.',
+    'native_upgrade_insufficient_space': 'There is not enough space for the checkpoint / Недостаточно места для контрольной копии.',
+    'native_upgrade_package_invalid': 'Invalid Debian package metadata / Некорректные метаданные пакета Debian.',
     'native_upgrade_migration_interrupted': 'The migration was interrupted before durable completion; the verified checkpoint was restored to avoid replaying uncertain SQL.',
     'native_upgrade_recovery_pending': 'Checkpoint recovery is incomplete; run resume-package again to finish restoring the previous release.',
     'native_upgrade_candidate_missing': 'The unpacked candidate release is missing; repeat the package installation before resuming.',
@@ -609,8 +610,22 @@ def cleanup_checkpoints():
               file=sys.stderr)
 
 
+def check_checkpoint_space():
+    from deploy.linux import backup_policy, native_backup as native, native_host
+
+    estimate = native_host.Host().backup_space_estimate(native.ROOT)
+    # Capture needs its own space; an explicit drill admits its workspace.
+    for volume, required in backup_policy.space_requirements(
+            native.ROOT, native.DRILLS, estimate, include_drill=False).items():
+        free = shutil.disk_usage(backup_policy.existing_parent(volume)).free
+        if free < required:
+            backup_policy.report_refusal({'reason': 'insufficient_backup_disk_space', 'volume': str(volume),
+                                          'required_bytes': required, 'free_bytes': free})
+            raise RuntimeError('native_upgrade_insufficient_space')
+
+
 def prepare(candidate, transaction, *, target_version=None, previous_version=None, reuse_existing=False):
-    from deploy.linux import backup_policy, native_host, native_backup as native, native_install as install, native_runtime as runtime
+    from deploy.linux import native_backup as native, native_install as install, native_runtime as runtime
 
     require(re.fullmatch(r'[a-z0-9][a-z0-9.+-]{0,63}', candidate)
             and re.fullmatch(r'[0-9a-f]{32}', transaction), 'native_upgrade_identity_invalid')
@@ -648,15 +663,7 @@ def prepare(candidate, transaction, *, target_version=None, previous_version=Non
                 check_reused_databases(candidate)
             else:
                 install.wait_health()
-            # Capture needs its own space; an explicit drill admits its workspace.
-            estimate = native_host.Host().backup_space_estimate(native.ROOT)
-            for volume, required in backup_policy.space_requirements(
-                    native.ROOT, native.DRILLS, estimate, include_drill=False).items():
-                free = shutil.disk_usage(backup_policy.existing_parent(volume)).free
-                if free < required:
-                    backup_policy.report_refusal({'reason': 'insufficient_backup_disk_space', 'volume': str(volume),
-                                                  'required_bytes': required, 'free_bytes': free})
-                    raise RuntimeError('native_upgrade_insufficient_space')
+            check_checkpoint_space()
             ensure_directory(path, 0o700, exist_ok=False)
             stamp = datetime.now(timezone.utc).isoformat()
             install.atomic(path / 'journal.json', {'schema_version': 1, 'transaction': transaction,
@@ -874,14 +881,38 @@ def reuse_existing(candidate):
     configure_package(candidate, version)
 
 
-def package_transaction(version):
+def latest_package_transaction(version):
+    if not TRANSACTIONS.exists():
+        return None
     matches = []
     for path in TRANSACTIONS.iterdir():
         journal = Journal(path)
         if journal.value.get('target_version') == version:
             matches.append(journal)
-    require(matches, 'native_upgrade_package_intent_required')
-    return max(matches, key=lambda journal: journal.value['created_at_utc'])
+    return max(matches, key=lambda journal: journal.value['created_at_utc'], default=None)
+
+
+def package_transaction(version):
+    journal = latest_package_transaction(version)
+    require(journal is not None, 'native_upgrade_package_intent_required')
+    return journal
+
+
+def check_package_space(version):
+    from deploy.linux import native_preinstall, native_runtime as runtime
+
+    require(re.fullmatch(r'[0-9][a-zA-Z0-9.+~]*-[0-9]+~deb13', version), 'native_upgrade_package_invalid')
+    if not native_preinstall.recovery_required():
+        return  # Fresh installation or recovery of an interrupted first start.
+    if version == package_metadata(runtime.release()[0])['version']:
+        return  # Same-version reinstall or explicit package reconciliation.
+    journal = latest_package_transaction(version)
+    if journal is not None:
+        value = journal.value
+        if value['status'] != 'committed' and not (
+                value['status'] == 'aborted_before_checkpoint' and value.get('services_restored') is True):
+            return  # Keep existing checkpoint reuse and recovery in their original paths.
+    check_checkpoint_space()
 
 
 def prepare_package(version):
@@ -895,13 +926,8 @@ def prepare_package(version):
         return  # Same-version reinstall, or explicit reconciliation after rollback.
     # A failed transaction requires explicit operator reconciliation; configure
     # and repeated APT must never silently try the candidate again.
-    matches = []
-    for path in TRANSACTIONS.iterdir():
-        journal = Journal(path)
-        if journal.value.get('target_version') == version:
-            matches.append(journal)
-    if matches:
-        journal = max(matches, key=lambda item: item.value['created_at_utc'])
+    journal = latest_package_transaction(version)
+    if journal is not None:
         if journal.value['status'] == 'aborted_before_checkpoint':
             if not journal.value.get('services_restored'):
                 resume_package(version)
@@ -1679,7 +1705,8 @@ def launch(candidate, transaction, *, action='prepare', arguments=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('launch', 'prepare', 'dispatch', 'prepare-package', 'check-package',
+    parser.add_argument('action', choices=('launch', 'prepare', 'dispatch', 'check-package-space',
+                                         'prepare-package', 'check-package',
                                          'configure-package', 'reconcile', 'resume-package', 'reuse-existing', 'check-reuse', 'rollback'))
     parser.add_argument('arguments', nargs='+')
     parser.add_argument('--target-version')
@@ -1699,6 +1726,9 @@ def main(argv=None):
             launch(None, None, action=args.arguments[0], arguments=args.arguments[1:])
         else:
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+            if args.action == 'check-package-space':
+                check_package_space(*args.arguments)
+                return 0
             if args.action == 'rollback':
                 from deploy.linux.native_restore import rollback
 
@@ -1728,6 +1758,10 @@ def main(argv=None):
              'resume-package': resume_package, 'reuse-existing': reuse_existing}[args.action](*args.arguments, **options)
     except Exception as error:  # noqa: BLE001 - allowlisted diagnostics only; no private exception text
         code = failure_code(error)
+        if args.action == 'check-package-space':
+            message = FAILURE_MESSAGES.get(code, 'Could not check checkpoint space before APT / Не удалось проверить место до запуска APT.')
+            print(f'{message} (reason_code={code})', file=sys.stderr)
+            return 1
         print(f'Upgrade failed: {failure_message(code)} (reason_code={code})', file=sys.stderr)
         version = args.arguments[-1]
         if args.action == 'reuse-existing' and code != 'native_root_required':

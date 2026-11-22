@@ -358,8 +358,22 @@ def test_small_commit_builds_valid_debs_and_a_runnable_self_contained_server(tmp
     result = subprocess.run([server], capture_output=True, text=True, check=True, env={'PATH': '/usr/bin:/bin'})
     assert result.stdout.strip() == 'beta kit smoke'
 
+def test_kit_installer_matches_the_packaged_source(tmp_path):
+    checkout = tmp_path / 'source'
+    installer = checkout / 'deploy/linux/install-beta-kit'
+    installer.parent.mkdir(parents=True)
+    installer.write_bytes(b'#!/usr/bin/env bash\n# Selected source fixture\n')
+    output = tmp_path / 'kit'
+    output.mkdir()
+    manifest = kit.finish(output, 'a' * 40, 'fixture', '1.0-1~deb13', toolchain={}, installer_root=checkout)
+    assert (output / 'install-beta-kit').read_bytes() == installer.read_bytes()
+    assert manifest['installer']['sha256'] == kit.sha256(installer)
+    assert f'{kit.sha256(installer)}  install-beta-kit' in (output / 'SHA256SUMS').read_text(encoding='utf-8')
+
+
 @pytest.mark.skipif(os.name != 'posix' or not shutil.which('bash'), reason='Linux shell tools required')
-@pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate'])
+@pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate',
+                                      'fresh_native', 'upgrade_space_ok', 'upgrade_space_shortfall'])
 def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     source = kit.ROOT / 'deploy/linux/install-beta-kit'
     assert source.is_file(), 'The Debian beta kit needs a standalone install helper'
@@ -367,11 +381,16 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     extracted.mkdir()
     script = extracted / source.name
     script.write_text(source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
-    deb = extracted / 'sli-example_1.0~deb13_amd64.deb'
+    native = scenario in {'fresh_native', 'upgrade_space_ok', 'upgrade_space_shortfall'}
+    deb = extracted / ('sli_1.0-1~deb13_amd64.deb' if native else 'sli-example_1.0~deb13_amd64.deb')
     deb.write_bytes(b'synthetic package')
     manifest = extracted / 'manifest.json'
     manifest.write_text('{}\n', encoding='utf-8')
     lines = [f'{kit.sha256(path)}  {path.name}\n' for path in (script, deb, manifest)]
+    if native:
+        host = extracted / 'sli-host_1.0-1~deb13_all.deb'
+        host.write_bytes(b'synthetic host package')
+        lines.append(f'{kit.sha256(host)}  {host.name}\n')
     if scenario == 'newer_vendor':
         vendor = extracted / 'tzdata_2026c_all.deb'
         vendor.write_bytes(b'verified vendor package')
@@ -389,36 +408,73 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
     apt_calls = tmp_path / 'apt-calls'
+    running = tmp_path / 'old-service-running'
+    if scenario.startswith('upgrade_space_'):
+        running.touch()
     sudo = bin_dir / 'sudo'
-    sudo.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n'
-                    'if [[ $SCENARIO == apt_failure && " $* " == *" install "* ]]; then exit 1; fi\n',
-                    encoding='utf-8', newline='\n')
+    sudo.write_text("""#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$APT_CALLS"
+if [[ " $* " == *' check-package-space '* ]]; then
+    test -f "$RUNNING" || exit 2
+    if [[ $SCENARIO == upgrade_space_shortfall ]]; then
+        echo 'native_upgrade_insufficient_space required=3000 bytes free=2000 bytes' >&2
+        exit 1
+    fi
+elif [[ " $* " == *' install '* ]]; then
+    rm -f -- "$RUNNING"
+    if [[ $SCENARIO == apt_failure ]]; then exit 1; fi
+fi
+""", encoding='utf-8', newline='\n')
+    systemctl = bin_dir / 'systemctl'
+    systemctl.write_text('#!/usr/bin/env bash\nprintf "systemctl %s\\n" "$*" >> "$APT_CALLS"\n',
+                         encoding='utf-8', newline='\n')
+    systemctl.chmod(0o755)
     sudo.chmod(0o755)
     dpkg_deb = bin_dir / 'dpkg-deb'
     dpkg_deb.write_text('''#!/usr/bin/env bash
+if [[ $1 == --extract ]]; then mkdir -p -- "$3/usr/lib/sli"; exit; fi
 case "$2:$3" in
     ./tzdata*:Package) echo tzdata;; ./tzdata*:Version) echo 2026c;; ./tzdata*:Architecture) echo all;;
+    ./sli-host*:Package) echo sli-host;; ./sli_*.deb:Package) echo sli;;
+    ./sli-host*:Version|./sli_*.deb:Version) echo '1.0-1~deb13';;
     *:Package) echo sli-example;; *:Version) echo 1.0;; *:Architecture) echo amd64;; *) exit 1;;
 esac
 ''', encoding='utf-8', newline='\n')
     query = bin_dir / 'dpkg-query'
-    query.write_text('#!/usr/bin/env bash\ntest "$3" = tzdata && echo "installed 2026e"\n', encoding='utf-8', newline='\n')
+    query.write_text("""#!/usr/bin/env bash
+if [[ $3 == sli-host && $SCENARIO == upgrade_space_* ]]; then echo installed
+elif [[ $3 == tzdata ]]; then echo 'installed 2026e'
+else exit 1
+fi
+""", encoding='utf-8', newline='\n')
     dpkg = bin_dir / 'dpkg'
     dpkg.write_text('#!/usr/bin/env bash\ntest "$*" = "--compare-versions 2026e gt 2026c"\n', encoding='utf-8', newline='\n')
     for stub in (dpkg_deb, query, dpkg):
         stub.chmod(0o755)
     env = dict(os.environ, PATH=f'{bin_dir}{os.pathsep}{os.environ["PATH"]}', APT_CALLS=str(apt_calls),
-               SCENARIO=scenario)
+               SCENARIO=scenario, RUNNING=str(running))
     run = subprocess.run(['bash', './install-beta-kit', '--port', '9443'],
                          cwd=extracted, env=env, capture_output=True, text=True)
-    if scenario in {'valid', 'newer_vendor'}:
+    if scenario == 'upgrade_space_shortfall':
+        assert run.returncode != 0
+        assert 'native_upgrade_insufficient_space' in run.stderr
+        assert 'required=3000 bytes free=2000 bytes' in run.stderr
+        assert running.is_file(), 'the accepted service must stay up'
+        calls = apt_calls.read_text(encoding='utf-8').splitlines()
+        assert len(calls) == 1
+        assert calls[0].endswith(' check-package-space 1.0-1~deb13')
+    elif scenario in {'valid', 'newer_vendor', 'fresh_native', 'upgrade_space_ok'}:
         assert run.returncode == 0, run.stderr
         if scenario == 'newer_vendor':
             assert 'Keeping tzdata 2026e' in run.stdout
-        assert apt_calls.read_text(encoding='utf-8').splitlines() == [
+        calls = apt_calls.read_text(encoding='utf-8').splitlines()
+        if scenario == 'upgrade_space_ok':
+            assert calls.pop(0).endswith(' check-package-space 1.0-1~deb13')
+        expected_packages = './' + deb.name + (' ./' + host.name if native else '')
+        assert calls == [
             'apt-get update', 'env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes '
             '-o APT::Get::allow-Downgrades=false -o Dpkg::Options::=--force-confdef '
-            f'-o Dpkg::Options::=--force-confold install --no-remove --fix-broken ./{deb.name}',
+            f'-o Dpkg::Options::=--force-confold install --no-remove --fix-broken {expected_packages}',
             '/usr/sbin/sli-setup --port 9443',
         ]
     elif scenario == 'apt_failure':
