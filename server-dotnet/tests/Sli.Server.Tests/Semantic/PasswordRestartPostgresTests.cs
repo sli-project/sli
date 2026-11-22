@@ -158,13 +158,48 @@ public sealed class PasswordRestartPostgresTests(ITestOutputHelper output)
             var existing = Assert.IsType<long[]>(await findings.ExecuteScalarAsync(ct));
             await PostCollectionPostgres.Sql(owner, original, ct);
             await fixture.Pg.ApplyFileAsync(migration, null, ct);
-            await PostCollectionPostgres.Sql(owner, injectClock, ct);
             await using var pending = new NpgsqlCommand("select history_to from public.password_pass_state393 where history_pin is not null", owner);
             await using (var history = await pending.ExecuteReaderAsync(ct)) {
                 int count = 0;
                 while (await history.ReadAsync(ct)) count++;
                 Assert.InRange(count, 1, 2);
             }
+            string migrations = Path.GetDirectoryName(migration)!;
+            string throughput = Path.Combine(migrations, "396_password_worker_throughput.sql");
+            await fixture.Pg.ApplyFileAsync(Path.Combine(migrations, "394_notification_language.sql"), null, ct);
+            await using var catchup = new NpgsqlCommand("select public.password_catchup_status388()::text", owner);
+            var recovered = Assert.IsType<string>(await catchup.ExecuteScalarAsync(ct));
+            await using var policyStates = new NpgsqlCommand("""
+                select coalesce(jsonb_object_agg(p.policy_id,p.lifecycle_status),'{}')::text
+                from public.semantic_risk_policies p where p.policy_id in (
+                    select 'default:'||r.rule_id||':'||substr(r.history_pin,1,32)
+                    from public.password_pass_state393 r where r.history_pin is not null)
+                """, owner);
+            var beforeRetirement = await policyStates.ExecuteScalarAsync(ct);
+            await fixture.Pg.ApplyFileAsync(throughput, null, ct);
+            Assert.Equal(DBNull.Value, await catchup.ExecuteScalarAsync(ct));
+            Assert.Equal(existing, Assert.IsType<long[]>(await findings.ExecuteScalarAsync(ct)));
+            // Poll the upgraded planner before rollback so managed policy
+            // retirement exercises the same path as a deployed worker.
+            await using (var runtime = PasswordProducerRuntime.Create(
+                name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
+                _ => throw new InvalidOperationException()))
+            await using (var worker = await runtime.OpenAsync(ct))
+            await using (var plan = new NpgsqlCommand("""
+                select public.password_plan388(source->'scope',@rule)::text from public.default_detection_sources()
+                where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
+                """, worker)) {
+                plan.Parameters.AddWithValue("rule", "qw.password-brute-force");
+                foreach (var rule in new[] { "qw.password-brute-force", "qw.password-spray" }) {
+                    plan.Parameters["rule"].Value = rule;
+                    var result = JsonNode.Parse(Assert.IsType<string>(await plan.ExecuteScalarAsync(ct)))!;
+                    Assert.Empty(result["catchup"]!.AsArray());
+                }
+            }
+            await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(throughput, ".rollback.sql"), null, ct);
+            Assert.Equal(recovered, await catchup.ExecuteScalarAsync(ct));
+            Assert.Equal(beforeRetirement, await policyStates.ExecuteScalarAsync(ct));
+            await PostCollectionPostgres.Sql(owner, injectClock, ct);
             while (last["catchup"] is { } previous) {
                 last = await RunWorker(true);
                 if (last["catchup"] is { } current)
