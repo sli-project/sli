@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Sli.Server.Infrastructure;
@@ -14,25 +13,25 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
     {
         public Task<Npgsql.NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
-    private sealed class MeasuredSession(IReportSession db) : IReportSession
+    private sealed class MeasuredSession(IReportSession db, ITestOutputHelper output) : IReportSession
     {
-        private string? measuredSql;
-        private IReadOnlyList<object?>? measuredValues;
-        public Task<IReadOnlyList<JsonObject>> QueryAsync(string sql, IReadOnlyList<object?> values, CancellationToken ct)
+        private bool measured;
+        public async Task<IReadOnlyList<JsonObject>> QueryAsync(string sql, IReadOnlyList<object?> values, CancellationToken ct)
         {
-            if (measuredSql is null && sql.StartsWith("with short_events", StringComparison.Ordinal))
+            if (!measured && sql.StartsWith("with short_events", StringComparison.Ordinal))
             {
-                measuredSql = sql;
-                measuredValues = values.ToArray();
+                measured = true;
+                var result = await db.QueryAsync("explain (analyze, serialize text, format json) " + sql, values, ct);
+                var plan = result.Single()["QUERY PLAN"]![0]!;
+                double planning = plan["Planning Time"]!.GetValue<double>();
+                double execution = plan["Execution Time"]!.GetValue<double>();
+                double statement = planning + execution;
+                output.WriteLine($"PostgreSQL journal query with output serialization: {statement:F1} ms");
+                if (statement >= 1000)
+                    output.WriteLine(plan.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                Assert.True(statement < 1000, $"Journal PostgreSQL query exceeded one second: {statement:F1} ms");
             }
-            return db.QueryAsync(sql, values, ct);
-        }
-
-        internal async Task<double> MeasureStatementAsync(CancellationToken ct)
-        {
-            var result = await db.QueryAsync("explain (analyze, serialize text, format json) " + measuredSql, measuredValues!, ct);
-            var plan = result.Single()["QUERY PLAN"]![0]!;
-            return plan["Planning Time"]!.GetValue<double>() + plan["Execution Time"]!.GetValue<double>();
+            return await db.QueryAsync(sql, values, ct);
         }
 
         public Task CommitAsync(CancellationToken ct) => db.CommitAsync(ct);
@@ -63,7 +62,7 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         DateTimeOffset from = to.AddHours(-2);
         DateTimeOffset boundary = new(DateTime.UtcNow.Date.AddDays(-14), TimeSpan.Zero);
         await using var db = await new ReportDatabase(new Connections(fixture)).OpenAsync(false, ct);
-        var measured = new MeasuredSession(db);
+        var measured = new MeasuredSession(db, output);
         Task<JsonObject> Read(JournalOptions options, int limit = 25, string? cursor = null, string? search = null, long domain = 1)
         {
             var sql = new ReportQuery();
@@ -80,13 +79,7 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         }
 
         var options = new JournalOptions(true, null, null, "all", "", "", null);
-        var stopwatch = Stopwatch.StartNew();
         var first = await Read(options);
-        stopwatch.Stop();
-        output.WriteLine($"First application read for 5,000 events: {stopwatch.Elapsed.TotalMilliseconds:F1} ms");
-        double statement = await measured.MeasureStatementAsync(ct);
-        output.WriteLine($"PostgreSQL journal query with output serialization: {statement:F1} ms");
-        Assert.True(statement < 1000, $"Journal PostgreSQL query exceeded one second: {statement:F1} ms");
         Assert.Equal(5000L, first["journal_event_count"]!.GetValue<long>());
         Assert.Equal(35L, first["filtered_count"]!.GetValue<long>());
         Assert.Equal(4998L, first["journal_counts"]!["authentication"]!.GetValue<long>());

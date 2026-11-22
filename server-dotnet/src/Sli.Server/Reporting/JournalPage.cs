@@ -172,21 +172,22 @@ internal static class JournalPage
                         """;
             }
             else
+                // Rank repeats and collect their facts in the same pass over each group.
                 statement += """
                     , repeated as (
-                        select repeat_key,min(first_seen_utc) as group_start,max(last_seen_utc) as group_end,count(*) as group_count,
-                               (array_agg(id order by time_created_utc desc,id desc))[1] as representative,
-                               case when count(actor)=count(*) and min(actor)=max(actor) then min(actor) end as group_actor,
-                               case when count(target)=count(*) and min(target)=max(target) then min(target) end as group_target,
-                               case when count(source)=count(*) and min(source)=max(source) then min(source) end as group_source
-                        from keyed where repeat_key is not null group by repeat_key
+                        select *,min(first_seen_utc) over w as group_start,max(last_seen_utc) over w as group_end,
+                               count(*) over w as group_count,row_number() over w as repeat_rank,
+                               case when count(actor) over w=count(*) over w and min(actor) over w=max(actor) over w then min(actor) over w end as group_actor,
+                               case when count(target) over w=count(*) over w and min(target) over w=max(target) over w then min(target) over w end as group_target,
+                               case when count(source) over w=count(*) over w and min(source) over w=max(source) over w then min(source) over w end as group_source
+                        from keyed where repeat_key is not null
+                        window w as (partition by repeat_key order by time_created_utc desc,id desc
+                                     rows between unbounded preceding and unbounded following)
                     ),
                     visible as (
-                        select event.*,(coalesce(repeated.group_count,1)>1) as journal_expandable,
-                               repeated.group_start,repeated.group_end,repeated.group_count,
-                               repeated.group_actor,repeated.group_target,repeated.group_source
-                        from keyed event left join repeated using(repeat_key)
-                        where event.repeat_key is null or event.id=repeated.representative
+                        select *,group_count>1 as journal_expandable from repeated where repeat_rank=1
+                        union all
+                        select *,null,null,null,null,null,null,null,false from keyed where repeat_key is null
                     )
                     """;
         }
@@ -214,7 +215,7 @@ internal static class JournalPage
             )
             select meta.*,(
                 select coalesce(jsonb_agg(
-                    (to_jsonb(page)-array['fields','method','outcome','repeat_key','minute','representative',
+                    (to_jsonb(page)-array['fields','method','outcome','repeat_key','minute','representative','repeat_rank',
                          'subject_user_name','target_user_name','ip_address','workstation_name','logon_id','journal_account_match'])
                     || jsonb_build_object('journal_logon_type',coalesce(page.outcome->>'LogonType',page.method->>'LogonType',page.fields->>'LogonType'))
                     order by page.time_created_utc desc,coalesce(page.id,0) desc,page.summary_key desc
