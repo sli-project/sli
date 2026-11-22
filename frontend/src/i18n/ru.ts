@@ -63,7 +63,7 @@ export const ru = {
   "problems.queue.original": "Открыть исходное событие",
   "problems.queue.eventTime": "Время события",
   "problems.queue.published": "Опубликовано",
-  "problems.queue.investigate": "В расследование",
+  "problems.queue.investigate": "Открыть в журнале",
   "problems.queue.previous": "Предыдущая проблема",
   "problems.queue.next": "Следующая проблема",
   "problems.queue.until": "Отложить до",

@@ -67,7 +67,7 @@ export const en: Record<MessageKey, string> = {
   "problems.queue.original": "Open original event",
   "problems.queue.eventTime": "Event time",
   "problems.queue.published": "Published",
-  "problems.queue.investigate": "Investigate",
+  "problems.queue.investigate": "Open in journal",
   "problems.queue.previous": "Previous problem",
   "problems.queue.next": "Next problem",
   "problems.queue.until": "Defer until",
