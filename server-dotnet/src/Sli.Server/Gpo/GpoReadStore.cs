@@ -9,7 +9,7 @@ using static Sli.Server.Gpo.GpoJson;
 
 namespace Sli.Server.Gpo;
 
-internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfiguration config) : IGpoReadStore
+internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfiguration config) : IGpoReadStore, IGpoSnapshotReadStore
 {
     public async Task<JsonObject> PairAsync(long[]? domains,CancellationToken ct)
     {
@@ -46,6 +46,42 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
         catch(Exception e) when(e is JsonException or InvalidDataException or ArgumentException or InvalidOperationException) { throw new GpoSourceException(); }
     }
     internal static void BindDomains(NpgsqlCommand cmd,long[]? domains)=>cmd.Parameters.AddWithValue("domains",NpgsqlDbType.Array|NpgsqlDbType.Bigint,domains is null?DBNull.Value:domains);
+
+    public async Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
+        (Guid Before, Guid After)? comparison, CancellationToken ct)
+    {
+        await using var db = await connections.OpenAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            select source_run_id, source_observed_at_utc,
+                case when @runs is not null then payload_json end,
+                case when @runs is not null then payload_sha256 end
+            from gpo_report_v2_source_snapshots
+            where domain_id = @domain and import_status = 'completed' and collection_status <> 'failed'
+              and schema_version = 'sli.ad-gpo.snapshot/1.0'
+              and (@runs is null or source_run_id = any(@runs))
+              and payload_json->>'collection_status' = collection_status
+              and jsonb_array_length(payload_json->'settings') = setting_count
+              and payload_json @> @policy
+            order by source_observed_at_utc desc, snapshot_id desc
+            """, db) { CommandTimeout = 0 };
+        cmd.Parameters.AddWithValue("domain", domain);
+        cmd.Parameters.AddWithValue("runs", NpgsqlDbType.Array | NpgsqlDbType.Uuid,
+            comparison is { } pair ? new[] { pair.Before, pair.After } : DBNull.Value);
+        cmd.Parameters.AddWithValue("policy", NpgsqlDbType.Jsonb, JsonSerializer.Serialize(new
+        {
+            gpos = new[] { new { id = policyId, source_states = new { report = new { status = "observed" } } } },
+        }));
+
+        var snapshots = new List<GpoPolicySnapshot>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var payload = comparison is null ? null : ValidateSnapshot(reader.GetString(2), reader.GetFieldValue<byte[]>(3));
+            snapshots.Add(new(reader.GetGuid(0), reader.GetFieldValue<DateTimeOffset>(1), payload));
+        }
+        return snapshots;
+    }
+
     public async Task<JsonObject> GraphAsync(JsonObject snapshot,long[]? domains,CancellationToken ct)
     {
         if(domains is {Length:0}) throw new UnauthorizedAccessException("gpo_domain_scope_required");
