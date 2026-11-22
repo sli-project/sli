@@ -22,6 +22,7 @@ export type PageHeaderControls = {
   updatedAt?: string | number | null;
   refreshing?: boolean;
   onRefresh?: () => void;
+  showRefreshLabel?: boolean;
 };
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
@@ -85,7 +86,7 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh } = controls ?? scope.controls ?? {};
+  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel } = controls ?? scope.controls ?? {};
   const domainControl = showDomain ? scope.domain?.(domain) : null;
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
@@ -97,7 +98,9 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
       {period ? <HeaderPeriod {...period}/> : null}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
-        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}/> : null}
+        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>
+          {showRefreshLabel ? t("shell.header.refresh") : null}
+        </Button> : null}
         {actions}
       </div> : null}
     </div>

@@ -171,10 +171,17 @@ internal static class AdUsersActivity
             var safe=(JsonObject)users[row.Int("entity_id")].DeepClone();AdInventoryRows.RedactUser(safe,fields);
             if(!AdInventoryRows.Matches(request with{Tab="users",Params=filters},safe,AdInventoryRows.User(safe,current["metadata"]!.Text("observed_at")??Iso(DateTimeOffset.UtcNow)),true))continue;
             if(request.Params.Text("group") is {} group&&row.Text("group_id")!=group||request.Params.Text("activity_type") is {} type&&row.Text("activity_type")!=type)continue;
+            row["domain_id"]=safe["domainId"]?.DeepClone();
+            row["domain_name"]=safe["domainName"]?.DeepClone();
+            row["sam"]=safe["samAccountName"]?.DeepClone();
+            row["enabled"]=safe["enabled"]?.DeepClone();
             selected.Add(row);
         }
         selected=selected.OrderByDescending(r=>r.Text("added_at")??r.Text("activity_at"),StringComparer.Ordinal).ThenByDescending(r=>r.Text("id"),StringComparer.Ordinal).ToList();
-        result["collections"]![request.Tab]=Array(selected.Take(request.Limit));result["filtered_count"]=selected.Count;
+        AdV2Store.Page(result,request,selected);
+        var page = result["items"]!;
+        result["items"] = new JsonArray();
+        result["collections"]![request.Tab] = page;
         result["metrics"]=Array(new[]{Obj(new{key="activity_observations",label="Наблюдения в выборке",value=selected.Count}),Obj(new{key="activity_accounts",label="Сопоставленные аккаунты",value=selected.Select(r=>r.Int("entity_id")).Distinct().Count()}),Obj(new{key="activity_repeated",label="Повторные краткие включения",value=selected.Count(r=>r.Int("repeats")>1)}),Obj(new{key="activity_ambiguous",label="Неоднозначные продолжения",value=selected.Count(r=>r.Text("quality")=="ambiguous")}),Obj(new{key="activity_unknown",label="События без точной идентичности",value=data.Int("unknown_identity_events")})});
         result["filter_options"]!["group"]=Array(current["metadata"]!["watch_groups"]!.AsArray().Select(g=>new{value=g!.Text("id"),label=g.Text("name")}));return result;
     }

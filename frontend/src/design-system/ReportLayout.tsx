@@ -43,7 +43,7 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   drawer?: ReactNode;
   side?: ReactNode;
   inlineDrawer?: ReactNode;
-  split?: boolean;
+  split?: boolean | "inline";
 }) {
   const blocking = state === "loading" || state === "empty" || state === "unavailable" || state === "denied" || state === "not_collected" || state === "error";
   const result = state === "loading"
@@ -57,7 +57,8 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   const content = <>
     {tabbed || state !== "denied" ? tabs : null}
     {state === "partial" || state === "stale" || state === "processing" ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} age={staleAge} compact/> : null}
-    {split ? <div className="sli-ds-report__split">{views}{drawer}</div> : views}
+    {split ? <div className="sli-ds-report__split" data-layout={split === "inline" ? split : undefined}
+      data-open={split === "inline" && drawer ? true : undefined}>{views}{drawer}</div> : views}
   </>;
   return <section className="sli-ds-report" data-state={state} data-busy={busy || undefined} aria-busy={busy || undefined}>
     {busy ? <div className="sli-ds-busybar" role="progressbar" aria-label={t("state.refreshing")}/> : null}

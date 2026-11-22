@@ -1,5 +1,6 @@
 import { formatNumber } from "../shared/format";
 import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -30,7 +31,7 @@ export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
   compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
-  rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
+  pageSize, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -58,11 +59,13 @@ export function DataTable<Row>({
   toolbar?: ReactNode;
   toolbarEnd?: ReactNode;
   footerControls?: ReactNode;
-  wrapCells?: boolean;
+  wrapCells?: boolean | "all";
   compact?: boolean;
   density?: "compact" | "comfortable" | "standard";
   expanded?: (row: Row) => ReactNode;
   afterRow?: (row: Row) => ReactNode;
+  pageSize?: { value: number; options: number[]; onChange: (size: number) => void };
+  columnsControlTarget?: HTMLElement | null;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -81,8 +84,8 @@ export function DataTable<Row>({
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
-  const columnMenu = toggleable.length ? <details className="sli-ds-table__columns">
-      <summary>{t("table.columns")}</summary>
+  const columnsControl = toggleable.length ? <details className="sli-ds-table__columns">
+      <summary className={columnsControlTarget ? "sli-ds-button" : undefined}>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
         {table.getAllLeafColumns().filter((column) => toggleable.some((item) => item.key === column.id)).map((column) => <label key={column.id}>
           <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()}/>
@@ -90,8 +93,10 @@ export function DataTable<Row>({
         </label>)}
       </div>
     </details> : null;
+  const columnsMenu = columnsControl && columnsControlTarget ? createPortal(columnsControl, columnsControlTarget) : columnsControl;
+
   return <div className="sli-ds-table" data-wrap={wrapCells || undefined} data-compact={compact || undefined} data-density={density}>
-    {toolbar || toolbarEnd ? <div className="sli-ds-table__toolbar">{toolbar}{columnMenu}{toolbarEnd}</div> : columnMenu}
+    {toolbar || toolbarEnd ? <div className="sli-ds-table__toolbar">{toolbar}{columnsMenu}{toolbarEnd}</div> : columnsMenu}
     <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
       <table data-responsive={columns.some((column) => column.mobile === false) || undefined}>
         <caption className="sli-ds-sr-only">{caption}</caption>
@@ -132,7 +137,7 @@ export function DataTable<Row>({
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
               return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined}
-                data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
+                data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={wrapCells === "all" ? undefined : title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>}
@@ -147,6 +152,11 @@ export function DataTable<Row>({
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
+      {pageSize ? <label className="sli-ds-header__actions">{t("table.rowsPerPage")}
+        <select value={pageSize.value} onChange={(event) => pageSize.onChange(Number(event.target.value))}>
+          {pageSize.options.map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+      </label> : null}
       {footerControls}
       {pagination ? <>
         <span>{pagination.label ?? pagination.pageLabel ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,

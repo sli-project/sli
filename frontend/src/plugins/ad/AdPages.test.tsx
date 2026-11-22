@@ -15,7 +15,7 @@ import { DomainControllersStep } from "./DomainControllersStep";
 const state = vi.hoisted(() => ({ capabilities: ["access.manage"], addDc: vi.fn(), toggleDc: vi.fn() }));
 vi.mock("../../app/App", async (original) => ({
   ...await original<typeof import("../../app/App")>(),
-  useEffectiveAccess: () => ({ capabilities: state.capabilities }),
+  useEffectiveAccess: () => ({ capabilities: state.capabilities, reports: [] }),
 }));
 vi.mock("../../api/client", async (original) => {
   const actual = await original<typeof import("../../api/client")>();
@@ -106,7 +106,8 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
   window.history.replaceState(null, "", `/app/report/${key}?domain=1&nav_view=logons`);
   const { rerender, client } = mount(<PluginReportPage reportKey={key} pilotEnabled={false}/>);
   const table = await screen.findByRole("table", { name: title });
-  expect(within(table).getByRole("columnheader", { name: "Объект" })).toBeTruthy();
+  const columnName = key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект";
+  expect(within(table).getByRole("columnheader", { name: columnName })).toBeTruthy();
   if (key === "ad.users.v2") {
     fireEvent.click(within(table).getByRole("button", { name: "synthetic-object" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();

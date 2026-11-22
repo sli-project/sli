@@ -6570,6 +6570,69 @@
           "required_capabilities": [],
           "accepts_generic_scope": false
         }
+      },
+      {
+        "kind": "table",
+        "key": "disabled_active",
+        "source": "disabled_active",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Пользователь",
+            "path": "display_name",
+            "kind": "text",
+            "link": "/app/entities/{entity_id}"
+          },
+          {
+            "key": "disabled_at",
+            "label": "Отключение (4725)",
+            "kind": "datetime",
+            "path": "disabled_at"
+          },
+          {
+            "key": "activity_at",
+            "label": "Последующая активность",
+            "kind": "datetime",
+            "path": "activity_at"
+          },
+          {
+            "key": "activity_type",
+            "label": "Тип активности",
+            "kind": "code",
+            "path": "activity_type"
+          },
+          {
+            "key": "delay_minutes",
+            "label": "Задержка, мин",
+            "kind": "number",
+            "path": "delay_minutes"
+          },
+          {
+            "key": "source_id",
+            "label": "Источник",
+            "kind": "code",
+            "path": "source_id"
+          },
+          {
+            "key": "logon_type",
+            "label": "Тип входа",
+            "kind": "code",
+            "path": "logon_type"
+          },
+          {
+            "key": "evidence",
+            "label": "События",
+            "kind": "list",
+            "path": "evidence"
+          },
+          {
+            "key": "quality",
+            "label": "Качество",
+            "kind": "state",
+            "path": "quality"
+          }
+        ],
+        "title": "Отключены, но активны"
       }
     ],
     "detail": {

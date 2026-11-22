@@ -3,7 +3,7 @@ import { t } from "../i18n";
 import { Button } from "./Primitives";
 
 /** Side panel for a selected row or entity; traps focus and closes on Escape. */
-export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, onClose, children, footer, inline: inlineRequested = false, inlineKeyboard = true, responsive = false }: {
+export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, onClose, children, footer, inline: inlineRequested = false, inlineDialog = false, inlineKeyboard = true, responsive = false }: {
   open: boolean;
   title: string;
   subtitle?: ReactNode;
@@ -13,6 +13,7 @@ export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, on
   children: ReactNode;
   footer?: ReactNode;
   inline?: boolean;
+  inlineDialog?: boolean;
   /** A permanently embedded panel can leave keyboard handling to the page. */
   inlineKeyboard?: boolean;
   responsive?: boolean;
@@ -38,7 +39,7 @@ export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, on
     const previous = document.activeElement as HTMLElement | null;
     const focusable = () => [...(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex='0']") ?? [])]
       .filter((element) => !element.closest('[hidden],[inert],[aria-hidden="true"]') && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
-    if (!inline) panel.current?.focus();
+    if (!inline || inlineDialog) panel.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (panel.current?.closest("[inert]")) return;
       if (event.key === "Escape") { event.preventDefault(); closeRef.current(); return; }
@@ -51,13 +52,13 @@ export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, on
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); if (!inline && previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, [open, inline, inlineRequested, inlineKeyboard]);
+    return () => { document.removeEventListener("keydown", onKey); if ((!inline || inlineDialog) && previous?.isConnected) previous.focus({ preventScroll: true }); };
+  }, [open, inline, inlineRequested, inlineDialog, inlineKeyboard]);
 
   if (!open) return null;
   return <div className="sli-ds-drawer" data-open data-inline={inline || undefined} data-responsive={responsive || undefined}>
     {inline ? null : <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>}
-    <aside ref={panel} className="sli-ds-drawer__panel" role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={titleId} tabIndex={inline && !inlineKeyboard ? undefined : -1}
+    <aside ref={panel} className="sli-ds-drawer__panel" role={!inline || inlineDialog ? "dialog" : undefined} aria-modal={inline ? undefined : true} aria-labelledby={titleId} tabIndex={inline && !inlineKeyboard ? undefined : -1}
       onKeyDown={inline && !inlineRequested ? (event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } } : undefined}>
       <header className="sli-ds-drawer__header">
         <div>
