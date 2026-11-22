@@ -12,18 +12,20 @@ namespace Sli.Server.Tests.Reporting;
 
 public sealed partial class SecurityProblemsV2Tests
 {
-    [Fact]
-    public async Task LoadedPasswordQueueServesStoredFactsWithinItsBudget()
+    [Theory]
+    [InlineData(50)]
+    [InlineData(73)]
+    public async Task LoadedPasswordQueueServesStoredFactsWithinItsBudget(int findings)
     {
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(Ct);
         await using var db = await fixture.Pg.OpenAsync(Ct);
         await ProblemQueuePagingTests.SeedPopulation(db, Ct);
-        await PostCollectionPostgres.Sql(db, """
-            update findings set status='closed' where id>50;
+        await PostCollectionPostgres.Sql(db, $$"""
+            update findings set status='closed' where id>{{findings}};
             update findings set rule_code='semantic.qw.password-spray',actor=null,target=null,source=null,
-                first_seen_utc='2026-11-21T10:00:00Z',last_seen_utc='2026-11-21T10:05:00Z',evidence_count=2000 where id<=50;
-            delete from finding_event_copies337 where finding_id<=50;
+                first_seen_utc='2026-11-21T10:00:00Z',last_seen_utc='2026-11-21T10:05:00Z',evidence_count=2000 where id<={{findings}};
+            delete from finding_event_copies337 where finding_id<={{findings}};
             insert into finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,domain_id,computer,
                 method,outcome,fields,source_sha256,evidence_role)
             select f.id,f.id*10000+n,'2026-11-21T10:00:00Z'::timestamptz+n*interval '100 milliseconds',
@@ -32,7 +34,7 @@ public sealed partial class SecurityProblemsV2Tests
                     '$principals',jsonb_build_object('TargetUserName','user-'||n,'TargetDomainName','example.test',
                     'IpAddress','192.0.2.'||f.id)), '{}','{}',sha256((f.id*10000+n)::text::bytea),'semantic_scenario'
             from findings f cross join domains d cross join generate_series(1,2000) n
-            where f.id<=50 and d.fqdn='example.test';
+            where f.id<={{findings}} and d.fqdn='example.test';
             analyze findings;
             analyze finding_event_copies337;
             """, Ct);
@@ -40,7 +42,8 @@ public sealed partial class SecurityProblemsV2Tests
         await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), Definition,
             nativeReader: new SecurityProblemsReader(new ProblemRepository(connections, TimeProvider.System),
                 new SecurityProblemEvidence(new SemanticDatabase(connections))));
-        const string path = "/api/v2/reports/security.problems/data?population=open&tz=Asia%2FNovosibirsk&limit=50";
+        string view = findings == 50 ? "population=open" : "queue_view=open&direction=desc&sort=last_seen_utc";
+        string path = $"/api/v2/reports/security.problems/data?{view}&tz=Asia%2FNovosibirsk&limit=50";
         host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en");
         // An in-flight finding update must leave the committed queue readable.
         await using var writer = await db.BeginTransactionAsync(Ct);
@@ -55,16 +58,23 @@ public sealed partial class SecurityProblemsV2Tests
             var bytes = await response.Content.ReadAsByteArrayAsync(Ct);
             timer.Stop();
             if (timer.Elapsed > slowest) slowest = timer.Elapsed;
-            TestContext.Current.TestOutputHelper!.WriteLine($"Loaded queue request {i + 1}: {timer.Elapsed.TotalMilliseconds:F1} ms");
+            TestContext.Current.TestOutputHelper!.WriteLine($"Loaded {findings}-finding queue request {i + 1}: {timer.Elapsed.TotalMilliseconds:F1} ms");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var result = O(System.Text.Encoding.UTF8.GetString(bytes));
-            Assert.Equal(50, result["filtered_count"]!.GetValue<long>());
+            Assert.Equal(findings, result["filtered_count"]!.GetValue<long>());
+            Assert.Equal(findings > 50, result["has_more"]!.GetValue<bool>());
             var rows = result["items"]!.AsArray();
             Assert.Equal(50, rows.Count);
             foreach (var row in rows) {
                 string ip = $"192.0.2.{row!["id"]}";
                 Assert.Equal(ip, row["actor_text"]!.ToString());
                 Assert.Equal($"{ip} (2000 accounts)", row["entity_text"]!.ToString());
+                if (findings == 73) {
+                    var attack = row["queue_attack"]!.AsObject();
+                    Assert.Equal(ip, Assert.Single(attack["addresses"]!.AsArray())!.ToString());
+                    Assert.Equal(new[] { "user-1", "user-10", "user-100", "user-1000", "user-1001", "user-1002", "user-1003", "user-1004" },
+                        attack["accounts"]!.AsArray().Select(name => name!.ToString()));
+                }
             }
         }
         await writer.RollbackAsync(Ct);
@@ -79,10 +89,13 @@ public sealed partial class SecurityProblemsV2Tests
                 """, Ct);
             using var response = await host.Client.GetAsync(path, Ct);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), "problems-queue-explain.log"),
+            await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), $"problems-queue-{findings}-explain.log"),
                 await fixture.Pg.DiagnosticsAsync(Ct), Ct);
         }
-        Assert.True(slowest < TimeSpan.FromSeconds(3), $"Loaded queue took {slowest.TotalMilliseconds:F1} ms");
+        // Keep the original CI budget on the original workload. The installed
+        // queue shape tracks the additional list path and reports its timings.
+        if (findings == 50)
+            Assert.True(slowest < TimeSpan.FromSeconds(3), $"Loaded queue took {slowest.TotalMilliseconds:F1} ms");
     }
 
     [Fact]
