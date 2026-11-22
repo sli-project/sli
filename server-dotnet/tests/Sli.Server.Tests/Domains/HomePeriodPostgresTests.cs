@@ -40,7 +40,7 @@ public sealed partial class HomeSummaryEndpointTests
             create table auth_users(id bigint,username text);
             create table semantic_suppressions(id bigint,finding_id bigint,kind text,state text,expires_at timestamptz,responsible_user_id bigint,semantic_type text);
             create table findings_active(id bigint primary key,domain_id bigint,rule_code text,title text,summary text,severity text,
-                actor text,target text,first_seen_utc text,closed_at timestamptz,status text,repeat_count int);
+                actor text,target text,first_seen_utc text,closed_at text,status text,repeat_count int);
             create function is_semantic_finding_published_v1(finding bigint) returns boolean language sql stable as 'select finding <> 9';
             create function semantic_finding_in_domains_v265(finding bigint, ids bigint[]) returns boolean language sql stable
                 as 'select ids is null or exists(select 1 from findings_active f where f.id=finding and f.domain_id=any(ids))';
@@ -86,7 +86,7 @@ public sealed partial class HomeSummaryEndpointTests
                  '{"$channel":"Application","$provider":"synthetic","$server_id":17}','{}','{}');
             insert into findings_active values
                 (1,7,'test-high','New high problem','A new high problem','high','test-actor','test-group',(@end-interval '35 minutes')::text,null,'active',0),
-                (2,7,'test-medium','Closed problem','A closed problem','medium',null,'test-account',(@end-interval '2 hours')::text,@end-interval '1 hour','closed',0),
+                (2,7,'test-medium','Closed problem','A closed problem','medium',null,'test-account',(@end-interval '2 hours')::text,(@end-interval '1 hour')::text,'closed',0),
                 (3,7,'test-hygiene','Hygiene problem',null,'low',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (4,7,'test-medium','Old problem',null,'medium',null,'test-account',(@end-interval '2 days')::text,null,'review',0),
                 (5,8,'test-critical','Other domain problem',null,'critical',null,'other-account',(@end-interval '2 hours')::text,null,'new',0),

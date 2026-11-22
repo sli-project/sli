@@ -2,15 +2,14 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { api } from "../api/client";
-import type { HomeChange, HomeController, HomePeriod, HomeProblem, HomeSeverity } from "../api/home-period";
-import { Badge, Button, Chart, DataTable, PageHeader, Panel, StateView, type TableColumn } from "../design-system";
+import type { HomeChange, HomeController, HomePeriod, HomeProblem } from "../api/home-period";
+import { Button, Chart, DataTable, PageHeader, Panel, SeverityBadge, StateView, type TableColumn } from "../design-system";
 import { getLocale, plural, t, type MessageKey } from "../i18n";
 import { browserTimeZone, formatDateTime } from "../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../shared/format";
 import { useAccessStatus, useEffectiveAccess, useTimeZone } from "./App";
 import "./home.css";
 
-const shapes: Record<HomeSeverity, string> = { critical: "■", high: "◆", medium: "▲", low: "●" };
 
 function clock(value: string | null, zone: string) {
   return formatDateTime(value, zone, { timeOnly: true });
@@ -49,9 +48,7 @@ function Problems({ data, zone }: { data: HomePeriod["problems"]; zone: string }
   const columns: TableColumn<HomeProblem>[] = [
     { key: "severity", label: t("home.severity"), width: "8rem", render: ({ id, severity }) => <>
       <span aria-hidden="true" className="sli-ds-home-chevron">{expanded === String(id) ? "▾" : "▸"}</span>
-      <Badge tone={severity === "critical" || severity === "high" ? "danger" : severity === "medium" ? "warning" : "neutral"}>
-        <span aria-hidden="true">{shapes[severity]}</span>&nbsp;{t(`home.severity.${severity}`)}
-      </Badge>
+      <SeverityBadge severity={severity} label={t(`home.severity.${severity}`)}/>
     </> },
     { key: "name", label: t("home.object"), width: "12%", wrap: true, render: (row) => link(row.href, row.name ?? EMPTY_VALUE) },
     { key: "fact", label: t("home.fact"), wrap: true, render: (row) => <>

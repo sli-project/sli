@@ -13,7 +13,7 @@ import { ComputerGpoPlan } from "./GpoPlan";
 type Row = Record<string, unknown>;
 type ComputerPreview = Row & { name: string | null; domain_name: string | null; computer_type: string | null };
 type Check = {
-  key: string; title: string; severity: string; severityText: string; status: string;
+  key: string; title: string; severity: string; status: string;
   total: number | null; newCount: number | null; remaining: number;
   why: string; action: string; remediation: string; observed: string | null; actor: string | null;
   objects: ComputerPreview[];
@@ -79,7 +79,7 @@ function checkModel(row: Row): Check {
   const change = row.change && typeof row.change === "object" ? row.change as Row : {};
   return {
     key: text(row.key) ?? String(row.id), title: text(row.title) ?? t("table.noValue"),
-    severity: text(row.severity) ?? "unknown", severityText: text(row.severity_text) ?? t("table.noValue"),
+    severity: text(row.severity) ?? "unknown",
     status: row.status === "no_comparison" ? t("reports.ad.checks.status.no_comparison")
       : row.status === "not_evaluated" || row.status_text === t("reports.ad.checks.status.not_evaluated")
       ? t("table.noValue") : text(row.status_text) ?? t("table.noValue"),
@@ -114,8 +114,7 @@ export function ComputerChecks({ result, onSelect, onInventory }: {
       { key: "observed_at_utc", label: t("reports.ad.computers.last_seen"), kind: "datetime", mobile: false },
     ];
     return {
-      key: check.key, title: check.title, severity: check.severityText,
-      tone: check.severity === "high" ? "danger" : check.severity === "medium" ? "warning" : "neutral",
+      key: check.key, title: check.title, severity: check.severity,
       status: check.status, total: check.total, newCount: check.newCount,
       objects: null,
       detail: <>

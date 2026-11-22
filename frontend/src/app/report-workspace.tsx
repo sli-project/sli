@@ -9,7 +9,7 @@ import { reportWorkspace } from "./navigation";
 import { ReportRenderer } from "./report-v2/ReportRenderer";
 
 /** Groups existing renderers without changing report keys or their server authorization. */
-export function ReportWorkspacePage({ reportKey }: { reportKey: string }) {
+export function ReportWorkspacePage({ reportKey, journalSearch }: { reportKey: string; journalSearch?: string }) {
   const workspace = reportWorkspace(reportKey);
   const catalog = useQuery({ queryKey: ["report-v2", "catalog"], queryFn: api.reportsV2Catalog,
     staleTime: 30_000, retry: false, enabled: !!workspace });
@@ -17,6 +17,7 @@ export function ReportWorkspacePage({ reportKey }: { reportKey: string }) {
   const accessStatus = useAccessStatus();
   const location = useLocation();
   const navigate = useNavigate();
+  if (reportKey === "events.journal" && journalSearch !== undefined) return <ReportRenderer reportKey={reportKey} initialSearch={journalSearch}/>;
   if (!workspace || reportKey.startsWith("file-audit.")) return <PluginReportPage reportKey={reportKey}/>;
   if (accessStatus === "отказ" || catalog.isError) return <StateView state="unavailable"/>;
   if (catalog.isLoading || !access) return <StateView state="loading"/>;

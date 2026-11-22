@@ -91,6 +91,16 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
 export const formatDate = (value: string | Date | null | undefined, timeZone: DisplayTimeZone | undefined = "browser") =>
   formatDateTime(value, timeZone, { withTime: false });
 
+export function formatClockWithOffset(instant: Date, timeZone: DisplayTimeZone) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timeZone === "browser" ? undefined : timeZone,
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "shortOffset",
+  }).formatToParts(instant);
+  const offset = parts.find((part) => part.type === "timeZoneName")?.value.slice(3) || "+0";
+  const time = parts.filter((part) => part.type === "hour" || part.type === "minute").map((part) => part.value).join(":");
+  return { time, zone: `UTC${offset}` };
+}
+
 /** "3 days ago" / "3 дня назад" (days, or hours/minutes for fresh values). */
 export function formatRelative(value: string | Date | null | undefined, { now = Date.now(), daysOnly = false }: { now?: number; daysOnly?: boolean } = {}): string {
   if (value === null || value === undefined || value === "") return EMPTY_VALUE;

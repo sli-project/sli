@@ -32,10 +32,15 @@ export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row
   return tableColumns(columns, timeZone).map((column) => ({ ...column,
     hiddenByDefault: !["name", "state", "ou", "last_workplace", "password_last_set", ...(privileged ? ["privilege_basis", "nested_privilege_groups"] : [])].includes(column.key),
     mobile: ["name", "state", ...(privileged ? ["privilege_basis"] : [])].includes(column.key),
-    render: column.key === "name" ? (row) => <>
-      <button type="button" className="sli-ds-button" data-variant="ghost" onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{text(row.sam) ?? text(row.display_name) ?? missing()}</button>
-      {text(row.display_name) && row.display_name !== row.sam ? <div className="sli-ds-muted">{String(row.display_name)}</div> : null}
-    </> : column.render ?? ((row) => columnValue(columns.find((item) => item.key === column.key)!, row) == null ? missing() : formatCell(columnValue(columns.find((item) => item.key === column.key)!, row), column.kind, timeZone)),
+    render: column.key === "name" ? (row) => {
+      const name = text(row.display_name);
+      const account = text(row.sam) ?? name ?? missing();
+      const displayName = name === account ? null : name;
+      return <span className="sli-ds-table__cell-line" title={displayName ? `${account} · ${displayName}` : account}>
+        <button type="button" className="sli-ds-link-button" onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{account}</button>
+        {displayName ? <span className="sli-ds-muted">{displayName}</span> : null}
+      </span>;
+    } : column.render ?? ((row) => columnValue(columns.find((item) => item.key === column.key)!, row) == null ? missing() : formatCell(columnValue(columns.find((item) => item.key === column.key)!, row), column.kind, timeZone)),
   }));
 }
 
@@ -79,8 +84,7 @@ export const UserChecks = memo(function UserChecks({ result, baseParams, onSelec
   const date = useDate();
   const checks = (result?.collections?.checks ?? result?.items ?? []).filter((row) => row.section !== "not_evaluated");
   const item = (check: Row): ReviewItem => ({
-    key: String(check.key), title: text(check.title) ?? missing(), severity: text(check.severity_text) ?? missing(),
-    tone: check.severity === "high" ? "danger" : check.severity === "medium" ? "warning" : "neutral",
+    key: String(check.key), title: text(check.title) ?? missing(), severity: check.severity,
     status: check.status === "no_comparison" ? t("reports.ad.checks.status.no_comparison")
       : check.status === "not_evaluated" || check.status_text === t("reports.ad.checks.status.not_evaluated")
       ? missing() : text(check.status_text) ?? missing(),

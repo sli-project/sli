@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider, useLocation } from "@tanstack/react-router";
 import fixture from "../../../config/navigation_v3.json";
 import type { AgentCollectionHealth } from "../api/client";
 import type { NavigationEntryDto } from "../api/report-v2-types";
@@ -41,7 +42,7 @@ vi.mock("../api/client", async (importOriginal) => {
 import { api } from "../api/client";
 import { AppShell, useTimeZone } from "./App";
 import { useDateFormatters } from "../design-system/useDateFormatters";
-import { navigationBeforeLoad } from "./navigation";
+import { navigationBeforeLoad, parseShellSearch, stringifyShellSearch } from "./navigation";
 import { createAdminPlaceholderRoutes } from "./admin/navigation-pages";
 import { localeRuntime, setLocale } from "../i18n";
 
@@ -54,9 +55,12 @@ function TimeZoneProbe() {
 async function renderShell(initialPath = "/", showTimeZone = false) {
   const root = createRootRoute({ component: AppShell, beforeLoad: ({ location }) => navigationBeforeLoad(location) });
   const page = (path: string) => createRoute({ getParentRoute: () => root, path, component: () => <><h1 data-page-heading tabIndex={-1}>Главная страница</h1>{showTimeZone ? <TimeZoneProbe/> : null}</> });
-  const search = createRoute({ getParentRoute: () => root, path: "/search", component: () => <h1 data-page-heading>Результаты поиска</h1> });
-  const routes = [page("/"), page("/plugins"), page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), ...createAdminPlaceholderRoutes(root), search];
-  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }) });
+  const search = createRoute({ getParentRoute: () => root, path: "/report/events.journal", component: () => {
+    const { searchStr } = useLocation();
+    return <><h1 data-page-heading>Журнал событий</h1><output aria-label="Journal query">{new URLSearchParams(searchStr).get("q")}</output></>;
+  } });
+  const routes = [page("/"), page("/plugins"), page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
+  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }), parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
   await waitFor(() => expect(document.querySelector("[data-page-heading]")).not.toBeNull());
@@ -282,16 +286,22 @@ describe("AppShell", () => {
     expect(screen.getByRole("searchbox", { name: "Глобальный поиск" })).toBeTruthy();
   });
 
-  it.each(["Enter", "submit"])("opens global results from the top search using %s without a separate objects entry", async (method) => {
-    state.access = { ...userAccess, capabilities: ["problem.view", "entity.view", "objects.view"] };
+  it.each(["Enter", "submit"])("filters the event journal from the top search using %s", async (method) => {
+    state.access = { ...userAccess, capabilities: ["problem.view", "events.view"] };
     await renderShell();
-    const input = screen.getByRole("searchbox", { name: "Глобальный поиск" });
-    fireEvent.change(input, { target: { value: "synthetic" } });
-    if (method === "Enter") fireEvent.keyDown(input, { key: "Enter" });
-    else fireEvent.submit(screen.getByRole("search"));
-    expect(await screen.findByRole("heading", { name: "Результаты поиска" })).toBeTruthy();
-    const nav = screen.getByRole("navigation", { name: "Разделы" });
-    expect(within(nav).queryByRole("link", { name: "Объекты и сущности" })).toBeNull();
+    const submit = async (value: string) => {
+      const input = screen.getByRole("searchbox", { name: "Глобальный поиск" });
+      await userEvent.clear(input);
+      await userEvent.type(input, value);
+      if (method === "Enter") await userEvent.keyboard("{Enter}");
+      else await userEvent.click(screen.getByRole("button", { name: "Выполнить поиск" }));
+    };
+    await submit("  4728  ");
+    expect(await screen.findByRole("heading", { name: "Журнал событий" })).toBeTruthy();
+    expect(screen.getByLabelText("Journal query").textContent).toBe("4728");
+    await submit('"example.test"');
+    await waitFor(() => expect(screen.getByLabelText("Journal query").textContent).toBe('"example.test"'));
+    expect(within(screen.getByRole("navigation", { name: "Разделы" })).queryByRole("link", { name: "Объекты и сущности" })).toBeNull();
   });
 
   it("opens the navigation from the mobile toggle and closes it on Escape", async () => {
@@ -319,7 +329,7 @@ describe("AppShell", () => {
   it("sets the theme from the profile menu and remembers it", async () => {
     await renderShell();
     fireEvent.click(await screen.findByRole("button", { name: /test\.operator/ }));
-    expect(screen.getByRole("menuitemradio", { name: "Как в системе" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "Тёмная" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Тёмная" }));
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(localStorage.getItem("sli.theme")).toBe("dark");
@@ -328,8 +338,8 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(localStorage.getItem("sli.theme")).toBe("light");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Как в системе" }));
-    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
-    expect(localStorage.getItem("sli.theme")).toBeNull();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("system");
+    expect(localStorage.getItem("sli.theme")).toBe("system");
   });
 
   it("switches the interface language and stores it", async () => {
@@ -400,44 +410,28 @@ describe("AppShell", () => {
     expect(within(nav).queryByRole("link", { name: "Агенты" })).toBeNull();
   });
 
-  it("keeps notification settings in the admin zone and gear for admins", async () => {
+  it("offers administration in the sidebar and notifications in the user menu", async () => {
     state.access = adminAccess;
     await renderShell();
     const nav = screen.getByRole("navigation", { name: "Разделы" });
-    await waitFor(() => expect(within(nav).getByRole("link", { name: "Пользователи" })).toBeTruthy());
-    expect(within(nav).queryByRole("link", { name: "Доступ" })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: "Настройки платформы" })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: "Сбор и хранилище" })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: "Каталог отчётов" })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: /К работе/ })).toBeNull();
+    expect(await within(nav).findByRole("link", { name: "Администрирование" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: "Оповещения" })).toBeNull();
-    const gear = await screen.findByRole("button", { name: "Администрирование" });
-    expect(gear.getAttribute("title")).toBe("Администрирование");
-    expect(gear.getAttribute("aria-pressed")).toBe("false");
-    expect(screen.queryByText("Пользовательский вид")).toBeNull();
+    const topbar = screen.getByRole("banner");
+    expect(within(topbar).queryByRole("button", { name: "Администрирование" })).toBeNull();
+    fireEvent.click(await within(topbar).findByRole("button", { name: "admin.user" }));
+    expect(within(topbar).getByRole("menuitem", { name: "Оповещения" }).getAttribute("href")).toBe("/notifications");
   });
 
-  it("opens the admin zone sidebar from the gear", async () => {
-    state.access = adminAccess;
-    await renderShell();
-    fireEvent.click(await screen.findByRole("button", { name: "Администрирование" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Администрирование" }));
-    const nav = screen.getByRole("navigation", { name: "Разделы" });
-    await waitFor(() => expect(within(nav).getByRole("link", { name: /К работе/ })).toBeTruthy());
-    expect(within(nav).getByRole("link", { name: "Хранение" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Администрирование" }).getAttribute("aria-pressed")).toBe("true");
-  });
-
-  it.each(["ru", "en"] as const)("opens notifications from the settings gear in %s", async (locale) => {
+  it.each(["ru", "en"] as const)("opens notifications from the user menu in %s", async (locale) => {
     setLocaleQuiet(locale);
     state.access = adminAccess;
     await renderShell();
-    const gear = await screen.findByRole("button", { name: locale === "ru" ? "Администрирование" : "Administration" });
-    fireEvent.click(gear);
+    const profile = await screen.findByRole("button", { name: "admin.user" });
+    fireEvent.click(profile);
     const link = screen.getByRole("menuitem", { name: locale === "ru" ? "Оповещения" : "Notifications" });
     expect(link.getAttribute("href")).toBe("/notifications");
     fireEvent.click(link);
-    await waitFor(() => expect(gear.getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(profile.getAttribute("aria-expanded")).toBe("false"));
     expect(screen.queryByRole("menu")).toBeNull();
     const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
     const links = within(nav).getAllByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" });
@@ -445,15 +439,15 @@ describe("AppShell", () => {
     expect(links[0].getAttribute("aria-current")).toBe("page");
   });
 
-  it("closes the settings menu with Escape or an outside click", async () => {
+  it("closes the user menu with Escape or an outside click", async () => {
     state.access = adminAccess;
     await renderShell();
-    const gear = await screen.findByRole("button", { name: "Администрирование" });
-    fireEvent.click(gear);
-    expect(gear.getAttribute("aria-expanded")).toBe("true");
+    const profile = await screen.findByRole("button", { name: "admin.user" });
+    fireEvent.click(profile);
+    expect(profile.getAttribute("aria-expanded")).toBe("true");
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
-    fireEvent.click(gear);
+    fireEvent.click(profile);
     fireEvent.mouseDown(screen.getByRole("main"));
     expect(screen.queryByRole("menu")).toBeNull();
   });
@@ -470,8 +464,6 @@ describe("AppShell", () => {
       expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual([activeHref]);
       expect(within(nav).queryByRole("link", { name: "Главная" })).toBeNull();
       expect(within(nav).queryByRole("link", { name: "Пользователи" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Администрирование" }).getAttribute("aria-pressed")).toBe("true");
-      expect(screen.getByText("администрирование")).toBeTruthy();
     });
   }
 
@@ -481,10 +473,10 @@ describe("AppShell", () => {
     const nav = screen.getByRole("navigation", { name: "Разделы" });
     await waitFor(() => expect(within(nav).getByRole("link", { name: "Главная" })).toBeTruthy());
     expect(within(nav).queryByRole("link", { name: /К работе/ })).toBeNull();
-    expect(screen.getByText("рабочее пространство")).toBeTruthy();
+    expect(within(nav).getByRole("link", { name: "Администрирование" })).toBeTruthy();
   });
 
-  it("hides the gear from users without administration entries", async () => {
+  it("hides administration from users without administration entries", async () => {
     await renderShell();
     await screen.findByRole("button", { name: /test\.operator/ });
     expect(screen.queryByRole("button", { name: "Администрирование" })).toBeNull();

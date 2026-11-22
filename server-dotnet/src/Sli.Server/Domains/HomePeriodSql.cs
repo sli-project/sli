@@ -6,7 +6,7 @@ internal static class HomePeriodSql
         with population as materialized (
             select findings.id,findings.rule_code,findings.title,findings.summary,findings.severity,
                    findings.actor,findings.target,findings.first_seen_utc::timestamptz as first_seen,
-                   findings.closed_at,({{HomeSummarySql.EffectiveStatus}}) as status
+                   findings.closed_at::timestamptz as closed_at,({{HomeSummarySql.EffectiveStatus}}) as status
             {{HomeSummarySql.Population}}
             where is_semantic_finding_published_v1(findings.id)
               and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))

@@ -24,7 +24,14 @@ export type ChartSpec =
 
 function token(name: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!value.startsWith("light-dark(")) return value || fallback;
+  const sample = document.createElement("span");
+  sample.style.color = value;
+  document.body.append(sample);
+  const resolved = getComputedStyle(sample).color;
+  sample.remove();
+  return resolved || fallback;
 }
 
 export function chartIsEmpty(spec: ChartSpec): boolean {

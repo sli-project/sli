@@ -74,6 +74,7 @@ it("renders all four blocks from the requested domain and opens Problems from th
   expect(request.mock.calls[0][0]).toBe("/api/v1/home/summary?domain_id=7&tz=UTC&period=24h&contract=v4");
   expect(screen.getByText("New in period 2 · Closed in period 1 · Open total 4")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Problems queue: 4 open →" }).getAttribute("href")).toBe("/app/report/security.problems?domain=7");
+  expect(within(problems).getByText("High").textContent).toContain("◆");
   expect(within(problems).getByRole("link", { name: "DC01" }).getAttribute("href")).toBe("/app/report/security.problems?domain=7&id=12");
   fireEvent.keyDown(within(problems).getByText("Security log cleared on DC01").closest("tr")!, { key: "Enter" });
   const observations = within(problems).getByRole("table", { name: "Observations" });

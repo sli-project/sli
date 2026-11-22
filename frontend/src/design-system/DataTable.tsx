@@ -1,5 +1,5 @@
 import { formatNumber } from "../shared/format";
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -55,9 +55,8 @@ export function DataTable<Row>({
     id: column.key,
     header: column.label,
     accessorFn: (row: Row) => (column.value ? column.value(row) : (row as Record<string, unknown>)[column.key]),
-    cell: (info) => (column.render ? column.render(info.row.original) : formatCell(info.getValue(), column.kind)),
     meta: column,
-  })), [columns, formatCell]);
+  })), [columns]);
   const table = useReactTable({
     data: rows, columns: defs, getCoreRowModel: getCoreRowModel(), getRowId: (row) => rowKey(row),
     state: { columnVisibility: { ...defaultVisibility, ...visibility } }, onColumnVisibilityChange: setVisibility, manualSorting: true,
@@ -101,7 +100,11 @@ export function DataTable<Row>({
             aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
             {row.getVisibleCells().map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
-              return <td key={cell.id} data-mobile={column.mobile} data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>;
+              const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
+              const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
+              const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
+              return <td key={cell.id} data-mobile={column.mobile} data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
+                data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>
           {selected && renderExpandedRow ? <tr><td data-wrap colSpan={row.getVisibleCells().length}>{renderExpandedRow(row.original)}</td></tr> : null}

@@ -65,7 +65,7 @@ export function UiKitPage() {
 
   const applyTheme = (value: typeof theme) => {
     setTheme(value);
-    if (value === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = value;
+    document.documentElement.dataset.theme = value === "auto" ? "system" : value;
   };
   const applyDensity = (value: typeof density) => {
     setDensity(value);

@@ -76,7 +76,7 @@ export const CELL_COMPONENTS: Record<string, ComponentType<CellComponentProps>> 
   "decoys.version": DecoyVersionLink,
   "ad.agent": AgentStatus,
   "ad.dns-ip": DnsIp,
-  "ad.last-workplace": LastWorkplace,
+  "ad.last-workplace": ({ row }) => <LastWorkplace row={row} compact/>,
   "problems.risk-badge": ProblemRiskBadge,
   "problems.occurrences": ProblemOccurrences,
   "vpn.activity-strip": VpnActivityStrip,

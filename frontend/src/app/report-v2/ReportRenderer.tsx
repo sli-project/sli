@@ -1,12 +1,14 @@
 import { journalColumns } from "./journal";
 import { workstationColumns } from "./workstation-columns";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
+import { isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, Tabs,
-  type FilterValues, type PeriodValue, type ResultState, type SortState,
+  type FilterValues, type PeriodPreset, type PeriodValue, type ResultState, type SortState,
 } from "../../design-system";
+import type { PageHeaderControls } from "../../design-system/PageHeader";
 import { t } from "../../i18n";
 import { reportMetadataText } from "../../i18n/report-metadata";
 import { api, ApiResponseError } from "../../api/client";
@@ -40,6 +42,15 @@ import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
 const problemDescriptionColumns = ["what", "why", "next"];
+
+function queueWindow(period: PeriodValue, timeZone: string) {
+  if (period.preset !== "custom" || !period.from || !period.to || period.from.includes("T") || period.to.includes("T")) return periodBounds(period);
+  if (timeZone !== "browser" && !isValidTimeZone(timeZone)) return null;
+  const nextDay = new Date(Date.parse(period.to) + 86_400_000).toISOString().slice(0, 10);
+  const from = localDateTimeToUtc(`${period.from}T00:00`, timeZone);
+  const to = localDateTimeToUtc(`${nextDay}T00:00`, timeZone);
+  return from && to ? { from, to } : null;
+}
 
 const WORKSTATION_SOURCE_REASONS = {
   source_timeout: "reports.workstations.source_timeout",
@@ -84,7 +95,7 @@ function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: ()
 }
 
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
-export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & AdditionalTabs) {
+export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
   if (definition.isLoading) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
   if (definition.error || !definition.data) {
@@ -98,10 +109,10 @@ export function ReportRenderer({ reportKey, ...tabs }: { reportKey: string } & A
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
-  return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} {...tabs}/>;
+  return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 
-function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAdditionalTab }: { definition: ReportDefinitionDto } & AdditionalTabs) {
+function ReportBody({ definition: sourceDefinition, initialSearch, additionalTabs = [], onAdditionalTab }: { definition: ReportDefinitionDto; initialSearch?: string } & AdditionalTabs) {
   const definition = useMemo(() => {
     if (sourceDefinition.key === "ad.gpo.v2") return gpoReportDefinition(sourceDefinition);
     if (sourceDefinition.key !== "security.problems") return sourceDefinition;
@@ -127,28 +138,30 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   const eventsJournal = definition.key === "events.journal";
   const domainEvents = definition.key === "security.events.chains";
   const [values, setValues] = useState<FilterValues>(() => {
-    const search = new URLSearchParams(window.location.search);
+    const search = new URLSearchParams(initialSearch ?? window.location.search);
     const initial = valuesFromSearch(definition, search);
     if (problemQueue && typeof initial.status === "string") initial.status = queueStatus(initial.status);
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
     return initial;
   });
   const [sort, setSort] = useState<SortState | null>(() => {
-    const search = new URLSearchParams(window.location.search);
+    const search = new URLSearchParams(initialSearch ?? window.location.search);
     const field = search.get("sort");
     return field ? { field, direction: search.get("direction") === "desc" ? "desc" : "asc" } : null;
   });
   const [selected, setSelected] = useState<Row | null>(null);
+  const [queuePreset, setQueuePreset] = useState<PeriodPreset>("custom");
   const [originalPeriod, setOriginalPeriod] = useState<string | null>(null);
   const views = useMemo(() => {
     const declared = domainEvents ? definition.views.filter((item) => item.key === "events") : independentUsers ? definition.views.filter((item) => !["users", "temporary_memberships"].includes(item.key)) : definition.views;
     return declared.length ? declared : [{ kind: "table" as const, key: "table", source: "items" }];
   }, [definition.views, independentUsers, domainEvents]);
   const [activeView, setActiveView] = useState(() => {
-    let requested = new URLSearchParams(window.location.search).get("tab");
+    const search = new URLSearchParams(initialSearch ?? window.location.search);
+    let requested = search.get("tab");
     if (independentUsers && requested === "users") requested = "all";
     if (independentUsers && views.some((item) => item.key === "checks")) requested = requested === "active" || requested === "disabled" ? "all" : requested === "risk" || requested === "semantic" ? "checks" : requested;
-    if (computerReport && !requested && new URLSearchParams(window.location.search).has("view")) return new URLSearchParams(window.location.search).get("view") === "changes" ? "changes" : "computers";
+    if (computerReport && !requested && search.has("view")) return search.get("view") === "changes" ? "changes" : "computers";
     return views.some((view) => view.key === requested) ? requested! : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
@@ -197,6 +210,10 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   resetValues.scope = values.scope;
   for (const param of definition.params) {
     if (param.kind === "period" || param.kind === "domain") resetValues[param.key] = values[param.key];
+  }
+  if (problemQueue) {
+    resetValues.time_from = values.time_from;
+    resetValues.time_to = values.time_to;
   }
   const viewDenied = view.access?.allowed === false;
   const ready = valuesReady(definition, values, activeView);
@@ -304,6 +321,8 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   const fields = useMemo(() => filterFields(definition, liveOptions, activeView).filter((field) =>
     independentUsers ? (view.key === "checks" || view.key === "changes" ? field.key === "q" : view.key === "privileged" ? ["q", "group", "relation"].includes(field.key) : true)
       : !computerReport || (view.key === "computers" || (view.key === "changes" && field.key === "q"))), [definition, liveOptions, activeView, computerReport, independentUsers, view.key]);
+  const headerPeriodField = fields.find((field) => field.kind === "period");
+  const bodyFields = fields.filter((field) => field !== headerPeriodField);
   const declaredColumns = useMemo(() => independentUsers ? userTableColumns(definition.columns, setSelected, view.key === "privileged", timeZone)
     : workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
       (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
@@ -405,6 +424,27 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
   const journalEmpty = <p role="status">{t(state === "not_collected" ? "reports.v2.events.journal.not_loaded" : "reports.v2.events.journal.empty")}</p>;
   const domainEventsEmpty = state === "ok" || state === "empty" ? <p role="status">{t("reports.domain_events.empty")}</p> : null;
   const eventListFailure = (eventsJournal || domainEvents) && (state === "error" || state === "unavailable");
+  const windowEnd = window_?.to_utc_exclusive ?? window_?.to_utc;
+  const bounds = window_?.from_utc && windowEnd && !data.isPlaceholderData ? { from: window_.from_utc, to: windowEnd } : undefined;
+  const queueBounds = typeof values.time_from === "string" && typeof values.time_to === "string" ? { from: values.time_from, to: values.time_to } : undefined;
+  const changeQueuePeriod = (value?: PeriodValue) => {
+    const window = value ? queueWindow(value, timeZone) : null;
+    if (value && !window) return;
+    setQueuePreset(value?.preset ?? "custom");
+    setSelected(null);
+    setValues((current) => ({ ...current, time_from: window?.from, time_to: window?.to }));
+  };
+  const headerPeriod: PageHeaderControls["period"] = headerPeriodField?.kind === "period" ? {
+    value: values[headerPeriodField.key] as PeriodValue | undefined,
+    presets: headerPeriodField.presets,
+    bounds,
+    onChange: (value) => { setSelected(null); setValues((current) => ({ ...current, [headerPeriodField.key]: value })); },
+  } : problemQueue ? {
+    value: queueBounds ? { preset: queuePreset, ...queueBounds } : undefined,
+    bounds: queueBounds,
+    onChange: changeQueuePeriod,
+    onClear: changeQueuePeriod,
+  } : undefined;
 
   return <ResultWindowContext.Provider value={first?.window}><Tabs items={displayedViews.map((item) => {
     const itemBranch = viewBranches?.[item.key];
@@ -414,6 +454,16 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
     else selectView(key);
   }}><ReportLayout
     title={definition.title}
+    domain={String(values.domain ?? values.domain_id ?? "") || undefined}
+    controls={state === "denied" ? undefined : {
+      period: headerPeriod,
+      updatedAt: qualityResult ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
+      refreshing: data.isFetching,
+      onRefresh: ready ? () => {
+        void data.refetch({ cancelRefetch: false });
+        if (passwordCoverage.isEnabled) void passwordCoverage.refetch({ cancelRefetch: false });
+      } : undefined,
+    }}
     crumbs={[{ label: getSectionCrumb(definition.section) }]}
     meta={infrastructure ? undefined : computerReport ? <span>{computerSummary(qualityResult)}</span> : domainEvents || eventsJournal ? null : <>{independentUsers ? <span>{userSummary(qualityResult)}</span> : null}{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
     actions={<>
@@ -433,7 +483,7 @@ function ReportBody({ definition: sourceDefinition, additionalTabs = [], onAddit
       {!eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
         {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
       </div> : null}
-      {fields.length ? <FilterBar fields={fields} layout={independentUsers ? "inline" : undefined} primaryKeys={eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : infrastructure ? ["q", "period"] : independentUsers ? ["q"] : fields.length > 4 ? primaryFilterKeys(definition) : undefined} additionalContent={eventsJournal ? quickFilters : undefined} values={values} defaults={resetValues} onApply={(next) => { setSelected(null); setValues(next); }}
+      {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers ? "inline" : undefined} primaryKeys={eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : infrastructure ? ["q", "period"] : independentUsers ? ["q"] : fields.length > 4 ? primaryFilterKeys(definition) : undefined} additionalContent={eventsJournal ? quickFilters : undefined} values={values} defaults={resetValues} onApply={(next) => { setSelected(null); setValues(next); }}
         quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
           <select value={view.key} onChange={(event) => selectView(event.target.value)}>
             {infrastructureChanges.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
