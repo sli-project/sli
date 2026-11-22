@@ -5,6 +5,7 @@ import { localizeReportCatalog, localizeReportDefinition, localizeReportResult, 
 import type { ReportCatalogV2Dto, ReportDefinitionDto, ReportResultDto, ReportStateDetails } from "./report-v2-types";
 import type { SigmaValidationRequest, SigmaValidationResponse, SigmaRuleScope, SigmaRuleListResponse } from "./sigma-types";
 import type { PluginSettings } from "./plugin-settings-types";
+import type { HomePeriod } from "./home-period";
 
 export type AgentEnrollmentToken = { id: string; token: string; host_id: string; expires_at: string };
 export type AdOperationCredential = { credential_id: string; domain_id: number; label: string; username: string;
@@ -2317,6 +2318,11 @@ export const api = {
     "/api/v1/admin/agent-console-tokens"),
   revokeAgentConsoleToken: (id: string) => requestMutation("/api/v1/admin/agent-console-tokens/revoke", "POST", { id }),
   homeSummary: () => request<HomeSummary>("/api/v1/home/summary").then(localizeHomeSummary),
+  homePeriod: (params: URLSearchParams) => {
+    const query = new URLSearchParams(params);
+    query.set("contract", "v4");
+    return request<HomePeriod>(`/api/v1/home/summary?${query}`);
+  },
   homeDecisions: (params = new URLSearchParams()) => {
     const query = new URLSearchParams(params);
     query.set("contract", "v3");

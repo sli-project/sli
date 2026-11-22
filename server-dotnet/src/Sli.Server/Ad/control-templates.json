@@ -45,8 +45,8 @@
     "control_id": "dc.operating_system",
     "category": "domain_controllers",
     "label": "Операционная система контроллера",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "Поддерживается",
+    "authority": "report_rule_v1"
   },
   "domain_controller:operating_system_version": {
     "control_id": "dc.operating_system_version",
@@ -59,15 +59,15 @@
     "control_id": "domain.functional_level",
     "category": "policies",
     "label": "Функциональный уровень домена",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "Не ниже Windows Server 2012 R2",
+    "authority": "report_rule_v1"
   },
   "domain:forest_mode": {
     "control_id": "forest.functional_level",
     "category": "policies",
     "label": "Функциональный уровень леса",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "Не ниже Windows Server 2012 R2",
+    "authority": "report_rule_v1"
   },
   "domain:recycle_bin_enabled": {
     "control_id": "domain.recycle_bin",
@@ -80,8 +80,8 @@
     "control_id": "domain.machine_account_quota",
     "category": "policies",
     "label": "MachineAccountQuota",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "0",
+    "authority": "report_rule_v1"
   },
   "domain:ldap_signing_requirement": {
     "control_id": "domain.ldap_signing",
@@ -129,57 +129,57 @@
     "control_id": "password.minimum_length",
     "category": "policies",
     "label": "Минимальная длина пароля",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≥ 12 знаков",
+    "authority": "report_rule_v1"
   },
   "password_policy:password_history_length": {
     "control_id": "password.history_length",
     "category": "policies",
     "label": "История паролей",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≥ 12 паролей",
+    "authority": "report_rule_v1"
   },
   "password_policy:password_min_age": {
     "control_id": "password.minimum_age",
     "category": "policies",
     "label": "Минимальный возраст пароля",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≥ 1 день",
+    "authority": "report_rule_v1"
   },
   "password_policy:password_max_age": {
     "control_id": "password.maximum_age",
     "category": "policies",
     "label": "Максимальный возраст пароля",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≤ 180 дней",
+    "authority": "report_rule_v1"
   },
   "password_policy:password_properties": {
     "control_id": "password.properties",
     "category": "policies",
     "label": "Свойства парольной политики",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "Включена",
+    "authority": "report_rule_v1"
   },
   "password_policy:lockout_threshold": {
     "control_id": "password.lockout_threshold",
     "category": "policies",
     "label": "Порог блокировки",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "5–10 попыток",
+    "authority": "report_rule_v1"
   },
   "password_policy:lockout_duration": {
     "control_id": "password.lockout_duration",
     "category": "policies",
     "label": "Длительность блокировки",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≥ 15 минут или ручная разблокировка",
+    "authority": "report_rule_v1"
   },
   "password_policy:lockout_observation_window": {
     "control_id": "password.lockout_observation_window",
     "category": "policies",
     "label": "Окно наблюдения блокировки",
-    "expected_condition": "Требование организации не задано",
-    "authority": "not_defined"
+    "expected_condition": "≥ 15 минут",
+    "authority": "report_rule_v1"
   },
   "domain_trust:trust_direction": {
     "control_id": "trust.direction",

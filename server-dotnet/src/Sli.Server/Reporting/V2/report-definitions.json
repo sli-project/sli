@@ -27,10 +27,23 @@
         "max_length": 256
       },
       {
+        "key": "include_previous",
+        "label": "Previous value",
+        "kind": "choice",
+        "hidden": true,
+        "options": [
+          {
+            "value": "true",
+            "label": "Previous value"
+          }
+        ],
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
-        "default": "7d",
+        "default": "24h",
         "required": true,
         "presets": [
           "24h",
@@ -316,7 +329,64 @@
         "source": "items",
         "title": "Параметры",
         "columns": [],
-        "access_rule": null
+        "access_rule": null,
+        "note": null
+      },
+      {
+        "kind": "table",
+        "key": "parameter_changes",
+        "source": "parameter_changes",
+        "title": "Изменения AD",
+        "columns": [
+          {
+            "key": "observed_at_utc",
+            "label": "Время",
+            "kind": "datetime",
+            "path": "observed_at_utc",
+            "field_categories": []
+          },
+          {
+            "key": "entity_name",
+            "label": "Объект",
+            "kind": "text",
+            "path": "entity_name",
+            "field_categories": []
+          },
+          {
+            "key": "label",
+            "label": "Параметр",
+            "kind": "text",
+            "path": "label",
+            "field_categories": []
+          },
+          {
+            "key": "previous_text",
+            "label": "Предыдущее значение",
+            "kind": "text",
+            "path": "previous_text",
+            "field_categories": []
+          },
+          {
+            "key": "actual_text",
+            "label": "Фактическое значение",
+            "kind": "text",
+            "path": "actual_text",
+            "field_categories": []
+          }
+        ],
+        "access_rule": {
+          "report_key": "ad.state",
+          "required_fields": [
+            "identity_basic",
+            "privilege",
+            "security",
+            "technical"
+          ],
+          "scope": "domain",
+          "export_action": "export",
+          "required_capabilities": [],
+          "accepts_generic_scope": false
+        }
       },
       {
         "kind": "table",
@@ -654,32 +724,32 @@
       }
     ],
     "detail": {
-      "kind": "inline",
-      "title": "Контекст объекта",
+      "kind": "sub",
+      "title": "История значения",
       "key": "row_id",
-      "inline": "context",
+      "inline": null,
       "row_component": null,
       "actions": null,
       "columns": [
         {
-          "key": "label",
-          "label": "Атрибут",
-          "kind": "text",
-          "path": "label",
+          "key": "observed_at_utc",
+          "label": "С какого момента",
+          "kind": "datetime",
+          "path": "observed_at_utc",
           "field_categories": []
         },
         {
-          "key": "value",
+          "key": "actual_text",
           "label": "Значение",
           "kind": "text",
-          "path": "value",
+          "path": "actual_text",
           "field_categories": []
         }
       ],
       "row_links": [],
       "access_rule": null,
       "default_limit": 50,
-      "query_available": false
+      "query_available": true
     },
     "export": true,
     "limits": {
