@@ -345,5 +345,9 @@ public sealed partial class ProblemQueuePagingTests
     {
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
-    const string EmptyPasswordFacts = "create function public.password_problem_facts395(bigint,text) returns jsonb language sql as $$select null::jsonb$$";
+    // These fixtures exercise legacy schemas or non-password findings only.
+    internal const string EmptyPasswordFacts = """
+        create function public.password_problem_facts395(bigint,text) returns jsonb
+        language plpgsql as $$ begin raise exception 'Password findings require migration 395 in this test'; end $$;
+        """;
 }

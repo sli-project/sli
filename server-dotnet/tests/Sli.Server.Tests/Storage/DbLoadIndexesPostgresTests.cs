@@ -21,6 +21,7 @@ public sealed class DbLoadIndexesPostgresTests(ITestOutputHelper output)
         int allocations = stand ? 15_000_000 : 15_000, jobs = stand ? 2_600_000 : 2600;
         await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct, throughVersion: 376);
         await using var db = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(db, ProblemQueuePagingTests.EmptyPasswordFacts, ct);
         await PostCollectionPostgres.Sql(db, "set statement_timeout=0; set lock_timeout=0; set jit=off", ct);
         var rows = await ShortEventAdmissionPostgresTests.SeedAsync(db, ct);
         await using (var tx = await db.BeginTransactionAsync(ct)) {

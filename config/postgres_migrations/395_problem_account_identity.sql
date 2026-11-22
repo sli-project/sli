@@ -13,6 +13,40 @@ set local role adlog_storage_owner;
 create or replace function public.password_definition_revision393(r text) returns integer
 language sql immutable set search_path=pg_catalog,pg_temp as $$ select 395 $$;
 
+-- A revision change can start a live pass even when the first event is
+-- newer than the seam. In that case the preceding history interval is empty.
+do $$ declare planner text; patched text; begin
+    select pg_get_functiondef('public.password_plan388(jsonb,text)'::regprocedure) into planner;
+    patched:=replace(planner,'coalesce(c.watermark,first_at,seam)','coalesce(c.watermark,least(first_at,seam))');
+    if patched=planner then
+        raise exception 'problem_account_identity395_planner_shape' using errcode='55000';
+    end if;
+    execute patched;
+end $$;
+
+-- The current password rules can use a verified successful logon to escalate.
+-- Admit it through the same source, native identity, and budget gates as failures.
+do $$ declare r record; original text; patched text; begin
+    for r in select * from (values
+        ('public.read_password_event_window362(jsonb,jsonb)',
+            'e.event_id in (4625,4771,4776)',
+            '(e.event_id in (4625,4771,4776) or (e.event_id=4624 and (execution->>''rule_version'')::integer>=395))'),
+        ('public.read_password_retained_proof_v2_short337(jsonb,jsonb)',
+            'event_id in (4625,4771,4776)','event_id in (4624,4625,4771,4776)'),
+        ('public.password_v2_native_cost_short337(jsonb,jsonb)',
+            'event_id in (4625,4771,4776)','event_id in (4624,4625,4771,4776)'),
+        ('public.password_v2_check_state(jsonb,jsonb,text)',
+            '''too_late''','''too_late'',''successful_logon''')
+    ) v(signature,prev_fragment,next_fragment) loop
+        select pg_get_functiondef(r.signature::regprocedure) into original;
+        patched:=replace(original,r.prev_fragment,r.next_fragment);
+        if patched=original then
+            raise exception 'problem_account_identity395_password_shape:%',r.signature using errcode='55000';
+        end if;
+        execute patched;
+    end loop;
+end $$;
+
 -- Resolve the retained principals as a set. Invoker rights retain the permissions
 -- of the existing problem and AD readers.
 create function public.password_problem_facts395(p_finding bigint,p_rule text) returns jsonb
