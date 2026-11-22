@@ -78,7 +78,7 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
   try {
     return new Intl.DateTimeFormat(intlLocale(), {
       timeZone: timeZone === "browser" ? undefined : timeZone,
-      ...(timeOnly ? { hour: "2-digit" as const, minute: "2-digit" as const, hourCycle: "h23" as const } : {
+      ...(timeOnly ? { hour: "2-digit" as const, minute: "2-digit" as const, ...(seconds ? { second: "2-digit" as const } : {}), hourCycle: "h23" as const } : {
       ...(withYear ? { year: "numeric" as const } : {}), month: en ? "short" : "2-digit", day: en ? "numeric" : "2-digit",
       ...(withTime ? { hour: en ? "numeric" : "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hourCycle: en ? "h12" : "h23" } : {}),
       }),
@@ -91,13 +91,13 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
 export const formatDate = (value: string | Date | null | undefined, timeZone: DisplayTimeZone | undefined = "browser") =>
   formatDateTime(value, timeZone, { withTime: false });
 
-export function formatClockWithOffset(instant: Date, timeZone: DisplayTimeZone) {
+export function formatClockWithOffset(instant: Date, timeZone: DisplayTimeZone, seconds = false) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: timeZone === "browser" ? undefined : timeZone,
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "shortOffset",
+    hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hourCycle: "h23", timeZoneName: "shortOffset",
   }).formatToParts(instant);
   const offset = parts.find((part) => part.type === "timeZoneName")?.value.slice(3) || "+0";
-  const time = parts.filter((part) => part.type === "hour" || part.type === "minute").map((part) => part.value).join(":");
+  const time = parts.filter((part) => part.type === "hour" || part.type === "minute" || part.type === "second").map((part) => part.value).join(":");
   return { time, zone: `UTC${offset}` };
 }
 

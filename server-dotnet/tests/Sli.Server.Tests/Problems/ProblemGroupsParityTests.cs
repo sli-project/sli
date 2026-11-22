@@ -256,6 +256,14 @@ public sealed class ProblemGroupsParityTests
             """, Ct);
         var ambiguous = (await Read(7))["groups"]![0]!["objects"]![0]!;
         Assert.Equal("", ambiguous["name"]!.ToString()); Assert.Equal("ambiguous", ambiguous["name_state"]!.ToString());
+
+        await PostCollectionPostgres.Sql(db, "insert into finding_queue_deferrals values(7,now()+interval '1 day')", Ct);
+        var deferred = await Read(7);
+        Assert.Equal("partial", deferred["state"]!.ToString());
+        Assert.Null(deferred["total"]);
+        Assert.Empty(deferred["groups"]!.AsArray());
+        await PostCollectionPostgres.Sql(db, "update finding_queue_deferrals set until_at=now()-interval '1 day' where finding_id=7", Ct);
+        Assert.Equal(1, N((await Read(7))["total"]));
     }
 
     [Fact]
@@ -303,6 +311,7 @@ public sealed class ProblemGroupsParityTests
             left join storage_v2_channel c on c.id=e.channel_id left join storage_v2_provider p on p.id=e.provider_id;
         create table domains(id bigint,fqdn text); insert into domains values(7,'example.test'),(8,'other.example.test');
         create table finding_entities(finding_id bigint,display_name text,entity_role text);
+        create table finding_queue_deferrals(finding_id bigint primary key,until_at timestamptz not null);
         create table auth_users(id bigint,username text);
         create table semantic_suppressions(id bigint,finding_id bigint,kind text,responsible_user_id bigint,
             state text,expires_at timestamptz,semantic_type text not null);

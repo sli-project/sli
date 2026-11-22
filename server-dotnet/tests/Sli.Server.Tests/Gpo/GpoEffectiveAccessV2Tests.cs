@@ -36,6 +36,8 @@ public sealed class GpoEffectiveAccessV2Tests
         {
             Assert.Null(History);GraphDomains.Add(domains);return Task.FromResult(Graph.Copy());
         }
+        public Task<JsonObject> PolicyHistoryAsync(long[] domains,DateTimeOffset from,DateTimeOffset to,string policyId,string guid,CancellationToken ct)
+            => throw new InvalidOperationException("Unexpected policy history read");
         public Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string query,CancellationToken ct)
         {
             HistoryCalls.Add((domains,from,to,query));return Task.FromResult(History!.Copy());

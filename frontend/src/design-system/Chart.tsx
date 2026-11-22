@@ -8,6 +8,7 @@ import { t } from "../i18n";
 import { useTimeZone } from "../shared/time-zone";
 import { formatDateTime } from "./format";
 import { formatDateTime as sharedDateTime } from "../shared/date-time";
+import { formatNumber } from "../shared/format";
 
 echarts.use([LineChart, BarChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, SVGRenderer]);
 
@@ -41,7 +42,7 @@ export function chartIsEmpty(spec: ChartSpec): boolean {
 }
 
 /** Builds the ECharts option from a spec; pure so it can be unit-tested. */
-export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string; danger?: string; warning?: string }, timeZone?: string): EChartsCoreOption {
+export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string; danger?: string; warning?: string }, timeZone?: string, emptyValue?: string): EChartsCoreOption {
   const base = {
     color: colors.palette,
     textStyle: { color: colors.text, fontFamily: "inherit" },
@@ -85,7 +86,7 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
   // series with another magnitude gets its own right-hand axis.
   const days = spec.series[0]?.points.map((point) => point.x) ?? [];
   if (days.length && days.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))) {
-    const dual = spec.series.length === 2 && !spec.stacked;
+    const dual = spec.series.length === 2 && !spec.stacked && !spec.series.some((series) => series.style);
     return {
       ...base,
       legend,
@@ -93,7 +94,8 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
       xAxis: { type: "category", data: days.map((day) => sharedDateTime(day, "UTC", { withTime: false, withYear: false })), ...axisStyle },
       yAxis: dual ? [{ type: "value", ...axisStyle }, { type: "value", ...axisStyle, splitLine: { show: false } }] : { type: "value", ...axisStyle },
       series: spec.series.map((series, index) => ({
-        type: dual && index === 1 ? "line" : "bar", name: series.name, yAxisIndex: dual ? index : 0,
+        type: series.style ? series.style === "bar" ? "bar" : "line" : dual && index === 1 ? "line" : "bar",
+        lineStyle: series.style === "dashed" ? { type: "dashed" } : undefined, name: series.name, yAxisIndex: dual ? index : 0,
         stack: spec.stacked ? "total" : undefined, showSymbol: false,
         data: series.points.map((point) => point.y),
       })),
@@ -107,6 +109,10 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
     yAxis: { type: "value", ...axisStyle, min: spec.range ? 0 : undefined, minInterval: spec.range ? 1 : undefined },
     series: [...spec.series.map((series) => ({
       type: series.style === "bar" || (!series.style && spec.bars) ? "bar" : "line", name: series.name, showSymbol: false, stack: spec.stacked ? "total" : undefined,
+      ...(emptyValue === undefined ? {} : {
+        encode: { tooltip: [1] },
+        tooltip: { valueFormatter: (value: unknown) => typeof value === "number" && Number.isFinite(value) ? formatNumber(value) : emptyValue },
+      }),
       areaStyle: spec.stacked && !spec.bars ? { opacity: 0.2 } : undefined,
       itemStyle: series.style === "bar" ? { color: colors.muted, opacity: 0.55 }
         : series.style ? { color: series.style === "line" ? colors.text : colors.muted } : undefined,
@@ -143,7 +149,7 @@ export function Chart({ title, spec, height = 280, emptyValue }: { title: string
   useEffect(() => {
     if (empty || !host.current) return;
     const instance = echarts.init(host.current, undefined, { renderer: "svg" });
-    const render = () => instance.setOption(buildChartOption(spec, currentColors(), timeZone), true);
+    const render = () => instance.setOption(buildChartOption(spec, currentColors(), timeZone, emptyValue), true);
     render();
     const fit = () => instance.resize();
     const resize = new ResizeObserver(fit);
@@ -154,7 +160,7 @@ export function Chart({ title, spec, height = 280, emptyValue }: { title: string
     const themeObserver = new MutationObserver(render);
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => { window.removeEventListener("resize", fit); resize.disconnect(); themeObserver.disconnect(); scheme?.removeEventListener?.("change", render); instance.dispose(); };
-  }, [spec, empty, timeZone]);
+  }, [spec, empty, timeZone, emptyValue]);
 
   return <figure className="sli-ds-chart">
     <figcaption>{title}</figcaption>

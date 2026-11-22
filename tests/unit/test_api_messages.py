@@ -86,10 +86,6 @@ def test_catalog_completeness_and_frontend_wording():
         "comparison_failed", "history_empty", "context_read_timeout", "context_read_cancelled",
         "computer_inventory_unavailable",
     )}
-    # «Что изменено» in the domain changes report is named by the server for every supported event kind.
-    expected |= {"reports.v2.security.events.chains.actions." + code for code in (
-        "1102", "4624", "4625", "4719", "4720", "4722", "4723", "4724", "4725", "4726", "4727", "4728", "4729", "4730", "4731", "4732", "4733", "4734", "4735", "4737", "4738", "4740", "4754", "4755", "4756", "4757", "4758", "4764", "4767", "4771", "4776.success", "4776.failure", "4776.unknown", "4781",
-    )}
     # Shared API messages for the AD account registry; the other adAccounts
     # labels are frontend-only and must not expand the server catalog.
     expected |= {"adAccounts.denied", "adAccounts.operationsUnavailable", "adAccounts.permission",
@@ -169,20 +165,22 @@ def test_catalog_completeness_and_frontend_wording():
         "not_evaluated", "details_unavailable", "denied", "not_applicable",
         "admitted", "diagnostic", "excluded",
     )}
-    # Retained-name and daily-cohort presentation messages are shared with the home queue.
+    # Problem identity and occurrence messages are shared with the frontend.
     expected |= {
         "security.problems.identity.name", "security.problems.identity.sources",
         "security.problems.identity.sources_partial", "security.problems.identity.unavailable",
-        "security.problems.assignee.unassigned", "home.queue.day", "home.queue.assignee.mixed",
-        "home.queue.identity_details", "home.queue.snapshot_name",
+        "security.problems.assignee.unassigned",
         "home.queue.occurrences.one", "home.queue.occurrences.few",
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
+    frontend_only_user_labels = tuple(f"reports.ad.users.{section}." for section in (
+        "deviation", "list", "card", "event",
+    ))
     expected |= {key for key in frontend_catalog("ru") if key.startswith((
         "reports.v2.security.problems.", "security.problems.status.", "security.problems.entity.",
         "security.problems.actor.", "security.problems.presentation.", "security.problems.ad_hardening.", "investigations.caseStatus.", "reports.ad.checks.",
         "reports.ad.users.", "events.semantic.", "reports.v2.file-audit.overview.limitations.",
-    ))}
+    )) and not key.startswith(frontend_only_user_labels)}
     # AD report metadata codes mirror the frontend keys; test_report_metadata_codes.py proves they are complete.
     expected |= {code for code in catalog("ru") if code.startswith(AD_REPORT_PREFIXES)}
     expected |= {f"access.builtin.package.{key}.{field}"
@@ -214,16 +212,25 @@ def test_catalog_completeness_and_frontend_wording():
     legacy_problem_codes = {f"security.problems.presentation.{field}" for field in (
         "watch_limitation", "decoy_limitation", "default_next", "audit_limitations", "wording_limitation",
     )}
-    def is_delivery_message(code):
-        return code.startswith(("notifications.message.", "notifications.bot."))
+    # Home period facts are formatted on the server, like notification text.
+    def is_server_rendered_message(code):
+        return code.startswith(("notifications.message.", "notifications.bot.", "home.period.problem."))
+
+    def is_domain_change_action(code):
+        return code.startswith("reports.v2.security.events.chains.actions.")
 
     assert set(catalog("ru")) == set(catalog("en"))
-    assert {code for code in catalog("ru") if not is_delivery_message(code)} == expected | legacy_problem_codes
+    assert {
+        code for code in catalog("ru") if not is_server_rendered_message(code) and not is_domain_change_action(code)
+    } == expected | legacy_problem_codes
+    attribute_change = "reports.v2.security.events.chains.actions.5136"
     for locale in ("ru", "en"):
         frontend = frontend_catalog(locale)
+        assert attribute_change in catalog(locale)
+        assert message(attribute_change, locale=locale)["text"] == frontend[attribute_change]
         for code, text in catalog(locale).items():
             assert text
-            if code in legacy_problem_codes or is_delivery_message(code):
+            if code in legacy_problem_codes or is_server_rendered_message(code):
                 assert code not in frontend
                 assert message(code, locale=locale)["text"] == text
             else:

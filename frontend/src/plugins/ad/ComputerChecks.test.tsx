@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "../../app/report-v2/ReportRenderer";
 import { ComputerChecks, computerRole, computerTableColumns } from "./ComputerChecks";
-import { DataTable } from "../../design-system";
+import { DataTable, OverlayProvider } from "../../design-system";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
@@ -51,7 +51,7 @@ const requests: URLSearchParams[] = [];
 let respond: (params: URLSearchParams) => ReportResultDto;
 let respondTo: (url: URL) => unknown;
 function show(props: Partial<Parameters<typeof ReportRenderer>[0]> = {}) {
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReportRenderer reportKey={definition.key} {...props}/></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><OverlayProvider><ReportRenderer reportKey={definition.key} {...props}/></OverlayProvider></QueryClientProvider>);
 }
 beforeEach(() => {
   requests.length = 0;
@@ -212,10 +212,11 @@ it("shows an empty comparison without source warnings or a note", async () => {
   respond = () => page({ items: [], collections: { changes: [] }, coverage: { comparison_missing_domains: ["example.test"],
     domains: [{ domain_name: "example.test", state: "complete", observed_at_utc: new Date().toISOString() }] } });
   const { container } = show();
-  await screen.findByRole("status");
+  const comparison = within(await screen.findByRole("tabpanel", { name: "Изменения" }));
+  await comparison.findByRole("status");
   expect(container.querySelectorAll('.sli-ds-callout[data-tone="warning"]')).toHaveLength(0);
   expect(container.textContent).not.toContain("Synthetic computer changes note");
-  expect(screen.getAllByRole("status")).toHaveLength(1);
+  expect(comparison.getAllByRole("status")).toHaveLength(1);
 });
 
 
@@ -264,7 +265,9 @@ it("uses exact computer scope for card changes, problems, and source event links
   const card = await screen.findByRole("complementary", { name: "synthetic-host" });
   const problems = (await within(card).findByText("Открытые проблемы")).parentElement!;
   const count = await within(problems).findByRole("link", { name: /Критическая 2/ });
-  expect(new URL(count.getAttribute("href")!, "http://example.test").searchParams.get("entity_id")).toBe("1");
+  const target = new URL(count.getAttribute("href")!, "http://example.test");
+  expect(target.pathname).toBe("/app/report/security.problems");
+  expect(Object.fromEntries(target.searchParams)).toEqual({ domain: "8", entity_id: "1", population: "open" });
   expect(within(card).getByRole("link", { name: "Открыть журнал событий" }).getAttribute("href")).toContain("synthetic-host.example.test");
   fireEvent.click(within(card).getByRole("tab", { name: "Изменения" }));
   await within(card).findByText(/synthetic-group/);
@@ -277,6 +280,43 @@ it("uses exact computer scope for card changes, problems, and source event links
   fireEvent.click(repeats);
   expect(within(card).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
   expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/15?");
+});
+
+it("opens every open state for the computer and keeps the scope in the queue request", async () => {
+  effective.reports = [{ report_key: "security.queue", allowed: true }];
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain_id=8");
+  const finding = (id: number, status: string, title_text: string) => ({
+    id, status, title_text, severity: "high", entity_text: "synthetic-host",
+  });
+  const related = [finding(21, "new", "Synthetic new"), finding(22, "active", "Synthetic active"), finding(23, "review", "Synthetic review")];
+  respondTo = (url) => {
+    if (url.pathname.endsWith("/security.problems/data")) {
+      if (url.searchParams.get("limit") === "1") return page({ coverage: { open_by_severity: { high: 3 } } });
+      const { searchParams: params } = url;
+      const scoped = params.get("domain") === "8" && params.get("entity_id") === "1" && params.get("population") === "open";
+      return page({ state: "ok", items: scoped ? related : [...related, finding(24, "closed", "Synthetic closed")] });
+    }
+    if (url.pathname.endsWith("/security.problems")) return {
+      ...definition, key: "security.problems", title: "Проблемы", archetype: "queue", export: false, views: [],
+      params: [{ key: "entity_id", kind: "text" }, { key: "population", kind: "choice" }, { key: "queue_view", kind: "choice" }],
+    };
+  };
+  const computer = show();
+  const card = await screen.findByRole("complementary", { name: "synthetic-host" });
+  const link = await within(card).findByRole("link", { name: /Высокая 3/ });
+  const target = new URL(link.getAttribute("href")!, "http://example.test");
+  computer.unmount();
+  show({ reportKey: "security.problems", initialSearch: target.search });
+  for (const name of [/Synthetic new/, /Synthetic active/, /Synthetic review/])
+    expect(await screen.findByRole("link", { name })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /Synthetic closed/ })).toBeNull();
+  const count = requests.find((params) => params.get("entity_id") === "1" && params.get("limit") === "1");
+  const queue = requests.find((params) => params.get("entity_id") === "1" && params.get("limit") === "50");
+  for (const params of [count, queue]) {
+    expect(params?.get("domain")).toBe("8");
+    expect(params?.get("population")).toBe("open");
+    expect(params?.get("queue_view")).toBe("all");
+  }
 });
 
 it("keeps the logon window, account filter, and page boundary when reading the next computer", async () => {
@@ -317,4 +357,3 @@ it("keeps the logon window, account filter, and page boundary when reading the n
     expect(params.get("domain_id")).toBe("8");
   }
 });
-

@@ -152,6 +152,112 @@ public sealed class DomainChangesColdFactsTests
         Assert.Equal("retained_match_present", (await query.CategoriesAsync(db,ct))["group_membership"]!["state"]!.ToString());
         Assert.Equal("no_retained_match", (await query.CategoriesAsync(db,ct))["authentication"]!["state"]!.ToString());
         Assert.Equal(0,details.Calls);
+
+        var changes = new JsonObject { ["changes_view"] = "all", ["repeat_mode"] = "collapsed" };
+        var changed = await current.ReadAsync(Request(filters: changes), false, ct);
+        Assert.Equal(4L, AdJson.Int(changed["change_counts"], "all"));
+        Assert.Equal(2L, AdJson.Int(changed["change_counts"], "accounts"));
+        Assert.Equal(1L, AdJson.Int(changed["change_counts"], "groups"));
+        Assert.Equal(1L, AdJson.Int(changed["change_counts"], "audit"));
+        var groups = await current.ReadAsync(Request(filters: new JsonObject
+        {
+            ["changes_view"] = "groups", ["repeat_mode"] = "collapsed", ["target_account"] = Member
+        }), false, ct);
+        var membership = Assert.Single(groups["items"]!.AsArray());
+        Assert.Equal(4728L, AdJson.Int(membership, "event_id"));
+        Assert.Equal("operator", AdJson.Text(membership!["actor"], "name"));
+
+        await PostCollectionPostgres.Sql(db, """
+            insert into event_cold_facts(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
+            select n,time_created_utc + n * interval '1 millisecond',event_kind,domain_id,actor,target,source,computer,method,outcome,fields
+            from event_cold_facts cross join generate_series(100,5098) n where event_id=1
+            """, ct);
+        var start = Period.Start.AddDays(80);
+        var window = new AdPeriod(start, start.AddHours(2));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var collapsed = await current.ReadAsync(Request(limit: 50, filters: changes) with { Period = window }, false, ct);
+        watch.Stop();
+        TestContext.Current.TestOutputHelper?.WriteLine($"Domain changes, 5,000 events in two hours: {watch.Elapsed.TotalMilliseconds:F1} ms");
+        var batch = Assert.Single(collapsed["items"]!.AsArray());
+        Assert.Equal(5000L, AdJson.Int(batch, "repeat_count"));
+        Assert.Equal(5098L, AdJson.Int(batch, "event_db_id"));
+        Assert.Equal(1L, AdJson.Int(collapsed, "filtered_count"));
+        Assert.Equal(5000L, AdJson.Int(collapsed["change_counts"], "all"));
+
+        var expansion = Request(limit: 2, filters: new JsonObject
+        {
+            ["changes_view"] = "all", ["repeat_mode"] = "collapsed", ["batch"] = 5098L
+        }) with { Period = window };
+        var members = await current.ReadAsync(expansion, false, ct);
+        Assert.Equal(new long[] { 5098, 5097 }, members["items"]!.AsArray().Select(item => AdJson.Int(item, "event_db_id")));
+        var nextMembers = await current.ReadAsync(expansion with { Cursor = AdJson.Text(members, "next_cursor") }, false, ct);
+        Assert.Equal(new long[] { 5096, 5095 }, nextMembers["items"]!.AsArray().Select(item => AdJson.Int(item, "event_db_id")));
+
+        var individual = await current.ReadAsync(Request(limit: 2, filters: new JsonObject
+        {
+            ["changes_view"] = "accounts", ["repeat_mode"] = "individual", ["changes_order"] = "asc"
+        }) with { Period = window }, false, ct);
+        Assert.Equal(new long[] { 1, 100 }, individual["items"]!.AsArray().Select(item => AdJson.Int(item, "event_db_id")));
+        Assert.Equal(5000L, AdJson.Int(individual, "filtered_count"));
+        Assert.All(individual["items"]!.AsArray(), item => Assert.Null(item!["repeat_count"]));
+
+        const string before = "previous@example.test", after = "current@example.test";
+        const string guid = "55555555-1111-4222-9000-555555555555";
+        const string firstManifest = "55555555-1111-4222-9000-555555555556";
+        const string nextManifest = "55555555-1111-4222-9000-555555555557";
+        var accountChange = rows[0] with
+        {
+            EventId = 5500, Kind = 4738, Layer = "fact", Time = start.UtcDateTime.AddMinutes(10),
+            Fields = new Dictionary<string, string?> { ["changed_user_principal_name"] = after }
+        };
+        var directoryChange = accountChange with
+        {
+            EventId = 5501, Kind = 5136, Target = guid,
+            Fields = new Dictionary<string, string?> { ["AttributeLDAPDisplayName"] = "description", ["AttributeValue"] = "Directory service" }
+        };
+        await SeedCompact(db, [accountChange, directoryChange], ct);
+        await PostCollectionPostgres.Sql(db, """
+            create table ad_snapshot_history_confirmations(manifest_id uuid, previous_manifest_id uuid, domain_id bigint,
+                family text, coverage_state text, batch_id text, observed_at timestamptz);
+            create table ad_snapshot_change_history(observed_at timestamptz, record_id text, batch_id text, manifest_id uuid,
+                domain_id bigint, family text, record_kind text, payload_json text, object_id text, attribute text,
+                before_value text, after_value text);
+            insert into entities_v2 values(15,7);
+            """, ct);
+        await AdJson.ReadAsync(db, "insert into ad_context_entity_aliases values(7,15,'object_sid',$1),(7,15,'object_guid',$2)", ct, Target.ToLowerInvariant(), guid);
+        string batchId = new('c', 64);
+        var payload = AdJson.Obj(new
+        {
+            object_type = "ad_user", object_id = guid, field = "userPrincipalName", kind = "attribute_changed",
+            before_sha256 = AdJobPlugin.Digest(JsonValue.Create(before)), after_sha256 = AdJobPlugin.Digest(JsonValue.Create(after))
+        });
+        string record = AdJobPlugin.Digest(new JsonArray(batchId, payload.DeepClone()));
+        await AdJson.ReadAsync(db, """
+            insert into ad_snapshot_history_confirmations values
+                ($1,null,7,'users_v2','partial',$3,$5),($2,$1,7,'users_v2','complete',$4,$6)
+            """, ct, Guid.Parse(firstManifest), Guid.Parse(nextManifest), new string('d', 64), batchId, start.UtcDateTime, start.UtcDateTime.AddMinutes(30));
+        await AdJson.ReadAsync(db, """
+            insert into ad_snapshot_change_history values
+                ($1,$2,$3,$4,7,'users_v2','history',$5,$6,'userPrincipalName',$7,$8)
+            """, ct, start.UtcDateTime.AddMinutes(30), record, batchId,
+            Guid.Parse(nextManifest), payload.ToJsonString(), guid, before, after);
+        var attribute = Request(filters: new JsonObject { ["changes_view"] = "accounts", ["event_id"] = 4738, ["repeat_mode"] = "individual" }) with { Period = window };
+        async Task<JsonNode?> AttributeFields(AdReportRequest request)
+            => Assert.Single((await current.ReadAsync(request, false, ct))["items"]!.AsArray())!["change"];
+        Assert.Null((await AttributeFields(attribute))!["previous_attributes"]);
+        var snapshotFields = await AttributeFields(attribute with { IncludeChangeSnapshotValues = true });
+        Assert.Equal(before, AdJson.Text(snapshotFields!["previous_attributes"]!["user_principal_name"], "value"));
+        Assert.Equal(AdJson.Iso(start), AdJson.Text(snapshotFields["previous_attributes"]!["user_principal_name"], "observed_at_utc"));
+        Assert.Equal(after, AdJson.Text(snapshotFields["attributes"], "user_principal_name"));
+        await PostCollectionPostgres.Sql(db, "update ad_snapshot_change_history set before_value='tampered@example.test'", ct);
+        Assert.Null((await AttributeFields(attribute with { IncludeChangeSnapshotValues = true }))!["previous_attributes"]);
+        var directory = await AttributeFields(attribute with
+        {
+            Filters = new JsonObject { ["changes_view"] = "accounts", ["event_id"] = 5136, ["repeat_mode"] = "individual" }
+        });
+        Assert.Equal("description", AdJson.Text(directory, "attribute"));
+        Assert.Equal("Directory service", AdJson.Text(directory, "observed_value"));
+
         // Record the S2 admission boundary without weakening it for this reader.
         // A separately numbered migration is required before API-role rollout.
         await using (var tx = await db.BeginTransactionAsync(ct)) {

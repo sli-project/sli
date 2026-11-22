@@ -6,6 +6,7 @@ using Sli.Server.Access.Administration;
 using Sli.Server.Semantic;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Entities;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Reporting.V2;
 
@@ -22,38 +23,55 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         foreach (string key in new[] { "view", "q", "server" }) if (c.Params[key]?.ToString() is { Length: > 0 } value && (key != "view" || value != "all")) filters[key] = value;
         if (!string.IsNullOrEmpty(c.Paging.Cursor)) filters["cursor"] = c.Paging.Cursor;
         JsonObject raw;
-        try { raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", Math.Min(c.Paging.Limit, 200), null, "view", filters, ct); }
+        var journal = Options(c);
+        try { raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", Math.Min(c.Paging.Limit, 200), null, "view", filters, ct, journal); }
         catch (ReportException e) { throw new ReportRequestException(e.Message, e.Status); }
         var rows = raw.Objects("items");
         // Dependencies belong to one projected row, never a union of grant branches.
         var identities = rows.Select(Identity).Where(i => i.HasValue).Select(i => i!.Value).ToHashSet();
         var titles = new Dictionary<(string Key, long EventId, string Channel), JsonObject>();
-        long[] ids = identities.Where(i => !i.Key.Contains(':')).Select(i => long.Parse(i.Key,CultureInfo.InvariantCulture)).Distinct().Order().ToArray();
-        string[] groups = identities.Where(i => i.Key.Contains(':')).Select(i => i.Key).ToArray();
-        if (ids.Length > 0 || groups.Length > 0)
+        var exactAccess = new HashSet<long>();
+        void AdmitTitle(JsonObject source)
         {
+            if (Identity(source) is not {} identity || !identities.Contains(identity)
+                || !Integer(source["domain_id"], out long domain) || !Integer(source["server_id"], out long server) || domain <= 0 || server <= 0) return;
+            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: identity.Channel)]];
+            if (!ResourceAccessDecisions.ReportAction(c.Access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed
+                || new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.Any(cap => !ResourceAccessDecisions.Capability(c.Access.Capabilities, cap, resources).Allowed)) return;
+            if (Integer(source["id"], out long eventId)) exactAccess.Add(eventId);
+            string provider = source["provider_name"]?.ToString().Trim() ?? "";
+            if (provider.Length == 0) return;
+            var lookup = source.Copy(); lookup["provider_name"] = provider; lookup["channel"] = identity.Channel.Trim();
+            if (EventListProjection.ExactTitleEntry(lookup) is not {} entry) return;
+            string code = $"events.semantic.{entry["channel"]}:{entry["provider_name"]}:{identity.EventId}.title";
+            string english = ReportResult.Message(code, true).Text("text");
+            if (english == code) english = ReportResult.Message("events.unknown_type", true).Text("text");
+            var title = ReportResult.Message("events.catalog_title");
+            title["params"] = new JsonObject { ["ru"] = entry["title"]!.DeepClone(), ["en"] = english };
+            title["text"] = entry["title"]!.DeepClone();
+            titles[identity] = title;
+        }
+
+        if (journal is not null)
+        {
+            foreach (var row in rows)
+            {
+                if (row["_journal_origin"] is not JsonObject origin) continue;
+                row.Remove("_journal_origin");
+                foreach (string field in new[] { "id", "event_id", "day", "summary_key", "channel" })
+                    origin[field] = row[field]?.DeepClone();
+                AdmitTitle(origin);
+            }
+        }
+        else if (identities.Count > 0)
+        {
+            long[] ids = identities.Where(i => !i.Key.Contains(':')).Select(i => long.Parse(i.Key,CultureInfo.InvariantCulture)).Distinct().Order().ToArray();
+            string[] groups = identities.Where(i => i.Key.Contains(':')).Select(i => i.Key).ToArray();
             try
             {
                 await using var db = await database.OpenAsync(false, ct);
                 var sources = await db.QueryAsync("with short_events as ("+EntityShortSql.Source("$3")+") select e.id,e.event_id,e.server_id,e.domain_id,e.channel,e.provider_name,e.day,e.summary_key "+EventReadService.ShortJoins+" where s.id is not null and (e.id=any($1) or (e.day::text || ':' || e.summary_key)=any($4)) limit $2", ct, ids, identities.Count, runner.ShortRetentionBoundary, groups);
-                foreach (var source in sources.OfType<JsonObject>())
-                {
-                    if (Identity(source) is not {} identity || !identities.Contains(identity)
-                        || !Integer(source["domain_id"], out long domain) || !Integer(source["server_id"], out long server) || domain <= 0 || server <= 0) continue;
-                    IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: source["channel"]!.ToString())]];
-                    if (!ResourceAccessDecisions.ReportAction(c.Access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed || new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.Any(cap => !ResourceAccessDecisions.Capability(c.Access.Capabilities, cap, resources).Allowed)) continue;
-                    string provider = source["provider_name"]?.ToString().Trim() ?? "";
-                    if (provider.Length == 0) continue;
-                    var lookup = source.Copy(); lookup["provider_name"] = provider; lookup["channel"] = identity.Channel.Trim();
-                    if (EventListProjection.ExactTitleEntry(lookup) is not {} entry) continue;
-                    string code = $"events.semantic.{entry["channel"]}:{entry["provider_name"]}:{identity.EventId}.title";
-                    string english = ReportResult.Message(code, true).Text("text");
-                    if (english == code) english = ReportResult.Message("events.unknown_type", true).Text("text");
-                    var title = ReportResult.Message("events.catalog_title");
-                    title["params"] = new JsonObject { ["ru"] = entry["title"]!.DeepClone(), ["en"] = english };
-                    title["text"] = entry["title"]!.DeepClone();
-                    titles[identity] = title;
-                }
+                foreach (var source in sources.OfType<JsonObject>()) AdmitTitle(source);
             }
             catch (Npgsql.PostgresException e) when (e.SqlState == "57014") { }
             catch (TimeoutException) { }
@@ -70,7 +88,52 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
             row["presentation_messages"] = new JsonObject { ["title_text"] = title };
             if (target is null && actor is null) row["presentation_messages"]!["participant"] = ReportResult.Message("events.participant_unknown");
         }
+        if (journal is not null) await LinkProblemsAsync(c, rows, exactAccess, ct);
         return Render(c, raw, rows);
+    }
+    internal static JournalOptions? Options(ReportQueryContext c)
+    {
+        long? Id(string key) => c.Params[key] is null ? null : long.TryParse(c.Params[key]!.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0
+            ? id : throw new ReportRequestException("report_parameter_invalid:" + key);
+        long? expand = Id("expand"), before = Id("before"), member = Id("member");
+        if (member.HasValue && !expand.HasValue) throw new ReportRequestException("report_parameter_invalid:member");
+        if (c.Action == "export" && (expand.HasValue || before.HasValue)) throw new ReportRequestException("report_parameter_invalid:expand");
+        string view = c.Params.Text("view", "all"), result = c.Params.Text("result"), pivot = c.Params.Text("pivot");
+        if (expand.HasValue && before.HasValue) throw new ReportRequestException("report_parameter_invalid:before");
+        return c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
+            pivot.Length > 0 || view is "groups" or "audit"
+            ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"), member) : null;
+    }
+
+    private async Task LinkProblemsAsync(ReportQueryContext c, JsonObject[] rows, HashSet<long> exactAccess, CancellationToken ct)
+    {
+        long[] ids = rows.Where(row => row["journal_expandable"]?.GetValue<bool>() != true)
+            .Select(row => Integer(row["id"], out long id) ? id : 0).Where(exactAccess.Contains).Distinct().ToArray();
+        if (ids.Length == 0) return;
+        long[]? domains;
+        try { domains = new ProblemAccess(c.Access).Scope("security.queue").Domains(); }
+        catch (ProblemException) { return; }
+
+        await using var db = await database.OpenAsync(false, ct);
+        var links = await db.QueryAsync($"""
+            select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id,findings.severity
+            from (select distinct event_db_id,finding_id from finding_event_details337 where event_db_id=any($1)) linked
+            join findings_active findings on findings.id=linked.finding_id
+            where is_semantic_finding_published_v1(findings.id)
+              and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
+              and ($2::bigint[] is null or semantic_finding_in_domains_v265(findings.id,$2::bigint[]))
+              and not ({ProblemRepository.Suppressed})
+              and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
+                  and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
+            order by linked.event_db_id,case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end,findings.id desc
+            """, ct, ids, domains);
+        var byId = links.OfType<JsonObject>().Where(row => Integer(row["event_db_id"], out _)).ToDictionary(row => row["event_db_id"]!.GetValue<long>());
+        foreach (var row in rows)
+        {
+            if (row["journal_expandable"]?.GetValue<bool>() == true || !Integer(row["id"], out long id) || !byId.TryGetValue(id, out var link)) continue;
+            row["journal_finding_id"] = link["finding_id"]?.DeepClone();
+            row["journal_severity"] = link["severity"]?.DeepClone();
+        }
     }
     internal static JsonObject Render(ReportQueryContext c, JsonObject raw, JsonObject[] rows)
     {
@@ -78,6 +141,8 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         var result = ReportResult.Create(c.Definition.Key, state, new JsonArray(rows.Select(r => (JsonNode?)r.DeepClone()).ToArray()), raw["coverage"] as JsonObject,
             limitations: new JsonArray(new JsonObject { ["code"] = "no_risk_in_slice", ["text"] = "Оценка риска не входит в этот срез. Название показывается только при точном совпадении источника и разрешённом доступе к доказательству; неизвестный участник не восстанавливается." }));
         result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false); result["next_cursor"] = raw["next_cursor"]?.DeepClone();
+        foreach (string field in new[] { "filtered_count", "journal_event_count", "journal_counts" })
+            if (raw[field] is { } value) result[field] = value.DeepClone();
         result["window"] = new JsonObject { ["from_utc"] = c.Params["period"]!["from_utc"]!.DeepClone(), ["to_utc_exclusive"] = c.Params["period"]!["to_utc"]!.DeepClone() };
         return result;
     }

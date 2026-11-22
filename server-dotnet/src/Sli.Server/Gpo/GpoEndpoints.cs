@@ -15,10 +15,13 @@ namespace Sli.Server.Gpo;
 
 internal sealed record GpoRequest(string View,string Query,string? Tab,string? Sort,string Direction,int Limit,string? Cursor,string Timezone,DateTimeOffset From,DateTimeOffset To)
 {
+    internal string? PolicyId { get; init; }
+    internal long? DomainId { get; init; }
+
     internal static GpoRequest Parse(IQueryCollection query,DateTimeOffset now)
     {
         string First(string key)=>query[key].FirstOrDefault()?.Trim()??"";
-        var known=new HashSet<string>{"period","view","q","from","to","cursor","limit","sort","direction","tz","tab"};
+        var known=new HashSet<string>{"period","view","q","from","to","cursor","limit","sort","direction","tz","tab","policy_id","domain"};
         string? unknown=query.Keys.Except(known).Order(StringComparer.Ordinal).FirstOrDefault();if(unknown is not null) throw new ArgumentException("report_parameter_unknown:"+unknown);
         string zone=First("tz");if(zone.Length==0) zone="UTC";TimeZoneInfo timezone;
         try { timezone=TimeZoneInfo.FindSystemTimeZoneById(zone); }catch(Exception e) when(e is TimeZoneNotFoundException or InvalidTimeZoneException) { throw new ArgumentException("report_timezone_invalid"); }
@@ -46,13 +49,21 @@ internal sealed record GpoRequest(string View,string Query,string? Tab,string? S
         }
         else throw new ArgumentException("report_period_invalid");
         if(to-from>TimeSpan.FromDays(3650)) throw new ArgumentException("report_period_too_wide");
-        string view=First("view");if(view.Length==0) view="attention";if(!new[]{"attention","unverified","assignment","all","linked","unlinked"}.Contains(view)||First("q").EnumerateRunes().Count()>256) throw new ArgumentException("report_parameter_invalid:"+(First("q").EnumerateRunes().Count()>256?"q":"view"));
+        string view=First("view");if(view.Length==0) view="attention";if(!new[]{"attention","unverified","assignment","all","linked","unlinked","version_mismatch","unlinked_version_mismatch"}.Contains(view)||First("q").EnumerateRunes().Count()>256) throw new ArgumentException("report_parameter_invalid:"+(First("q").EnumerateRunes().Count()>256?"q":"view"));
         int limit=500;string raw=First("limit");
         if(raw.Length>0) try { var parsed=Sli.Server.Agents.SnapshotPublication.GovernanceInteger.Parse(JsonValue.Create(raw));if(parsed<1||parsed>10000) throw new InvalidDataException();limit=(int)parsed; } catch(InvalidDataException) { throw new ArgumentException("report_limit_invalid"); }
         string direction=First("direction");if(direction.Length==0) direction="asc";string sort=First("sort");
         if(direction is not ("asc" or "desc")||sort.Length>0&&!Metadata["declaration"].Rows("columns").Any(c=>c.Text("key")==sort&&c.True("sortable"))) throw new ArgumentException("report_sort_invalid");
         string tab=First("tab");if(tab.Length>0&&!Metadata["declaration"].Rows("views").Any(v=>v.Text("key")==tab)) throw new ArgumentException("report_tab_invalid");
-        return new(view,First("q"),tab.Length==0?null:tab,sort.Length==0?null:sort,direction,limit,First("cursor"),zone,from,to);
+        string policyId=First("policy_id"),domain=First("domain");
+        if(policyId.Length>256||policyId.Length>0&&tab is not ("gpos" or "changes")) throw new ArgumentException("report_parameter_invalid:policy_id");
+        long? domainId=null;
+        if(domain.Length>0)
+        {
+            if(tab!="gpos"&&!(tab=="changes"&&policyId.Length>0)||!long.TryParse(domain,NumberStyles.None,CultureInfo.InvariantCulture,out long id)||id<=0) throw new ArgumentException("report_parameter_invalid:domain");
+            domainId=id;
+        }
+        return new(view,First("q"),tab.Length==0?null:tab,sort.Length==0?null:sort,direction,limit,First("cursor"),zone,from,to) { PolicyId=policyId.Length>0?policyId:null,DomainId=domainId };
     }
 }
 public interface IGpoReadStore
@@ -60,6 +71,7 @@ public interface IGpoReadStore
     Task<JsonObject> PairAsync(long[]? domains,CancellationToken ct);
     Task<JsonObject> GraphAsync(JsonObject snapshot,long[]? domains,CancellationToken ct);
     Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string query,CancellationToken ct);
+    Task<JsonObject> PolicyHistoryAsync(long[] domains,DateTimeOffset from,DateTimeOffset to,string policyId,string guid,CancellationToken ct);
 }
 public sealed class GpoSourceException() : Exception("gpo_snapshot_unavailable");
 
@@ -118,6 +130,12 @@ public static class GpoEndpoints
                 await DomainHttp.WriteAsync(c,body,200,ct);return;
             }
             var request=GpoRequest.Parse(c.Request.Query,DateTimeOffset.UtcNow);var store=services.GetRequiredService<IGpoReadStore>();
+            if(request.DomainId is long domain)
+            {
+                if(domains is not null&&!domains.Contains(domain)) throw new UnauthorizedAccessException("report_scope_not_executable");
+                domains=[domain];
+            }
+            if(export&&request.PolicyId is not null) throw new ArgumentException("report_parameter_invalid:policy_id");
             var result=await GpoReport.QueryAsync(store,domains,request,ct);ct.ThrowIfCancellationRequested();result["access"]=AccessSummary();
             if(!catalog.Recheck(captured).Rules.Any(r=>r.RegistryKey=="ad.gpo.v2"&&!r.DeclarationOnly)) { await DomainHttp.WriteAsync(c,new {error="report_plugin_unavailable"},503,ct);return; }
             result["state_message"]=Metadata["messages"]![DomainHttp.SelectEnglish(c.Request.Headers.AcceptLanguage.ToString())?"en":"ru"]!["reports.state."+result.Text("state")]!.DeepClone();

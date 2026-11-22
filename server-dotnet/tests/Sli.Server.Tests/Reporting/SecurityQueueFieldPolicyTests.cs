@@ -46,13 +46,15 @@ public sealed class SecurityQueueFieldPolicyTests
         """)!.AsObject();
 
     static AccessFacts Facts(string[]? fields = null, string scope = "{\"kind\":\"all\"}",
-        bool assigned = true, string effect = "allow", string[]? actions = null, bool cases = false, bool capability = true)
+        bool assigned = true, string effect = "allow", string[]? actions = null, bool cases = false, bool capability = true,
+        bool exportCapability = false)
     {
         fields ??= ["security"]; actions ??= ["view", "export"];
         string[] allFields = ["security", "raw_evidence", "identity_basic", "technical"];
         var grants = assigned ? new List<JsonElement> { J(new { report_key = "security.queue", effect, allowed_actions = actions, field_categories = fields, scope_json = JsonNode.Parse(scope) }) } : [];
         if (cases) grants.Add(J(new { report_key = "investigations.workspace", effect = "allow", allowed_actions = new[] { "view" }, field_categories = new[] { "security" }, scope_json = new { kind = "domain", ids = new[] { 1 } } }));
         return new(false, "viewer", [], [], allFields.Select(f => "field." + f).Append("evidence.exact")
+            .Concat(exportCapability ? ["reports.export"] : [])
             .Concat(capability ? ["investigations.view"] : []).Select(c => J(new { capability_key = c, effect = "allow", scope_json = new { kind = "all" } })).ToArray(), [], [], grants,
             new[] { "security.queue", "investigations.workspace" }.Select(key => J(new { report_key = key, version = 1, dataset_version = 1,
                 definition_json = new { actions = new[] { "view", "export" } }, actions_json = new[] { "view", "export" }, fields_json = allFields.Select(category => new { category }) })).ToArray());
@@ -226,6 +228,30 @@ public sealed class SecurityQueueFieldPolicyTests
         }
     }
     [Fact]
+    public async Task ComputerOpenQueueRequiresIdentityAndDomainBeforeReading()
+    {
+        const string query = "domain=1&entity_id=7&population=open&queue_view=all";
+        using var fixture = new Fixture(Facts(["security"], "{\"kind\":\"domain\",\"ids\":[1]}"));
+        Assert.Equal(403, (await fixture.Get(With(Queue(false), query))).Status);
+        Assert.Empty(fixture.Repo.Calls);
+
+        fixture.Facts.Value = Facts(["security", "identity_basic"], "{\"kind\":\"domain\",\"ids\":[2]}");
+        Assert.Equal(403, (await fixture.Get(With(Queue(false), query))).Status);
+        Assert.Empty(fixture.Repo.Calls);
+
+        fixture.Facts.Value = Facts(["security", "identity_basic"], "{\"kind\":\"domain\",\"ids\":[1]}");
+        var response = await fixture.Get(With(Queue(false), query));
+        Assert.Equal(200, response.Status);
+        var input = Assert.Single(fixture.Repo.Calls);
+        Assert.Equal([1L], Assert.IsType<long[]>(input.Domains));
+        Assert.Equal(7, input.EntityId);
+        Assert.Equal("open", input.Population);
+        Assert.Equal("all", input.QueueView);
+        Assert.True(input.GroupQueue);
+        Assert.True(input.ExcludeDeferred);
+        Assert.Equal(1, response.Body["coverage"]!["open_by_severity"]!["high"]!.GetValue<int>());
+    }
+    [Fact]
     public async Task SeparateGrantCannotRestoreDeniedFields()
     {
         var facts = Facts(); facts = facts with { ReportAssignments = facts.ReportAssignments.Append(J(new { report_key = "security.queue", effect = "allow", allowed_actions = new[] { "view" }, field_categories = new[] { "raw_evidence" }, scope_json = new { kind = "all" } })).ToArray() };
@@ -291,9 +317,22 @@ public sealed class SecurityQueueFieldPolicyTests
         foreach (var field in definition.Rule["required_fields"]!.AsArray().Concat(definition.Declaration["row_categories"]!.AsObject().SelectMany(p => p.Value!.AsArray()))) Assert.Contains(field!.ToString(), classes);
     }
     [Fact]
+    public async Task QueueDiscoveryDoesNotAdvertiseCsvEvenWithAnExportGrant()
+    {
+        using var f = new Fixture(Facts(actions: ["view", "export"], exportCapability: true));
+        var response = await f.Get(Report);
+        Assert.Equal(200, response.Status);
+        Assert.False(response.Body["export"]!.GetValue<bool>());
+        Assert.Empty(f.Repo.Calls);
+    }
+    [Fact]
     public async Task QueueExportIsUnavailableAndFutureCsvSinkReceivesProjectedRows()
     {
-        using var f = new Fixture(); Assert.Equal(404, (await f.Get(Report + "/export.csv")).Status); Assert.Empty(f.Repo.Calls);
+        using var f = new Fixture();
+        var unavailable = await f.Get(Report + "/export.csv");
+        Assert.Equal(404, unavailable.Status);
+        Assert.Equal("report_export_not_available", unavailable.Body["error"]!.ToString());
+        Assert.Empty(f.Repo.Calls);
         var response = await f.Get(Queue(false)); var definition = new ReportDefinitionRegistry().Get("security.problems")!;
         string csv = ReportCsv.FromColumns(definition.Columns, response.Body["items"]!.AsArray().OfType<JsonObject>());
         Assert.Contains("Password guessing against an account", csv);

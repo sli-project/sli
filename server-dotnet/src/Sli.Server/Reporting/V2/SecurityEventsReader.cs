@@ -35,7 +35,12 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
             foreach (var row in rows.OfType<JsonObject>())
                 names.Add(long.Parse(row["id"]!.ToString(), CultureInfo.InvariantCulture), row["fqdn"]!.GetValue<string>());
         }
-        return new JsonObject { ["domain"] = JsonSerializer.SerializeToNode(ids.Select(id => new { value = id.ToString(CultureInfo.InvariantCulture), label = names.GetValueOrDefault(id, "Домен " + id) })) };
+        return new JsonObject
+        {
+            ["domain"] = JsonSerializer.SerializeToNode(ids.Select(id => new { value = id.ToString(CultureInfo.InvariantCulture), label = names.GetValueOrDefault(id, "Домен " + id) })),
+            ["change_operation"] = JsonSerializer.SerializeToNode(AdSecurity.ChangeEventIds()
+                .Select(id => new { value = id.ToString(CultureInfo.InvariantCulture), label = id.ToString(CultureInfo.InvariantCulture) }))
+        };
     }
     public Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct) => exports.ExportAsync(c, ct);
     public async Task<JsonObject> QueryAsync(ReportQueryContext c, CancellationToken ct)
@@ -54,7 +59,7 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
         }
         var period = AdPeriod.Parse(c.Params["period"]!["from_utc"]!.ToString(), c.Params["period"]!["to_utc"]!.ToString(), "UTC", "security_events",365);
         var cutoff = Sli.Server.Storage.EventReports.EventReadService.ShortBoundary(configuration);
-        var filters = AdSecurity.Normalize(new QueryCollection(c.Params.Where(p => p.Value is JsonValue).ToDictionary(p => p.Key, p => new StringValues(p.Value!.ToString()))));
+        var filters = AdSecurity.Normalize(new QueryCollection(c.Params.Where(p => p.Value is JsonValue).ToDictionary(p => p.Key, p => new StringValues(p.Value!.ToString()))), domainChanges: true);
         long[] ids = c.Params["domain"] is {} selected ? [long.Parse(selected.ToString(), CultureInfo.InvariantCulture)] : await Authorized(c.Access, c.Action == "export", ct);
         if (ids.Any(id => id <= 0)) throw new ReportRequestException("security_events_domain_invalid");
         if (ids.Length == 0 || ids.Any(id => !AdReportEndpoints.Allowed(c.Access, "security", id, c.Action == "export"))) return ReportResult.Create(c.Definition.Key, "denied");
@@ -69,7 +74,11 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
         foreach (long id in ids)
         {
             string? cursor = after is null ? null : AdSecurity.EncodeCursor(id, period, filters, DateTimeOffset.Parse(after.Text("time"), CultureInfo.InvariantCulture), after.Int("id"), after.Text("group") ?? "");
-            var raw = await store.ReadAsync(new("security", false, c.Action == "export", id, period, c.Paging.Limit, filters, cursor) { AuthenticationCutoff = cutoff }, false, ct);
+            bool snapshotValues = filters["changes_view"] is not null && c.Action == "view"
+                && ResourceAccessDecisions.ReportAction(c.Access, "ad.users.v2", "view", [[new("domain", id)]],
+                    new HashSet<string> { "identity_basic", "technical" }).Allowed;
+            var raw = await store.ReadAsync(new("security", false, c.Action == "export", id, period, c.Paging.Limit, filters, cursor)
+                { AuthenticationCutoff = cutoff, IncludeChangeSnapshotValues = snapshotValues }, false, ct);
             if (ReportResult.SourceState(raw.Text("state")) == "denied") return ReportResult.Create(c.Definition.Key, "denied");
             sources.Add(raw);
             rows.AddRange(raw.Objects("items").Select(r => r.Copy())); more |= raw.Flag("has_more"); history |= raw["collection_coverage"]?["history_event_present"]?.GetValue<bool>() == true;
@@ -79,7 +88,12 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
                 if (!categories.ContainsKey(family) || Rank(state) > Rank(categories[family])) categories[family] = state?.DeepClone();
             }
         }
-        var page = rows.OrderByDescending(r => DateTimeOffset.Parse(r.Text("time_created_utc"), CultureInfo.InvariantCulture)).ThenByDescending(r => r.Int("event_db_id")).ThenByDescending(r => r.Text("summary_key"),StringComparer.Ordinal).Take(c.Paging.Limit).ToArray(); more |= rows.Count > page.Length;
+        DateTimeOffset Time(JsonObject row) => DateTimeOffset.Parse(row.Text("time_created_utc"), CultureInfo.InvariantCulture);
+        var ordered = filters.Text("changes_order") == "asc"
+            ? rows.OrderBy(Time).ThenBy(r => r.Int("event_db_id"))
+            : rows.OrderByDescending(Time).ThenByDescending(r => r.Int("event_db_id")).ThenByDescending(r => r.Text("summary_key"), StringComparer.Ordinal);
+        var page = ordered.Take(c.Paging.Limit).ToArray();
+        more |= rows.Count > page.Length;
         foreach (var row in page) Derived(row);
         var renderedSources = sources.Select(s => Render(c.Definition.Key, s)).ToArray();
         var states = renderedSources.Select(s => s.Text("state")).ToArray();
@@ -122,6 +136,12 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
             }
         }
         var result = ReportResult.Create(c.Definition.Key, stateCode, JsonSerializer.SerializeToNode(page)!.AsArray(), coverage, collections, limitations);
+        if (filters["changes_view"] is not null && stateCode != "not_collected")
+        {
+            result["change_counts"] = new JsonObject(AdSecurity.ChangeViews.Select(key =>
+                KeyValuePair.Create(key, (JsonNode?)JsonValue.Create(sources.Sum(s => s["change_counts"].Int(key))))));
+            result["filtered_count"] = sources.Sum(s => s.Int("filtered_count"));
+        }
         result["has_more"] = more; result["next_cursor"] = more && page.Length > 0 ? ReportCursor.Encode(binding, new JsonObject { ["time"] = page[^1]["time_created_utc"]!.DeepClone(), ["id"] = page[^1]["event_db_id"]?.DeepClone() ?? JsonValue.Create(0), ["group"] = page[^1]["summary_key"]?.DeepClone() }.ToJsonString()) : null;
         result["window"] = new JsonObject { ["from_utc"] = c.Params["period"]!["from_utc"]!.DeepClone(), ["to_utc_exclusive"] = c.Params["period"]!["to_utc"]!.DeepClone() };
         result["filter_options"] = await OptionsAsync(c.Definition, c.Access, ct); return result;

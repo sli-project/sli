@@ -99,7 +99,13 @@ internal static class AdSnapshotChanges
                 if(prior["metadata"].Text("observed_at") is {} from)fromTimes.Add(from);
                 if(now["metadata"].Text("observed_at") is {} to)toTimes.Add(to);
                 foreach(var snapshot in new[]{now,prior})foreach(var user in snapshot["users"]!.AsArray().OfType<JsonObject>())AdInventoryRows.RedactUser(user,fields);
-                foreach(var row in CompareUsers(now,prior)){row["observed_at_utc"]=now["metadata"]?["observed_at"]?.DeepClone();changes.Add(row);}
+                foreach(var row in CompareUsers(now,prior).Where(r=>r.Text("type")!="source_status_changed"))
+                {
+                    row["observed_at_utc"]=now["metadata"]?["observed_at"]?.DeepClone();
+                    row["domain_id"]=source["domain_id"]?.DeepClone();
+                    row["domain_name"]=source["fqdn"]?.DeepClone();
+                    changes.Add(row);
+                }
             }
             else changes.AddRange(CompareComputers(now,prior,source.Int("domain_id"),source.Text("fqdn"),currentAt.Value));
         }

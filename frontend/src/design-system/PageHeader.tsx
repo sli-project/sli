@@ -21,14 +21,14 @@ export type PageHeaderControls = {
   };
   updatedAt?: string | number | null;
   refreshing?: boolean;
-  refreshLabel?: boolean;
-  showBreadcrumbs?: boolean;
   onRefresh?: () => void;
+  showRefreshLabel?: boolean;
+  showBreadcrumbs?: boolean;
 };
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = true, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();
@@ -75,7 +75,7 @@ function UpdatedTime({ value }: { value: string | number }) {
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
-export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain }: {
+export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain, showDomain = true }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -84,10 +84,11 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   meta?: ReactNode;
   controls?: PageHeaderControls;
   domain?: string;
+  showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, refreshLabel, showBreadcrumbs, onRefresh } = controls ?? scope.controls ?? {};
-  const domainControl = scope.domain?.(domain);
+  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
+  const domainControl = showDomain ? scope.domain?.(domain) : null;
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" data-visible={showBreadcrumbs || undefined} aria-label={t("reports.breadcrumbs_aria")}>
       <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
@@ -99,7 +100,7 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
         {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>
-          {refreshLabel ? t("shell.header.refresh") : null}
+          {showRefreshLabel ? t("shell.header.refresh") : null}
         </Button> : null}
         {actions}
       </div> : null}

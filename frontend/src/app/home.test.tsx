@@ -19,12 +19,12 @@ vi.mock("../design-system/Chart", async (importOriginal) => {
     ...actual,
     Chart: ({ title, spec }: Parameters<typeof actual.Chart>[0]) => <figure aria-label={title}>
       {spec.kind === "timeseries" && spec.series.map((series) =>
-        <div key={series.name} aria-label={series.name}>{series.points.map((point) => point.y).join(", ")}</div>)}
+        <div key={series.name} aria-label={series.name}>{JSON.stringify(series.points.map((point) => point.y))}</div>)}
     </figure>,
   };
 });
 
-const example: HomePeriod = {
+const example = {
   domains: [{ id: 7, name: "example.test" }, { id: 8, name: "second.example.test" }],
   domain_id: 7, from: "2026-11-21T02:00:00Z", to: "2026-11-22T02:00:00Z", updated_at: "2026-11-22T02:00:05Z",
   problems: {
@@ -51,7 +51,7 @@ const example: HomePeriod = {
     hours: [{ at: "2026-11-22T01:00:00Z", failed: 105, succeeded: 42, typical: 4 }],
     markers: [{ severity: "high", at: "2026-11-22T01:15:00Z" }],
   },
-};
+} satisfies HomePeriod;
 
 beforeEach(() => {
   route.searchStr = "?domain=7";
@@ -60,8 +60,11 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function show(respond: (url: string) => HomePeriod = () => example) {
-  const request = vi.fn(async (url: string) => new Response(JSON.stringify(respond(url)), { headers: { "content-type": "application/json" } }));
+function show(respond: (url: string) => HomePeriod | Response = () => example) {
+  const request = vi.fn(async (url: string) => {
+    const result = respond(url);
+    return result instanceof Response ? result : Response.json(result);
+  });
   vi.stubGlobal("fetch", request);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><HomePage/></QueryClientProvider>);
@@ -88,7 +91,7 @@ it("renders all four blocks from the requested domain and opens Problems from th
   const changes = screen.getByRole("table", { name: "Permission and configuration changes" });
   expect(within(changes).getByText("Account created")).toBeTruthy();
   expect(within(changes).getByText("admin-example · 4720")).toBeTruthy();
-  expect(within(screen.getByLabelText("Activity in this period")).getByLabelText("Failed logons").textContent).toBe("105");
+  expect(within(screen.getByLabelText("Activity in this period")).getByLabelText("Failed logons").textContent).toBe("[105]");
 });
 
 it("loads the adjacent previous window and returns to the current period", async () => {
@@ -112,4 +115,62 @@ it("refetches after a manual refresh and retains the selected domain", async () 
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
   expect(request.mock.calls[1][0]).toBe(request.mock.calls[0][0]);
+});
+
+const blocks = [
+  ["problems", "Новое и важное за период", "Не удалось загрузить новые и важные проблемы"],
+  ["controllers", "Состояние контроллеров домена", "Не удалось загрузить состояние контроллеров домена"],
+  ["changes", "Изменения прав и настроек", "Не удалось загрузить изменения прав и настроек"],
+  ["activity", "Активность за период", "Не удалось загрузить активность за период"],
+] as const;
+
+it.each(blocks)("recovers the %s block while keeping the other blocks visible", async (block, title, message) => {
+  setLocale("ru");
+  let response: HomePeriod = { ...example, [block]: null };
+  const request = show(() => response);
+  const error = await screen.findByRole("alert");
+  expect(error.textContent).toContain(message);
+  for (const [other, label] of blocks) {
+    if (other !== block) screen.getByRole(other === "activity" ? "figure" : "table", { name: label });
+  }
+  response = example;
+  fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
+  await screen.findByRole(block === "activity" ? "figure" : "table", { name: title });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[1][0]).toBe(request.mock.calls[0][0]);
+});
+
+it("recovers when the summary request fails before any block has loaded", async () => {
+  let response: HomePeriod | Response = new Response(null, { status: 503 });
+  show(() => response);
+  expect((await screen.findByRole("alert")).textContent).toContain("Could not load Home");
+  response = example;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("table", { name: "Domain controller status" });
+});
+
+it("shows dashes for missing counts, controller checks and time, and change initiator", async () => {
+  show(() => ({
+    ...example,
+    problems: { ...example.problems, new_count: null, closed_count: 0, open_count: null },
+    controllers: { ...example.controllers, items: [{ id: 5, name: "DC03", at: null, passed: 0, failures: [], href: null }] },
+    changes: { ...example.changes, items: [{ at: "2026-11-22T01:25:00Z", name: "service-example", event_id: 4720, initiator: null, value: null }] },
+  }));
+  await screen.findByText("New in period — · Closed in period 0 · Open total —");
+  screen.getByRole("link", { name: "Problems queue: — open →" });
+  const controller = screen.getByRole("row", { name: /DC03/ });
+  expect(within(controller).getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
+  screen.getByRole("cell", { name: "— · 4720" });
+});
+
+it("keeps an unobserved activity hour separate from an observed zero", async () => {
+  show(() => ({ ...example, activity: { hours: [
+    { at: "2026-11-22T00:00:00Z", failed: null, succeeded: null, typical: null },
+    { at: "2026-11-22T01:00:00Z", failed: 0, succeeded: 2, typical: 4 },
+  ], markers: [] } }));
+  const activity = within(await screen.findByRole("figure", { name: "Activity in this period" }));
+  expect(activity.getByLabelText("Failed logons").textContent).toBe("[null,0]");
+  expect(activity.getByLabelText("Successful logons").textContent).toBe("[null,2]");
+  expect(activity.getByLabelText("Typical").textContent).toBe("[null,4]");
 });

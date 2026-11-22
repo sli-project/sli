@@ -68,4 +68,3 @@ public sealed class AdComputerLogonActivityTests
         Assert.Equal("other-user", onlyOther["computer_logon_activity"]?["top"].Text("account"));
     }
 }
-

@@ -63,8 +63,9 @@ function renderReport(reportKey = "demo.events") {
   return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
 }
 
-it.each(["list", "drawer"] as const)("resolves a problem from the %s in two actions", async (surface) => {
-  const raw = { ...definition, ...reportDefinitions.find((item) => item.key === "security.problems"), detail: "fields" } as ReportDefinitionDto;
+it.each(["list", "drawer"] as const)("resolves a problem from the legacy %s in two actions", async (surface) => {
+  const problems = reportDefinitions.find((item) => item.key === "security.problems")!;
+  const raw = { ...definition, ...problems, params: problems.params.filter(({ key }) => key !== "queue_view" && key !== "queue_assignee"), detail: "fields" } as ReportDefinitionDto;
   const problem = { id: 7, title_text: "Synthetic problem", status: "confirmed", allowed_statuses: ["confirmed", "active", "closed"] };
   dataResponse.body = page({ report_key: raw.key, items: [problem] });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).includes("/data?") ? dataResponse.body : raw)));
@@ -158,10 +159,15 @@ it.each(["ru", "en"] as const)("keeps both change collections in one infrastruct
   await waitFor(() => expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition"));
 });
 
-it.each(["ok", "partial", "stale", "processing"] as const)("shows domain events as a list without data-state blocks (%s)", async (state) => {
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
+const legacyDomainEvents = (() => {
+  const report = reportDefinitions.find((item) => item.key === "security.events.chains")!;
+  return { ...report, params: report.params.filter(({ key }) => key !== "changes_view"),
     default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
   } as unknown as ReportDefinitionDto;
+})();
+
+it.each(["ok", "partial", "stale", "processing"] as const)("shows legacy domain events as a list without data-state blocks (%s)", async (state) => {
+  const raw = legacyDomainEvents;
   window.history.replaceState(null, "", "/app/report/security.events.chains?tab=chains");
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input); requested.push(url);
@@ -197,11 +203,9 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows domain events 
   expect(document.querySelector(".sli-ds-filters__additional")?.hasAttribute("open")).toBe(false);
 });
 
-it.each(["ru", "en"] as const)("renders absent domain event values as an em dash (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("renders absent legacy domain event values as an em dash (%s)", async (locale) => {
   setLocale(locale);
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
-    default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
-  } as unknown as ReportDefinitionDto;
+  const raw = legacyDomainEvents;
   const body = page({ report_key: raw.key, items: [{ event_db_id: 5, time_created_utc: "2026-11-14T01:00:00Z",
     change_text: locale === "ru" ? "Неудачный вход" : "Failed sign-in", actor: { state: "unknown", name: null, sid: null },
     affected_account: { state: "unknown" }, group: null, source_host: { hostname: "" }, outcome_code: "failure" }],
@@ -219,10 +223,8 @@ it.each(["ru", "en"] as const)("renders absent domain event values as an em dash
   expect(within(table).queryByText("-", { exact: true })).toBeNull();
 });
 
-it.each([false, true])("shows domain event optional columns only when the page has values (%s)", async (populated) => {
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
-    default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
-  } as unknown as ReportDefinitionDto;
+it.each([false, true])("shows legacy domain event optional columns only when the page has values (%s)", async (populated) => {
+  const raw = legacyDomainEvents;
   const body = page({ report_key: raw.key, items: [{ event_db_id: 4, time_created_utc: "2026-11-14T02:00:00Z" }, { event_db_id: 5, time_created_utc: "2026-11-14T01:00:00Z",
     change_text: populated ? "Изменена группа" : "—", actor: { name: populated ? "fixture-user" : " " },
     group: { name: populated ? "fixture-group" : null }, outcome_code: "success" }],
@@ -292,7 +294,8 @@ it.each((["ru", "en"] as const).flatMap(locale =>
       return new Response(JSON.stringify(data ? page({ report_key: key, state, items: [], collections: {}, filtered_count: 0 }) : raw),
         { headers: { "Content-Type": "application/json" } });
     }));
-    const { container } = renderReport(key);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><OverlayProvider><ReportRenderer reportKey={key}/></OverlayProvider></QueryClientProvider>);
     await waitFor(() => {
       expect(dataRequested).toBe(true);
       expect(container.querySelector('.sli-ds-report[data-state]:not([data-state="loading"])')).toBeTruthy();
@@ -332,9 +335,9 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
   expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
   const table = screen.getByRole("table");
-  expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(locale === "ru"
-    ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
-    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"]);
+  const headers = locale === "ru" ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
+    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"];
+  expect(within(table).getAllByRole("columnheader")).toEqual(headers.map((name) => within(table).getByRole("columnheader", { name })));
   expect(within(table).getAllByRole("row")[1].querySelectorAll("td")[3].textContent).toBe("—");
   fireEvent.click(screen.getByText(t("table.columns")));
   for (const key of ["actor_identifier", "entity_identifiers", "identity_sources"] as const) {

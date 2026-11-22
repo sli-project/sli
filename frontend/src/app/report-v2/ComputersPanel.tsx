@@ -83,12 +83,13 @@ function ComputerFacts({ row }: { row: Row }) {
   const { formatDateTime } = useDateFormatters();
   const access = useEffectiveAccess();
   const entity = id(row.entity_id);
+  const domain = id(row.domain_id);
   const allowed = access?.reports.some((report) => report.allowed && ["security.problems", "security.queue"].includes(report.report_key));
-  const filters = { ...domainOf(row), entity_id: entity ?? "", population: "open" };
+  const filters = { domain: domain ?? "", entity_id: entity ?? "", population: "open" };
   const problems = useQuery({
     queryKey: ["report-v2", "computer-problems", filters],
-    queryFn: () => api.reportV2Data("security.problems", new URLSearchParams({ ...filters, limit: "1" })),
-    enabled: Boolean(allowed && entity),
+    queryFn: () => api.reportV2Data("security.problems", new URLSearchParams({ ...filters, queue_view: "all", limit: "1" })),
+    enabled: Boolean(allowed && entity && domain),
     retry: false,
   });
   const counts = problems.data?.coverage.open_by_severity;
@@ -281,7 +282,7 @@ export function ComputerPanel({ row, logons, logonParams, changes, canCompare, o
   </> : undefined;
   return <DetailDrawer open inline={!expanded} title={name} subtitle={logons ? t("reports.computers.observations") : text(row.dns_host_name)}
     onClose={expanded ? () => setExpanded(false) : onClose} footer={footer}
-    actions={!expanded ? <Button variant="ghost" aria-label={t("reports.computers.expand")} onClick={() => setExpanded(true)}>↗</Button> : undefined}>
+    inlineKeyboard={false} headerActions={!expanded ? <Button variant="ghost" aria-label={t("reports.computers.expand")} onClick={() => setExpanded(true)}>↗</Button> : undefined}>
     {logons ? <Observations row={row} params={logonParams} strip={false}/> : <Tabs items={tabs.map((item) => ({ ...item, label: t(item.label as MessageKey) }))} active={tab} onChange={setTab}>
       <TabList label={t("reports.computers.details")}/>
       <TabPanel>{tab === "changes" ? <ComputerChanges row={row} columns={changes} timeZone={timeZone}/>
@@ -290,4 +291,3 @@ export function ComputerPanel({ row, logons, logonParams, changes, canCompare, o
     </Tabs>}
   </DetailDrawer>;
 }
-

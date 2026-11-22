@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using static Sli.Server.Gpo.GpoJson;
 
@@ -27,7 +28,7 @@ internal static class GpoChangeHistory
         return new JsonObject { ["state"]=starts.Count==0?"not_collected":reasons.Count>0?"partial":"complete",["reasons"]=Array(reasons.Select(r=>(JsonNode)JsonValue.Create(r)!)),["history_from_utc"]=starts.Count>0?JsonValue.Create(Iso(starts.Max())):null,["history_to_utc"]=ends.Count>0?JsonValue.Create(Iso(ends.Min())):null,["retained_from_utc"]=Iso(cutoff) };
     }
     internal static async Task<JsonObject> ReadAsync(List<JsonObject> confirmations,long[] domains,DateTimeOffset from,DateTimeOffset to,DateTimeOffset cutoff,int days,string query,
-        Func<string,long,string,DateTimeOffset,CancellationToken,Task<List<JsonObject>>> read,CancellationToken ct)
+        Func<string,long,string,DateTimeOffset,CancellationToken,Task<List<JsonObject>>> read,CancellationToken ct,string? policyId=null,string? guid=null)
     {
         var coverage=Coverage(confirmations,domains,from,to,cutoff);coverage["history_days"]=days;
         var eligible=confirmations.Where(c=>Stamp(c.Text("observed_at"))>=(from>cutoff?from:cutoff)&&Stamp(c.Text("observed_at"))<to).Reverse().ToArray();
@@ -42,6 +43,16 @@ internal static class GpoChangeHistory
             foreach(var record in records)
             {
                 var payload=JsonNode.Parse(record.Text("payload_json"))!.AsObject();if(Hash(new JsonArray(batch,payload.DeepClone()))!=record.Text("record_id")) throw new InvalidDataException("snapshot_history_record_hash_mismatch");
+                if(policyId is not null)
+                {
+                    var objectId=payload.Text("object_id");
+                    bool matches=payload.Text("object_type")=="gpo"
+                        ? objectId==policyId||!string.IsNullOrEmpty(guid)&&string.Equals(objectId.Trim('{','}'),guid.Trim('{','}'),StringComparison.OrdinalIgnoreCase)
+                        : payload.Text("related_object_id")==policyId;
+                    if(!matches) continue;
+                    payload["before_value"]=VerifiedValue(record["before_value"],payload.Text("before_sha256"));
+                    payload["after_value"]=VerifiedValue(record["after_value"],payload.Text("after_sha256"));
+                }
                 if(query.Length>0&&!Fold(record.Text("payload_json")).Contains(Fold(query),StringComparison.Ordinal)) continue;
                 payload["id"]=record["record_id"]?.DeepClone();payload["domain_id"]=confirmation["domain_id"]?.DeepClone();payload["manifest_id"]=confirmation["manifest_id"]?.DeepClone();payload["previous_manifest_id"]=confirmation["previous_manifest_id"]?.DeepClone()??JsonValue.Create("None");payload["observed_at"]=Iso(Stamp(confirmation.Text("observed_at")));rows.Add(payload);
             }
@@ -50,6 +61,20 @@ internal static class GpoChangeHistory
         if(truncated) { coverage["state"]="partial";coverage["reasons"]=Array(coverage["reasons"]!.AsArray().Select(x=>x!.ToString()).Append("history_truncated").Distinct().Order(StringComparer.Ordinal).Select(x=>(JsonNode)JsonValue.Create(x)!)); }
         string state=coverage.Text("state");if(state is not ("partial" or "not_collected")) state=rows.Count>0?"ok":"empty";
         return new JsonObject { ["state"]=state,["items"]=Array(rows.OfType<JsonObject>().Take(2000)),["coverage"]=coverage,["truncated"]=truncated };
+    }
+
+    static JsonNode? VerifiedValue(JsonNode? value,string expected)
+    {
+        if(value is not JsonValue text||!text.TryGetValue<string>(out var serialized)||expected.Length==0) return null;
+        if(Hash(text)==expected) return text.DeepClone();
+        // Stored strings are plain text. Other values retain their JSON representation.
+        try
+        {
+            var parsed=JsonNode.Parse(serialized);
+            if(parsed is not null&&Hash(parsed)==expected) return text.DeepClone();
+        }
+        catch(JsonException) { }
+        return null;
     }
 }
 

@@ -90,12 +90,14 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
 async function installStandardFixtures(page: Page, count = 60) {
   const unexpected: string[] = [];
   const servedData: string[] = [];
+  const decisions: unknown[] = [];
+  let firstProblemStatus = 'new';
   await page.addInitScript(() => {
     localStorage.setItem('sli.locale', 'ru');
     localStorage.setItem('sli.theme', 'light');
   });
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
-    const pathname = new URL(route.request().url()).pathname;
+    const { pathname, searchParams } = new URL(route.request().url());
     let body: unknown;
     let status = 200;
     if (pathname === '/api/v1/ui/bootstrap') body = { api_version: 'v1', effective_role: 'admin',
@@ -107,6 +109,20 @@ async function installStandardFixtures(page: Page, count = 60) {
     else if (pathname === '/api/v1/overview') body = { collection_freshness: { state: 'partial' } };
     else if (pathname === '/api/v1/domains') body = { items: [{ id: 1, display_name: 'example.test',
       freshness: { snapshot_state: 'partial', observed_at_utc: observed } }] };
+    else if (pathname === '/api/findings/risk-responsibles' && route.request().method() === 'GET') {
+      body = { items: [] };
+    }
+    else if (pathname === '/api/findings/queue-decisions' && route.request().method() === 'POST') {
+      const decision = route.request().postDataJSON();
+      decisions.push(decision);
+      firstProblemStatus = decision.state;
+      body = { status: 'ok', changed: 1 };
+    }
+    else if (pathname === '/api/v2/reports/security.problems/rows/1/detail' && route.request().method() === 'GET') {
+      body = { ...resultFor(definitions.get('security.problems')!, 0), items: [{
+        event_id: 4625, event_db_id: 1, evidence_id: 1, time_created_utc: observed,
+      }] };
+    }
     else if (pathname === '/api/v2/reports/security.problems/password-coverage' && route.request().method() === 'GET') {
       body = {
         contract_id: 'sli.report-result.v2', report_key: 'security.problems', state: 'partial',
@@ -120,8 +136,24 @@ async function installStandardFixtures(page: Page, count = 60) {
       const match = pathname.match(/^\/api\/v2\/reports\/([^/]+)(\/data)?$/);
       const definition = match && definitions.get(decodeURIComponent(match[1]) as typeof screens[number]['key']);
       if (definition) {
-        body = match![2] ? resultFor(definition, count) : definition;
-        if (match![2]) servedData.push(definition.key);
+        if (match![2]) {
+          const result = resultFor(definition, count);
+          if (definition.key === 'ad.computers.v6' && searchParams.get('tab') === 'computers') {
+            result.items.forEach((row, index) => {
+              row.entity_id = index + 1;
+              row.computer_type = 'domain_controller';
+            });
+          }
+          if (definition.key === 'security.problems') {
+            result.items[0].status = firstProblemStatus;
+            if (searchParams.has('id')) {
+              result.items = result.items.filter(item => String(item.id) === searchParams.get('id'));
+              result.filtered_count = result.items.length;
+            }
+          }
+          body = result;
+          servedData.push(definition.key);
+        } else body = definition;
       } else {
         unexpected.push(`${route.request().method()} ${pathname}`);
         status = 501; body = { error: 'standard_unmocked_request' };
@@ -129,7 +161,7 @@ async function installStandardFixtures(page: Page, count = 60) {
     }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  return { unexpected, servedData };
+  return { unexpected, servedData, decisions };
 }
 
 async function measureStandard(page: Page) {
@@ -190,7 +222,7 @@ function standardViolations(m: Awaited<ReturnType<typeof measureStandard>>, mini
 
 for (const screen of screens) {
   test(`UI standard: ${screen.key}`, async ({ page }, testInfo) => {
-    const { unexpected, servedData } = await installStandardFixtures(page);
+    const { unexpected, servedData, decisions } = await installStandardFixtures(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`/app/report/${screen.key}${screen.key === 'ad.computers.v6' ? '?tab=checks' : ''}`);
@@ -199,9 +231,8 @@ for (const screen of screens) {
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
     // AD checks have hidden object-preview tables inside each closed row.
     const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
-    await expect(page.locator('main').locator(rows)).toHaveCount(60);
-    if (screen.key === 'security.problems')
-      await expect(page.locator('main tbody tr').first().getByRole('button', { name: 'Решено' })).toBeVisible();
+    const list = screen.key === 'ad.gpo.v2' ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
+    await expect(list.locator(rows)).toHaveCount(60);
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -214,6 +245,29 @@ for (const screen of screens) {
     const screenshot = testInfo.outputPath('screen.png');
     await page.screenshot({ path: screenshot });
     await testInfo.attach('screen.png', { path: screenshot, contentType: 'image/png' });
+    if (screen.key === 'security.problems') {
+      expect(measurements.horizontalOverflow).toBe(false);
+      const scroll = page.locator('main .sli-ds-table__scroll').first();
+      expect(await scroll.evaluate(box => box.scrollWidth - box.clientWidth)).toBeLessThanOrEqual(1);
+      const first = page.locator('main').locator(rows).first();
+      const title = 'Изменены настройки учётной записи';
+      await first.getByRole('link', { name: `${title} · Объект 1`, exact: true }).click();
+      const panel = page.getByRole('dialog', { name: title });
+      await expect(panel).toBeInViewport({ ratio: 1 });
+      await expect(panel.getByText('4625', { exact: true })).toBeVisible();
+      expect(await panel.locator('.sli-ds-drawer__body').evaluate(box => box.scrollWidth - box.clientWidth)).toBeLessThanOrEqual(1);
+      const panelScreenshot = testInfo.outputPath('problem-panel.png');
+      await page.screenshot({ path: panelScreenshot });
+      await testInfo.attach('problem-panel.png', { path: panelScreenshot, contentType: 'image/png' });
+      const state = panel.getByRole('combobox', { name: 'Состояние' });
+      await state.selectOption('closed');
+      const decision = page.getByRole('dialog', { name: 'Изменить состояние' });
+      await decision.getByLabel('Причина решения').selectOption('fixed');
+      await decision.getByRole('button', { name: 'Сохранить решение' }).click();
+      await expect(decision).toBeHidden();
+      await expect(state).toHaveValue('closed');
+      expect(decisions).toEqual([{ ids: [1], state: 'closed', classification: 'fixed' }]);
+    }
     expect(unexpected, 'all API traffic must be synthetic and handled').toEqual([]);
     expect(errors, 'screen must render without errors even in monitoring mode').toEqual([]);
     expect(servedData).toContain(screen.key);
@@ -239,11 +293,19 @@ for (const screen of screens) {
 test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 11);
   await page.goto('/app/report/ad.gpo.v2?domain=1');
-  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(definitions.get('ad.gpo.v2')!.title, { timeout: 30_000 });
-  await expect(page.locator('main tbody tr')).toHaveCount(11);
+  const { title } = definitions.get('ad.gpo.v2')!;
+  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
+  await expect(page.getByRole('table', { name: title, exact: true }).locator('tbody tr')).toHaveCount(11);
   await page.evaluate(async () => { await document.fonts.ready; });
   const measurement = await measureStandard(page);
-  expect((await page.locator('.sli-ds-field > label').filter({ hasText: 'Поиск' }).boundingBox())!.height).toBeLessThanOrEqual(30);
+  const search = page.getByRole('searchbox', { name: 'Название политики', exact: true });
+  const filter = page.getByRole('button', { name: /^Без связей/ });
+  await expect(search).toBeVisible();
+  await expect(filter).toBeVisible();
+  const searchBox = (await search.boundingBox())!;
+  const filterBox = (await filter.boundingBox())!;
+  expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(filterBox.x);
+  expect(Math.max(searchBox.y, filterBox.y)).toBeLessThan(Math.min(searchBox.y + searchBox.height, filterBox.y + filterBox.height));
   console.log(JSON.stringify({ screen: 'ad.gpo.v2', shortList: true, ...measurement }));
   expect(standardViolations(measurement, 11)).toEqual([]);
   expect(new URL(page.url()).searchParams.get('domain')).toBe('1');
@@ -254,6 +316,7 @@ test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
 test('computer checks: a short list fits without data commentary', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 6);
   await page.goto('/app/report/ad.computers.v6?tab=checks');
+  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(definitions.get('ad.computers.v6')!.title, { timeout: 30_000 });
   await expect(page.locator('main .sli-ds-review-list__item')).toHaveCount(6);
   await expect(page.locator('main').getByRole('tablist')).toHaveCount(1);
   await expect(page.locator('main').getByRole('tab', { name: 'Требуют проверки', selected: true })).toBeVisible();
@@ -265,6 +328,34 @@ test('computer checks: a short list fits without data commentary', async ({ page
   const screenshot = testInfo.outputPath('computers-after.png');
   await page.screenshot({ path: screenshot });
   await testInfo.attach('computers-after.png', { path: screenshot, contentType: 'image/png' });
+});
+
+test('computer inventory card stays beside its list at 1920 and 2560', async ({ page }, testInfo) => {
+  const { unexpected } = await installStandardFixtures(page, 16);
+  for (const width of [1920, 2560]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await page.goto('/app/report/ad.computers.v6?tab=computers&domain=1');
+    const table = page.getByRole('table', { name: 'Все компьютеры' });
+    await expect(table.getByRole('button', { name: 'Объект 1', exact: true })).toBeVisible();
+    const card = page.getByRole('complementary', { name: 'Объект 1' });
+    await expect(card).toBeVisible();
+    const list = await table.boundingBox();
+    const detail = await card.boundingBox();
+    expect(list).not.toBeNull();
+    expect(detail).not.toBeNull();
+    expect(detail!.x).toBeGreaterThanOrEqual(list!.x + list!.width);
+    expect(detail!.x + detail!.width).toBeLessThanOrEqual(width);
+    expect(detail!.y + detail!.height).toBeLessThanOrEqual(1080);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    await card.getByRole('button', { name: 'Развернуть сведения' }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Объект 1' });
+    await expect(dialog).toBeInViewport({ ratio: 1 });
+    await dialog.press('Escape');
+    await expect(card).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`computer-inventory-${width}.png`) });
+    console.log(JSON.stringify({ width, list, detail }));
+  }
+  expect(unexpected).toEqual([]);
 });
 
 test('measurement detects a banner and paragraph above the table', async ({ page }) => {

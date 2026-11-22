@@ -3,7 +3,7 @@ using static Sli.Server.Ad.AdJson;
 
 namespace Sli.Server.Ad;
 
-// Legacy slices remain internal; the HTTP contract exposes the four owner views.
+// Legacy slices remain internal to the inventory reader.
 internal static class AdUsersTabs
 {
     internal static readonly string[] Tabs = ["all", "active", "disabled", "privileged", "risk", "semantic"];
@@ -31,6 +31,42 @@ internal static class AdUsersTabs
             ?? (metadata?["sources"] as JsonArray ?? []).FirstOrDefault(s => s.Text("name") == "directory").Text("status")
             ?? metadata.Text("collection_status") ?? source.Text("source_state") ?? "not_collected");
     }
+    internal static JsonArray DirectMemberships(JsonObject raw) => Array((raw["memberships"]?["direct"] as JsonArray ?? [])
+        .Where(group => group.Text("id") is not null && group.Text("name") is not null)
+        .Select(group => new { id = group.Text("id"), name = group.Text("name") }));
+
+    internal static void SetPrivileges(JsonObject row, JsonObject raw, bool includePaths = true)
+    {
+        var grants = (raw["privilegedMemberships"] as JsonArray ?? []).OfType<JsonObject>()
+            .Where(g => g.Text("relation") == "direct" && (g.Text("group") is not null || g.Int("group_id") > 0)).ToArray();
+        var effective = (raw["memberships"]?["effective"] as JsonArray ?? []).OfType<JsonObject>()
+            .Where(g => AdInventoryRows.Bool(g["watchGroup"]) == true).ToArray();
+        var direct = grants.Select(g => g.Text("group") ?? g.Int("group_id").ToString())
+            .Concat(effective.Where(g => g.Text("relation") is "direct" or "primary").Select(g => g.Text("name") ?? g.Text("id")))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        row["privilege_basis"] = Array(direct);
+        row["nested_privilege_groups"] = Array(effective.Where(g => g.Text("relation") == "nested").Select(g => g.Text("name")));
+        if (!includePaths) return;
+        var identifiedGrants = grants.Where(g => g.Int("group_id") > 0).ToArray();
+        var targets = effective.Select(g => g.Text("id")).Concat(identifiedGrants.Select(g => "group:" + g.Int("group_id"))).ToHashSet();
+        var paths = (raw["memberships"]?["paths"] as JsonArray ?? []).OfType<JsonObject>()
+            .Where(p => targets.Contains(p.Text("groupId"))).Select(p => p.DeepClone().AsObject()).ToList();
+        string? primary = raw["memberships"]?["primary"].Text("id");
+        foreach (var path in paths)
+            if (primary is not null && (path["nodes"] as JsonArray)?.Skip(1).FirstOrDefault().Text("id") == primary)
+                path["first_relation"] = "primary";
+        foreach (var grant in identifiedGrants)
+        {
+            string groupId = "group:" + grant.Int("group_id");
+            if (paths.Any(p => p.Text("groupId") == groupId) || grant.Text("group") is not {} name) continue;
+            paths.Add(Obj(new { groupId, relation = "direct", nodes = new[] {
+                new { id = raw.Text("id"), name = raw.Text("samAccountName") },
+                new { id = (string?)groupId, name = (string?)name }
+            } }));
+        }
+        row["privilege_paths"] = Array(paths);
+    }
+
     internal static JsonObject Query(AdV2Request request, List<JsonObject> sources, JsonObject policy,
         Func<IEnumerable<string>, bool> fields, JsonObject? exceptions = null,
         IReadOnlyDictionary<(long, string), JsonObject>? workplaces = null,
@@ -67,22 +103,24 @@ internal static class AdUsersTabs
                 row["domain_id"] = raw["domainId"]?.DeepClone() ?? source["domain_id"]?.DeepClone();
                 row["domain_name"] = raw["domainName"]?.DeepClone() ?? source["fqdn"]?.DeepClone();
                 row["observed_at_utc"] = raw["sourceStates"]?["directory"]?["observed_at"]?.DeepClone() ?? JsonValue.Create(observed);
-                if (fields(["privilege"])) row["membership_paths"] = raw["memberships"]?["paths"]?.DeepClone();
+                if (fields(["privilege"]))
+                {
+                    bool historical = request.Params["as_of"] is not null;
+                    SetPrivileges(row, raw, historical);
+                    if (historical) row["direct_memberships"] = DirectMemberships(raw);
+                    row["membership_paths"] = raw["memberships"]?["paths"]?.DeepClone();
+                }
                 if (fields(["security", "technical"])) row["last_workplace"] = workplaces?.GetValueOrDefault((source.Int("domain_id"), raw.Text("sid")?.ToLowerInvariant() ?? ""))?.DeepClone();
                 if (request.QualifyNames)
                 {
                     string name = row.Text("domain_name") ?? source.Int("domain_id").ToString();
+                    row["account_display_name"] = row["display_name"]?.DeepClone();
                     row["display_name"] = name + "\\" + (row.Text("sam") ?? row.Text("display_name"));
                     if (row.Text("sam") is {} sam) row["sam"] = name + "\\" + sam;
                 }
                 if (request.Tab == "privileged")
                 {
-                    var direct = (raw["privilegedMemberships"] as JsonArray ?? []).Where(g => g.Text("relation") == "direct").Select(g => g.Text("group") ?? g.Int("group_id").ToString()).ToList();
                     var effective = (raw["memberships"]?["effective"] as JsonArray ?? []).Where(g => AdInventoryRows.Bool(g?["watchGroup"]) == true).ToArray();
-                    foreach (var group in effective.Where(g => g.Text("relation") is "direct" or "primary"))
-                        if ((group.Text("name") ?? group.Text("id")) is {} label && !direct.Contains(label)) direct.Add(label);
-                    row["privilege_basis"] = Array(direct);
-                    row["nested_privilege_groups"] = Array(effective.Where(g => g.Text("relation") == "nested").Select(g => g.Text("name")));
                     unknown += raw["privilegedMemberships"] is null ? 1 : 0;
                     foreach (var group in raw["privilegedMemberships"] as JsonArray ?? [])
                         if (group.Text("relation") == "direct" && group.Int("group_id") > 0) groups["group:" + group.Int("group_id")] = group.Text("group") ?? group.Int("group_id").ToString();
@@ -113,6 +151,11 @@ internal static class AdUsersTabs
         coverage["as_of"] = request.Tab == "privileged" ? request.Params["as_of"]?.DeepClone() : null;
         coverage["disabled_privileged"] = request.Tab == "privileged" ? JsonValue.Create(rows.Count(r => AdInventoryRows.Bool(r["enabled"]) == false)) : null;
         coverage["truncated"] = false;
+        if (request.Tab == "all")
+        {
+            coverage["privileged_accounts"] = fields(["privilege", "security"]) ? JsonValue.Create(rows.Count(r =>
+                r["privilege_basis"] is JsonArray { Count: > 0 } || r["nested_privilege_groups"] is JsonArray { Count: > 0 })) : null;
+        }
         coverage["hygiene_policy"] = request.Tab == "risk" ? policy.DeepClone() : null;
         if (request.Tab == "risk")
         {

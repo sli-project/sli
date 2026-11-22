@@ -10,10 +10,22 @@ namespace Sli.Server.Ad;
 
 public static class AdSecurity
 {
+    internal static readonly string[] ChangeViews = ["all", "accounts", "groups", "passwords", "audit"];
+    internal static int[] ChangeEventIds() => AdReportStore.EventIds("security").Where(id => ChangeView(id) is not null).Append(5136).Order().ToArray();
+    internal static string? ChangeView(long id) => id == 5136 ? "accounts" : Family(id) switch
+    {
+        "account_lock" or "account_lifecycle" or "account_change" => "accounts",
+        "group_membership" or "group_lifecycle" => "groups",
+        "password_operation" => "passwords",
+        "audit_configuration" => "audit",
+        _ => null
+    };
+
     internal static string? Family(long id) => AdHistory.Map("_SECURITY_EVENT_FAMILY_BY_EVENT_ID")[id.ToString()]?.GetValue<string>();
-    public static JsonObject Normalize(IQueryCollection query)
+    public static JsonObject Normalize(IQueryCollection query, bool domainChanges = false)
     {
         var filters = new JsonObject();
+        bool changes = domainChanges && query.ContainsKey("changes_view");
         foreach (string key in new[] { "category", "event_id", "outcome", "actor", "target", "group", "source", "q", "entity_id", "event_db_id" })
         {
             string? value = query[key].FirstOrDefault()?.Trim(); if (string.IsNullOrEmpty(value)) continue;
@@ -21,7 +33,7 @@ public static class AdSecurity
             string name = key switch { "target" => "target_account", "source" => "source_host", _ => key };
             if (key is "event_id" or "entity_id" or "event_db_id")
             {
-                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null) throw new AdInputException("security_events_filter_invalid");
+                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null && !(changes && id == 5136)) throw new AdInputException("security_events_filter_invalid");
                 filters[name] = id;
             }
             else filters[name] = key is "category" or "outcome" ? value.ToLowerInvariant() : value;
@@ -29,6 +41,23 @@ public static class AdSecurity
         if (filters.Text("category") is {} category && !AdHistory.Map("_SECURITY_EVENT_FAMILY_BY_EVENT_ID").Any(p => p.Value!.GetValue<string>() == category)
             || filters["event_id"] is not null && filters.Text("category") is {} selected && Family(filters.Int("event_id")) != selected
             || filters.Text("outcome") is {} outcome && outcome is not ("success" or "failure" or "unknown")) throw new AdInputException("security_events_filter_invalid");
+        if (changes && query["changes_view"].FirstOrDefault() is {} view)
+        {
+            if (!ChangeViews.Contains(view)) throw new AdInputException("security_events_filter_invalid");
+            filters["changes_view"] = view;
+            string mode = query["repeat_mode"].FirstOrDefault() ?? "collapsed";
+            if (mode is not ("collapsed" or "individual")) throw new AdInputException("security_events_filter_invalid");
+            filters["repeat_mode"] = mode;
+            string order = query["changes_order"].FirstOrDefault() ?? "desc";
+            if (order is not ("asc" or "desc")) throw new AdInputException("security_events_filter_invalid");
+            filters["changes_order"] = order;
+            if (query["batch"].FirstOrDefault() is {} batch)
+            {
+                if (mode != "collapsed" || !long.TryParse(batch, out long anchor) || anchor <= 0)
+                    throw new AdInputException("security_events_filter_invalid");
+                filters["batch"] = anchor;
+            }
+        }
         return filters;
     }
     private static readonly byte[] CursorPrefix = Encoding.UTF8.GetBytes("sli.security-events.v1\0");
@@ -76,7 +105,8 @@ public static class AdSecurity
         var items = new List<JsonObject>();
         foreach (var e in events)
         {
-            long id = e.Int("event_id"); string? family = Family(id);
+            long id = e.Int("event_id");
+            string? family = id == 5136 && request.Filters["changes_view"] is not null ? "directory_change" : Family(id);
             if (family is null) throw new AdInputException("security_events_event_invalid");
             if(e["day"] is not null)throw new AdInputException("security_events_event_identity_invalid");
             if (e.Int("event_db_id") <= 0 || items.Any(i => i.Int("event_db_id") == e.Int("event_db_id"))) throw new AdInputException("security_events_event_identity_invalid");
@@ -112,7 +142,8 @@ public static class AdSecurity
             items.Add(row);
         }
         foreach (var group in items.GroupBy(r => r.Int("domain_id"))) AdHistory.Prior(group.Where(r => r["account_change"] is not null), "affected_account", "sid", "account_change");
-        items = items.OrderByDescending(r => r.Time("time_created_utc")).ThenByDescending(r => r.Int("event_db_id")).ThenByDescending(r => r.Text("summary_key"),StringComparer.Ordinal).ToList();
+        if (request.Filters.Text("changes_order") != "asc")
+            items = items.OrderByDescending(r => r.Time("time_created_utc")).ThenByDescending(r => r.Int("event_db_id")).ThenByDescending(r => r.Text("summary_key"),StringComparer.Ordinal).ToList();
         if (items.Count > request.Limit || items.Count > 0 && !history) throw new AdInputException("security_events_collection_coverage_invalid");
         string state = items.Count > 0 ? "available" : history ? "empty_unverified" : "not_collected";
         var payload = AdHistory.Base("security", request.Domain, request.Period!, request.Limit, false);
@@ -140,16 +171,45 @@ public static class AdSecurity
     {
         var query = AdSecurityQuery.Create(request,config:config);
         var rows = await AdJson.ReadAsync(db, query.SelectSql, ct, query.Args.ToArray());
+        var counts = query.ChangeCounts ? rows[0] : null;
+        if (counts is not null) rows = rows.Where(r => r["event_db_id"] is not null).ToList();
         bool more = rows.Count > request.Limit; rows = rows.Take(request.Limit).ToList();
         await AdSecurityQuery.ResolveEntitiesAsync(db, rows.Where(r=>r["day"] is null).ToList(), request.Domain, ct);
-        bool history = rows.Count > 0 || await AdReportStore.Presence(db, "security", request.Domain, ct,query.Selected,config:config);
-        var categories = await query.CategoriesAsync(db, ct);
+        bool history = rows.Count > 0 || counts?.Int("all") > 0 || await AdReportStore.Presence(db, "security", request.Domain, ct,query.Selected,config:config);
+        var categories = counts is null ? await query.CategoriesAsync(db, ct) : new JsonObject();
         foreach(var row in rows.Where(r=>r["day"] is null)) {
             var fields=JsonNode.Parse(row.Text("compact_fields")!)!.AsObject();
             if(fields["channel"] is {} channel)fields["Channel"]=channel.DeepClone();
             if(AdSecurityHydration.Change(row.Int("event_id"),fields) is {} change)row["source_native_change"]=change;
+            if (query.ChangeCounts && row.Int("event_id") == 5136 && fields.WindowsText("AttributeLDAPDisplayName") is {} attribute)
+            {
+                var directoryChange = new JsonObject { ["state"] = "observed", ["kind"] = "directory_attribute", ["attribute"] = attribute };
+                if (attribute.Equals("description", StringComparison.OrdinalIgnoreCase) || attribute.Equals("displayName", StringComparison.OrdinalIgnoreCase)
+                    || attribute.Equals("userPrincipalName", StringComparison.OrdinalIgnoreCase))
+                    directoryChange["observed_value"] = fields.WindowsText("AttributeValue");
+                row["source_native_change"] = directoryChange;
+            }
         }
         var result = Compose(request, rows.Where(r=>r["day"] is null).ToArray(), history, more, categories);
+        if (counts is not null)
+        {
+            result["change_counts"] = new JsonObject(ChangeViews.Select(key =>
+                KeyValuePair.Create(key, (JsonNode?)JsonValue.Create(counts.Int(key)))));
+            result["filtered_count"] = counts.Int("display_count");
+            var sourceById = rows.ToDictionary(row => row.Int("event_db_id"));
+            foreach (var item in result["items"]!.AsArray().OfType<JsonObject>())
+            {
+                var source = sourceById[item.Int("event_db_id")];
+                if (source.Int("repeat_count") > 1 && request.Filters["batch"] is null)
+                {
+                    item["repeat_count"] = source.Int("repeat_count");
+                    item["first_seen_utc"] = source["first_seen_utc"]?.DeepClone();
+                }
+                item["channel"] = source["event_channel"]?.DeepClone();
+            }
+            if (request.IncludeChangeSnapshotValues)
+                await DomainChangeSnapshotValues.AddAsync(db, request.Domain, result["items"]!.AsArray().OfType<JsonObject>().ToArray(), ct);
+        }
         result["daily_summaries"] = Array(rows.Where(r=>r["day"] is not null).Select(r => new {
             day=r.Time("time_created_utc").ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),
             event_id=r.Int("event_id"),domain_id=r.Int("domain_id"),actor=r.Text("actor"),target=r.Text("target"),

@@ -114,7 +114,7 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
   const computerInventory = key === "ad.computers.v6";
   const caption = computerInventory ? "Все компьютеры" : title;
   const table = await screen.findByRole("table", { name: caption });
-  expect(within(table).getByRole("columnheader", { name: computerInventory ? "Компьютер" : "Объект" })).toBeTruthy();
+  expect(within(table).getByRole("columnheader", { name: computerInventory ? "Компьютер" : key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект" })).toBeTruthy();
   if (computerInventory) {
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
     expect(screen.getByRole("tab", { name: caption, selected: true })).toBeTruthy();
