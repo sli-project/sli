@@ -213,16 +213,17 @@ def test_catalog_completeness_and_frontend_wording():
     legacy_problem_codes = {f"security.problems.presentation.{field}" for field in (
         "watch_limitation", "decoy_limitation", "default_next", "audit_limitations", "wording_limitation",
     )}
-    def is_delivery_message(code):
-        return code.startswith(("notifications.message.", "notifications.bot."))
+    # Home period facts are formatted on the server, like notification text.
+    def is_server_rendered_message(code):
+        return code.startswith(("notifications.message.", "notifications.bot.", "home.period.problem."))
 
     assert set(catalog("ru")) == set(catalog("en"))
-    assert {code for code in catalog("ru") if not is_delivery_message(code)} == expected | legacy_problem_codes
+    assert {code for code in catalog("ru") if not is_server_rendered_message(code)} == expected | legacy_problem_codes
     for locale in ("ru", "en"):
         frontend = frontend_catalog(locale)
         for code, text in catalog(locale).items():
             assert text
-            if code in legacy_problem_codes or is_delivery_message(code):
+            if code in legacy_problem_codes or is_server_rendered_message(code):
                 assert code not in frontend
                 assert message(code, locale=locale)["text"] == text
             else:

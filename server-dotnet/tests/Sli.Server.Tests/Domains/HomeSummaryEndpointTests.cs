@@ -28,7 +28,7 @@ public sealed partial class HomeSummaryEndpointTests
             "problems" => sql.Contains("as new_count"),
             "controllers" => sql == HomePeriodSql.Controllers,
             "changes" => sql == HomePeriodSql.PasswordPolicyChanges,
-            _ => sql.Contains("current_counts as (")
+            _ => sql.Contains("@read_from", StringComparison.Ordinal)
         } };
         var (status, body) = await Request("?contract=v4&domain_id=7", rows, true, reports);
         Assert.Equal(200, status);

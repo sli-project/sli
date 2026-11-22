@@ -281,13 +281,20 @@ public sealed partial class ProblemRepository
                 passwordRows[ProblemJson.Long(fact["id"])]["presentation_facts"] = fact["facts"]?.DeepClone();
         }
         if (query.QueueView is not null && !query.Compact && passwordRows.Count > 0) {
+            // Project the two bounded text values before sorting, without carrying the retained event JSON.
             var aliases = await Rows(tx, """
                 select finding_id,
-                    (array_agg(distinct left(btrim(target_user_name),256) order by left(btrim(target_user_name),256))
-                      filter(where target_user_name not in ('','-') and event_id<>4624))[1:8] as accounts,
-                    (array_agg(distinct left(btrim(ip_address),256) order by left(btrim(ip_address),256))
-                      filter(where ip_address not in ('','-','::','::1','0.0.0.0','127.0.0.1')))[1:8] as addresses
-                from finding_event_details337 where finding_id=any(@ids) and event_id in (4624,4625,4771,4776) group by finding_id
+                    (array_agg(distinct account order by account) filter(where account is not null))[1:8] as accounts,
+                    (array_agg(distinct address order by address) filter(where address is not null))[1:8] as addresses
+                from (
+                    select finding_id,
+                        case when target_user_name not in ('','-') and event_id<>4624
+                            then left(btrim(target_user_name),256) end as account,
+                        case when ip_address not in ('','-','::','::1','0.0.0.0','127.0.0.1')
+                            then left(btrim(ip_address),256) end as address
+                    from finding_event_details337 where finding_id=any(@ids) and event_id in (4624,4625,4771,4776)
+                    offset 0
+                ) aliases group by finding_id
                 """, new() { ["ids"] = passwordRows.Keys.ToArray() }, ct);
             foreach (var alias in aliases.OfType<JsonObject>()) passwordRows[ProblemJson.Long(alias["finding_id"])]["queue_attack_aliases"] = alias.DeepClone();
         }
