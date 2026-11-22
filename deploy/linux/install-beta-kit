@@ -45,6 +45,9 @@ printf '%s\n' "${checksums[@]}" | sha256sum --check --strict --status - || fail 
 chmod 0755 -- "$staging"
 
 install=()
+target_version=
+host_package=
+host_version=
 for file in "${packages[@]}"; do
     package=$(dpkg-deb -f "$file" Package)
     version=$(dpkg-deb -f "$file" Version)
@@ -52,7 +55,14 @@ for file in "${packages[@]}"; do
     [[ $package =~ ^[a-z0-9][a-z0-9+.-]+$ && $arch =~ ^[a-z0-9]+$ && -n $version ]] \
         || fail "Invalid Debian package metadata: $file"
     case $package in
-        sli|sli-*) ;;
+        sli)
+            [[ -z $target_version ]] || fail 'Multiple sli packages in the kit'
+            target_version=$version ;;
+        sli-host)
+            [[ -z $host_package ]] || fail 'Multiple sli-host packages in the kit'
+            host_package=$file
+            host_version=$version ;;
+        sli-*) ;;
         *)
             query=$package
             [[ $arch == all ]] || query+=":$arch"
@@ -70,6 +80,20 @@ for file in "${packages[@]}"; do
     install+=("$file")
 done
 [[ ${#install[@]} -gt 0 ]] || fail 'No packages to install'
+
+# An existing installation must admit the checkpoint before APT can stop it.
+# Extract the verified candidate helpers without executing any maintainer scripts.
+if [[ -n $target_version ]]; then
+    host_status=$(dpkg-query -W -f='${db:Status-Status}' sli-host 2>/dev/null) || host_status=
+    if [[ $host_status == installed || -L /opt/sli/current || -e /opt/sli/current ]]; then
+        [[ -n $host_package && $host_version == "$target_version" ]] || fail 'Missing matching sli-host package'
+        mkdir -p -- preflight/deploy
+        dpkg-deb --extract "$host_package" preflight/package
+        mv -- preflight/package/usr/lib/sli preflight/deploy/linux
+        sudo /usr/bin/python3 -I -B "$staging/preflight/deploy/linux/native_upgrade.py" \
+            check-package-space "$target_version"
+    fi
+fi
 
 sudo apt-get update
 sudo env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes \
