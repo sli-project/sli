@@ -4,6 +4,7 @@ using Sli.Server.Auth;
 using Sli.Server.Problems;
 using Sli.Server.Reporting.V2;
 using Sli.Server.Tests.Agents;
+using Sli.Server.Tests.Problems;
 using Xunit;
 
 namespace Sli.Server.Tests.Reporting;
@@ -19,13 +20,25 @@ public sealed partial class ProblemQueuePagingTests
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await SeedPopulation(owner, ct);
         await PostCollectionPostgres.Sql(owner, "update findings set assigned_to='platform-owner' where id=207", ct);
+        const string queuePolicy = """
+            select r.definition_json->>'export_policy' as policy,
+                   (r.definition_json->'actions')::text as registry_actions, d.actions_json::text as dataset_actions
+            from report_registry_v4 r join report_datasets_v4 d on d.id=r.dataset_id
+            where r.report_key='security.queue' and r.status='published'
+            """;
+        var previousPolicy = Assert.Single(await Rows(owner, queuePolicy));
+        Assert.Equal("disabled", previousPolicy["policy"]!.ToString());
+        foreach (string key in new[] { "registry_actions", "dataset_actions" })
+            Assert.DoesNotContain(JsonNode.Parse(previousPolicy[key]!.GetValue<string>())!.AsArray(), action => action!.ToString() == "export");
         string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/397_problem_queue_workflow.sql");
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.True(JsonNode.DeepEquals(previousPolicy, Assert.Single(await Rows(owner, queuePolicy))));
         long domain = Assert.Single(await Rows(owner, "select id from domains where fqdn='example.test'"))["id"]!.GetValue<long>();
         long user = Assert.Single(await Rows(owner, "select id from auth_users where username='platform-owner'"))["id"]!.GetValue<long>();
         var repository = new ProblemRepository(new ReaderConnections(fixture), TimeProvider.System);
         var context = Context(new JsonObject { ["queue_view"] = "open" }) with { DomainIds = [domain] };
-        var access = new ProblemAccess(context.Access);
+        var access = ProblemLifecycleTests.Access("security.queue",
+            scope: $$"""{"kind":"domain","ids":[{{domain}}]}""", fields: ["security", "identity_basic"]);
         var principal = new Principal("session", user, "admin", "platform-owner");
         var before = DateTimeOffset.UtcNow;
         QueueDecision Input(string body) => QueueDecision.Parse(JsonNode.Parse(body)!.AsObject(), before);
@@ -34,6 +47,9 @@ public sealed partial class ProblemQueuePagingTests
         Assert.Single(await Rows(owner, "select id from finding_status_history where finding_id=206 and old_status='new' and new_status='new'"));
         Assert.Empty(await Rows(owner, "select id from finding_status_history where finding_id=207"));
         await Assert.ThrowsAsync<ProblemException>(() => repository.QueueDecisionAsync(Input("""{"ids":[206,210],"state":"active"}"""), access, principal, ct));
+        var outsideDomain = await Assert.ThrowsAsync<ProblemException>(() =>
+            repository.QueueDecisionAsync(Input("""{"ids":[206,211],"state":"active"}"""), access, principal, ct));
+        Assert.Equal(404, outsideDomain.Status);
         Assert.Equal("new", Assert.Single(await Rows(owner, "select status from findings where id=206"))["status"]!.GetValue<string>());
 
         await repository.QueueDecisionAsync(Input("""{"ids":[206],"state":"closed","classification":"fixed","comment":"Reset password"}"""), access, principal, ct);
@@ -54,14 +70,9 @@ public sealed partial class ProblemQueuePagingTests
         var ownerFacts = await accessFacts.LoadAsync(principal, ct);
         var allowed = new ReportEligibility().Compose(ownerFacts, new CapabilityComposer().Compose(ownerFacts));
         Assert.DoesNotContain(ordinary.Reports.Single(r => r.ReportKey == "security.queue").Grants, grant => grant.AllowedActions.Contains("export"));
-        var exportAccess = allowed.Reports.Single(r => r.ReportKey == "security.queue");
-        Assert.True(exportAccess.Allowed);
-        Assert.Contains(exportAccess.Grants, grant => grant.AllowedActions.Contains("export"));
-        var reader = new SecurityProblemsReader(repository, null!);
-        var csv = await reader.ExportAsync(context with { Access = allowed, Action = "export",
-            Params = new JsonObject { ["queue_view"] = "resolved", ["queue_assignee"] = "platform-owner" } }, ct);
-        Assert.Equal(1, csv.Rows);
-        Assert.Contains(",206,", csv.Body);
+        var ownerQueue = allowed.Reports.Single(r => r.ReportKey == "security.queue");
+        Assert.True(ownerQueue.Allowed);
+        Assert.DoesNotContain(ownerQueue.Grants, grant => grant.AllowedActions.Contains("export"));
 
         await repository.QueueDecisionAsync(Input($$"""{"ids":[207],"state":"deferred","until":"{{before.AddDays(1):O}}"}"""), access, principal, ct);
         var query = SecurityProblemsReader.Input(context) with { QueueList = true, Compact = true };
@@ -76,6 +87,9 @@ public sealed partial class ProblemQueuePagingTests
         Assert.Contains(expired["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 207 && row["status"]!.GetValue<string>() == "new");
 
         await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.True(JsonNode.DeepEquals(previousPolicy, Assert.Single(await Rows(owner, queuePolicy))));
+        Assert.Null(Assert.Single(await Rows(owner, "select to_regclass('public.finding_queue_deferrals')::text as deferrals"))["deferrals"]);
+        Assert.Equal(396, Assert.Single(await Rows(owner, "select max(version) as version from schema_migrations"))["version"]!.GetValue<int>());
         Assert.Single(await Rows(owner, "select id from finding_status_history where finding_id=206 and new_status='closed'"));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }

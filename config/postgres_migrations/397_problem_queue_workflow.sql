@@ -20,13 +20,6 @@ create table public.finding_queue_deferrals (
 );
 grant select, insert, update, delete on public.finding_queue_deferrals to adlog_user;
 
--- Publish the new action through the existing export capability and report grants.
 reset role;
-update public.report_datasets_v4 d set actions_json=d.actions_json || jsonb_build_array('export')
-where d.id in (select dataset_id from public.report_registry_v4 where report_key='security.queue' and status='published');
-update public.report_registry_v4 set definition_json=definition_json || jsonb_build_object(
-    'actions',definition_json->'actions' || jsonb_build_array('export'), 'export_policy','controlled')
-where report_key='security.queue' and status='published';
-
 insert into public.schema_migrations(version,name) values (397,'problem_queue_workflow');
 commit;

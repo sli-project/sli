@@ -19,7 +19,7 @@ const definition: ReportDefinitionDto = {
   key, title: "Security problems", section: "investigation", description: "", archetype: "queue",
   params: [{ key: "queue_view", kind: "choice", label: "View" }, { key: "queue_assignee", kind: "text", label: "Assignee" }, { key: "q", kind: "text", label: "Search" }],
   filter_options: { domain: [{ label: "example.test", value: "7" }] }, columns: [], views: [], row_key: "id",
-  detail: { title: "Evidence", kind: "sub", key: "id", columns: [], row_links: [] }, export: true,
+  detail: { title: "Evidence", kind: "sub", key: "id", columns: [], row_links: [] }, export: false,
   presets: [], row_links: [], limits: { default: 50, max: 200 },
 };
 const page = (items: ReportResultDto["items"], total = items.length): ReportResultDto => ({
@@ -57,6 +57,7 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   const user = userEvent.setup();
   const reads = renderQueue();
   await screen.findByRole("tab", { name: "Open (2)" });
+  expect(screen.queryByRole("link", { name: "Export CSV" })).toBeNull();
   expect(screen.getByRole("checkbox", { name: "Collapse repeats" })).toHaveProperty("checked", true);
   const attack = screen.getByRole("link", { name: /Password spray.*operator.one, operator.two.*192.0.2.28.*12 accounts.*64 events/ });
   await user.click(screen.getByRole("button", { name: "Expand repeats for #41" }));

@@ -126,11 +126,7 @@ public static class ReportV2Endpoints
                 }
                 EnsureCurrent(catalog, captured, key);
                 ReportV2Metadata.Annotate(declaration, await services.GetRequiredService<IReportV2Metadata>().PluginAsync(key, ct));
-                if (key == "security.problems") {
-                    string exportAction = definition.Rule.Text("export_action", "export");
-                    declaration["export"] = definition.HasExport && grant.Grants.Any(g => g.AllowedActions.Contains(exportAction) && g.FieldCategories.Contains("security"));
-                    SecurityProblemsReader.Localize(declaration, http.Request.Headers.AcceptLanguage.ToString(), declaration: true);
-                }
+                if (key == "security.problems") SecurityProblemsReader.Localize(declaration, http.Request.Headers.AcceptLanguage.ToString(), declaration: true);
                 await DomainHttp.WriteAsync(http, ReportPresentation.Apply(declaration, DomainHttp.SelectEnglish(http.Request.Headers.AcceptLanguage.ToString())), 200, ct); return;
             }
             var query = http.Request.Query;

@@ -65,23 +65,6 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
     }
-    public async Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct)
-    {
-        const int maximum = 10000;
-        var access = new ProblemAccess(c.Access, c.Action);
-        var input = Input(c) with { Limit = 200, QueueList = true, BeforeId = null };
-        var rows = new List<JsonObject>();
-        bool more;
-        do {
-            var raw = await repository.FindingsAsync(input, access, ct);
-            var page = raw.Objects("items");
-            rows.AddRange(page.Select(finding => ProblemPresentation.Finding(finding, access, c.Language, queue: true)));
-            more = raw.Flag("has_more") && page.Length > 0;
-            if (more) input = input with { BeforeId = ProblemJson.Long(page[^1]["queue_cursor_id"] ?? page[^1]["id"]),
-                BeforeSeen = ProblemJson.Stamp(page[^1]["queue_sort_at"], out var stamp) ? stamp : null };
-        } while (more && rows.Count < maximum);
-        return new ReportExport(ReportCsv.FromColumns(c.Definition.Columns, rows), rows.Count, more);
-    }
     internal async Task<JsonObject> PasswordCoverageAsync(ReportQueryContext c, CancellationToken ct)
     {
         try {

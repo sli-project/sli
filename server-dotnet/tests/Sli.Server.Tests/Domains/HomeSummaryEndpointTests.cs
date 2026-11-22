@@ -16,6 +16,34 @@ namespace Sli.Server.Tests.Domains;
 public sealed partial class HomeSummaryEndpointTests
 {
     [Theory]
+    [InlineData("problems")]
+    [InlineData("controllers")]
+    [InlineData("changes")]
+    [InlineData("activity")]
+    public async Task Period_home_isolates_a_failed_read_and_recovers_on_the_next_request(string block)
+    {
+        var owner = Report("events.journal").Capabilities! with { IsOwner = true };
+        HomeReport[] reports = [Report("security.problems"), Report("ad.infrastructure"), Report("events.journal") with { Capabilities = owner }];
+        var rows = new Rows(populated: false) { FailPeriodRead = sql => block switch {
+            "problems" => sql.Contains("as new_count"),
+            "controllers" => sql == HomePeriodSql.Controllers,
+            "changes" => sql == HomePeriodSql.PasswordPolicyChanges,
+            _ => sql.Contains("current_counts as (")
+        } };
+        var (status, body) = await Request("?contract=v4&domain_id=7", rows, true, reports);
+        Assert.Equal(200, status);
+        Assert.True(body.ContainsKey(block));
+        Assert.Null(body[block]);
+        foreach (var other in new[] { "problems", "controllers", "changes", "activity" }.Where(key => key != block))
+            Assert.IsType<JsonObject>(body[other]);
+
+        rows.FailPeriodRead = null;
+        var (retryStatus, retryBody) = await Request("?contract=v4&domain_id=7", rows, true, reports);
+        Assert.Equal(200, retryStatus);
+        Assert.IsType<JsonObject>(retryBody[block]);
+    }
+
+    [Theory]
     [InlineData("timeout")]
     [InlineData("postgres")]
     [InlineData("driver")]
@@ -156,6 +184,7 @@ public sealed partial class HomeSummaryEndpointTests
     {
         public List<(string Sql, IReadOnlyDictionary<string, object?> Parameters)> Calls { get; } = [];
         public bool Fail { get; set; }
+        public Func<string, bool>? FailPeriodRead { get; set; }
         public bool Active { get; set; } = true;
         public bool HasGroups { get; set; } = true;
         public JsonObject[]? ProblemCounts { get; set; }
@@ -168,6 +197,8 @@ public sealed partial class HomeSummaryEndpointTests
         public long VpnPreviousCount { get; set; } = 5;
         public Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct)
         {
+            if (FailPeriodRead?.Invoke(sql) == true)
+                return Task.FromException<IReadOnlyList<JsonObject>>(new TimeoutException("synthetic read failure"));
             Calls.Add((sql, parameters));
             if (Fail) throw new InvalidOperationException("private-database-identity");
             JsonObject Row(object value) => JsonSerializer.SerializeToNode(value)!.AsObject();

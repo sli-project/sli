@@ -579,8 +579,8 @@
     "config/postgres_migrations/395_problem_account_identity.sql": "b77e14d2b61cbe585e9a505c1b319b32fa7a582220c6efa9367840ce4e69f3d6",
     "config/postgres_migrations/396_password_worker_throughput.rollback.sql": "95cf1ccb8bec6166026713a2145da4e9779bb4c37fca56799c2af98d50bbf119",
     "config/postgres_migrations/396_password_worker_throughput.sql": "ba619ed004dde3a8652f2d3e1a2e190d6c8a01e803519fc71cb592f66a5eeb95",
-    "config/postgres_migrations/397_problem_queue_workflow.rollback.sql": "a9881dce2795559d56249a409de14b61579922139966f22a11dd469a0eff578f",
-    "config/postgres_migrations/397_problem_queue_workflow.sql": "c9cc8d40b95df6c27ef2ab9ff8e9524871ae1dba61b7e66b2cd1436aa46a2ede",
+    "config/postgres_migrations/397_problem_queue_workflow.rollback.sql": "980d876c17a958c1c9e622ded1c4c7ed914823acbeb77f448312f3d8f4137909",
+    "config/postgres_migrations/397_problem_queue_workflow.sql": "7cc816e0c92586a2b61c398416798749aaa273429c63288eda98a083db1d1f83",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

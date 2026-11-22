@@ -276,8 +276,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
     <ReportLayout title={definition.title} crumbs={[{ label: t("problems.queue.crumb") }, { label: definition.title }]} split tabbed={!denied} showDomain={false}
       state={denied ? "denied" : list.isLoading ? "loading" : error ? "error" : "ok"}
       busy={list.isFetching && !list.isLoading} stateView={denied ? <ReportDenied reportKey={definition.key}/> : error ? <StateView state="error" detail={t("problems.queue.loadFailed")} onRetry={() => void list.refetch()}/> : undefined}
-      actions={denied ? undefined : <><Button icon="refresh" disabled={list.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>
-        {definition.export ? <a className="sli-ds-button" href={`/api/v2/reports/${definition.key}/export.csv?${base}`} download>{t("reports.renderer.export_csv")}</a> : null}</>}
+      actions={denied ? undefined : <Button icon="refresh" disabled={list.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>}
       tabs={controls} drawer={active && selected !== null ? <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
         retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} tab={panelTab} onTab={setPanelTab} canManage={canManage}
         canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}

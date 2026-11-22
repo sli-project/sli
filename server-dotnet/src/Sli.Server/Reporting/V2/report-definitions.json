@@ -5358,7 +5358,7 @@
       "default_limit": 20,
       "query_available": true
     },
-    "export": true,
+    "export": false,
     "limits": {
       "default": 50,
       "max": 200
@@ -5503,7 +5503,7 @@
         "Supplemental: exact retained evidence events and rule-runtime diagnostics."
       ],
       "freshness_expectation": "Время публикации результатов проверки показывается отдельно от времени исходных событий и загрузки данных.",
-      "rights": "security.queue view grant; engine-enforced finding and evidence scope; lifecycle actions and exports require independent grants.",
+      "rights": "security.queue view grant; engine-enforced finding and evidence scope; lifecycle actions require independent authority; export is unavailable.",
       "field_classes": [
         "security",
         "identity_basic",
@@ -5522,7 +5522,7 @@
       "fallback": "Preserve missing-source and evidence-expired limitations; no findings is not a clean security assessment.",
       "acceptance_lanes": {
         "product_user": "Published findings support a human triage and lifecycle decision.",
-        "authorization": "security.queue scope, evidence access, export and lifecycle permissions remain independent.",
+        "authorization": "security.queue scope, evidence access and lifecycle permissions remain independent.",
         "deterministic_interpretation": "Finding severity and policy identity come from published records; no new scoring is computed.",
         "api_view_model": "Finding filters, lifecycle fields and evidence cursors preserve the existing reader contract.",
         "ui_honest_states": "Empty queue, denied grant, partial evaluation, stale and unavailable sources stay distinct.",

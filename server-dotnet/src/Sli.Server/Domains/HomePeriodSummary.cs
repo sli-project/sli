@@ -2,13 +2,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sli.Server.Ad;
 using Sli.Server.Gpo;
+using Sli.Server.Problems;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Domains.HomeJson;
 
 namespace Sli.Server.Domains;
 
-internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore? gpo, IConfiguration? configuration)
+internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore? gpo, IConfiguration? configuration,
+    ILogger<HomeSummaryService>? logger)
 {
     internal async Task<JsonObject> Build(IReadOnlyList<HomeReport> reports, IReadOnlyList<DomainItem> domains,
         HomeSummaryQuery query, CancellationToken ct)
@@ -41,18 +43,23 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         bool objectLinks = infrastructure?.Capabilities?.Decide("entity.view").Allowed == true
             || queue?.Capabilities?.Decide("entity.view").Allowed == true;
 
-        var problemsTask = queueIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
-            : reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("technical", queueTechnical)]);
-        var controllerTask = dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
-            : reads.Read(HomePeriodSql.Controllers, ct, ("ids", dcIds), ("to", window.To));
-        var passwordTask = dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
-            : reads.Read(HomePeriodSql.PasswordPolicyChanges, ct, [.. windowArgs, ("ids", dcIds)]);
-        var gpoTask = policyIds.Length == 0 || gpo is null ? Task.FromResult<IEnumerable<JsonObject>>([]) : ReadGpo();
-        var activityTask = eventScope is { } activityScope ? ReadActivity(activityScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]);
-        var eventsTask = eventScope is { } changeScope ? ReadEventChanges(changeScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]);
+        var problemsTask = ReadBlock("problems", queueIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([]) : ReadProblems());
+        var controllerTask = ReadBlock("controllers", dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
+            : reads.Read(HomePeriodSql.Controllers, ct, ("ids", dcIds), ("to", window.To)));
+        var passwordTask = ReadBlock("changes", dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
+            : reads.Read(HomePeriodSql.PasswordPolicyChanges, ct, [.. windowArgs, ("ids", dcIds)]));
+        var gpoTask = ReadBlock("changes", policyIds.Length == 0 || gpo is null ? Task.FromResult<IEnumerable<JsonObject>>([]) : ReadGpo());
+        var activityTask = ReadBlock("activity", eventScope is { } activityScope ? ReadActivity(activityScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
+        var eventsTask = ReadBlock("changes", eventScope is { } changeScope ? ReadEventChanges(changeScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
         await Task.WhenAll(problemsTask, controllerTask, passwordTask, gpoTask, activityTask, eventsTask);
 
-        var counts = (await problemsTask).SingleOrDefault();
+        var problems = await problemsTask;
+        var controllers = await controllerTask;
+        var events = await eventsTask;
+        var passwords = await passwordTask;
+        var gpoChanges = await gpoTask;
+        var hours = await activityTask;
+        var counts = problems?.SingleOrDefault();
         var problemRows = Rows(counts?["items"]).Select(row =>
         {
             long id = row.Number("id");
@@ -74,42 +81,61 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         }).ToArray();
         var problemsById = problemRows.ToDictionary(row => row.id);
 
-        var eventChanges = (await eventsTask).Select(row => Object(new {
+        var eventChanges = events?.Select(row => Object(new {
             at = row.Stamp("at"), name = DisplayName(row.Text("name")), event_id = row.Number("event_id"),
             initiator = DisplayName(row.Text("initiator")), value = DisplayName(row.Text("value")),
             href = eventLinks ? "/app/events/" + row.Number("id") : null
         }));
-        var passwordChanges = (await passwordTask).Select(row => Object(new {
+        var passwordChanges = passwords?.Select(row => Object(new {
             at = row.Stamp("at"), name = row.Text("name"), kind = "password", field = row.Text("field"),
             before = Scalar(row["before"]), after = Scalar(row["after"])
         }));
         return Object(new {
             domains = candidates.Select(d => new { id = d.Id, name = d.DisplayName }), domain_id = chosen?.Id,
             from = window.From, to = window.To, updated_at = query.Now,
-            problems = new {
+            problems = problems is null ? null : new {
                 new_count = counts?["new_count"], closed_count = counts?["closed_count"], open_count = counts?["open_count"],
                 items = problemRows, href = counts is not null ? HomeSummaryQuery.Href("security.problems",
                     new Dictionary<string, object?>(links) { ["population"] = "open" }) : null
             },
-            controllers = new {
-                items = (await controllerTask).Select(row => Controller(row, window.To, objectLinks)),
+            controllers = controllers is null ? null : new {
+                items = controllers.Select(row => Controller(row, window.To, objectLinks)),
                 href = dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", links) : null
             },
-            changes = new {
-                items = eventChanges.Concat(passwordChanges).Concat(await gpoTask).OrderByDescending(row => row.Stamp("at")).Take(200),
+            changes = eventChanges is null || passwordChanges is null || gpoChanges is null ? null : new {
+                items = eventChanges.Concat(passwordChanges).Concat(gpoChanges).OrderByDescending(row => row.Stamp("at")).Take(200),
                 href = Ids(domainChanges).Length > 0 ? HomeSummaryQuery.Href("security.events.chains", filters)
                     : eventScope is not null ? HomeSummaryQuery.Href("events.journal", filters)
                     : dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", new Dictionary<string, object?>(filters) { ["tab"] = "changes" })
                     : policyIds.Length > 0 ? HomeSummaryQuery.Href("ad.gpo.v2", new Dictionary<string, object?>(filters) { ["tab"] = "changes" }) : null
             },
-            activity = new {
-                hours = await activityTask,
+            activity = hours is null ? null : new {
+                hours,
                 markers = Rows(counts?["markers"]).Select(row => {
                     var problem = problemsById.GetValueOrDefault(row.Number("id"));
                     return new { at = row.Stamp("at"), severity = row.Text("severity"), name = problem?.name, fact = problem?.fact };
                 })
             }
         });
+
+        Task<IReadOnlyList<JsonObject>> ReadProblems()
+        {
+            var (_, summary, args) = ProblemRepository.FindingsQueries(new FindingQuery(null, null, null, null, null, null,
+                null, queueIds, 25, false) { Population = "open", PageQueue = true, QueueList = true, GroupQueue = true, Timezone = query.TimeZone });
+            args.Remove("limit");
+            return reads.Read(HomePeriodSql.Problems(summary), ct,
+                [.. windowArgs, ("ids", queueIds), ("technical", queueTechnical), .. args.Select(pair => (pair.Key, pair.Value))]);
+        }
+
+        async Task<T?> ReadBlock<T>(string block, Task<T> read) where T : class
+        {
+            try { return await read; }
+            catch (Exception error) when (!ct.IsCancellationRequested && error is (Npgsql.NpgsqlException or TimeoutException))
+            {
+                logger?.LogWarning("Home block read failed for {Block} ({ErrorType})", block, error.GetType().Name);
+                return null;
+            }
+        }
 
         async Task<IEnumerable<JsonObject>> ReadGpo()
         {
