@@ -87,10 +87,22 @@
           "hidden": true
         },
         {
+          "key": "include_previous",
+          "label": "Previous value",
+          "kind": "choice",
+          "hidden": true,
+          "options": [
+            {
+              "value": "true",
+              "label": "Previous value"
+            }
+          ]
+        },
+        {
           "key": "period",
           "label": "Период",
           "kind": "period",
-          "default": "7d",
+          "default": "24h",
           "required": true,
           "presets": [
             "24h",
@@ -342,7 +354,46 @@
           "kind": "table",
           "key": "controls",
           "source": "items",
-          "title": "Параметры"
+          "title": "Параметры",
+          "note": null
+        },
+        {
+          "kind": "table",
+          "key": "parameter_changes",
+          "source": "parameter_changes",
+          "title": "Изменения AD",
+          "columns": [
+            {
+              "key": "observed_at_utc",
+              "label": "Время",
+              "kind": "datetime",
+              "path": "observed_at_utc"
+            },
+            {
+              "key": "entity_name",
+              "label": "Объект",
+              "kind": "text",
+              "path": "entity_name"
+            },
+            {
+              "key": "label",
+              "label": "Параметр",
+              "kind": "text",
+              "path": "label"
+            },
+            {
+              "key": "previous_text",
+              "label": "Предыдущее значение",
+              "kind": "text",
+              "path": "previous_text"
+            },
+            {
+              "key": "actual_text",
+              "label": "Фактическое значение",
+              "kind": "text",
+              "path": "actual_text"
+            }
+          ]
         },
         {
           "kind": "table",
@@ -620,27 +671,28 @@
       ],
       "row_key": "row_id",
       "detail": {
-        "kind": "inline",
-        "title": "Контекст объекта",
+        "kind": "sub",
+        "title": "История значения",
         "key": "row_id",
-        "inline": "context",
+        "inline": null,
         "row_component": null,
         "actions": null,
         "columns": [
           {
-            "key": "label",
-            "label": "Атрибут",
-            "kind": "text",
-            "path": "label"
+            "key": "observed_at_utc",
+            "label": "С какого момента",
+            "kind": "datetime",
+            "path": "observed_at_utc"
           },
           {
-            "key": "value",
+            "key": "actual_text",
             "label": "Значение",
             "kind": "text",
-            "path": "value"
+            "path": "actual_text"
           }
         ],
-        "row_links": []
+        "row_links": [],
+        "query_available": true
       },
       "export": true,
       "limits": {
@@ -713,6 +765,12 @@
     "row_categories": {},
     "view_fields": {
       "controls": [],
+      "parameter_changes": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
       "privileged_changes": [
         "privilege",
         "technical"

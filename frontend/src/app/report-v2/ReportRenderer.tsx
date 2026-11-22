@@ -39,6 +39,7 @@ import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerC
 import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
+import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
@@ -110,6 +111,9 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "ad.infrastructure" && definition.data.views.some((view) => view.key === "controls")) {
+    return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
+  }
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody key={reportKey} definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 
@@ -142,7 +146,6 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const [detailsVisible, setDetailsVisible] = useState(true);
   const [refreshWindow, setRefreshWindow] = useState(0);
   const gpoReport = definition.key === "ad.gpo.v2";
-  const infrastructure = definition.key === "ad.infrastructure";
   const problemQueue = definition.key === "security.problems";
   const canManageProblems = problemQueue && Boolean(access?.capabilities.includes("investigations.manage"));
   const eventsJournal = definition.key === "events.journal";
@@ -175,10 +178,6 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return views.some((view) => view.key === requested) ? requested! : computerReport ? "computers" : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
-  const infrastructureChanges = infrastructure ? views.filter((item) => ["changes", "privileged_changes"].includes(item.key)) : [];
-  const infrastructureChange = infrastructureChanges.some((item) => item.key === view.key);
-  const displayedViews = infrastructureChanges.some((item) => item.key === "changes")
-    ? views.filter((item) => item.key !== "privileged_changes") : views;
   const tabFilters = useRef<Record<string, { values: FilterValues; sort: SortState | null }>>({});
   useEffect(() => { tabFilters.current[activeView] = { values, sort }; }, [activeView, values, sort]);
   const selectView = (key: string) => {
@@ -321,13 +320,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const branch = viewBranches?.[view.key];
   const branchDetail = branch?.limitations.map((item) => item.text).join(" ") || undefined;
   const rows = useMemo(() => {
-    const items = (independentUsers && view.key === "all" || eventsJournal || computersScreen)
+    return (independentUsers && view.key === "all" || eventsJournal || computersScreen)
       ? (data.data?.pages[userPage]?.items ?? []) as Row[]
       : data.data?.pages.flatMap((page) => page.items as Row[]) ?? [];
-    if (!infrastructure || view.key !== "controls") return items;
-    return items.filter((row) => ["passed", "failed"].includes(String(row.qualification))
-      || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
-  }, [data.data, independentUsers, eventsJournal, infrastructure, view.key, userPage, computersScreen]);
+  }, [data.data, independentUsers, eventsJournal, view.key, userPage, computersScreen]);
   const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
   const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
     || (view.key === "checks" ? selected : rows[0]) : undefined;
@@ -339,8 +335,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   useEffect(() => {
     // Select only an exact row returned by the access-filtered server query.
-    const id = definition.key === "security.problems" ? values.id
-      : definition.key === "ad.infrastructure" ? values.row_id : undefined;
+    const id = definition.key === "security.problems" ? values.id : undefined;
     if (!id || openedDeepLink || data.isPlaceholderData || first?.state === "denied" || first?.state === "error") return;
     const row = rows.find((item) => String(item[definition.row_key]) === String(id));
     if (row && definition.detail !== "none") { setSelected(row); setOpenedDeepLink(true); }
@@ -424,7 +419,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     : window_?.from_utc ? t("reports.renderer.period_range", { from: formatDateTime(window_.from_utc), to: formatDateTime(window_.to_utc_exclusive ?? window_.to_utc ?? "") }) : null;
   // A chip that repeats a clickable metric is the same action twice: keep the metric.
   const presets = gpoReport ? definition.presets : visiblePresets(definition, values, problemQueue ? [] : (first?.metrics ?? []).flatMap((metric) => metric.filter ? [metric.filter] : []));
-  const exportsByTab = independentUsers || computerReport || definition.key === "ad.infrastructure" || definition.key === "ad.gpo.v2";
+  const exportsByTab = independentUsers || computerReport || definition.key === "ad.gpo.v2";
   const exportParams = new URLSearchParams(baseParams);
   exportParams.delete("limit");
   if (exportsByTab) exportParams.set("tab", view.key);
@@ -457,7 +452,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const description = definition.description && definition.description !== definition.title ? definition.description : undefined;
   const archiveContext = qualityResult?.domains?.some((domain) => domain.is_archived)
     ? <ArchiveDomainNotice domains={qualityResult.domains} coverage={qualityResult.coverage} timeZone={timeZone} detail/> : null;
-  const reportDetails = problemQueue || gpoReport || infrastructure || domainEvents || computersScreen || eventsJournal ? null : !independentUsers && definition.intent
+  const reportDetails = problemQueue || gpoReport || domainEvents || computersScreen || eventsJournal ? null : !independentUsers && definition.intent
     ? <ReportPassportMeta intent={definition.intent} coverage={qualityCoverage} state={qualityState} timeZone={timeZone} description={description}>{archiveContext}</ReportPassportMeta>
     : independentUsers
       ? archiveContext ? <details><summary>{t("reports.passport.more")}</summary>{archiveContext}</details> : null
@@ -491,7 +486,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     onClear: changeQueuePeriod,
   } : undefined;
 
-  const namedViews = displayedViews.map((item) => {
+  const namedViews = views.map((item) => {
     const itemBranch = viewBranches?.[item.key];
     const label = computersScreen ? t(computerLogons ? "reports.computers.logons" : item.key === "checks" ? "reports.computers.review"
       : item.key === "changes" ? "reports.computers.changes" : "reports.computers.all") : item.title || item.key;
@@ -520,7 +515,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     {isValidTimeZone(timeZone) && Number.isFinite(Date.parse(scopeInstant))
       ? ` · ${formatClockWithOffset(new Date(scopeInstant), timeZone).zone}` : null}
   </span> : undefined;
-  return <ResultWindowContext.Provider value={first?.window}><Tabs items={computerLogons ? [...linkedViews, ...namedViews] : [...namedViews, ...linkedViews]} active={infrastructureChange && displayedViews.some((item) => item.key === "changes") ? "changes" : view.key} onChange={(key) => {
+  return <ResultWindowContext.Provider value={first?.window}><Tabs items={computerLogons ? [...linkedViews, ...namedViews] : [...namedViews, ...linkedViews]} active={view.key} onChange={(key) => {
     if (additionalTabs.some((item) => item.key === key)) onAdditionalTab?.(key);
     else selectView(key);
   }}><ReportLayout
@@ -542,12 +537,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       ? [{ label: t("shell.nav.computers-report"), href: "/app/report/ad.computers.v6" }, { label: t("reports.computers.logons_tab") }]
       : computerReport ? [{ label: t("reports.computers.directory") }, { label: definition.title }]
       : [{ label: getSectionCrumb(definition.section) }]}
-    meta={infrastructure || computersScreen ? undefined : domainEvents || eventsJournal ? null : <>{independentUsers ? <span>{userSummary(qualityResult)}</span> : null}{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
+    meta={computersScreen ? undefined : domainEvents || eventsJournal ? null : <>{independentUsers ? <span>{userSummary(qualityResult)}</span> : null}{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
     actions={<>
       {PageAction && state !== "denied" && !(first?.plugin ?? definition.plugin)?.read_only ? <PageAction rows={rows as Record<string, unknown>[]} result={first}/> : null}
       {exportHref ? <a className="sli-ds-button" href={exportHref} download>{exportsSelectedView ? t("reports.renderer.export_csv") : t("reports.renderer.export_csv_all", { view: mainView.title ?? mainView.key })}</a> : null}
     </>}
-    metrics={!problemQueue && !eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computersScreen && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.map((metric) => ({
+    metrics={!problemQueue && !eventsJournal && !gpoReport && !domainEvents && !independentUsers && !computersScreen && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.map((metric) => ({
       key: metric.key, label: metric.label,
       value: metric.quality === "unknown" ? t("reports.metrics.no_data") : metric.value,
       tone: metric.quality && metric.quality !== "complete" ? "warning" : metric.tone,
@@ -557,21 +552,17 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     }))}/> : null}
     filters={<>
       {independentUsers && view.key === "privileged" ? <label className="sli-ds-field">{t("reports.ad.users.as_of")}<input type="date" value={String(values.as_of ?? "")} onChange={(event) => { setSelected(null); setValues((current) => ({ ...current, as_of: event.target.value })); }}/></label> : null}
-      {!eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computersScreen && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
+      {!eventsJournal && !gpoReport && !domainEvents && !independentUsers && !computersScreen && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
         {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
       </div> : null}
-      {bodyFields.length ? <FilterBar fields={bodyFields} scope={computerScope} layout={independentUsers || computersScreen ? "inline" : undefined} primaryKeys={computersScreen ? undefined : eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : infrastructure ? ["q", "period"] : independentUsers ? ["q"] : fields.length > 4 ? primaryFilterKeys(definition) : undefined} additionalContent={eventsJournal ? quickFilters : undefined} applyInline={computersScreen} values={values} defaults={resetValues} onApply={(next) => {
+      {bodyFields.length ? <FilterBar fields={bodyFields} scope={computerScope} layout={independentUsers || computersScreen ? "inline" : undefined} primaryKeys={computersScreen ? undefined : eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : independentUsers ? ["q"] : fields.length > 4 ? primaryFilterKeys(definition) : undefined} additionalContent={eventsJournal ? quickFilters : undefined} applyInline={computersScreen} values={values} defaults={resetValues} onApply={(next) => {
         setSelected(null);
         if (computerReport && next.domain !== values.domain) {
           const { domain_id: _legacyDomain, ...current } = next;
           setValues({ ...current, scope: current.domain ? undefined : "all" });
         } else setValues(next);
       }}
-        quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
-          <select value={view.key} onChange={(event) => selectView(event.target.value)}>
-            {infrastructureChanges.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
-          </select>
-        </label> : domainEvents && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
+        quickFilters={domainEvents && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
           {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
         </div> : gpoReport && view === mainView ? <div role="group" aria-label={t("reports.renderer.quick_scenarios")} className="sli-ds-header__actions">
         {presets.map((preset) => {
@@ -587,7 +578,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         <div ref={setColumnsTarget}/>
         <button type="button" className="sli-ds-chip" aria-pressed={detailsVisible} onClick={() => setDetailsVisible((value) => !value)}>{t("reports.computers.toggle_details")}</button>
       </div>
-    </div> : <ViewTabs views={displayedViews}/>}
+    </div> : <ViewTabs views={views}/>}
     tabbed={views.length + linkedViews.length > 1}
     // A custom view loads its own data: an empty main table is not its state.
     state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
@@ -596,7 +587,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     stateActions={state === "empty" ? emptyActions : vpnTimeoutRetry}
     stateView={eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : (eventsJournal || domainEvents) && state === "empty" ? eventsJournal ? journalEmpty : domainEventsEmpty
-      : (eventsJournal || domainEvents || problemQueue || infrastructure || computersScreen || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
+      : (eventsJournal || domainEvents || problemQueue || computersScreen || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : computersScreen && state === "empty" ? computerEmpty()
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
       subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
@@ -657,14 +648,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           sort={sort} onSort={toggleSort} onRowClick={definition.detail === "none" ? undefined : setSelected}
           selectedKey={selected ? String(selected[definition.row_key]) : null}
           hasMore={Boolean(data.hasNextPage)} loadingMore={data.isFetchingNextPage} onLoadMore={() => void data.fetchNextPage()}
-          total={infrastructure && view.key === "controls" ? null : first?.filtered_count ?? null}
+          total={first?.filtered_count ?? null}
           pagination={independentUsers && view.key === "all" || eventsJournal ? listPagination : undefined}/></>)
       : <CollectionView view={definition.key === "vpn.connections" && ["policy_denials", "policy_denials_growth", "policy_denials_events"].includes(view.key)
           && first?.window.nps_period_clamped === true && !data.isPlaceholderData
           ? { ...view, note: t("reports.v2.vpn.connections.nps_period_clamped") } : view}
         reportTitle={definition.title} rows={(first?.collections?.[view.source ?? ""] ?? []) as Row[]} emptyDetail={emptyDetail} emptyActions={emptyActions}
         state={branch?.state === "not_requested" ? state : branch?.state ?? state} stateDetails={first?.state_details}/>}
-    {!eventsJournal && !problemQueue && !gpoReport && !infrastructure && !independentUsers && !domainEvents && !computersScreen && first?.limitations.length && state === "ok" ? <details aria-label={t("reports.renderer.limitations_aria")}>
+    {!eventsJournal && !problemQueue && !gpoReport && !independentUsers && !domainEvents && !computersScreen && first?.limitations.length && state === "ok" ? <details aria-label={t("reports.renderer.limitations_aria")}>
       <summary>{t("reports.renderer.limitations_title")}</summary>
       <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul>
     </details> : null}
