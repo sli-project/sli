@@ -172,6 +172,7 @@ export type ReportResultDto = {
   has_more: boolean;
   next_cursor: string | null;
   filtered_count: number | null;
+  change_counts?: Record<string, number>;
   metrics: Array<{ key: string; label: string; value: number | string | null; quality?: "complete" | "observed" | "unknown"; tone?: "neutral" | "accent" | "success" | "warning" | "danger"; caption?: string; filter?: Record<string, string> }>;
   series: Record<string, unknown>;
   coverage: { password_detection?: PasswordDetectionCoverage; state?: string; completeness?: string; evidence_total_lower_bound?: number | null; evidence_missing_sources?: number; [key: string]: unknown };

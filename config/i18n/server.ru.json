@@ -33,6 +33,7 @@
   "reports.v2.security.events.chains.actions.4776.failure": "Неудачный вход",
   "reports.v2.security.events.chains.actions.4776.unknown": "Проверка учётных данных",
   "reports.v2.security.events.chains.actions.4781": "Переименование учётной записи",
+  "reports.v2.security.events.chains.actions.5136": "Изменение атрибута каталога",
   "access.builtin.report.security.queue.name": "Очередь проблем ИБ",
   "access.builtin.report.events.explorer.name": "Технические события",
   "access.builtin.report.investigations.workspace.name": "Расследования",

@@ -1,4 +1,5 @@
 import { journalColumns } from "./journal";
+import { DomainChanges } from "./DomainChanges";
 import { workstationColumns } from "./workstation-columns";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
@@ -109,6 +110,11 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "security.events.chains" && definition.data.params.some(({ key }) => key === "changes_view")) {
+    const search = new URLSearchParams(initialSearch ?? window.location.search);
+    if (search.get("category") !== "authentication" && !["4624", "4625", "4771", "4776"].includes(search.get("event_id") ?? ""))
+      return <DomainChanges definition={definition.data} initialSearch={initialSearch}/>;
+  }
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 

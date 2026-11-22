@@ -13,6 +13,7 @@ namespace Sli.Server.Ad;
 public sealed record AdReportRequest(string Kind, bool Sources, bool Export, long Domain, AdPeriod? Period, int Limit, JsonObject Filters, string? Cursor)
 {
     public DateTimeOffset? AuthenticationCutoff { get; init; }
+    internal bool IncludeChangeSnapshotValues { get; init; }
 }
 public interface IAdReportStore
 {

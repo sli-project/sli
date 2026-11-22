@@ -33,6 +33,7 @@
   "reports.v2.security.events.chains.actions.4776.failure": "Failed sign-in",
   "reports.v2.security.events.chains.actions.4776.unknown": "Credential validation",
   "reports.v2.security.events.chains.actions.4781": "Account renamed",
+  "reports.v2.security.events.chains.actions.5136": "Directory attribute changed",
   "access.builtin.report.security.queue.name": "InfoSec problem queue",
   "access.builtin.report.events.explorer.name": "Technical events",
   "access.builtin.report.investigations.workspace.name": "Investigations",
