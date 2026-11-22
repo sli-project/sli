@@ -83,7 +83,7 @@ it("preserves the AD section, exact captions, URLs and independent GPO ownership
   // The status page is its own menu item, independent of AD plugin ownership.
   expect(corePaths).toEqual(expect.arrayContaining(["/admin/status", "/agents", "/access", "/report/ad.gpo.v2"]));
   expect(corePaths).not.toContain("/platform-settings");
-  expect(globalSearchTarget("synthetic-object")).toEqual({ to: "/search", search: { q: "synthetic-object" } });
+  expect(globalSearchTarget("synthetic-object")).toEqual({ to: "/report/events.journal", search: { q: "synthetic-object" } });
 });
 
 it("keeps the logon alias, workspace query and back link", () => {

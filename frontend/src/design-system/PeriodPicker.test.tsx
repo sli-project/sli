@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { PeriodPicker, periodBounds } from "./PeriodPicker";
+import { PeriodPicker, periodBounds, previousPeriod } from "./PeriodPicker";
 
 afterEach(cleanup);
 it("keeps date inputs by default and supports exact date-time inputs when requested", () => {
@@ -22,4 +22,13 @@ it("resolves precise local bounds and retains whole-day bounds for existing repo
     from: new Date("2026-10-01T00:00:00").toISOString(), to: new Date("2026-10-01T23:59:59.999").toISOString(),
   });
   expect(periodBounds({ preset: "custom", from: "2026-10-01T10:45", to: "2026-10-01T09:15" })).toBeNull();
+});
+
+it("selects the immediately preceding window, including repeated shifts and inclusive calendar dates", () => {
+  const previous = previousPeriod({ preset: "24h" }, { from: "2026-11-21T08:00:00Z", to: "2026-11-22T08:00:00Z" });
+  expect(previous).toEqual({ preset: "custom", from: "2026-11-20T08:00:00.000Z", to: "2026-11-21T08:00:00Z" });
+  expect(previousPeriod(previous!)).toEqual({ preset: "custom", from: "2026-11-19T08:00:00.000Z", to: "2026-11-20T08:00:00.000Z" });
+  expect(previousPeriod({ preset: "custom", from: "2026-11-01", to: "2026-11-03" })).toEqual({
+    preset: "custom", from: "2026-10-29", to: "2026-10-31",
+  });
 });

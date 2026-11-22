@@ -1,4 +1,6 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
+import { within } from "@testing-library/dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { expect, it } from "vitest";
@@ -164,5 +166,9 @@ it("investigation history carries its exact selection and bounds to the chosen p
   expect(Object.fromEntries(relationUrl.searchParams)).toEqual({ event_db_id: "517551", entity_id: "5632", q: "—", scope: "all", time_from: "2026-09-10T12:00:00.123001Z", time_to: "2026-09-10T12:00:00.123999Z", timezone: "Asia/Novosibirsk" });
   expect(html).toContain("Класс каталога: информационный");
   expect(html).not.toContain("Риск ИБ: info");
-  expect(html).toContain("Риск ИБ: high");
+  const workspace = document.createElement("div");
+  workspace.innerHTML = html;
+  const finding = within(workspace).getByRole("row", { name: /Подтверждённая находка/ });
+  const risk = within(finding).getByRole("cell", { name: "Риск ИБ: Высокая" });
+  expect(within(risk).getByText("Риск ИБ: Высокая")).toBeTruthy();
 });

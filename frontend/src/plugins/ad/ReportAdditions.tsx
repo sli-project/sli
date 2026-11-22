@@ -36,7 +36,7 @@ export function DnsIp({ row }: { row: Row }) {
     {at ? <small className="sli-ds-muted" style={{ display: "block" }}>{t("reports.ad.additions.dns_at", { date: formatDateTime(at) })}</small> : null}</span>;
 }
 
-export function LastWorkplace({ row }: { row: Row }) {
+export function LastWorkplace({ row, compact = false }: { row: Row; compact?: boolean }) {
   const { formatDateTime } = useDateFormatters();
   const workplace = object(row.last_workplace);
   const computer = text(workplace.computer);
@@ -44,7 +44,14 @@ export function LastWorkplace({ row }: { row: Row }) {
   const params = new URLSearchParams();
   if (row.sam) params.set("user", String(row.sam));
   if (row.domain_id != null) params.set("domain_id", String(row.domain_id));
-  return <span>{computer && at ? <>{typeof workplace.computer_id === "number" && workplace.computer_id > 0
-    ? <a href={`/app/entities/${workplace.computer_id}`} onClick={(event) => event.stopPropagation()}>{computer}</a> : computer} · {formatDateTime(at)} · {workplace.kind === "rdp" ? t("reports.ad.additions.rdp") : workplace.kind === "local" ? t("reports.ad.additions.local_logon") : t("reports.metrics.no_data")}</> : t("reports.metrics.no_data")}
-    {row.sam ? <a style={{ display: "block" }} href={`/app/report/ad.computer-logons?${params}`} onClick={(event) => event.stopPropagation()}>{t("reports.ad.additions.all_user_logons")}</a> : null}</span>;
+  const missing = t("table.noValue");
+  const kind = workplace.kind === "rdp" ? t("reports.ad.additions.rdp") : workplace.kind === "local" ? t("reports.ad.additions.local_logon") : missing;
+  const timeAndKind = at ? `${formatDateTime(at)} · ${kind}` : null;
+  const logons = row.sam ? t("reports.ad.additions.all_user_logons") : null;
+  const title = [computer && timeAndKind ? `${computer} · ${timeAndKind}` : missing, logons].filter(Boolean).join(" · ");
+  return <span className={compact ? "sli-ds-table__cell-line" : undefined} title={compact ? title : undefined}>
+    <span>{computer && timeAndKind ? <>{typeof workplace.computer_id === "number" && workplace.computer_id > 0
+      ? <a href={`/app/entities/${workplace.computer_id}`} onClick={(event) => event.stopPropagation()}>{computer}</a> : computer} · {timeAndKind}</> : missing}</span>
+    {logons ? <a style={compact ? undefined : { display: "block" }} href={`/app/report/ad.computer-logons?${params}`} onClick={(event) => event.stopPropagation()}>{logons}</a> : null}
+  </span>;
 }

@@ -1,10 +1,21 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { t } from "../i18n";
 import { Icon } from "./Icon";
+import { SeverityBadge, type Severity } from "./SeverityBadge";
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
+// Home's existing queue passes these localized labels and tones through Badge.
+const QUEUE_SEVERITIES: ReadonlyArray<[Severity, Tone]> = [
+  ["critical", "danger"], ["high", "danger"], ["medium", "warning"], ["low", "neutral"],
+];
+
 /** Small status label; `tone` maps to the semantic colour roles. */
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
+  const severity = typeof children === "string"
+    ? QUEUE_SEVERITIES.find(([level, color]) => color === tone && children === t(`home.queue.${level}`))?.[0]
+    : undefined;
+  if (severity) return <SeverityBadge severity={severity}/>;
   return <span className="sli-ds-badge" data-tone={tone === "neutral" ? undefined : tone}>{children}</span>;
 }
 

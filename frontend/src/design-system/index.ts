@@ -7,6 +7,7 @@ export { MetricStrip, type MetricItem } from "./MetricStrip";
 export { DataTable, type TableColumn, type SortState } from "./DataTable";
 export { FilterBar, type FilterField, type FilterValues, type FilterValue, type FilterOption } from "./FilterBar";
 export { PeriodPicker, periodBounds, type PeriodValue, type PeriodPreset } from "./PeriodPicker";
+export { SeverityBadge, type Severity } from "./SeverityBadge";
 export { DetailDrawer, FactList } from "./DetailDrawer";
 export { Chart, buildChartOption, chartIsEmpty, type ChartSpec, type ChartSeries, type HeatmapData } from "./Chart";
 export { ReportLayout } from "./ReportLayout";
