@@ -44,7 +44,8 @@ describe("API message resolution", () => {
     setLocale(locale);
     const server: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${locale}.json`, "utf8"));
     for (const [code, text] of Object.entries(server)) {
-      if (code.startsWith("notifications.message.") || code.startsWith("notifications.bot.")) {
+      // Home period facts arrive as formatted text, just like notification text.
+      if (code.startsWith("notifications.message.") || code.startsWith("notifications.bot.") || code.startsWith("home.period.problem.")) {
         expect(Object.hasOwn(ru, code) || Object.hasOwn(en, code), code).toBe(false);
         continue;
       }
