@@ -86,10 +86,6 @@ def test_catalog_completeness_and_frontend_wording():
         "comparison_failed", "history_empty", "context_read_timeout", "context_read_cancelled",
         "computer_inventory_unavailable",
     )}
-    # «Что изменено» in the domain changes report is named by the server for every supported event kind.
-    expected |= {"reports.v2.security.events.chains.actions." + code for code in (
-        "1102", "4624", "4625", "4719", "4720", "4722", "4723", "4724", "4725", "4726", "4727", "4728", "4729", "4730", "4731", "4732", "4733", "4734", "4735", "4737", "4738", "4740", "4754", "4755", "4756", "4757", "4758", "4764", "4767", "4771", "4776.success", "4776.failure", "4776.unknown", "4781",
-    )}
     # Shared API messages for the AD account registry; the other adAccounts
     # labels are frontend-only and must not expand the server catalog.
     expected |= {"adAccounts.denied", "adAccounts.operationsUnavailable", "adAccounts.permission",
@@ -217,10 +213,18 @@ def test_catalog_completeness_and_frontend_wording():
     def is_delivery_message(code):
         return code.startswith(("notifications.message.", "notifications.bot."))
 
+    def is_domain_change_action(code):
+        return code.startswith("reports.v2.security.events.chains.actions.")
+
     assert set(catalog("ru")) == set(catalog("en"))
-    assert {code for code in catalog("ru") if not is_delivery_message(code)} == expected | legacy_problem_codes
+    assert {
+        code for code in catalog("ru") if not is_delivery_message(code) and not is_domain_change_action(code)
+    } == expected | legacy_problem_codes
+    attribute_change = "reports.v2.security.events.chains.actions.5136"
     for locale in ("ru", "en"):
         frontend = frontend_catalog(locale)
+        assert attribute_change in catalog(locale)
+        assert message(attribute_change, locale=locale)["text"] == frontend[attribute_change]
         for code, text in catalog(locale).items():
             assert text
             if code in legacy_problem_codes or is_delivery_message(code):

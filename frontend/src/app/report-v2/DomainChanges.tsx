@@ -9,7 +9,7 @@ import {
 import { periodLabel } from "../../design-system/PeriodPicker";
 import { PageHeaderContext } from "../../design-system/PageHeader";
 import { t, type MessageKey } from "../../i18n";
-import { dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone, localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
+import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone, localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
 import { preserveNavigationView } from "../navigation";
@@ -118,10 +118,8 @@ function Result({ value }: { value: string }) {
 }
 
 function shortTime(time: string, timeZone: string) {
-  if (!time || dayKey(time, timeZone) !== dayKey(new Date(), timeZone)) return formatDateTime(time, timeZone, { seconds: true });
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: timeZone === "browser" ? undefined : timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit",
-  }).format(new Date(time));
+  const today = !!time && dayKey(time, timeZone) === dayKey(new Date(), timeZone);
+  return formatDateTime(time, timeZone, { seconds: true, timeOnly: today });
 }
 
 function PeriodControl({ period, timeZone, presets, apply }: {
@@ -264,7 +262,7 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
       if (utc) params.set(key, utc);
     }
   }
-  if (timeZone === "browser") params.set("tz", Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC");
+  if (timeZone === "browser") params.set("tz", browserTimeZone() ?? "UTC");
   const query = params.toString();
   const pageIndex = position.query === query ? position.page : 0;
   const data = useInfiniteQuery({
@@ -323,7 +321,7 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
     { key: "field", label: labels("field"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ label }) => label).join(" · ") || dash() },
     { key: "value", label: labels("value"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ value }) => show(value)).join(" · ") || dash() },
     { key: "initiator", label: labels("initiator"), hiddenByDefault: false, render: (row) => show(row.actor) },
-    { key: "dc", label: labels("dc"), minWidth: "calc(4.5 * var(--sli-space-8))", hiddenByDefault: false, render: (row) => show(row.host) },
+    { key: "dc", label: labels("dc"), minWidth: "calc(4.5 * var(--sli-space-8))", hiddenByDefault: true, render: (row) => show(row.host) },
     { key: "result", label: labels("result"), minWidth: "calc(2.5 * var(--sli-space-8))", hiddenByDefault: false, render: (row) => <Result value={row.result}/> },
   ];
   const operations = paramOptions(definition, "event_id", page?.filter_options);

@@ -74,7 +74,12 @@ it("shows server counts and sends the selected tab and operation", async () => {
   const requests = openReport();
   expect(await screen.findByRole("tab", { name: "All changes 4" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Groups 2" })).toBeTruthy();
-  expect(within(screen.getByRole("table", { name: "Domain changes" })).getAllByRole("columnheader")).toHaveLength(8);
+  const table = within(screen.getByRole("table", { name: "Domain changes" }));
+  expect(table.queryByRole("columnheader", { name: "DC" })).toBeNull();
+  fireEvent.click(screen.getByText("Columns", { selector: "summary" }));
+  fireEvent.click(within(screen.getByRole("group", { name: "Columns" })).getByRole("checkbox", { name: "DC" }));
+  expect(table.getByRole("columnheader", { name: "DC" })).toBeTruthy();
+  expect(table.getAllByText("dc01.example.test").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("tab", { name: "Accounts 2" }));
   const value = await screen.findByText("<example.user@example.test>");
   expect(value.innerHTML).toContain("&lt;");
