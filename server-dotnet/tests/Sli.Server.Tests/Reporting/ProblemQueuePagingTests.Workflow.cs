@@ -1,0 +1,82 @@
+using System.Text.Json.Nodes;
+using Sli.Server.Access;
+using Sli.Server.Auth;
+using Sli.Server.Problems;
+using Sli.Server.Reporting.V2;
+using Sli.Server.Tests.Agents;
+using Xunit;
+
+namespace Sli.Server.Tests.Reporting;
+
+public sealed partial class ProblemQueuePagingTests
+{
+    [Fact]
+    public async Task WorkflowUpgradePreservesAssignmentsAndWritesAtomicDecisionHistory()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 396);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await SeedPopulation(owner, ct);
+        await PostCollectionPostgres.Sql(owner, "update findings set assigned_to='platform-owner' where id=207", ct);
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/397_problem_queue_workflow.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        long domain = Assert.Single(await Rows(owner, "select id from domains where fqdn='example.test'"))["id"]!.GetValue<long>();
+        long user = Assert.Single(await Rows(owner, "select id from auth_users where username='platform-owner'"))["id"]!.GetValue<long>();
+        var repository = new ProblemRepository(new ReaderConnections(fixture), TimeProvider.System);
+        var context = Context(new JsonObject { ["queue_view"] = "open" }) with { DomainIds = [domain] };
+        var access = new ProblemAccess(context.Access);
+        var principal = new Principal("session", user, "admin", "platform-owner");
+        var before = DateTimeOffset.UtcNow;
+        QueueDecision Input(string body) => QueueDecision.Parse(JsonNode.Parse(body)!.AsObject(), before);
+
+        await repository.QueueDecisionAsync(Input($$"""{"ids":[207,206],"assignee_id":{{user}}}"""), access, principal, ct);
+        Assert.Single(await Rows(owner, "select id from finding_status_history where finding_id=206 and old_status='new' and new_status='new'"));
+        Assert.Empty(await Rows(owner, "select id from finding_status_history where finding_id=207"));
+        await Assert.ThrowsAsync<ProblemException>(() => repository.QueueDecisionAsync(Input("""{"ids":[206,210],"state":"active"}"""), access, principal, ct));
+        Assert.Equal("new", Assert.Single(await Rows(owner, "select status from findings where id=206"))["status"]!.GetValue<string>());
+
+        await repository.QueueDecisionAsync(Input("""{"ids":[206],"state":"closed","classification":"fixed","comment":"Reset password"}"""), access, principal, ct);
+        var entry = Assert.Single(await Rows(owner, """
+            select changed_by, changed_at, old_status, new_status, note from finding_status_history where finding_id=206 and new_status='closed'
+            """));
+        Assert.Equal("platform-owner", entry["changed_by"]!.GetValue<string>());
+        Assert.Equal("new", entry["old_status"]!.GetValue<string>());
+        Assert.NotNull(entry["changed_at"]);
+        Assert.Contains("Reset password", entry["note"]!.GetValue<string>());
+        Assert.Contains("fixed", entry["note"]!.GetValue<string>());
+        Assert.Equal(2, (await Rows(owner, "select id from access_audit_v4 where target_key='206' and action='finding_queue_decision'")).Length);
+
+        var accessFacts = new AccessFactsRepository(new ReaderConnections(fixture));
+        var facts = await accessFacts.LoadAsync(principal, ct);
+        var ordinary = new ReportEligibility().Compose(facts, new CapabilityComposer().Compose(facts));
+        await fixture.SeedOwnerAsync(ct);
+        var ownerFacts = await accessFacts.LoadAsync(principal, ct);
+        var allowed = new ReportEligibility().Compose(ownerFacts, new CapabilityComposer().Compose(ownerFacts));
+        Assert.DoesNotContain(ordinary.Reports.Single(r => r.ReportKey == "security.queue").Grants, grant => grant.AllowedActions.Contains("export"));
+        var exportAccess = allowed.Reports.Single(r => r.ReportKey == "security.queue");
+        Assert.True(exportAccess.Allowed);
+        Assert.Contains(exportAccess.Grants, grant => grant.AllowedActions.Contains("export"));
+        var reader = new SecurityProblemsReader(repository, null!);
+        var csv = await reader.ExportAsync(context with { Access = allowed, Action = "export",
+            Params = new JsonObject { ["queue_view"] = "resolved", ["queue_assignee"] = "platform-owner" } }, ct);
+        Assert.Equal(1, csv.Rows);
+        Assert.Contains(",206,", csv.Body);
+
+        await repository.QueueDecisionAsync(Input($$"""{"ids":[207],"state":"deferred","until":"{{before.AddDays(1):O}}"}"""), access, principal, ct);
+        var query = SecurityProblemsReader.Input(context) with { QueueList = true, Compact = true };
+        var deferred = await repository.FindingsAsync(query with { QueueView = "deferred" }, access, ct);
+        Assert.Equal(207, Assert.Single(deferred["items"]!.AsArray())!["id"]!.GetValue<long>());
+        Assert.Equal("platform-owner", deferred["items"]![0]!["assigned_to"]!.GetValue<string>());
+        var report = SecurityProblemsReader.Render(context, await repository.FindingsAsync(query, access, ct));
+        Assert.Equal(1, report["series"]!["queue_counts"]!["deferred"]!.GetValue<long>());
+        Assert.DoesNotContain(report["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 207);
+        await PostCollectionPostgres.Sql(owner, "update finding_queue_deferrals set until_at=now()-interval '1 minute' where finding_id=207", ct);
+        var expired = await repository.FindingsAsync(query, access, ct);
+        Assert.Contains(expired["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 207 && row["status"]!.GetValue<string>() == "new");
+
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Single(await Rows(owner, "select id from finding_status_history where finding_id=206 and new_status='closed'"));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+}

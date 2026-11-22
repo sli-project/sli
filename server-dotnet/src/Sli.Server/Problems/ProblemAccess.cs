@@ -73,7 +73,7 @@ public sealed class ProblemScope(bool all, IReadOnlyList<JsonElement> clauses)
     }
 }
 
-public sealed class ProblemAccess(AccessDecision decision)
+public sealed class ProblemAccess(AccessDecision decision, string fieldAction = "view")
 {
     public AccessDecision Decision { get; } = decision;
     public static string[] Required(string report) => report switch {
@@ -97,7 +97,7 @@ public sealed class ProblemAccess(AccessDecision decision)
     }
     public bool Fields(params string[] extra)
     {
-        try { return Scope("security.queue", "view", extra).Covers(Scope("security.queue")); }
+        try { return Scope("security.queue", fieldAction, extra).Covers(Scope("security.queue", fieldAction)); }
         catch (ProblemException) { return false; }
     }
     public void Capability(string key)

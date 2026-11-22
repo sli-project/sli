@@ -25,9 +25,17 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
             _ = ReportParameters.Period("custom", S("time_from"), S("time_to"), TimeZoneInfo.FindSystemTimeZoneById(c.Paging.Timezone), 90, DateTimeOffset.UtcNow);
         }
         if (S("cohort") is {} cohort) { if (!c.FieldAccess(["security", "identity_basic"])) throw new ReportRequestException("report_field_categories_not_allowed", 403); _ = ProblemCohorts.Parse(cohort); }
+        string? queueView = S("queue_view");
         long? before = null;
+        DateTimeOffset? beforeSeen = null;
         if (rowId is null && c.Paging.Cursor is {} cursor) {
             string? value = ReportCursor.Decode(cursor, Binding(c));
+            if (queueView is not null) {
+                var parts = value?.Split('|');
+                if (parts is not { Length: 3 } || parts[2] != c.Paging.Direction || !ProblemJson.Stamp(JsonValue.Create(parts[1]), out var stamp))
+                    throw new ReportRequestException("invalid_cursor");
+                value = parts[0]; beforeSeen = stamp;
+            }
             if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long id) || id <= 0) throw new ReportRequestException("invalid_cursor"); before = id;
         }
         // Python's open queue depends on the original id filter, not the detail row id.
@@ -36,8 +44,11 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         return new(S("status"), S("severity"), S("q"), S("time_from"), S("time_to"), S("risk"), Id("entity_id"), domains, c.Paging.Limit, S("show_suppressed") == "true") {
             FindingId = rowId is null ? Id("id") : long.TryParse(rowId, out long finding) && finding > 0 ? finding : throw new ReportRequestException("report_row_not_found", 404),
             RuleCode = S("rule_code"), CreatedFrom = S("created_from"), CreatedTo = S("created_to"), Cohort = S("cohort"),
-            Population = population, BeforeId = before, PageQueue = true,
-            GroupQueue = rowId is null && S("cohort") is null && S("id") is null, Timezone = c.Paging.Timezone
+            Population = queueView is null ? population : null, BeforeId = before, BeforeSeen = beforeSeen,
+            OldestFirst = c.Paging.Direction == "asc", PageQueue = true,
+            QueueView = queueView, QueueAssignee = S("queue_assignee") is {} owner ? owner == "-" ? "" : owner : null,
+            QueueAssigneesVisible = queueView is not null && c.FieldAccess(["identity_basic"]),
+            GroupQueue = rowId is null && S("cohort") is null && S("id") is null && S("fold") != "false", Timezone = c.Paging.Timezone
         };
     }
     private static long[]? CoverageDomains(ReportQueryContext c)
@@ -53,6 +64,23 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
             return Render(c, raw);
         }
         catch (ProblemException e) { throw new ReportRequestException(e.Code, e.Status); }
+    }
+    public async Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct)
+    {
+        const int maximum = 10000;
+        var access = new ProblemAccess(c.Access, c.Action);
+        var input = Input(c) with { Limit = 200, QueueList = true, BeforeId = null };
+        var rows = new List<JsonObject>();
+        bool more;
+        do {
+            var raw = await repository.FindingsAsync(input, access, ct);
+            var page = raw.Objects("items");
+            rows.AddRange(page.Select(finding => ProblemPresentation.Finding(finding, access, c.Language, queue: true)));
+            more = raw.Flag("has_more") && page.Length > 0;
+            if (more) input = input with { BeforeId = ProblemJson.Long(page[^1]["queue_cursor_id"] ?? page[^1]["id"]),
+                BeforeSeen = ProblemJson.Stamp(page[^1]["queue_sort_at"], out var stamp) ? stamp : null };
+        } while (more && rows.Count < maximum);
+        return new ReportExport(ReportCsv.FromColumns(c.Definition.Columns, rows), rows.Count, more);
     }
     internal async Task<JsonObject> PasswordCoverageAsync(ReportQueryContext c, CancellationToken ct)
     {
@@ -138,8 +166,21 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         var result = ReportResult.Create(c.Definition.Key, state, rows, coverage, limitations: limitations);
         result["metrics"] = metrics; result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false);
         var last = (raw["items"] as JsonArray)?.LastOrDefault();
-        result["next_cursor"] = result.Flag("has_more") && last is not null ? ReportCursor.Encode(Binding(c), (last["queue_cursor_id"] ?? last["id"])!.ToString()) : null;
+        if (result.Flag("has_more") && last is not null) {
+            string position = (last["queue_cursor_id"] ?? last["id"])!.ToString();
+            if (c.Params["queue_view"] is not null) position += $"|{last["queue_sort_at"]}|{c.Paging.Direction}";
+            result["next_cursor"] = ReportCursor.Encode(Binding(c), position);
+        } else result["next_cursor"] = null;
         result["filtered_count"] = (raw["summary"] as JsonArray ?? []).Sum(r => long.TryParse(r?["count"]?.ToString(), out long n) ? n : 0);
+        if (c.Params["queue_view"] is {} queueView) {
+            var counts = new JsonObject { ["all"] = result["filtered_count"]?.DeepClone(), ["open"] = Count("new", "confirmed", "repeated"),
+                ["active"] = Count("active", "review"), ["deferred"] = Count("deferred"), ["resolved"] = Count("closed", "false_positive") };
+            result["series"] = new JsonObject { ["queue_counts"] = counts };
+            var assignees = raw.Objects("summary").Select(row => row.Text("queue_assignee", row.Text("assigned_to")))
+                .Where(name => name.Length > 0).Distinct().Order(StringComparer.OrdinalIgnoreCase);
+            result["filter_options"] = new JsonObject { ["queue_assignee"] = new JsonArray(assignees.Select(name => (JsonNode)new JsonObject { ["value"] = name, ["label"] = name }).ToArray()) };
+            result["filtered_count"] = counts[queueView.ToString()]?.DeepClone();
+        }
         return result;
     }
 
@@ -182,7 +223,8 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
             }
             Columns(body, "columns.");
             foreach (var param in body.Objects("params")) {
-                string key = param.Text("key"); Field(param, "label", prefix + "params." + key + ".label");
+                string key = param.Text("key");
+                Field(param, "label", prefix + "params." + key + ".label");
                 foreach (var option in param.Objects("options")) Field(option, "label", prefix + "params." + key + ".options." + option["value"]);
             }
             foreach (var preset in body.Objects("presets")) Field(preset, "label", prefix + "presets." + preset["params"]!.ToJsonString());

@@ -16,7 +16,7 @@ export function Tabs({ items, active, onChange, children }: Omit<TabsContextValu
   return <TabsContext.Provider value={{ id, items, active, onChange }}>{children}</TabsContext.Provider>;
 }
 
-export function TabList({ label }: { label: string }) {
+export function TabList({ label, variant }: { label: string; variant?: "segmented" | "underline" }) {
   const { id, items, active, onChange } = useTabs();
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next: number;
@@ -31,7 +31,7 @@ export function TabList({ label }: { label: string }) {
     onChange(items[next].key);
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
-  return <div className="sli-ds-header__meta" role="tablist" aria-label={label}>
+  return <div className="sli-ds-header__meta" role="tablist" aria-label={label} data-variant={variant}>
     {items.map((item, index) => <button key={item.key} type="button" role="tab" id={`${id}-tab-${item.key}`} aria-controls={`${id}-panel`}
       className="sli-ds-chip" aria-selected={item.key === active} aria-pressed={item.key === active} tabIndex={item.key === active ? 0 : -1}
       onClick={() => onChange(item.key)} onKeyDown={(event) => navigate(event, index)}>{item.label}</button>)}

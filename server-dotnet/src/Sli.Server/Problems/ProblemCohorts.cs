@@ -9,8 +9,9 @@ internal static class ProblemCohorts
     internal static string PasswordFacts(string alias) =>
         $"case when {alias}.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray') " +
         $"then public.password_problem_facts395({alias}.id,{alias}.rule_code) end";
-    internal static string Queue(string population, string where, string status, string accepted) => Sql("queue-groups")
-        .Replace("__POPULATION__", population).Replace("__WHERE__", where).Replace("__STATUS__", status).Replace("__ACCEPTED__", accepted).Replace("__COHORT__", Sql("queue-cohort"));
+    internal static string Queue(string population, string where, string status, string accepted, string partition = "", bool owners = false) => Sql("queue-groups")
+        .Replace("__POPULATION__", population).Replace("__WHERE__", where).Replace("__STATUS__", status).Replace("__ACCEPTED__", accepted)
+        .Replace("__PARTITION__", partition).Replace("__ASSIGNEE__", owners ? "findings.assigned_to" : "null::text").Replace("__COHORT__", Sql("queue-cohort"));
     internal static string Sql(string name) {
         using var stream = typeof(ProblemCohorts).Assembly.GetManifestResourceStream($"Sli.Server.Problems.{name}.sql")!;
         using var reader = new StreamReader(stream);

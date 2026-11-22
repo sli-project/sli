@@ -1,23 +1,36 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
 import { Button } from "./Primitives";
 
 /** Side panel for a selected row or entity; traps focus and closes on Escape. */
-export function DetailDrawer({ open, title, subtitle, onClose, children, footer }: {
+export function DetailDrawer({ open, title, subtitle, eyebrow, headerActions, onClose, children, footer, responsive = false }: {
   open: boolean;
   title: string;
   subtitle?: ReactNode;
+  eyebrow?: ReactNode;
+  headerActions?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  responsive?: boolean;
 }) {
   const panel = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const titleId = useId();
+  const [inline, setInline] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!responsive || typeof window.matchMedia !== "function") return;
+    const screen = window.matchMedia("(min-width: 2200px)");
+    const update = () => setInline(screen.matches);
+    update();
+    screen.addEventListener("change", update);
+    return () => screen.removeEventListener("change", update);
+  }, [responsive]);
+
+  useEffect(() => {
+    if (!open || inline) return;
     const previous = document.activeElement as HTMLElement | null;
     const focusable = () => [...(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex='0']") ?? [])]
       .filter((element) => !element.closest('[hidden],[inert],[aria-hidden="true"]') && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
@@ -35,18 +48,21 @@ export function DetailDrawer({ open, title, subtitle, onClose, children, footer 
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, [open]);
+  }, [open, inline]);
 
   if (!open) return null;
-  return <div className="sli-ds-drawer" data-open>
-    <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>
-    <aside ref={panel} className="sli-ds-drawer__panel" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+  return <div className="sli-ds-drawer" data-open data-inline={inline || undefined} data-responsive={responsive || undefined}>
+    {inline ? null : <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>}
+    <aside ref={panel} className="sli-ds-drawer__panel" role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={titleId} tabIndex={-1}
+      onKeyDown={inline ? (event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } } : undefined}>
       <header className="sli-ds-drawer__header">
         <div>
+          {eyebrow ? <div className="sli-ds-drawer__eyebrow">{eyebrow}</div> : null}
           <h2 id={titleId}>{title}</h2>
           {subtitle ? <div className="sli-ds-drawer__subtitle">{subtitle}</div> : null}
         </div>
-        <Button variant="ghost" onClick={onClose} aria-label={t("drawer.close")}>✕</Button>
+        {headerActions ? <div className="sli-ds-header__actions">{headerActions}<Button variant="ghost" onClick={onClose} aria-label={t("drawer.close")}>✕</Button></div>
+          : <Button variant="ghost" onClick={onClose} aria-label={t("drawer.close")}>✕</Button>}
       </header>
       <div className="sli-ds-drawer__body">{children}</div>
       {footer ? <footer className="sli-ds-drawer__footer">{footer}</footer> : null}

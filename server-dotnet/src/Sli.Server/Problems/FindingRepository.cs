@@ -132,6 +132,8 @@ public sealed partial class ProblemRepository
     internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true)
     {
         var args = new Dictionary<string, object?>();
+        string effectiveStatus = query.QueueView is null ? EffectiveStatus : $"case when d.until_at>statement_timestamp() and findings.status in ('new','confirmed','repeated') then 'deferred' else ({EffectiveStatus}) end";
+        string queueState = $"case ({effectiveStatus}) when 'deferred' then 'deferred' when 'active' then 'active' when 'review' then 'active' when 'closed' then 'resolved' when 'false_positive' then 'resolved' else 'open' end";
         var admission = new List<string> { "is_semantic_finding_published_v1(findings.id)", "(findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))" };
         var clauses = new List<string>();
         if (query.Risk == "accepted") clauses.Add(Accepted); else if (query.Risk != "all") clauses.Add("not " + Accepted);
@@ -143,10 +145,23 @@ public sealed partial class ProblemRepository
             else if (query.PageQueue && query.Status == "active") clauses.Add($"({EffectiveStatus}) in ('active','review')");
             else { args["status"] = query.Status; clauses.Add($"({EffectiveStatus})=@status"); }
         }
-        if (!string.IsNullOrEmpty(query.Severity)) { args["severity"] = query.Severity; clauses.Add("findings.severity=@severity"); }
+        if (!string.IsNullOrEmpty(query.Severity)) {
+            args["severity"] = query.Severity;
+            const string queueSeverity = """
+                case when findings.rule_code in ('semantic.qw.account-decoy','semantic.qw.file-decoy')
+                    or (findings.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
+                        and exists(select 1 from finding_event_details337 e where e.finding_id=findings.id and e.event_id=4624))
+                then 'critical' else findings.severity end
+                """;
+            clauses.Add(query.QueueView is null ? "findings.severity=@severity" : $"({queueSeverity})=@severity");
+        }
+        if (query.QueueAssignee is {} assignee) {
+            args["assignee_filter"] = assignee;
+            clauses.Add("coalesce(findings.assigned_to,'')=@assignee_filter");
+        }
         if (!string.IsNullOrEmpty(query.From)) { args["from"] = query.From; clauses.Add("findings.last_seen_utc::timestamptz>=@from::timestamptz"); }
         if (!string.IsNullOrEmpty(query.To)) { args["to"] = query.To; clauses.Add("findings.last_seen_utc::timestamptz<@to::timestamptz"); }
-        if (!string.IsNullOrEmpty(query.Search)) { args["q"] = "%" + query.Search + "%"; clauses.Add("(lower(coalesce(findings.title,'')) like lower(@q) or lower(coalesce(findings.actor,'')) like lower(@q) or lower(coalesce(findings.target,'')) like lower(@q) or lower(coalesce(findings.summary,'')) like lower(@q))"); }
+        if (!string.IsNullOrEmpty(query.Search)) { args["q"] = "%" + query.Search + "%"; clauses.Add("(findings.title ilike @q or findings.actor ilike @q or findings.target ilike @q or findings.summary ilike @q or findings.rule_code ilike @q)"); }
         if (query.FindingId is {} finding) { args["finding"] = finding; clauses.Add("findings.id=@finding"); }
         if (query.RuleCode is {} rule) { args["rule"] = rule; clauses.Add("findings.rule_code=@rule"); }
         if (query.CreatedFrom is {} createdFrom) { args["created_from"] = createdFrom; clauses.Add("findings.created_at>=@created_from::timestamptz"); }
@@ -154,6 +169,7 @@ public sealed partial class ProblemRepository
         if (query.Population == "attention") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
         if (query.Population == "open" && string.IsNullOrEmpty(query.Status) && string.IsNullOrEmpty(query.Risk))
             clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated','active','review') and not ({Accepted})");
+        if (query.ExcludeDeferred) clauses.Add("not exists(select 1 from finding_queue_deferrals deferred where deferred.finding_id=findings.id and deferred.until_at>statement_timestamp() and findings.status in ('new','confirmed','repeated'))");
         // In the queue, apply status and risk filters before classifying event
         // witnesses. In particular, closed findings should not incur suppression
         // and domain checks just because an exception is active for their rule.
@@ -161,7 +177,8 @@ public sealed partial class ProblemRepository
             ? $" where case when {string.Join(" and ", clauses)} then {string.Join(" and ", admission)} else false end"
             : " where " + string.Join(" and ", admission.Concat(clauses));
         args["limit"] = query.Limit + 1;
-        string population = Population, prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
+        string population = Population + (query.QueueView is null ? "" : " left join finding_queue_deferrals d on d.finding_id=findings.id");
+        string prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
         if (query.GroupQueue) {
             args["cohort_zone"] = query.Timezone;
             // findings_active is a security-barrier view. Rejoining it for
@@ -169,7 +186,9 @@ public sealed partial class ProblemRepository
             // its admission boundary, but evaluate it once for this statement.
             population = population.Replace("from findings_active findings", "from queue_findings findings", StringComparison.Ordinal);
             prefix = "with queue_findings as materialized (select * from findings_active)," +
-                ProblemCohorts.Queue(population, where, EffectiveStatus, Accepted)[5..];
+                ProblemCohorts.Queue(population, where, effectiveStatus, Accepted,
+                    query.QueueView is null ? "" : $", ({queueState}), (({effectiveStatus})='false_positive')" +
+                        (query.QueueAssigneesVisible ? ", coalesce(findings.assigned_to,'')" : ""), query.QueueAssigneesVisible)[5..];
             population += " join queue_groups on queue_groups.id=findings.id";
             where = " where true"; summaryPopulation = "from queue_groups"; summaryWhere = "";
             groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc,queue_groups.severity as severity,queue_groups.password_facts - 'cohort_key' as presentation_facts";
@@ -182,8 +201,21 @@ public sealed partial class ProblemRepository
         }
         if (populationOnly) return (prefix, "", args);
         string pageWhere = where;
-        if (query.BeforeId is {} before) { args["before"] = before; pageWhere += query.GroupQueue ? " and queue_groups.queue_cursor_id<@before" : " and findings.id<@before"; }
+        if (query.QueueView is not (null or "all")) { args["queue_view"] = query.QueueView; pageWhere += $" and ({queueState})=@queue_view"; }
+        string seen = query.GroupQueue ? "queue_groups.last_seen_utc" : "coalesce(findings.last_seen_utc,findings.updated_at::text)::timestamptz";
+        string cursorId = query.GroupQueue ? "queue_groups.queue_cursor_id" : "findings.id";
+        if (query.BeforeId is {} before) {
+            args["before"] = before;
+            if (query.BeforeSeen is {} stamp) {
+                args["before_seen"] = stamp;
+                pageWhere += $" and ({seen},{cursorId}) {(query.OldestFirst ? ">" : "<")} (@before_seen,@before)";
+            } else pageWhere += $" and {cursorId}<@before";
+        }
         string order = query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
+        if (query.QueueView is not null) {
+            string direction = query.OldestFirst ? "asc" : "desc";
+            order = $"{seen} {direction},{cursorId} {direction},";
+        }
         string riskAudit = query.QueueList ? "null::jsonb" : """
             (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
                 select id,action,actor,occurred_at,details from semantic_control_audit where details->'rule'->>'kind'='risk_acceptance'
@@ -195,7 +227,8 @@ public sealed partial class ProblemRepository
             : review;
         string page = $"""
             {prefix}
-            select findings.*,({EffectiveStatus}) as status{groupFields},
+            select findings.*,({effectiveStatus}) as status{groupFields},
+              {(query.QueueView is null ? "" : $"case when findings.status in ('new','confirmed','repeated') then d.until_at end as deferred_until,{seen} as queue_sort_at,")}
               case when risk.id is not null then to_jsonb(risk)||jsonb_build_object('state',case when risk.state='active' and risk.expires_at<=statement_timestamp() then 'expired' else risk.state end) else null end as risk_acceptance,
               {riskAudit} as risk_audit,
               {reviewHint} as review_hint,
@@ -206,8 +239,10 @@ public sealed partial class ProblemRepository
               case findings.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 when 'low' then 4 else 5 end,
               coalesce(findings.last_seen_utc,findings.updated_at::text)::timestamptz desc,findings.id desc limit @limit
             """;
-        string summary = query.GroupQueue ? $"{prefix} select severity,status,risk_accepted,count(*) as count,sum(occurrence_count) as occurrences from queue_groups group by severity,status,risk_accepted" :
-            $"select findings.severity,({EffectiveStatus}) as status,({Accepted}) as risk_accepted,count(*) as count {summaryPopulation}{summaryWhere} group by findings.severity,({EffectiveStatus}),({Accepted})";
+        string groupedOwner = query.QueueAssigneesVisible ? ", queue_assignee" : "";
+        string rawOwner = query.QueueAssigneesVisible ? ", findings.assigned_to" : "";
+        string summary = query.GroupQueue ? $"{prefix} select severity,status,risk_accepted{groupedOwner},count(*) as count,sum(occurrence_count) as occurrences from queue_groups group by severity,status,risk_accepted{groupedOwner}" :
+            $"select findings.severity,({effectiveStatus}) as status,({Accepted}) as risk_accepted{rawOwner},count(*) as count {summaryPopulation}{summaryWhere} group by findings.severity,({effectiveStatus}),({Accepted}){rawOwner}";
         return (page, summary, args);
     }
     public async Task<JsonObject> FindingsAsync(FindingQuery query, ProblemAccess access, CancellationToken ct)
@@ -244,6 +279,17 @@ public sealed partial class ProblemRepository
                     ["rules"] = passwordRows.Values.Select(row => ProblemJson.Text(row["rule_code"])).ToArray() }, ct);
             foreach (var fact in passwordFacts.OfType<JsonObject>())
                 passwordRows[ProblemJson.Long(fact["id"])]["presentation_facts"] = fact["facts"]?.DeepClone();
+        }
+        if (query.QueueView is not null && !query.Compact && passwordRows.Count > 0) {
+            var aliases = await Rows(tx, """
+                select finding_id,
+                    (array_agg(distinct left(btrim(target_user_name),256) order by left(btrim(target_user_name),256))
+                      filter(where target_user_name not in ('','-') and event_id<>4624))[1:8] as accounts,
+                    (array_agg(distinct left(btrim(ip_address),256) order by left(btrim(ip_address),256))
+                      filter(where ip_address not in ('','-','::','::1','0.0.0.0','127.0.0.1')))[1:8] as addresses
+                from finding_event_details337 where finding_id=any(@ids) and event_id in (4624,4625,4771,4776) group by finding_id
+                """, new() { ["ids"] = passwordRows.Keys.ToArray() }, ct);
+            foreach (var alias in aliases.OfType<JsonObject>()) passwordRows[ProblemJson.Long(alias["finding_id"])]["queue_attack_aliases"] = alias.DeepClone();
         }
         foreach (var row in rows.OfType<JsonObject>())
             if (row["review_hint"] is JsonObject hint)
@@ -309,8 +355,8 @@ public sealed partial class ProblemRepository
             """, args, ct);
         var history = queueList ? new JsonArray() : await Rows(tx, """
             select id,finding_id,old_status,new_status,changed_at,changed_by,note from (
-              select *,row_number() over(partition by finding_id order by id desc) as rn from finding_status_history where finding_id=any(@ids)
-            ) ranked where rn<=20 order by finding_id,id desc
+              select *,row_number() over(partition by finding_id order by changed_at desc,id desc) as rn from finding_status_history where finding_id=any(@ids)
+            ) ranked where rn<=20 order by finding_id,changed_at desc,id desc
             """, args, ct);
         foreach (var row in rows.OfType<JsonObject>())
         {

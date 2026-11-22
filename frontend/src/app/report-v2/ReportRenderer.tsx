@@ -1,4 +1,5 @@
 import { journalColumns } from "./journal";
+import { ProblemsQueue, ProblemJournal } from "./ProblemsQueue";
 import { workstationColumns } from "./workstation-columns";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
@@ -109,6 +110,12 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "security.problems" && definition.data.params.some(({ key }) => key === "queue_view")) return <ProblemsQueue definition={definition.data} initialSearch={initialSearch}/>;
+  if (reportKey === "events.journal") {
+    const query = new URLSearchParams(initialSearch ?? window.location.search);
+    const finding = Number(query.get("finding"));
+    if (Number.isSafeInteger(finding) && finding > 0) return <ProblemJournal definition={definition.data} finding={finding} domain={query.get("domain") ?? ""}/>;
+  }
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 

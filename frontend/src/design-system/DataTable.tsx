@@ -1,5 +1,5 @@
 import { formatNumber } from "../shared/format";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -26,7 +26,7 @@ export type TableColumn<Row> = {
 
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, density, afterRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -45,6 +45,8 @@ export function DataTable<Row>({
   showFooter?: boolean;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  density?: "compact" | "standard";
+  afterRow?: (row: Row) => ReactNode;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -61,7 +63,7 @@ export function DataTable<Row>({
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
 
-  return <div className="sli-ds-table">
+  return <div className="sli-ds-table" data-density={density}>
     {toggleable.length ? <details className="sli-ds-table__columns">
       <summary>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
@@ -90,7 +92,8 @@ export function DataTable<Row>({
         })}</tr>)}</thead>
         <tbody>{table.getRowModel().rows.map((row) => {
           const selected = selectedKey === row.id;
-          return <tr key={row.id} data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
+          const extra = afterRow?.(row.original);
+          return <Fragment key={row.id}><tr data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
@@ -103,7 +106,7 @@ export function DataTable<Row>({
               return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>;
+          </tr>{extra ? <tr><td colSpan={row.getVisibleCells().length}>{extra}</td></tr> : null}</Fragment>;
         })}</tbody>
       </table>
     </div>

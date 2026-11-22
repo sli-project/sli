@@ -4756,6 +4756,36 @@
     "key": "security.problems",
     "params": [
       {
+        "key": "queue_view",
+        "label": "Вид очереди",
+        "kind": "choice",
+        "hidden": true,
+        "options": [
+          { "value": "all", "label": "Все" },
+          { "value": "open", "label": "Открытые" },
+          { "value": "active", "label": "В работе" },
+          { "value": "deferred", "label": "Отложенные" },
+          { "value": "resolved", "label": "Решённые" }
+        ],
+        "field_categories": []
+      },
+      {
+        "key": "queue_assignee",
+        "label": "Ответственный",
+        "kind": "text",
+        "hidden": true,
+        "max_length": 300,
+        "field_categories": ["identity_basic"]
+      },
+      {
+        "key": "fold",
+        "label": "Свернуть повторы",
+        "kind": "choice",
+        "hidden": true,
+        "options": [{ "value": "false", "label": "Нет" }],
+        "field_categories": []
+      },
+      {
         "key": "id",
         "label": "№",
         "kind": "int",
@@ -5003,6 +5033,7 @@
         "label": "Последнее событие",
         "kind": "datetime",
         "path": "last_seen_utc",
+        "sortable": true,
         "field_categories": [],
         "hidden_by_default": false
       },
@@ -5257,7 +5288,7 @@
       "default_limit": 20,
       "query_available": true
     },
-    "export": false,
+    "export": true,
     "limits": {
       "default": 50,
       "max": 200
@@ -5307,6 +5338,11 @@
       "problem_cohort": [
         "identity_basic"
       ],
+      "queue_participant": ["identity_basic"],
+      "queue_group": ["identity_basic"],
+      "queue_attack.accounts": ["identity_basic"],
+      "queue_attack.account_count": ["identity_basic"],
+      "queue_attack.addresses": ["identity_basic", "technical"],
       "entities": [
         "identity_basic"
       ],

@@ -70,7 +70,7 @@ function UpdatedTime({ value }: { value: string | number }) {
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
-export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain }: {
+export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain, showDomain = true }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -79,10 +79,11 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   meta?: ReactNode;
   controls?: PageHeaderControls;
   domain?: string;
+  showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
   const { period, updatedAt, refreshing, onRefresh } = controls ?? scope.controls ?? {};
-  const domainControl = scope.domain?.(domain);
+  const domainControl = showDomain ? scope.domain?.(domain) : null;
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
       <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
