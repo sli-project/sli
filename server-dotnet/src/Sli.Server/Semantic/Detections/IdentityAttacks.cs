@@ -55,7 +55,7 @@ public static class IdentityAttacks
                 if(host!=""&&!account.EndsWith('$')&&!excluded.Contains(account)&&!excluded.Contains(domain+"\\"+account)&&!excluded.Contains(sid))Add("qw.logon-fanout",entity,row,host);
             }
             string target=row.Get("TargetSid").ToUpperInvariant();if(row.EventId==4720&&Match(target,@"S-1-5-21-\d+-\d+-\d+-\d+"))created[target]=row;
-            if(row.EventId is 4728 or 4732 or 4756&&(Match(target,@"S-1-5-21-\d+-\d+-\d+-(512|518|519)")||new[]{"S-1-5-32-544","S-1-5-32-548","S-1-5-32-551"}.Contains(target))){
+            if(row.EventId is 4728 or 4732 or 4756&&(Match(target,@"S-1-5-21-\d+-\d+-\d+-(512|518|519)")||new[]{"S-1-5-32-544","S-1-5-32-548","S-1-5-32-549","S-1-5-32-551"}.Contains(target))){
                 string member=row.Get("MemberSid").ToUpperInvariant();if(!Match(member,@"S-1-\d+(?:-\d+)+"))continue;
                 var proof=new List<DetectionRow>{row};string[] reasons=[];if(created.TryGetValue(member,out var prior)&&row.At-prior.At<=TimeSpan.FromSeconds(policy.NewAccountSeconds)){proof.Insert(0,prior);reasons=["new_account_privileged"];}
                 string key=member+":"+target+":"+row.Ref.NativeId;

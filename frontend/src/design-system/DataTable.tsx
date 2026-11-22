@@ -39,7 +39,6 @@ export function DataTable<Row>({
   selectedKey?: string | null;
   caption: string;
   expandedContent?: (row: Row) => ReactNode;
-  renderExpandedRow?: (row: Row) => ReactNode;
   emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -48,6 +47,7 @@ export function DataTable<Row>({
   pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
+  renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
 }) {

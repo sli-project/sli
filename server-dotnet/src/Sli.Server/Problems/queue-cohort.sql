@@ -1,5 +1,10 @@
 
     left join lateral (
+        select public.password_problem_facts395(findings.id,findings.rule_code) as facts
+        where findings.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
+        offset 0
+    ) password on true
+    left join lateral (
         select s.partition_key,s.strict_keys_json->>'entity' as entity
         from semantic_security_scenarios s
         where s.scenario_key=case when findings.fingerprint ~ '^semantic:[0-9a-f]{64}$'
@@ -12,6 +17,8 @@
     ) scenario_object on true
     cross join lateral (
         select case
+            when password.facts->>'cohort_key' is not null
+            then jsonb_build_array('password',findings.rule_code,password.facts->>'cohort_key')
             when scenario_object.entity is not null
             then jsonb_build_array('rule-entity',findings.rule_code,scenario_object.partition_key,scenario_object.entity)
             when nullif(btrim(findings.target),'') is not null and length(findings.target)<=2048

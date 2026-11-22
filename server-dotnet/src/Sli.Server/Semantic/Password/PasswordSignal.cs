@@ -10,16 +10,21 @@ public static class PasswordSignal
         int index=context["portion_index"]!.GetValue<int>();
         // QW evidence ordering is lexicographic over ref.params, not numeric native ID.
         var refs=emission.Occurrences.Skip(index*256).Take(256).OrderBy(w=>w.NativeId.ToString(System.Globalization.CultureInfo.InvariantCulture),StringComparer.Ordinal).ToArray();
-        var document=new JsonObject{["kind"]="threshold",["rule_id"]=rule.Id,["rule_version"]=rule.Revision,["rule_sha256"]=rule.Execution["rule_sha256"]!.DeepClone(),["policy_revision"]=1,["evaluation_mode"]="enabled",["entity_key"]=emission.Entity,["episode_key"]=emission.EpisodeKey,["occurred_at_utc"]=PasswordJson.Stamp(emission.Endpoint.At),["received_at_utc"]=PasswordJson.Stamp(received),["evidence_refs"]=PasswordJson.Array(refs,w=>w.Ref),["base_severity"]="high",["effective_severity"]="high",["severity_reasons"]=new JsonArray(),["quality"]="good",["conclusion_state"]="observed",["evidence_total"]=emission.Occurrences.Count,["password_context"]=context.DeepClone()};
-        var reasons=SprayEvidence(rule,(history??[]).Append(emission),native??[]);document["severity_reasons"]=PasswordJson.Array(reasons,s=>JsonValue.Create(s));document["effective_severity"]=reasons.Contains("success_after_spray")?"critical":"high";
+        string baseSeverity=rule.NormalizedAccounts?"medium":"high";
+        var reasons=SeverityEvidence(rule,(history??[]).Append(emission),native??[]);
+        var document=new JsonObject{["kind"]="threshold",["rule_id"]=rule.Id,["rule_version"]=rule.Revision,["rule_sha256"]=rule.Execution["rule_sha256"]!.DeepClone(),["policy_revision"]=1,["evaluation_mode"]="enabled",["entity_key"]=emission.Entity,["episode_key"]=emission.EpisodeKey,["occurred_at_utc"]=PasswordJson.Stamp(emission.Endpoint.At),["received_at_utc"]=PasswordJson.Stamp(received),["evidence_refs"]=PasswordJson.Array(refs,w=>w.Ref),["base_severity"]=baseSeverity,["effective_severity"]=reasons.Any(r=>r is "success_after_spray" or "success_after_brute_force")?"critical":baseSeverity,["severity_reasons"]=PasswordJson.Array(reasons,s=>JsonValue.Create(s)),["quality"]="good",["conclusion_state"]="observed",["evidence_total"]=emission.Occurrences.Count,["password_context"]=context.DeepClone()};
         if(PasswordJson.SpacedSize(document)>524288)throw new PasswordFailure("password_v2_signal_invalid");return document;
     }
-    internal static string[] SprayEvidence(PasswordRule rule,IEnumerable<PasswordEmission> emissions,IEnumerable<PasswordNative> native)
+    internal static string[] SeverityEvidence(PasswordRule rule,IEnumerable<PasswordEmission> emissions,IEnumerable<PasswordNative> native)
     {
-        if(rule.Kind!="spray")return [];var refs=emissions.SelectMany(e=>e.Occurrences).Select(w=>w.Ref.ToJsonString()).ToHashSet();var rows=native.Where(n=>refs.Contains(n.Witness.Ref.ToJsonString())).DistinctBy(n=>n.Witness).OrderBy(n=>n.Witness.At).ThenBy(n=>n.Witness.NativeId).ToArray();var failures=rows.Where(n=>n.Member.Reason==null&&n.EventId!=4624).ToArray();var reasons=new List<string>();
+        if(rule.Kind!="spray"&&!rule.NormalizedAccounts)return [];var refs=emissions.SelectMany(e=>e.Occurrences).Select(w=>w.Ref.ToJsonString()).ToHashSet();var rows=native.Where(n=>refs.Contains(n.Witness.Ref.ToJsonString())).DistinctBy(n=>n.Witness).OrderBy(n=>n.Witness.At).ThenBy(n=>n.Witness.NativeId).ToArray();var failures=rows.Where(n=>n.Member.Reason==null&&n.EventId!=4624).ToArray();var reasons=new List<string>();
+        if (rule.Kind=="brute")
+            return rows.Any(success=>success.EventId==4624&&failures.Count(n=>n.Witness.At>=success.Witness.At.AddSeconds(-600)&&
+                n.Witness.At<success.Witness.At&&n.Member.ClientKey==success.Member.ClientKey&&success.SameTarget(n))>=10)
+                ? ["success_after_brute_force"] : [];
         var counts=failures.GroupBy(n=>n.Member.TargetKey).Select(g=>g.Count()).ToArray();if(counts.Length>0&&counts.Max()<=2)reasons.Add("machine_tempo_spray");var intervals=failures.Zip(failures.Skip(1),(a,b)=>(b.Witness.At-a.Witness.At).TotalSeconds).ToArray();
         if(intervals.Length>=3&&intervals.Min()>0){double mean=intervals.Average();if(intervals.Max(i=>Math.Abs(i-mean))<=mean*0.10)reasons.Add("regular_intervals");}
-        foreach(var success in rows.Where(n=>n.EventId==4624)){var preceding=failures.Where(n=>n.Witness.At>=success.Witness.At.AddSeconds(-600)&&n.Witness.At<success.Witness.At&&n.Member.ClientKey==success.Member.ClientKey).ToArray();if(preceding.Select(n=>n.Member.TargetKey).Distinct().Count()>=5&&preceding.Any(n=>n.Member.TargetKey==success.Member.TargetKey)){reasons.Add("success_after_spray");break;}}
+        foreach(var success in rows.Where(n=>n.EventId==4624)){var preceding=failures.Where(n=>n.Witness.At>=success.Witness.At.AddSeconds(-600)&&n.Witness.At<success.Witness.At&&n.Member.ClientKey==success.Member.ClientKey).ToArray();if(preceding.Select(n=>n.Member.TargetKey).Distinct().Count()>=5&&preceding.Any(success.SameTarget)){reasons.Add("success_after_spray");break;}}
         return reasons.ToArray();
     }
     public static string Id(JsonObject document){var copy=(JsonObject)document.DeepClone();copy.Remove("received_at_utc");return PasswordJson.Hash(copy);}
