@@ -20,12 +20,15 @@ internal static class SnapshotChangeStore
         _ => value?.DeepClone()
     };
 
-    internal static async Task<List<JsonObject>> ReadAsync(NpgsqlConnection db, string batch, long domain, string family, DateTimeOffset observed, CancellationToken ct)
+    internal static async Task<List<JsonObject>> ReadAsync(NpgsqlConnection db, string batch, long domain, string family, DateTimeOffset observed, CancellationToken ct, bool includeValues = false)
         => await Rows(db, null, """
-            select record_id,payload_json from public.ad_snapshot_change_history
+            select record_id,payload_json,
+                   case when @include_values then before_value end as before_value,
+                   case when @include_values then after_value end as after_value
+            from public.ad_snapshot_change_history
             where batch_id=@batch and domain_id=@domain and family=@family and observed_at=@observed and record_kind='history'
             order by record_id collate "C"
-            """, ct, ("batch", batch), ("domain", domain), ("family", family), ("observed", observed));
+            """, ct, ("batch", batch), ("domain", domain), ("family", family), ("observed", observed), ("include_values", includeValues));
 
     internal static async Task WriteAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid manifest, string batch, long domain, string family, DateTime observed,
         JsonObject[] history, List<(string? Before, string? After)> values, List<JsonObject> display, string? from, string? to, CancellationToken ct)

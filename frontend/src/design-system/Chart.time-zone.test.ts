@@ -18,3 +18,15 @@ it("formats the actual ECharts tooltip axis value label in the selected zone", (
     expect(getValueLabel(Date.parse(stamp), axis.axis, model, [], { formatter })).toBe("09.10.2026, 06:05");
   } finally { chart.dispose(); }
 });
+
+it("shows the chart's empty value for a missing hourly measurement and keeps observed zero", () => {
+  const colors = { text: "", muted: "", grid: "", palette: [], accent: "", surface: "" };
+  const option = buildChartOption({ kind: "timeseries", series: [{ name: "Failed logons", points: [
+    { x: stamp, y: null }, { x: "2026-10-09T00:05:00Z", y: 0 },
+  ] }] }, colors, "UTC", "—");
+  const [series] = option.series as Array<{
+    data: Array<[string, number | null]>;
+    tooltip: { valueFormatter: (value: number | null) => string };
+  }>;
+  expect(series.data.map(([, value]) => series.tooltip.valueFormatter(value))).toEqual(["—", "0"]);
+});

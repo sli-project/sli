@@ -152,6 +152,6 @@ export const UserChanges = memo(function UserChanges({ columns, rows, title, onS
         return value === null || value === undefined || value === "" ? missing() : formatCell(value, column.kind);
       }),
   }));
-  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect} wrap {...paging}/>
+  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect} wrapCells="all" {...paging}/>
     : <p>{missing()}</p>;
 });

@@ -44,7 +44,7 @@ public sealed class ShortEventAdmissionPostgresTests
         string[]? nativeTimestamps = null, string[]? nativeAccounts = null, string[]? nativeAddresses = null,
         Guid? packetId = null, int sequence = 1, int firstRecordId = 1, string hostName = "dc.example.test",
         IReadOnlyDictionary<string, string>? nativeFields = null, string? eventChannel = null,
-        DateTimeOffset[]? allocatedAt = null)
+        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null)
     {
         var agent = registered?.Agent ?? Agent; var host = registered?.Host ?? hostId ?? Agent;
         var packet = packetId ?? Packet;
@@ -67,6 +67,7 @@ public sealed class ShortEventAdmissionPostgresTests
             };
             if(nativeAccounts is not null) fields=fields.Replace("synthetic-user",nativeAccounts[natives.Count]);
             if(nativeAddresses is not null) fields=fields.Replace("192.0.2.1",nativeAddresses[natives.Count]);
+            if(nativeTargetSids is not null) fields=fields.Replace("S-1-5-21-100000001-200000002-300000003-1001",nativeTargetSids[natives.Count]);
             if (nativeFields is not null) {
                 foreach (var (key, value) in nativeFields.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                     fields += new XElement("Data", new XAttribute("Name", key), value).ToString(SaveOptions.DisableFormatting);

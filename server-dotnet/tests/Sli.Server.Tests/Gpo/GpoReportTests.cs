@@ -13,9 +13,15 @@ public sealed class GpoReportTests
     internal sealed class Store : IGpoReadStore
     {
         public JsonObject Pair=Vectors()["pair"]!.AsObject();public int Reads;public long[]? Domains;public Exception? Error;
+        public JsonObject? PolicyHistory;
         public Task<JsonObject> PairAsync(long[]? domains,CancellationToken ct) { Reads++;Domains=domains;if(Error is {} e) throw e;return Task.FromResult(Pair.Copy()); }
         public Task<JsonObject> GraphAsync(JsonObject s,long[]? domains,CancellationToken ct) { Reads++;Domains=domains;return Task.FromResult(Vectors()["effective"]![0]!["graph"]!.AsObject().Copy()); }
         public Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string q,CancellationToken ct) { Reads++;Domains=domains;return Task.FromResult(new JsonObject { ["state"]="unavailable",["items"]=new JsonArray(),["coverage"]=new JsonObject { ["state"]="unavailable" } }); }
+        public Task<JsonObject> PolicyHistoryAsync(long[] domains,DateTimeOffset from,DateTimeOffset to,string policyId,string guid,CancellationToken ct)
+        {
+            Reads++;Domains=domains;
+            return Task.FromResult(PolicyHistory?.Copy()??new JsonObject { ["state"]="unavailable",["items"]=new JsonArray() });
+        }
     }
     static GpoRequest Request(string view="all",string? tab=null)=>new(view,"",tab,null,"asc",500,null,"UTC",Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-08T00:00:00Z"));
     // Minimal observed snapshot from tests/reports/test_gpo_review_categories.py.

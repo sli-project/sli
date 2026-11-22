@@ -8,6 +8,7 @@ import { t } from "../i18n";
 import { useTimeZone } from "../shared/time-zone";
 import { formatDateTime } from "./format";
 import { formatDateTime as sharedDateTime } from "../shared/date-time";
+import { formatNumber } from "../shared/format";
 
 echarts.use([LineChart, BarChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, SVGRenderer]);
 
@@ -41,7 +42,7 @@ export function chartIsEmpty(spec: ChartSpec): boolean {
 }
 
 /** Builds the ECharts option from a spec; pure so it can be unit-tested. */
-export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string; danger?: string; warning?: string }, timeZone?: string): EChartsCoreOption {
+export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string; danger?: string; warning?: string }, timeZone?: string, emptyValue?: string): EChartsCoreOption {
   const base = {
     color: colors.palette,
     textStyle: { color: colors.text, fontFamily: "inherit" },
@@ -108,6 +109,10 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
     yAxis: { type: "value", ...axisStyle, min: spec.range ? 0 : undefined, minInterval: spec.range ? 1 : undefined },
     series: [...spec.series.map((series) => ({
       type: series.style === "bar" || (!series.style && spec.bars) ? "bar" : "line", name: series.name, showSymbol: false, stack: spec.stacked ? "total" : undefined,
+      ...(emptyValue === undefined ? {} : {
+        encode: { tooltip: [1] },
+        tooltip: { valueFormatter: (value: unknown) => typeof value === "number" && Number.isFinite(value) ? formatNumber(value) : emptyValue },
+      }),
       areaStyle: spec.stacked && !spec.bars ? { opacity: 0.2 } : undefined,
       itemStyle: series.style === "bar" ? { color: colors.muted, opacity: 0.55 }
         : series.style ? { color: series.style === "line" ? colors.text : colors.muted } : undefined,
@@ -144,7 +149,7 @@ export function Chart({ title, spec, height = 280, emptyValue }: { title: string
   useEffect(() => {
     if (empty || !host.current) return;
     const instance = echarts.init(host.current, undefined, { renderer: "svg" });
-    const render = () => instance.setOption(buildChartOption(spec, currentColors(), timeZone), true);
+    const render = () => instance.setOption(buildChartOption(spec, currentColors(), timeZone, emptyValue), true);
     render();
     const fit = () => instance.resize();
     const resize = new ResizeObserver(fit);
@@ -155,7 +160,7 @@ export function Chart({ title, spec, height = 280, emptyValue }: { title: string
     const themeObserver = new MutationObserver(render);
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => { window.removeEventListener("resize", fit); resize.disconnect(); themeObserver.disconnect(); scheme?.removeEventListener?.("change", render); instance.dispose(); };
-  }, [spec, empty, timeZone]);
+  }, [spec, empty, timeZone, emptyValue]);
 
   return <figure className="sli-ds-chart">
     <figcaption>{title}</figcaption>

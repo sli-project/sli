@@ -16,6 +16,10 @@ describe("formatDateTime", () => {
     expect(formatDateTime(null, "UTC")).toBe("—");
   });
 
+  it("keeps seconds in the selected zone when requested for a time-only value", () => {
+    expect(formatDateTime("2026-07-16T13:05:20Z", "Asia/Novosibirsk", { timeOnly: true, seconds: true })).toBe("20:05:20");
+  });
+
   it("converts a Novosibirsk wall-clock filter to an exact UTC instant", () => {
     expect(localDateTimeToUtc("2026-07-16T12:00", "Asia/Novosibirsk")).toBe("2026-07-16T05:00:00.000Z");
     expect(utcToLocalDateTimeInput("2026-07-16T05:00:00Z", "Asia/Novosibirsk")).toBe("2026-07-16T12:00");

@@ -26,6 +26,7 @@ public static class ProblemEndpoints
     {
         endpoints.MapGet("/api/findings", HandleAsync);
         endpoints.MapGet("/api/findings/risk-responsibles", HandleAsync);
+        endpoints.MapPost("/api/findings/queue-decisions", HandleAsync);
         endpoints.MapGet("/api/findings/{**tail:regex((^|.*/)risk-audit$)}", HandleAsync);
         endpoints.MapGet("/reports/findings.html", Compatibility.LegacyHttpEndpoints.HandleAsync);
         endpoints.MapPost("/api/findings/{**tail:regex((^|.*/)(status|risk-acceptance)$)}", HandleAsync);
@@ -116,6 +117,13 @@ public static class ProblemEndpoints
                 response["items"] = new JsonArray(ProblemJson.Array(response["items"]).OfType<JsonObject>().Select(row => (JsonNode)ProblemPresentation.Finding(row, access, language)).ToArray());
             }
             else if (path == "/api/findings/risk-responsibles") response = await repository.ResponsiblesAsync(ct);
+            else if (path == "/api/findings/queue-decisions")
+            {
+                using var body = await AuthJsonBody.ReadAsync(context, ct);
+                if (JsonNode.Parse(body.RootElement.GetRawText()) is not JsonObject value) throw new ProblemException("invalid_queue_decision");
+                response = await repository.QueueDecisionAsync(QueueDecision.Parse(value, services.GetRequiredService<TimeProvider>().GetUtcNow()),
+                    access, principal, CancellationToken.None);
+            }
             else
             {
                 string raw = context.Features.Get<IHttpRequestFeature>()?.RawTarget is { Length: > 0 } target ? target.Split('?', 2)[0] : path;

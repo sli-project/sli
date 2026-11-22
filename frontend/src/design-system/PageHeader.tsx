@@ -27,7 +27,7 @@ export type PageHeaderControls = {
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = true, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();
@@ -74,7 +74,7 @@ function UpdatedTime({ value }: { value: string | number }) {
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
-export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain }: {
+export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain, showDomain = true }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -82,11 +82,12 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   /** Scope/coverage line under the title (domain, observed time). */
   meta?: ReactNode;
   controls?: PageHeaderControls;
-  domain?: string | false;
+  domain?: string;
+  showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
   const { period, updatedAt, refreshing, onRefresh, showRefreshLabel } = controls ?? scope.controls ?? {};
-  const domainControl = domain === false ? null : scope.domain?.(domain);
+  const domainControl = showDomain ? scope.domain?.(domain) : null;
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
       <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>

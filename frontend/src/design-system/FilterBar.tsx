@@ -1,5 +1,5 @@
 import { formatNumber } from "../shared/format";
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { t } from "../i18n";
 import { PeriodPicker, type PeriodValue } from "./PeriodPicker";
 import { Button } from "./Primitives";
@@ -8,8 +8,8 @@ import { SearchMultiSelect, type SearchOption } from "./SearchMultiSelect";
 export type FilterOption = { value: string; label: string; count?: number };
 
 export type FilterField =
-  | { key: string; label: string; kind: "text"; placeholder?: string; wide?: boolean; nested?: { key: string; label: string } }
-  | { key: string; label: string; kind: "select"; options: FilterOption[] }
+  | { key: string; label: string; kind: "text"; placeholder?: string; wide?: boolean; nested?: { key: string; label: string }; immediate?: boolean }
+  | { key: string; label: string; kind: "select"; options: FilterOption[]; immediate?: boolean; hideLabel?: boolean }
   | { key: string; label: string; kind: "multiselect"; options: FilterOption[] }
   | { key: string; label: string; kind: "search-multiselect"; options: SearchOption[] }
   | { key: string; label: string; kind: "period"; presets?: PeriodValue["preset"][]; precision?: "date" | "datetime-local" };
@@ -27,7 +27,7 @@ function isActive(value: FilterValue): boolean {
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, leadingContent, additionalContent, align, layout, quickFilters }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -35,25 +35,30 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   defaults?: FilterValues;
   /** When supplied, remaining fields share a collapsible section of this form. */
   primaryKeys?: string[];
-  leadingContent?: ReactNode;
   additionalContent?: ReactNode;
   align?: "start" | "end";
   /** A three-column form with wide object fields; stacks on narrow screens. */
   layout?: "grid" | "inline";
   quickFilters?: ReactNode;
+  leadingControls?: ReactNode;
 }) {
   const [draft, setDraft] = useState<FilterValues>(values);
   // On a phone a long form hides the result; it starts folded behind one toggle.
   const [collapsed, setCollapsed] = useState(() => !primaryKeys && typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches);
   const formId = useId();
-  useEffect(() => { setDraft(values); }, [values]);
+  const searchTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    setDraft(values);
+    return () => window.clearTimeout(searchTimer.current);
+  }, [values]);
   const activeCount = fields.filter((field) => field.kind !== "period" && isActive(values[field.key]) && JSON.stringify(values[field.key]) !== JSON.stringify(defaults[field.key])).length;
   const additional = primaryKeys ? fields.filter((field) => !primaryKeys.includes(field.key)) : [];
   const additionalActive = additional.filter((field) => isActive(draft[field.key]) && JSON.stringify(draft[field.key]) !== JSON.stringify(defaults[field.key])).length;
   const [additionalOpen, setAdditionalOpen] = useState(() => !quickFilters && additionalActive > 0);
   useEffect(() => { if (!quickFilters && additionalActive > 0) setAdditionalOpen(true); }, [additionalActive, quickFilters]);
   const set = (key: string, value: FilterValue) => setDraft((current) => ({ ...current, [key]: value }));
-  const submit = (event: FormEvent) => { event.preventDefault(); onApply(draft); };
+  const apply = (next: FilterValues) => { window.clearTimeout(searchTimer.current); onApply(next); };
+  const submit = (event: FormEvent) => { event.preventDefault(); apply(draft); };
 
   const renderFields = (items: FilterField[]) => items.map((field) => {
     const id = `${formId}-${field.key}`;
@@ -66,11 +71,15 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
     return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
-      <label htmlFor={id} className={layout === "inline" && field.kind === "text" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <label htmlFor={id} className={layout === "inline" && (field.kind === "text" || field.kind === "select" && field.hideLabel) ? "sli-ds-sr-only" : undefined}>{field.label}</label>
       {field.kind === "text"
         ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")} onChange={(event) => {
             set(field.key, event.target.value);
-            if (layout === "inline" && !event.target.value) onApply({ ...draft, [field.key]: "" });
+            const next = { ...draft, [field.key]: event.target.value };
+            if (field.immediate && event.target.value) {
+              window.clearTimeout(searchTimer.current);
+              searchTimer.current = window.setTimeout(() => onApply(next), 250);
+            } else if (field.immediate || layout === "inline" && !event.target.value) apply(next);
           }}/>
           {field.nested ? <label className="sli-ds-field__help"><input type="checkbox" checked={draft[field.nested.key] === "true"}
             onChange={(event) => set(field.nested!.key, String(event.target.checked))}/>{field.nested.label}</label> : null}</>
@@ -78,7 +87,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
           ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => {
               const value = event.target.value || undefined;
               set(field.key, value);
-              if (layout === "inline" && primaryKeys?.includes(field.key)) onApply({ ...draft, [field.key]: value });
+              if (field.immediate) apply({ ...draft, [field.key]: value });
             }}>
               {!field.options.some((option) => option.value === "") ? <option value="">{t("filters.any")}</option> : null}
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
@@ -92,7 +101,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
 
   const actions = <div className="sli-ds-filters__actions">
     {activeCount && layout !== "inline" ? <span className="sli-ds-badge" data-tone="accent">{t("filters.active", { count: activeCount })}</span> : null}
-    <Button variant="ghost" onClick={() => { setDraft(defaults); onApply(defaults); }}>{t("filters.reset")}</Button>
+    <Button variant="ghost" onClick={() => { setDraft(defaults); apply(defaults); }}>{t("filters.reset")}</Button>
     <Button type="submit" variant="primary">{t("filters.apply")}</Button>
   </div>;
 
@@ -100,7 +109,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     {!primaryKeys ? <Button className="sli-ds-filters__toggle" aria-expanded={!collapsed} aria-controls={`${formId}-fields`} onClick={() => setCollapsed((value) => !value)}>
       {t("filters.title")}{activeCount ? ` · ${t("filters.active", { count: activeCount })}` : ""}
     </Button> : null}
-    {leadingContent}
+    {leadingControls}
     <div className="sli-ds-filters__fields" id={`${formId}-fields`} data-align={align} data-layout={layout}>
       {renderFields(primaryKeys ? fields.filter((field) => primaryKeys.includes(field.key)) : fields)}
     </div>

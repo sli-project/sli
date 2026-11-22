@@ -4,11 +4,11 @@ namespace Sli.Server.Domains;
 
 internal static class HomeDecisionSql
 {
-    internal static string Groups(bool identity, bool allDomains = false)
+    internal static string Groups(bool identity, bool allDomains = false, bool excludeDeferred = false)
     {
         // The queue owns both the admitted population and the rule/object grouping.
         var query = new FindingQuery(null, null, null, "from", "to", null, null, allDomains ? null : [], 8, false) {
-            GroupQueue = true, Population = "open"
+            GroupQueue = true, Population = "open", ExcludeDeferred = excludeDeferred
         };
         string prefix = ProblemRepository.FindingsQueries(query, populationOnly: true, shortEvents: true).Page
             .Replace("@domains", "@ids")

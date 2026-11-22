@@ -44,7 +44,7 @@ function Privileges({ row }: { row: Row }) {
       <DataTable caption={cardText("direct_membership")} rows={groups} rowKey={(group) => String(group.id)}
         columns={[{ key: "group", label: cardText("group"), render: (group) => <GroupLink group={group}/> },
           { key: "relation", label: cardText("membership"), render: () => cardText("direct") }]}
-        wrap stickyHeader={false} showFooter={false}/>
+        wrapCells="all" stickyHeader={false} showFooter={false}/>
     </Section> : null}
   </>;
 }
@@ -145,7 +145,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
     { key: "activity_source", label: cardText("activity_source"), value: text(row.activity_source)?.includes("lastLogon across all")
       ? cardText("source_dc") : text(row.activity_source) ? cardText("source_ad") : null },
   ].filter((fact) => canSee(fact.key) && (fact.key !== "department" || fact.value !== null));
-  return <DetailDrawer open inline title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
+  return <DetailDrawer open inline inlineDialog title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
     {allowJournal && sam ? <a className="sli-ds-button" data-variant="primary" href={withReturnTo(`/app/report/events.journal?${journalParams}`, returnTo)}>{cardText("journal")}</a> : null}
     {allowProblems && id ? <a className="sli-ds-button" href={withReturnTo(`/app/report/security.problems?${problemsParams}`, returnTo)}>{cardText("problems")}</a> : null}
     <CopyFactsButton text={rowFactsText(name, columns, row, timeZone)}/>
@@ -164,7 +164,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
                 const date = formatDateTime(text(computer.at_utc));
                 return href ? <a href={withReturnTo(href, returnTo)}>{date}</a> : date;
               } },
-            ]} wrap stickyHeader={false} showFooter={false}/>
+            ]} wrapCells="all" stickyHeader={false} showFooter={false}/>
           </Section> : null}
           <Privileges row={row}/>
         </> : tab === "rights" ? <Privileges row={row}/>

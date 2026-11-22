@@ -32,7 +32,7 @@ export type ReportParamDto = {
   default?: string | number;
   required?: boolean;
   hidden?: boolean;
-  presets?: Array<"24h" | "7d" | "30d" | "90d" | "custom">;
+  presets?: Array<"2h" | "24h" | "7d" | "30d" | "90d" | "custom">;
   max_days?: number;
   max_length?: number;
 };
@@ -74,6 +74,7 @@ export type ReportDetailDto = {
   inline?: string | null;
   row_component?: string | null;
   actions?: string | null;
+  query_available?: boolean;
   columns: ReportColumnDto[];
   row_links: Array<{ label: string; href: string }>;
 };
@@ -172,8 +173,11 @@ export type ReportResultDto = {
   has_more: boolean;
   next_cursor: string | null;
   filtered_count: number | null;
+  change_counts?: Record<string, number>;
   metrics: Array<{ key: string; label: string; value: number | string | null; quality?: "complete" | "observed" | "unknown"; tone?: "neutral" | "accent" | "success" | "warning" | "danger"; caption?: string; filter?: Record<string, string> }>;
   series: Record<string, unknown>;
+  journal_counts?: Record<string, number>;
+  journal_event_count?: number;
   coverage: { password_detection?: PasswordDetectionCoverage; state?: string; completeness?: string; evidence_total_lower_bound?: number | null; evidence_missing_sources?: number; [key: string]: unknown };
   filter_options: Record<string, ReportOption[]>;
   limitations: Array<{ code: string; text: string; params?: Record<string, string | number | null> }>;

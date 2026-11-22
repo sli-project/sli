@@ -26,18 +26,26 @@ public sealed partial class BuiltinReportExports(ReportRunner runner, IAccessFac
         var projection = JsonSerializer.SerializeToNode(AccessReadProjection.Compose(c.Principal, subject, c.Access.Capabilities, c.Access, false))!.AsObject();
         var filters = new Dictionary<string, string> { ["time_from"] = c.Params["period"]!["from_utc"]!.ToString(), ["time_to"] = c.Params["period"]!["to_utc"]!.ToString() };
         foreach (string key in new[] { "view", "q", "server" }) if (c.Params[key]?.ToString() is { Length: > 0 } value && (key != "view" || value != "all")) filters[key] = value;
-        var raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", 200, null, "export", filters, ct);
+        var journal = EventsJournalReader.Options(c);
+        var raw = await runner.ExecuteAsync(new(c.Principal, subject, c.Access.Capabilities, projection), "events.explorer", 200, null, "export", filters, ct, journal);
         var rows = (raw["items"] as JsonArray ?? []).OfType<JsonObject>().ToArray();
         var columns = (raw["fields"] as JsonArray ?? []).OfType<JsonObject>().Select(f => new JsonObject { ["key"] = f["key"]!.DeepClone(), ["label"] = f["label"]?.DeepClone() ?? f["key"]!.DeepClone() });
-        bool truncated = raw["has_more"]?.GetValue<bool>() == true || long.TryParse(raw["limits"]?["total_count"]?.ToString(), out long total) && total > rows.Length;
+        bool truncated = raw["has_more"]?.GetValue<bool>() == true || long.TryParse((raw["filtered_count"] ?? raw["limits"]?["total_count"])?.ToString(), out long total) && total > rows.Length;
         return new(ReportCsv.FromColumns(columns, rows), rows.Length, truncated);
     }
     async Task<ReportExport> Security(ReportQueryContext c, CancellationToken ct)
     {
-        var period = AdPeriod.Parse(c.Params["period"]!["from_utc"]!.ToString(), c.Params["period"]!["to_utc"]!.ToString(), "UTC", "security_events");
+        var period = AdPeriod.Parse(c.Params["period"]!["from_utc"]!.ToString(), c.Params["period"]!["to_utc"]!.ToString(), "UTC", "security_events",
+            c.Params["changes_view"] is null ? 31 : 365);
         if (c.Paging.Tab == "persistence-changes") return await Persistence(c, period, ct);
         var query = new QueryCollection(c.Params.Where(p => p.Value is JsonValue).ToDictionary(p => p.Key, p => new StringValues(p.Value!.ToString())));
-        var filters = AdSecurity.Normalize(query);
+        var filters = AdSecurity.Normalize(query, domainChanges: true);
+        if (filters["changes_view"] is not null)
+        {
+            filters["repeat_mode"] = "individual";
+            filters["changes_order"] = "desc";
+            filters.Remove("batch");
+        }
         long? selected = c.Params["domain"] is {} domain ? long.Parse(domain.ToString(), CultureInfo.InvariantCulture) : null;
         var domains = new List<long>();
         if (selected is {} chosen) {

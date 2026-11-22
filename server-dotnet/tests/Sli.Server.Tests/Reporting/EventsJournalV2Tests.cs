@@ -124,7 +124,7 @@ public sealed class EventsJournalV2Tests
         var (sql, values) = f.Db.Page;
         Assert.Contains("event.domain_id=any(", sql); Assert.Equal(new long[] { 7, 8 }, Assert.IsType<long[]>(values[0]));
         Assert.Equal(5, values.Length); // domain scope, both window boundaries, page size
-        Assert.Equal(DateTimeOffset.Parse(To).AddDays(-7), values[1]); Assert.Equal(DateTimeOffset.Parse(To), values[2]);
+        Assert.Equal(DateTimeOffset.Parse(To).AddHours(-2), values[1]); Assert.Equal(DateTimeOffset.Parse(To), values[2]);
         Assert.DoesNotContain("event.event_id=any(", sql); Assert.DoesNotContain("event.id<", sql);
         Assert.Equal("empty", body["state"]!.ToString()); Assert.Empty(body["items"]!.AsArray()); Assert.Equal(0, f.Source.Reads);
     }

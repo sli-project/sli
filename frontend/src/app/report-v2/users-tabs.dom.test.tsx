@@ -96,10 +96,12 @@ it("expands a check and opens every exact match with a bounded request", async (
 it("opens the right panel from a name and restores focus without losing the list", async () => {
   window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all"); show();
   const button = await screen.findByRole("button", { name: "synthetic-1" }); button.focus(); fireEvent.click(button);
-  expect(await screen.findByRole("dialog")).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Все учётки" })).toBeTruthy();
+  const dialog = await screen.findByRole("dialog");
+  expect(document.activeElement).toBe(dialog);
+  const tabPanel = screen.getByRole("tabpanel", { name: /Все учётки/ });
+  expect(within(tabPanel).getByRole("table", { name: "Все учётки" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Synthetic all" })).toBeNull();
-  fireEvent.keyDown(document, { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyDown(dialog, { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(button);
 });
 

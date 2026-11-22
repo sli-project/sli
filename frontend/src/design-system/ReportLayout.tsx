@@ -14,14 +14,15 @@ import { Panel } from "./Primitives";
  * Reports fill the slots; they do not define their own page geometry.
  * While loading, the metrics/table slots show skeletons of the final geometry.
  */
-export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, split = false }: {
+export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, side, split = false }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
   meta?: ReactNode;
   actions?: ReactNode;
   controls?: PageHeaderControls;
-  domain?: string | false;
+  domain?: string;
+  showDomain?: boolean;
   metrics?: ReactNode;
   filters?: ReactNode;
   tabs?: ReactNode;
@@ -40,24 +41,31 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   busy?: boolean;
   children?: ReactNode;
   drawer?: ReactNode;
-  split?: boolean;
+  side?: ReactNode;
+  inlineDrawer?: ReactNode;
+  split?: boolean | "inline";
 }) {
   const blocking = state === "loading" || state === "empty" || state === "unavailable" || state === "denied" || state === "not_collected" || state === "error";
   const result = state === "loading"
     ? <LoadingRegion>{metrics ? null : <MetricStripSkeleton/>}<TableSkeleton/></LoadingRegion>
     : blocking ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} actions={stateActions} onRetry={onRetry}/> : children;
-  const view = tabbed ? <TabPanel>{result}</TabPanel> : blocking ? result : <div className="sli-ds-report__views">{result}</div>;
+  const reportContent = side ? <div className="sli-ds-report__side">{result}{side}</div> : result;
+  const views = tabbed ? <TabPanel>{reportContent}</TabPanel> : blocking && !split ? result : <div className="sli-ds-report__views" data-split={Boolean(inlineDrawer) || undefined}>
+    {inlineDrawer ? <div className="sli-ds-report__list">{reportContent}</div> : reportContent}
+    {inlineDrawer}
+  </div>;
   const content = <>
     {tabbed || state !== "denied" ? tabs : null}
     {state === "partial" || state === "stale" || state === "processing" ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} age={staleAge} compact/> : null}
-    {split ? <div className="sli-ds-report__split" data-open={drawer ? true : undefined}>{view}{drawer}</div> : view}
+    {split ? <div className="sli-ds-report__split" data-layout={split === "inline" ? split : undefined}
+      data-open={split === "inline" && drawer ? true : undefined}>{views}{drawer}</div> : views}
   </>;
   return <section className="sli-ds-report" data-state={state} data-busy={busy || undefined} aria-busy={busy || undefined}>
     {busy ? <div className="sli-ds-busybar" role="progressbar" aria-label={t("state.refreshing")}/> : null}
-    <PageHeader title={title} subtitle={subtitle} crumbs={crumbs} meta={meta} actions={actions} controls={controls} domain={domain}/>
+    <PageHeader title={title} subtitle={subtitle} crumbs={crumbs} meta={meta} actions={actions} controls={controls} domain={domain} showDomain={showDomain}/>
     {state !== "denied" ? metrics : null}
     {state !== "denied" ? filters : null}
     {panel ? <Panel>{content}</Panel> : content}
-    {!split ? drawer : null}
+    {split ? null : drawer}
   </section>;
 }
