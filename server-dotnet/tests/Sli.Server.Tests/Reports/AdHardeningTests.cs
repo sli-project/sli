@@ -6,6 +6,20 @@ namespace Sli.Server.Tests.Reports;
 
 public class AdHardeningTests
 {
+    [Fact] public void ObservedQuotaAndDisabledLockoutAreLowSeverity()
+    {
+        var domain = Item("example.test", "domain");
+        domain["attributes"]!["machine_account_quota"] = 10;
+        var policy = Item("default-policy", "password_policy");
+        policy["attributes"]!["lockout_threshold"] = 0;
+        var rows = Run(domain, policy);
+        Assert.Equal(new[] { "lockout_threshold", "machine_account_quota" }, rows.Select(row => row!["check"]!.ToString()));
+        Assert.All(rows, row => Assert.Equal("low", row!["severity"]!.ToString()));
+        domain["attributes"]!["machine_account_quota"] = 0;
+        policy["attributes"]!.AsObject().Remove("lockout_threshold");
+        Assert.Empty(Run(domain.DeepClone().AsObject(), policy.DeepClone().AsObject()));
+    }
+
     [Fact] public void Duplicate_record_key_uses_last_object()
     {
         Assert.Empty(Run(Item("duplicate", "ad_user", spn: true), Item("duplicate", "ad_user")));
@@ -54,7 +68,7 @@ public class AdHardeningTests
         var group = Item("group", "ad_group", sid: "S-1-5-21-111-222-333-512");
         var snap = new JsonObject { ["observed_at_utc"] = "2026-10-29T00:00:00Z", ["objects"] = new JsonArray(user, group), ["edges"] = new JsonArray(new JsonArray("user", "group")) };
         var rows = AdHardening.Evaluate(snap);
-        Assert.Equal("medium", (string?)rows.Single(x => (string?)x!["check"] == "privileged_nonexpiring")!["severity"]);
+        Assert.Equal("low", (string?)rows.Single(x => (string?)x!["check"] == "privileged_nonexpiring")!["severity"]);
         Assert.Equal("high", (string?)rows.Single(x => (string?)x!["check"] == "spn_users")!["severity"]);
     }
 }

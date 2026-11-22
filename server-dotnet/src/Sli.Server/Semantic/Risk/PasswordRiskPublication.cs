@@ -51,13 +51,14 @@ internal static class PasswordRiskPublication
             """,ct,("legacy","semantic:"+RiskJson.String(scenario,"scenario_key")),("fingerprint",entityFingerprint),
             ("scenario",sid),("partition",work.Proposal.Partition),("kind",work.Proposal.Policy.Rule.Id),("entity",work.Proposal.Signal.Entity));
         string fingerprint=RiskJson.String(published[0],"finding_fingerprint");
+        string severity = RiskJson.String(scenario,"risk_class") == "critical" ? "critical" : "medium";
         var created=await sql.Rows("""
             insert into public.findings(fingerprint,rule_code,title,severity,confidence,status,first_seen_utc,last_seen_utc,
               actor,target,source,summary,why_it_matters,recommended_action,evidence_count,status_reason,repeat_count,last_evidence_event_id)
             values(@fingerprint,@rule,@title,@risk,@confidence,'new',@first,@last,null,null,null,@explanation,@explanation,
               'Review the linked evidence and validate the security impact.',0,'created from enabled semantic scenario',0,null)
             on conflict(fingerprint) do nothing returning id
-            """,ct,("fingerprint",fingerprint),("rule",ruleCode),("title",RiskJson.String(scenario,"title")),("risk",RiskJson.String(scenario,"risk_class")),("confidence",RiskJson.Int(scenario,"confidence_score")/100.0),("first",RiskJson.String(scenario,"first_seen_utc")),("last",RiskJson.String(scenario,"last_seen_utc")),("explanation",RiskJson.String(scenario,"explanation")));
+            """,ct,("fingerprint",fingerprint),("rule",ruleCode),("title",RiskJson.String(scenario,"title")),("risk",severity),("confidence",RiskJson.Int(scenario,"confidence_score")/100.0),("first",RiskJson.String(scenario,"first_seen_utc")),("last",RiskJson.String(scenario,"last_seen_utc")),("explanation",RiskJson.String(scenario,"explanation")));
         var findings=await sql.Rows("select id,rule_code from public.findings where fingerprint=@fingerprint for update",ct,("fingerprint",fingerprint));
         RiskJson.Require(findings.Count==1&&RiskJson.String(findings[0],"rule_code")==ruleCode,"password_risk_finding_replay_conflict");long finding=RiskJson.Long(findings[0],"id");
         // Re-resolve and reparse again before linking. No preflight cache/verdict is reused.
@@ -100,7 +101,7 @@ internal static class PasswordRiskPublication
               confidence=greatest(confidence,@confidence),first_seen_utc=least(first_seen_utc,@first),last_seen_utc=greatest(last_seen_utc,@last),
               summary=@explanation,why_it_matters=@explanation,recommended_action='Review the linked evidence and validate the security impact.',
               evidence_count=@count,last_evidence_event_id=@last_event::bigint,updated_at=now() where id=@finding
-            """,ct,("title",RiskJson.String(scenario,"title")),("risk",RiskJson.String(scenario,"risk_class")),("confidence",RiskJson.Int(scenario,"confidence_score")/100.0),("first",RiskJson.String(scenario,"first_seen_utc")),("last",RiskJson.String(scenario,"last_seen_utc")),("explanation",RiskJson.String(scenario,"explanation")),("count",count),("last_event",evidence[0]["max_event_id"]==null?null:RiskJson.Long(evidence[0],"max_event_id")),("finding",finding));
+            """,ct,("title",RiskJson.String(scenario,"title")),("risk",severity),("confidence",RiskJson.Int(scenario,"confidence_score")/100.0),("first",RiskJson.String(scenario,"first_seen_utc")),("last",RiskJson.String(scenario,"last_seen_utc")),("explanation",RiskJson.String(scenario,"explanation")),("count",count),("last_event",evidence[0]["max_event_id"]==null?null:RiskJson.Long(evidence[0],"max_event_id")),("finding",finding));
         await sql.Execute("""
             insert into public.semantic_finding_publications(scenario_id,finding_id,first_job_id,finding_fingerprint,published_evidence_count)
             values(@scenario,@finding,@job,@fingerprint,@count) on conflict(scenario_id) do nothing

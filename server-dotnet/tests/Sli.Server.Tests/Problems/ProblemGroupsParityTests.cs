@@ -284,7 +284,7 @@ public sealed class ProblemGroupsParityTests
         create table ad_context_sections(run_id text,section_name text,status text);
         """;
 
-    const string FixtureSql = """
+    const string FixtureSql = ProblemQueuePagingTests.EmptyPasswordFacts + """
         create table findings_active(id bigint,rule_code text,title text,severity text,created_at timestamptz,first_seen_utc text,last_seen_utc text,assigned_to text,actor text,target text,evidence_count bigint,status text,repeat_count int,updated_at timestamptz);
         create table finding_evidence(finding_id bigint,event_id bigint,evidence_role text,note text);
         create table events_v2_core(id bigint,event_id int,domain_id bigint,server_id bigint,time_created_utc timestamptz,target_user_sid text,channel_id int,provider_id int,target_domain_id bigint,subject_domain_id bigint,target_user_name text,ip_address text,workstation_name text,event_record_id bigint,subject_user_name text,subject_user_sid text);

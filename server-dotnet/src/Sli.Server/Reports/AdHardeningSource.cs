@@ -26,12 +26,17 @@ public sealed class AdHardeningSource(IPostgresConnectionFactory connections):IA
         var runs=await sql.Rows("""
             /* ad_hardening_published_runs */
             select d.id as domain_id,r.run_id::text,r.observed_at_utc,s.source_state,r.mode,
+              posture.run_id::text as posture_run,posture.observed_at_utc as posture_at,
               (select jsonb_object_agg(section_name,jsonb_build_object('status',status,'record_count',record_count))
                from public.ad_context_sections where run_id=r.run_id and section_name in ('directory_accounts','directory_group_graph')) as sections
             from public.domains d
             left join lateral(select manifest_id from public.ad_snapshot_manifests where domain_id=d.id order by slot_start_utc desc limit 1)m on true
             left join public.ad_snapshot_manifest_sources s on s.manifest_id=m.manifest_id and s.family='ad_context_base'
             left join public.ad_context_runs r on r.run_id::text=s.source_id and r.domain_id=d.id and r.bundle_sha256=s.payload_sha256 and r.status='completed'
+            left join public.ad_snapshot_manifest_sources p on p.manifest_id=m.manifest_id and p.family='ad_domain_posture'
+            left join public.ad_context_runs posture on posture.run_id::text=p.source_id and posture.domain_id=d.id
+              and posture.bundle_sha256=p.payload_sha256 and posture.status='completed'
+              and exists(select 1 from public.ad_context_sections where run_id=posture.run_id and section_name='domain_posture' and status='complete')
             where (@domains::bigint[] is null or d.id=any(@domains::bigint[])) order by d.id limit 101
             """,ct,("domains",domainIds));
         var snapshots=new List<JsonObject>();foreach(var run in runs.Take(100)){
@@ -58,7 +63,23 @@ public sealed class AdHardeningSource(IPostgresConnectionFactory connections):IA
                 """,ct,args);
             var objects=Verified(entities.Take(10000),at);var edges=Verified(relations.Take(10000),at);var sections=run["sections"] as JsonObject??new();
             bool complete=entities.Count<=10000&&relations.Count<=10000&&sections.Select(p=>p.Key).ToHashSet().SetEquals(["directory_accounts","directory_group_graph"])&&sections.All(p=>D.Text(p.Value?["status"])=="complete")&&sections.Sum(p=>p.Value?["record_count"]?.GetValue<int>()??0)==objects.Count+edges.Count&&D.Text(run["mode"]) is "full" or "reconcile";
-            snapshots.Add(new(){["available"]=true,["domain_id"]=run["domain_id"]!.DeepClone(),["run_id"]=run["run_id"]!.DeepClone(),["observed_at_utc"]=D.Stamp(at),["objects"]=D.Array(objects,n=>n.DeepClone()),["edges"]=D.Array(edges,n=>new JsonArray(n["source_record_key"]!.DeepClone(),n["target_record_key"]!.DeepClone())),["complete"]=complete});
+            if (run["posture_run"] is not null && run["posture_at"] is not null) {
+                var postureAt=D.Time(run["posture_at"]);
+                var posture=await sql.Rows("""
+                    select v.attributes_json,encode(evidence.integrity_sha256,'hex') as integrity_sha256
+                    from public.ad_context_entity_versions v join public.entities_v2 entity on entity.id=v.entity_id
+                    join public.ad_context_evidence evidence on evidence.source_run_id=@run
+                      and evidence.locator_json->>'record_key'=v.attributes_json->>'record_key'
+                    where entity.domain_id=@domain and v.source_section='domain_posture'
+                      and v.attributes_json#>>'{identity,kind}' in ('domain','password_policy')
+                      and v.valid_from_utc<=@at and (v.valid_to_utc is null or v.valid_to_utc>@at)
+                    order by v.entity_id limit 10001
+                    """,ct,("run",Guid.Parse(D.Text(run["posture_run"]))),("domain",run["domain_id"]!.GetValue<long>()),("at",postureAt));
+                var verified=Verified(posture.Take(10000),postureAt);
+                complete=complete&&verified.Count==posture.Count;
+                objects=objects.Concat(verified).ToArray();
+            }
+            snapshots.Add(new(){["available"]=true,["domain_id"]=run["domain_id"]!.DeepClone(),["run_id"]=run["run_id"]!.DeepClone(),["observed_at_utc"]=D.Stamp(at),["objects"]=D.Array(objects,n=>n.DeepClone()),["edges"]=D.Array(edges,n=>new JsonArray(n["source_record_key"]!.DeepClone(),n["target_record_key"]!.DeepClone())),["complete"]=complete,["posture_run"]=run["posture_run"]?.DeepClone(),["posture_at"]=run["posture_at"]?.DeepClone()});
         }return new(snapshots,runs.Count>100);
     }
     internal static IReadOnlyList<JsonObject> Verified(IEnumerable<JsonObject> rows,DateTimeOffset observed)
@@ -71,7 +92,7 @@ public static class AdHardeningReport
 {
     public static JsonObject Render(AdHardeningSnapshots data,DateTimeOffset now,bool english=false,string? severity=null,string? query=null,string? ruleCode=null,Func<long,string,bool>? fieldAllowed=null)
     {
-        var available=data.Items.Where(s=>s["available"]?.GetValue<bool>()==true).ToArray();bool partial=data.Truncated||available.Length!=data.Items.Count||available.Any(s=>s["complete"]?.GetValue<bool>()!=true),stale=available.Any(s=>now-D.Time(s["observed_at_utc"])>TimeSpan.FromHours(48)||D.Time(s["observed_at_utc"])>now);var rows=new JsonArray();
+        var available=data.Items.Where(s=>s["available"]?.GetValue<bool>()==true).ToArray();bool partial=data.Truncated||available.Length!=data.Items.Count||available.Any(s=>s["complete"]?.GetValue<bool>()!=true),stale=available.SelectMany(s=>new[]{s["observed_at_utc"],s["posture_at"]}).OfType<JsonValue>().Select(D.Time).Any(at=>now-at>TimeSpan.FromHours(48)||at>now);var rows=new JsonArray();
         JsonObject Message(string code,IReadOnlyDictionary<string,object?>? parameters=null)=>new(){["code"]=code,["params"]=System.Text.Json.JsonSerializer.SerializeToNode(parameters??new Dictionary<string,object?>()),["text"]=DetectionMessages.Text(code,english,parameters)};
         foreach(var snapshot in available)foreach(var node in AdHardening.Evaluate(snapshot)){
             var row=node!.AsObject();long domain=row["domain_id"]!.GetValue<long>();bool identity=fieldAllowed?.Invoke(domain,"identity_basic")??true,technical=fieldAllowed?.Invoke(domain,"technical")??true;

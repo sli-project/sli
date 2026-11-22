@@ -26,13 +26,13 @@ internal static class NotificationAlert
         string language = await NotificationLanguages.ReadAsync(db, tx, job.Recipient, telegram, ct);
         if (job.Kind == "test_problem") return NotificationMessage.Format(job, baseUrl, null, null, language);
 
-        await using var command = new NpgsqlCommand($"""
+        await using var command = new NpgsqlCommand("""
             with alert as materialized (
                 select public.notification_alert_finding(@job,@lease) as finding
             ), events as materialized (
                 select * from public.notification_alert_events(@job,@lease)
             )
-            select finding, {ProblemCohorts.PasswordFacts("f", eventSource: "events")} as password_facts,
+            select finding, public.notification_password_facts395(@job,@lease) as password_facts,
                 case when f.rule_code not in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
                     then (select min(hostname) from events where hostname not in ('','-') having count(distinct hostname)=1) end as computer,
                 (select min(ip_address) from events where ip_address not in ('','-','::','0.0.0.0')

@@ -48,14 +48,15 @@ internal static class PasswordRiskProof
         }return signals;
     }
 
-    internal static async Task<IReadOnlyList<PasswordNative>> Native(RiskSql sql,PasswordScope scope,IReadOnlyList<PasswordWitness> witnesses,CancellationToken ct)
+    internal static async Task<IReadOnlyList<PasswordNative>> Native(RiskSql sql,PasswordRule rule,IReadOnlyList<PasswordWitness> witnesses,CancellationToken ct)
     {
+        var scope=rule.Scope;
         RiskJson.Require(witnesses.Count<=10000&&witnesses.Sum(w=>(long)w.XmlBytes)<=33554432,"password_risk_proof_bound");
         var rows=await sql.Rows("select * from public.read_password_retained_proof_v2(@scope::jsonb,@refs::jsonb)",ct,("scope",scope.Document),("refs",PasswordJson.Array(witnesses,w=>w.Document)));
         RiskJson.Require(rows.Count==witnesses.Count,"password_risk_native_unavailable");var natives=new List<PasswordNative>();long bytes=0;
         for(int i=0;i<rows.Count;i++) {
             var row=rows[i];RiskJson.Require(RiskJson.Int(row,"occurrence_index")==i+1&&RiskJson.Long(row,"source_event_id")==witnesses[i].NativeId,"password_risk_native_unavailable");
-            var native=PasswordNative.Parse(scope,RiskJson.Long(row,"source_event_id"),RiskJson.String(row,"sha256"),RiskJson.Int(row,"event_id"),PasswordJson.Time(row["occurred_at_utc"]),RiskJson.String(row,"source_xml"));
+            var native=PasswordNative.Parse(scope,RiskJson.Long(row,"source_event_id"),RiskJson.String(row,"sha256"),RiskJson.Int(row,"event_id"),PasswordJson.Time(row["occurred_at_utc"]),RiskJson.String(row,"source_xml"),rule.NormalizedAccounts);
             bytes+=native.Witness.XmlBytes;RiskJson.Require(bytes<=33554432,"password_risk_proof_bound");
             RiskJson.Require(native.Witness==witnesses[i]&&RiskJson.Int(row,"xml_bytes")==native.Witness.XmlBytes&&RiskJson.String(row,"xml_sha256")==native.Witness.XmlSha256,"password_risk_native_content_conflict");natives.Add(native);
         }return natives;
@@ -63,8 +64,8 @@ internal static class PasswordRiskProof
 
     internal static async Task VerifyPortion(RiskSql sql,PasswordRiskSignal signal,CancellationToken ct)
     {
-        var native=await Native(sql,signal.Rule.Scope,signal.Witnesses,ct);
-        RiskJson.Require(native.All(n=>n.Member.EntityFor(signal.Rule)==signal.Entity),"password_risk_native_entity_conflict");
+        var native=await Native(sql,signal.Rule,signal.Witnesses,ct);
+        RiskJson.Require(native.All(n=>n.ProvesEntity(signal.Rule,signal.Entity)),"password_risk_native_entity_conflict");
     }
 
     private static PasswordWitness ReleaseWitness(JsonNode? document,PasswordScope scope)
@@ -101,9 +102,9 @@ internal static class PasswordRiskProof
             if(!witnesses.Contains(release))witnesses.Add(release);
         }
         var historical=Historical(ledger,episode);if(historical!=null&&!witnesses.Contains(historical))witnesses.Add(historical);
-        var native=await Native(sql,episode.Rule.Scope,witnesses,ct);var budget=episode.Verify(native.Take(chainCount));
+        var native=await Native(sql,episode.Rule,witnesses,ct);var budget=episode.Verify(native.Take(chainCount));
         string entity=native[0].Member.EntityFor(signal.Rule)??throw new PasswordRiskFailure("password_risk_native_entity_invalid");
-        if(release!=null)RiskJson.Require(native.All(n=>n.Member.EntityFor(signal.Rule)==entity),"password_risk_release_invalid");
+        if(release!=null)RiskJson.Require(native.All(n=>n.ProvesEntity(signal.Rule,entity)),"password_risk_release_invalid");
         var last=episode.Emissions[^1];
         if(historical!=null) {
             var barrier=native.First(n=>n.Witness==historical);var endpoint=native.First(n=>n.Witness==last.Endpoint);
