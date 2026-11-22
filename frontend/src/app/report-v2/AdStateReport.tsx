@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
-import { DataTable, Icon, ReportLayout, SeverityBadge, TabList, Tabs, type PeriodPreset, type PeriodValue, type TableColumn } from "../../design-system";
+import { DataTable, Icon, ReportLayout, SeverityBadge, StateView, TabList, Tabs, type PeriodPreset, type PeriodValue, type TableColumn } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { formatNumber, EMPTY_VALUE } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
@@ -67,10 +67,11 @@ function ParameterHistory({ row, reportKey, params }: { row: Row; reportKey: str
     ? (row.object_context as Row).dns_host_name : undefined;
   return <section className="sli-ds-table__detail">
     <h3>{title}</h3>
-    {history.isError && !items.length || ["error", "denied"].includes(history.data?.pages[0]?.state ?? "") ? <Failure subject={copy("history")} retry={() => void history.refetch()}/> :
-      <div aria-busy={history.isLoading || undefined}><DataTable caption={title} columns={columns} rows={items}
+    {history.isPending ? <StateView state="loading" compact skeleton="table"/>
+      : history.isError && !items.length || ["error", "denied"].includes(history.data?.pages[0]?.state ?? "") ? <Failure subject={copy("history")} retry={() => void history.refetch()}/>
+      : <DataTable caption={title} columns={columns} rows={items}
         rowKey={(item) => String(item.row_id ?? item.observed_at_utc)} stickyHeader={false} showFooter={Boolean(history.hasNextPage)} hasMore={history.hasNextPage}
-        loadingMore={history.isFetchingNextPage} onLoadMore={() => void history.fetchNextPage()} emptyContent={EMPTY_VALUE}/></div>}
+        loadingMore={history.isFetchingNextPage} onLoadMore={() => void history.fetchNextPage()} emptyContent={EMPTY_VALUE}/>}
     {typeof host === "string" && host ? <a href={inApp(reportHref("events.journal", { server: host.slice(0, 256), domain: String(row.domain_id ?? "") }))}>{copy("object_events")}</a> : null}
   </section>;
 }
