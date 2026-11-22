@@ -339,6 +339,34 @@ public static class ProblemPresentation
                 if (row.TryGetPropertyValue(field, out var value)) queueRow[field] = value?.DeepClone();
             if (IsPasswordFinding(rule)) queueRow.Remove("actor");
         }
+        if (finding.ContainsKey("deferred_until")) {
+            if (status == "deferred") queueRow["deferred_until"] = finding["deferred_until"]?.DeepClone();
+            else if (queueRow["status_history"] is JsonArray history && finding["deferred_until"] is {} expired && ProblemJson.Stamp(expired, out var until)) {
+                var ended = new JsonObject { ["id"] = -ProblemJson.Long(finding["id"]), ["old_status"] = "deferred", ["new_status"] = status,
+                    ["changed_by"] = "system", ["changed_at"] = expired.DeepClone() };
+                int position = 0;
+                while (position < history.Count && ProblemJson.Stamp(history[position]?["changed_at"], out var changed) && changed >= until) position++;
+                history.Insert(position, ended);
+            }
+            queueRow["rule_code"] = finding["rule_code"]?.DeepClone();
+            var facts = RuleParameters(finding, access, language);
+            queueRow["queue_participant"] = (facts["member"] ?? facts["account"] ?? facts["target"] ?? facts["computer"])?.DeepClone();
+            queueRow["queue_group"] = facts["group"]?.DeepClone();
+            if (ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) || rule is "semantic.qw.account-decoy" or "semantic.qw.file-decoy")
+                queueRow["severity"] = "critical";
+            if (IsPasswordFinding(rule)) {
+                var aliases = finding["queue_attack_aliases"];
+                var witnesses = finding["presentation_facts"];
+                bool identityAllowed = access.Fields("identity_basic");
+                bool sourceAllowed = access.Fields("identity_basic", "technical");
+                queueRow["queue_attack"] = new JsonObject {
+                    ["accounts"] = identityAllowed ? aliases?["accounts"]?.DeepClone() : null,
+                    ["addresses"] = sourceAllowed ? aliases?["addresses"]?.DeepClone() : null,
+                    ["account_count"] = identityAllowed ? witnesses?["account_count"]?.DeepClone() : null,
+                    ["event_count"] = witnesses?["attempts"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone()
+                };
+            }
+        }
         return queueRow;
     }
 }

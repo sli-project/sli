@@ -74,6 +74,7 @@ export type ReportDetailDto = {
   inline?: string | null;
   row_component?: string | null;
   actions?: string | null;
+  query_available?: boolean;
   columns: ReportColumnDto[];
   row_links: Array<{ label: string; href: string }>;
 };

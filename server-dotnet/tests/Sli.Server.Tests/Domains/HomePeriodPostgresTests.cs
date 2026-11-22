@@ -47,6 +47,9 @@ public sealed partial class HomeSummaryEndpointTests
             create function semantic_finding_in_domains_v265(finding bigint, ids bigint[]) returns boolean language sql stable
                 as 'select ids is null or exists(select 1 from findings_active f where f.id=finding and f.domain_id=any(ids))';
             create function semantic_finding_suppressed_v160(finding bigint,rule text) returns boolean language sql stable as 'select false';
+            create table semantic_security_scenarios(scenario_key bytea,scenario_kind text,partition_key text,strict_keys_json jsonb);
+            create table finding_event_details337(finding_id bigint,event_db_id bigint,event_id int);
+            create function password_problem_facts395(finding bigint,rule text) returns jsonb language sql stable as 'select null::jsonb';
             create table finding_entities(finding_id bigint,entity_id bigint,display_name text,entity_role text);
             create table finding_event_copies337(finding_id bigint,event_id bigint,event_kind int,domain_id bigint,time_created_utc timestamptz,
                 computer text,method jsonb,fields jsonb);
@@ -117,7 +120,13 @@ public sealed partial class HomeSummaryEndpointTests
                 (5,8,'test-critical','Other domain problem',null,'critical',null,'other-account',(@end-interval '2 hours')::text,null,'new',0),
                 (6,7,'semantic.qw.password-brute-force','Stored English title',null,'high','','',(@end-interval '39 minutes')::text,null,'active',0),
                 (7,7,'semantic.qw.password-spray','Stored English title',null,'high','','',(@end-interval '40 minutes')::text,null,'active',0),
-                (9,7,'test-critical','Unpublished problem',null,'critical',null,'test-account',(@end-interval '2 hours')::text,null,'new',0);
+                (9,7,'test-critical','Unpublished problem',null,'critical',null,'test-account',(@end-interval '2 hours')::text,null,'new',0),
+                (10,7,'qw.ad-hardening.machine-account-quota','MachineAccountQuota',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
+                (11,7,'qw.ad-hardening.lockout-threshold','Lockout threshold',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
+                (12,7,'qw.ad-hardening.privileged-nonexpiring','Password never expires',null,'high',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
+                (13,7,'semantic.security.privileged_group_member_added','Earlier occurrence',null,'high',null,'test-group',(@end-interval '8 days')::text,null,'new',0);
+            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int;
+            update findings_active set last_seen_utc=first_seen_utc;
             insert into finding_event_copies337 values
                 (1,250004,4728,7,@end-interval '35 minutes','DC01.example.test',
                  '{"$principals":{"TargetUserName":"test-group"}}','{"MemberName":"test-account"}'),
@@ -136,7 +145,10 @@ public sealed partial class HomeSummaryEndpointTests
             from generate_series(1,38) n;
             insert into storage_v2_entity_type values(1,'ad_computer'),(2,'password_policy');
             insert into entities_v2_active values(10,1,7,'DC01.example.test'),(11,1,7,'DC02.example.test'),(20,2,7,'Default domain password policy');
-            insert into finding_entities values (1,10,'DC01.example.test','source'),(4,null,'test-computer','target_entity');
+            insert into finding_entities values
+                (1,10,'DC01.example.test','source'),
+                (2,10,'DC01.example.test','target_entity'),
+                (4,null,'test-computer','target_entity');
             insert into ad_context_runs values
                 ('10000000-0000-4000-8000-000000000001',7,'completed'),
                 ('10000000-0000-4000-8000-000000000002',7,'completed');
@@ -161,6 +173,7 @@ public sealed partial class HomeSummaryEndpointTests
             analyze;
             """, db))
         {
+            seed.CommandTimeout = 120;
             seed.Parameters.AddWithValue("end", end);
             await seed.ExecuteNonQueryAsync(ct);
         }
@@ -227,9 +240,15 @@ public sealed partial class HomeSummaryEndpointTests
         var russian = await Read(1, "ru");
         var noHistory = await Read(1, until: end.AddDays(-11));
         var problems = payload["problems"]!;
-        Assert.Equal(5, problems.Number("new_count"));
+        Assert.Equal(8, problems.Number("new_count"));
         Assert.Equal(1, problems.Number("closed_count"));
-        Assert.Equal(5, problems.Number("open_count"));
+        var (_, queueSql, queueArguments) = ProblemRepository.FindingsQueries(new FindingQuery(null, null, null, null, null, null, null, [7], 25, false) {
+            Population = "open", PageQueue = true, GroupQueue = true, QueueList = true, Timezone = "UTC"
+        });
+        queueArguments.Remove("limit");
+        var queue = await new HomeSummaryRepository(database).ReadAsync(queueSql, queueArguments, ct);
+        Assert.Equal(8, queue.Sum(row => row.Number("count")));
+        Assert.Equal(queue.Sum(row => row.Number("count")), problems.Number("open_count"));
         var rows = problems["items"]!.AsArray();
         Assert.Equal(new long[] { 1, 6, 7, 2 }, rows.Select(row => row.Number("id")));
         Assert.Contains("id=1", rows[0].Text("href"));
@@ -246,6 +265,7 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.Contains("Source addresses: 38", rows[2].Text("fact"));
         Assert.Equal(20, rows[2]!["observations"]!.AsArray().Count);
         Assert.Equal("DC01.example.test", rows[3].Text("name"));
+        Assert.Equal("/app/entities/10", rows[3].Text("object_href"));
         Assert.Equal("Windows audit policy changed", rows[3].Text("fact"));
         var russianRows = russian["problems"]!["items"]!.AsArray();
         Assert.Equal(russianTitle + " · Неудачные попытки: 18 · 203.0.113.11 · 23:21–23:32", russianRows[1].Text("fact"));

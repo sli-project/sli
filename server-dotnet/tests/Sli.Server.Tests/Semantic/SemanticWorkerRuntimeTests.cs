@@ -171,6 +171,9 @@ public sealed class SemanticWorkerRuntimeTests
     [InlineData("{\"completed\":1}", true)] [InlineData("{\"failed\":1}", true)] [InlineData("{\"risk_queued\":1}", true)]
     [InlineData("{\"processing\":{\"claimed\":1,\"completed\":0,\"failed\":0}}", true)]
     [InlineData("{\"dispatch\":{\"claimed\":1}}", true)]
+    [InlineData("{\"password_producer\":{\"jobs\":1}}", true)]
+    [InlineData("{\"password_risk\":{\"claimed\":1}}", true)]
+    [InlineData("{\"password_producer\":{\"completed\":2,\"jobs\":0},\"password_risk\":{\"claimed\":0}}", false)]
     [InlineData("{\"completed\":0,\"failed\":0,\"processing\":{\"claimed\":0}}", false)]
     public void Cycle_activity_includes_deferred_context_and_failures(string json, bool expected) => Assert.Equal(expected, SemanticProduction.CycleHasWork(JsonNode.Parse(json)));
 

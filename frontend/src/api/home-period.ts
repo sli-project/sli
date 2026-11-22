@@ -45,11 +45,11 @@ export type HomePeriod = {
   from: string;
   to: string;
   updated_at: string;
-  problems: { new_count: number | null; closed_count: number | null; open_count: number | null; items: HomeProblem[]; href: string | null };
-  controllers: { items: HomeController[]; href: string | null };
-  changes: { items: HomeChange[]; href: string | null };
+  problems: { new_count: number | null; closed_count: number | null; open_count: number | null; items: HomeProblem[]; href: string | null } | null;
+  controllers: { items: HomeController[]; href: string | null } | null;
+  changes: { items: HomeChange[]; href: string | null } | null;
   activity: {
     hours: { at: string; failed: number | null; succeeded: number | null; typical: number | null }[];
     markers: { at: string; severity: HomeSeverity; name?: string; fact?: string }[];
-  };
+  } | null;
 };

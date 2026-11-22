@@ -2,7 +2,7 @@ namespace Sli.Server.Domains;
 
 internal static class HomePeriodSql
 {
-    internal static string Problems => $$"""
+    internal static string Problems(string queueSummary) => $$"""
         with population as materialized (
             select findings.id,findings.rule_code,findings.severity,
                    findings.actor,findings.target,findings.first_seen_utc::timestamptz as first_seen,
@@ -16,13 +16,15 @@ internal static class HomePeriodSql
         ), recent as materialized (
             select * from population where first_seen>=@from and first_seen<@to
               and severity in ('critical','high','medium')
+              and rule_code not in ('qw.ad-hardening.privileged-nonexpiring','qw.ad-hardening.machine-account-quota',
+                                    'qw.ad-hardening.lockout-threshold')
         ), top as (
             select * from recent order by case severity when 'critical' then 0 when 'high' then 1 else 2 end,
                 first_seen desc,id desc limit 7
         )
         select count(*) filter(where first_seen>=@from and first_seen<@to) as new_count,
                count(*) filter(where closed_at>=@from and closed_at<@to) as closed_count,
-               count(*) filter(where status in ('new','confirmed','repeated','active','review')) as open_count,
+               (select coalesce(sum(queue.count),0) from ({{queueSummary}}) queue) as open_count,
                (select jsonb_agg(to_jsonb(top) || jsonb_build_object('entity',(
                    select jsonb_build_object('id',min(entity.id),'name',min(entity.display_name)) from finding_entities linked
                    join entities_v2_active entity on entity.id=linked.entity_id and entity.domain_id=any(@ids)

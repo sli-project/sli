@@ -283,6 +283,29 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/agent-deployment/gpo/confirm", new { plan_id = agent, plan_sha256 = new string('a',64), acknowledged = true, credential_id = agent, credential_revision = 1 }, 404);
         await Check("/api/v1/agent-deployment/gpo/cancel", new { plan_id = agent, plan_sha256 = new string('a',64) }, 404);
         await Check("/api/findings/1/status", new { status = "active", status_reason = "Synthetic SQL decision" });
+        const string queueDecisions = "/api/findings/queue-decisions";
+        await Check(queueDecisions, new { ids = new[] { 1, 2 }, state = "closed", classification = "fixed" }, 404, error: "not_found");
+        using (var unchanged = new NpgsqlCommand("select status from findings where id=1", admin))
+            Assert.Equal("active", await unchanged.ExecuteScalarAsync(ct));
+        var queueDecision = await Check(queueDecisions, new { ids = new[] { 1 }, state = "closed", classification = "fixed", comment = "Synthetic queue decision" });
+        Assert.Equal(1, (int?)queueDecision?["changed"]);
+        using (var audit = new NpgsqlCommand("""
+            select h.old_status, h.new_status, a.details_json->'decision'->>'comment'
+            from finding_status_history h
+            join access_audit_v4 a on a.target_type='finding' and a.target_key=h.finding_id::text
+            join auth_users u on u.id=a.actor_id and u.username=h.changed_by
+            where h.finding_id=1 and a.action='finding_queue_decision' and a.outcome='ok'
+              and a.actor_type='session' and u.username='platform-owner'
+              and h.old_status=a.details_json->>'from' and h.new_status=a.details_json->>'to'
+            """, admin))
+        await using (var decisionHistory = await audit.ExecuteReaderAsync(ct))
+        {
+            Assert.True(await decisionHistory.ReadAsync(ct));
+            Assert.Equal("active", decisionHistory.GetString(0));
+            Assert.Equal("closed", decisionHistory.GetString(1));
+            Assert.Equal("Synthetic queue decision", decisionHistory.GetString(2));
+            Assert.False(await decisionHistory.ReadAsync(ct));
+        }
         await Check("/api/findings/1/risk-acceptance", new { action = "create", responsible_user_id = 1, reason = "Synthetic SQL acceptance", expires_at = DateTimeOffset.UtcNow.AddDays(1) });
         await Check(investigation + "/findings", new { finding_id = 1 }, 503, error: "module_disabled");
         await Check("/api/v1/investigations/from-finding", new { finding_id = 2 }, 503, error: "module_disabled");

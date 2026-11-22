@@ -169,12 +169,11 @@ def test_catalog_completeness_and_frontend_wording():
         "not_evaluated", "details_unavailable", "denied", "not_applicable",
         "admitted", "diagnostic", "excluded",
     )}
-    # Retained-name and daily-cohort presentation messages are shared with the home queue.
+    # Problem identity and occurrence messages are shared with the frontend.
     expected |= {
         "security.problems.identity.name", "security.problems.identity.sources",
         "security.problems.identity.sources_partial", "security.problems.identity.unavailable",
-        "security.problems.assignee.unassigned", "home.queue.day", "home.queue.assignee.mixed",
-        "home.queue.identity_details", "home.queue.snapshot_name",
+        "security.problems.assignee.unassigned",
         "home.queue.occurrences.one", "home.queue.occurrences.few",
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
