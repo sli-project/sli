@@ -13,8 +13,7 @@ import "./home.css";
 const shapes: Record<HomeSeverity, string> = { critical: "■", high: "◆", medium: "▲", low: "●" };
 
 function clock(value: string | null, zone: string) {
-  if (!value) return EMPTY_VALUE;
-  return new Intl.DateTimeFormat(getLocale(), { timeZone: zone === "browser" ? undefined : zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
+  return formatDateTime(value, zone, { timeOnly: true });
 }
 
 function link(href: string | null | undefined, label: ReactNode) {
