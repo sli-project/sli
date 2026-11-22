@@ -50,6 +50,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         JsonObject result;
         if (request.Key == "ad.infrastructure") result = request.Tab switch
         {
+            "controls" when request.Action == "detail" => await AdParameterHistory.DetailAsync(db, request, ct),
+            "parameter_changes"=>await AdParameterHistory.ChangesAsync(db,request,ct),
             "spn_collisions"=>await AdInfrastructureExtras.SpnAsync(db,request,ct),
             "privileged_changes"=>await AdInfrastructureExtras.PrivilegedAsync(db,request,ct),
             "changes"=>await AdSnapshotHistory.ReadAsync(db,request,configuration,ct),
@@ -318,6 +320,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         if(request.QualifyNames)foreach(var row in rows)row["display_name"]=row.Text("domain_name")+"\\"+row.Text("display_name");
         var controls = AdInfrastructure.Compose(rows.Take(5000).ToArray(), request.Params);
         var allControls=AdInfrastructure.Compose(rows.Take(5000).ToArray(),Obj(new{view=request.Params.Text("view")??"overview"}));
+        if (request.Tab == "controls" && request.Action == "view" && request.Params.Text("include_previous") == "true")
+            await AdParameterHistory.AddPreviousAsync(db, request, controls, ct);
         var coverageRows=await AdJson.ReadAsync(db,"""
             with expected_domains as(select id as domain_id,fqdn as domain_name from domains where id=any($1)),required_sections(section_name) as(values('domain_posture'),('domain_health')),
             latest_section as(select distinct on(run.domain_id,section.section_name)run.domain_id,section.section_name,run.status as run_status,section.status as section_status,section.record_count,run.observed_at_utc

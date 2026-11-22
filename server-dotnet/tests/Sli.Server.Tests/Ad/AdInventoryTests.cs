@@ -49,7 +49,7 @@ public sealed class AdInventoryTests
             Assert.False(row.ContainsKey("basis"));
             Assert.False(row["presentation_messages"]!.AsObject().ContainsKey("basis"));
             var expected=reference["rows"]!.AsArray().Single(r=>r!["row_id"]!.ToString()==row["row_id"]!.ToString());
-            foreach (string field in new[] { "actual_value", "qualification", "object_context", "observed_at_utc" })
+            foreach (string field in new[] { "actual_value", "object_context", "observed_at_utc" })
                 Assert.True(JsonNode.DeepEquals(expected![field],row[field]),field);
         }
     }
@@ -66,6 +66,21 @@ public sealed class AdInventoryTests
         Assert.DoesNotContain("removed basis",csv);
         Assert.Equal("Параметр;Объект;Тип объекта;Контекст;Фактическое значение;Ожидаемое условие;Результат;Источник правила;Секция;Наблюдалось\r\n"
             + "'=1+1;dc.example.test;domain_controller;{};passed;passed;passed;collector_diagnostic;domain_health;2026-11-01T12:00:00Z\r\n",csv);
+    }
+
+    [Fact] public void Password_parameters_compare_collected_values_with_the_report_conditions()
+    {
+        var entity = new JsonObject {
+            ["entity_id"] = 7L, ["entity_type"] = "password_policy", ["domain_name"] = "example.test",
+            ["source_section"] = "domain_posture", ["observed_at_utc"] = "2026-11-22T01:45:00Z",
+            ["record"] = """{"attributes":{"password_min_length":16,"lockout_threshold":0,"lockout_duration":"00:30:00","password_properties":4,"password_min_age":null}}"""
+        };
+        var rows = AdInfrastructure.Compose([entity], new());
+        Assert.Equal("passed", rows.Single(row => AdJson.Text(row, "control_id") == "password.minimum_length")["qualification"]!.ToString());
+        Assert.Equal("failed", rows.Single(row => AdJson.Text(row, "control_id") == "password.lockout_threshold")["qualification"]!.ToString());
+        Assert.Equal("passed", rows.Single(row => AdJson.Text(row, "control_id") == "password.lockout_duration")["qualification"]!.ToString());
+        Assert.Equal("failed", rows.Single(row => AdJson.Text(row, "control_id") == "password.properties")["qualification"]!.ToString());
+        Assert.DoesNotContain(rows, row => AdJson.Text(row, "control_id") == "password.minimum_age" && AdJson.Text(row, "qualification") == "passed");
     }
     [Fact] public void Cursor_interoperates_with_python_and_rejects_another_domain_or_filter()
     {

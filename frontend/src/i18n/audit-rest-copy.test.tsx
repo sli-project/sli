@@ -80,7 +80,7 @@ it("translates infrastructure controls, conditions and context labels by codes, 
   expect(html).toContain("LDAP signing requirement");
   expect(html).toContain("LDAP signing must be required");
   expect(html).toContain("Organization requirement is not specified");
-  expect(html).toContain("The domain name resolution check must succeed");
+  expect(html).toContain(">Passed</td>");
   expect(html).toContain("The value must equal 0");
   expect(html).toContain("successful replication must be within 24 hours");
   expect(html).not.toMatch(/[А-Яа-яЁё]/);

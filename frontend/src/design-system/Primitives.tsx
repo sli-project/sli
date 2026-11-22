@@ -33,9 +33,13 @@ export function EmptyState({ title, copy, icon, action }: { title: string; copy:
 }
 
 /** Titled surface for a group of related content. */
-export function Panel({ title, subtitle, children, action }: { title: ReactNode; subtitle?: ReactNode; children: ReactNode; action?: ReactNode }) {
+export function Panel({ title, subtitle, children, action }: { title?: ReactNode; subtitle?: ReactNode; children: ReactNode; action?: ReactNode }) {
   return <section className="sli-ds-panel">
-    <div className="sli-ds-panel__head"><h2 className="sli-ds-panel__title">{title}</h2>{subtitle ? <p className="sli-ds-panel__subtitle">{subtitle}</p> : null}{action}</div>
+    {title || subtitle || action ? <div className="sli-ds-panel__head">
+      {title ? <h2 className="sli-ds-panel__title">{title}</h2> : null}
+      {subtitle ? <p className="sli-ds-panel__subtitle">{subtitle}</p> : null}
+      {action}
+    </div> : null}
     <div className="sli-ds-panel__body">{children}</div>
   </section>;
 }
