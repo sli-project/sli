@@ -1,7 +1,8 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
-import { dayKey, formatDate, isValidTimeZone } from "../shared/date-time";
+import { dayKey, formatClockWithOffset, isValidTimeZone } from "../shared/date-time";
 import { useTimeZone } from "../shared/time-zone";
+import { formatDateTime } from "./format";
 import { Icon } from "./Icon";
 import { PeriodPicker, periodLabel, previousPeriod, type PeriodPreset, type PeriodValue } from "./PeriodPicker";
 import { Button } from "./Primitives";
@@ -65,13 +66,8 @@ function UpdatedTime({ value }: { value: string | number }) {
   const { timeZone } = useTimeZone();
   const instant = new Date(value);
   if (!Number.isFinite(instant.getTime()) || (timeZone !== "browser" && !isValidTimeZone(timeZone))) return null;
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: timeZone === "browser" ? undefined : timeZone,
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "shortOffset",
-  }).formatToParts(instant);
-  const offset = parts.find((part) => part.type === "timeZoneName")?.value.slice(3) || "+0";
-  const time = parts.filter((part) => part.type === "hour" || part.type === "minute").map((part) => part.value).join(":");
-  return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { time, date: formatDate(instant, timeZone), zone: `UTC${offset}` })}</time>;
+  const clock = formatClockWithOffset(instant, timeZone);
+  return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
 export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain }: {
