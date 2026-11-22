@@ -38,6 +38,7 @@ import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
 import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
+import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
@@ -110,6 +111,9 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
   }
   if (reportKey === "events.journal") return <EventJournal definition={definition.data} initialSearch={initialSearch}/>;
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "ad.infrastructure" && definition.data.views.some((view) => view.key === "controls")) {
+    return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
+  }
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 

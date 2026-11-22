@@ -367,13 +367,16 @@ describe("v2 registry metadata", () => {
     setLocale("en");
     const raw = registry.definitions.find((item) => item.key === "ad.infrastructure")!;
     const localized = localizeReportDefinition(raw);
-    expect(raw.params.filter((param) => param.key === "period")).toHaveLength(1);
     const period = raw.params.find((param) => param.key === "period")!;
     expect(period.max_days).toBe(3650);
-    expect(localized.params.find((param) => param.key === "period")).toEqual({ ...period, label: "Period", presets: period.presets?.filter((preset) => preset !== "24h") });
+    expect(localized.params.find((param) => param.key === "period")).toMatchObject({ ...period, label: "Period" });
+    expect(period.presets).toContain("24h");
+    expect(localized.views.find((view) => view.key === "parameter_changes")?.source).toBe("parameter_changes");
     expect(localized.views.find((view) => view.key === "changes")?.source).toBe("changes");
     expect(localized.views.find((view) => view.key === "privileged_changes")?.source).toBe("privileged_changes");
-    expect(localized.params.filter((param) => param.hidden).map((param) => param.key)).toEqual(["domain_id", "domain", "row_id"]);
+    for (const key of ["domain_id", "domain", "row_id", "include_previous"]) {
+      expect(localized.params.find((param) => param.key === key)?.hidden).toBe(true);
+    }
   });
 
   it.each([

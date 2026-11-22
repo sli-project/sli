@@ -103,6 +103,7 @@ public sealed partial class AdV2Tests
             yield return [key,"/data"];
             if(AdV2Endpoints.Definitions[key]!["declaration"]!["export"]!.GetValue<bool>())yield return [key,"/export.csv"];
             if(key=="ad.computer-logons")yield return [key,"/rows/7/detail"];
+            if(key=="ad.infrastructure")yield return [key,"/rows/7:password.minimum_length/detail"];
         }
     }
     sealed class Auth:IPrincipalAuthenticator
@@ -203,6 +204,22 @@ public sealed partial class AdV2Tests
     {
         var store=new Store();using var host=await Host(store,facts:new ScopedFacts(export:false));using var client=host.GetTestClient();
         using var response=await client.GetAsync("/api/v2/reports/"+key+"/export.csv",Ct);Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);Assert.Equal(0,store.Reads);
+    }
+    [Fact]
+    public async Task Parameter_history_uses_the_report_scope_and_exact_control()
+    {
+        var store = new Store();
+        using var host = await Host(store, facts: new ScopedFacts());
+        using var client = host.GetTestClient();
+        const string endpoint = "/api/v2/reports/ad.infrastructure/rows/7%3Apassword.minimum_length/detail";
+        using var denied = await client.GetAsync(endpoint + "?domain=2", Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(0, store.Reads);
+        using var observed = await client.GetAsync(endpoint + "?domain=1", Ct);
+        Assert.Equal(HttpStatusCode.OK, observed.StatusCode);
+        Assert.Equal("7:password.minimum_length", store.LastRequest!.Row);
+        Assert.Equal("detail", store.LastRequest.Action);
+        Assert.Equal(new long[] { 1 }, store.LastRequest.Domains);
     }
     [Fact]public async Task Draining_or_unreviewed_plugin_generation_cannot_execute_a_reader()
     {

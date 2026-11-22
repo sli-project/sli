@@ -47,7 +47,7 @@ it("shows AD state rows by code, including Yes/No values", () => {
       authority_text: { code: "reports.v2.ad.infrastructure.authority.collector_diagnostic", params: {}, text: "Диагностика сборщика" },
     } };
   const [localized] = localizeReportResult(result("ad.infrastructure", [row])).items;
-  expect(localized.label).toBe("Domain controller advertising");
+  expect(localized.label).toBe("Controller advertising");
   expect(localized.actual_text).toBe("Yes");
   expect(localized.authority_text).toBe("Collector diagnostics");
   expect(localized.actual_value).toBe(true);

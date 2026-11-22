@@ -1,6 +1,6 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
-import { dayKey, formatClockWithOffset, isValidTimeZone } from "../shared/date-time";
+import { dayKey, formatClockWithOffset, formatDateTime as formatDateRange, isValidTimeZone } from "../shared/date-time";
 import { useTimeZone } from "../shared/time-zone";
 import { formatDateTime } from "./format";
 import { Icon } from "./Icon";
@@ -15,6 +15,7 @@ export type PageHeaderControls = {
     presets?: PeriodPreset[];
     bounds?: { from: string; to: string };
     showBounds?: boolean;
+    showPrevious?: boolean;
     onChange: (value: PeriodValue) => void;
     onClear?: () => void;
   };
@@ -25,7 +26,7 @@ export type PageHeaderControls = {
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();
@@ -57,10 +58,8 @@ function HeaderPeriod({ value, presets, bounds, showBounds, onChange, onClear }:
         }}/>
       </div>
     </details>
-    {showBounds && bounds ? <span className="sli-ds-header__updated">
-      {formatDateTime(bounds.from, true, timeZone)} → {formatDateTime(bounds.to, true, timeZone)}
-    </span> : null}
-    {!showBounds && (presets?.includes("custom") ?? true) ? <Button icon="chevron-left" disabled={!previous} onClick={() => { if (previous) onChange(previous); }}>
+    {showBounds && bounds ? <span className="sli-ds-header__updated">{formatDateRange(bounds.from, timeZone, { withYear: false })} → {formatDateRange(bounds.to, timeZone, { withYear: false })}</span> : null}
+    {showPrevious && (presets?.includes("custom") ?? true) ? <Button icon="chevron-left" disabled={!previous} onClick={() => { if (previous) onChange(previous); }}>
       {t("shell.header.previousPeriod")}
     </Button> : null}
   </>;
