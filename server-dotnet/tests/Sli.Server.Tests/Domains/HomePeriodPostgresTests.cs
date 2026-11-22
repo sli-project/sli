@@ -11,6 +11,7 @@ using GpoJson = Sli.Server.Gpo.GpoJson;
 using GpoReadStore = Sli.Server.Gpo.GpoReadStore;
 using IGpoReadStore = Sli.Server.Gpo.IGpoReadStore;
 using Sli.Server.Infrastructure;
+using Sli.Server.Problems;
 using Sli.Server.Storage.Lifecycle;
 using Sli.Server.Tests.Agents;
 using Xunit;
@@ -90,7 +91,16 @@ public sealed partial class HomeSummaryEndpointTests
                 (3,7,'test-hygiene','Hygiene problem',null,'low',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (4,7,'test-medium','Old problem',null,'medium',null,'test-account',(@end-interval '2 days')::text,null,'review',0),
                 (5,8,'test-critical','Other domain problem',null,'critical',null,'other-account',(@end-interval '2 hours')::text,null,'new',0),
+                (6,7,'test-high','Earlier occurrence',null,'high',null,'test-group',(@end-interval '2 days')::text,null,'new',0),
+                (7,7,'qw.ad-hardening.machine-account-quota','MachineAccountQuota',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
+                (8,7,'qw.ad-hardening.lockout-threshold','Lockout threshold',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
+                (10,7,'qw.ad-hardening.privileged-nonexpiring','Password never expires',null,'high',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (9,7,'test-critical','Unpublished problem',null,'critical',null,'test-account',(@end-interval '2 hours')::text,null,'new',0);
+            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int;
+            update findings_active set last_seen_utc=first_seen_utc;
+            create table semantic_security_scenarios(scenario_key bytea,scenario_kind text,partition_key text,strict_keys_json jsonb);
+            create table finding_event_details337(finding_id bigint,event_db_id bigint,event_id int);
+            create function password_problem_facts395(finding bigint,rule text) returns jsonb language sql stable as 'select null::jsonb';
             insert into finding_event_copies337 values (1,250004,4728,7,@end-interval '35 minutes','DC01.example.test');
             insert into storage_v2_entity_type values(1,'ad_computer'),(2,'password_policy');
             insert into entities_v2_active values(10,1,7,'DC01.example.test'),(11,1,7,'DC02.example.test'),(20,2,7,'Default domain password policy');
@@ -154,9 +164,15 @@ public sealed partial class HomeSummaryEndpointTests
         TestContext.Current.TestOutputHelper?.WriteLine($"Home took {timer.Elapsed.TotalMilliseconds:N0} ms with 240,000 logons over eight days.");
         Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"Home took {timer.Elapsed.TotalMilliseconds:N0} ms.");
         var problems = payload["problems"]!;
-        Assert.Equal(3, problems.Number("new_count"));
+        Assert.Equal(6, problems.Number("new_count"));
         Assert.Equal(1, problems.Number("closed_count"));
-        Assert.Equal(3, problems.Number("open_count"));
+        var (_, queueSql, _) = ProblemRepository.FindingsQueries(new FindingQuery(null, null, null, null, null, null, null, [7], 25, false) {
+            Population = "open", PageQueue = true, GroupQueue = true, QueueList = true, Timezone = "UTC"
+        });
+        var queue = await new HomeSummaryRepository(database).ReadAsync(queueSql,
+            new Dictionary<string, object?> { ["domains"] = new long[] { 7 }, ["cohort_zone"] = "UTC" }, ct);
+        Assert.Equal(6, queue.Sum(row => row.Number("count")));
+        Assert.Equal(queue.Sum(row => row.Number("count")), problems.Number("open_count"));
         var rows = problems["items"]!.AsArray();
         Assert.Equal(new long[] { 1, 2 }, rows.Select(row => row.Number("id")));
         Assert.Contains("id=1", rows[0].Text("href"));
