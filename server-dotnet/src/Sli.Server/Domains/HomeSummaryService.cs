@@ -1,11 +1,13 @@
 using System.Text.Json.Nodes;
 using Sli.Server.Access;
 using Sli.Server.Auth;
+using Sli.Server.Gpo;
 using static Sli.Server.Domains.HomeJson;
 
 namespace Sli.Server.Domains;
 
-public sealed class HomeSummaryService(IHomeSummaryAccess access, IDomainRepository domains, HomeSummaryReaders reads)
+public sealed class HomeSummaryService(IHomeSummaryAccess access, IDomainRepository domains, HomeSummaryReaders reads,
+    IGpoReadStore? gpo = null, IConfiguration? configuration = null)
 {
     public async Task<JsonObject> BuildAsync(Principal principal, HomeSummaryQuery query, CancellationToken ct)
     {
@@ -21,11 +23,12 @@ public sealed class HomeSummaryService(IHomeSummaryAccess access, IDomainReposit
         {
             if (permitted.Kind == DomainGrantKind.None || permitted.Kind == DomainGrantKind.Scoped && !permitted.DomainIds.Contains(domain))
                 throw new HomeQueryException("domain_scope_denied", 403);
-            permitted = DomainGrant.Scoped([domain]);
+            if (query.Contract != "v4") permitted = DomainGrant.Scoped([domain]);
         }
         var selected = await domains.ReadAsync(permitted, ct);
-        if (query.Domain.HasValue && selected.Count == 0) throw new HomeQueryException("domain_scope_denied", 403);
+        if (query.Domain is { } selectedId && !selected.Any(d => d.Id == selectedId)) throw new HomeQueryException("domain_scope_denied", 403);
         if (query.Contract == "v3") return await new HomeDecisionSummary(reads).Build(queue, selected, principal, query, ct);
+        if (query.Contract == "v4") return await new HomePeriodSummary(reads, gpo, configuration).Build(reports, selected, query, ct);
         var payload = await Build(reports, selected, query, ct);
         payload["domain_scope"] = Object(new { mode = query.Domain.HasValue ? "domain" : "accessible", domain_id = query.Domain,
             domain_ids = selected.Select(d => d.Id), state = selected.Count > 0 ? "available" : "no_domains" });

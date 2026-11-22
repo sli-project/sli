@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, HeatmapChart, LineChart } from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
@@ -9,14 +9,16 @@ import { useTimeZone } from "../shared/time-zone";
 import { formatDateTime } from "./format";
 import { formatDateTime as sharedDateTime } from "../shared/date-time";
 
-echarts.use([LineChart, BarChart, HeatmapChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, SVGRenderer]);
+echarts.use([LineChart, BarChart, HeatmapChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, SVGRenderer]);
 
 /** One named series of points; `x` is an ISO time (timeseries) or a category. */
-export type ChartSeries = { name: string; points: Array<{ x: string; y: number | null }> };
+export type ChartSeries = { name: string; points: Array<{ x: string; y: number | null }>; style?: "bar" | "line" | "dashed" };
+type ChartMarker = { at: string; label: string; severity: "critical" | "high" | "medium" | "low" };
+const markerSymbols = { critical: "rect", high: "diamond", medium: "triangle", low: "circle" };
 export type HeatmapData = { xLabels: string[]; yLabels: string[]; cells: Array<{ x: number; y: number; value: number }> };
 
 export type ChartSpec =
-  | { kind: "timeseries"; series: ChartSeries[]; stacked?: boolean; bars?: boolean }
+  | { kind: "timeseries"; series: ChartSeries[]; stacked?: boolean; bars?: boolean; markers?: ChartMarker[]; range?: [string, string] }
   | { kind: "bar"; series: ChartSeries[]; horizontal?: boolean }
   | { kind: "heatmap"; data: HeatmapData };
 
@@ -34,15 +36,16 @@ function token(name: string, fallback: string): string {
 
 export function chartIsEmpty(spec: ChartSpec): boolean {
   if (spec.kind === "heatmap") return spec.data.cells.length === 0;
+  if (spec.kind === "timeseries" && spec.markers?.length) return false;
   return spec.series.every((series) => series.points.every((point) => point.y === null));
 }
 
 /** Builds the ECharts option from a spec; pure so it can be unit-tested. */
-export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string }, timeZone?: string): EChartsCoreOption {
+export function buildChartOption(spec: ChartSpec, colors: { text: string; muted: string; grid: string; palette: string[]; accent: string; surface: string; danger?: string; warning?: string }, timeZone?: string): EChartsCoreOption {
   const base = {
     color: colors.palette,
     textStyle: { color: colors.text, fontFamily: "inherit" },
-    tooltip: { trigger: spec.kind === "heatmap" ? "item" : "axis", confine: true },
+    tooltip: { trigger: spec.kind === "heatmap" ? "item" : "axis", confine: true, renderMode: "richText" },
     grid: { left: 8, right: 16, top: 32, bottom: 8, containLabel: true },
     animation: false,
   };
@@ -50,7 +53,7 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
   // grid, so it never overlaps bars or axis labels (ECharts 6 lays out legends differently).
   const multiSeries = spec.kind !== "heatmap" && spec.series.length > 1;
   const legend = multiSeries
-    ? { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: colors.muted }, pageTextStyle: { color: colors.muted } }
+    ? { type: "scroll", top: 0, left: 0, right: 0, itemGap: 20, textStyle: { color: colors.muted }, pageTextStyle: { color: colors.muted } }
     : undefined;
   const legendGrid = multiSeries ? { ...base.grid, top: 40 } : base.grid;
   const axisStyle = { axisLine: { lineStyle: { color: colors.grid } }, axisLabel: { color: colors.muted }, splitLine: { lineStyle: { color: colors.grid } } };
@@ -100,13 +103,21 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
     ...base,
     legend,
     grid: legendGrid,
-    xAxis: { type: "time", ...axisStyle, axisPointer: { label: { formatter: ({ value }: { value: string | number }) => formatDateTime(new Date(value), true, timeZone) } }, axisLabel: { color: colors.muted, formatter: (value: number) => formatDateTime(new Date(value), true, timeZone) } },
-    yAxis: { type: "value", ...axisStyle },
-    series: spec.series.map((series) => ({
-      type: spec.bars ? "bar" : "line", name: series.name, showSymbol: false, stack: spec.stacked ? "total" : undefined,
+    xAxis: { type: "time", ...axisStyle, min: spec.range?.[0], max: spec.range?.[1], axisPointer: { label: { formatter: ({ value }: { value: string | number }) => formatDateTime(new Date(value), true, timeZone) } }, axisLabel: { color: colors.muted, formatter: (value: number) => formatDateTime(new Date(value), true, timeZone) } },
+    yAxis: { type: "value", ...axisStyle, min: spec.range ? 0 : undefined, minInterval: spec.range ? 1 : undefined },
+    series: [...spec.series.map((series) => ({
+      type: series.style === "bar" || (!series.style && spec.bars) ? "bar" : "line", name: series.name, showSymbol: false, stack: spec.stacked ? "total" : undefined,
       areaStyle: spec.stacked && !spec.bars ? { opacity: 0.2 } : undefined,
+      itemStyle: series.style === "bar" ? { color: colors.muted, opacity: 0.55 }
+        : series.style ? { color: series.style === "line" ? colors.text : colors.muted } : undefined,
+      lineStyle: series.style === "dashed" ? { type: "dashed", color: colors.muted, width: 2 }
+        : series.style === "line" ? { color: colors.text, width: 2 } : undefined,
       data: series.points.map((point) => [point.x, point.y]),
-    })),
+    })), ...(spec.markers?.length ? [{
+      type: "scatter", z: 5, symbolSize: 10, symbolOffset: [0, -7], tooltip: { trigger: "item", formatter: "{b}" },
+      data: spec.markers.map((marker) => ({ name: marker.label, value: [marker.at, 0], symbol: markerSymbols[marker.severity],
+        itemStyle: { color: marker.severity === "critical" || marker.severity === "high" ? colors.danger : marker.severity === "medium" ? colors.warning : colors.muted } })),
+    }] : [])],
   };
 }
 
@@ -117,12 +128,14 @@ function currentColors() {
     grid: token("--sli-chart-grid", "#e3e9f2"),
     accent: token("--sli-accent", "#0868e8"),
     surface: token("--sli-surface-2", "#f7f9fc"),
+    danger: token("--sli-danger", "#b42318"),
+    warning: token("--sli-warning", "#9a5b00"),
     palette: [1, 2, 3, 4, 5, 6, 7, 8].map((index) => token(`--sli-chart-${index}`, "#0868e8")),
   };
 }
 
 /** The only chart entry point for reports (ADR 0013). */
-export function Chart({ title, spec, height = 280 }: { title: string; spec: ChartSpec; height?: number }) {
+export function Chart({ title, spec, height = 280, emptyValue }: { title: string; spec: ChartSpec; height?: number | string; emptyValue?: string }) {
   const { timeZone } = useTimeZone();
   const host = useRef<HTMLDivElement | null>(null);
   const empty = useMemo(() => chartIsEmpty(spec), [spec]);
@@ -146,7 +159,7 @@ export function Chart({ title, spec, height = 280 }: { title: string; spec: Char
   return <figure className="sli-ds-chart">
     <figcaption>{title}</figcaption>
     {empty
-      ? <div className="sli-ds-chart__empty" role="status">{t("chart.empty")}</div>
+      ? <div className="sli-ds-chart__empty" role="status">{emptyValue ?? t("chart.empty")}</div>
       : <div ref={host} className="sli-ds-chart__canvas" style={{ height }} role="img" aria-label={t("chart.label", { title })}/>}
   </figure>;
 }

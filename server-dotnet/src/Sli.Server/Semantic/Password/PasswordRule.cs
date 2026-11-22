@@ -108,17 +108,34 @@ public sealed class PasswordRule
     public PasswordRule(PasswordScope scope,string kind="brute",int revision=2){scope.Validate();if(kind is not ("brute" or "spray")||revision<2)throw new PasswordFailure("password_v2_rule_scope");Scope=scope;Kind=kind;Revision=revision;}
     public string Id=>Kind=="brute"?RuleId:"qw.password-spray";
     public const string RuleId="qw.password-brute-force";
+    internal bool NormalizedAccounts => Revision >= 395;
     public JsonObject Execution=>new(){["version"]="sli.qw.execution.v1",["kind"]="threshold",["rule_id"]=Id,["rule_version"]=Revision,["scope"]=Scope.Document,["rule_sha256"]=PasswordJson.Hash(new JsonObject{["contract"]=Revision==2?"sli.password.v2.phase-a.1":"sli.password.v2.live."+Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),["rule"]=Id,["window"]=600,["inclusive"]=true,["threshold"]=Kind=="brute"?10:5,["holdback"]=120,["horizon"]=720,["rows"]=10000,["lifetime_refs"]=10000,["lifetime_portions"]=256,["lifetime_xml_bytes"]=33554432,["classification"]="bad-unknown-other/native-v1",["client"]="native-ip-mapped-or-explicit-workstation/v1",["late"]="drop-finalized/v1",["gap"]="new-epoch/v1",["continuity"]="native-adjacency/v1"})};
     public string Pin=>PasswordJson.Hash(Execution);
     internal string EpisodeKey(long epoch,string entity,PasswordWitness seed)=>PasswordJson.Hash(new JsonArray(Pin,epoch,entity,seed.Params));
     private static PasswordMember[] Ordered(IEnumerable<PasswordMember> members)=>members.OrderBy(m=>m.Witness.At).ThenBy(m=>m.Witness.NativeId).ToArray();
     private static bool Later(PasswordWitness a,PasswordWitness b)=>a.At>b.At||a.At==b.At&&a.NativeId>b.NativeId;
-    internal static Dictionary<long,PasswordNative> Records(IEnumerable<PasswordNative> natives)
+    internal Dictionary<long,string> BruteSuccessRoutes(IEnumerable<PasswordMember> window, IEnumerable<PasswordNative> events)
+    {
+        var routes = new Dictionary<long,string>();
+        if (!NormalizedAccounts || Kind != "brute") return routes;
+        var candidates = events.Where(n=>n.BruteSuccessNameEntity is not null).ToArray();
+        if (candidates.Length == 0) return routes;
+        var failures = window.Concat(events.Select(n=>n.Member)).Where(m=>m.Entity is not null)
+            .DistinctBy(m=>m.Witness.NativeId).ToLookup(m=>m.Entity!);
+        foreach (var success in candidates) {
+            string alternate = success.BruteSuccessNameEntity!;
+            bool InWindow(PasswordMember m) => m.Witness.At >= success.Witness.At.AddSeconds(-600) && m.Witness.At < success.Witness.At;
+            if (failures[success.Member.EntityFor(this)!].Count(InWindow)<10 && failures[alternate].Count(InWindow)>=10)
+                routes.Add(success.Witness.NativeId,alternate);
+        }
+        return routes;
+    }
+    private Dictionary<long,PasswordNative> Records(IEnumerable<PasswordNative> natives)
     {
         var result=new Dictionary<long,PasswordNative>();int bytes=0,count=0;
         foreach(var native in natives) {
             if(++count>10000||(bytes=checked(bytes+System.Text.Encoding.UTF8.GetByteCount(native.SourceXml)))>33554432)throw new PasswordFailure("password_v2_proof_bound");
-            var parsed=PasswordNative.Parse(native.Witness.Scope,native.Witness.NativeId,native.Witness.Sha256,native.EventId,native.Witness.At,native.SourceXml);
+            var parsed=PasswordNative.Parse(native.Witness.Scope,native.Witness.NativeId,native.Witness.Sha256,native.EventId,native.Witness.At,native.SourceXml,NormalizedAccounts);
             if(parsed!=native||result.TryGetValue(native.Witness.NativeId,out var old)&&old!=parsed)throw new PasswordFailure("password_v2_native_content_conflict");result[native.Witness.NativeId]=parsed;
         }return result;
     }
@@ -129,11 +146,12 @@ public sealed class PasswordRule
     }
     private void VerifyWitness(string entity,PasswordWitness w,Dictionary<long,PasswordNative> records)
     {
-        if(!records.TryGetValue(w.NativeId,out var n))throw new PasswordFailure("password_v2_native_unavailable");if(n.Witness!=w||w.Scope!=Scope||n.Member.EntityFor(this)!=entity)throw new PasswordFailure("password_v2_continuity_native_conflict");
+        if(!records.TryGetValue(w.NativeId,out var n))throw new PasswordFailure("password_v2_native_unavailable");if(n.Witness!=w||w.Scope!=Scope||!n.ProvesEntity(this,entity))throw new PasswordFailure("password_v2_continuity_native_conflict");
     }
     public PasswordBudget VerifyChain(IReadOnlyList<PasswordEmission> chain,IEnumerable<PasswordNative> native)
     {
         var records=Records(native);if(chain.Count==0)throw new PasswordFailure("password_v2_continuity_missing");PasswordEmission? previous=null;var budget=new PasswordBudget();
+        var provenFailures=new List<PasswordNative>();
         foreach(var e in chain.OrderBy(e=>e.Sequence)) {
             if(e.Pin!=Pin||e.Sequence!=(previous?.Sequence??0)+1||e.EpisodeKey!=chain[0].EpisodeKey||e.Entity!=chain[0].Entity||e.Epoch!=chain[0].Epoch)throw new PasswordFailure("password_v2_continuity_identity");
             var witnesses=e.Occurrences;if(witnesses.Count==0)throw new PasswordFailure("password_v2_continuity_empty");budget=budget.Reserve(witnesses);foreach(var w in witnesses)VerifyWitness(e.Entity,w,records);
@@ -145,7 +163,16 @@ public sealed class PasswordRule
             } else {
                 if(e.NewEvents.Count==0||e.Origin.Count!=0||e.RootProof.Count!=0||e.Predecessor!=previous.Endpoint||e.PreviousId!=previous.Id||e.Seed!=previous.Seed)throw new PasswordFailure("password_v2_continuity_predecessor");endpoint=e.Predecessor!;
             }
-            foreach(var w in e.NewEvents){if(!Later(w,endpoint)||w.At-endpoint.At>TimeSpan.FromSeconds(600))throw new PasswordFailure("password_v2_continuity_gap");endpoint=w;}
+            if (NormalizedAccounts) provenFailures.AddRange(e.RootProof.Select(w=>records[w.NativeId]));
+            foreach(var w in e.NewEvents){
+                if(!Later(w,endpoint)||w.At-endpoint.At>TimeSpan.FromSeconds(600))throw new PasswordFailure("password_v2_continuity_gap");endpoint=w;
+                if (!NormalizedAccounts) continue;
+                var item=records[w.NativeId];
+                if (item.EventId!=4624) { provenFailures.Add(item); continue; }
+                var preceding=provenFailures.Where(n=>n.Witness.At>=w.At.AddSeconds(-600)&&n.Witness.At<w.At).ToArray();
+                if ((Kind=="brute" ? preceding.Count(item.SameTarget)<10 : preceding.Select(n=>n.Member.TargetKey).Distinct().Count()<5||!preceding.Any(item.SameTarget)))
+                    throw new PasswordFailure("password_v2_continuity_threshold");
+            }
             var counted=(previous==null?e.RootProof:e.NewEvents).Select(w=>records[w.NativeId].Member).ToArray();
             if(e.KnownBadPassword!=counted.Count(m=>m.Failure=="known_bad_password")||e.UnknownAccount!=counted.Count(m=>m.Failure=="unknown_account")||e.OtherFailure!=counted.Count(m=>m.Failure=="other_failure")||e.DistinctNames!=counted.Select(m=>m.TargetKey).Distinct().Count())throw new PasswordFailure("password_v2_continuity_counters");previous=e;
         }return budget;
@@ -201,12 +228,29 @@ public sealed class PasswordRule
             queue.Enqueue(member);string target=member.TargetKey!;counts[target]=counts.GetValueOrDefault(target)+1;
         }
         foreach(var old in Ordered(oldWindow.Where(m=>m.Witness.At<=watermark)))if(old.Reason!="successful_logon"&&old.EntityFor(this) is string entity)AddCandidate(entity,old);
+        var successRoutes=BruteSuccessRoutes(oldWindow,records.Values);
         foreach(var member in finalized) {
-            string? entity=member.EntityFor(this);var witness=member.Witness;if(entity==null){if(member.Reason!="successful_logon")Note(member.Reason??"missing_client");continue;}
+            var witness=member.Witness;
+            string? entity=successRoutes.GetValueOrDefault(witness.NativeId)??member.EntityFor(this);
+            if(entity==null){if(member.Reason!="successful_logon")Note(member.Reason??"missing_client");continue;}
             episodes.TryGetValue(entity,out var episode);
             if(member.Reason=="successful_logon"){
-                var preceding=records.Values.Where(n=>n.Member.EntityFor(this)==entity&&n.Member.Reason==null&&n.Witness.At>=witness.At.AddSeconds(-600)&&n.Witness.At<witness.At).Select(n=>n.Member).ToArray();
-                if(episode==null||episode.RootId==null&&!proofs.ContainsKey(episode.Key)||preceding.Select(m=>m.TargetKey).Distinct().Count()<5||!preceding.Any(m=>m.TargetKey==member.TargetKey))continue;
+                if(episode==null||episode.Frozen||episode.RootId==null&&!proofs.ContainsKey(episode.Key))continue;
+                if (NormalizedAccounts) {
+                    var accepted=history.Where(e=>e.EpisodeKey==episode.Key).SelectMany(e=>e.Occurrences)
+                        .Concat(proofs.GetValueOrDefault(episode.Key)??[]).Concat(newByKey.GetValueOrDefault(episode.Key)??[]);
+                    var preceding=accepted.Where(w=>w.At>=witness.At.AddSeconds(-600)&&w.At<witness.At)
+                        .Select(w=>records[w.NativeId]).Where(n=>n.EventId!=4624).ToArray();
+                    var signedIn=records[witness.NativeId];
+                    if (Kind=="brute" ? preceding.Count(signedIn.SameTarget)<10 :
+                        preceding.Select(n=>n.Member.TargetKey).Distinct().Count()<5||!preceding.Any(signedIn.SameTarget))continue;
+                    if(!newByKey.TryGetValue(episode.Key,out var successes))newByKey[episode.Key]=successes=[];
+                    successes.Add(witness);
+                    episodes[entity]=episode with{Last=witness};
+                    continue;
+                }
+                var legacyPreceding=records.Values.Where(n=>n.Member.EntityFor(this)==entity&&n.Member.Reason==null&&n.Witness.At>=witness.At.AddSeconds(-600)&&n.Witness.At<witness.At).ToArray();
+                if (legacyPreceding.Select(n=>n.Member.TargetKey).Distinct().Count()<5||!legacyPreceding.Any(n=>n.Member.TargetKey==member.TargetKey))continue;
             }
             if(episode==null||witness.At-episode.Last.At>TimeSpan.FromSeconds(600)) {
                 if(episode!=null)VerifyWitness(entity,episode.Last,records);episode=new(EpisodeKey(epoch,entity,witness),entity,witness,witness,Origin:[witness]);originChecked.Add(episode.Key);

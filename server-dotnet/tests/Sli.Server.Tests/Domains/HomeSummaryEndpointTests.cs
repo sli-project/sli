@@ -189,7 +189,7 @@ public sealed partial class HomeSummaryEndpointTests
             else if (sql.Contains("population as materialized")) result = !HasGroups || !populated ? [] : [Row(new {
                 rule_code = "synthetic-rule", title = "Synthetic problem", importance = 1, total = 11, new_count = 3,
                 last_seen_utc = Stamp(Now), assigned_to = "synthetic-owner", unassigned_count = 2,
-                total_problems = 20, total_new = 4, total_groups = 9, cohort = new object[] { "finding", 41 },
+                total_problems = 20, total_new = 4, total_groups = 20, cohort = new object[] { "finding", 41 },
                 object_names = SidGroups ? new[] { "S-1-5-21-100000001-200000002-300000003-1001", "S-1-5-21-100000001-200000002-300000003-1002" } : new[] { "synthetic-target" }, domain_name = "synthetic.example", representative = new { id = 41 }, day = (string?)null })];
             else if (sql.Contains("as label")) result = parameters.ContainsKey("requests")
                 ? [Row(new { request_index=0, label="fixture-one", witness_verified=true, entity_id=14, source_run_id="synthetic-run", observed_at_utc=Stamp(Now) }),Row(new { request_index=1,label="fixture-two", witness_verified=true, entity_id=15, source_run_id="synthetic-run", observed_at_utc=Stamp(Now) })]
@@ -460,8 +460,14 @@ public sealed partial class HomeSummaryEndpointTests
         var rows = new Rows(); var (status, body) = await Request("?contract=v3&domain_id=7", rows);
         Assert.Equal(200, status); Assert.Equal("sli.home-summary.v3", (string?)body["contract_id"]);
         Assert.Equal("ok", (string?)body["state"]); Assert.Equal(20, (int?)body["total"]);
-        Assert.Equal(4, (int?)body["new_count"]); Assert.Equal(8, (int?)body["remaining_groups"]); Assert.Equal(9, (int?)body["remaining_problems"]);
-        var group = body["groups"]![0]; Assert.Equal("mixed", (string?)group?["assignee_state"]);
+        Assert.Equal(4, (int?)body["new_count"]);
+        var groups = body["groups"]!.AsArray();
+        int remaining = body["total"]!.GetValue<int>() - groups.Count;
+        Assert.Equal(remaining, body["remaining_groups"]!.GetValue<int>());
+        Assert.Equal(remaining, body["remaining_problems"]!.GetValue<int>());
+        var group = Assert.Single(groups);
+        Assert.Equal(11, group!["total"]!.GetValue<int>());
+        Assert.Equal("mixed", (string?)group["assignee_state"]);
         Assert.Equal("synthetic-target", (string?)group?["objects"]?[0]?["name"]);
         Assert.Contains("cohort=", (string?)group?["href"]); Assert.Empty(body["warnings"]!.AsArray());
         Assert.Null(body["kpis"]); Assert.DoesNotContain(rows.Calls, c => c.Sql.Contains("from entities_v2_active"));

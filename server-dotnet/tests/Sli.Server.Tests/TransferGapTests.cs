@@ -300,6 +300,7 @@ public sealed class TransferGapTests
         await using var pg = new Sli.Server.Tests.Agents.PostCollectionPostgres(); await pg.StartAsync(Ct);
         await using var db = new Npgsql.NpgsqlConnection(pg.ConnectionString); await db.OpenAsync(Ct);
         await Sli.Server.Tests.Agents.PostCollectionPostgres.Sql(db, """
+            create function public.password_problem_facts395(bigint,text) returns jsonb language sql as $$select null::jsonb$$;
             create temp table finding_event_details337(finding_id bigint,event_db_id bigint,event_id integer);
             create temp table finding_entities(finding_id bigint,display_name text,entity_role text);
             create temp table semantic_security_scenarios(scenario_key bytea,scenario_kind text,partition_key text,strict_keys_json jsonb);

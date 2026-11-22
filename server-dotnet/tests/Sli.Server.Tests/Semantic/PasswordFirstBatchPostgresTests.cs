@@ -137,9 +137,16 @@ public sealed class PasswordFirstBatchPostgresTests(ITestOutputHelper output)
                 case when @stand then case when n<392 or n>=@total-10 then '192.0.2.1' else '192.0.2.'||(n%(@clients-1)+2)::text end
                     when @noise and n<@total-10 then '192.0.2.'||(n%@clients+1)::text else '192.0.2.1' end as ip
                 from template,generate_series(1,@total-1) n),
-            native as (select *,jsonb_set(jsonb_set(doc,'{properties,1}',to_jsonb(account)),
+            native as (select *,jsonb_set(jsonb_set(
+                case when @noise or @accounts>0 or @missing
+                    then jsonb_set(doc,'{properties,0}','"S-1-0-0"'::jsonb) else doc end,
+                '{properties,1}',to_jsonb(account)),
                 '{properties,4}',to_jsonb(ip))||jsonb_build_object('record_id',n+1,'time_created',to_char(at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-                'xml',replace(replace(replace(replace(doc->>'xml','<EventRecordID>1</EventRecordID>','<EventRecordID>'||(n+1)::text||'</EventRecordID>'),
+                'xml',replace(replace(replace(replace(
+                    case when @noise or @accounts>0 or @missing
+                        then replace(doc->>'xml','S-1-5-21-100000001-200000002-300000003-1001','S-1-0-0')
+                        else doc->>'xml' end,
+                    '<EventRecordID>1</EventRecordID>','<EventRecordID>'||(n+1)::text||'</EventRecordID>'),
                     doc->>'time_created',to_char(at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')),'synthetic-user',account),'192.0.2.1',ip)) as representation from events)
             select n,900001+n as id,at,packet_id,representation,account,ip,sha256(convert_to(representation::text,'UTF8')) as hash,
                 (row_number() over(partition by packet_id order by n)-1)::integer as ordinal from native;
@@ -157,7 +164,9 @@ public sealed class PasswordFirstBatchPostgresTests(ITestOutputHelper output)
             insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
                 select e.id,e.at,h.event_kind,h.domain_id,h.actor,h.target,h.source,h.computer,
                     h.method||jsonb_build_object('$packet_id',e.packet_id::text,'$packet_ordinal',e.ordinal,
-                        '$principals',(h.method->'$principals')||jsonb_build_object('TargetUserName',e.account,'IpAddress',e.ip)),h.outcome,h.fields
+                    '$principals',(h.method->'$principals')
+                        ||case when @noise or @accounts>0 or @missing then jsonb_build_object('TargetUserSid','S-1-0-0') else '{}'::jsonb end
+                        ||jsonb_build_object('TargetUserName',e.account,'IpAddress',e.ip)),h.outcome,h.fields
                 from password_test_events e cross join event_hot h order by e.at,e.id;
             analyze event_hot;
             """,db){CommandTimeout=0};

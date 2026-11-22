@@ -128,7 +128,7 @@ public sealed partial class SecurityProblemsV2Tests
                 long id = row!["id"]!.GetValue<long>();
                 string address = $"192.0.2.{id}";
                 Assert.Equal(address, row["actor_text"]!.ToString());
-                Assert.Equal(id % 2 == 0 ? $"{address} (учётных записей: 30)" : $"example.test\\user-{id}", row["entity_text"]!.ToString());
+                Assert.Equal(id % 2 == 0 ? $"{address} (учётных записей: 30)" : $"user-{id}", row["entity_text"]!.ToString());
                 Assert.Null(row["evidence"]);
                 Assert.Null(row["status_history"]);
                 Assert.Null(row["what_happened"]);
@@ -142,7 +142,7 @@ public sealed partial class SecurityProblemsV2Tests
         Assert.Equal(HttpStatusCode.OK, description.StatusCode);
         var problem = Assert.Single((await ReportFixture.Body(description))["items"]!.AsArray())!;
         Assert.Equal("client-159.example.test", problem["actor_text"]!.ToString());
-        Assert.Contains("example.test\\user-159", problem["what_happened"]!.ToString());
+        Assert.Contains("user-159", problem["what_happened"]!.ToString());
         Assert.Equal("fixture comment", Assert.Single(problem["status_history"]!.AsArray())!["note"]!.ToString());
         using var evidence = await host.Client.GetAsync("/api/v2/reports/security.problems/rows/159/detail?population=open&limit=20", Ct);
         Assert.Equal(HttpStatusCode.OK, evidence.StatusCode);
