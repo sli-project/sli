@@ -5,6 +5,7 @@ using Sli.Server.Gpo;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Domains.HomeJson;
+using static Sli.Server.Domains.HomePresentation;
 
 namespace Sli.Server.Domains;
 
@@ -34,6 +35,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         var dcIds = Ids(infrastructure);
         var policyIds = Ids(policies);
         var eventScope = chosen is null ? null : EventScope(journal, chosen.Id);
+        var retention = eventScope is null ? window.From : EventReadService.ShortBoundary(configuration);
         bool queueIdentity = queueIds.Length > 0 && queue!.Fields(queueIds, "identity_basic");
         bool queueTechnical = queueIds.Length > 0 && queue!.Fields(queueIds, "technical");
         bool queueEvidence = queueTechnical && queue!.Fields(queueIds, "raw_evidence");
@@ -42,7 +44,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             || queue?.Capabilities?.Decide("entity.view").Allowed == true;
 
         var problemsTask = queueIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
-            : reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("technical", queueTechnical)]);
+            : reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
         var controllerTask = dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
             : reads.Read(HomePeriodSql.Controllers, ct, ("ids", dcIds), ("to", window.To));
         var passwordTask = dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
@@ -56,20 +58,25 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         var problemRows = Rows(counts?["items"]).Select(row =>
         {
             long id = row.Number("id");
-            var target = queueIdentity ? DisplayName(row.Text("target")) ?? DisplayName(row.Text("actor")) : null;
+            var (name, fact) = HomePresentation.PeriodProblem(row, query, queueIdentity);
+            var subject = row["subject"];
+            var lookup = DisplayName(subject.Text("group_name")) ?? (row["password"].Number("accounts") <= 1 ? name : null);
+            var entity = row["entity"];
             var observations = Rows(row["observations"]).Select(observation => new {
                 at = observation.Stamp("at"), event_id = observation.Number("event_kind"),
-                source = observation.Text("source"),
+                source = DisplayName(observation.Text("source")),
                 href = queueEvidence && eventLinks && eventScope is not null ? "/app/events/" + observation.Number("event_id") : null
             }).ToArray();
             return new {
-                id, name = target, fact = HomePresentation.Finding(row, query.Language, queueIdentity, queueTechnical).Text("what"),
+                id, name, fact,
                 severity = row.Text("severity"), at = row.Stamp("first_seen"), source = observations.FirstOrDefault()?.source,
                 observations,
                 href = HomeSummaryQuery.Href("security.problems", new Dictionary<string, object?>(links) { ["id"] = id }),
-                object_href = objectLinks && queueIdentity && row.Number("entity_id") > 0 ? "/app/entities/" + row.Number("entity_id") : null,
-                events_href = eventScope is not null && target is not null ? HomeSummaryQuery.Href("events.journal",
-                    new Dictionary<string, object?>(filters) { ["q"] = target }) : null
+                object_href = objectLinks && lookup is not null && entity.Number("id") > 0
+                    && string.Equals(lookup, DisplayName(entity.Text("name")), StringComparison.OrdinalIgnoreCase)
+                    ? "/app/entities/" + entity.Number("id") : null,
+                events_href = eventScope is not null && lookup is not null
+                    ? HomeSummaryQuery.Href("events.journal", new Dictionary<string, object?>(filters) { ["q"] = lookup }) : null
             };
         }).ToArray();
         var problemsById = problemRows.ToDictionary(row => row.id);
@@ -77,7 +84,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         var eventChanges = (await eventsTask).Select(row => Object(new {
             at = row.Stamp("at"), name = DisplayName(row.Text("name")), event_id = row.Number("event_id"),
             initiator = DisplayName(row.Text("initiator")), value = DisplayName(row.Text("value")),
-            href = eventLinks ? "/app/events/" + row.Number("id") : null
+            href = eventLinks && row.Stamp("at") >= retention ? "/app/events/" + row.Number("id") : null
         }));
         var passwordChanges = (await passwordTask).Select(row => Object(new {
             at = row.Stamp("at"), name = row.Text("name"), kind = "password", field = row.Text("field"),
@@ -92,7 +99,8 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                     new Dictionary<string, object?>(links) { ["population"] = "open" }) : null
             },
             controllers = new {
-                items = (await controllerTask).Select(row => Controller(row, window.To, objectLinks)),
+                items = (await controllerTask).OrderBy(row => row.Text("name"), StringComparer.Ordinal)
+                    .Select(row => Controller(row, window.To, objectLinks)),
                 href = dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", links) : null
             },
             changes = new {
@@ -135,10 +143,8 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
 
         Task<IReadOnlyList<JsonObject>> ReadEventChanges((string Sql, Dictionary<string, object> Parameters) scope)
         {
-            var retention = EventReadService.ShortBoundary(configuration);
-            return reads.Read(HomePeriodSql.EventChanges(EventReadService.ShortSource("@read_from", daily: false), scope.Sql
-                + " and e.time_created_utc>=@from and e.time_created_utc<@to"), ct,
-                [.. windowArgs, ("ids", new[] { chosen!.Id }), ("read_from", window.From > retention ? window.From : retention),
+            return reads.Read(HomePeriodSql.EventChanges(EventReadService.ShortSource("@from", daily: false), scope.Sql), ct,
+                [.. windowArgs, ("ids", new[] { chosen!.Id }),
                  .. scope.Parameters.Select(p => (p.Key, (object?)p.Value))]);
         }
 
@@ -155,11 +161,9 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                 return new(TimeZoneInfo.ConvertTimeToUtc(midnight, zone));
             }
             var history = Midnight(localStart.AddDays(-7));
-            var baselineEnd = Midnight(localStart);
-            var retention = EventReadService.ShortBoundary(configuration);
             return reads.Read(HomePeriodSql.Activity(EventReadService.ShortSource("@read_from", daily: false), scope.Sql), ct,
-                [.. windowArgs, ("ids", new[] { chosen!.Id }), ("zone", query.TimeZone), ("hour", hour), ("history", history),
-                 ("baseline_end", baselineEnd), ("retention", retention), ("read_from", history > retention ? history : retention),
+                [.. windowArgs, ("ids", new[] { chosen!.Id }), ("zone", query.TimeZone), ("hour", hour),
+                 ("read_from", history > retention ? history : retention),
                  .. scope.Parameters.Select(p => (p.Key, (object?)p.Value))]);
         }
     }
@@ -167,12 +171,14 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
     private static (string Sql, Dictionary<string, object> Parameters)? EventScope(HomeReport? journal, long domain)
     {
         if (journal?.Capabilities is not { } capabilities || !journal.Fields([domain], "security", "technical")) return null;
-        const string security = "e.domain_id=any(@ids) and e.channel='Security' and e.provider_name='Microsoft-Windows-Security-Auditing'";
+        const string auditing = "e.domain_id=any(@ids) and (e.provider_name='Microsoft-Windows-Security-Auditing' "
+            + "or lower(e.provider_name)='microsoft-windows-security-auditing')";
         var compiler = new EventSearchSql();
-        if (capabilities.IsOwner) return (security, compiler.Parameters);
+        if (capabilities.IsOwner)
+            return (auditing + " and (e.channel='Security' or lower(e.channel)='security')", compiler.Parameters);
         if (!capabilities.Capabilities.Contains("events.view") && !capabilities.ResourceCapabilities.Contains("events.view")) return null;
         var rules = capabilities.Policies.Where(p => p.CapabilityKey == "events.view").ToArray();
-        var parts = new List<string> { security,
+        var parts = new List<string> { auditing, "e.channel='Security'",
             "exists (select 1 from servers s where s.id=e.server_id and s.domain_id=e.domain_id)" };
         try
         {
@@ -208,7 +214,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         if (AdComputerPosture.SupportEnd(os, attributes.Text("operating_system_version")) is { } supportEnd)
             Check("os", end < supportEnd, os);
         return new {
-            id = row.Number("entity_id"), name = row.Text("name"), at = row.Stamp("observed_at"), passed, failures = checks,
+            id = row.Number("entity_id"), name = DisplayName(row.Text("name")), at = row.Stamp("observed_at"), passed, failures = checks,
             href = link ? "/app/entities/" + row.Number("entity_id") : null
         };
     }
@@ -223,6 +229,4 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         catch (JsonException) { return null; }
     }
     private static string? Scalar(JsonNode? node) => node is JsonValue ? node.ToString() : null;
-    private static string? DisplayName(string? value) => string.IsNullOrWhiteSpace(value) || value == "-"
-        || value.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase) || value.StartsWith("sid:", StringComparison.OrdinalIgnoreCase) ? null : value;
 }
