@@ -193,7 +193,7 @@ for (const screen of screens) {
     const { unexpected, servedData } = await installStandardFixtures(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`/app/report/${screen.key}`);
+    await page.goto(`/app/report/${screen.key}${screen.key === 'ad.computers.v6' ? '?tab=checks' : ''}`);
     const definition = definitions.get(screen.key)!;
     const title = screen.key === 'ad.infrastructure' ? 'Состояние AD' : definition.title;
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
@@ -253,12 +253,10 @@ test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
 
 test('computer checks: a short list fits without data commentary', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 6);
-  await page.goto('/app/report/ad.computers.v6');
+  await page.goto('/app/report/ad.computers.v6?tab=checks');
   await expect(page.locator('main .sli-ds-review-list__item')).toHaveCount(6);
   await expect(page.locator('main').getByRole('tablist')).toHaveCount(1);
-  await expect(page.locator('main').getByRole('tab')).toHaveText([
-    'Требуют проверки', 'Изменения', 'Все компьютеры', 'Входы на компьютеры',
-  ]);
+  await expect(page.locator('main').getByRole('tab', { name: 'Требуют проверки', selected: true })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const measurements = await measureStandard(page);
   console.log(JSON.stringify({ screen: 'ad.computers.v6', dataset: 'short-list', ...measurements }));

@@ -104,9 +104,16 @@ public sealed class DetectionShortEventsPostgresTests
         var reference = shortPrecursors[0].Ref;
         await using (var tx = await worker.BeginTransactionAsync(ct)) {
             var sql = new DetectionSql(worker, tx);
-            var denied = await sql.Rows("select public.resolve_finding_evidence_ref(@i,@p,@s,@g,'','core_event',@n,@h) as allowed",ct,
-                ("i",Guid.Parse(scope.InstallationId)),("p",scope.PluginId),("s",scope.SourceInstanceId),("g","synthetic-other-generation"),("n",reference.NativeId),("h",reference.Sha256));
-            Assert.False(denied[0]["allowed"]!.GetValue<bool>());
+            async Task<bool> Resolves(string generation, string nativeId, string hash) {
+                var rows = await sql.Rows("select public.resolve_finding_evidence_ref(@i,@p,@s,@g,'','core_event',@n,@h) as allowed", ct,
+                    ("i", Guid.Parse(scope.InstallationId)), ("p", scope.PluginId), ("s", scope.SourceInstanceId), ("g", generation), ("n", nativeId), ("h", hash));
+                return Assert.Single(rows)["allowed"]!.GetValue<bool>();
+            }
+            Assert.True(await Resolves(scope.SourceGeneration, reference.NativeId, reference.Sha256));
+            Assert.False(await Resolves("synthetic-other-generation", reference.NativeId, reference.Sha256));
+            Assert.False(await Resolves(scope.SourceGeneration, "0" + reference.NativeId, reference.Sha256));
+            Assert.False(await Resolves(scope.SourceGeneration, "9223372036854775808", reference.Sha256));
+            Assert.False(await Resolves(scope.SourceGeneration, reference.NativeId, new string('g', 64)));
             await sql.Rows("select public.link_finding_evidence_ref(@f,@i,@p,@s,@g,'','core_event',@n,@h) as added", ct,
                 ("f",finding),("i",Guid.Parse(scope.InstallationId)),("p",scope.PluginId),("s",scope.SourceInstanceId),("g",scope.SourceGeneration),("n",reference.NativeId),("h",reference.Sha256));
             await tx.CommitAsync(ct);
