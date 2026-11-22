@@ -1,5 +1,5 @@
 import { formatNumber } from "../shared/format";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -27,6 +27,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  rowGroup, rowDetail, emptyContent,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -36,6 +37,9 @@ export function DataTable<Row>({
   onRowClick?: (row: Row) => void;
   selectedKey?: string | null;
   caption: string;
+  rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
+  rowDetail?: (row: Row) => ReactNode;
+  emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -60,6 +64,8 @@ export function DataTable<Row>({
     state: { columnVisibility: { ...defaultVisibility, ...visibility } }, onColumnVisibilityChange: setVisibility, manualSorting: true,
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
+  const visibleRows = table.getRowModel().rows;
+  const columnCount = table.getVisibleLeafColumns().length;
 
   return <div className="sli-ds-table">
     {toggleable.length ? <details className="sli-ds-table__columns">
@@ -88,9 +94,14 @@ export function DataTable<Row>({
               : flexRender(header.column.columnDef.header, header.getContext())}
           </th>;
         })}</tr>)}</thead>
-        <tbody>{table.getRowModel().rows.map((row) => {
+        <tbody>{visibleRows.map((row, index) => {
+          const group = rowGroup?.(row.original);
+          const groupStart = group && (index === 0 || rowGroup?.(visibleRows[index - 1].original).key !== group.key);
+          const detail = group?.collapsed ? null : rowDetail?.(row.original);
           const selected = selectedKey === row.id;
-          return <tr key={row.id} data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
+          return <Fragment key={row.id}>
+            {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
+            {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
@@ -103,8 +114,10 @@ export function DataTable<Row>({
               return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>;
-        })}</tbody>
+          </tr>}
+            {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
+          </Fragment>;
+        })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">

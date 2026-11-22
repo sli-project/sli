@@ -118,7 +118,7 @@ function withoutADInfrastructureClutter(value: ReportDefinitionDto): ReportDefin
     })),
     params: value.params.map((param) => param.key === "qualification"
       ? { ...param, options: param.options?.map((option) => ["not_evaluated", "policy_not_defined"].includes(option.value) ? { ...option, label: "—" } : option) }
-      : param.key === "period" ? { ...param, presets: param.presets?.filter((preset) => preset !== "24h") } : param),
+      : param),
   };
 }
 
