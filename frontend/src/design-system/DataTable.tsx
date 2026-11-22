@@ -1,5 +1,6 @@
 import { formatNumber } from "../shared/format";
 import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -26,7 +27,7 @@ export type TableColumn<Row> = {
 
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, compact, pageSize, columnsTarget,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -40,11 +41,14 @@ export function DataTable<Row>({
   loadingMore?: boolean;
   onLoadMore?: () => void;
   total?: number | null;
-  pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
+  pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean; label?: string };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  compact?: boolean;
+  pageSize?: { value: number; options: readonly number[]; label: string; onChange: (size: number) => void };
+  columnsTarget?: HTMLElement | null;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -61,16 +65,17 @@ export function DataTable<Row>({
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
 
-  return <div className="sli-ds-table">
-    {toggleable.length ? <details className="sli-ds-table__columns">
-      <summary>{t("table.columns")}</summary>
+  const columnMenu = toggleable.length ? <details className="sli-ds-table__columns">
+      <summary className={columnsTarget ? "sli-ds-chip" : undefined}>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
         {table.getAllLeafColumns().filter((column) => toggleable.some((item) => item.key === column.id)).map((column) => <label key={column.id}>
           <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()}/>
           {String(column.columnDef.header)}
         </label>)}
       </div>
-    </details> : null}
+    </details> : null;
+  return <div className="sli-ds-table" data-compact={compact}>
+    {columnMenu && columnsTarget ? createPortal(columnMenu, columnsTarget) : columnMenu}
     <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
       <table data-responsive={columns.some((column) => column.mobile === false) || undefined}>
         <caption className="sli-ds-sr-only">{caption}</caption>
@@ -108,12 +113,18 @@ export function DataTable<Row>({
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
+      {pageSize ? <div className="sli-ds-header__meta" role="group" aria-label={pageSize.label}>
+        <span>{pageSize.label}</span>{pageSize.options.map((size) => <button key={size} type="button" className="sli-ds-chip"
+          aria-pressed={size === pageSize.value} onClick={() => pageSize.onChange(size)}>{size}</button>)}
+      </div> : null}
       {pagination ? <>
-        <span>{t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
+        <span>{pagination.label ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
           total: typeof total === "number" ? formatNumber(total) : t("table.noValue") })}</span>
         <div className="sli-ds-header__actions">
-          <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onPrevious} onClick={pagination.onPrevious}>{t("table.previous")}</button>
-          <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onNext} onClick={pagination.onNext}>{t("table.next")}</button>
+          <button type="button" className="sli-ds-button" aria-label={t("table.previous")}
+            disabled={pagination.busy || !pagination.onPrevious} onClick={pagination.onPrevious}>{pageSize ? "←" : t("table.previous")}</button>
+          <button type="button" className="sli-ds-button" aria-label={t("table.next")}
+            disabled={pagination.busy || !pagination.onNext} onClick={pagination.onNext}>{pageSize ? "→" : t("table.next")}</button>
         </div>
       </> : <>
         <span>{t("table.shown", { count: rows.length })}{typeof total === "number" ? ` ${t("table.of", { total: formatNumber(total) })}` : ""}</span>

@@ -10,6 +10,12 @@ import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
 
+const effective = vi.hoisted(() => ({ reports: [] as { report_key: string; allowed: boolean }[], capabilities: [] as string[] }));
+vi.mock("../../app/App", async (load) => ({
+  ...(await load<typeof import("../../app/App")>()),
+  useEffectiveAccess: () => effective,
+}));
+
 const columns: ReportDefinitionDto["columns"] = [
   { key: "display_name", path: "display_name", label: "Компьютер", kind: "text", link: "/app/entities/{entity_id}" },
   { key: "computer_type", path: "computer_type", label: "Тип", kind: "state", labels: { server: "Сервер", domain_controller: "Контроллер домена" } },
@@ -19,7 +25,8 @@ const columns: ReportDefinitionDto["columns"] = [
 const definition: ReportDefinitionDto = {
   key: "ad.computers.v6", title: "Компьютеры", description: "", section: "reports/computers", archetype: "inventory-status",
   params: [{ key: "view", label: "Срез", kind: "choice", hidden: true, default: "all" },
-    { key: "domain_id", label: "Домен", kind: "domain", hidden: true }, { key: "q", label: "Поиск", kind: "text" }],
+    { key: "domain_id", label: "Домен", kind: "domain", hidden: true }, { key: "q", label: "Поиск", kind: "text" },
+    { key: "type", label: "Тип", kind: "choice", options: [{ value: "domain_controller", label: "Контроллер домена" }] }],
   columns, views: [{ key: "checks", title: "Требуют проверки", kind: "table", source: "checks" },
     { key: "changes", title: "Изменения", kind: "table", source: "changes", note: "Synthetic computer changes note", columns: [...columns.slice(0, 2),
       { key: "change_type", path: "change_type", label: "Изменение", kind: "text" },
@@ -29,7 +36,7 @@ const definition: ReportDefinitionDto = {
     columns: [{ key: "label", path: "label", label: "Причина", kind: "text" }] },
   export: true, limits: { default: 50, max: 200 }, presets: [], row_links: [], filter_options: {},
 };
-const host = { entity_id: 1, display_name: "synthetic-host", domain_name: "example.test", computer_type: "domain_controller", operating_system: "unknown", reasons: [] };
+const host = { entity_id: 1, domain_id: 8, object_guid: "00000000-0000-0000-0000-000000000001", display_name: "synthetic-host", domain_name: "example.test", computer_type: "domain_controller", operating_system: "unknown", reasons: [] };
 const check = { id: "computers:laps", key: "laps", title: "Synthetic LAPS check", severity: "medium", severity_text: "Средняя",
   status: "not_evaluated", status_text: "Не оценено", total: 4, new_count: null, is_lower_bound: true, remaining_objects: 1,
   why: "Synthetic reason", action: "Synthetic action", remediation: "Synthetic remediation",
@@ -42,14 +49,18 @@ const page = (overrides: Partial<ReportResultDto> = {}): ReportResultDto => ({
 });
 const requests: URLSearchParams[] = [];
 let respond: (params: URLSearchParams) => ReportResultDto;
+let respondTo: (url: URL) => unknown;
 function show(props: Partial<Parameters<typeof ReportRenderer>[0]> = {}) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReportRenderer reportKey={definition.key} {...props}/></QueryClientProvider>);
 }
 beforeEach(() => {
   requests.length = 0;
+  effective.reports = [];
+  effective.capabilities = [];
+  respondTo = () => undefined;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale("ru");
-  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain_id=8");
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain_id=8&tab=checks");
   respond = (params) => params.get("tab") === "checks" ? page() : params.get("tab") === "changes"
     ? page({ items: [{ ...host, row_id: "new:1", change_type: "Synthetic discovery", before: "Absent", after: "Present" }] })
     : page({ state: "ok", items: [host], metrics: [{ key: "all", label: "All", value: 1 }], coverage: {} });
@@ -57,7 +68,8 @@ beforeEach(() => {
     const url = String(input);
     const params = new URL(url, "http://example.test").searchParams;
     if (url.includes("/data?")) requests.push(params);
-    return new Response(JSON.stringify(url.includes("/data?") ? respond(params) : definition));
+    const response = respondTo(new URL(url, "http://example.test")) ?? (url.includes("/data?") ? respond(params) : definition);
+    return new Response(JSON.stringify(response));
   }));
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -72,7 +84,7 @@ it("preserves declared links and their return query outside the computer name ov
   const link = screen.getByRole("link", { name: "synthetic-object" });
   const target = new URL(link.getAttribute("href")!, "http://example.test");
   expect(target.pathname).toBe("/app/entities/7");
-  expect(target.searchParams.get("return_to")).toBe("/app/report/ad.computers.v6?domain_id=8");
+  expect(target.searchParams.get("return_to")).toBe("/app/report/ad.computers.v6?domain_id=8&tab=checks");
   link.addEventListener("click", (event) => event.preventDefault(), { once: true });
   fireEvent.click(link);
   expect(onSelect).not.toHaveBeenCalled();
@@ -80,7 +92,7 @@ it("preserves declared links and their return query outside the computer name ov
   expect(onSelect).toHaveBeenCalledExactlyOnceWith(row);
 });
 
-it("opens checks first, preserves unknown counts and shows no warning for a fresh complete source", async () => {
+it("opens check deep links, preserves unknown counts and shows no warning for a fresh complete source", async () => {
   const { container } = show();
   await screen.findByText(check.title, { selector: "strong" });
   expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Требуют проверки", "Изменения", "Все компьютеры"]);
@@ -111,7 +123,6 @@ it.each(["ru", "en"] as const)("omits missing assessments and removes data comme
   expect(container.textContent).not.toMatch(/Не оценено|Not evaluated|Компьютер может попадать|A computer may/);
   expect(container.textContent).not.toContain("Synthetic removed limitation");
   expect(screen.queryByText(t("reports.passport.more"))).toBeNull();
-  expect(container.querySelector(".sli-ds-header__meta")?.textContent ?? "").not.toContain("2026");
   expect(container.querySelectorAll(".sli-ds-state--banner, .sli-ds-callout")).toHaveLength(0);
   fireEvent.click(summary);
   expect(screen.getByRole("button", { name: "synthetic-preview" })).toBeTruthy();
@@ -129,19 +140,20 @@ it("keeps workspace navigation in the report tab strip", async () => {
   expect(onAdditionalTab).toHaveBeenCalledExactlyOnceWith("logons");
 });
 
-it("opens preview and inventory names in the overlay, keeping the list and closing on Escape", async () => {
+it("opens the right panel, expands it on demand, and returns to the split view on Escape", async () => {
   show();
   await screen.findByText(check.title, { selector: "strong" });
   fireEvent.click(screen.getByText(check.title, { selector: "strong" }).closest("summary")!);
   fireEvent.click(screen.getByRole("button", { name: "synthetic-preview" }));
-  expect(screen.getByRole("dialog").textContent).toContain("synthetic-preview");
+  expect(screen.getByRole("complementary", { name: "synthetic-preview" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t("reports.computers.expand") }));
+  expect(screen.getByRole("dialog", { name: "synthetic-preview" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Требуют проверки" })).toBeTruthy();
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Все компьютеры" }));
   fireEvent.click(await screen.findByRole("button", { name: "synthetic-host" }));
-  const drawer = screen.getByRole("dialog");
-  expect(drawer.getAttribute("aria-modal")).toBe("true");
+  const drawer = screen.getByRole("complementary", { name: "synthetic-host" });
   expect(within(drawer).getByText("Контроллер домена")).toBeTruthy();
   expect(screen.getByRole("table", { name: "Все компьютеры" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "synthetic-host" })).toBeNull();
@@ -160,11 +172,11 @@ it("requests each tab in domain scope and exports changes, with role and compact
   const params = new URL(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href")!, "http://example.test").searchParams;
   expect(params.get("tab")).toBe("changes");
   expect(params.get("domain_id")).toBe("8");
-  expect(requests.every((request) => request.get("domain_id") === "8")).toBe(true);
+  expect(requests.every((request) => (request.get("domain_id") ?? request.get("domain")) === "8")).toBe(true);
   fireEvent.click(screen.getByRole("tab", { name: "Все компьютеры" }));
   await screen.findByRole("button", { name: "synthetic-host" });
   expect(screen.queryByText("unknown")).toBeNull();
-  expect(screen.getByRole("columnheader", { name: "LAPS" })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: "Windows LAPS" })).toBeTruthy();
 });
 
 it("retains cursor pagination on inventory and never shows another tab's rows", async () => {
@@ -175,7 +187,7 @@ it("retains cursor pagination on inventory and never shows another tab's rows", 
   await screen.findByText(check.title, { selector: "strong" });
   fireEvent.click(screen.getByRole("tab", { name: "Все компьютеры" }));
   await screen.findByRole("button", { name: "synthetic-host" });
-  fireEvent.click(screen.getByRole("button", { name: t("table.loadMore") }));
+  fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
   await screen.findByRole("button", { name: "synthetic-next" });
   expect(requests.at(-1)?.get("cursor")).toBe("opaque");
   fireEvent.click(screen.getByRole("tab", { name: "Требуют проверки" }));
@@ -200,7 +212,7 @@ it("shows an empty comparison without source warnings or a note", async () => {
   respond = () => page({ items: [], collections: { changes: [] }, coverage: { comparison_missing_domains: ["example.test"],
     domains: [{ domain_name: "example.test", state: "complete", observed_at_utc: new Date().toISOString() }] } });
   const { container } = show();
-  await screen.findByText(t("reports.ad.computers.no_changes"));
+  await screen.findByRole("status");
   expect(container.querySelectorAll('.sli-ds-callout[data-tone="warning"]')).toHaveLength(0);
   expect(container.textContent).not.toContain("Synthetic computer changes note");
   expect(screen.getAllByRole("status")).toHaveLength(1);
@@ -221,5 +233,88 @@ it("defines identical computer view translations in both locales", () => {
   const keys = Object.keys(ru).filter((key) => key.startsWith("reports.ad.computers.") || key.startsWith("reports.v2.ad.computers.v6.views.changes."));
   expect(Object.keys(en).filter((key) => key.startsWith("reports.ad.computers.") || key.startsWith("reports.v2.ad.computers.v6.views.changes.")).sort()).toEqual(keys.sort());
   for (const key of keys) expect(en[key as keyof typeof en]).not.toMatch(/[А-Яа-яЁё]/);
+});
+
+it("shows server filter counts and reloads the inventory with the selected role", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain_id=8");
+  respond = (params) => page({ state: "ok", items: [{ ...host, display_name: params.has("type") ? "synthetic-matching-host" : host.display_name }],
+    filter_options: { type: [{ value: "domain_controller", label: "Controller", count: 4 }] } });
+  show();
+  await screen.findByRole("option", { name: "Контроллер домена (4)" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Тип" }), { target: { value: "domain_controller" } });
+  await screen.findByRole("button", { name: "synthetic-matching-host" });
+  expect(requests.at(-1)?.get("type")).toBe("domain_controller");
+});
+
+it("uses exact computer scope for card changes, problems, and source event links", async () => {
+  const computer = { ...host, computer_type: "workstation", dns_host_name: "synthetic-host.example.test" };
+  effective.reports = ["ad.computer-logons", "security.queue", "events.explorer"].map((report_key) => ({ report_key, allowed: true }));
+  respond = (params) => params.has("object_guid")
+    ? page({ state: "ok", items: [{ row_id: "event:1", change_type: "membership_added", group_name: "synthetic-group", source_event_id: 9 }] })
+    : page({ state: "ok", items: [computer] });
+  respondTo = (url) => {
+    if (url.pathname.endsWith("/security.problems/data")) return page({ coverage: { open_by_severity: { critical: 2 } } });
+    if (url.pathname.endsWith("/rows/1/detail")) return page({ items: [
+      { source_event_id: 15, user_name: "synthetic-user", observed_at_utc: "2026-11-22T07:13:00Z" },
+      { source_event_id: 14, user_name: "synthetic-user", observed_at_utc: "2026-11-22T07:12:00Z" },
+    ], computer_logon_activity: { days: [], total: 2, typical: 2, top: { account: "synthetic-user", count: 2 } } });
+  };
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain_id=8");
+  show();
+  const card = await screen.findByRole("complementary", { name: "synthetic-host" });
+  const problems = (await within(card).findByText("Открытые проблемы")).parentElement!;
+  const count = await within(problems).findByRole("link", { name: /Критическая 2/ });
+  expect(new URL(count.getAttribute("href")!, "http://example.test").searchParams.get("entity_id")).toBe("1");
+  expect(within(card).getByRole("link", { name: "Открыть журнал событий" }).getAttribute("href")).toContain("synthetic-host.example.test");
+  fireEvent.click(within(card).getByRole("tab", { name: "Изменения" }));
+  await within(card).findByText(/synthetic-group/);
+  expect(requests.at(-1)?.get("object_guid")).toBe(host.object_guid);
+  expect(within(card).getByRole("link", { name: "#9" }).getAttribute("href")).toContain("/app/events/9?");
+  fireEvent.click(within(card).getByRole("tab", { name: "Входы" }));
+  await within(card).findByText("synthetic-user (2 за период)");
+  const repeats = within(card).getByRole("button", { name: /×2/ });
+  expect(repeats.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(repeats);
+  expect(within(card).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
+  expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/15?");
+});
+
+it("keeps the logon window, account filter, and page boundary when reading the next computer", async () => {
+  const key = "ad.computer-logons";
+  const logons: ReportDefinitionDto = { ...definition, key, title: "Входы на компьютеры", export: false,
+    params: [{ key: "period", label: "Период", kind: "period", default: "30d", required: true },
+      { key: "domain_id", label: "Домен", kind: "domain", hidden: true }, { key: "user", label: "Пользователь", kind: "text" },
+      { key: "with_logons", label: "Показывать", kind: "choice", options: [{ value: "yes", label: "Со входами" }] }],
+    views: [{ key: "table", kind: "table" }],
+    columns: [{ key: "name", label: "Компьютер", kind: "text", path: "display_name" },
+      { key: "count", label: "Входов за период", kind: "number", path: "login_count" }],
+  };
+  const detail: URLSearchParams[] = [];
+  respondTo = (url) => {
+    if (url.pathname.endsWith(key)) return logons;
+    if (url.pathname.endsWith("/detail")) {
+      detail.push(url.searchParams);
+      return page({ report_key: key, items: [{ source_event_id: 20, observed_at_utc: "2026-11-21T12:00:00Z", user_name: "synthetic-user" }] });
+    }
+    if (url.pathname.endsWith("/data")) {
+      const next = url.searchParams.has("cursor");
+      return page({ report_key: key, items: [{ entity_id: next ? 2 : 1, login_count: 1,
+        display_name: next ? "synthetic-next" : "synthetic-host" }], has_more: !next, next_cursor: next ? null : "opaque" });
+    }
+  };
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&user=synthetic-user");
+  show({ reportKey: key });
+  await screen.findByRole("link", { name: "#20" });
+  expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Только ПК со входами" }).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
+  await screen.findByRole("complementary", { name: "synthetic-next" });
+  expect(requests.at(-1)?.get("cursor")).toBe("opaque");
+  for (const params of [...requests, ...detail]) {
+    expect(params.get("period")).toBe("custom");
+    expect(params.get("from")).toBe(requests[0].get("from"));
+    expect(params.get("to")).toBe(requests[0].get("to"));
+    expect(params.get("user")).toBe("synthetic-user");
+    expect(params.get("domain_id")).toBe("8");
+  }
 });
 

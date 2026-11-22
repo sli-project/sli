@@ -2516,6 +2516,12 @@
           "kind": "text"
         },
         {
+          "key": "object_guid",
+          "label": "Computer",
+          "kind": "text",
+          "hidden": true
+        },
+        {
           "key": "type",
           "label": "Тип",
           "kind": "choice",
@@ -3181,6 +3187,7 @@
       "view": [],
       "q": [],
       "type": [],
+      "object_guid": [],
       "enabled": [],
       "activity": [],
       "threshold_days": [],
@@ -3367,6 +3374,7 @@
         }
       },
       "params": [
+        { "key": "domain_id", "label": "Domain", "kind": "domain", "options_from": "domain", "hidden": true },
         {
           "key": "period",
           "label": "Период",
@@ -3399,7 +3407,8 @@
             {
               "value": "yes",
               "label": "Только ПК со входами"
-            }
+            },
+            { "value": "no", "label": "Все компьютеры" }
           ]
         }
       ],
@@ -3408,7 +3417,8 @@
           "key": "name",
           "label": "Компьютер",
           "kind": "text",
-          "path": "display_name"
+          "path": "display_name",
+          "sortable": true
         },
         {
           "key": "count",
@@ -3506,6 +3516,7 @@
     "scope": "delegated",
     "param_fields": {
       "period": [],
+      "domain_id": [],
       "q": [],
       "user": [],
       "with_logons": []

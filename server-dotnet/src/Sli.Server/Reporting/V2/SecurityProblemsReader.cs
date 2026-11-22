@@ -135,6 +135,16 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         string? Latest(string key) => rows.OfType<JsonObject>().Select(r => r[key]?.ToString()).Where(s => s is not null).Order(StringComparer.Ordinal).LastOrDefault();
         var coverage = new JsonObject { ["state"] = runtime["findings_state"]?.DeepClone(), ["event_at_utc"] = Latest("last_seen_utc"), ["published_at_utc"] = Latest("published_at_utc"), ["worker_checked_at_utc"] = runtime["heartbeat_at"]?.DeepClone() };
+        if (c.Params["entity_id"] is not null && c.Params["population"]?.ToString() == "open" && runtime.Text("findings_state") == "active")
+        {
+            var counts = new JsonObject();
+            var open = new[] { "new", "confirmed", "repeated", "active", "review" };
+            foreach (var bucket in (raw["summary"] as JsonArray ?? []).OfType<JsonObject>()
+                         .Where(row => open.Contains(row.Text("status")) && !row.Flag("risk_accepted"))
+                         .GroupBy(row => row.Text("severity")))
+                if (bucket.Key is not null) counts[bucket.Key] = bucket.Sum(row => long.TryParse(row["count"]?.ToString(), out long n) ? n : 0);
+            coverage["open_by_severity"] = counts;
+        }
         var result = ReportResult.Create(c.Definition.Key, state, rows, coverage, limitations: limitations);
         result["metrics"] = metrics; result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false);
         var last = (raw["items"] as JsonArray)?.LastOrDefault();

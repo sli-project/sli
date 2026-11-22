@@ -139,6 +139,7 @@ internal static class AdInventoryRows
         void Reason(bool match, string code, string label) { if (match) reasons.Add(Obj(new { code, label })); }
         Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(Bool(raw["enabled"]) == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(Bool(raw["enabled"]) == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
         row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
+        row["ad_last_logon_utc"] = raw["lastLogonTimestamp"]?.DeepClone();
         row["last_logon_utc"]=raw["eventLastSeen"]?.DeepClone()??raw["exactLastLogon"]?.DeepClone()??raw["lastLogonTimestamp"]?.DeepClone();
         row["ou_path"]=raw["ou"]?.DeepClone()??row["ou_path"]?.DeepClone();row["operating_system_build"]=raw["osBuild"]?.DeepClone();row["classification"]=raw["classification"]?.DeepClone()??Obj(new{result=type,state=type=="unknown"?"unknown":"observed",rule_id="base_inventory_os_family",evidence=new[]{"OperatingSystem="+(raw.Text("osName")??"не передано")}});
         row["classification"]!["role_hint"]=raw["roleHint"]?.DeepClone();row["classification"]!["role_evidence"]=raw["roleEvidence"]?.DeepClone()??new JsonArray();
@@ -218,12 +219,27 @@ internal static class AdInventoryRows
             if(view is "workstation_enabled" or "workstation_disabled"&&(row.Text("computer_type")!="workstation"||Bool(raw["enabled"])!=(view=="workstation_enabled"))||view is "server_enabled" or "server_disabled"&&(row.Text("computer_type") is not ("server" or "domain_controller")||Bool(raw["enabled"])!=(view=="server_enabled")))return false;
             if(view=="unknown_type"&&row.Text("computer_type")!="unknown"||view=="data_quality"&&row["quality_issues"]!.AsArray().Count==0||view=="semantic"&&row["semantic_findings"]!.AsArray().Count==0)return false;
             if(request.Params.Text("reason_code") is {} code&&!row["reasons"]!.AsArray().Any(r=>r!.Text("code")==code)||request.Params.Text("quality_code") is {} quality&&!row["quality_issues"]!.AsArray().Any(r=>r!.Text("code")==quality))return false;
-            int? days=row["activity"]?["age_days"]?.GetValue<int>();long threshold=request.Params.Int("threshold_days")>0?request.Params.Int("threshold_days"):90;
-            bool matched=request.Params.Text("activity") switch{"missing"=>days is null,"within_30_days"=>days<=30,"days_31_to_90"=>days>=31&&days<=90,"over_60_days"=>days>60,"within_threshold"=>days<=threshold,"over_threshold"=>days>threshold,_=>true};if(!matched)return false;
+            if (!MatchesComputerActivity(row, request.Params.Text("activity"), request.Params.Int("threshold_days"))) return false;
         }
         if (view == "attention" && row["reasons"]!.AsArray().Count == 0) return false;
         if (request.Params.Text("reason") is {} reason && !(row["reason_keys"] as JsonArray??[]).Any(n => n!.ToString() == reason)) return false;
         if (request.Params.Text("information") is {} information && !(row["information_keys"] as JsonArray??[]).Any(n=>n!.ToString()==information))return false;
         return true;
+    }
+
+    internal static bool MatchesComputerActivity(JsonObject row, string? activity, long configuredThreshold)
+    {
+        int? days = row["activity"]?["age_days"]?.GetValue<int>();
+        long threshold = configuredThreshold > 0 ? configuredThreshold : 90;
+        return activity switch
+        {
+            "missing" => days is null,
+            "within_30_days" => days <= 30,
+            "days_31_to_90" => days is >= 31 and <= 90,
+            "over_60_days" => days > 60,
+            "within_threshold" => days <= threshold,
+            "over_threshold" => days > threshold,
+            _ => true,
+        };
     }
 }

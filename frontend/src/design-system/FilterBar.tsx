@@ -9,6 +9,7 @@ export type FilterOption = { value: string; label: string; count?: number };
 
 export type FilterField =
   | { key: string; label: string; kind: "text"; placeholder?: string; wide?: boolean; nested?: { key: string; label: string } }
+  | { key: string; label: string; kind: "checkbox"; onValue: string; offValue: string }
   | { key: string; label: string; kind: "select"; options: FilterOption[] }
   | { key: string; label: string; kind: "multiselect"; options: FilterOption[] }
   | { key: string; label: string; kind: "search-multiselect"; options: SearchOption[] }
@@ -27,7 +28,7 @@ function isActive(value: FilterValue): boolean {
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, applyInline, scope }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -40,6 +41,8 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   /** A three-column form with wide object fields; stacks on narrow screens. */
   layout?: "grid" | "inline";
   quickFilters?: ReactNode;
+  applyInline?: boolean;
+  scope?: ReactNode;
 }) {
   const [draft, setDraft] = useState<FilterValues>(values);
   // On a phone a long form hides the result; it starts folded behind one toggle.
@@ -51,7 +54,11 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   const additionalActive = additional.filter((field) => isActive(draft[field.key]) && JSON.stringify(draft[field.key]) !== JSON.stringify(defaults[field.key])).length;
   const [additionalOpen, setAdditionalOpen] = useState(() => !quickFilters && additionalActive > 0);
   useEffect(() => { if (!quickFilters && additionalActive > 0) setAdditionalOpen(true); }, [additionalActive, quickFilters]);
-  const set = (key: string, value: FilterValue) => setDraft((current) => ({ ...current, [key]: value }));
+  const set = (key: string, value: FilterValue, apply = false) => {
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    if (applyInline && apply) onApply(next);
+  };
   const submit = (event: FormEvent) => { event.preventDefault(); onApply(draft); };
 
   const renderFields = (items: FilterField[]) => items.map((field) => {
@@ -60,21 +67,26 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
       return <PeriodPicker key={field.key} label={field.label} presets={field.presets}
         precision={field.precision}
         value={(draft[field.key] as PeriodValue | undefined) ?? { preset: "30d" }}
-        onChange={(value) => set(field.key, value)}/>;
+        onChange={(value) => set(field.key, value, value.preset !== "custom" || Boolean(value.from && value.to && value.from <= value.to))}/>;
     }
+    if (field.kind === "checkbox") return <label key={field.key} className="sli-ds-button">
+      <input type="checkbox" checked={draft[field.key] === field.onValue}
+        onChange={(event) => set(field.key, event.target.checked ? field.onValue : field.offValue, true)}/>{field.label}
+    </label>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
     return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
       <label htmlFor={id} className={layout === "inline" && field.kind === "text" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
       {field.kind === "text"
-        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")} onChange={(event) => {
+        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
+          onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) onApply(draft); }} onChange={(event) => {
             set(field.key, event.target.value);
             if (layout === "inline" && !event.target.value) onApply({ ...draft, [field.key]: "" });
           }}/>
           {field.nested ? <label className="sli-ds-field__help"><input type="checkbox" checked={draft[field.nested.key] === "true"}
             onChange={(event) => set(field.nested!.key, String(event.target.checked))}/>{field.nested.label}</label> : null}</>
         : field.kind === "select"
-          ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => set(field.key, event.target.value || undefined)}>
+          ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => set(field.key, event.target.value || undefined, true)}>
               {!field.options.some((option) => option.value === "") ? <option value="">{t("filters.any")}</option> : null}
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
             </select>
@@ -96,6 +108,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
       {t("filters.title")}{activeCount ? ` · ${t("filters.active", { count: activeCount })}` : ""}
     </Button> : null}
     <div className="sli-ds-filters__fields" id={`${formId}-fields`} data-align={align} data-layout={layout}>
+      {scope}
       {renderFields(primaryKeys ? fields.filter((field) => primaryKeys.includes(field.key)) : fields)}
     </div>
     {quickFilters}

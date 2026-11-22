@@ -21,14 +21,6 @@ type Check = {
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value : null;
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 
-export function computerSummary(result?: ReportResultDto) {
-  if (!result) return undefined;
-  const population = count(result.coverage.population) ?? count(result.metrics.find((metric) => metric.key === "all")?.value);
-  const affected = count(result.coverage.affected_objects) ?? count(result.metrics.find((metric) => metric.key === "attention")?.value);
-  return t("reports.ad.computers.summary", { count: population ?? t("table.noValue"),
-    affected: affected ?? t("table.noValue") });
-}
-
 export function computerTableColumns(columns: ReportColumnDto[], onSelect: (row: Row) => void, rows: Row[] = [], timeZone?: string): TableColumn<Row>[] {
   const inventory = columns.some((column) => column.key === "laps_state");
   return tableColumns(columns, timeZone).map((column) => ({ ...column,
@@ -51,21 +43,6 @@ export function computerFactValue(column: ReportColumnDto, row: Row, timeZone?: 
   return value === null || value === undefined || value === "" || (typeof value === "string" && ["unknown", "none", "null"].includes(value.toLowerCase()))
     ? t("table.noValue") : formatCell(value, column.kind === "state" || column.kind === "code" ? "text" : column.kind, timeZone);
 }
-
-export function ComputerReasons({ row }: { row: Row }) {
-  const reasons = (Array.isArray(row.reasons) ? row.reasons : []).filter((reason): reason is Row => Boolean(reason) && typeof reason === "object");
-  return <section className="sli-ds-report__views" aria-label={t("reports.ad.computers.reasons")}>
-    {row.sli_agent && typeof row.sli_agent === "object" && (row.sli_agent as Row).state === "absent" ? <ComputerGpoPlan rows={[row]}/> : null}
-    <h3 className="sli-ds-section-title">{t("reports.ad.computers.reasons")}</h3>
-    {reasons.length ? reasons.map((reason, index) => <section className="sli-ds-panel" key={String(reason.code ?? index)}>
-      <h4 className="sli-ds-section-title">{text(reason.label) ?? t("table.noValue")}</h4>
-      <p><strong>{t("reports.ad.checks.column.why")}: </strong>{text(reason.qualification) ?? text(reason.observed) ?? t("table.noValue")}</p>
-      <p><strong>{t("reports.ad.checks.column.action")}: </strong>{text(reason.next_action) ?? t("table.noValue")}</p>
-      {text(reason.limitation) ? <p className="sli-ds-muted">{String(reason.limitation)}</p> : null}
-    </section>) : <p className="sli-ds-muted">{t("reports.ad.computers.no_recorded_reasons")}</p>}
-  </section>;
-}
-
 
 export function computerRole(value: unknown) {
   return value === "domain_controller" ? t("reports.v2.ad.computers.v6.columns.computer_type.labels.domain_controller")

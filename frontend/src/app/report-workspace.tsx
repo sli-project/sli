@@ -31,13 +31,21 @@ export function ReportWorkspacePage({ reportKey, journalSearch }: { reportKey: s
   const select = (id: string) => {
     // A different report has its own filters and internal tabs. Keep the domain scope.
     const current = location.search as Record<string, unknown>;
+    const computerTab = active.report_key === "ad.computer-logons" && ["checks", "changes", "computers"].includes(id);
     const search = { ...(current.domain_id !== undefined ? { domain_id: current.domain_id }
-      : current.domain !== undefined ? { domain: current.domain } : {}), nav_view: id };
+      : current.domain !== undefined ? { domain: current.domain } : {}), nav_view: computerTab ? "computers" : id,
+      ...(computerTab ? { tab: id } : {}) };
     void navigate({ to: entry.path, search: search as never });
   };
   if (active.report_key === "ad.computers.v6") return <ReportRenderer reportKey={active.report_key}
     additionalTabs={views.filter((view) => view.id !== active.id).map((view) => ({ key: view.id, label: t(view.label as MessageKey) }))}
     onAdditionalTab={select}/>;
+  if (active.report_key === "ad.computer-logons") return <ReportRenderer reportKey={active.report_key}
+    additionalTabs={views.some((view) => view.id === "computers") ? [
+      { key: "checks", label: t("reports.computers.review") },
+      { key: "changes", label: t("reports.computers.changes") },
+      { key: "computers", label: t("reports.computers.all") },
+    ] : []} onAdditionalTab={select}/>;
   return <Tabs items={views.map((view) => ({ key: view.id, label: t(view.label as MessageKey) }))} active={active.id} onChange={select}>
     <TabList label={t(entry.label as MessageKey)}/>
     <TabPanel><PluginReportPage key={active.report_key} reportKey={active.report_key}/></TabPanel>

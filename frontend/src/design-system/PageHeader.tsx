@@ -19,6 +19,8 @@ export type PageHeaderControls = {
   };
   updatedAt?: string | number | null;
   refreshing?: boolean;
+  refreshLabel?: boolean;
+  showBreadcrumbs?: boolean;
   onRefresh?: () => void;
 };
 
@@ -81,10 +83,10 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   domain?: string;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh } = controls ?? scope.controls ?? {};
+  const { period, updatedAt, refreshing, refreshLabel, showBreadcrumbs, onRefresh } = controls ?? scope.controls ?? {};
   const domainControl = scope.domain?.(domain);
   return <header className="sli-ds-header">
-    {crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
+    {crumbs?.length ? <nav className="sli-ds-crumbs" data-visible={showBreadcrumbs || undefined} aria-label={t("reports.breadcrumbs_aria")}>
       <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
     </nav> : null}
     <div className="sli-ds-header__row">
@@ -93,7 +95,9 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
       {period ? <HeaderPeriod {...period}/> : null}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
-        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}/> : null}
+        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>
+          {refreshLabel ? t("shell.header.refresh") : null}
+        </Button> : null}
         {actions}
       </div> : null}
     </div>

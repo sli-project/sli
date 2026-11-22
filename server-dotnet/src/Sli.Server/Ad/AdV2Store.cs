@@ -248,6 +248,17 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         result["coverage"]!["truncated"]=inputTruncated;
         result["summary"] = Obj(new { total_computers = allRows.Count });
         result["metrics"]=ComputerMetrics(allRows);
+        foreach (var (key, field) in new[] { ("type", "computer_type"), ("enabled", "account_state") })
+            result["filter_options"]![key] = Array(allRows.GroupBy(row => row.Text(field)).Where(group => group.Key is not null)
+                .Select(group => new { value = group.Key, label = group.Key, count = group.Count() }));
+        var activityParameter = AdV2Endpoints.Definitions[request.Key]!["declaration"]!["params"]!.AsArray()
+            .OfType<JsonObject>().Single(parameter => parameter.Text("key") == "activity");
+        long threshold = request.Params.Int("threshold_days");
+        result["filter_options"]!["activity"] = Array(activityParameter["options"]!.AsArray().OfType<JsonObject>().Select(option =>
+        {
+            string? value = option.Text("value");
+            return new { value, label = value, count = allRows.Count(row => AdInventoryRows.MatchesComputerActivity(row, value, threshold)) };
+        }));
         foreach(var(key,field)in new[]{("os","operating_system"),("os_version","operating_system_version"),("os_family","operating_system_family"),("ou","ou_path"),("ad_site","site_text")})result["filter_options"]![key]=Array(allRows.Select(r=>r.Text(field)??"__missing__").Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Select(value=>new{value,label=value=="__missing__"?"Нет данных":value}));
         if (request.Params["period"] is {} period) result["window"] = period.DeepClone();
         Page(result, request, rows);
