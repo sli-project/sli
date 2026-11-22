@@ -18,6 +18,7 @@ export type TableColumn<Row> = {
   /** Omit secondary columns on narrow screens while keeping row details available. */
   mobile?: boolean;
   wideOnly?: boolean;
+  wrap?: boolean;
   width?: string;
   minWidth?: string;
   align?: "start" | "end";
@@ -27,7 +28,7 @@ export type TableColumn<Row> = {
 
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption, expandedContent, emptyContent,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -38,6 +39,7 @@ export function DataTable<Row>({
   selectedKey?: string | null;
   caption: string;
   expandedContent?: (row: Row) => ReactNode;
+  renderExpandedRow?: (row: Row) => ReactNode;
   emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -98,16 +100,21 @@ export function DataTable<Row>({
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
-            aria-selected={onRowClick ? selected : undefined}>
+            aria-expanded={renderExpandedRow ? selected : undefined}
+            aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
             {row.getVisibleCells().map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined}
+                data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>{detail != null ? <tr className="sli-ds-table__expanded"><td colSpan={row.getVisibleCells().length}>{detail}</td></tr> : null}</Fragment>;
+          </tr>
+          {selected && renderExpandedRow ? <tr><td data-wrap colSpan={row.getVisibleCells().length}>{renderExpandedRow(row.original)}</td></tr> : null}
+          {detail != null ? <tr className="sli-ds-table__expanded"><td colSpan={row.getVisibleCells().length}>{detail}</td></tr> : null}
+          </Fragment>;
         })}</tbody>
       </table>
     </div>
