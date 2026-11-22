@@ -100,7 +100,7 @@ public static class ReportV2Endpoints
                 var options = await (services.GetRequiredService<ReportV2Dispatcher>().Resolve(owner)?.OptionsAsync(definition, access, ct) ?? Task.FromResult(new JsonObject()));
                 var visibleOptions = declaration.Objects("params").Select(p => p.Text("options_from", p.Text("key"))).ToHashSet(StringComparer.Ordinal);
                 declaration["filter_options"] = new JsonObject(options.Where(p => visibleOptions.Contains(p.Key)).Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())));
-                if (key is "ad.users.v2" or "ad.computers.v6" or "ad.infrastructure" or "vpn.connections")
+                if (key is "ad.users.v2" or "ad.computers.v6" or "ad.infrastructure" or "vpn.connections" or "security.problems")
                 {
                     try
                     {
@@ -111,6 +111,8 @@ public static class ReportV2Endpoints
                             var allowed = options.Objects("domain").Select(o => o["value"]?.ToString()).ToHashSet();
                             available = available.Where(d => allowed.Contains(d.Id.ToString(CultureInfo.InvariantCulture))).ToArray();
                         }
+                        if (key == "security.problems") declaration["filter_options"]!["domain"] = JsonSerializer.SerializeToNode(
+                            available.Select(d => new { value = d.Id.ToString(CultureInfo.InvariantCulture), label = d.DisplayName }));
                         var chosen = ReportV2Metadata.ChooseDomain(available, await metadata.PreferredDomainAsync(ct));
                         declaration["default_domain_id"] = chosen?.Id;
                         declaration["default_domain_state"] = chosen is null ? "unknown" : "available";
