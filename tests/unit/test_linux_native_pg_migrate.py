@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import time
@@ -230,11 +231,10 @@ def private_postgres(tmp_path):
 
     result = tool("initdb", ["-D", str(data), "-U", "postgres", "--auth=trust", "--no-locale", "-E", "UTF8"])
     assert result.returncode == 0, result.stderr
-    args = ["-XqAt", "-w", "-h", "127.0.0.1", "-p", str(port), "-U", "postgres",
-            "-d", "postgres", "-v", "ON_ERROR_STOP=1"]
+    args = ["-XqAt", "-w", "-h", "127.0.0.1", "-p", str(port), "-v", "ON_ERROR_STOP=1"]
 
-    def sql(body):
-        return tool("psql", args, body)
+    def sql(body, *, user="postgres", database="postgres"):
+        return tool("psql", [*args, "-U", user, "-d", database], body)
 
     sql.port = port
     sql.tools = tools
@@ -267,6 +267,131 @@ def private_postgres(tmp_path):
 def postgres(tmp_path):
     with private_postgres(tmp_path) as query:
         yield query
+
+
+def test_native_396_queue_upgrade_preserves_published_397(tmp_path, postgres, monkeypatch):
+    from deploy.linux import native_install, native_pg_migrate as subject, native_upgrade
+    from scripts.maintenance import existing_postgres_bootstrap as bootstrap
+
+    def execute(body, *, user="postgres", database="sli"):
+        result = postgres(body, user=user, database=database)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    linux = ROOT / "deploy/linux"
+    migrations = bootstrap.forward_migration_inventory(ROOT / "config/postgres_migrations")
+    baseline = bootstrap.load_baseline(ROOT / "config/postgres_baseline", migrations)
+    rendered = bootstrap.render_baseline_schema(baseline, "example.test", tmp_path / "baseline.sql",
+                                                seed_report_domain=False)
+    execute("""
+        create role sli_migration login noinherit;
+        create role adlog_user login noinherit;
+        create database sli owner sli_migration;
+    """, database="postgres")
+    execute("""
+        revoke all on database sli from public;
+        grant connect on database sli to adlog_user;
+        revoke create on schema public from public;
+        grant usage on schema public to adlog_user;
+    """)
+    grants = (linux / "runtime_grants.sql").read_text(encoding="utf-8")
+    execute("\n".join(("begin;", baseline.roles_path.read_text(encoding="utf-8"),
+                       rendered.read_text(encoding="utf-8"), grants,
+                       (linux / "default_semantic_policy.sql").read_text(encoding="utf-8"), "commit;")))
+    execute("\n".join(item.path.read_text(encoding="utf-8") for item in migrations
+                      if baseline.version < item.version <= 396))
+    execute(grants)
+
+    release = tmp_path / "release-397"
+    scripts = release / "config/postgres_migrations"
+    scripts.mkdir(parents=True)
+    shutil.copytree(ROOT / "config/postgres_baseline", release / "config/postgres_baseline")
+    shutil.copyfile(ROOT / "config/postgres_schema_v8.sql", release / "config/postgres_schema_v8.sql")
+    for path in (ROOT / "config/postgres_migrations").glob("*.sql"):
+        version = path.name.partition("_")[0]
+        if not version.isdigit() or int(version) <= 397:
+            (scripts / path.name).write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+    (release / "deploy/linux").mkdir(parents=True)
+    (release / "deploy/linux/native_pg_ledger.json").write_text(json.dumps(inventory.build_manifest(release)))
+    published = inventory.expected_ledger(release)
+    predecessor = published[:-1]
+    assert published[-1] == {"version": 397, "name": "problem_queue_workflow",
+                             "sha256": "7cc816e0c92586a2b61c398416798749aaa273429c63288eda98a083db1d1f83"}
+    migration = scripts / "397_problem_queue_workflow.sql"
+    rollback = migration.with_suffix(".rollback.sql")
+    assert hashlib.sha256(rollback.read_bytes()).hexdigest() == (
+        "980d876c17a958c1c9e622ded1c4c7ed914823acbeb77f448312f3d8f4137909"
+    )
+
+    ledger_sql = """
+        select json_agg(m order by version) from (select version,name,sha256 from public.schema_migrations) m;
+    """
+    execute(f"""
+        alter table public.schema_migrations add column if not exists sha256 text;
+        update public.schema_migrations m set sha256=e.sha256
+        from json_to_recordset('{json.dumps(predecessor)}') as e(version int,name text,sha256 text)
+        where (m.version,m.name)=(e.version,e.name);
+    """)
+    inventory.verify_ledger(json.loads(execute(ledger_sql)), predecessor, root=release)
+
+    catalog_sql = """
+        select jsonb_build_array(to_jsonb(r), to_jsonb(d))
+        from public.report_registry_v4 r join public.report_datasets_v4 d on d.id=r.dataset_id
+        where r.report_key='security.queue' and r.status='published';
+    """
+    rights_sql = """
+        select c.relname, c.relowner::regrole, c.relacl, a.attname, a.attacl
+        from pg_class c join pg_attribute a on a.attrelid=c.oid and a.attnum>0
+        where c.oid in ('public.report_registry_v4'::regclass,'public.report_datasets_v4'::regclass)
+        order by c.relname,a.attnum;
+    """
+    before_catalog = execute(catalog_sql, user="adlog_user")
+    report, dataset = json.loads(before_catalog)
+    assert report["definition_json"]["export_policy"] == "disabled"
+    assert "export" not in report["definition_json"]["actions"] and "export" not in dataset["actions_json"]
+    before_rights = execute(rights_sql)
+    before_roles = execute("select * from pg_auth_members order by oid;")
+    assert all("|sli_migration|" in line for line in before_rights.splitlines())
+    assert execute("""
+        select session_user, current_user, rolinherit, rolsuper from pg_roles where rolname=session_user;
+    """, user="sli_migration") == "sli_migration|sli_migration|f|f"
+
+    old_entry = "set role adlog_storage_owner;\n" + migration.read_text(encoding="utf-8")
+    failed = postgres(old_entry, database="sli")
+    assert failed.returncode != 0 and "permission denied for table report_registry_v4" in failed.stderr
+    assert execute("select max(version),to_regclass('public.finding_queue_deferrals') from schema_migrations;") == "396|"
+
+    manifest = {"python": "python", "python_sha256": "synthetic", "postgres_version": "18.6",
+                "plugins": {}, "roles": [], "migration_ledger": published}
+    # Temporary releases are not installed as root. Still compare their real bytes.
+    monkeypatch.setattr(native_install, "trusted", Path.read_bytes)
+    assert native_upgrade.migration_required({**manifest, "migration_ledger": predecessor}, manifest, "", release)
+    assert not native_upgrade.migration_required(manifest, manifest, "", release)
+    monkeypatch.setattr(subject, "run_sql", execute)
+    subject.migrate(release)
+    assert execute("select relowner::regrole from pg_class where oid='public.finding_queue_deferrals'::regclass;") == "adlog_storage_owner"
+    assert execute(catalog_sql, user="adlog_user") == before_catalog
+    assert execute(rights_sql) == before_rights
+    assert execute("select * from pg_auth_members order by oid;") == before_roles
+    inventory.verify_ledger(json.loads(execute(ledger_sql)), published, root=release)
+    subject.migrate(release)
+    inventory.verify_ledger(json.loads(execute(ledger_sql)), published, root=release)
+
+    # A standalone migration/rollback caller is explicitly allowed to SET ROLE.
+    # This fixture-only grant leaves the authenticated migration login NOINHERIT.
+    execute("grant adlog_storage_owner to sli_migration with inherit false;")
+    execute("insert into public.schema_migrations(version,name) values (398,'synthetic_successor');")
+    failed = postgres(rollback.read_text(encoding="utf-8"), user="sli_migration", database="sli")
+    assert failed.returncode != 0 and "problem_queue_workflow397_rollback_preflight" in failed.stderr
+    execute("delete from public.schema_migrations where version=398;")
+    execute(rollback.read_text(encoding="utf-8"), user="sli_migration")
+    assert execute("select max(version),to_regclass('public.finding_queue_deferrals') from schema_migrations;") == "396|"
+    failed = postgres(old_entry, user="sli_migration", database="sli")
+    assert failed.returncode != 0 and "permission denied for table report_registry_v4" in failed.stderr
+    execute(migration.read_text(encoding="utf-8"), user="sli_migration")
+    execute(rollback.read_text(encoding="utf-8"), user="sli_migration")
+    assert execute(catalog_sql, user="adlog_user") == before_catalog
+    assert execute(rights_sql) == before_rights
 
 
 def prepare_333(sql, release):
