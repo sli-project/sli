@@ -55,7 +55,7 @@ export function utcToLocalDateTimeInput(value: string | null | undefined, timeZo
 /** Intl locale for the current interface language. */
 const intlLocale = () => (getLocale() === "en" ? "en-US" : "ru-RU");
 
-export type DateTimeFormatOptions = { withTime?: boolean; seconds?: boolean; withYear?: boolean };
+export type DateTimeFormatOptions = { withTime?: boolean; seconds?: boolean; withYear?: boolean; timeOnly?: boolean };
 
 /**
  * The single date/time formatter for the UI.
@@ -63,7 +63,7 @@ export type DateTimeFormatOptions = { withTime?: boolean; seconds?: boolean; wit
  * An absent value is the empty-value dash; a bad time zone is reported, never silently ignored.
  */
 export function formatDateTime(value: string | Date | null | undefined, timeZone: DisplayTimeZone | undefined = "browser", options: DateTimeFormatOptions = {}) {
-  const { withTime = true, seconds = false, withYear = true } = options;
+  const { withTime = true, seconds = false, withYear = true, timeOnly = false } = options;
   if (value === null || value === undefined || value === "") return EMPTY_VALUE;
   const calendarDay = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
   const instant = value instanceof Date ? value : new Date(value);
@@ -78,8 +78,10 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
   try {
     return new Intl.DateTimeFormat(intlLocale(), {
       timeZone: timeZone === "browser" ? undefined : timeZone,
+      ...(timeOnly ? { hour: "2-digit" as const, minute: "2-digit" as const, hourCycle: "h23" as const } : {
       ...(withYear ? { year: "numeric" as const } : {}), month: en ? "short" : "2-digit", day: en ? "numeric" : "2-digit",
       ...(withTime ? { hour: en ? "numeric" : "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hourCycle: en ? "h12" : "h23" } : {}),
+      }),
     }).format(instant);
   } catch {
     return t("operations.dateTime.zoneUnavailable", { zone: timeZone });
