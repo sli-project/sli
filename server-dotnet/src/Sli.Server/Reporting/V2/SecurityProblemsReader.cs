@@ -41,10 +41,12 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         // Python's open queue depends on the original id filter, not the detail row id.
         string? population = S("population") ?? "open";
         if (population == "open" && S("id") is not null) population = null;
+        bool entityOpen = S("entity_id") is not null && S("population") == "open";
         return new(S("status"), S("severity"), S("q"), S("time_from"), S("time_to"), S("risk"), Id("entity_id"), domains, c.Paging.Limit, S("show_suppressed") == "true") {
             FindingId = rowId is null ? Id("id") : long.TryParse(rowId, out long finding) && finding > 0 ? finding : throw new ReportRequestException("report_row_not_found", 404),
             RuleCode = S("rule_code"), CreatedFrom = S("created_from"), CreatedTo = S("created_to"), Cohort = S("cohort"),
-            Population = queueView is null ? population : null, BeforeId = before, BeforeSeen = beforeSeen,
+            Population = entityOpen ? "open" : queueView is null ? population : null, BeforeId = before, BeforeSeen = beforeSeen,
+            ExcludeDeferred = entityOpen,
             OldestFirst = c.Paging.Direction == "asc", PageQueue = true,
             QueueView = queueView, QueueAssignee = S("queue_assignee") is {} owner ? owner == "-" ? "" : owner : null,
             QueueAssigneesVisible = queueView is not null && c.FieldAccess(["identity_basic"]),
@@ -146,6 +148,16 @@ public sealed class SecurityProblemsReader(IProblemRepository repository, ISecur
         }
         string? Latest(string key) => rows.OfType<JsonObject>().Select(r => r[key]?.ToString()).Where(s => s is not null).Order(StringComparer.Ordinal).LastOrDefault();
         var coverage = new JsonObject { ["state"] = runtime["findings_state"]?.DeepClone(), ["event_at_utc"] = Latest("last_seen_utc"), ["published_at_utc"] = Latest("published_at_utc"), ["worker_checked_at_utc"] = runtime["heartbeat_at"]?.DeepClone() };
+        if (c.Params["entity_id"] is not null && c.Params["population"]?.ToString() == "open" && runtime.Text("findings_state") == "active")
+        {
+            var counts = new JsonObject();
+            var open = new[] { "new", "confirmed", "repeated", "active", "review" };
+            foreach (var bucket in (raw["summary"] as JsonArray ?? []).OfType<JsonObject>()
+                         .Where(row => open.Contains(row.Text("status")) && !row.Flag("risk_accepted"))
+                         .GroupBy(row => row.Text("severity")))
+                if (bucket.Key is not null) counts[bucket.Key] = bucket.Sum(row => long.TryParse(row["count"]?.ToString(), out long n) ? n : 0);
+            coverage["open_by_severity"] = counts;
+        }
         var result = ReportResult.Create(c.Definition.Key, state, rows, coverage, limitations: limitations);
         result["metrics"] = metrics; result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false);
         var last = (raw["items"] as JsonArray)?.LastOrDefault();

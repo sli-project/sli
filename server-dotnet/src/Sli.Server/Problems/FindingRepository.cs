@@ -167,7 +167,8 @@ public sealed partial class ProblemRepository
         if (query.CreatedFrom is {} createdFrom) { args["created_from"] = createdFrom; clauses.Add("findings.created_at>=@created_from::timestamptz"); }
         if (query.CreatedTo is {} createdTo) { args["created_to"] = createdTo; clauses.Add("findings.created_at<@created_to::timestamptz"); }
         if (query.Population == "attention") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
-        if (query.Population == "open" && string.IsNullOrEmpty(query.Status) && string.IsNullOrEmpty(query.Risk))
+        if (query.Population == "open" && (query.QueueView is not null && query.EntityId is not null
+            || string.IsNullOrEmpty(query.Status) && string.IsNullOrEmpty(query.Risk)))
             clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated','active','review') and not ({Accepted})");
         if (query.ExcludeDeferred) clauses.Add("not exists(select 1 from finding_queue_deferrals deferred where deferred.finding_id=findings.id and deferred.until_at>statement_timestamp() and findings.status in ('new','confirmed','repeated'))");
         // In the queue, apply status and risk filters before classifying event

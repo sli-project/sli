@@ -228,6 +228,30 @@ public sealed class SecurityQueueFieldPolicyTests
         }
     }
     [Fact]
+    public async Task ComputerOpenQueueRequiresIdentityAndDomainBeforeReading()
+    {
+        const string query = "domain=1&entity_id=7&population=open&queue_view=all";
+        using var fixture = new Fixture(Facts(["security"], "{\"kind\":\"domain\",\"ids\":[1]}"));
+        Assert.Equal(403, (await fixture.Get(With(Queue(false), query))).Status);
+        Assert.Empty(fixture.Repo.Calls);
+
+        fixture.Facts.Value = Facts(["security", "identity_basic"], "{\"kind\":\"domain\",\"ids\":[2]}");
+        Assert.Equal(403, (await fixture.Get(With(Queue(false), query))).Status);
+        Assert.Empty(fixture.Repo.Calls);
+
+        fixture.Facts.Value = Facts(["security", "identity_basic"], "{\"kind\":\"domain\",\"ids\":[1]}");
+        var response = await fixture.Get(With(Queue(false), query));
+        Assert.Equal(200, response.Status);
+        var input = Assert.Single(fixture.Repo.Calls);
+        Assert.Equal([1L], Assert.IsType<long[]>(input.Domains));
+        Assert.Equal(7, input.EntityId);
+        Assert.Equal("open", input.Population);
+        Assert.Equal("all", input.QueueView);
+        Assert.True(input.GroupQueue);
+        Assert.True(input.ExcludeDeferred);
+        Assert.Equal(1, response.Body["coverage"]!["open_by_severity"]!["high"]!.GetValue<int>());
+    }
+    [Fact]
     public async Task SeparateGrantCannotRestoreDeniedFields()
     {
         var facts = Facts(); facts = facts with { ReportAssignments = facts.ReportAssignments.Append(J(new { report_key = "security.queue", effect = "allow", allowed_actions = new[] { "view" }, field_categories = new[] { "raw_evidence" }, scope_json = new { kind = "all" } })).ToArray() };

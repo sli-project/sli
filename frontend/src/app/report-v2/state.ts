@@ -52,7 +52,8 @@ export function defaultValues(definition: ReportDefinitionDto): FilterValues {
         ? options.find((option) => definition.default_domain_id != null && option.value === String(definition.default_domain_id))
         : options.find((option) => option.value === String(param.default)) ?? (param.required ? options[0] : undefined);
       if (selected) values[param.key] = selected.value;
-    } else if (param.default !== undefined) values[param.key] = String(param.default);
+    } else if (definition.key === "ad.computer-logons" && param.key === "with_logons") values[param.key] = "yes";
+    else if (param.default !== undefined) values[param.key] = String(param.default);
   }
   return values;
 }
@@ -80,6 +81,12 @@ export function valuesFromSearch(definition: ReportDefinitionDto, search: URLSea
       const value = search.get(param.key);
       if (value) values[param.key] = value;
     }
+  }
+  if (definition.key === "ad.computer-logons" && !search.has("domain_id") && search.has("domain"))
+    values.domain_id = search.get("domain") ?? undefined;
+  if (definition.key === "ad.computers.v6" && values.domain_id && definition.params.some((param) => param.key === "domain" && !param.hidden)) {
+    values.domain ??= values.domain_id;
+    delete values.domain_id;
   }
   return values;
 }

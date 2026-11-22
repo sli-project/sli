@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Ad.AdJson;
 
@@ -66,9 +67,21 @@ internal static class AdSnapshotChanges
     public static async Task<JsonObject> ReadAsync(NpgsqlConnection db,AdV2Request request,List<JsonObject> sources,Func<IEnumerable<string>,bool> fields,CancellationToken ct,IConfiguration? config=null)
     {
         bool users=request.Key=="ad.users.v2";var changes=new List<JsonObject>();var missing=new List<string>();bool partial=false;
+        Guid? computer = null;
+        if (!users && request.Params.Text("object_guid") is {} rawGuid)
+            computer = Guid.TryParse(rawGuid, out var guid) ? guid : throw new AdInputException("report_parameter_invalid:object_guid");
         var fromTimes=new List<string>();var toTimes=new List<string>();
+        var nowUtc = DateTimeOffset.UtcNow;
         foreach(var source in sources)
         {
+            if (computer is {} target && request.Action == "view" && source["snapshot"]?["objects"] is JsonArray currentObjects)
+            {
+                var account = currentObjects.OfType<JsonObject>()
+                    .FirstOrDefault(row => Guid.TryParse(row.Text("objectGuid"), out var candidate) && candidate == target);
+                if (account?.Text("sid") is {} sid)
+                    changes.AddRange(await ComputerMembershipAsync(db, request, target, account, sid, source.Int("domain_id"),
+                        new AdPeriod(nowUtc.AddDays(-30), nowUtc), ct, config));
+            }
             var previous=await AdV2Store.PreviousSnapshot(db,source,users?"users_v2":"computers_v6",ct);
             var currentAt=AdInventoryRows.Date(source["observed_at_utc"]);var previousAt=AdInventoryRows.Date(previous?["observed_at_utc"]);
             if(source["snapshot"] is not JsonObject now||previous?["snapshot"] is not JsonObject prior||currentAt is null||previousAt is null||currentAt<=previousAt){missing.Add(source.Text("fqdn")??source.Int("domain_id").ToString());continue;}
@@ -96,8 +109,11 @@ internal static class AdSnapshotChanges
             }
             else changes.AddRange(CompareComputers(now,prior,source.Int("domain_id"),source.Text("fqdn"),currentAt.Value));
         }
+        if (computer is {} selected)
+            changes = changes.Where(row => Guid.TryParse(row.Text("object_guid"), out var candidate) && candidate == selected).ToList();
         string? q=request.Params.Text("q");if(q is not null)changes=changes.Where(r=>new[]{"display_name","sam","domain_name","computer_type","operating_system","ou_path"}.Any(k=>r.Text(k)?.Contains(q,StringComparison.OrdinalIgnoreCase)==true)).ToList();
         string state=sources.Count==0||missing.Count==sources.Count?"not_collected":partial||missing.Count>0?"partial":sources.Any(s=>s.Time("observed_at_utc")<DateTimeOffset.UtcNow.AddDays(-1))?"stale":changes.Count>0?"ok":"empty";
+        if (computer is not null && state == "not_collected" && changes.Count > 0) state = "partial";
         var coverage=AdV2Store.Coverage(sources);coverage["comparison_missing_domains"]=Array(missing);coverage["history_mode"]="latest_compatible_agent_pair";var result=AdV2Store.Result(request.Key,state,changes,coverage);
         if(users)
         {
@@ -111,5 +127,42 @@ internal static class AdSnapshotChanges
             var page=changes.Skip(offset).Take(request.Limit).ToArray();bool more=offset+page.Length<changes.Count;result["items"]=Array(page);result["filtered_count"]=state=="not_collected"?null:JsonValue.Create(changes.Count);result["has_more"]=more;result["next_cursor"]=more?page[^1].Text("row_id"):null;
         }
         result["collections"]!["changes"]=result["items"]!.DeepClone();return result;
+    }
+
+    static async Task<List<JsonObject>> ComputerMembershipAsync(NpgsqlConnection db, AdV2Request request, Guid computer,
+        JsonObject account, string sid, long domain, AdPeriod period, CancellationToken ct, IConfiguration? config)
+    {
+        if (request.Access is not {} access) return [];
+        var controllers = await AdJson.ReadAsync(db, "select id from servers where domain_id=$1 and role='domain_controller'", ct, domain);
+        var servers = controllers.Select(row => row.Int("id")).Where(server =>
+        {
+            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: "Security")]];
+            return ResourceAccessDecisions.ReportAction(access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical" }).Allowed
+                && ResourceAccessDecisions.Capability(access.Capabilities, "events.view", resources).Allowed;
+        }).ToArray();
+        if (servers.Length == 0) return [];
+        int[] eventIds = [4728, 4729, 4732, 4733, 4756, 4757];
+        var events = await AdJson.ReadAsync(db, AdAccountEvents.Source(config, daily: false) + """
+            select event_db_id, event_id, time_created_utc,
+                   coalesce(nullif(fields->>'TargetUserName',''), case when target not ilike 'S-1-%' then target end) as group_name,
+                   coalesce(nullif(fields->>'SubjectUserName',''), case when actor not ilike 'S-1-%' then actor end) as initiator
+            from account_events
+            where event_id=any($1) and time_created_utc>=$2 and time_created_utc<$3 and domain_id=$4
+              and membership_member_sid=$5 and server_id=any($6)
+            order by time_created_utc desc, event_db_id desc
+            limit 200
+            """, ct, eventIds, period.Start, period.End, domain, sid, servers);
+        return events.Select(row => Obj(new
+        {
+            row_id = $"{domain}:{computer}:membership:{row.Int("event_db_id")}",
+            object_guid = computer.ToString(),
+            display_name = account.Text("name"),
+            domain_id = domain,
+            change_type = row.Int("event_id") is 4728 or 4732 or 4756 ? "membership_added" : "membership_removed",
+            observed_at_utc = Iso(row.Time("time_created_utc")),
+            actor = row.Text("initiator"),
+            group_name = row.Text("group_name"),
+            source_event_id = row.Int("event_db_id"),
+        })).ToList();
     }
 }

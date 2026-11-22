@@ -16,6 +16,9 @@
 .sli-ds-report { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sli-space-4); color: var(--sli-text); font-family: var(--sli-font-sans); font-size: var(--sli-text-md); line-height: var(--sli-leading); min-width: 0; }
 .sli-ds-report__views { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sli-space-4); min-width: 0; }
 .sli-ds-report__side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(var(--sli-field-max-width), 25%); gap: var(--sli-space-2); min-width: 0; align-items: start; }
+.sli-ds-report__side[data-size="wide"] { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.sli-ds-report__side[data-size] .sli-ds-drawer[data-inline] > .sli-ds-drawer__panel { position: static; width: 100%; max-height: calc(100dvh - var(--sli-report-drawer-offset)); }
+.sli-ds-table__link { border: 0; padding: 0; color: var(--sli-accent); background: transparent; font: inherit; text-align: start; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; }
 
 /* Buttons, chips, badges */
 .sli-ds-button { display: inline-flex; align-items: center; gap: var(--sli-space-2); min-height: var(--sli-control-height-compact); padding: 0 var(--sli-space-3); border: 1px solid var(--sli-border-strong); border-radius: var(--sli-radius-md); background: var(--sli-surface-1); color: var(--sli-text); font: inherit; font-size: var(--sli-text-sm); font-weight: var(--sli-weight-medium); cursor: pointer; transition: background var(--sli-motion), border-color var(--sli-motion); }
@@ -242,6 +245,7 @@ button.sli-ds-metric:hover { border-color: var(--sli-border-strong); }
 .sli-ds-drawer__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sli-space-3); padding: var(--sli-space-4); border-bottom: 1px solid var(--sli-border); }
 .sli-ds-drawer__header > div { min-width: 0; overflow-wrap: anywhere; }
 .sli-ds-drawer__header > .sli-ds-button { flex: none; }
+.sli-ds-report__side[data-size] .sli-ds-drawer__header > .sli-ds-header__actions { flex: none; }
 .sli-ds-drawer__header h2 { margin: 0; font-size: var(--sli-text-lg); overflow-wrap: anywhere; }
 .sli-ds-drawer__subtitle { margin-top: var(--sli-space-1); color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 .sli-ds-drawer__body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--sli-space-4); display: grid; align-content: start; gap: var(--sli-space-4); }
@@ -512,7 +516,7 @@ button.sli-ds-activity__day:hover, button.sli-ds-activity__day:focus-visible { o
 }
 /* Density (docs/UI_STANDARD.md): one header line, one filter line, the table down to the bottom of the window. */
 .sli-ds-report { gap: var(--sli-space-2); }
-.sli-ds-report > .sli-ds-header .sli-ds-crumbs { display: none; }
+.sli-ds-report > .sli-ds-header .sli-ds-crumbs:not([data-visible]) { display: none; }
 .sli-ds-report > .sli-ds-header .sli-ds-header__meta { margin-top: 0; }
 .sli-ds-report > .sli-ds-metrics, .sli-ds-report > .sli-ds-metrics[data-compact] { display: flex; flex-wrap: wrap; gap: var(--sli-space-2); }
 .sli-ds-report > .sli-ds-metrics .sli-ds-metric { display: flex; align-items: baseline; gap: var(--sli-space-2); padding: 3px var(--sli-space-3); box-shadow: none; }
@@ -525,7 +529,7 @@ button.sli-ds-activity__day:hover, button.sli-ds-activity__day:focus-visible { o
 .sli-ds-report > .sli-ds-filters[data-layout="inline"] { padding: 0; border: 0; background: transparent; }
 .sli-ds-filters[data-layout="inline"] > .sli-ds-filters__fields { flex: 1; }
 .sli-ds-filters[data-layout="inline"] > .sli-ds-filters__fields > .sli-ds-field { flex: 1; }
-.sli-ds-filters[data-layout="inline"] > .sli-ds-filters__fields input { width: 100%; }
+.sli-ds-filters[data-layout="inline"] > .sli-ds-filters__fields input:not([type="checkbox"]) { width: 100%; }
 .sli-ds-filters[data-layout="inline"] > .sli-ds-filters__additional { position: relative; }
 .sli-ds-filters[data-layout="inline"] .sli-ds-filters__popover { position: absolute; right: 0; z-index: 3; display: grid; gap: var(--sli-space-3); width: min(var(--sli-field-max-width), calc(100vw - var(--sli-space-8))); padding: var(--sli-space-3); background: var(--sli-surface-1); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-md); box-shadow: var(--sli-shadow-1); }
 .sli-ds-report > .sli-ds-filters .sli-ds-field label { white-space: nowrap; }

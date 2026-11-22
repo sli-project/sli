@@ -173,12 +173,13 @@ export type ReportResultDto = {
   has_more: boolean;
   next_cursor: string | null;
   filtered_count: number | null;
+  computer_logon_activity?: { days: Array<{ day: string; count: number }>; total: number | null; typical: number | null; top: { account: string; count: number } | null };
   change_counts?: Record<string, number>;
   metrics: Array<{ key: string; label: string; value: number | string | null; quality?: "complete" | "observed" | "unknown"; tone?: "neutral" | "accent" | "success" | "warning" | "danger"; caption?: string; filter?: Record<string, string> }>;
   series: Record<string, unknown>;
   journal_counts?: Record<string, number>;
   journal_event_count?: number;
-  coverage: { password_detection?: PasswordDetectionCoverage; state?: string; completeness?: string; evidence_total_lower_bound?: number | null; evidence_missing_sources?: number; [key: string]: unknown };
+  coverage: { password_detection?: PasswordDetectionCoverage; open_by_severity?: Record<string, number>; state?: string; completeness?: string; evidence_total_lower_bound?: number | null; evidence_missing_sources?: number; [key: string]: unknown };
   filter_options: Record<string, ReportOption[]>;
   limitations: Array<{ code: string; text: string; params?: Record<string, string | number | null> }>;
   window: { from_utc?: string; to_utc_exclusive?: string; to_utc?: string; local_from_date?: string | null; local_to_date?: string | null; timezone?: string | null; source_domain_id?: number | null; generated_at_utc?: string | null; nps_period_clamped?: boolean };

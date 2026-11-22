@@ -144,6 +144,12 @@ async function installStandardFixtures(page: Page, count = 60, firstProblemEvide
       if (definition) {
         if (match![2]) {
           const result = resultFor(definition, count);
+          if (definition.key === 'ad.computers.v6' && searchParams.get('tab') === 'computers') {
+            result.items.forEach((row, index) => {
+              row.entity_id = index + 1;
+              row.computer_type = 'domain_controller';
+            });
+          }
           if (definition.key === 'security.problems') {
             result.items[0].status = firstProblemStatus;
             if (firstProblemEvidence > 1) {
@@ -235,7 +241,7 @@ for (const screen of screens) {
     const { unexpected, servedData, decisions } = await installStandardFixtures(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`/app/report/${screen.key}`);
+    await page.goto(`/app/report/${screen.key}${screen.key === 'ad.computers.v6' ? '?tab=checks' : ''}`);
     const definition = definitions.get(screen.key)!;
     const title = screen.key === 'ad.infrastructure' ? 'Состояние AD' : definition.title;
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
@@ -406,12 +412,11 @@ test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
 
 test('computer checks: a short list fits without data commentary', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 6);
-  await page.goto('/app/report/ad.computers.v6');
+  await page.goto('/app/report/ad.computers.v6?tab=checks');
+  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(definitions.get('ad.computers.v6')!.title, { timeout: 30_000 });
   await expect(page.locator('main .sli-ds-review-list__item')).toHaveCount(6);
   await expect(page.locator('main').getByRole('tablist')).toHaveCount(1);
-  await expect(page.locator('main').getByRole('tab')).toHaveText([
-    'Требуют проверки', 'Изменения', 'Все компьютеры', 'Входы на компьютеры',
-  ]);
+  await expect(page.locator('main').getByRole('tab', { name: 'Требуют проверки', selected: true })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const measurements = await measureStandard(page);
   console.log(JSON.stringify({ screen: 'ad.computers.v6', dataset: 'short-list', ...measurements }));
@@ -420,6 +425,34 @@ test('computer checks: a short list fits without data commentary', async ({ page
   const screenshot = testInfo.outputPath('computers-after.png');
   await page.screenshot({ path: screenshot });
   await testInfo.attach('computers-after.png', { path: screenshot, contentType: 'image/png' });
+});
+
+test('computer inventory card stays beside its list at 1920 and 2560', async ({ page }, testInfo) => {
+  const { unexpected } = await installStandardFixtures(page, 16);
+  for (const width of [1920, 2560]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await page.goto('/app/report/ad.computers.v6?tab=computers&domain=1');
+    const table = page.getByRole('table', { name: 'Все компьютеры' });
+    await expect(table.getByRole('button', { name: 'Объект 1', exact: true })).toBeVisible();
+    const card = page.getByRole('complementary', { name: 'Объект 1' });
+    await expect(card).toBeVisible();
+    const list = await table.boundingBox();
+    const detail = await card.boundingBox();
+    expect(list).not.toBeNull();
+    expect(detail).not.toBeNull();
+    expect(detail!.x).toBeGreaterThanOrEqual(list!.x + list!.width);
+    expect(detail!.x + detail!.width).toBeLessThanOrEqual(width);
+    expect(detail!.y + detail!.height).toBeLessThanOrEqual(1080);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    await card.getByRole('button', { name: 'Развернуть сведения' }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Объект 1' });
+    await expect(dialog).toBeInViewport({ ratio: 1 });
+    await dialog.press('Escape');
+    await expect(card).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`computer-inventory-${width}.png`) });
+    console.log(JSON.stringify({ width, list, detail }));
+  }
+  expect(unexpected).toEqual([]);
 });
 
 test('measurement detects a banner and paragraph above the table', async ({ page }) => {

@@ -10,6 +10,7 @@ export type FilterOption = { value: string; label: string; count?: number };
 export type FilterField =
   | { key: string; label: string; kind: "text"; placeholder?: string; wide?: boolean; nested?: { key: string; label: string }; immediate?: boolean }
   | { key: string; label: string; kind: "select"; options: FilterOption[]; immediate?: boolean; hideLabel?: boolean }
+  | { key: string; label: string; kind: "checkbox"; onValue: string; offValue: string }
   | { key: string; label: string; kind: "multiselect"; options: FilterOption[] }
   | { key: string; label: string; kind: "search-multiselect"; options: SearchOption[] }
   | { key: string; label: string; kind: "period"; presets?: PeriodValue["preset"][]; precision?: "date" | "datetime-local" };
@@ -27,7 +28,7 @@ function isActive(value: FilterValue): boolean {
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -41,6 +42,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   layout?: "grid" | "inline";
   quickFilters?: ReactNode;
   leadingControls?: ReactNode;
+  applyInline?: boolean;
 }) {
   const [draft, setDraft] = useState<FilterValues>(values);
   // On a phone a long form hides the result; it starts folded behind one toggle.
@@ -66,14 +68,26 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
       return <PeriodPicker key={field.key} label={field.label} presets={field.presets}
         precision={field.precision}
         value={(draft[field.key] as PeriodValue | undefined) ?? { preset: "30d" }}
-        onChange={(value) => set(field.key, value)}/>;
+        onChange={(value) => {
+          set(field.key, value);
+          if (applyInline && (value.preset !== "custom" || value.from && value.to && value.from <= value.to))
+            apply({ ...draft, [field.key]: value });
+        }}/>;
     }
+    if (field.kind === "checkbox") return <label key={field.key} className="sli-ds-button">
+      <input type="checkbox" checked={draft[field.key] === field.onValue} onChange={(event) => {
+        const value = event.target.checked ? field.onValue : field.offValue;
+        set(field.key, value);
+        if (applyInline) apply({ ...draft, [field.key]: value });
+      }}/>{field.label}
+    </label>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
     return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
       <label htmlFor={id} className={layout === "inline" && (field.kind === "text" || field.kind === "select" && field.hideLabel) ? "sli-ds-sr-only" : undefined}>{field.label}</label>
       {field.kind === "text"
-        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")} onChange={(event) => {
+        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
+          onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
             set(field.key, event.target.value);
             const next = { ...draft, [field.key]: event.target.value };
             if (field.immediate && event.target.value) {
@@ -87,7 +101,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
           ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => {
               const value = event.target.value || undefined;
               set(field.key, value);
-              if (field.immediate) apply({ ...draft, [field.key]: value });
+              if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
             }}>
               {!field.options.some((option) => option.value === "") ? <option value="">{t("filters.any")}</option> : null}
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}

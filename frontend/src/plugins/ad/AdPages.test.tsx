@@ -36,10 +36,16 @@ const captions = [
 ] as const;
 
 function reportDefinition(key: string, title: string): ReportDefinitionDto {
+  const computerInventory = key === "ad.computers.v6";
   return { key, title, section: "reports/identity", description: title, archetype: "list",
     params: [{ key: "domain", label: "Домен", kind: "domain", required: true }],
-    columns: [{ key: "name", label: "Объект", kind: "text", path: "name", link: "/app/objects/ad_user/{id}" }],
-    views: [{ kind: "table", key: "table" }], row_key: "id", detail: "fields", export: true,
+    columns: computerInventory
+      ? [{ key: "display_name", label: "Компьютер", kind: "text", path: "display_name" }]
+      : [{ key: "name", label: "Объект", kind: "text", path: "name", link: "/app/objects/ad_user/{id}" }],
+    views: computerInventory
+      ? [{ kind: "table", key: "checks", source: "checks" }, { kind: "table", key: "computers", title: "Все компьютеры" }]
+      : [{ kind: "table", key: "table" }],
+    row_key: "id", detail: "fields", export: true,
     limits: { default: 100, max: 500 }, presets: [], row_links: [],
     filter_options: { domain: [{ value: "1", label: "synthetic.test" }] },
   };
@@ -105,10 +111,16 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
   }));
   window.history.replaceState(null, "", `/app/report/${key}?domain=1&nav_view=logons`);
   const { rerender, client } = mount(<PluginReportPage reportKey={key} pilotEnabled={false}/>);
-  const table = await screen.findByRole("table", { name: title });
-  const columnName = key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект";
-  expect(within(table).getByRole("columnheader", { name: columnName })).toBeTruthy();
-  if (key === "ad.users.v2") {
+  const computerInventory = key === "ad.computers.v6";
+  const caption = computerInventory ? "Все компьютеры" : title;
+  const table = await screen.findByRole("table", { name: caption });
+  expect(within(table).getByRole("columnheader", { name: computerInventory ? "Компьютер" : key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект" })).toBeTruthy();
+  if (computerInventory) {
+    expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: caption, selected: true })).toBeTruthy();
+    expect(within(table).getByRole("button", { name: "synthetic-object" })).toBeTruthy();
+    expect(requests.some((url) => new URL(url, "http://example.test").searchParams.get("tab") === "computers")).toBe(true);
+  } else if (key === "ad.users.v2") {
     fireEvent.click(within(table).getByRole("button", { name: "synthetic-object" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
@@ -123,7 +135,7 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
     .toContain(`/api/v2/reports/${key}/export.csv?`);
   const before = table.outerHTML;
   rerender(<QueryClientProvider client={client}><PluginReportPage reportKey={key} pilotEnabled/></QueryClientProvider>);
-  expect(screen.getByRole("table", { name: title }).outerHTML).toBe(before);
+  expect(screen.getByRole("table", { name: caption }).outerHTML).toBe(before);
   expect(requests.every((url) => url === `/api/v2/reports/${key}` || url.startsWith(`/api/v2/reports/${key}/`))).toBe(true);
 });
 

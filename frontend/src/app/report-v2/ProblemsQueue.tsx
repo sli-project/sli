@@ -80,6 +80,13 @@ function historyAction(entry: RecordRow, zone: string) {
   return [statuses[0] === statuses[1] && assignment ? "" : [...new Set(statuses)].join(" → "), reason, assignment, until && timeLabel(until, zone), note].filter(Boolean).join(" · ");
 }
 
+function setOpenEntityScope(params: URLSearchParams, entity: string | null) {
+  if (entity) {
+    params.set("entity_id", entity);
+    params.set("population", "open");
+  }
+}
+
 export function ProblemsQueue({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
   const { timeZone: preference } = useTimeZone();
   const timeZone = preference === "browser" ? browserTimeZone() : preference;
@@ -87,6 +94,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const canManage = Boolean(access?.capabilities.includes("investigations.manage"));
   const ownerAllowed = definition.params.some(({ key }) => key === "queue_assignee");
   const [initial] = useState(() => new URLSearchParams(initialSearch ?? window.location.search));
+  const openEntity = initial.get("population") === "open" ? initial.get("entity_id") : null;
   const [view, setView] = useState<View>(() => views.find((item) => item === initial.get("queue_view")) ??
     (initial.get("risk") === "accepted" ? "deferred" : initial.get("status") === "active" ? "active" : ["closed", "false_positive"].includes(initial.get("status") ?? "") ? "resolved" : initial.get("population") === "attention" || initial.get("status") === "new" ? "open" : "all"));
   const [domain, setDomain] = useState(initial.get("domain") ?? String(definition.default_domain_id ?? ""));
@@ -133,9 +141,10 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       const value = initial.get(key);
       if (value && value !== "accepted" && definition.params.some((param) => param.key === key)) params.set(key, value);
     }
+    setOpenEntityScope(params, openEntity);
     if (bounds) { params.set("time_from", bounds.from); params.set("time_to", bounds.to); }
     return params.toString();
-  }, [view, timeZone, size, direction, domain, severity, owner, ownerAllowed, search, definition.params, fold, initial, bounds]);
+  }, [view, timeZone, size, direction, domain, severity, owner, ownerAllowed, search, definition.params, fold, initial, openEntity, bounds]);
   const cursors = page.key === base ? page.cursors : [];
   const cursor = cursors.at(-1);
   const list = useQuery({ queryKey: ["report-v2", "data", definition.key, base, cursor], retry: false, queryFn: () => {
@@ -159,10 +168,11 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       if (ownerAllowed) params.set("queue_assignee", representative!.assignee || "-");
       return api.reportV2Data(definition.key, params);
     }, initialPageParam: null as string | null, getNextPageParam: (page) => page.has_more ? page.next_cursor : null });
-  const details = useQuery({ queryKey: ["report-v2", "data", definition.key, "finding", selected, domain, timeZone], retry: false, enabled: selected !== null,
+  const details = useQuery({ queryKey: ["report-v2", "data", definition.key, "finding", selected, domain, timeZone, openEntity], retry: false, enabled: selected !== null,
     queryFn: async () => {
       const params = new URLSearchParams({ queue_view: "all", id: String(selected), limit: "1", tz: timeZone });
       if (domain) params.set("domain", domain);
+      setOpenEntityScope(params, openEntity);
       return (await api.reportV2Data(definition.key, params)).items[0];
     } });
   const detailRow = details.data ? problemRow(details.data) : null;
@@ -280,7 +290,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       actions={denied ? undefined : <Button icon="refresh" disabled={list.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>}
       tabs={controls} drawer={active && selected !== null ? <div data-problems-queue-drawer>
         <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
-          retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} tab={panelTab} onTab={setPanelTab} canManage={canManage}
+          retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} tab={panelTab} onTab={setPanelTab} canManage={canManage}
           canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}
           onClose={() => select(null)} previous={position > 0 ? () => select(visibleRows[position - 1].id) : undefined}
           next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
@@ -291,7 +301,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
         sort={{ field: "last_seen_utc", direction }} onSort={() => { setDirection((current) => current === "asc" ? "desc" : "asc"); clearRows(); }}
         afterRow={representative ? (row) => {
           if (row.id === representative.id && !expandedRows.length && !members.hasNextPage)
-            return <ExpandedEvidence id={row.id} domain={domain} zone={timeZone} members={members.data?.pages[0]} failed={members.isError} retry={() => void members.refetch()}/>;
+            return <ExpandedEvidence id={row.id} domain={domain} zone={timeZone} openEntity={openEntity} members={members.data?.pages[0]} failed={members.isError} retry={() => void members.refetch()}/>;
           if (row.id === (expandedRows.at(-1)?.id ?? representative.id) && members.hasNextPage)
             return <Button disabled={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>{t(members.isFetchNextPageError ? "state.retry" : "table.loadMore")}</Button>;
           return null;
@@ -353,11 +363,12 @@ function DecisionForm({ kind, choose, ids, current, zone, onSave }: {
   </form>;
 }
 
-function useProblemEvidence(id: number, domain: string, zone: string, enabled = true) {
-  return useInfiniteQuery({ queryKey: ["report-v2", "data", "security.problems", "evidence", id, domain, zone], enabled, retry: false,
+function useProblemEvidence(id: number, domain: string, zone: string, enabled = true, openEntity: string | null = null) {
+  return useInfiniteQuery({ queryKey: ["report-v2", "data", "security.problems", "evidence", id, domain, zone, openEntity], enabled, retry: false,
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ queue_view: "all", tz: zone });
       if (domain) params.set("domain", domain);
+      setOpenEntityScope(params, openEntity);
       if (pageParam) params.set("cursor", pageParam);
       return api.reportV2Detail("security.problems", String(id), params);
     }, initialPageParam: null as string | null, getNextPageParam: (page) => page.has_more ? page.next_cursor : null });
@@ -385,9 +396,9 @@ function EvidenceTable({ evidence, zone }: { evidence: ReturnType<typeof useProb
     {evidence.isFetchNextPageError ? <StateView state="error" detail={t("problems.queue.evidenceFailed")} onRetry={() => void evidence.fetchNextPage()}/> : null}</>;
 }
 
-function ExpandedEvidence({ id, domain, zone, members, failed, retry }: { id: number; domain: string; zone: string; members?: ReportResultDto; failed: boolean; retry: () => void }) {
+function ExpandedEvidence({ id, domain, zone, openEntity, members, failed, retry }: { id: number; domain: string; zone: string; openEntity: string | null; members?: ReportResultDto; failed: boolean; retry: () => void }) {
   const showEvidence = members?.items.length === 1;
-  const evidence = useProblemEvidence(id, domain, zone, showEvidence);
+  const evidence = useProblemEvidence(id, domain, zone, showEvidence, openEntity);
   if (failed) return <StateView state="error" detail={t("problems.queue.repeatsFailed")} onRetry={retry}/>;
   if (!members) return <StateView state="loading"/>;
   return showEvidence ? <EvidenceTable evidence={evidence} zone={zone}/> : null;
@@ -404,13 +415,13 @@ export function ProblemJournal({ definition, finding, domain }: { definition: Re
   </ReportLayout>;
 }
 
-function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zone, tab, onTab, canManage, canAssign, canEvidence, onClose, previous, next, onChange }: {
-  publicRow: Problem; detail: Problem | null; detailError: boolean; retryDetails: () => void; domain: string; zone: string; tab: string;
+function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zone, openEntity, tab, onTab, canManage, canAssign, canEvidence, onClose, previous, next, onChange }: {
+  publicRow: Problem; detail: Problem | null; detailError: boolean; retryDetails: () => void; domain: string; zone: string; openEntity: string | null; tab: string;
   onTab: (key: string) => void; canManage: boolean; canAssign: boolean; canEvidence: boolean; onClose: () => void;
   previous?: () => void; next?: () => void; onChange: (kind: "state" | "assign" | "defer", state?: State) => void;
 }) {
   const row = detail ?? publicRow;
-  const evidence = useProblemEvidence(row.id, domain, zone, canEvidence);
+  const evidence = useProblemEvidence(row.id, domain, zone, canEvidence, openEntity);
   const options = new URLSearchParams({ finding: String(row.id), ...(domain ? { domain } : {}) });
   const event = evidence.data?.pages.flatMap((page) => page.items).find((item) => eventHref(item.event_db_id));
   const tabs = [{ key: "evidence", label: t("problems.queue.evidence") }, { key: "history", label: t("problems.queue.history") }, { key: "rule", label: t("problems.queue.rule") }];

@@ -7,7 +7,7 @@ import { formatClockWithOffset, isValidTimeZone, localDateTimeToUtc } from "../.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
-  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, Tabs,
+  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, TabList, Tabs,
   type FilterValues, type PeriodPreset, type PeriodValue, type ResultState, type SortState,
 } from "../../design-system";
 import type { PageHeaderControls } from "../../design-system/PageHeader";
@@ -37,11 +37,12 @@ import { preserveNavigationView } from "../navigation";
 import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
-import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
+import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerChecks";
 import { UserChanges, UserChecks, userTableColumns } from "../../plugins/ad/UserChecks";
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
+import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -131,12 +132,14 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
   if (reportKey === "ad.infrastructure" && definition.data.views.some((view) => view.key === "controls")) {
     return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
   }
-  return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
+  return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody key={reportKey} definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 
 function ReportBody({ definition: sourceDefinition, initialSearch, additionalTabs = [], onAdditionalTab }: { definition: ReportDefinitionDto; initialSearch?: string } & AdditionalTabs) {
   const definition = useMemo(() => {
     if (sourceDefinition.key === "ad.gpo.v2") return gpoReportDefinition(sourceDefinition);
+    if (sourceDefinition.key === "ad.computers.v6") return { ...sourceDefinition,
+      params: sourceDefinition.params.map((param) => param.key === "domain" ? { ...param, hidden: false } : param) };
     if (sourceDefinition.key !== "security.problems") return sourceDefinition;
     return {
       ...sourceDefinition,
@@ -153,6 +156,13 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const access = useEffectiveAccess();
   const independentUsers = definition.key === "ad.users.v2";
   const computerReport = definition.key === "ad.computers.v6";
+  const computerLogons = definition.key === "ad.computer-logons";
+  const computersScreen = computerReport || computerLogons;
+  const [computerPageSize, setComputerPageSize] = useState(50);
+  const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
+  const [compact, setCompact] = useState(true);
+  const [detailsVisible, setDetailsVisible] = useState(true);
+  const [refreshWindow, setRefreshWindow] = useState(0);
   const gpoReport = definition.key === "ad.gpo.v2";
   const infrastructure = definition.key === "ad.infrastructure";
   const problemQueue = definition.key === "security.problems";
@@ -188,7 +198,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     if (independentUsers && requested === "users") requested = "all";
     if (independentUsers && views.some((item) => item.key === "checks")) requested = requested === "active" || requested === "disabled" ? "all" : requested === "risk" || requested === "semantic" ? "checks" : requested;
     if (computerReport && !requested && search.has("view")) return search.get("view") === "changes" ? "changes" : "computers";
-    return views.some((view) => view.key === requested) ? requested! : views[0].key;
+    return views.some((view) => view.key === requested) ? requested! : computerReport ? "computers" : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
   const canLinkReport = (key: string) => !access || access.reports.some((report) => report.allowed
@@ -226,7 +236,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const restore = () => {
       const search = new URLSearchParams(window.location.search);
       const tab = independentUsers && search.get("tab") === "users" ? "all" : search.get("tab");
-      setActiveView(views.some((item) => item.key === tab) ? tab! : views[0].key);
+      setActiveView(views.some((item) => item.key === tab) ? tab! : computerReport ? "computers" : views[0].key);
       setValues(valuesFromSearch(definition, search));
       setSort(search.get("sort") ? { field: search.get("sort")!, direction: search.get("direction") === "desc" ? "desc" : "asc" } : null);
       setSelected(null);
@@ -263,8 +273,13 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const period = values.period as PeriodValue | undefined;
     return definition.key === "vpn.connections" && period && ["24h", "7d", "30d", "90d"].includes(period.preset) ? periodBounds(period) : null;
   }, [definition.key, values.period]);
+  const computerPeriod = useMemo(() => {
+    const period = values.period as PeriodValue | undefined;
+    return computerLogons && period && period.preset !== "custom" ? periodBounds(period) : null;
+  }, [computerLogons, values.period, refreshWindow]);
+  const inventoryLogonWindow = useMemo(() => periodBounds({ preset: "30d" }), [refreshWindow]);
   const baseParams = useMemo(() => {
-    const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(independentUsers || domainEvents ? { limit: independentUsers ? userPageSize : 50 } : {}) });
+    const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(computersScreen || independentUsers || domainEvents ? { limit: computersScreen ? computerPageSize : independentUsers ? userPageSize : 50 } : {}) });
     if (independentUsers) {
       params.delete("check");
       if (activeView !== "privileged") params.delete("as_of");
@@ -274,9 +289,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       params.set("from", vpnPeriod.from);
       params.set("to", vpnPeriod.to);
     }
+    if (computerPeriod) {
+      params.set("period", "custom");
+      params.set("from", computerPeriod.from);
+      params.set("to", computerPeriod.to);
+    }
     if (collectionTab) params.set("tab", collectionTab);
     return params.toString();
-  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView, independentUsers, domainEvents, userPageSize]);
+  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView, independentUsers, domainEvents, userPageSize, computerPeriod, computersScreen, computerPageSize]);
   const data = useInfiniteQuery({
     queryKey: ["report-v2", "data", definition.key, baseParams],
     queryFn: ({ pageParam }) => {
@@ -290,7 +310,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     retry: false,
     // On refetch (new filters/sort) keep the previous result visible with a
     // busy indicator instead of blanking to a skeleton.
-    placeholderData: independentUsers || computerReport ? undefined : keepPreviousData,
+    placeholderData: independentUsers || computersScreen ? undefined : keepPreviousData,
     // Report queries are heavy and an infinite query refetches every loaded
     // page: do not repeat them on each window focus; a minute is fresh enough
     // (filters, paging and retries still request explicitly).
@@ -337,11 +357,20 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const page = data.data?.pages[userPage];
     const items = independentUsers
       ? ((view.source !== "items" && view.source ? page?.collections?.[view.source] : undefined) ?? page?.items ?? []) as Row[]
+      : computersScreen ? (page?.items ?? []) as Row[]
       : data.data?.pages.flatMap((item) => item.items as Row[]) ?? [];
     if (!infrastructure || view.key !== "controls") return items;
     return items.filter((row) => ["passed", "failed"].includes(String(row.qualification))
       || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
-  }, [data.data, independentUsers, infrastructure, view.key, view.source, userPage]);
+  }, [data.data, independentUsers, infrastructure, view.key, view.source, userPage, computersScreen]);
+  const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
+  const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
+    || (view.key === "checks" ? selected : rows[0]) : undefined;
+  const chooseComputer = (row: Row) => { setDetailsVisible(true); setSelected(row); };
+  const compareView = views.find((item) => item.key === "changes" && item.access?.allowed !== false);
+  const cardLogonParams = new URLSearchParams(inventoryLogonWindow ? { period: "custom", from: inventoryLogonWindow.from,
+    to: inventoryLogonWindow.to, tz: timeZone } : { period: "30d", tz: timeZone });
+  if (activeComputer?.domain_id) cardLogonParams.set("domain_id", String(activeComputer.domain_id));
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   useEffect(() => {
     // Select only an exact row returned by the access-filtered server query.
@@ -357,13 +386,26 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     : definition, liveOptions, activeView).filter((field) =>
     independentUsers ? (["domain", "q"].includes(field.key)
       || ["account_state", "department", "ou"].includes(field.key) && (view.key === "all" || view.key === "privileged"))
-      : !computerReport || (view.key === "computers" || (view.key === "changes" && field.key === "q")))
-    .map((field) => independentUsers && field.key === "q" && field.kind === "text"
-      ? { ...field, placeholder: t(view.key === "all" || view.key === "privileged" ? "reports.ad.users.list.search" : "reports.ad.users.list.search_account") } : field),
-    [definition, liveOptions, activeView, computerReport, independentUsers, view.key]);
+      : !computerReport || (field.key === "domain" || field.key === "domain_id" || field.key === "q" && view.key !== "checks"
+        || view.key === "computers" && ["type", "enabled", "activity"].includes(field.key))).map((field) => {
+      if (independentUsers && field.key === "q" && field.kind === "text") return { ...field,
+        placeholder: t(view.key === "all" || view.key === "privileged" ? "reports.ad.users.list.search" : "reports.ad.users.list.search_account") };
+      if (computerLogons && field.key === "with_logons") return { key: field.key, kind: "checkbox" as const, label: t("reports.computers.only_logons"), onValue: "yes", offValue: "no" };
+      if (computersScreen && field.kind === "text" && ["q", "user"].includes(field.key)) {
+        const label = field.key === "user" ? t("reports.computers.user") : computerLogons ? t("reports.computers.computer") : t("reports.computers.search");
+        return { ...field, label, placeholder: label };
+      }
+      if (computerReport && field.kind === "select" && ["type", "enabled", "activity"].includes(field.key)) {
+        const counts = liveOptions?.[field.key];
+        return { ...field, options: field.options.map((option) => ({ ...option,
+          label: ["missing", "unknown"].includes(option.value) ? t("table.noValue") : option.label,
+          count: counts ? counts.find((bucket) => bucket.value === option.value)?.count ?? (first?.state === "ok" ? 0 : undefined) : undefined })) };
+      }
+      return field;
+    }), [definition, liveOptions, activeView, computerReport, computerLogons, computersScreen, independentUsers, view.key, first?.state]);
   const headerPeriodField = fields.find((field) => field.kind === "period");
   const hasDepartment = !independentUsers || !!values.department || !!liveOptions?.department?.length || rows.some((row) => Boolean(row.department));
-  const bodyFields = fields.filter((field) => field !== headerPeriodField && (field.key !== "department" || hasDepartment))
+  const bodyFields = fields.filter((field) => (computersScreen || field !== headerPeriodField) && (field.key !== "department" || hasDepartment))
     .map((field) => independentUsers && field.kind === "select" ? { ...field, immediate: true } : field);
   const declaredColumns = useMemo(() => workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
       (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
@@ -433,7 +475,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const exportHref = definition.export && ready && !viewDenied ? `/api/v2/reports/${encodeURIComponent(definition.key)}/export.csv?${exportParams.toString()}` : null;
   const exportsSelectedView = view === mainView || exportsByTab;
   const PageAction = definition.page_actions ? PAGE_ACTIONS[definition.page_actions] : undefined;
-  const toggleSort = (field: string) => setSort((current) => ({ field, direction: current?.field === field && current.direction === "asc" ? "desc" : "asc" }));
+  const defaultSort: SortState | null = computerLogons ? { field: "name", direction: "asc" }
+    : computerReport && view.key === "computers" ? { field: "display_name", direction: "asc" } : null;
+  const activeSort = sort ?? defaultSort;
+  const toggleSort = (field: string) => setSort({ field, direction: activeSort?.field === field && activeSort.direction === "asc" ? "desc" : "asc" });
   const pagination = (size: number) => ({
     start: userPage * size + 1,
     end: userPage * size + rows.length,
@@ -469,7 +514,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const description = definition.description && definition.description !== definition.title ? definition.description : undefined;
   const archiveContext = qualityResult?.domains?.some((domain) => domain.is_archived)
     ? <ArchiveDomainNotice domains={qualityResult.domains} coverage={qualityResult.coverage} timeZone={timeZone} detail/> : null;
-  const reportDetails = problemQueue || gpoReport || infrastructure || domainEvents || computerReport ? null : !independentUsers && definition.intent
+  const reportDetails = problemQueue || gpoReport || infrastructure || domainEvents || computersScreen ? null : !independentUsers && definition.intent
     ? <ReportPassportMeta intent={definition.intent} coverage={qualityCoverage} state={qualityState} timeZone={timeZone} description={description}>{archiveContext}</ReportPassportMeta>
     : independentUsers ? null
       : <>{first?.coverage?.completeness === "not_proven" ? <span className="sli-ds-badge" data-tone="warning">{t("reports.renderer.completeness_not_proven")}</span> : null}{description || archiveContext ? <details><summary>{t("reports.passport.more")}</summary>{description ? <p>{description}</p> : null}{archiveContext}</details> : null}</>;
@@ -498,38 +543,62 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     onClear: changeQueuePeriod,
   } : undefined;
 
-  return <ResultWindowContext.Provider value={first?.window}><Tabs items={displayedViews.map((item) => {
+  const namedViews = displayedViews.map((item) => {
     const itemBranch = viewBranches?.[item.key];
+    const label = computersScreen ? t(computerLogons ? "reports.computers.logons" : item.key === "checks" ? "reports.computers.review"
+      : item.key === "changes" ? "reports.computers.changes" : "reports.computers.all") : item.title || item.key;
     const count = independentUsers && item.access?.allowed !== false && first && !data.error
       ? item.key === view.key ? item.key === "checks" ? first.coverage.affected_objects : first.filtered_count
         : view.key === "all" && item.key === "privileged" ? first.coverage.privileged_accounts : undefined : undefined;
-    return { key: item.key, label: <>{item.title || item.key}{typeof count === "number" ? <> <span>{count}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
-  }).concat(additionalTabs.map((item) => ({ key: item.key, label: <>{item.label}</> })))} active={infrastructureChange && displayedViews.some((item) => item.key === "changes") ? "changes" : view.key} onChange={(key) => {
+    return { key: item.key, label: <>{label}{typeof count === "number" ? <> <span>{count}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
+  });
+  const linkedViews = additionalTabs.map((item) => ({ key: item.key, label: <>{item.label}</> }));
+  const listPagination = { ...pagination(computerPageSize),
+    label: computersScreen ? typeof first?.filtered_count === "number"
+      ? t("reports.computers.page_of", { page: userPage + 1, total: Math.ceil(first.filtered_count / computerPageSize) })
+      : t("reports.computers.page", { page: userPage + 1 }) : undefined };
+  const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
+    : columns.filter((column) => column.key !== "state").map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false,
+      ...(column.key === "count" ? { render: (row: Row) => Number(row.login_count) > 0 ? formatCell(row.login_count, "number") : t("table.noValue") } : {}) }));
+  const scopeInstant = computerLogons ? bounds?.to : typeof snapshotAt === "string" ? snapshotAt : undefined;
+  const computerScope = computersScreen && scopeInstant ? <span className="sli-ds-badge">
+    {first?.domains?.length === 1 && !bodyFields.some((field) => field.key === "domain") ? <>{first.domains[0].display_name} · </> : null}
+    {computerLogons && bounds ? t("reports.renderer.period_range", { from: formatDateTime(bounds.from), to: formatDateTime(bounds.to) })
+      : t("reports.renderer.snapshot_at", { time: formatDateTime(scopeInstant) })}
+    {isValidTimeZone(timeZone) && Number.isFinite(Date.parse(scopeInstant))
+      ? ` · ${formatClockWithOffset(new Date(scopeInstant), timeZone).zone}` : null}
+  </span> : undefined;
+  return <ResultWindowContext.Provider value={first?.window}><Tabs items={computerLogons ? [...linkedViews, ...namedViews] : [...namedViews, ...linkedViews]} active={infrastructureChange && displayedViews.some((item) => item.key === "changes") ? "changes" : view.key} onChange={(key) => {
     if (additionalTabs.some((item) => item.key === key)) onAdditionalTab?.(key);
     else selectView(key);
   }}><ReportLayout
     title={definition.title}
     domain={String(values.domain ?? values.domain_id ?? "") || undefined} showDomain={!independentUsers}
     controls={state === "denied" ? undefined : {
-      period: headerPeriod,
-      updatedAt: !independentUsers && qualityResult ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
+      period: computersScreen ? undefined : headerPeriod,
+      updatedAt: !independentUsers && qualityResult && !computersScreen ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
       refreshing: data.isFetching,
-      showRefreshLabel: independentUsers,
+      showRefreshLabel: computersScreen || independentUsers,
+      showBreadcrumbs: computersScreen,
       onRefresh: ready ? () => {
-        void data.refetch({ cancelRefetch: false });
+        if (computersScreen) setRefreshWindow((value) => value + 1);
+        if (!computerPeriod) void data.refetch({ cancelRefetch: false });
         if (passwordCoverage.isEnabled) void passwordCoverage.refetch({ cancelRefetch: false });
       } : undefined,
     }}
-    crumbs={independentUsers ? [
+    crumbs={computerLogons
+      ? [{ label: t("shell.nav.computers-report"), href: "/app/report/ad.computers.v6" }, { label: t("reports.computers.logons_tab") }]
+      : computerReport ? [{ label: t("reports.computers.directory") }, { label: definition.title }]
+      : independentUsers ? [
       { label: t("shell.section.active-directory"), href: canLinkReport("ad.infrastructure") ? "/app/report/ad.infrastructure" : undefined },
       { label: definition.title },
     ] : [{ label: getSectionCrumb(definition.section) }]}
-    meta={infrastructure ? undefined : computerReport ? <span>{computerSummary(qualityResult)}</span> : independentUsers || domainEvents ? null : <>{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
+    meta={infrastructure || computersScreen ? undefined : independentUsers || domainEvents ? null : <>{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
     actions={<>
       {PageAction && state !== "denied" && !(first?.plugin ?? definition.plugin)?.read_only ? <PageAction rows={rows as Record<string, unknown>[]} result={first}/> : null}
       {exportHref ? <a className="sli-ds-button" href={exportHref} download>{exportsSelectedView ? t("reports.renderer.export_csv") : t("reports.renderer.export_csv_all", { view: mainView.title ?? mainView.key })}</a> : null}
     </>}
-    metrics={!problemQueue && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.map((metric) => ({
+    metrics={!problemQueue && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computersScreen && state !== "denied" && state !== "error" && state !== "not_collected" && first?.metrics.length ? <MetricStrip compact items={first.metrics.map((metric) => ({
       key: metric.key, label: metric.label,
       value: metric.quality === "unknown" ? t("reports.metrics.no_data") : metric.value,
       tone: metric.quality && metric.quality !== "complete" ? "warning" : metric.tone,
@@ -539,15 +608,18 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     }))}/> : null}
     filters={<>
       {independentUsers && view.key === "privileged" ? <label className="sli-ds-field">{t("reports.ad.users.as_of")}<input type="date" value={String(values.as_of ?? "")} onChange={(event) => { setSelected(null); setValues((current) => ({ ...current, as_of: event.target.value })); }}/></label> : null}
-      {!gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
+      {!gpoReport && !infrastructure && !domainEvents && !independentUsers && !computersScreen && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
         {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
       </div> : null}
-      {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers ? "inline" : undefined}
-        primaryKeys={gpoReport || infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
-        leadingControls={userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined}
+      {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers || computersScreen ? "inline" : undefined}
+        primaryKeys={computersScreen ? undefined : gpoReport || infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
+        applyInline={computersScreen} leadingControls={computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
         values={values} defaults={resetValues} onApply={(next) => {
           setSelected(null);
-          setValues(independentUsers ? { ...next, domain_id: undefined, scope: next.domain ? undefined : "all" } : next);
+          if (independentUsers || computerReport && next.domain !== values.domain) {
+            const { domain_id: _legacyDomain, ...current } = next;
+            setValues({ ...current, scope: current.domain ? undefined : "all" });
+          } else setValues(next);
         }}
         quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
           <select value={view.key} onChange={(event) => selectView(event.target.value)}>
@@ -562,7 +634,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         })}
       </div> : undefined}/> : null}
     </>}
-    tabs={independentUsers ? <div className="sli-ds-report__toolbar">
+    tabs={computersScreen ? <div className="sli-ds-header__row">
+      {views.length + linkedViews.length > 1 ? <TabList label={t("reports.views.tabs_aria")}/> : null}
+      <div className="sli-ds-header__actions">
+        <button type="button" className="sli-ds-chip" aria-pressed={compact} onClick={() => setCompact((value) => !value)}>{t("reports.computers.compact")}</button>
+        <div ref={setColumnsTarget}/>
+        <button type="button" className="sli-ds-chip" aria-pressed={detailsVisible} onClick={() => setDetailsVisible((value) => !value)}>{t("reports.computers.toggle_details")}</button>
+      </div>
+    </div> : independentUsers ? <div className="sli-ds-report__toolbar">
       <ViewTabs views={displayedViews}/>
       <div className="sli-ds-header__actions">
         <select aria-label={t("reports.ad.users.list.density")} value={userDensity} onChange={(event) => setUserDensity(event.target.value === "comfortable" ? "comfortable" : "compact")}>
@@ -573,7 +652,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         <button type="button" className="sli-ds-button" aria-pressed={!!selected} disabled={!selected && (view.key === "checks" || !rows.length)} onClick={() => selected ? setSelected(null) : selectUser(rows[0])}>{t("reports.ad.users.list.details")}</button>
       </div>
     </div> : <ViewTabs views={displayedViews}/>}
-    tabbed={views.length > 1}
+    tabbed={views.length + (computersScreen ? linkedViews.length : 0) > 1}
     // A custom view loads its own data: an empty main table is not its state.
     state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
     stateMessage={first?.state === state ? first.state_message : undefined}
@@ -583,7 +662,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : independentUsers && state === "empty" ? <p>{t("table.noValue")}</p>
       : eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : domainEvents && state === "empty" ? domainEventsEmpty
-      : (domainEvents || problemQueue || infrastructure || computerReport || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
+      : computersScreen && state === "empty" ? computerEmpty()
+      : (domainEvents || problemQueue || infrastructure || computersScreen || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
       subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
       detail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : definition.key === "workstations.usb" && state === "not_collected" ? undefined : stateDetail} actions={state === "empty" ? emptyActions : vpnTimeoutRetry}
@@ -591,8 +671,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     staleAge={first?.coverage?.observed_at_utc ? formatDateTime(String(first.coverage.observed_at_utc)) : undefined}
     onRetry={() => void data.refetch()}
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
+    sideSize={computerLogons ? "wide" : "standard"}
+    side={activeComputer && !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state) ? <ComputerPanel key={`${rowKey(activeComputer)}:${baseParams}:${refreshWindow}`} row={activeComputer} logons={computerLogons}
+      logonParams={computerLogons ? baseParams : cardLogonParams.toString()} changes={compareView?.columns ?? []}
+      canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/> : undefined}
     split={independentUsers ? "inline" : undefined}
-    drawer={independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
+    drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
       allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")} onClose={() => setSelected(null)}/> : undefined
       : <DetailDrawer open={selected !== null} title={selected ? problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
@@ -607,11 +691,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       {selectedFacts && problemQueue && problemDetailsReady ? definition.columns.filter((column) => problemDescriptionColumns.includes(column.key)).map((column) =>
         <p key={column.key}><strong>{column.label}</strong>{": "}{formatCell(columnValue(column, selectedFacts), cellKind(column))}</p>) : null}
       {selected && problemQueue && problemDetails.isError ? <ReportState state="error" subject={definition.title} onRetry={() => void problemDetails.refetch()}/> : null}
-      {selectedFacts && !independentUsers ? <FactList facts={(computerReport && view.key === "changes" ? view.columns ?? [] : definition.columns).filter((column) => (!problemQueue || !problemDescriptionColumns.includes(column.key)) && (!computerReport || view.key === "changes" || ["computer_type", "operating_system", "enabled", "last_logon_utc", "ou_path", "laps_state", "observed", "ip_addresses", "sli_agent"].includes(column.key))).map((column) => ({ label: column.label, value: computerReport ? computerFactValue(column, selectedFacts, timeZone) : column.component ? <CellComponent name={column.component} row={selectedFacts}/> : formatCell(columnValue(column, selectedFacts), cellKind(column)) }))}/> : null}
-      {selected && computerReport ? <ComputerReasons row={selected}/> : selectedFacts && !independentUsers && typeof definition.detail === "object" && (!problemQueue || problemDetailsReady) ? <DetailSection definition={definition} detail={definition.detail} row={selectedFacts} baseParams={baseParams}/> : null}
+      {selectedFacts && !independentUsers ? <FactList facts={definition.columns.filter((column) => !problemQueue || !problemDescriptionColumns.includes(column.key)).map((column) => ({ label: column.label, value: column.component ? <CellComponent name={column.component} row={selectedFacts}/> : formatCell(columnValue(column, selectedFacts), cellKind(column)) }))}/> : null}
+      {selectedFacts && !independentUsers && typeof definition.detail === "object" && (!problemQueue || problemDetailsReady) ? <DetailSection definition={definition} detail={definition.detail} row={selectedFacts} baseParams={baseParams}/> : null}
     </DetailDrawer>}
   >
-    {!independentUsers && !domainEvents && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? <PairsWindowState result={first} onShowLatest={showLatest}
+    {!computersScreen && !independentUsers && !domainEvents && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? <PairsWindowState result={first} onShowLatest={showLatest}
       onChangeBaseline={() => { setSelected(null); setValues((current) => ({ ...current, baseline_days: "1" })); }}/> : null}
     {state === "denied" ? <ReportDenied reportKey={definition.key} title={definition.title} reason={stateDetail}/>
       : branch && (branch.state === "error" || branch.state === "denied")
@@ -626,10 +710,18 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         rows={rows} rowKey={(row) => String(row[definition.row_key])} sort={sort} onSort={toggleSort} onRowClick={selectUser}
         selectedKey={selected ? String(selected[definition.row_key]) : null} columnsControlTarget={userColumnsTarget} wrapCells="all" {...userTablePaging}/> : <p>{t("table.noValue")}</p>
       : computerReport && view.key === "checks"
-      ? <ComputerChecks result={first} onSelect={setSelected} onInventory={() => selectView("computers")}/>
-      : computerReport && view.key === "changes"
-      ? <>{rows.length ? <DataTable caption={view.title ?? view.key} columns={computerTableColumns(view.columns ?? [], setSelected, [], timeZone)} rows={rows} rowKey={(row) => String(row.row_id)} onRowClick={setSelected} total={first?.filtered_count}
-        hasMore={Boolean(data.hasNextPage)} loadingMore={data.isFetchingNextPage} onLoadMore={() => void data.fetchNextPage()}/> : <p role="status">{t("reports.ad.computers.no_changes")}</p>}</>
+      ? <ComputerChecks result={first} onSelect={chooseComputer} onInventory={() => selectView("computers")}/>
+      : computersScreen
+      ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title}
+        columns={computerReport && view.key === "changes" ? computerTableColumns(view.columns ?? [], chooseComputer, [], timeZone) : computerTable}
+        rows={rows} rowKey={rowKey} onRowClick={chooseComputer} total={first?.filtered_count} selectedKey={activeComputer ? rowKey(activeComputer) : null}
+        compact={compact} density={compact ? undefined : "comfortable"} wrapCells="all" pagination={listPagination} sort={activeSort}
+        onSort={toggleSort} columnsControlTarget={columnsTarget} footerControls={<div className="sli-ds-header__meta" role="group" aria-label={t("reports.computers.rows_per_page")}>
+          <span>{t("reports.computers.rows_per_page")}</span>
+          {[25, 50, 100, 200].map((size) => <button key={size} type="button" className="sli-ds-chip" aria-pressed={size === computerPageSize}
+            onClick={() => { setSelected(null); setComputerPageSize(size); }}>{size}</button>)}
+        </div>}/>
+        : computerEmpty()
       : gpoReport && view !== mainView
       ? (first?.collections?.[view.source ?? ""]?.length
         ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={tableColumns(view.columns ?? [], timeZone)} rows={first.collections[view.source ?? ""]} rowKey={(row) => JSON.stringify(row)}/>
@@ -639,7 +731,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : (view.source ?? "items") === "items"
       ? (rows.length === 0 && !data.isLoading && !data.error
         ? (domainEvents ? domainEventsEmpty : gpoReport ? state === "not_collected" ? null : gpoEmpty : state !== "error" ? <ReportState state="empty" detail={<>{definition.key === "workstations.usb" ? t(state === "partial" || state === "stale" ? "workstations.usb.empty_unverified" : "workstations.usb.empty") : reportEmptyText(view, definition.title)}{emptyDetail}</>} actions={emptyActions}/> : null)
-        : <><DataTable caption={view.title || definition.title} columns={computerReport ? computerTableColumns(definition.columns, setSelected, rows, timeZone) : columns} rows={rows} rowKey={(row) => String(row[definition.row_key] ?? JSON.stringify(row))}
+        : <><DataTable caption={view.title || definition.title} columns={columns} rows={rows} rowKey={(row) => String(row[definition.row_key] ?? JSON.stringify(row))}
           sort={sort} onSort={toggleSort} onRowClick={definition.detail === "none" ? undefined : setSelected}
           selectedKey={selected ? String(selected[definition.row_key]) : null}
           hasMore={Boolean(data.hasNextPage)} loadingMore={data.isFetchingNextPage} onLoadMore={() => void data.fetchNextPage()}
@@ -649,7 +741,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           ? { ...view, note: t("reports.v2.vpn.connections.nps_period_clamped") } : view}
         reportTitle={definition.title} rows={(first?.collections?.[view.source ?? ""] ?? []) as Row[]} emptyDetail={emptyDetail} emptyActions={emptyActions}
         state={branch?.state === "not_requested" ? state : branch?.state ?? state} stateDetails={first?.state_details}/>}
-    {!problemQueue && !gpoReport && !infrastructure && !independentUsers && !domainEvents && !computerReport && first?.limitations.length && state === "ok" ? <details aria-label={t("reports.renderer.limitations_aria")}>
+    {!problemQueue && !gpoReport && !infrastructure && !independentUsers && !domainEvents && !computersScreen && first?.limitations.length && state === "ok" ? <details aria-label={t("reports.renderer.limitations_aria")}>
       <summary>{t("reports.renderer.limitations_title")}</summary>
       <ul className="sli-ds-state__text">{first.limitations.map((item) => <li key={item.code + item.text}>{item.text}</li>)}</ul>
     </details> : null}
