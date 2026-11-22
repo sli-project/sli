@@ -16,13 +16,24 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
         await using var db=await connections.OpenAsync(ct);await using var tx=await db.BeginTransactionAsync(ct);
         await using(var limits=new NpgsqlCommand("set transaction read only",db,tx) { CommandTimeout = 0 }) await limits.ExecuteNonQueryAsync(ct);
         await using var cmd=new NpgsqlCommand("""
-            select payload_json,payload_sha256 from gpo_report_v2_source_snapshots
-            where (@domains::bigint[] is null or domain_id=any(@domains)) and import_status='completed'
-              and schema_version='sli.ad-gpo.snapshot/1.0'
-            order by source_completed_at_utc desc limit 2
-            """,db,tx) { CommandTimeout = 0 };BindDomains(cmd,domains);var snapshots=new List<JsonObject>();
-        await using(var reader=await cmd.ExecuteReaderAsync(ct)) while(await reader.ReadAsync(ct)) snapshots.Add(ValidateSnapshot(reader.GetString(0),reader.IsDBNull(1)?null:(byte[])reader.GetValue(1)));
-        await tx.CommitAsync(ct);return new JsonObject { ["state"]=snapshots.Count==0?"not_collected":snapshots.Count==1?"partial":"available",["current"]=snapshots.FirstOrDefault(),["previous"]=snapshots.Skip(1).FirstOrDefault() };
+            with newest as (
+                select domain_id from gpo_report_v2_source_snapshots
+                where (@domains::bigint[] is null or domain_id=any(@domains)) and import_status='completed'
+                  and schema_version='sli.ad-gpo.snapshot/1.0'
+                order by source_completed_at_utc desc, source_run_id desc limit 1
+            )
+            select snapshot.payload_json,snapshot.payload_sha256,snapshot.domain_id
+            from gpo_report_v2_source_snapshots snapshot
+            join newest on newest.domain_id=snapshot.domain_id
+            where snapshot.import_status='completed' and snapshot.schema_version='sli.ad-gpo.snapshot/1.0'
+            order by snapshot.source_completed_at_utc desc, snapshot.source_run_id desc limit 2
+            """,db,tx) { CommandTimeout = 0 };BindDomains(cmd,domains);var snapshots=new List<JsonObject>();long? domain=null,previousDomain=null;
+        await using(var reader=await cmd.ExecuteReaderAsync(ct)) while(await reader.ReadAsync(ct))
+        {
+            if(snapshots.Count==0) domain=reader.GetInt64(2);else previousDomain=reader.GetInt64(2);
+            snapshots.Add(ValidateSnapshot(reader.GetString(0),reader.IsDBNull(1)?null:(byte[])reader.GetValue(1)));
+        }
+        await tx.CommitAsync(ct);return new JsonObject { ["state"]=snapshots.Count==0?"not_collected":snapshots.Count==1?"partial":"available",["current"]=snapshots.FirstOrDefault(),["previous"]=snapshots.Skip(1).FirstOrDefault(),["domain_id"]=domain,["previous_domain_id"]=previousDomain };
     }
     internal static JsonObject ValidateSnapshot(string json,byte[]? hash)
     {
@@ -85,7 +96,13 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
             await using var cmd=new NpgsqlCommand(sql,db,tx) { CommandTimeout = 0 };cmd.Parameters.AddWithValue("domain",source.Number("domain_id"));cmd.Parameters.AddWithValue("run",Guid.Parse(source.Text("run_id")));await using var reader=await cmd.ExecuteReaderAsync(ct);var rows=new List<JsonObject>();while(await reader.ReadAsync(ct)) rows.Add(JsonNode.Parse(reader.GetString(0))!.AsObject());return rows;
         }
     }
-    public async Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string query,CancellationToken ct)
+    public Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string query,CancellationToken ct)
+        => ReadHistoryAsync(domains,from,to,query,null,null,ct);
+
+    public Task<JsonObject> PolicyHistoryAsync(long[] domains,DateTimeOffset from,DateTimeOffset to,string policyId,string guid,CancellationToken ct)
+        => ReadHistoryAsync(domains,from,to,"",policyId,guid,ct);
+
+    async Task<JsonObject> ReadHistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string query,string? policyId,string? guid,CancellationToken ct)
     {
         var unavailable=new JsonObject { ["state"]="unavailable",["items"]=new JsonArray(),["coverage"]=new JsonObject { ["state"]="unavailable" },["truncated"]=false };
         if(domains is {Length:0}) return unavailable;
@@ -117,7 +134,7 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
             if(confirmations.Count>50000) return new JsonObject { ["state"]="unavailable",["items"]=new JsonArray(),["coverage"]=new JsonObject { ["state"]="unavailable",["reason"]="confirmation_limit" },["truncated"]=false };
             await using var historyDb=await connections.OpenAsync(ct);
             return await GpoChangeHistory.ReadAsync(confirmations,domains,from,to,DateTimeOffset.UtcNow.AddDays(-days),days,query,
-                (batch,domain,family,observed,token)=>SnapshotChangeStore.ReadAsync(historyDb,batch,domain,family,observed,token),ct);
+                (batch,domain,family,observed,token)=>SnapshotChangeStore.ReadAsync(historyDb,batch,domain,family,observed,token,includeValues:policyId is not null),ct,policyId,guid);
         }
         catch(OperationCanceledException) when(ct.IsCancellationRequested) { throw; }
         catch(Exception) { return unavailable; }

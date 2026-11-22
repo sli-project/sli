@@ -2408,6 +2408,7 @@
       {
         "kind": "table",
         "key": "gpos",
+        "component": "gpo.policy-list",
         "source": "items",
         "title": "Политики",
         "columns": [],

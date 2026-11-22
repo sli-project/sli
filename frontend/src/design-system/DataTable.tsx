@@ -1,5 +1,5 @@
 import { formatNumber } from "../shared/format";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -17,6 +17,7 @@ export type TableColumn<Row> = {
   hiddenByDefault?: boolean;
   /** Omit secondary columns on narrow screens while keeping row details available. */
   mobile?: boolean;
+  wideOnly?: boolean;
   width?: string;
   minWidth?: string;
   align?: "start" | "end";
@@ -25,7 +26,7 @@ export type TableColumn<Row> = {
 };
 
 export function DataTable<Row>({
-  columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
+  columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption, expandedContent, emptyContent,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
 }: {
   columns: TableColumn<Row>[];
@@ -36,6 +37,8 @@ export function DataTable<Row>({
   onRowClick?: (row: Row) => void;
   selectedKey?: string | null;
   caption: string;
+  expandedContent?: (row: Row) => ReactNode;
+  emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -78,7 +81,7 @@ export function DataTable<Row>({
           const column = header.column.columnDef.meta as TableColumn<Row>;
           const active = sort?.field === column.key;
           const ariaSort = active ? (sort?.direction === "asc" ? "ascending" : "descending") : column.sortable && onSort ? "none" : undefined;
-          return <th key={header.id} scope="col" data-mobile={column.mobile} style={{ width: column.width, minWidth: column.minWidth }} data-align={column.align ?? (column.kind === "number" ? "end" : "start")} aria-sort={ariaSort}>
+          return <th key={header.id} scope="col" data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined} style={{ width: column.width, minWidth: column.minWidth }} data-align={column.align ?? (column.kind === "number" ? "end" : "start")} aria-sort={ariaSort}>
             {column.sortable && onSort
               ? <button type="button" className="sli-ds-table__sort" onClick={() => onSort(column.key)}>
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -88,9 +91,10 @@ export function DataTable<Row>({
               : flexRender(header.column.columnDef.header, header.getContext())}
           </th>;
         })}</tr>)}</thead>
-        <tbody>{table.getRowModel().rows.map((row) => {
+        <tbody>{rows.length === 0 && emptyContent != null ? <tr><td colSpan={table.getVisibleLeafColumns().length}>{emptyContent}</td></tr> : null}{table.getRowModel().rows.map((row) => {
           const selected = selectedKey === row.id;
-          return <tr key={row.id} data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
+          const detail = expandedContent?.(row.original);
+          return <Fragment key={row.id}><tr data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
@@ -100,10 +104,10 @@ export function DataTable<Row>({
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>;
+          </tr>{detail != null ? <tr className="sli-ds-table__expanded"><td colSpan={row.getVisibleCells().length}>{detail}</td></tr> : null}</Fragment>;
         })}</tbody>
       </table>
     </div>

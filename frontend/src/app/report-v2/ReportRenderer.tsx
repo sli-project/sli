@@ -38,6 +38,7 @@ import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
 import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
+import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
 
 type Row = Record<string, unknown>;
 type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
@@ -109,6 +110,8 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "ad.gpo.v2" && definition.data.views.some((view) => view.component === "gpo.policy-list"))
+    return <GpoPolicyReport definition={definition.data} search={initialSearch}/>;
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 
