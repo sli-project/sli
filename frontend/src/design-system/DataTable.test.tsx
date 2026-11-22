@@ -59,6 +59,22 @@ it("keeps full names available on text cells and linked cells", () => {
   expect(screen.getByRole("link", { name }).closest("td")?.title).toBe(name);
 });
 
+it("hides row details and expanded content when their group is collapsed", () => {
+  const props = { columns: [{ key: "id", label: "ID" }], rows, rowKey: (row: { id: string }) => row.id, caption: "Grouped rows",
+    selectedKey: "one", rowDetail: (row: { id: string }) => row.id === "one" ? "Parameter history" : null,
+    renderExpandedRow: () => "Problem observations" };
+  const group = (collapsed: boolean) => () => ({ key: "group", heading: "Controllers", collapsed });
+  const { rerender } = render(<DataTable {...props} rowGroup={group(false)}/>);
+  expect(screen.getByText("one").closest("tr")?.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Parameter history")).toBeTruthy();
+  expect(screen.getByText("Problem observations")).toBeTruthy();
+  rerender(<DataTable {...props} rowGroup={group(true)}/>);
+  expect(screen.getByText("Controllers")).toBeTruthy();
+  expect(screen.queryByText("one")).toBeNull();
+  expect(screen.queryByText("Parameter history")).toBeNull();
+  expect(screen.queryByText("Problem observations")).toBeNull();
+});
+
 it("activates a focused row without intercepting nested link or button keyboard actions", async () => {
   const openRow = vi.fn(), openLink = vi.fn(), pressButton = vi.fn();
   render(<DataTable columns={[{ key: "id", label: "Actions", render: () => <>
