@@ -20,6 +20,7 @@ export type PageHeaderControls = {
   updatedAt?: string | number | null;
   refreshing?: boolean;
   onRefresh?: () => void;
+  showRefreshLabel?: boolean;
 };
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
@@ -78,11 +79,11 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   /** Scope/coverage line under the title (domain, observed time). */
   meta?: ReactNode;
   controls?: PageHeaderControls;
-  domain?: string;
+  domain?: string | false;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh } = controls ?? scope.controls ?? {};
-  const domainControl = scope.domain?.(domain);
+  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel } = controls ?? scope.controls ?? {};
+  const domainControl = domain === false ? null : scope.domain?.(domain);
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
       <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
@@ -93,7 +94,9 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
       {period ? <HeaderPeriod {...period}/> : null}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
-        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}/> : null}
+        {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>
+          {showRefreshLabel ? t("shell.header.refresh") : null}
+        </Button> : null}
         {actions}
       </div> : null}
     </div>

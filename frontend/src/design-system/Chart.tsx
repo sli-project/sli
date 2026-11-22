@@ -12,7 +12,7 @@ import { formatDateTime as sharedDateTime } from "../shared/date-time";
 echarts.use([LineChart, BarChart, HeatmapChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, SVGRenderer]);
 
 /** One named series of points; `x` is an ISO time (timeseries) or a category. */
-export type ChartSeries = { name: string; points: Array<{ x: string; y: number | null }> };
+export type ChartSeries = { name: string; points: Array<{ x: string; y: number | null }>; style?: "bar" | "line" | "dashed" };
 export type HeatmapData = { xLabels: string[]; yLabels: string[]; cells: Array<{ x: number; y: number; value: number }> };
 
 export type ChartSpec =
@@ -82,7 +82,7 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
   // series with another magnitude gets its own right-hand axis.
   const days = spec.series[0]?.points.map((point) => point.x) ?? [];
   if (days.length && days.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))) {
-    const dual = spec.series.length === 2 && !spec.stacked;
+    const dual = spec.series.length === 2 && !spec.stacked && !spec.series.some((series) => series.style);
     return {
       ...base,
       legend,
@@ -90,7 +90,8 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
       xAxis: { type: "category", data: days.map((day) => sharedDateTime(day, "UTC", { withTime: false, withYear: false })), ...axisStyle },
       yAxis: dual ? [{ type: "value", ...axisStyle }, { type: "value", ...axisStyle, splitLine: { show: false } }] : { type: "value", ...axisStyle },
       series: spec.series.map((series, index) => ({
-        type: dual && index === 1 ? "line" : "bar", name: series.name, yAxisIndex: dual ? index : 0,
+        type: series.style ? series.style === "bar" ? "bar" : "line" : dual && index === 1 ? "line" : "bar",
+        lineStyle: series.style === "dashed" ? { type: "dashed" } : undefined, name: series.name, yAxisIndex: dual ? index : 0,
         stack: spec.stacked ? "total" : undefined, showSymbol: false,
         data: series.points.map((point) => point.y),
       })),

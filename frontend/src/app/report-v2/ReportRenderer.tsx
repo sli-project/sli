@@ -1,7 +1,7 @@
 import { journalColumns } from "./journal";
 import { workstationColumns } from "./workstation-columns";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
-import { isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
+import { formatClockWithOffset, isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
@@ -36,7 +36,8 @@ import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
-import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
+import { UserChanges, UserChecks, userTableColumns } from "../../plugins/ad/UserChecks";
+import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 
 type Row = Record<string, unknown>;
@@ -142,6 +143,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const initial = valuesFromSearch(definition, search);
     if (problemQueue && typeof initial.status === "string") initial.status = queueStatus(initial.status);
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
+    if (independentUsers && initial.domain_id) { initial.domain = initial.domain_id; delete initial.domain_id; }
     return initial;
   });
   const [sort, setSort] = useState<SortState | null>(() => {
@@ -150,6 +152,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return field ? { field, direction: search.get("direction") === "desc" ? "desc" : "asc" } : null;
   });
   const [selected, setSelected] = useState<Row | null>(null);
+  const [userDetailTab, setUserDetailTab] = useState("account");
+  const [userPageSize, setUserPageSize] = useState(50);
+  const [userDensity, setUserDensity] = useState<"compact" | "comfortable">("compact");
+  const [userColumnsTarget, setUserColumnsTarget] = useState<HTMLSpanElement | null>(null);
   const [queuePreset, setQueuePreset] = useState<PeriodPreset>("custom");
   const [originalPeriod, setOriginalPeriod] = useState<string | null>(null);
   const views = useMemo(() => {
@@ -165,6 +171,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return views.some((view) => view.key === requested) ? requested! : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
+  const canLinkReport = (key: string) => !access || access.reports.some((report) => report.allowed
+    && (report.report_key === key || report.target_path === `/app/report/${key}`));
+  const selectUser = (row: Row, tab = view.key === "changes" ? "changes" : "account") => {
+    setSelected(row);
+    setUserDetailTab(tab);
+  };
   const infrastructureChanges = infrastructure ? views.filter((item) => ["changes", "privileged_changes"].includes(item.key)) : [];
   const infrastructureChange = infrastructureChanges.some((item) => item.key === view.key);
   const displayedViews = infrastructureChanges.some((item) => item.key === "changes")
@@ -178,6 +190,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       for (const param of definition.params) {
         if (param.kind === "domain") saved.values[param.key] = values[param.key];
       }
+      if (independentUsers) saved.values.q = values.q;
       saved.values.scope = values.scope;
       const search = searchFromValues(definition, saved.values, saved.sort);
       search.set("tab", key);
@@ -231,7 +244,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return definition.key === "vpn.connections" && period && ["24h", "7d", "30d", "90d"].includes(period.preset) ? periodBounds(period) : null;
   }, [definition.key, values.period]);
   const baseParams = useMemo(() => {
-    const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(independentUsers || domainEvents || eventsJournal ? { limit: 50 } : {}) });
+    const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(independentUsers || domainEvents || eventsJournal ? { limit: independentUsers ? userPageSize : 50 } : {}) });
     if (independentUsers) {
       params.delete("check");
       if (activeView !== "privileged") params.delete("as_of");
@@ -243,7 +256,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     }
     if (collectionTab) params.set("tab", collectionTab);
     return params.toString();
-  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView]);
+  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView, independentUsers, eventsJournal, domainEvents, userPageSize]);
   const data = useInfiniteQuery({
     queryKey: ["report-v2", "data", definition.key, baseParams],
     queryFn: ({ pageParam }) => {
@@ -301,13 +314,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const branch = viewBranches?.[view.key];
   const branchDetail = branch?.limitations.map((item) => item.text).join(" ") || undefined;
   const rows = useMemo(() => {
-    const items = (independentUsers && view.key === "all" || eventsJournal)
-      ? (data.data?.pages[userPage]?.items ?? []) as Row[]
+    const page = data.data?.pages[userPage];
+    const items = (independentUsers || eventsJournal)
+      ? ((independentUsers && view.source !== "items" && view.source ? page?.collections?.[view.source] : undefined) ?? page?.items ?? []) as Row[]
       : data.data?.pages.flatMap((page) => page.items as Row[]) ?? [];
     if (!infrastructure || view.key !== "controls") return items;
     return items.filter((row) => ["passed", "failed"].includes(String(row.qualification))
       || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
-  }, [data.data, independentUsers, eventsJournal, infrastructure, view.key, userPage]);
+  }, [data.data, independentUsers, eventsJournal, infrastructure, view.key, view.source, userPage]);
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   useEffect(() => {
     // Select only an exact row returned by the access-filtered server query.
@@ -318,13 +332,19 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     if (row && definition.detail !== "none") { setSelected(row); setOpenedDeepLink(true); }
   }, [definition, values, rows, first?.state, data.isPlaceholderData, openedDeepLink]);
   const liveOptions = first?.filter_options;
-  const fields = useMemo(() => filterFields(definition, liveOptions, activeView).filter((field) =>
-    independentUsers ? (view.key === "checks" || view.key === "changes" ? field.key === "q" : view.key === "privileged" ? ["q", "group", "relation"].includes(field.key) : true)
-      : !computerReport || (view.key === "computers" || (view.key === "changes" && field.key === "q"))), [definition, liveOptions, activeView, computerReport, independentUsers, view.key]);
+  const fields = useMemo(() => filterFields(independentUsers
+    ? { ...definition, params: definition.params.map((param) => param.key === "domain" ? { ...param, hidden: false } : param) }
+    : definition, liveOptions, activeView).filter((field) =>
+    independentUsers ? (["domain", "q"].includes(field.key)
+      || ["account_state", "department", "ou"].includes(field.key) && (view.key === "all" || view.key === "privileged"))
+      : !computerReport || (view.key === "computers" || (view.key === "changes" && field.key === "q")))
+    .map((field) => independentUsers && field.key === "q" && field.kind === "text"
+      ? { ...field, placeholder: t(view.key === "all" || view.key === "privileged" ? "reports.ad.users.list.search" : "reports.ad.users.list.search_account") } : field),
+    [definition, liveOptions, activeView, computerReport, independentUsers, view.key]);
   const headerPeriodField = fields.find((field) => field.kind === "period");
-  const bodyFields = fields.filter((field) => field !== headerPeriodField);
-  const declaredColumns = useMemo(() => independentUsers ? userTableColumns(definition.columns, setSelected, view.key === "privileged", timeZone)
-    : workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
+  const hasDepartment = !independentUsers || !!values.department || !!liveOptions?.department?.length || rows.some((row) => Boolean(row.department));
+  const bodyFields = fields.filter((field) => field !== headerPeriodField && (field.key !== "department" || hasDepartment));
+  const declaredColumns = useMemo(() => workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
       (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
       && !(domainEvents && ["change", "actor", "group"].includes(column.key) && rows.length > 0
         && rows.every((row) => {
@@ -332,7 +352,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           return value == null || typeof value === "string" && ["", "-", "—"].includes(value.trim());
         }))), timeZone), rows).map((column) =>
       definition.key === "security.problems" && column.key === "title"
-        ? { ...column, minWidth: "var(--sli-field-max-width)" } : column), [definition, independentUsers, view.key, timeZone, rows]);
+        ? { ...column, minWidth: "var(--sli-field-max-width)" } : column), [definition, view.key, timeZone, rows]);
 
   const columns = eventsJournal ? journalColumns(declaredColumns, rows) : canManageProblems ? declaredColumns.map((column) =>
     column.key === "status" ? { ...column, render: (row: Row) => <>
@@ -377,6 +397,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const hiddenCategories = first?.access?.hidden_categories ?? definition.access?.hidden_categories ?? [];
   const inventorySnapshot = definition.key === "ad.gpo.v2" && view.key !== "changes";
   const snapshotAt = !data.isPlaceholderData ? first?.coverage.observed_at_utc : undefined;
+  const userSnapshot = independentUsers && Boolean(values.domain ?? values.domain_id) && typeof snapshotAt === "string" && Number.isFinite(Date.parse(snapshotAt))
+    ? t("reports.ad.users.list.snapshot", { time: formatDateTime(snapshotAt), zone: formatClockWithOffset(new Date(snapshotAt), timeZone).zone }) : undefined;
   const periodMeta = inventorySnapshot
     ? typeof snapshotAt === "string" && snapshotAt ? t("reports.renderer.snapshot_at", { time: formatDateTime(snapshotAt) }) : null
     : window_?.from_utc ? t("reports.renderer.period_range", { from: formatDateTime(window_.from_utc), to: formatDateTime(window_.to_utc_exclusive ?? window_.to_utc ?? "") }) : null;
@@ -391,6 +413,20 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const exportsSelectedView = view === mainView || exportsByTab;
   const PageAction = definition.page_actions ? PAGE_ACTIONS[definition.page_actions] : undefined;
   const toggleSort = (field: string) => setSort((current) => ({ field, direction: current?.field === field && current.direction === "asc" ? "desc" : "asc" }));
+  const pagination = (size: number) => ({
+    start: userPage * size + 1,
+    end: userPage * size + rows.length,
+    busy: data.isFetchingNextPage,
+    onPrevious: userPage > 0 ? () => { setSelected(null); setUserPaging({ params: baseParams, index: userPage - 1 }); } : undefined,
+    onNext: data.data?.pages[userPage]?.has_more ? () => { setSelected(null); void (async () => {
+      if (!data.data?.pages[userPage + 1]) { const next = await data.fetchNextPage(); if (next.isError) return; }
+      setUserPaging({ params: baseParams, index: userPage + 1 });
+    })(); } : undefined,
+  });
+  const userTablePaging = { pagination: pagination(userPageSize), density: userDensity, total: first?.filtered_count,
+    pageSize: { value: userPageSize, options: [25, 50, 100, 200], onChange: (size: number) => {
+      setSelected(null); setUserPaging({ params: "", index: 0 }); setUserPageSize(size);
+    } } };
   const periodParam = definition.params.find((param) => param.kind === "period");
   const recovery = !eventsJournal && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? reportEmptyRecovery(first, timeZone, periodParam ? values[periodParam.key] as PeriodValue : undefined) : null;
   const showLatest = periodParam && recovery?.period ? () => {
@@ -414,8 +450,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     ? <ArchiveDomainNotice domains={qualityResult.domains} coverage={qualityResult.coverage} timeZone={timeZone} detail/> : null;
   const reportDetails = problemQueue || gpoReport || infrastructure || domainEvents || computerReport || eventsJournal ? null : !independentUsers && definition.intent
     ? <ReportPassportMeta intent={definition.intent} coverage={qualityCoverage} state={qualityState} timeZone={timeZone} description={description}>{archiveContext}</ReportPassportMeta>
-    : independentUsers
-      ? archiveContext ? <details><summary>{t("reports.passport.more")}</summary>{archiveContext}</details> : null
+    : independentUsers ? null
       : <>{first?.coverage?.completeness === "not_proven" ? <span className="sli-ds-badge" data-tone="warning">{t("reports.renderer.completeness_not_proven")}</span> : null}{description || archiveContext ? <details><summary>{t("reports.passport.more")}</summary>{description ? <p>{description}</p> : null}{archiveContext}</details> : null}</>;
 
   const quickFilters = !independentUsers && !computerReport && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
@@ -448,24 +483,31 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
 
   return <ResultWindowContext.Provider value={first?.window}><Tabs items={displayedViews.map((item) => {
     const itemBranch = viewBranches?.[item.key];
-    return { key: item.key, label: <>{item.title || item.key}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
+    const count = independentUsers && item.access?.allowed !== false && first && !data.error
+      ? item.key === view.key ? item.key === "checks" ? first.coverage.affected_objects : first.filtered_count
+        : view.key === "all" && item.key === "privileged" ? first.coverage.privileged_accounts : undefined : undefined;
+    return { key: item.key, label: <>{item.title || item.key}{typeof count === "number" ? <> <span>{count}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
   }).concat(additionalTabs.map((item) => ({ key: item.key, label: <>{item.label}</> })))} active={infrastructureChange && displayedViews.some((item) => item.key === "changes") ? "changes" : view.key} onChange={(key) => {
     if (additionalTabs.some((item) => item.key === key)) onAdditionalTab?.(key);
     else selectView(key);
   }}><ReportLayout
     title={definition.title}
-    domain={String(values.domain ?? values.domain_id ?? "") || undefined}
+    domain={independentUsers ? false : String(values.domain ?? values.domain_id ?? "") || undefined}
     controls={state === "denied" ? undefined : {
       period: headerPeriod,
-      updatedAt: qualityResult ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
+      updatedAt: !independentUsers && qualityResult ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
       refreshing: data.isFetching,
+      showRefreshLabel: independentUsers,
       onRefresh: ready ? () => {
         void data.refetch({ cancelRefetch: false });
         if (passwordCoverage.isEnabled) void passwordCoverage.refetch({ cancelRefetch: false });
       } : undefined,
     }}
-    crumbs={[{ label: getSectionCrumb(definition.section) }]}
-    meta={infrastructure ? undefined : computerReport ? <span>{computerSummary(qualityResult)}</span> : domainEvents || eventsJournal ? null : <>{independentUsers ? <span>{userSummary(qualityResult)}</span> : null}{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
+    crumbs={independentUsers ? [
+      { label: t("shell.section.active-directory"), href: canLinkReport("ad.infrastructure") ? "/app/report/ad.infrastructure" : undefined },
+      { label: definition.title },
+    ] : [{ label: getSectionCrumb(definition.section) }]}
+    meta={infrastructure ? undefined : computerReport ? <span>{computerSummary(qualityResult)}</span> : independentUsers || domainEvents || eventsJournal ? null : <>{definition.default_domain_state && definition.default_domain_state !== "available" && !values.domain && !values.domain_id && values.scope !== "all" ? <span role="status">{t("domain.archive.noDefault")}</span> : null}{hiddenCategories.length ? <span role="status">{t("reports.access.hidden_columns", { categories: categoryNames(hiddenCategories) })}</span> : null}{periodMeta ? <span>{periodMeta}</span> : null}{originalPeriod ? <span>{originalPeriod}</span> : null}{periodMeta && definition.key === "vpn.connections" && !first?.window.nps_period_clamped ? <span>{t("reports.v2.vpn.connections.period_note")}</span> : null}{reportDetails}</>}
     actions={<>
       {PageAction && state !== "denied" && !(first?.plugin ?? definition.plugin)?.read_only ? <PageAction rows={rows as Record<string, unknown>[]} result={first}/> : null}
       {exportHref ? <a className="sli-ds-button" href={exportHref} download>{exportsSelectedView ? t("reports.renderer.export_csv") : t("reports.renderer.export_csv_all", { view: mainView.title ?? mainView.key })}</a> : null}
@@ -483,7 +525,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       {!eventsJournal && !gpoReport && !infrastructure && !domainEvents && !independentUsers && !computerReport && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
         {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
       </div> : null}
-      {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers ? "inline" : undefined} primaryKeys={eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : infrastructure ? ["q", "period"] : independentUsers ? ["q"] : fields.length > 4 ? primaryFilterKeys(definition) : undefined} additionalContent={eventsJournal ? quickFilters : undefined} values={values} defaults={resetValues} onApply={(next) => { setSelected(null); setValues(next); }}
+      {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers ? "inline" : undefined} primaryKeys={eventsJournal ? primaryFilterKeys(definition) : gpoReport ? ["q", "period"] : infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
+        leadingContent={userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined}
+        additionalContent={eventsJournal ? quickFilters : undefined} values={values} defaults={resetValues} onApply={(next) => {
+          setSelected(null);
+          setValues(independentUsers ? { ...next, domain_id: undefined, scope: next.domain ? undefined : "all" } : next);
+        }}
         quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
           <select value={view.key} onChange={(event) => selectView(event.target.value)}>
             {infrastructureChanges.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
@@ -497,14 +544,26 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         })}
       </div> : undefined}/> : null}
     </>}
-    tabs={<ViewTabs views={displayedViews}/>}
+    tabs={independentUsers ? <div className="sli-ds-report__toolbar">
+      <ViewTabs views={displayedViews}/>
+      <div className="sli-ds-header__actions">
+        <select aria-label={t("reports.ad.users.list.density")} value={userDensity} onChange={(event) => setUserDensity(event.target.value === "comfortable" ? "comfortable" : "compact")}>
+          <option value="compact">{t("reports.ad.users.list.compact")}</option>
+          <option value="comfortable">{t("reports.ad.users.list.comfortable")}</option>
+        </select>
+        <span ref={setUserColumnsTarget}/>
+        <button type="button" className="sli-ds-button" aria-pressed={!!selected} disabled={!selected && (view.key === "checks" || !rows.length)} onClick={() => selected ? setSelected(null) : selectUser(rows[0])}>{t("reports.ad.users.list.details")}</button>
+      </div>
+    </div> : <ViewTabs views={displayedViews}/>}
     tabbed={views.length > 1}
     // A custom view loads its own data: an empty main table is not its state.
     state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
     stateMessage={first?.state === state ? first.state_message : undefined}
     stateDetail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : stateDetail}
     stateActions={state === "empty" ? emptyActions : vpnTimeoutRetry}
-    stateView={eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
+    stateView={independentUsers && (state === "error" || state === "unavailable") ? <div role="alert">{t("reports.ad.users.list.load_error")} <button type="button" className="sli-ds-button" onClick={() => void data.refetch()}>{t("state.retry")}</button></div>
+      : independentUsers && state === "empty" ? <p>{t("table.noValue")}</p>
+      : eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : (eventsJournal || domainEvents) && state === "empty" ? eventsJournal ? journalEmpty : domainEventsEmpty
       : (eventsJournal || domainEvents || problemQueue || infrastructure || computerReport || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
@@ -514,7 +573,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     staleAge={first?.coverage?.observed_at_utc ? formatDateTime(String(first.coverage.observed_at_utc)) : undefined}
     onRetry={() => void data.refetch()}
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
-    drawer={<DetailDrawer open={selected !== null} title={selected ? independentUsers ? String(selected.sam ?? selected.display_name ?? t("reports.metrics.no_data")) : problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
+    split={independentUsers}
+    drawer={independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
+      initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
+      allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")} onClose={() => setSelected(null)}/> : undefined
+      : <DetailDrawer open={selected !== null} title={selected ? problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
       footer={selected ? <>
         {canManageProblems && canResolveProblem(selected) ? <ResolveProblem key={String(selected.id)} row={selected} onResolved={() => setSelected(null)}/> : null}
         {definition.row_links.map((link) => {
@@ -527,20 +590,23 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         <p key={column.key}><strong>{column.label}</strong>{": "}{formatCell(columnValue(column, selectedFacts), cellKind(column))}</p>) : null}
       {selected && problemQueue && problemDetails.isError ? <ReportState state="error" subject={definition.title} onRetry={() => void problemDetails.refetch()}/> : null}
       {selectedFacts && !independentUsers ? <FactList facts={(computerReport && view.key === "changes" ? view.columns ?? [] : definition.columns).filter((column) => (!problemQueue || !problemDescriptionColumns.includes(column.key)) && (!computerReport || view.key === "changes" || ["computer_type", "operating_system", "enabled", "last_logon_utc", "ou_path", "laps_state", "observed", "ip_addresses", "sli_agent"].includes(column.key))).map((column) => ({ label: column.label, value: computerReport ? computerFactValue(column, selectedFacts, timeZone) : column.component ? <CellComponent name={column.component} row={selectedFacts}/> : formatCell(columnValue(column, selectedFacts), cellKind(column)) }))}/> : null}
-      {selected && independentUsers ? <><FactList facts={definition.columns.filter((column) => ["state", "ou", "password_last_set"].includes(column.key)).map((column) => ({ label: column.label, value: columnValue(column, selected) == null ? t("reports.metrics.no_data") : formatCell(columnValue(column, selected), cellKind(column)) }))}/><UserReasons row={selected}/></> : null}
       {selected && computerReport ? <ComputerReasons row={selected}/> : selectedFacts && !independentUsers && typeof definition.detail === "object" && (!problemQueue || problemDetailsReady) ? <DetailSection definition={definition} detail={definition.detail} row={selectedFacts} baseParams={baseParams}/> : null}
     </DetailDrawer>}
   >
-    {!domainEvents && !eventsJournal && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? <PairsWindowState result={first} onShowLatest={showLatest}
+    {!independentUsers && !domainEvents && !eventsJournal && ready && !data.isPlaceholderData && !data.isFetching && !data.error && state !== "denied" ? <PairsWindowState result={first} onShowLatest={showLatest}
       onChangeBaseline={() => { setSelected(null); setValues((current) => ({ ...current, baseline_days: "1" })); }}/> : null}
     {state === "denied" ? <ReportDenied reportKey={definition.key} title={definition.title} reason={stateDetail}/>
       : branch && (branch.state === "error" || branch.state === "denied")
       ? <ReportState state={branch.state} details={{ reason: branch.reason, limitations: branch.limitations }}
         detail={branchDetail} subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
       : independentUsers && view.key === "checks"
-      ? <UserChecks key={baseParams} result={first} baseParams={baseParams} onSelect={setSelected}/>
-      : independentUsers && view.key === "changes"
-      ? <><UserChanges columns={view.columns ?? []} rows={first?.collections?.changes ?? []} title={view.title ?? view.key} onSelect={setSelected}/></>
+      ? <UserChecks key={baseParams} result={first} baseParams={baseParams} onSelect={selectUser}/>
+      : independentUsers && ["changes", "disabled_active"].includes(view.key)
+      ? <UserChanges columns={view.columns ?? []} rows={rows} title={view.title ?? view.key} onSelect={selectUser} paging={userTablePaging}/>
+      : independentUsers
+      ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={userTableColumns(definition.columns.filter((column) => column.key !== "department" || hasDepartment), selectUser, timeZone)}
+        rows={rows} rowKey={(row) => String(row[definition.row_key])} sort={sort} onSort={toggleSort} onRowClick={selectUser}
+        selectedKey={selected ? String(selected[definition.row_key]) : null} columnsControlTarget={userColumnsTarget} wrap {...userTablePaging}/> : <p>{t("table.noValue")}</p>
       : computerReport && view.key === "checks"
       ? <ComputerChecks result={first} onSelect={setSelected} onInventory={() => selectView("computers")}/>
       : computerReport && view.key === "changes"
@@ -560,12 +626,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           selectedKey={selected ? String(selected[definition.row_key]) : null}
           hasMore={Boolean(data.hasNextPage)} loadingMore={data.isFetchingNextPage} onLoadMore={() => void data.fetchNextPage()}
           total={infrastructure && view.key === "controls" ? null : first?.filtered_count ?? null}
-          pagination={independentUsers && view.key === "all" || eventsJournal ? { start: userPage * 50 + 1, end: userPage * 50 + rows.length, busy: data.isFetchingNextPage,
-            onPrevious: userPage > 0 ? () => { setSelected(null); setUserPaging({ params: baseParams, index: userPage - 1 }); } : undefined,
-            onNext: data.data?.pages[userPage]?.has_more ? () => { setSelected(null); void (async () => {
-              if (!data.data?.pages[userPage + 1]) { const next = await data.fetchNextPage(); if (next.isError) return; }
-              setUserPaging({ params: baseParams, index: userPage + 1 });
-            })(); } : undefined } : undefined}/></>)
+          pagination={eventsJournal ? pagination(50) : undefined}/></>)
       : <CollectionView view={definition.key === "vpn.connections" && ["policy_denials", "policy_denials_growth", "policy_denials_events"].includes(view.key)
           && first?.window.nps_period_clamped === true && !data.isPlaceholderData
           ? { ...view, note: t("reports.v2.vpn.connections.nps_period_clamped") } : view}

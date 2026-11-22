@@ -6,7 +6,7 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ReportRenderer } from "./ReportRenderer";
 
-const titles = { checks: "Требуют проверки", privileged: "Привилегированные", changes: "Изменения", all: "Все учётки" };
+const titles = { checks: "Требуют проверки", privileged: "Привилегированные", changes: "Изменения", all: "Все учётки", disabled_active: "Отключены, но активны" };
 const definition: ReportDefinitionDto = {
   key: "ad.users.v2", section: "reports/identity", title: "Пользователи", description: "", archetype: "inventory-status",
   params: [{ key: "q", kind: "text", label: "Поиск" }, { key: "domain", kind: "domain", label: "Домен", hidden: true },
@@ -21,7 +21,7 @@ const definition: ReportDefinitionDto = {
   row_key: "id", detail: "fields", export: true, limits: { default: 50, max: 500 }, presets: [], row_links: [], filter_options: {},
 };
 const calls: URLSearchParams[] = [];
-const account = (id: number, name = `Synthetic account ${id}`) => ({ id, entity_id: id, display_name: name, sam: `synthetic-${id}`, enabled: true });
+const account = (id: number, name = `Synthetic account ${id}`) => ({ id, entity_id: id, domain_id: 8, display_name: name, sam: `synthetic-${id}`, enabled: true });
 const check = { id: "users:reversible_password", key: "reversible_password", title: "Synthetic check", severity: "high", severity_text: "Высокая",
   status: "not_evaluated", status_text: "Не оценено", total: 7, new_count: null, objects: [1, 2, 3].map((id) => ({ ...account(id), name: `synthetic-${id}`, domain_id: 8, domain_name: "example.test" })),
   remaining_objects: 4, why: "Synthetic why", action: "Synthetic action", remediation: "Synthetic remediation" };
@@ -35,6 +35,19 @@ function page(tab: string, overrides: Partial<ReportResultDto> = {}): ReportResu
 function mock(response: (params: URLSearchParams) => Response | Promise<Response> = (params) => new Response(JSON.stringify(page(params.get("tab") ?? "checks"))), raw = definition) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes("/rows/1/detail?")) return new Response(JSON.stringify(page("all", { items: [{
+      ...account(1, "Synthetic all"),
+      direct_memberships: [{ id: "group:2", name: "Synthetic team" }],
+      privilege_paths: [{ groupId: "group:3", relation: "nested",
+        nodes: [{ id: "user:1", name: "synthetic-1" }, { id: "group:2", name: "Synthetic team" }, { id: "group:3", name: "Synthetic admins" }] }],
+      timeline: [
+        { id: 1, event_id: 4625, at_utc: "2026-11-20T11:57:00Z", first_seen_utc: "2026-11-20T11:57:00Z", event_count: 1, actor: "synthetic-1" },
+        { id: 2, event_id: 4625, at_utc: "2026-11-20T11:51:00Z", first_seen_utc: "2026-11-20T11:51:00Z", event_count: 1, actor: "synthetic-1" },
+        { id: 3, event_id: 4728, at_utc: "2026-11-19T11:00:00Z", actor: "synthetic-admin", member: "synthetic-1", target: "Synthetic team" },
+      ],
+      changes: [{ id: 3, event_id: 4728, at_utc: "2026-11-19T11:00:00Z", actor: "synthetic-admin", member: "synthetic-1", target: "Synthetic team" }],
+      computers: [{ computer: "test-ws", at_utc: "2026-11-18T11:00:00Z" }],
+    }] })));
     if (!url.includes("/data?")) return new Response(JSON.stringify(raw));
     const params = new URL(url, "http://example.test").searchParams;
     calls.push(params); return response(params);
@@ -51,9 +64,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it("defaults to checks with the supplied tabs and no counter queries or data-state copy", async () => {
+it("defaults to checks and shows the affected account count without counter queries", async () => {
   const { container } = show(); await screen.findByText("Synthetic check", { selector: "strong" });
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(Object.values(titles));
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([titles.checks + " 7", ...Object.values(titles).slice(1)]);
   expect(new URLSearchParams(window.location.search).get("tab")).toBe("checks");
   expect(screen.queryByText(/Не оценено|Нет сравнения|Одна учётка|≥/)).toBeNull();
   expect(container.querySelector(".sli-ds-review-list__objects")).toBeNull();
@@ -80,7 +93,7 @@ it("expands a check and opens every exact match with a bounded request", async (
   expect(request.get("check")).toBe("reversible_password"); expect(request.get("limit")).toBe("50");
 });
 
-it("opens an overlay from a name and restores focus without losing the list", async () => {
+it("opens the right panel from a name and restores focus without losing the list", async () => {
   window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all"); show();
   const button = await screen.findByRole("button", { name: "synthetic-1" }); button.focus(); fireEvent.click(button);
   expect(await screen.findByRole("dialog")).toBeTruthy();
@@ -88,6 +101,25 @@ it("opens an overlay from a name and restores focus without losing the list", as
   expect(screen.queryByRole("link", { name: "Synthetic all" })).toBeNull();
   fireEvent.keyDown(document, { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(button);
+});
+
+it("shows group paths, combined activity, and account-scoped Problems and journal links", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all&domain=8"); show();
+  fireEvent.click(await screen.findByRole("button", { name: "synthetic-1" }));
+  const card = within(await screen.findByRole("dialog"));
+  expect(await card.findByRole("heading", { name: "Компьютеры за 30 дней" })).toBeTruthy();
+  fireEvent.click(card.getByRole("tab", { name: "Права" }));
+  expect(card.getByRole("link", { name: "Synthetic admins" }).getAttribute("href")).toContain("/app/entities/3");
+  fireEvent.click(card.getByRole("tab", { name: "Активность" }));
+  expect(card.getByText(/Отказ во входе · synthetic-1 ×2/)).toBeTruthy();
+  expect(card.getByText(/Добавление в группу · synthetic-1 · Synthetic team · synthetic-admin/)).toBeTruthy();
+  fireEvent.click(card.getByRole("checkbox", { name: "Свернуть повторы" }));
+  expect(card.queryByText(/×2/)).toBeNull();
+  fireEvent.click(card.getByRole("tab", { name: "Изменения" }));
+  expect(card.queryByText(/Отказ во входе/)).toBeNull();
+  expect(card.getByText(/Добавление в группу · synthetic-1 · Synthetic team · synthetic-admin/)).toBeTruthy();
+  expect(card.getByRole("link", { name: "Связанные проблемы" }).getAttribute("href")).toContain("entity_id=1&domain=8");
+  expect(card.getByRole("link", { name: "События пользователя" }).getAttribute("href")).toContain("/app/report/events.journal?q=synthetic-1");
 });
 
 it("pages fifty at a time, supports back and resets after filtering", async () => {
@@ -113,16 +145,35 @@ it("requests composition on a date and preserves that date in CSV", async () => 
   expect(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href")).toContain("as_of=2026-10-17");
 });
 
+it("uses server counts and changes page size on the disabled-active list", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all&domain=8");
+  mock((params) => {
+    const tab = params.get("tab") ?? "all";
+    return new Response(JSON.stringify(tab === "disabled_active" ? page(tab, { items: [], filtered_count: 1,
+      collections: { disabled_active: [{ ...account(3), enabled: false }] } })
+      : page(tab, { coverage: { privileged_accounts: 2 }, filtered_count: 12 })));
+  }, { ...definition, views: definition.views.map((view) => view.key === "disabled_active"
+    ? { ...view, source: "disabled_active", columns: [definition.columns[0]] } : view) });
+  show();
+  expect(await screen.findByRole("tab", { name: "Все учётки 12" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Привилегированные 2" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: titles.disabled_active }));
+  expect(await screen.findByRole("tab", { name: "Отключены, но активны 1" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "synthetic-3" })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Строк на странице"), { target: { value: "25" } });
+  await waitFor(() => expect(calls.some((params) => params.get("tab") === "disabled_active" && params.get("limit") === "25")).toBe(true));
+});
+
 it("renders changes and restores tabs through browser history", async () => {
   show(); await screen.findByText("Synthetic check", { selector: "strong" }); fireEvent.click(screen.getByRole("tab", { name: "Изменения" }));
   expect(await screen.findByText("Synthetic change")).toBeTruthy(); window.history.back();
-  await waitFor(() => expect(screen.getByRole("tab", { name: "Требуют проверки" }).getAttribute("aria-selected")).toBe("true"));
+  await waitFor(() => expect(screen.getByRole("tab", { name: /^Требуют проверки/ }).getAttribute("aria-selected")).toBe("true"));
 });
 
 it.each(["active", "disabled", "risk", "semantic"])("normalizes legacy %s links", async (legacy) => {
   window.history.replaceState(null, "", `/app/report/ad.users.v2?tab=${legacy}&q=synthetic`); show();
   await waitFor(() => expect(calls.length).toBeGreaterThan(0)); expect(calls.some((params) => params.get("tab") === legacy)).toBe(false);
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(Object.values(titles)); expect(new URLSearchParams(window.location.search).get("q")).toBe("synthetic");
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.replace(/ \d+$/, ""))).toEqual(Object.values(titles)); expect(new URLSearchParams(window.location.search).get("q")).toBe("synthetic");
 });
 
 it("keeps denied tabs visible without querying or exporting them", async () => {
@@ -187,10 +238,9 @@ it.each(["users", "temporary_memberships"])("reduces the server tabs and normali
   window.history.replaceState(null, "", `/app/report/ad.users.v2?tab=${tab}&domain=8`);
   mock(undefined, { ...definition, views: [...definition.views,
     { key: "users", title: "Пользователи", kind: "table", source: "items" },
-    { key: "disabled_active", title: "Отключены, но активны", kind: "table", source: "disabled_active" },
     { key: "temporary_memberships", title: "Краткое членство в контрольных группах", kind: "table", source: "temporary_memberships" },
   ] });
   show(); await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-  expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([...Object.values(titles), "Отключены, но активны"]);
+  expect(screen.getAllByRole("tab").map((item) => item.textContent?.replace(/ \d+$/, ""))).toEqual(Object.values(titles));
   expect(calls.every((params) => params.get("tab") === (tab === "users" ? "all" : "checks") && params.get("domain") === "8")).toBe(true);
 });

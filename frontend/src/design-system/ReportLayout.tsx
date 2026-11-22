@@ -13,14 +13,14 @@ import { TabPanel } from "./Tabs";
  * Reports fill the slots; they do not define their own page geometry.
  * While loading, the metrics/table slots show skeletons of the final geometry.
  */
-export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, metrics, filters, tabs, tabbed = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer }: {
+export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, metrics, filters, tabs, tabbed = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, split = false }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
   meta?: ReactNode;
   actions?: ReactNode;
   controls?: PageHeaderControls;
-  domain?: string;
+  domain?: string | false;
   metrics?: ReactNode;
   filters?: ReactNode;
   tabs?: ReactNode;
@@ -38,11 +38,13 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   busy?: boolean;
   children?: ReactNode;
   drawer?: ReactNode;
+  split?: boolean;
 }) {
   const blocking = state === "loading" || state === "empty" || state === "unavailable" || state === "denied" || state === "not_collected" || state === "error";
   const result = state === "loading"
     ? <LoadingRegion>{metrics ? null : <MetricStripSkeleton/>}<TableSkeleton/></LoadingRegion>
     : blocking ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} actions={stateActions} onRetry={onRetry}/> : children;
+  const panel = tabbed ? <TabPanel>{result}</TabPanel> : blocking ? result : <div className="sli-ds-report__views">{result}</div>;
   return <section className="sli-ds-report" data-state={state} data-busy={busy || undefined} aria-busy={busy || undefined}>
     {busy ? <div className="sli-ds-busybar" role="progressbar" aria-label={t("state.refreshing")}/> : null}
     <PageHeader title={title} subtitle={subtitle} crumbs={crumbs} meta={meta} actions={actions} controls={controls} domain={domain}/>
@@ -50,7 +52,6 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
     {state !== "denied" ? filters : null}
     {tabbed || state !== "denied" ? tabs : null}
     {state === "partial" || state === "stale" || state === "processing" ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} age={staleAge} compact/> : null}
-    {tabbed ? <TabPanel>{result}</TabPanel> : blocking ? result : <div className="sli-ds-report__views">{result}</div>}
-    {drawer}
+    {split ? <div className="sli-ds-report__split" data-open={drawer ? true : undefined}>{panel}{drawer}</div> : <>{panel}{drawer}</>}
   </section>;
 }

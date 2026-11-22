@@ -113,6 +113,7 @@
 
   /* Density */
   --sli-row-height: 30px;
+  --sli-row-height-comfortable: 40px;
   --sli-cell-pad-x: 10px;
   --sli-drawer-width: min(560px, 100vw);
   --sli-motion: 120ms ease-out;

@@ -223,6 +223,18 @@ button.sli-ds-metric:hover { border-color: var(--sli-border-strong); }
 .sli-ds-drawer__subtitle { margin-top: var(--sli-space-1); color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 .sli-ds-drawer__body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--sli-space-4); display: grid; align-content: start; gap: var(--sli-space-4); }
 .sli-ds-drawer__footer { padding: var(--sli-space-3) var(--sli-space-4); border-top: 1px solid var(--sli-border); display: flex; flex-wrap: wrap; gap: var(--sli-space-2); }
+.sli-ds-report__split { min-width: 0; }
+.sli-ds-report__split[data-open] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, min(30%, var(--sli-drawer-width))); align-items: start; gap: var(--sli-space-3); }
+.sli-ds-drawer[data-inline] { position: static; min-width: 0; }
+.sli-ds-drawer[data-inline] .sli-ds-drawer__panel { position: static; width: auto; border: 1px solid var(--sli-border); border-radius: var(--sli-radius-lg); }
+.sli-ds-drawer[data-inline] .sli-ds-drawer__body { max-height: calc(100vh - var(--sli-space-10) * 5); }
+.sli-ds-table[data-wrap] th, .sli-ds-table[data-wrap] td { white-space: normal; overflow-wrap: anywhere; }
+.sli-ds-table[data-density="comfortable"] td { height: var(--sli-row-height-comfortable); }
+.sli-ds-report__toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sli-space-2); }
+.sli-ds-fact-section { border-top: 1px solid var(--sli-border); padding-top: var(--sli-space-2); }
+.sli-ds-fact-section > h3 { margin: 0 0 var(--sli-space-2); font-size: var(--sli-text-md); }
+.sli-ds-path { margin: 0; padding-inline-start: var(--sli-space-5); }
+.sli-ds-path li { padding-block: var(--sli-space-1); }
 .sli-ds-facts { display: grid; gap: var(--sli-space-2); margin: 0; }
 .sli-ds-facts > div { display: grid; grid-template-columns: minmax(0, 35%) minmax(0, 1fr); gap: var(--sli-space-3); overflow-wrap: anywhere; }
 .sli-ds-facts dt { color: var(--sli-text-muted); font-size: var(--sli-text-sm); }

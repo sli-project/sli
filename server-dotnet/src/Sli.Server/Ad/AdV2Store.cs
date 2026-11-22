@@ -60,7 +60,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         {
             bool users = request.Key == "ad.users.v2";
             var sources = await Snapshots(db, users ? "users_v2" : "computers_v6", request.Domains, ct);
-            if (request.Key == "ad.computer-logons") result = await AdLogonReports.ReadAsync(db, request, sources, ct);
+            if (users && request.Action == "detail") result = await AdUserCard.ReadAsync(db, request, sources, fields, configuration, ct);
+            else if (request.Key == "ad.computer-logons") result = await AdLogonReports.ReadAsync(db, request, sources, ct);
             else if(users&&request.Tab is "disabled_active" or "temporary_memberships") result=await AdUsersActivity.QueryAsync(db,request,sources,fields,ct,configuration);
             else result = await Inventory(db, request, sources, fields, ct);
         }

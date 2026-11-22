@@ -70,7 +70,7 @@ public static class AdV2Endpoints
             bool Available()=>catalog.Recheck(captured).Rules.Any(r=>r.RegistryKey==key&&r.OwnerId=="sli.ad"&&!r.DeclarationOnly);
             if(!Available()){await DomainHttp.WriteAsync(c,new{error="report_plugin_unavailable"},503,ct);return;}
             var declaration = (JsonObject)definition["declaration"]!.DeepClone();
-            if (action == "detail" && (declaration["detail"] is not JsonObject detail || detail.Text("kind")!="sub"))
+            if (action == "detail" && key != "ad.users.v2" && (declaration["detail"] is not JsonObject detail || detail.Text("kind")!="sub"))
             { await DomainHttp.WriteAsync(c, new { error = "report_detail_not_available" }, 404, ct); return; }
             if (action == "export" && declaration["export"]?.GetValue<bool>() != true)
             { await DomainHttp.WriteAsync(c, new { error = "report_export_not_available" }, 404, ct); return; }

@@ -147,6 +147,56 @@ public sealed class UsersActivityV2Tests
         }
     }
     [Fact]
+    public async Task UserCardCountsDailyLogonsAndKeepsActorTargetChangesWithinTheDomain()
+    {
+        await using var pg = new PostCollectionPostgres(canonicalSchema: true);
+        await pg.StartAsync(Ct);
+        await using var db = await pg.OpenAsync(Ct);
+        await Schema(db);
+        var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        await using (var command = new NpgsqlCommand("""
+            insert into event_hot
+            select id, @stamp::timestamptz - interval '1 day' + id * interval '1 minute',
+                   code, domain_id, actor, target, 'test-ws', 'dc01.example.test',
+                   jsonb_build_object('$server_id', server_id, '$channel', 'Security',
+                                      '$provider', 'Microsoft-Windows-Security-Auditing', 'LogonType', '2'),
+                   '{}'::jsonb, jsonb_build_object('MemberSid',member)
+              from (values (1,4624,1,7,@sid,null,null), (2,4625,1,7,'test-user@example.test',null,null),
+                           (3,4728,1,7,'admin@example.test','Test group',@sid),
+                           (4,4738,1,7,@sid,'other@example.test',null),
+                           (5,4624,2,8,@sid,null,null), (6,4738,1,7,'admin@example.test',@sid,null),
+                           (7,4625,1,7,'test-user@other.example.test',null,null))
+                   v(id,code,domain_id,server_id,actor,target,member);
+            insert into event_cold_daily values(
+                (@stamp::timestamptz at time zone 'UTC')::date-10,4624,1,@sid,null,'test-ws','dc01.example.test',
+                jsonb_build_object('$server_id',7,'$channel','Security','$provider','Microsoft-Windows-Security-Auditing','LogonType','2'),
+                '{}'::jsonb,decode('01','hex'),3,@stamp::timestamptz-interval '10 days',@stamp::timestamptz-interval '10 days');
+            """, db))
+        {
+            command.Parameters.AddWithValue("stamp", today);
+            command.Parameters.AddWithValue("sid", Sid);
+            await command.ExecuteNonQueryAsync(Ct);
+        }
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Sli:Storage:HotRetentionDays"] = "7" }).Build();
+        async Task<JsonObject> Read(bool privilege) => Assert.Single(await AdJson.ReadAsync(db,
+            AdAccountEvents.Source(config) + AdUserCard.ActivitySql, Ct, new[] { 4624, 4625, 4728, 4738 }, today.AddDays(-30),
+            today, 1L, Sid, new[] { "test-user@example.test" }, today, privilege));
+
+        var result = await Read(true);
+        var totals = JsonNode.Parse(result.Text("logon_totals")!)!;
+        Assert.Equal(4, totals.Int("successes"));
+        Assert.Equal(1, totals.Int("failures"));
+        Assert.Equal(0, totals.Int("typical"));
+        var computers = JsonNode.Parse(result.Text("computers")!)!.AsArray();
+        Assert.Equal(1, Assert.Single(computers).Int("id"));
+        var changes = JsonNode.Parse(result.Text("changes")!)!.AsArray();
+        Assert.Equal([6L, 4L, 3L], changes.Select(row => row.Int("id")));
+        var redacted = JsonNode.Parse((await Read(false)).Text("changes")!)!.AsArray();
+        Assert.Equal([6L, 4L], redacted.Select(row => row.Int("id")));
+    }
+
+    [Fact]
     public async Task LoaderDoesNotAttachLegacyCandidatesToShortEvents()
     {
         await using var pg=new PostCollectionPostgres(canonicalSchema:true);await pg.StartAsync(Ct);await using var db=await pg.OpenAsync(Ct);await Schema(db);await Seed(db,Event(1,4728,1),Event(2,4729,2));

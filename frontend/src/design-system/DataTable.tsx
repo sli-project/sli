@@ -1,5 +1,6 @@
 import { formatNumber } from "../shared/format";
 import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
@@ -27,6 +28,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  wrap = false, density, pageSize, columnsControlTarget,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -45,6 +47,10 @@ export function DataTable<Row>({
   showFooter?: boolean;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  wrap?: boolean;
+  density?: "compact" | "comfortable";
+  pageSize?: { value: number; options: number[]; onChange: (size: number) => void };
+  columnsControlTarget?: HTMLElement | null;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -61,16 +67,18 @@ export function DataTable<Row>({
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
 
-  return <div className="sli-ds-table">
-    {toggleable.length ? <details className="sli-ds-table__columns">
-      <summary>{t("table.columns")}</summary>
+  const columnsControl = toggleable.length ? <details className="sli-ds-table__columns">
+      <summary className={columnsControlTarget ? "sli-ds-button" : undefined}>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
         {table.getAllLeafColumns().filter((column) => toggleable.some((item) => item.key === column.id)).map((column) => <label key={column.id}>
           <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()}/>
           {String(column.columnDef.header)}
         </label>)}
       </div>
-    </details> : null}
+    </details> : null;
+
+  return <div className="sli-ds-table" data-wrap={wrap || undefined} data-density={density}>
+    {columnsControl && columnsControlTarget ? createPortal(columnsControl, columnsControlTarget) : columnsControl}
     <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
       <table data-responsive={columns.some((column) => column.mobile === false) || undefined}>
         <caption className="sli-ds-sr-only">{caption}</caption>
@@ -100,7 +108,7 @@ export function DataTable<Row>({
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={wrap ? undefined : title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>;
@@ -108,6 +116,11 @@ export function DataTable<Row>({
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
+      {pageSize ? <label className="sli-ds-header__actions">{t("table.rowsPerPage")}
+        <select value={pageSize.value} onChange={(event) => pageSize.onChange(Number(event.target.value))}>
+          {pageSize.options.map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+      </label> : null}
       {pagination ? <>
         <span>{t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
           total: typeof total === "number" ? formatNumber(total) : t("table.noValue") })}</span>

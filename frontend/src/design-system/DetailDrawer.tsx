@@ -3,13 +3,14 @@ import { t } from "../i18n";
 import { Button } from "./Primitives";
 
 /** Side panel for a selected row or entity; traps focus and closes on Escape. */
-export function DetailDrawer({ open, title, subtitle, onClose, children, footer }: {
+export function DetailDrawer({ open, title, subtitle, onClose, children, footer, inline = false }: {
   open: boolean;
   title: string;
   subtitle?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  inline?: boolean;
 }) {
   const panel = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
@@ -25,7 +26,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, children, footer 
     const onKey = (event: KeyboardEvent) => {
       if (panel.current?.closest("[inert]")) return;
       if (event.key === "Escape") { event.preventDefault(); closeRef.current(); return; }
-      if (event.key !== "Tab") return;
+      if (inline || event.key !== "Tab") return;
       const items = focusable();
       if (!items.length) { event.preventDefault(); return; }
       const first = items[0], last = items[items.length - 1];
@@ -35,12 +36,12 @@ export function DetailDrawer({ open, title, subtitle, onClose, children, footer 
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, [open]);
+  }, [open, inline]);
 
   if (!open) return null;
-  return <div className="sli-ds-drawer" data-open>
-    <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>
-    <aside ref={panel} className="sli-ds-drawer__panel" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+  return <div className="sli-ds-drawer" data-open data-inline={inline || undefined}>
+    {inline ? null : <div className="sli-ds-drawer__scrim" onClick={onClose} aria-hidden="true"/>}
+    <aside ref={panel} className="sli-ds-drawer__panel" role="dialog" aria-modal={inline ? undefined : true} aria-labelledby={titleId} tabIndex={-1}>
       <header className="sli-ds-drawer__header">
         <div>
           <h2 id={titleId}>{title}</h2>

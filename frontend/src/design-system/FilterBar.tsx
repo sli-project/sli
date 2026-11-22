@@ -27,7 +27,7 @@ function isActive(value: FilterValue): boolean {
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, leadingContent, additionalContent, align, layout, quickFilters }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -35,6 +35,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   defaults?: FilterValues;
   /** When supplied, remaining fields share a collapsible section of this form. */
   primaryKeys?: string[];
+  leadingContent?: ReactNode;
   additionalContent?: ReactNode;
   align?: "start" | "end";
   /** A three-column form with wide object fields; stacks on narrow screens. */
@@ -74,7 +75,11 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
           {field.nested ? <label className="sli-ds-field__help"><input type="checkbox" checked={draft[field.nested.key] === "true"}
             onChange={(event) => set(field.nested!.key, String(event.target.checked))}/>{field.nested.label}</label> : null}</>
         : field.kind === "select"
-          ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => set(field.key, event.target.value || undefined)}>
+          ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => {
+              const value = event.target.value || undefined;
+              set(field.key, value);
+              if (layout === "inline" && primaryKeys?.includes(field.key)) onApply({ ...draft, [field.key]: value });
+            }}>
               {!field.options.some((option) => option.value === "") ? <option value="">{t("filters.any")}</option> : null}
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
             </select>
@@ -95,6 +100,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     {!primaryKeys ? <Button className="sli-ds-filters__toggle" aria-expanded={!collapsed} aria-controls={`${formId}-fields`} onClick={() => setCollapsed((value) => !value)}>
       {t("filters.title")}{activeCount ? ` · ${t("filters.active", { count: activeCount })}` : ""}
     </Button> : null}
+    {leadingContent}
     <div className="sli-ds-filters__fields" id={`${formId}-fields`} data-align={align} data-layout={layout}>
       {renderFields(primaryKeys ? fields.filter((field) => primaryKeys.includes(field.key)) : fields)}
     </div>

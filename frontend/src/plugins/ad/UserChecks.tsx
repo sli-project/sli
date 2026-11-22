@@ -4,44 +4,85 @@ import { memo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { ReportColumnDto, ReportResultDto } from "../../api/report-v2-types";
-import { Callout, DataTable, FactList, formatCell, type TableColumn } from "../../design-system";
+import { DataTable, SeverityBadge, formatCell, type TableColumn } from "../../design-system";
+import { isSeverity } from "../../design-system/SeverityBadge";
 import { ReviewList, type ReviewItem } from "../../design-system/ReviewList";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { tableColumns } from "../../app/report-v2/DetailSection";
-import { columnValue } from "../../app/report-v2/state";
-import { LastWorkplace } from "./ReportAdditions";
 
 type Row = Record<string, unknown>;
-const text = (value: unknown) => typeof value === "string" && value.trim() ? value : null;
-const object = (value: unknown): Row => value && typeof value === "object" ? value as Row : {};
-const objects = (value: unknown): Row[] => Array.isArray(value) ? value.filter((item): item is Row => Boolean(item) && typeof item === "object") : [];
+export const userText = (value: unknown) => typeof value === "string" && value.trim() ? value : null;
+export const userObject = (value: unknown): Row => value && typeof value === "object" ? value as Row : {};
+export const userObjects = (value: unknown): Row[] => Array.isArray(value) ? value.filter((item): item is Row => Boolean(item) && typeof item === "object") : [];
+const text = userText;
+const object = userObject;
+const objects = userObjects;
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 const missing = () => t("table.noValue");
+const deviations: Record<string, MessageKey> = {
+  locked_out: "reports.ad.users.deviation.locked_out",
+  account_expired: "reports.ad.users.deviation.account_expired",
+  password_expired: "reports.ad.users.deviation.password_expired",
+  sensitive_uac_flag: "reports.ad.users.deviation.sensitive_setting",
+  watch_group_membership: "reports.ad.users.deviation.monitored_group",
+  password_not_required: "reports.ad.users.deviation.password_not_required",
+  kerberos_no_preauth: "reports.ad.users.deviation.kerberos_no_preauth",
+  spn_privileged: "reports.ad.users.deviation.spn_privileged",
+  spn_old_password: "reports.ad.users.deviation.spn_old_password",
+  privileged_password_never_expires: "reports.ad.users.list.password_no_expiry",
+  temporary_membership: "reports.ad.users.deviation.temporary_membership",
+};
+
+function deviationText(row: Row) {
+  const reasons = objects(row.reasons).map((reason) => {
+    const key = String(reason.key);
+    const days = count(object(reason.policy).threshold_days);
+    if (days !== null && key === "password_age") return t("reports.ad.users.deviation.password_age", { days });
+    if (days !== null && key === "inactive_threshold") return t("reports.ad.users.deviation.inactive", { days });
+    return Object.hasOwn(deviations, key) ? t(deviations[key]) : text(reason.label);
+  }).filter(Boolean);
+  return (reasons.length ? reasons.join(" · ") : text(row.reason_text))
+    ?? (row.password_never_expires === true ? t("reports.ad.users.list.password_no_expiry") : null);
+}
 function useDate() {
   const { formatDateTime } = useDateFormatters();
   return (value: unknown) => formatDateTime(text(value));
 }
 
-export function userSummary(result?: ReportResultDto) {
-  if (!result) return undefined;
-  return t("reports.ad.users.summary", { count: count(result.coverage.population) ?? count(result.coverage.users) ?? missing(),
-    affected: count(result.coverage.affected_objects) ?? missing() });
-}
-
-export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row) => void, privileged: boolean, timeZone?: string): TableColumn<Row>[] {
-  return tableColumns(columns, timeZone).map((column) => ({ ...column,
-    hiddenByDefault: !["name", "state", "ou", "last_workplace", "password_last_set", ...(privileged ? ["privilege_basis", "nested_privilege_groups"] : [])].includes(column.key),
-    mobile: ["name", "state", ...(privileged ? ["privilege_basis"] : [])].includes(column.key),
-    render: column.key === "name" ? (row) => {
-      const name = text(row.display_name);
+export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row, tab?: string) => void, timeZone?: string): TableColumn<Row>[] {
+  const order = ["name", "privilege_basis", "department", "ou", "activity", "last_workplace", "password_last_set", "groups", "reason"];
+  const labels: Record<string, string> = {
+    name: t("reports.ad.users.list.name"), privilege_basis: t("reports.ad.users.list.privileges"),
+    last_workplace: t("reports.ad.users.list.computer"), groups: t("reports.ad.users.list.direct_groups"),
+    reason: t("reports.ad.users.list.deviation"),
+  };
+  const mapped = tableColumns(columns.filter((column) => order.includes(column.key)), timeZone);
+  return order.flatMap((key) => {
+    const column = mapped.find((item) => item.key === key);
+    if (!column) return [];
+    return [{ ...column, label: labels[key] ?? column.label, hiddenByDefault: key === "name" ? undefined : false,
+    render: (row: Row) => {
+      if (key === "last_workplace") return text(object(row.last_workplace).computer) ?? missing();
+      if (key === "reason") {
+        const reason = deviationText(row);
+        return reason ? <>{isSeverity(row.severity) ? <><SeverityBadge severity={row.severity}/> · </> : null}{reason}</> : missing();
+      }
+      if (key === "privilege_basis") {
+        const groups = [row.privilege_basis, row.nested_privilege_groups].flatMap((group) => Array.isArray(group) ? group.filter((value) => typeof value === "string") : []);
+        return groups.length ? <button type="button" className="sli-ds-link-button" onClick={(event) => {
+          event.stopPropagation(); onSelect(row, "rights");
+        }}>{[...new Set(groups)].join(", ")}</button> : missing();
+      }
+      if (key !== "name") return formatCell(column.value?.(row), key === "password_last_set" ? "date" : column.kind, timeZone);
+      const name = text(row.account_display_name) ?? text(row.display_name);
       const account = text(row.sam) ?? name ?? missing();
       const displayName = name === account ? null : name;
-      return <span className="sli-ds-table__cell-line" title={displayName ? `${account} · ${displayName}` : account}>
+      return <><span aria-hidden="true">{row.enabled === true ? "● " : row.enabled === false ? "⊘ " : ""}</span>
+        {typeof row.enabled === "boolean" ? <span className="sli-ds-sr-only">{t(row.enabled ? "reports.ad.users.card.enabled" : "reports.ad.users.card.disabled")} </span> : null}
         <button type="button" className="sli-ds-link-button" onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{account}</button>
-        {displayName ? <span className="sli-ds-muted">{displayName}</span> : null}
-      </span>;
-    } : column.render ?? ((row) => columnValue(columns.find((item) => item.key === column.key)!, row) == null ? missing() : formatCell(columnValue(columns.find((item) => item.key === column.key)!, row), column.kind, timeZone)),
-  }));
+        {displayName ? <> / {displayName}</> : null}</>;
+    }}];
+  });
 }
 
 
@@ -69,7 +110,7 @@ function CheckObjects({ check, baseParams, onSelect }: { check: Row; baseParams:
   ];
   return <>
     {all && query.isLoading ? <p role="status">{t("table.loadingMore")}</p> : null}
-    {all && query.error ? <Callout tone="warning" title={t("reports.ad.users.objects_unavailable")}><button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></Callout> : null}
+    {all && query.error ? <div role="alert">{t("reports.ad.users.objects_unavailable")} <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></div> : null}
     {rows.length ? <DataTable caption={String(check.title)} columns={columns} rows={rows} rowKey={(row) => `${row.domain_id}:${row.entity_id ?? row.name}`}
       stickyHeader={false} showFooter={all} total={all ? query.data?.filtered_count : undefined}
       pagination={all ? { start: (cursors.length - 1) * 50 + 1, busy: query.isFetching,
@@ -100,41 +141,17 @@ export const UserChecks = memo(function UserChecks({ result, baseParams, onSelec
   return <ReviewList compact summaryOnly items={checks.map(item).filter((check) => check.status !== missing() || check.total !== null || check.newCount !== null)}/>;
 });
 
-export const UserChanges = memo(function UserChanges({ columns, rows, title, onSelect }: { columns: ReportColumnDto[]; rows: Row[]; title: string; onSelect: (row: Row) => void }) {
+export const UserChanges = memo(function UserChanges({ columns, rows, title, onSelect, paging }: { columns: ReportColumnDto[]; rows: Row[]; title: string; onSelect: (row: Row) => void; paging?: Pick<React.ComponentProps<typeof DataTable<Row>>, "pagination" | "pageSize" | "density" | "total"> }) {
   const { timeZone } = useTimeZone();
   const { formatCell } = useDateFormatters();
-  const mapped = tableColumns(columns, timeZone).map((column) => ({ ...column, mobile: ["name", "change"].includes(column.key),
-    render: column.key === "name" ? (row: Row) => <button type="button" className="sli-ds-button" data-variant="ghost" onClick={() => onSelect(row)}>{text(row.sam) ?? text(row.display_name) ?? missing()}</button>
+  const mapped = tableColumns(columns.filter((column) => !["field", "group", "note", "quality", "source_id", "activity_type", "delay_minutes", "logon_type", "evidence"].includes(column.key)
+    && (column.key !== "actor" || rows.some((row) => text(row.actor)))), timeZone).map((column) => ({ ...column,
+    render: column.key === "name" ? (row: Row) => <button type="button" className="sli-ds-link-button" onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{text(row.sam) ?? text(row.display_name) ?? missing()}</button>
       : column.render ?? ((row: Row) => {
         const value = column.value?.(row);
         return value === null || value === undefined || value === "" ? missing() : formatCell(value, column.kind);
       }),
   }));
-  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect}/>
-    : <p>{t("reports.ad.users.no_changes")}</p>;
+  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect} wrap {...paging}/>
+    : <p>{missing()}</p>;
 });
-
-export function UserReasons({ row }: { row: Row }) {
-  const date = useDate();
-  const reasons = objects(row.review_details);
-  const paths = objects(row.membership_paths);
-  const change = object(row.change);
-  return <>
-    <section><h3 className="sli-ds-section-title">{t("reports.ad.users.workplace")}</h3><LastWorkplace row={row}/></section>
-    <section><h3 className="sli-ds-section-title">{t("reports.ad.users.reasons")}</h3>
-      {reasons.length ? reasons.map((reason, index) => <section key={index}>
-        <h4>{text(reason.label) ?? missing()}</h4><FactList facts={[
-          { label: t("reports.ad.users.observed"), value: text(reason.observed) ?? missing() },
-          { label: t("reports.ad.checks.column.why"), value: text(reason.qualification) ?? missing() },
-          { label: t("reports.ad.checks.column.action"), value: text(reason.next) ?? missing() },
-        ]}/></section>) : <p>{t("reports.ad.users.no_recorded_reasons")}</p>}
-    </section>
-    <section><h3 className="sli-ds-section-title">{t("reports.ad.users.groups")}</h3>
-      {paths.length ? <ul>{paths.map((path, index) => <li key={index}>{objects(path.nodes).map((node) => text(node.name) ?? missing()).join(" → ")}</li>)}</ul>
-        : <p>{Array.isArray(row.direct_groups) && row.direct_groups.length ? row.direct_groups.join(", ") : missing()}</p>}
-    </section>
-    <section><h3 className="sli-ds-section-title">{t("reports.ad.users.history")}</h3>
-      <p>{text(change.at_utc) ? <>{date(change.at_utc)} · {text(change.actor) ?? missing()}</> : missing()}</p>
-    </section>
-  </>;
-}
