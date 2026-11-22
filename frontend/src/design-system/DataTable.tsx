@@ -27,8 +27,9 @@ export type TableColumn<Row> = {
 };
 
 export function DataTable<Row>({
-  columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption, expandedContent, emptyContent,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, renderExpandedRow,
+  columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
+  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -39,6 +40,8 @@ export function DataTable<Row>({
   selectedKey?: string | null;
   caption: string;
   expandedContent?: (row: Row) => ReactNode;
+  rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
+  rowDetail?: (row: Row) => ReactNode;
   emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -65,6 +68,8 @@ export function DataTable<Row>({
     state: { columnVisibility: { ...defaultVisibility, ...visibility } }, onColumnVisibilityChange: setVisibility, manualSorting: true,
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
+  const visibleRows = table.getRowModel().rows;
+  const columnCount = table.getVisibleLeafColumns().length;
 
   return <div className="sli-ds-table">
     {toggleable.length ? <details className="sli-ds-table__columns">
@@ -93,10 +98,15 @@ export function DataTable<Row>({
               : flexRender(header.column.columnDef.header, header.getContext())}
           </th>;
         })}</tr>)}</thead>
-        <tbody>{rows.length === 0 && emptyContent != null ? <tr><td colSpan={table.getVisibleLeafColumns().length}>{emptyContent}</td></tr> : null}{table.getRowModel().rows.map((row) => {
+        <tbody>{visibleRows.map((row, index) => {
+          const group = rowGroup?.(row.original);
+          const groupStart = group && (index === 0 || rowGroup?.(visibleRows[index - 1].original).key !== group.key);
+          const detail = group?.collapsed ? null : rowDetail?.(row.original);
+          const expanded = group?.collapsed ? null : expandedContent?.(row.original);
           const selected = selectedKey === row.id;
-          const detail = expandedContent?.(row.original);
-          return <Fragment key={row.id}><tr data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
+          return <Fragment key={row.id}>
+            {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
+            {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
@@ -111,11 +121,12 @@ export function DataTable<Row>({
                 data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>
-          {selected && renderExpandedRow ? <tr><td data-wrap colSpan={row.getVisibleCells().length}>{renderExpandedRow(row.original)}</td></tr> : null}
-          {detail != null ? <tr className="sli-ds-table__expanded"><td colSpan={row.getVisibleCells().length}>{detail}</td></tr> : null}
+          </tr>}
+            {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
+            {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
+            {expanded != null ? <tr className="sli-ds-table__expanded"><td colSpan={columnCount}>{expanded}</td></tr> : null}
           </Fragment>;
-        })}</tbody>
+        })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">

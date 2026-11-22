@@ -67,6 +67,8 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
     ...(definition.key === 'security.problems' ? { allowed_statuses: ['new', 'active', 'false_positive', 'closed'] } : {}),
     ...(definition.key === 'ad.computers.v6' && index % 2 === 0
       ? { status: 'checked', status_text: 'Проверено', total: 2, new_count: 0 } : {}),
+    ...(definition.key === 'ad.infrastructure' ? { entity_type: 'domain_controller', entity_name: `dc-${index + 1}.example.test`,
+      label: 'DNS', actual_value: 'passed', expected_condition: 'Пройдено', qualification: 'passed', observed_at_utc: observed } : {}),
   }));
   return {
     contract_id: 'sli.report-result.v2', report_key: definition.key, state: 'partial',
@@ -193,9 +195,10 @@ for (const screen of screens) {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`/app/report/${screen.key}`);
     const definition = definitions.get(screen.key)!;
-    await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(definition.title, { timeout: 30_000 });
+    const title = screen.key === 'ad.infrastructure' ? 'Состояние AD' : definition.title;
+    await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
     // AD checks have hidden object-preview tables inside each closed row.
-    const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr';
+    const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
     const list = screen.key === 'ad.gpo.v2' ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
     await expect(list.locator(rows)).toHaveCount(60);
     if (screen.key === 'security.problems')

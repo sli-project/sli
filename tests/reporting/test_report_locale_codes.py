@@ -140,19 +140,26 @@ def test_report_rows_are_english_without_russian(make):
 def test_report_rows_keep_the_russian_wording(make):
     payload = make()
     expected = without_envelopes(payload)
-    # Diagnostic conditions use the current dictionary wording; observations
-    # and stable control codes must survive unchanged.
-    diagnostic_conditions = {
-        "dc.advertising": "Проверка доступности контроллера домена должна пройти успешно",
-        "dc.connectivity": "Проверка связи с контроллером домена должна пройти успешно",
-        "dc.services": "Проверка служб контроллера домена должна пройти успешно",
-        "dc.sysvol": "Проверка общей папки политик домена должна пройти успешно",
-        "dc.netlogon": "Проверка службы входа в домен должна пройти успешно",
-        "dc.dns": "Проверка разрешения доменных имён должна пройти успешно",
+    # Localize display text while preserving observations and control codes.
+    diagnostics = {
+        "dc.advertising": ("Объявление контроллера", "Объявлен"),
+        "dc.connectivity": ("Связь с контроллером", "Отвечает"),
+        "dc.services": ("Обязательные службы", "Работают"),
+        "dc.sysvol": ("SYSVOL", "Доступен"),
+        "dc.netlogon": ("Доступность NETLOGON", "Доступен"),
+        "dc.dns": ("DNS", "Пройдено"),
+    }
+    renamed_controls = {
+        "dc.operating_system": "Версия ОС контроллера",
+        "password.properties": "Сложность пароля",
+        "password.lockout_observation_window": "Сброс счётчика блокировки через",
     }
     for row in expected["items"]:
-        if row.get("control_id") in diagnostic_conditions:
-            row["expected_condition"] = diagnostic_conditions[row["control_id"]]
+        control = row.get("control_id")
+        if control in diagnostics:
+            row["label"], row["expected_condition"] = diagnostics[control]
+        elif control in renamed_controls:
+            row["label"] = renamed_controls[control]
     assert without_envelopes(response_messages(payload, "ru", report=True)) == expected
 
 
@@ -172,7 +179,7 @@ def test_check_names_severities_and_statuses_follow_the_locale():
 
 def test_ad_state_row_keeps_observed_values_and_codes():
     row = next(row for row in response_messages(state_result(), "en", report=True)["items"] if row["control_id"] == "dc.advertising")
-    assert row["label"] == "Domain controller advertising"
+    assert row["label"] == "Controller advertising"
     assert row["authority_text"] == "Collector diagnostics"
     assert row["actual_text"] == "Passed" and row["actual_value"] == "passed"
     assert {entry["label"] for entry in row["context"]} >= {"Site", "Global Catalog"}

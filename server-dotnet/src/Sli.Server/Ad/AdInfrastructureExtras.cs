@@ -18,6 +18,7 @@ internal static class AdInfrastructureExtras
             if(attrs?["service_principal_names"] is not JsonArray names){unknownSpn++;continue;}
             var password=AdInventoryRows.Date(attrs["password_last_set_utc"]);int? age=password<=now?(int?)(now-password.Value).TotalDays:null;
             var owner=new JsonObject();foreach(string field in new[]{"entity_id","entity_type","domain_id","run_id","observed_at_utc"})owner[field]=row[field]?.DeepClone();
+            if (row["entity_name"] is {} displayName) owner["entity_name"] = displayName.DeepClone();
             owner["password_last_set_utc"]=password.HasValue?Iso(password.Value):null;owner["password_age_days"]=age;
             foreach(string key in new[]{"enabled","trusted_for_delegation","trusted_to_auth_for_delegation","does_not_require_preauth"})owner[key]=AdInventoryRows.Bool(attrs?[key]);
             owner["msds_supported_encryption_types"]=attrs?["msds_supported_encryption_types"]?.DeepClone();
@@ -54,7 +55,7 @@ internal static class AdInfrastructureExtras
             """,ct,now.AddDays(-31),now,domains);
         var eligible=sources.Take(100).Where(r=>r.Text("run_status")=="completed"&&r.Text("section_status") is "complete" or "partial"&&JsonNode.Parse(r.Text("scope_json")??"{}")!.Text("search_base") is not null).ToArray();
         var rows=await AdJson.ReadAsync(db,"""
-            select entity.id as entity_id,entity.domain_id,kind.value as entity_type,evidence.source_run_id::text as run_id,evidence.observed_at_utc,version.attributes_json::text
+            select entity.id as entity_id,entity.domain_id,entity.display_name as entity_name,kind.value as entity_type,evidence.source_run_id::text as run_id,evidence.observed_at_utc,version.attributes_json::text
             from ad_context_evidence evidence join ad_context_runs run on run.run_id=evidence.source_run_id
             join entities_v2 entity on entity.domain_id=run.domain_id join storage_v2_entity_type kind on kind.id=entity.entity_type_id
             join ad_context_entity_versions version on version.entity_id=entity.id and version.source_section='directory_accounts'
