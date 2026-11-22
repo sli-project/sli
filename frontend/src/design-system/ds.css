@@ -537,3 +537,15 @@ button.sli-ds-activity__day:hover, button.sli-ds-activity__day:focus-visible { o
   .sli-ds-form__row { grid-template-columns: minmax(0, 1fr); }
   .sli-ds-form__default { grid-column: 1; }
 }
+
+/* Compact tables and an inline detail panel share the report layout. */
+.sli-ds-report__views[data-split] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, var(--sli-drawer-width)); align-items: start; gap: var(--sli-space-3); }
+.sli-ds-report__list, .sli-ds-report__list > * { min-width: 0; }
+.sli-ds-drawer[data-inline]:not([data-responsive]) { position: static; min-width: 0; }
+.sli-ds-drawer[data-inline]:not([data-responsive]) .sli-ds-drawer__panel { position: static; width: 100%; max-height: calc(100vh - var(--sli-report-drawer-offset)); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-lg); box-shadow: none; }
+.sli-ds-drawer[data-inline]:not([data-responsive]) h3 { margin: 0 0 var(--sli-space-2); font-size: var(--sli-text-md); }
+.sli-ds-table[data-compact] td, .sli-ds-table[data-compact] th { font-size: var(--sli-text-sm); }
+.sli-ds-result[data-result="failure"] { color: var(--sli-danger); }
+.sli-ds-table[data-compact] .sli-ds-table__cell-line .sli-ds-button { min-height: 0; padding: 0; flex: none; }
+.sli-ds-table .sli-ds-table__expanded { padding: var(--sli-space-2) var(--sli-space-4); background: var(--sli-surface-2); }
+.sli-ds-link { padding: 0; border: 0; background: transparent; color: var(--sli-accent); font: inherit; text-decoration: underline; cursor: pointer; text-align: start; }

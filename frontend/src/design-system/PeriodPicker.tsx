@@ -1,16 +1,16 @@
 import { useId } from "react";
 import { t } from "../i18n";
 
-export type PeriodPreset = "24h" | "7d" | "30d" | "90d" | "custom";
+export type PeriodPreset = "2h" | "24h" | "7d" | "30d" | "90d" | "custom";
 /** `from`/`to` are local dates or local date-times, according to the picker precision. */
 export type PeriodValue = { preset: PeriodPreset; from?: string; to?: string };
 
 const PRESET_LABEL: Record<PeriodPreset, Parameters<typeof t>[0]> = {
-  "24h": "period.24h", "7d": "period.7d", "30d": "period.30d", "90d": "period.90d", custom: "period.custom",
+  "2h": "reports.v2.events.journal.period.2h", "24h": "period.24h", "7d": "period.7d", "30d": "period.30d", "90d": "period.90d", custom: "period.custom",
 };
 export const periodLabel = (preset: PeriodPreset) => Object.hasOwn(PRESET_LABEL, preset) ? t(PRESET_LABEL[preset]) : t("period.label");
 
-const PRESET_HOURS: Record<Exclude<PeriodPreset, "custom">, number> = { "24h": 24, "7d": 168, "30d": 720, "90d": 2160 };
+const PRESET_HOURS: Record<Exclude<PeriodPreset, "custom">, number> = { "2h": 2, "24h": 24, "7d": 168, "30d": 720, "90d": 2160 };
 
 /** Resolves a period to an absolute UTC window for a report query. */
 export function periodBounds(value: PeriodValue, now = new Date()): { from: string; to: string } | null {

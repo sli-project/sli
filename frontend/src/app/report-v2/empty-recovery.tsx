@@ -2,6 +2,7 @@ import { dayKey } from "../../shared/date-time";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import type { ReportResultDto } from "../../api/report-v2-types";
 import { formatDateTime, type PeriodValue } from "../../design-system";
+import { periodLabel } from "../../design-system/PeriodPicker";
 import { t } from "../../i18n";
 
 type EmptyRecovery = { lastAt: string | null; period: PeriodValue | null; sourceHref: string; originalPeriod: string | null };
@@ -30,7 +31,7 @@ export function reportEmptyRecovery(result: ReportResultDto | undefined, timeZon
   let originalPeriod = from && to ? t("reports.empty.original_period", { from: formatDateTime(from, true, timeZone), to: formatDateTime(to, true, timeZone) }) : null;
   if (!originalPeriod && requestedPeriod) {
     if (requestedPeriod.preset === "custom" && requestedPeriod.from && requestedPeriod.to) originalPeriod = t("reports.empty.original_period", { from: requestedPeriod.from, to: requestedPeriod.to });
-    else if (requestedPeriod.preset !== "custom") originalPeriod = t("reports.empty.original_selection", { period: t(`period.${requestedPeriod.preset}`) });
+    else if (requestedPeriod.preset !== "custom") originalPeriod = t("reports.empty.original_selection", { period: periodLabel(requestedPeriod.preset) });
   }
   return { lastAt, period, sourceHref: hostname ? `/app/operations/sources/${encodeURIComponent(hostname)}` : "/app/operations",
     originalPeriod };

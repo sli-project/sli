@@ -2053,9 +2053,10 @@
         "key": "period",
         "label": "Период",
         "kind": "period",
-        "default": "7d",
+        "default": "2h",
         "required": true,
         "presets": [
+          "2h",
           "24h",
           "7d",
           "30d",
@@ -2087,6 +2088,14 @@
             "label": "Учётные записи"
           },
           {
+            "value": "groups",
+            "label": "Groups and rights"
+          },
+          {
+            "value": "audit",
+            "label": "Audit"
+          },
+          {
             "value": "tasks",
             "label": "Задания и службы"
           }
@@ -2101,6 +2110,44 @@
         "kind": "text",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "collapse",
+        "label": "Collapse repeats",
+        "kind": "choice",
+        "hidden": true,
+        "options": [{"value": "on", "label": "On"}, {"value": "off", "label": "Off"}]
+      },
+      {
+        "key": "expand",
+        "label": "Repeat group",
+        "kind": "int",
+        "hidden": true
+      },
+      {
+        "key": "before",
+        "label": "Earlier than event",
+        "kind": "int",
+        "hidden": true
+      },
+      {
+        "key": "member",
+        "label": "Repeat subgroup",
+        "kind": "int",
+        "hidden": true
+      },
+      {
+        "key": "pivot",
+        "label": "Search field",
+        "kind": "choice",
+        "hidden": true,
+        "options": [{"value": "account", "label": "Account"}, {"value": "computer", "label": "Computer"}, {"value": "address", "label": "Address"}]
+      },
+      {
+        "key": "result",
+        "label": "Result",
+        "kind": "choice",
+        "options": [{"value": "success", "label": "Success"}, {"value": "failure", "label": "Failure"}]
       },
       {
         "key": "server",

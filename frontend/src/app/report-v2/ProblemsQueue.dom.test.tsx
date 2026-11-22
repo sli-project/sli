@@ -83,6 +83,18 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   });
 });
 
+it("opens the finding journal directly and links back to the same problem", async () => {
+  const journalKey = "events.journal";
+  vi.spyOn(api, "reportV2Definition").mockResolvedValue({ ...definition, key: journalKey, title: "Events journal" });
+  const readEvidence = vi.spyOn(api, "reportV2Detail").mockResolvedValue(page([evidence]));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><ReportRenderer reportKey={journalKey} initialSearch="finding=41&domain=7"/></QueryClientProvider>);
+
+  expect((await screen.findByRole("link", { name: "4625" })).getAttribute("href")).toBe("/app/events/712");
+  expect(screen.getByRole("link", { name: "Problem #41" }).getAttribute("href")).toBe("/app/report/security.problems?id=41&domain=7");
+  expect(readEvidence).toHaveBeenCalledWith(key, "41", new URLSearchParams({ queue_view: "all", tz: "UTC", domain: "7" }));
+});
+
 it("submits a classified decision and shows who changed state, then assigns selected findings", async () => {
   const user = userEvent.setup();
   let status = "new";

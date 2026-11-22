@@ -14,7 +14,7 @@ import { Panel } from "./Primitives";
  * Reports fill the slots; they do not define their own page geometry.
  * While loading, the metrics/table slots show skeletons of the final geometry.
  */
-export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, split = false }: {
+export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, split = false }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -41,13 +41,17 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   busy?: boolean;
   children?: ReactNode;
   drawer?: ReactNode;
+  inlineDrawer?: ReactNode;
   split?: boolean;
 }) {
   const blocking = state === "loading" || state === "empty" || state === "unavailable" || state === "denied" || state === "not_collected" || state === "error";
   const result = state === "loading"
     ? <LoadingRegion>{metrics ? null : <MetricStripSkeleton/>}<TableSkeleton/></LoadingRegion>
     : blocking ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} actions={stateActions} onRetry={onRetry}/> : children;
-  const views = tabbed ? <TabPanel>{result}</TabPanel> : blocking && !split ? result : <div className="sli-ds-report__views">{result}</div>;
+  const views = tabbed ? <TabPanel>{result}</TabPanel> : blocking && !split ? result : <div className="sli-ds-report__views" data-split={Boolean(inlineDrawer) || undefined}>
+    {inlineDrawer ? <div className="sli-ds-report__list">{result}</div> : result}
+    {inlineDrawer}
+  </div>;
   const content = <>
     {tabbed || state !== "denied" ? tabs : null}
     {state === "partial" || state === "stale" || state === "processing" ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} age={staleAge} compact/> : null}

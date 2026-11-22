@@ -26,7 +26,7 @@ export type PageHeaderControls = {
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = true, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();

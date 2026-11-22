@@ -84,7 +84,8 @@ public static class ReportParameters
         try
         {
             int days = preset switch { "24h" => 1, "7d" => 7, "30d" => 30, "90d" => 90, _ => 0 };
-            if (days > 0) { end = now; start = end.AddDays(-days); }
+            if (preset == "2h") { end = now; start = end.AddHours(-2); }
+            else if (days > 0) { end = now; start = end.AddDays(-days); }
             else if (preset == "custom" && ((from ?? "") + to).Contains('T'))
             {
                 start = Instant(from); end = Instant(to);
