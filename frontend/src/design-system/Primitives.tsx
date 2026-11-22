@@ -1,21 +1,10 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { t } from "../i18n";
 import { Icon } from "./Icon";
-import { SeverityBadge, type Severity } from "./SeverityBadge";
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
-// Home's existing queue passes these localized labels and tones through Badge.
-const QUEUE_SEVERITIES: ReadonlyArray<[Severity, Tone]> = [
-  ["critical", "danger"], ["high", "danger"], ["medium", "warning"], ["low", "neutral"],
-];
-
 /** Small status label; `tone` maps to the semantic colour roles. */
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-  const severity = typeof children === "string"
-    ? QUEUE_SEVERITIES.find(([level, color]) => color === tone && children === t(`home.queue.${level}`))?.[0]
-    : undefined;
-  if (severity) return <SeverityBadge severity={severity}/>;
   return <span className="sli-ds-badge" data-tone={tone === "neutral" ? undefined : tone}>{children}</span>;
 }
 
@@ -44,9 +33,13 @@ export function EmptyState({ title, copy, icon, action }: { title: string; copy:
 }
 
 /** Titled surface for a group of related content. */
-export function Panel({ title, subtitle, children }: { title: ReactNode; subtitle?: ReactNode; children: ReactNode }) {
+export function Panel({ title, subtitle, children, action }: { title?: ReactNode; subtitle?: ReactNode; children: ReactNode; action?: ReactNode }) {
   return <section className="sli-ds-panel">
-    <div className="sli-ds-panel__head"><h2 className="sli-ds-panel__title">{title}</h2>{subtitle ? <p className="sli-ds-panel__subtitle">{subtitle}</p> : null}</div>
+    {title || subtitle || action ? <div className="sli-ds-panel__head">
+      {title ? <h2 className="sli-ds-panel__title">{title}</h2> : null}
+      {subtitle ? <p className="sli-ds-panel__subtitle">{subtitle}</p> : null}
+      {action}
+    </div> : null}
     <div className="sli-ds-panel__body">{children}</div>
   </section>;
 }

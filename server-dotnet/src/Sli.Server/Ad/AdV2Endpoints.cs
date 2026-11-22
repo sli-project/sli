@@ -190,6 +190,11 @@ public static class AdV2Endpoints
         int limit = (int)d["limits"]!.Int("default"); if (First("limit") is {} raw && !int.TryParse(raw, out limit) || limit < 1 || limit > d["limits"]!.Int("max")) throw new AdInputException("report_limit_invalid");
         string tab = First("tab") ?? (key == "ad.computers.v6" ? "computers" : d["views"]![0]!.Text("key")!), direction = First("direction") ?? "asc";
         if (!d["views"]!.AsArray().Any(v => v!.Text("key") == tab)) throw new AdInputException("report_tab_invalid");
+        if (key == "ad.infrastructure" && action == "detail")
+        {
+            if (tab != "controls") throw new KeyNotFoundException();
+            limit = Math.Min(limit, (int)d["detail"]!.Int("default_limit"));
+        }
         string? sort = First("sort");
         if (direction is not ("asc" or "desc") || sort is not null && !d["columns"]!.AsArray().Any(col => col!.Text("key") == sort && col!["sortable"]?.GetValue<bool>() == true)) throw new AdInputException("report_sort_invalid");
         return new(key, action, request.RouteValues["row"]?.ToString(), selected is null ? domains : [selected.Value], p, tab, sort, direction == "desc", action == "export" ? key=="ad.users.v2"?100000:10000 : limit, action=="export"?null:First("cursor"), zone);
