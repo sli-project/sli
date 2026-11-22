@@ -21,6 +21,7 @@ public sealed class TelegramUpdatePostgresTests
         await fixture.StartAsync(Ct, throughVersion: 393);
         var migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/394_notification_language.sql");
         await fixture.Pg.ApplyFileAsync(migration, null, Ct);
+        var problemAccounts = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/395_problem_account_identity.sql");
         var database = new Factory(fixture);
         await NotificationLanguages.RememberInterfaceAsync(database, 1, "en", Ct);
 
@@ -34,6 +35,8 @@ public sealed class TelegramUpdatePostgresTests
         var settings = new TelegramBotSettings("https://sli.invalid/app", "1:synthetic", "http://proxy.invalid:8080", []);
         var job = new NotificationJob(Guid.NewGuid(), Guid.NewGuid(), 1, "test_problem", Guid.NewGuid(), 1, 1,
             Guid.NewGuid(), DateTime.UtcNow, null, "live", 0);
+        var problem = await SeedAlertAsync(fixture, job, Ct);
+        await fixture.Pg.ApplyFileAsync(problemAccounts, null, Ct);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         var loop = TelegramUpdateWorker.PollOwnedAsync(worker, settings, () => Volatile.Read(ref settings), bot, stop.Token);
         try
@@ -83,10 +86,9 @@ public sealed class TelegramUpdatePostgresTests
             var mail = await NotificationAlert.FormatAsync(delivery, tx, job, settings.BaseUrl, null, null, ct);
             Assert.StartsWith("SLI test message: alerts work.", mail);
 
-            var problem = await SeedAlertAsync(fixture, job, ct);
             var access = ProblemLifecycleTests.Access("security.queue", fields: ["security", "identity_basic", "technical"]);
             var finding = await NotificationAlert.FormatAsync(delivery, tx, problem, settings.BaseUrl, access, telegram, ct);
-            Assert.StartsWith("Высокая · Подбирают пароль к учётной записи\n", finding);
+            Assert.StartsWith("Средняя · Подбирают пароль к учётной записи\n", finding);
             Assert.Contains("Источник: 192.0.2.10", finding);
             Assert.Contains("Впервые: 22.11 03:00", finding);
             Assert.EndsWith("/app/report/security.problems?id=42", finding);
@@ -99,6 +101,7 @@ public sealed class TelegramUpdatePostgresTests
             try { await loop; }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
         }
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(problemAccounts, ".rollback.sql"), null, Ct);
         await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, Ct);
         await fixture.Pg.ApplyFileAsync(migration, null, Ct);
     }

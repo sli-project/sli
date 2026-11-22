@@ -53,10 +53,10 @@ it("shows the workplace and URL-encodes the exact account and domain filter", ()
   expect(url.searchParams.get("domain_id")).toBe("2");
 });
 
-it("provides English unknown state and navigation even without workplace evidence", () => {
+it("shows a dash and keeps logon navigation available when the workplace is absent", () => {
   setLocale("en");
-  render(<LastWorkplace row={{ sam: "synthetic-account" }}/>);
-  expect(screen.getByText(/No data/)).toBeTruthy();
+  render(<LastWorkplace compact row={{ sam: "synthetic-account" }}/>);
+  expect(screen.getByText("—")).toBeTruthy();
   expect(screen.getByRole("link", { name: "All user logons" })).toBeTruthy();
 });
 

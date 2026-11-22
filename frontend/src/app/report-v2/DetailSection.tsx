@@ -3,7 +3,7 @@ import { useTimeZone } from "../../shared/time-zone";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ACTION_COMPONENTS, CELL_COMPONENTS, ROW_COMPONENTS } from "./custom";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { DataTable, formatCell, StateView, type TableColumn } from "../../design-system";
+import { DataTable, formatCell, SeverityBadge, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportColumnDto, ReportDefinitionDto, ReportDetailDto, ReportResultDto } from "../../api/report-v2-types";
@@ -39,7 +39,7 @@ export function tableColumns(columns: ReportColumnDto[], timeZone?: string): Tab
       const text = formatCell(columnValue(column, row), cellKind(column), timeZone);
       const href = fillTemplate(column.link!, row);
       return href ? <a href={withReturnTo(href, `${window.location.pathname}${window.location.search}`)} onClick={(event) => event.stopPropagation()}>{text}</a> : text;
-    } : undefined,
+    } : column.key === "severity" ? (row) => <SeverityBadge severity={readPath(row, column.path)}/> : undefined,
   }));
 }
 

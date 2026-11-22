@@ -49,6 +49,16 @@ it("lets an embedded preview supply its own single count and open-all footer", (
   expect(container.querySelector(".sli-ds-table__footer")).toBeNull();
 });
 
+it("keeps full names available on text cells and linked cells", () => {
+  const name = "A directory account with a name too long to display in a narrow column";
+  render(<DataTable columns={[
+    { key: "name", label: "Name" },
+    { key: "id", label: "Account", render: (row) => <a href="#account">{row.name}</a> },
+  ]} rows={[{ id: "sample", name }]} rowKey={(row) => row.id} caption="Accounts"/>);
+  expect(screen.getAllByTitle(name)).toHaveLength(2);
+  expect(screen.getByRole("link", { name }).closest("td")?.title).toBe(name);
+});
+
 it("activates a focused row without intercepting nested link or button keyboard actions", async () => {
   const openRow = vi.fn(), openLink = vi.fn(), pressButton = vi.fn();
   render(<DataTable columns={[{ key: "id", label: "Actions", render: () => <>

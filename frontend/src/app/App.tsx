@@ -1,17 +1,20 @@
 import { AccessRequestContext } from "./access-request-state";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { api } from "../api/client";
 import { Button, Icon, IconSprite, OverlayProvider, useOverlays } from "../design-system";
 import { LOCALES, getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
-import { buildNavigation, globalSearchTarget, isActivePath } from "./navigation";
+import { buildNavigation, globalSearchTarget, isActivePath, journalSearchPath } from "./navigation";
 import { AdminRelatedLinks, adminNavigationPath } from "./admin/navigation-pages";
 import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "./theme";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { selectedDomain } from "./domain-navigation";
+import { PageHeaderContext } from "../design-system/PageHeader";
+import type { PeriodPreset, PeriodValue } from "../design-system/PeriodPicker";
+import { homeParams } from "./home-view";
 
-import { DEFAULT_TIME_ZONE, TimeZoneContext } from "../shared/time-zone";
+import { DEFAULT_TIME_ZONE, TimeZoneContext, useTimeZone } from "../shared/time-zone";
 export { DEFAULT_TIME_ZONE, useTimeZone } from "../shared/time-zone";
 
 const storedTimeZone = () => {
@@ -40,12 +43,39 @@ export type СостояниеПрав = "загружается" | "отказ"
 const AccessStatusContext = createContext<СостояниеПрав>("загружается");
 export const useAccessStatus = () => useContext(AccessStatusContext);
 
+function HomeHeaderScope({ access, domain, children }: { access: EffectiveAccessState; domain?: (id?: string) => ReactNode; children: ReactNode }) {
+  const { timeZone } = useTimeZone();
+  const { searchStr } = useLocation();
+  const navigate = useNavigate();
+  const params = homeParams(searchStr, timeZone);
+  // Observe the query owned by Home, with no independent fetch on mount.
+  const summary = useQuery({
+    queryKey: ["home", "summary", "v3", params.toString(), getLocale(), access],
+    queryFn: () => api.homeDecisions(params),
+    enabled: false,
+  });
+  const preset = params.get("period");
+  const value: PeriodValue | undefined = preset && ["24h", "7d", "30d", "90d", "custom"].includes(preset)
+    ? { preset: preset as PeriodPreset, from: params.get("from") ?? undefined, to: params.get("to") ?? undefined }
+    : undefined;
+  const changePeriod = (period?: PeriodValue) => {
+    void navigate({ search: ((previous: Record<string, unknown>) => ({ ...previous, period: period?.preset, from: period?.from, to: period?.to })) as never });
+  };
+  return <PageHeaderContext.Provider value={{ domain, controls: access ? {
+    period: { value, onChange: changePeriod, onClear: changePeriod },
+    updatedAt: summary.data?.updated_at_utc,
+    refreshing: summary.isFetching,
+    onRefresh: () => { void summary.refetch({ cancelRefetch: false }); },
+  } : undefined }}>{children}</PageHeaderContext.Provider>;
+}
+
 function ShellContent() {
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.bootstrap, staleTime: 60_000 });
   const access = useQuery({ queryKey: ["v4", "access", "shell"], queryFn: () => api.v4Access(), staleTime: 60_000, retry: false });
   const catalog = useQuery({ queryKey: ["report-v2", "catalog"], queryFn: api.reportsV2Catalog, staleTime: 30_000, retry: false });
   const queryClient = useQueryClient();
   const location = useLocation();
+  const { history } = useRouter();
   const navigate = useNavigate();
   const { toast } = useOverlays();
   const [timeZone, setStoredTimeZone] = useState(storedTimeZone);
@@ -53,15 +83,22 @@ function ShellContent() {
   const sidebarRef = useRef<HTMLElement | null>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const previousPathnameRef = useRef(location.pathname);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [theme, setThemeState] = useState<ThemePreference>(storedTheme);
   const locale = getLocale();
   const chooseTheme = (value: ThemePreference) => { setTheme(value); setThemeState(value); };
   const chooseLocale = (value: Locale) => { if (value !== locale) setLocale(value); };
-  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  const [committedSearch, setCommittedSearch] = useState(location.searchStr);
+  useLayoutEffect(() => {
+    // Home and report pages initialize their filters from the browser URL.
+    history.flush();
+    setCommittedSearch(location.searchStr);
+  }, [history, location.searchStr]);
+  const search = new URLSearchParams(committedSearch);
+  const journalQuery = isActivePath(journalSearchPath, location.pathname) ? search.get("q") : null;
+  const [query, setQuery] = useState(journalQuery ?? "");
+  useEffect(() => { setQuery(journalQuery ?? ""); }, [journalQuery]);
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -81,7 +118,6 @@ function ShellContent() {
   const adminSections = navigation.filter((section) => section.id === "operations" || section.id === "admin");
   const workSections = navigation.filter((section) => section.id !== "operations" && section.id !== "admin");
   const adminItems = adminSections.flatMap((section) => section.groups.flatMap((group) => group.items));
-  const hasAdminView = adminItems.length > 0;
   const relatedPath = adminNavigationPath(location.pathname);
   const navigationPath = adminItems.some((item) => item.path === location.pathname) ? location.pathname
     : relatedPath === "/admin/status" ? adminItems.find((item) => item.id === "admin-status")?.path ?? relatedPath
@@ -89,18 +125,17 @@ function ShellContent() {
   const inAdminZone = adminItems.some((item) => isActivePath(item.path, navigationPath));
   const notifications = adminItems.find((item) => item.id === "notifications");
   const sidebarSections = inAdminZone ? adminSections : workSections;
+  const isHome = location.pathname === "/";
+  const isReport = location.pathname.startsWith("/report/");
+  const workspaceAccess = access.data?.capabilities.includes("workspace.view") ? access.data : undefined;
+  const domainControl = workspaceAccess && (isHome || isReport) ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
+  const scopeKey = isHome ? committedSearch : JSON.stringify([selectedDomain(committedSearch), search.get("scope")]);
   const openSearch = (rawValue: string) => {
     const target = globalSearchTarget(rawValue);
     void navigate({ to: target.to, search: target.search as never });
     setMobileMenuOpen(false);
   };
   const submitSearch = (event: FormEvent) => { event.preventDefault(); openSearch(query); };
-  const openAdminZone = () => {
-    setProfileMenuOpen(false);
-    setSettingsMenuOpen(false);
-    setMobileMenuOpen(false);
-    if (!inAdminZone && adminItems[0]) void navigate({ to: adminItems[0].path });
-  };
   useEffect(() => {
     if (mobileMenuOpen) requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>('a,button,[tabindex]:not([tabindex="-1"])')?.focus());
   }, [mobileMenuOpen]);
@@ -120,24 +155,22 @@ function ShellContent() {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       } else if (event.key === "Escape") {
         setProfileMenuOpen(false);
-        setSettingsMenuOpen(false);
       }
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [mobileMenuOpen]);
   useEffect(() => {
-    if (!profileMenuOpen && !settingsMenuOpen) return;
+    if (!profileMenuOpen) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (!profileMenuRef.current?.contains(event.target as Node)) setProfileMenuOpen(false);
-      if (!settingsMenuRef.current?.contains(event.target as Node)) setSettingsMenuOpen(false);
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
     return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, [profileMenuOpen, settingsMenuOpen]);
+  }, [profileMenuOpen]);
   useEffect(() => {
     setMobileMenuOpen(false);
-    setSettingsMenuOpen(false);
+    setProfileMenuOpen(false);
     if (previousPathnameRef.current === location.pathname) return;
     previousPathnameRef.current = location.pathname;
     requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-page-heading]")?.focus({ preventScroll: true }));
@@ -149,24 +182,41 @@ function ShellContent() {
     <div className="sli-ds-shell" data-sli-shell data-menu-open={mobileMenuOpen}>
       <aside className="sli-ds-shell__sidebar" aria-label={t("shell.sidebar.aria")} ref={sidebarRef}>
         <Link to="/" className="sli-ds-shell__brand" onClick={() => setMobileMenuOpen(false)}><span className="sli-ds-shell__brand-mark"><Icon name="shield"/></span><span><span className="sli-ds-shell__brand-name">SLI</span><span className="sli-ds-shell__brand-caption">{t("shell.brand.caption")}</span></span></Link>
-        <nav className="sli-ds-shell__nav" aria-label={t("shell.nav.aria")}>{inAdminZone ? <Link to="/" className="sli-ds-shell__item" data-route="back-to-work" onClick={() => setMobileMenuOpen(false)}><span>{t("shell.backToWork")}</span></Link> : null}{sidebarSections.map((section) => <section className="sli-ds-shell__section" key={section.id} aria-label={section.title}><div className="sli-ds-shell__section-title">{section.title}</div>{section.groups.map((group) => <div key={group.id} role="group" aria-label={group.title || section.title}>{group.title ? <div className="sli-ds-shell__group-title">{group.title}</div> : null}{group.items.map((item) => <Link key={item.id} to={item.path} data-route={item.path.replace(/^\//, "") || "workspace"} className="sli-ds-shell__item" data-active={isActivePath(item.path, navigationPath) ? "true" : undefined} aria-current={isActivePath(item.path, navigationPath) ? "page" : undefined} onClick={() => setMobileMenuOpen(false)}><Icon name={item.icon}/><span>{item.label}</span></Link>)}</div>)}</section>)}{!inAdminZone && adminItems[0] ? <Link to={adminItems[0].path} className="sli-ds-shell__item" data-route="administration" onClick={() => setMobileMenuOpen(false)}><Icon name="settings"/><span>{t("shell.admin")}</span></Link> : null}</nav>
+        <nav className="sli-ds-shell__nav" aria-label={t("shell.nav.aria")}>
+          {inAdminZone ? <Link to="/" className="sli-ds-shell__item" data-route="back-to-work" onClick={() => setMobileMenuOpen(false)}>
+            <Icon name="chevron-left"/><span>{t("shell.backToWork")}</span>
+          </Link> : null}
+          {sidebarSections.map((section) => <section className="sli-ds-shell__section" key={section.id} aria-label={section.title}>
+            <div className="sli-ds-shell__section-title">{section.title}</div>
+            {section.groups.map((group) => <div key={group.id} role="group" aria-label={group.title || section.title}>
+              {inAdminZone && group.title ? <div className="sli-ds-shell__group-title">{group.title}</div> : null}
+              {group.items.map((item) => {
+                const active = isActivePath(item.path, navigationPath);
+                return <Link key={item.id} to={item.path} data-route={item.path.replace(/^\//, "") || "workspace"}
+                  className="sli-ds-shell__item" data-active={active || undefined} aria-current={active ? "page" : undefined}
+                  onClick={() => setMobileMenuOpen(false)}><Icon name={item.icon}/><span>{item.label}</span></Link>;
+              })}
+            </div>)}
+          </section>)}
+          {!inAdminZone && adminItems[0] ? <Link to={adminItems[0].path} className="sli-ds-shell__item sli-ds-shell__admin" data-route="administration" onClick={() => setMobileMenuOpen(false)}>
+            <Icon name="sliders"/><span>{t("shell.admin")}</span>
+          </Link> : null}
+        </nav>
       </aside>
       <div className="sli-ds-shell__scrim" aria-hidden="true" onClick={() => { setMobileMenuOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}/>
       <header className="sli-ds-shell__topbar">
         <button className="sli-ds-button sli-ds-shell__menu-button" data-variant="ghost" ref={mobileMenuButtonRef} type="button" aria-label={t("shell.menu.open")} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Icon name="menu"/></button>
-        {access.data?.capabilities.includes("workspace.view") ? <DomainSwitcher access={access.data}/> : null}
-        <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}><Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/><input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); openSearch(event.currentTarget.value); } }} placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/></form>
-        <div className="sli-ds-shell__spacer"/>
-        {hasAdminView ? <div className="sli-ds-shell__profile" ref={settingsMenuRef}>
-          <button className="sli-ds-button sli-ds-shell__control" type="button" aria-label={t("shell.admin")} title={t("shell.admin")} aria-pressed={inAdminZone} aria-haspopup="menu" aria-expanded={settingsMenuOpen} data-active={inAdminZone ? "true" : undefined} onClick={() => { setProfileMenuOpen(false); setSettingsMenuOpen((open) => !open); }}><Icon name="settings"/></button>
-          {settingsMenuOpen ? <div className="sli-ds-shell__menu" role="menu">
-            {notifications ? <Link to={notifications.path} role="menuitem" className="sli-ds-button" data-variant="ghost" onClick={() => setSettingsMenuOpen(false)}>{notifications.label}</Link> : null}
-            <button type="button" role="menuitem" className="sli-ds-button" data-variant="ghost" onClick={openAdminZone}>{t("shell.admin")}</button>
-          </div> : null}
-        </div> : null}
+        <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
+          <Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/>
+          <input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/>
+        </form>
         <div className="sli-ds-shell__profile" ref={profileMenuRef}>
-          <button type="button" className="sli-ds-button sli-ds-shell__control" aria-haspopup="menu" aria-expanded={profileMenuOpen} onClick={() => setProfileMenuOpen((open) => !open)}><span className="sli-ds-shell__avatar">{initials}</span><span className="sli-ds-shell__label"><span className="sli-ds-shell__label-title">{username}</span><span className="sli-ds-shell__label-caption">{inAdminZone ? t("shell.zone.admin") : t("shell.zone.work")}</span></span><Icon name="chevron"/></button>
+          <button type="button" className="sli-ds-button sli-ds-shell__control" aria-label={username} aria-haspopup="menu" aria-expanded={profileMenuOpen} onClick={() => setProfileMenuOpen((open) => !open)}>
+            <span aria-hidden="true" className="sli-ds-shell__avatar">{initials}</span><span className="sli-ds-shell__label-title" title={username}>{username}</span><Icon name="chevron-down"/>
+          </button>
           {profileMenuOpen ? <div className="sli-ds-shell__menu" role="menu">
+            {notifications ? <Link to={notifications.path} role="menuitem" className="sli-ds-button" data-variant="ghost" onClick={() => setProfileMenuOpen(false)}>{notifications.label}</Link> : null}
             <div className="sli-ds-shell__menu-title" role="presentation">{t("shell.profile.theme.title")}</div>
             {THEME_PREFERENCES.map((value) => <button key={value} type="button" className="sli-ds-button" data-variant="ghost" role="menuitemradio" aria-checked={theme === value} data-theme-option={value} onClick={() => chooseTheme(value)}><span className="sli-ds-shell__menu-mark" aria-hidden="true">{theme === value ? <Icon name="check"/> : null}</span>{t(`shell.profile.theme.${value}` as MessageKey)}</button>)}
             <div className="sli-ds-shell__menu-title" role="presentation">{t("shell.profile.language.title")}</div>
@@ -176,7 +226,13 @@ function ShellContent() {
           </div> : null}
         </div>
       </header>
-      <main className="sli-ds-shell__main" id="main" tabIndex={-1}><div className="sli-ds-shell__content" key={selectedDomain(location.searchStr)}><Outlet/>{inAdminZone ? <AdminRelatedLinks pathname={location.pathname} access={{ capabilities, reports: new Set(reports.map((report) => report.report_key)) }}/> : null}</div></main>
+      <main className="sli-ds-shell__main" id="main" tabIndex={-1}>
+        <div className="sli-ds-shell__content" key={scopeKey}>
+          {isHome ? <HomeHeaderScope access={access.data} domain={domainControl}><Outlet/></HomeHeaderScope>
+            : <PageHeaderContext.Provider value={{ domain: domainControl }}><Outlet/></PageHeaderContext.Provider>}
+          {inAdminZone ? <AdminRelatedLinks pathname={location.pathname} access={{ capabilities, reports: new Set(reports.map((report) => report.report_key)) }}/> : null}
+        </div>
+      </main>
     </div>
   </AccessStatusContext.Provider></AccessRequestContext.Provider></EffectiveAccessContext.Provider></TimeZoneContext.Provider>;
 }

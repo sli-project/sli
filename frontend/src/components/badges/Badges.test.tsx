@@ -11,7 +11,7 @@ it("keeps global finding risk separate from event classification and role comple
     <EventCardCompletenessBadge completeness="not_applicable" />
   </>);
 
-  expect(html).toContain("Риск ИБ: high");
+  expect(html).toContain("Риск ИБ: Высокая");
   expect(html).toContain("Класс каталога: низкий");
   expect(html).toContain("Полнота карточки: полная");
   expect(html).toContain("Полнота карточки: частичная");

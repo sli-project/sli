@@ -38,25 +38,33 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 it("does not request the home summary on a report until the domain menu is opened", async () => {
   await show(undefined, "/report/ad.users.v2");
-  await screen.findByText("Домен:");
+  const trigger = await screen.findByLabelText("Домен: Все домены");
   expect(api.homeSummaryV2).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("Домен:"));
+  fireEvent.click(trigger);
   await waitFor(() => expect(api.homeSummaryV2).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByText("Домен:"));
+  fireEvent.click(trigger);
   fireEvent.click(screen.getByRole("link", { name: "Computers" }));
   await screen.findByText("Report");
   expect(api.homeSummaryV2).toHaveBeenCalledTimes(1);
 });
 
-it.each([{ items: [] }, { items: [domain(1)] }])("hides the switcher without multiple accessible domains", async ({ items }) => {
-  await show(items);
-  expect(screen.queryByText("Домен:")).toBeNull();
+it("hides the switcher when no domains are accessible", async () => {
+  const { client } = await show([]);
+  await waitFor(() => expect(client.getQueryState(["domains", access])?.status).toBe("success"));
+  expect(screen.queryByLabelText(/^Домен:/)).toBeNull();
+  expect(api.homeSummaryV2).not.toHaveBeenCalled();
+});
+
+it("shows the switcher for a single accessible domain without requesting counts", async () => {
+  await show([domain(1)]);
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
+  expect(screen.getByRole("button", { name: /domain-1\.example\.test/ })).toBeTruthy();
   expect(api.homeSummaryV2).not.toHaveBeenCalled();
 });
 
 it("shows authorized counts without warnings, incomplete domains first and hides zero", async () => {
   await show();
-  fireEvent.click(await screen.findByText("Домен:"));
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
   const menu = screen.getByLabelText("Домен");
   await waitFor(() => expect(within(menu).getAllByText("12")).toHaveLength(2));
   const options = within(menu).getAllByRole("button");
@@ -68,7 +76,7 @@ it("shows authorized counts without warnings, incomplete domains first and hides
 
 it("searches seven or more domains and keeps all domains available", async () => {
   await show(Array.from({ length: 7 }, (_, index) => domain(index + 1)));
-  fireEvent.click(await screen.findByText("Домен:"));
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "DOMAIN-3" } });
   const menu = screen.getByLabelText("Домен");
   expect(within(menu).getAllByRole("button")).toHaveLength(2);
@@ -79,19 +87,22 @@ it("searches seven or more domains and keeps all domains available", async () =>
 
 it("preserves selection through home, both AD reports and history, then clears it", async () => {
   const { router } = await show();
-  fireEvent.click(await screen.findByText("Домен:"));
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
   fireEvent.click(screen.getByRole("button", { name: /domain-2/ }));
   await waitFor(() => expect(selectedDomain(router.state.location.searchStr)).toBe("2"));
   for (const label of ["Users", "Computers", "Home"]) {
     fireEvent.click(screen.getByRole("link", { name: label }));
     await waitFor(() => expect(router.state.location.pathname).toBe(label === "Home" ? "/" : `/report/${label === "Users" ? "ad.users.v2" : "ad.computers.v6"}`));
     expect(selectedDomain(router.state.location.searchStr)).toBe("2");
+    expect(within(screen.getByLabelText("Домен: domain-2.example.test")).getByText("domain-2.example.test")).toBeTruthy();
   }
   await act(async () => { router.history.back(); });
   await waitFor(() => expect(router.state.location.pathname).toBe("/report/ad.computers.v6"));
-  fireEvent.click(screen.getByText("Домен:"));
+  fireEvent.click(screen.getByLabelText("Домен: domain-2.example.test"));
+  expect(screen.getByRole("button", { name: /domain-2/, current: true })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /Все домены/ }));
   await waitFor(() => expect(selectedDomain(router.state.location.searchStr)).toBeNull());
+  expect(await screen.findByLabelText("Домен: Все домены")).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Users" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/report/ad.users.v2"));
   expect(selectedDomain(router.state.location.searchStr)).toBeNull();
@@ -99,8 +110,8 @@ it("preserves selection through home, both AD reports and history, then clears i
 
 it("restores a domain_id deep link and never labels unavailable counts zero", async () => {
   const { client } = await show(undefined, "/?domain_id=2");
-  expect(await screen.findByLabelText("Домен: domain-2.example.test")).toBeTruthy();
-  fireEvent.click(screen.getByText("Домен:"));
+  const trigger = await screen.findByLabelText("Домен: domain-2.example.test");
+  fireEvent.click(trigger);
   await waitFor(() => expect(client.getQueryData(["domains", "summary", access])).toBeDefined());
   vi.mocked(api.homeSummaryV2).mockRejectedValue(new Error("synthetic-unavailable"));
   await act(async () => { await client.invalidateQueries({ queryKey: ["domains", "summary"] }); });
@@ -109,7 +120,7 @@ it("restores a domain_id deep link and never labels unavailable counts zero", as
   expect(menu.textContent).not.toContain("12");
   fireEvent.keyDown(menu, { key: "Escape" });
   expect(menu.closest("details")?.open).toBe(false);
-  expect(document.activeElement).toBe(screen.getByLabelText("Домен: domain-2.example.test"));
+  expect(document.activeElement).toBe(trigger);
 });
 
 it("preserves scope on plain report links without overriding explicit scope", () => {
@@ -119,7 +130,7 @@ it("preserves scope on plain report links without overriding explicit scope", ()
 
 it("keeps archive selectable and labels its observation date without treating age as lifecycle", async () => {
   await show([domain(1), { ...domain(2), is_archived: true }]);
-  fireEvent.click(await screen.findByText("Домен:"));
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
   expect(screen.getByRole("button", { name: /domain-2.*Архив.*17\.10\.2026/ })).toBeTruthy();
 });
 
@@ -130,7 +141,7 @@ it("carries explicit All through router middleware and new-tab links", () => {
 
 it("allows explicitly opening the only authorized domain when it is archived", async () => {
   const { router } = await show([{ ...domain(1), is_archived: true }]);
-  fireEvent.click(await screen.findByText("Домен:"));
+  fireEvent.click(await screen.findByLabelText("Домен: Все домены"));
   fireEvent.click(screen.getByRole("button", { name: /domain-1.*Архив/ }));
   await waitFor(() => expect(selectedDomain(router.state.location.searchStr)).toBe("1"));
 });
@@ -141,7 +152,7 @@ it("formats the archive timestamp in English without leaking the ISO value", asy
   setLocale("en");
   try {
     await show([{ ...domain(1), is_archived: true }]);
-    fireEvent.click(await screen.findByText("Domain:"));
+    fireEvent.click(await screen.findByLabelText("Domain: All domains"));
     const item = screen.getByRole("button", { name: /domain-1.*Archive/ });
     expect(item.textContent).toContain("Oct 17, 2026");
     expect(item.textContent).not.toMatch(/2026-10-17T|17\.10\.2026/);

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Domains;
 using Sli.Server.Infrastructure;
 using Sli.Server.Problems;
 using Sli.Server.Reporting.V2;
@@ -60,11 +61,97 @@ public sealed partial class ProblemQueuePagingTests
     }
 
     [Fact]
+    public async Task UpgradeGroupsPasswordAliasesAndKeepsFindingHistoryAndHomeCounts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 394);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await SeedPopulation(owner, ct);
+        await PostCollectionPostgres.Sql(owner, """
+            update domains set netbios_name='DEMO' where fqdn='example.test';
+            update findings set status='closed' where id>17;
+            update findings set status='new',severity='high',first_seen_utc=(timestamptz '2026-10-01 UTC'+id*interval '1 hour')::text,
+                last_seen_utc=(timestamptz '2026-10-02 UTC'+id*interval '1 hour')::text,
+                rule_code=case when id<=8 then 'semantic.qw.password-brute-force' when id<=10 then 'semantic.qw.password-spray'
+                    when id=11 then 'semantic.qw.audit-disabled' when id=12 then 'semantic.qw.security-log-cleared'
+                    when id=13 then 'semantic.qw.agent-tamper' when id=14 then 'semantic.qw.privileged-group-addition'
+                    when id=15 then 'qw.ad-hardening.privileged-nonexpiring' when id=16 then 'qw.ad-hardening.machine-account-quota'
+                    else 'qw.ad-hardening.lockout-threshold' end
+            where id<=17;
+            update findings set severity='medium' where id between 11 and 14;
+            insert into finding_status_history(finding_id,new_status,changed_by) values(2,'new','synthetic');
+
+            insert into storage_v2_entity_type(value) values('ad_user') on conflict do nothing;
+            insert into entities_v2(id,entity_type_id,natural_key,display_name,domain_id,source_core_sha256)
+            select 500,type.id,'synthetic-administrator','Synthetic display name',d.id,sha256('identity'::bytea)
+            from domains d cross join storage_v2_entity_type type where d.fqdn='example.test' and type.value='ad_user';
+            insert into ad_context_runs(run_id,source_pack_id,source_pack_version,domain_id,mode,observed_at_utc,bundle_sha256,status)
+            select md5('snapshot')::uuid,'synthetic','1',id,'full','2026-10-01 UTC',sha256('snapshot'::bytea),'completed'
+            from domains where fqdn='example.test';
+            insert into ad_context_sections(run_id,section_name,status,record_count)
+            values(md5('snapshot')::uuid,'directory_accounts','complete',1);
+            insert into ad_context_entity_versions(entity_id,source_section,valid_from_utc,last_observed_at_utc,content_sha256,attributes_json,source_run_id)
+            values(500,'directory_accounts','2026-10-01 UTC','2026-10-01 UTC',sha256('account'::bytea),
+                '{"identity":{"kind":"ad_user","object_sid":"S-1-5-21-100000001-200000002-300000003-500"},"attributes":{"sam_account_name":"Administrator"}}',md5('snapshot')::uuid);
+            insert into ad_context_entity_aliases(entity_id,domain_id,alias_type,alias_value,normalized_value,first_seen_utc,last_seen_utc,source_run_id)
+            select 500,d.id,a.kind,a.name,lower(a.name),'2026-10-01 UTC','2026-10-01 UTC',md5('snapshot')::uuid
+            from domains d cross join (values('sam_account_name','Administrator'),('object_sid','S-1-5-21-100000001-200000002-300000003-500')) a(kind,name)
+            where d.fqdn='example.test';
+
+            update finding_event_copies337 e set event_id=100+finding_id,time_created_utc='2026-10-02 UTC',
+                method=method||jsonb_build_object('$principals',jsonb_strip_nulls(jsonb_build_object(
+                    'TargetUserName',a.name,'TargetDomainName','DEMO','TargetUserSid',case when a.sid then 'S-1-5-21-100000001-200000002-300000003-500' end,
+                    'IpAddress',case when finding_id=8 then '192.0.2.11' else '192.0.2.10' end)))
+            from (values(1,'Administrator',true),(2,'ADMINISTRATOR',false),(3,'АДМИНИСТРАТОР',true),(4,'DEMO\Administrator',false),
+                (5,'Admin',false),(6,'ADMIN',false),(7,'АДМИНИСТРАТОР',false),(8,'Administrator',true),(9,'spray-one',false),(10,'spray-two',false)) a(id,name,sid)
+            where e.finding_id=a.id;
+            insert into finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,domain_id,computer,method,outcome,fields,source_sha256,evidence_role)
+            select finding_id,200,'2026-10-02 00:01 UTC',4624,domain_id,computer,method,outcome,fields,source_sha256,evidence_role
+            from finding_event_copies337 where finding_id=3;
+            """, ct);
+        Assert.Equal(17, Assert.Single(await Rows(owner, "select count(*) as n from findings where status='new'"))["n"]!.GetValue<long>());
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/395_problem_account_identity.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+
+        var repositories = new ReaderConnections(fixture);
+        var repository = new ProblemRepository(repositories, TimeProvider.System);
+        var query = SecurityProblemsReader.Input(Context() with { DomainIds = null }) with { Compact = true };
+        var queue = await repository.FindingsAsync(query, new(Context().Access), ct);
+        var items = queue["items"]!.AsArray().OfType<JsonObject>().ToArray();
+        Assert.Equal(12, items.Length);
+        var administrator = Assert.Single(items, row => row["severity"]!.ToString()=="critical");
+        Assert.Equal("Administrator", administrator["presentation_facts"]!["account"]!.ToString());
+        Assert.Equal(4, administrator["occurrence_count"]!.GetValue<long>());
+        Assert.Equal(DateTimeOffset.Parse("2026-10-01T01:00:00Z"), DateTimeOffset.Parse(administrator["first_seen_utc"]!.ToString()));
+        Assert.Equal(DateTimeOffset.Parse("2026-10-02T04:00:00Z"), DateTimeOffset.Parse(administrator["last_seen_utc"]!.ToString()));
+        var grouping = administrator["problem_cohort"]!.ToJsonString();
+        var members = await repository.FindingsAsync(query with { GroupQueue = false, Cohort = grouping }, new(Context().Access), ct);
+        Assert.Equal(new long[] { 4, 3, 2, 1 }, members["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
+        Assert.Contains(items, row => row["id"]!.GetValue<long>()==6 && row["occurrence_count"]!.GetValue<long>()==2);
+        Assert.Contains(items, row => row["id"]!.GetValue<long>()==7 && row["occurrence_count"]!.GetValue<long>()==1);
+        Assert.Contains(items, row => row["id"]!.GetValue<long>()==8 && row["occurrence_count"]!.GetValue<long>()==1);
+        Assert.Contains(items, row => row["id"]!.GetValue<long>()==10 && row["occurrence_count"]!.GetValue<long>()==2);
+        Assert.Equal(new[] { 1, 4, 4, 3 }, new[] { "critical", "high", "medium", "low" }.Select(severity => items.Count(row => row["severity"]!.ToString()==severity)));
+
+        var home = await new HomeSummaryRepository(repositories).ReadAsync(HomeDecisionSql.Groups(true, allDomains: true),
+            new Dictionary<string, object?> { ["from"] = null, ["to"] = null, ["since"] = null }, ct);
+        Assert.Equal(items.LongLength, home[0]["total_problems"]!.GetValue<long>());
+        Assert.Equal(administrator["occurrence_count"]!.GetValue<long>(), home[0]["total"]!.GetValue<long>());
+        Assert.Equal(17, Assert.Single(await Rows(owner, "select count(*) as n from findings where status='new'"))["n"]!.GetValue<long>());
+        Assert.Single(await Rows(owner, "select id from finding_status_history where finding_id=2"));
+
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Equal("high", Assert.Single(await Rows(owner, "select severity from findings where id=3"))["severity"]!.ToString());
+    }
+
+    [Fact]
     public async Task RepeatsOfOneObjectAcrossDaysAndActorsHaveOneRowAndLatestTime()
     {
         await using var pg = new PostCollectionPostgres(canonicalSchema: true);
         await pg.StartAsync(TestContext.Current.CancellationToken);
         await using var db = await pg.OpenAsync(TestContext.Current.CancellationToken);
+        await PostCollectionPostgres.Sql(db, EmptyPasswordFacts, TestContext.Current.CancellationToken);
         string fixture = NoEvidenceFixture.Replace("generate_series(1,166)", "generate_series(162,166)")
             .Replace("when n=163 then 'other-object'", "when n=163 then 'synthetic-object'");
         var row = Assert.Single(await Rows(db, Grouped(fixture) + " select * from queue_groups"));
@@ -80,6 +167,7 @@ public sealed partial class ProblemQueuePagingTests
         await using var pg = new PostCollectionPostgres(canonicalSchema: true);
         await pg.StartAsync(TestContext.Current.CancellationToken);
         await using var db = await pg.OpenAsync(TestContext.Current.CancellationToken);
+        await PostCollectionPostgres.Sql(db, EmptyPasswordFacts, TestContext.Current.CancellationToken);
         string cte = Grouped(MembershipFixture.Replace("__ACTOR__", missingActor ? "null" : "'synthetic-actor'"));
         var counts = Assert.Single(await Rows(db, cte + " select count(*) as groups,sum(occurrence_count) as occurrences from queue_groups"));
         Assert.Equal("61", counts["groups"]!.ToString()); Assert.Equal("209", counts["occurrences"]!.ToString());
@@ -105,6 +193,7 @@ public sealed partial class ProblemQueuePagingTests
         await using var pg = new PostCollectionPostgres(canonicalSchema: true);
         await pg.StartAsync(TestContext.Current.CancellationToken);
         await using var db = await pg.OpenAsync(TestContext.Current.CancellationToken);
+        await PostCollectionPostgres.Sql(db, EmptyPasswordFacts, TestContext.Current.CancellationToken);
         var rows = await Rows(db, Grouped(NoEvidenceFixture) + " select * from queue_groups order by occurrence_count desc");
         Assert.Equal(new long[] { 165, 1 }, rows.Select(r => r["occurrence_count"]!.GetValue<long>()));
         string cohort = rows[0]["problem_cohort"]!.ToString();
@@ -256,4 +345,9 @@ public sealed partial class ProblemQueuePagingTests
     {
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
+    // These fixtures exercise legacy schemas or non-password findings only.
+    internal const string EmptyPasswordFacts = """
+        create function public.password_problem_facts395(bigint,text) returns jsonb
+        language plpgsql as $$ begin raise exception 'Password findings require migration 395 in this test'; end $$;
+        """;
 }

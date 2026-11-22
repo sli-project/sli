@@ -5,7 +5,7 @@ import { shouldRetryQuery } from "./api/retry-policy";
 import { createRootRoute, createRoute, createRouter, lazyRouteComponent, redirect, RouterProvider } from "@tanstack/react-router";
 import { AppShell } from "./app/App";
 import { domainSearchMiddleware } from "./app/domain-navigation";
-import { globalSearchTarget, navigationBeforeLoad } from "./app/navigation";
+import { navigationBeforeLoad, objectSearchPath, parseShellSearch, stringifyShellSearch } from "./app/navigation";
 import { ReportWorkspacePage } from "./app/report-workspace";
 import { WorkstationsPage } from "./plugins/workstations/route";
 import { ScenariosPage } from "./app/scenarios";
@@ -41,7 +41,14 @@ import "./design-system/ds.css";
 const rootRoute = createRootRoute({ component: AppShell, beforeLoad: ({ location }) => navigationBeforeLoad(location), search: { middlewares: [domainSearchMiddleware] } });
 // Retired report generations keep their URLs as redirects to the successor report.
 const retiredRedirect = (path: string, to: string) => createRoute({ getParentRoute: () => rootRoute, path, beforeLoad: () => { throw redirect({ to }); } });
-function ReportV2RoutePage() { const { reportKey } = reportV2.useParams(); return <ReportWorkspacePage key={reportKey} reportKey={reportKey}/>; }
+function ReportV2RoutePage() {
+  const { reportKey } = reportV2.useParams();
+  const search: Record<string, unknown> = reportV2.useSearch();
+  if (reportKey === "events.journal") {
+    return <ReportWorkspacePage key={JSON.stringify([reportKey, search.q])} reportKey={reportKey} journalSearch={stringifyShellSearch(search)}/>;
+  }
+  return <ReportWorkspacePage key={reportKey} reportKey={reportKey}/>;
+}
 function PluginRoutePage() { const { pluginId, _splat } = pluginUi.useParams(); return <InstalledPluginPage pluginId={pluginId} route={`/extensions/${pluginId}/${_splat ?? ""}`}/>; }
 const overview = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage });
 const legacyOverview = retiredRedirect("/security-overview", "/");
@@ -73,7 +80,7 @@ const vpnConnections = createRoute({ getParentRoute: () => rootRoute, path: "/vp
 const reportV2 = createRoute({ getParentRoute: () => rootRoute, path: "/report/$reportKey", beforeLoad: ({ location }) => navigationBeforeLoad(location), component: ReportV2RoutePage });
 const pluginUi = createRoute({ getParentRoute: () => rootRoute, path: "/extensions/$pluginId/$", component: PluginRoutePage });
 const securityEventsReport = createRoute({ getParentRoute: () => rootRoute, path: "/security-events-report", beforeLoad: ({ location }) => { throw redirect({ href: legacySecurityEventsHref(location.searchStr) }); } });
-const search = createRoute({ getParentRoute: () => rootRoute, path: globalSearchTarget("").to, component: ObjectsPage });
+const search = createRoute({ getParentRoute: () => rootRoute, path: objectSearchPath, component: ObjectsPage });
 const objects = createRoute({ getParentRoute: () => rootRoute, path: "/objects", beforeLoad: ({ location }) => navigationBeforeLoad(location) });
 const objectDetail = createRoute({ getParentRoute: () => rootRoute, path: "/objects/$objectType/$objectId", beforeLoad: ({ params, location }) => { throw redirect(objectRouteRedirect(params.objectId, location.search as Record<string, unknown>)); } });
 const access = createRoute({ getParentRoute: () => rootRoute, path: "/access", component: AccessCenterPage });
@@ -96,7 +103,7 @@ const setup = createRoute({ getParentRoute: () => rootRoute, path: "/setup", com
 const agents = createRoute({ getParentRoute: () => rootRoute, path: "/agents", component: AgentsPage });
 const admin = createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage });
 const uiKit = createRoute({ getParentRoute: () => rootRoute, path: "/ui-kit", component: lazyRouteComponent(() => import("./app/UiKitPage"), "UiKitPage") });
-const router = createRouter({ routeTree: rootRoute.addChildren([overview, legacyOverview, reports, workstations, adReportLegacy, reportData, problems, adReport, usersReport, usersV2Report, computersReport, computersV5Report, computersV6Report, whatWhereWhenReport, gpoReport, gpoV2Report, privilegedReport, vpnReport, vpnConnections, securityEventsReport, reportV2, pluginUi, search, objects, objectDetail, access, accessCenter, accessUser, accessRequests, reportStudio, reportManagement, reportEditor, reportBuilder, events, eventDetail, investigations, cases, investigationCase, scenarios, entities, entityDetail, operations, sourceDetail, projectReadiness, settings, platformSettings, adAccounts, notifications, plugins, setup, agents, admin, ...createAdminPlaceholderRoutes(rootRoute), uiKit]), basepath: "/app" });
+const router = createRouter({ routeTree: rootRoute.addChildren([overview, legacyOverview, reports, workstations, adReportLegacy, reportData, problems, adReport, usersReport, usersV2Report, computersReport, computersV5Report, computersV6Report, whatWhereWhenReport, gpoReport, gpoV2Report, privilegedReport, vpnReport, vpnConnections, securityEventsReport, reportV2, pluginUi, search, objects, objectDetail, access, accessCenter, accessUser, accessRequests, reportStudio, reportManagement, reportEditor, reportBuilder, events, eventDetail, investigations, cases, investigationCase, scenarios, entities, entityDetail, operations, sourceDetail, projectReadiness, settings, platformSettings, adAccounts, notifications, plugins, setup, agents, admin, ...createAdminPlaceholderRoutes(rootRoute), uiKit]), basepath: "/app", parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch });
 declare module "@tanstack/react-router" { interface Register { router: typeof router } }
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: shouldRetryQuery } } });
 createRoot(document.getElementById("root")!).render(<React.StrictMode><QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider></React.StrictMode>);

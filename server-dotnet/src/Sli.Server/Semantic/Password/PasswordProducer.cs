@@ -76,12 +76,14 @@ public sealed class PasswordProducer
         var window=ValidateWindow(PasswordJson.Obj(rows[0]["metadata"]),PasswordJson.Time(attempt["attempted_at"]),true);
         if(rows.Count-1!=window["candidate_count"]!.GetValue<int>())throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.CandidateCount};
         if(rows.Skip(1).Any(r=>r["record_kind"]?.GetValue<string>()!="event"))throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.EventRecords};
-        var incoming=rows.Skip(1).Select(r=>ReadNative(rule.Scope,r)).ToArray();var windowBudget=new NativeBudget(incoming);
+        var incoming=rows.Skip(1).Select(r=>ReadNative(rule.Scope,r,rule.NormalizedAccounts)).ToArray();var windowBudget=new NativeBudget(incoming,rule.NormalizedAccounts);
         if(windowBudget.Count!=incoming.Length)throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.DuplicateNative};
         var now=PasswordJson.Time(window["read_to"]);var lower=PasswordJson.Time(window["read_from"]);var final=PasswordJson.Time(window["finalizable_through"]);
         if(incoming.Any(n=>n.Witness.At<lower||n.Witness.At>now))throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.EventTimeRange};
         if(state.Watermark.HasValue&&final<state.Watermark)throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.WatermarkRegression};
-        var entities=state.Episodes.Select(e=>e.Entity).Concat(state.Window.Select(m=>m.EntityFor(rule))).Concat(incoming.Select(n=>n.Member.EntityFor(rule))).OfType<string>().Distinct().Order(StringComparer.Ordinal).ToArray();
+        var successRoutes=rule.BruteSuccessRoutes(state.Window,incoming);
+        string? Entity(PasswordMember member)=>successRoutes.GetValueOrDefault(member.Witness.NativeId)??member.EntityFor(rule);
+        var entities=state.Episodes.Select(e=>e.Entity).Concat(state.Window.Select(Entity)).Concat(incoming.Select(n=>Entity(n.Member))).OfType<string>().Distinct().Order(StringComparer.Ordinal).ToArray();
         var context=PasswordJson.Obj(await sql.Call("prepare_password_producer_batch_v2",ct,scope,execution,token,revision,entities));
         if(context["status"]?.GetValue<string>()!="prepared"||context["state_revision"]!.GetValue<long>()!=revision||context["barriers"] is not JsonArray barriersJson||barriersJson.Count>10000||PasswordJson.SpacedSize(context)>4194304||context["prelocked_entities"] is not JsonArray prelockedJson||prelockedJson.Count>10000)throw new PasswordFailure("password_v2_context_invalid") {Check=PasswordFailure.ContextCheck.Shape};
         var prelocked=prelockedJson.Select(PasswordJson.Text).ToArray();
@@ -98,27 +100,27 @@ public sealed class PasswordProducer
         bool cacheOverlap=true;
         try{windowBudget.Plan(overlap);}catch(PasswordFailure e)when(e.Message=="password_v2_proof_bound"){cacheOverlap=false;}
         if(cacheOverlap)await windowBudget.Fetch(sql,rule.Scope,overlap,ct,retainedWindow);
-        var cachedByEntity=windowBudget.Records.Values.ToLookup(n=>n.Member.EntityFor(rule)??"",StringComparer.Ordinal);
+        var cachedByEntity=windowBudget.Records.Values.ToLookup(n=>Entity(n.Member)??"",StringComparer.Ordinal);
         // Keep the input window bounded, but validate one entity's immutable chain
         // at a time. Unrelated chains must not consume each other's proof budget.
         // A retained too_late member keeps its diagnostic reason. When its
         // native row is reread, both copies must still enter the same partition
         // so Advance can deduplicate them before classifying new decisions.
         var incomingEntities=state.Window.Any(m=>m.Reason=="too_late")
-            ?incoming.ToDictionary(n=>n.Witness.NativeId,n=>n.Member.EntityFor(rule)??""):null;
-        var membersByEntity=state.Window.ToLookup(m=>incomingEntities?.GetValueOrDefault(m.Witness.NativeId)??m.EntityFor(rule)??"",StringComparer.Ordinal);
-        var incomingByEntity=incoming.ToLookup(n=>n.Member.EntityFor(rule)??"",StringComparer.Ordinal);
+            ?incoming.ToDictionary(n=>n.Witness.NativeId,n=>Entity(n.Member)??""):null;
+        var membersByEntity=state.Window.ToLookup(m=>incomingEntities?.GetValueOrDefault(m.Witness.NativeId)??Entity(m)??"",StringComparer.Ordinal);
+        var incomingByEntity=incoming.ToLookup(n=>Entity(n.Member)??"",StringComparer.Ordinal);
         var queued=new List<JsonObject>();var touched=new HashSet<string>(StringComparer.Ordinal);
         var reservations=new List<(PasswordEmission Emission,JsonObject[] Signals,JsonObject? Expected)>();
         var nextMembers=new List<PasswordMember>();var nextActive=new List<PasswordEpisode>();var nextClosed=new List<PasswordEpisode>();
         var counts=new Dictionary<string,int>(StringComparer.Ordinal);PasswordState? nextState=null;
         var work=windowBudget.Work;work["completion_calls"]=1;work["window_items"]=incoming.Length;
         foreach(string entityKey in entities.Concat(barriers.Keys).Append("").Distinct().Order(StringComparer.Ordinal)) {
-            var entityIncoming=incomingByEntity[entityKey].ToArray();var budget=new NativeBudget(cachedByEntity[entityKey]);
+            var entityIncoming=incomingByEntity[entityKey].ToArray();var budget=new NativeBudget(cachedByEntity[entityKey],rule.NormalizedAccounts);
             var entityState=state with{Members=membersByEntity[entityKey].ToArray(),Active=state.Episodes.Where(e=>e.Entity==entityKey).ToArray()};
             var working=entityState with{Active=episodes.TryGetValue(entityKey,out var active)?[active]:[]};
             var pending=entityIncoming.Select(n=>n.Member).Concat(entityState.Window).ToArray();
-            var affected=pending.Where(m=>m.EntityFor(rule)!=null&&m.Witness.At<=final&&(!state.Watermark.HasValue||m.Witness.At>state.Watermark)).Select(m=>m.EntityFor(rule)!).ToHashSet(StringComparer.Ordinal);
+            var affected=pending.Where(m=>m.Witness.At<=final&&(!state.Watermark.HasValue||m.Witness.At>state.Watermark)).Select(Entity).OfType<string>().ToHashSet(StringComparer.Ordinal);
             var entityBarriers=barriers.Where(p=>p.Key==entityKey).ToDictionary(p=>p.Key,p=>p.Value,StringComparer.Ordinal);
             var needed=new List<PasswordWitness>();var histories=new List<PasswordEmission>();var historySignals=new List<JsonObject>();
             foreach(var b in entityBarriers.Values){needed.Add(PasswordWitness.Read(b["seed"]));needed.Add(PasswordWitness.Read(b["tracking_endpoint"]));}
@@ -127,7 +129,7 @@ public sealed class PasswordProducer
             foreach(var episode in working.Episodes) {
                 if(!affected.Contains(episode.Entity)||episode.Frozen)continue;
                 if(episode.RootId!=null&&!(entityState.Watermark.HasValue&&lower>entityState.Watermark)) {
-                    var added=pending.Where(m=>m.EntityFor(rule)==episode.Entity&&m.Witness.At<=final&&(!entityState.Watermark.HasValue||m.Witness.At>entityState.Watermark)).Select(m=>m.Witness).ToArray();
+                    var added=pending.Where(m=>Entity(m)==episode.Entity&&m.Witness.At<=final&&(!entityState.Watermark.HasValue||m.Witness.At>entityState.Watermark)).Select(m=>m.Witness).ToArray();
                     if(added.Length>0&&added.Min(w=>w.At)-episode.Last.At<=TimeSpan.FromSeconds(600)){var chain=await History(sql,rule,episode,historySignals,ct);histories.AddRange(chain);needed.AddRange(chain.SelectMany(e=>e.Occurrences));}
                 }
             }
@@ -138,7 +140,7 @@ public sealed class PasswordProducer
             await budget.Fetch(sql,rule.Scope,needed,ct,retainedWindow);
             foreach(var document in historySignals){var portion=PasswordJson.Obj(document["password_context"]);var chain=histories.Where(e=>e.EpisodeKey==PasswordJson.Text(portion["episode_key"])).OrderBy(e=>e.Sequence).ToArray();int sequence=portion["sequence"]!.GetValue<int>();var emission=chain.Single(e=>e.Sequence==sequence);
                 if(!JsonNode.DeepEquals(document,PasswordSignal.Create(rule,emission,portion,PasswordJson.Time(document["received_at_utc"]),budget.Records.Values,chain.Where(e=>e.Sequence<sequence).ToArray())))throw new PasswordFailure("password_v2_chain_invalid");}
-            foreach(var (entity,b) in entityBarriers)if(budget.Native(PasswordWitness.Read(b["seed"])).Member.EntityFor(rule)!=entity||budget.Native(PasswordWitness.Read(b["tracking_endpoint"])).Member.EntityFor(rule)!=entity)throw new PasswordFailure("password_v2_barrier_native_conflict");
+            foreach(var (entity,b) in entityBarriers)if(!budget.Native(PasswordWitness.Read(b["seed"])).ProvesEntity(rule,entity)||!budget.Native(PasswordWitness.Read(b["tracking_endpoint"])).ProvesEntity(rule,entity))throw new PasswordFailure("password_v2_barrier_native_conflict");
             var entityIncomingIds=entityIncoming.Select(n=>n.Witness.NativeId).ToHashSet();var retained=budget.Records.Values.Where(n=>!entityIncomingIds.Contains(n.Witness.NativeId)).ToArray();
             var proposal=rule.Advance(working,entityIncoming,now,histories,retained,lower);
             if(proposal.State.Watermark!=final||proposal.Diagnostics.Any(p=>p.Value!=0&&!LossCodes.Contains(p.Key)))throw new PasswordFailure("password_v2_proposal_unavailable") {ProposalDiagnostics=proposal.Diagnostics,WatermarkMatches=proposal.State.Watermark==final,StateBytes=proposal.StateBytes};
@@ -209,7 +211,7 @@ public sealed class PasswordProducer
         if(PasswordJson.Time(metadata["finalizable_through"])!=now.AddSeconds(-120))throw new PasswordFailure("password_v2_window_invalid") {WindowCondition=PasswordFailure.WindowCheck.FinalizableThrough};
         var result=(JsonObject)metadata.DeepClone();foreach(string key in new[]{"read_from","read_to","finalizable_through"})result[key]=PasswordJson.Stamp(PasswordJson.Time(metadata[key]));return result;
     }
-    private static PasswordNative ReadNative(PasswordScope scope,JsonObject row)=>PasswordNative.Parse(scope,row["source_event_id"]!.GetValue<long>(),PasswordJson.Text(row["sha256"]),row["event_id"]!.GetValue<int>(),PasswordJson.Time(row["occurred_at_utc"]),PasswordJson.Text(row["source_xml"]));
+    private static PasswordNative ReadNative(PasswordScope scope,JsonObject row,bool normalizeAccount)=>PasswordNative.Parse(scope,row["source_event_id"]!.GetValue<long>(),PasswordJson.Text(row["sha256"]),row["event_id"]!.GetValue<int>(),PasswordJson.Time(row["occurred_at_utc"]),PasswordJson.Text(row["source_xml"]),normalizeAccount);
     private static PasswordEpisode BarrierEpisode(JsonObject b)=>new(PasswordJson.Text(b["episode_key"]),PasswordJson.Text(b["entity"]),PasswordWitness.Read(b["seed"]),PasswordWitness.Read(b["tracking_endpoint"]),PasswordJson.Text(b["root_id"]),PasswordJson.Text(b["last_emission_id"]),b["last_sequence"]!.GetValue<int>(),PasswordBudget.Read(b["totals"]),true);
     private static async Task<JsonObject> Complete(PasswordSql sql,PasswordRule rule,JsonObject attempt,string mode,JsonObject payload,CancellationToken ct)
     {
@@ -275,7 +277,8 @@ public sealed class PasswordProducer
         internal Dictionary<long,PasswordNative> Records {get;}=[];
         internal int Count=>Records.Count;private int bytes,retainedQueries;internal int CompletionCalls;
         internal JsonObject Work=>new(){["native_items"]=Count,["xml_bytes"]=bytes,["retained_queries"]=retainedQueries,["reservation_occurrences"]=0,["window_queries"]=1,["reservation_calls"]=0,["tracking_calls"]=0,["completion_calls"]=CompletionCalls};
-        internal NativeBudget(IEnumerable<PasswordNative> incoming){foreach(var n in incoming)Add(n);}
+        internal NativeBudget(IEnumerable<PasswordNative> incoming,bool normalizeAccount){foreach(var n in incoming)Add(n);this.normalizeAccount=normalizeAccount;}
+        private readonly bool normalizeAccount;
         private void Add(PasswordNative native,PasswordWitness? expected=null)
         {
             if(expected!=null&&native.Witness!=expected)throw new PasswordFailure("password_v2_native_content_conflict");long id=native.Witness.NativeId;
@@ -298,7 +301,7 @@ public sealed class PasswordProducer
             var missing=Plan(planned);if(missing.Count==0)return;
             var rows=await sql.Rows("select * from public.read_password_retained_proof_v2(@s::jsonb,@refs::jsonb)",ct,("s",scope.Document),("refs",PasswordJson.Array(missing,w=>w.Document)));retainedQueries++;
             if(rows.Count!=missing.Count)throw new PasswordFailure("password_v2_native_unavailable");
-            for(int i=0;i<rows.Count;i++){var row=rows[i];if(row["occurrence_index"]!.GetValue<int>()!=i+1||row["source_event_id"]!.GetValue<long>()!=missing[i].NativeId)throw new PasswordFailure("password_v2_native_unavailable");var n=ReadNative(scope,row);if(row["xml_bytes"]!.GetValue<int>()!=n.Witness.XmlBytes||row["xml_sha256"]?.GetValue<string>()!=n.Witness.XmlSha256)throw new PasswordFailure("password_v2_native_content_conflict");Add(n,missing[i]);}
+            for(int i=0;i<rows.Count;i++){var row=rows[i];if(row["occurrence_index"]!.GetValue<int>()!=i+1||row["source_event_id"]!.GetValue<long>()!=missing[i].NativeId)throw new PasswordFailure("password_v2_native_unavailable");var n=ReadNative(scope,row,normalizeAccount);if(row["xml_bytes"]!.GetValue<int>()!=n.Witness.XmlBytes||row["xml_sha256"]?.GetValue<string>()!=n.Witness.XmlSha256)throw new PasswordFailure("password_v2_native_content_conflict");Add(n,missing[i]);}
         }
     }
 }

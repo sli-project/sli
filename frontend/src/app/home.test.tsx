@@ -82,9 +82,11 @@ it("renders one grouped queue with counts, domain objects and a scoped group lin
 it("keeps the problem, severity and total in the phone layout", () => {
   compose();
   const row = screen.getAllByRole("row")[1];
-  expect([...row.querySelectorAll("td:not([data-home-detail])")].map((cell) => cell.textContent)).toEqual([
-    "высокая", expect.stringContaining("Synthetic problem"), "3",
-  ]);
+  const [severity, problem, total] = row.querySelectorAll<HTMLElement>("td:not([data-home-detail])");
+  expect(severity.textContent).toContain("Высокая");
+  expect(severity.textContent).toContain("◆");
+  expect(problem.textContent).toContain("Synthetic problem");
+  expect(total.textContent).toBe("3");
   expect(row.querySelectorAll("[data-home-detail]")).toHaveLength(3);
 });
 

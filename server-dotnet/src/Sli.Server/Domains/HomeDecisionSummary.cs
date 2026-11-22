@@ -109,7 +109,7 @@ internal sealed class HomeDecisionSummary(HomeSummaryReaders reads)
         payload["previous_login_at"] = since.HasValue ? HomeSummaryQuery.Iso(since.Value) : null;
         payload["updated_at_utc"] = selected.All(d => d.Freshness.ObservedAtUtc is not null) ? selected.Select(d => d.Freshness.ObservedAtUtc).Order().FirstOrDefault() : null;
         payload["remaining_groups"] = uncertainEmpty ? null : rows.FirstOrDefault().Number("total_groups") - groups.Count;
-        payload["remaining_problems"] = uncertainEmpty ? null : total - rows.Sum(r => r.Number("total"));
+        payload["remaining_problems"] = uncertainEmpty ? null : total - rows.Count;
         payload["warnings"] = warnings;
         return payload;
     }
