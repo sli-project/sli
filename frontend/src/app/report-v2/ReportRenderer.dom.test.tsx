@@ -159,10 +159,15 @@ it.each(["ru", "en"] as const)("keeps both change collections in one infrastruct
   await waitFor(() => expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition"));
 });
 
-it.each(["ok", "partial", "stale", "processing"] as const)("shows domain events as a list without data-state blocks (%s)", async (state) => {
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
+const legacyDomainEvents = (() => {
+  const report = reportDefinitions.find((item) => item.key === "security.events.chains")!;
+  return { ...report, params: report.params.filter(({ key }) => key !== "changes_view"),
     default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
   } as unknown as ReportDefinitionDto;
+})();
+
+it.each(["ok", "partial", "stale", "processing"] as const)("shows legacy domain events as a list without data-state blocks (%s)", async (state) => {
+  const raw = legacyDomainEvents;
   window.history.replaceState(null, "", "/app/report/security.events.chains?tab=chains");
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input); requested.push(url);
@@ -198,11 +203,9 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows domain events 
   expect(document.querySelector(".sli-ds-filters__additional")?.hasAttribute("open")).toBe(false);
 });
 
-it.each(["ru", "en"] as const)("renders absent domain event values as an em dash (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("renders absent legacy domain event values as an em dash (%s)", async (locale) => {
   setLocale(locale);
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
-    default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
-  } as unknown as ReportDefinitionDto;
+  const raw = legacyDomainEvents;
   const body = page({ report_key: raw.key, items: [{ event_db_id: 5, time_created_utc: "2026-11-14T01:00:00Z",
     change_text: locale === "ru" ? "Неудачный вход" : "Failed sign-in", actor: { state: "unknown", name: null, sid: null },
     affected_account: { state: "unknown" }, group: null, source_host: { hostname: "" }, outcome_code: "failure" }],
@@ -220,10 +223,8 @@ it.each(["ru", "en"] as const)("renders absent domain event values as an em dash
   expect(within(table).queryByText("-", { exact: true })).toBeNull();
 });
 
-it.each([false, true])("shows domain event optional columns only when the page has values (%s)", async (populated) => {
-  const raw = { ...reportDefinitions.find((item) => item.key === "security.events.chains"),
-    default_domain_id: 7, default_domain_state: "available", filter_options: { domain: [{ value: "7", label: "example.test" }] },
-  } as unknown as ReportDefinitionDto;
+it.each([false, true])("shows legacy domain event optional columns only when the page has values (%s)", async (populated) => {
+  const raw = legacyDomainEvents;
   const body = page({ report_key: raw.key, items: [{ event_db_id: 4, time_created_utc: "2026-11-14T02:00:00Z" }, { event_db_id: 5, time_created_utc: "2026-11-14T01:00:00Z",
     change_text: populated ? "Изменена группа" : "—", actor: { name: populated ? "fixture-user" : " " },
     group: { name: populated ? "fixture-group" : null }, outcome_code: "success" }],

@@ -96,8 +96,11 @@ public sealed class SecurityEventDomainOptionsTests
         var store = new Store(); var names = new Names();
         var options = await Reader(store, names).OptionsAsync(Definition, Access(ids: [7, 8]), Ct);
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""
-            {"domain":[{"value":"7","label":"domain7.example.test"},{"value":"8","label":"domain8.example.test"}]}
-            """), options));
+            [{"value":"7","label":"domain7.example.test"},{"value":"8","label":"domain8.example.test"}]
+            """), options["domain"]));
+        var operations = options["change_operation"]!.AsArray();
+        Assert.Contains(operations, operation => operation?["value"]?.ToString() == "5136");
+        Assert.DoesNotContain(operations, operation => operation?["value"]?.ToString() == "4624");
         Assert.Equal(new long[] { 7, 8 }, Assert.Single(names.Reads));
         Assert.Empty(store.Reads); Assert.Equal(0, store.Probes);
     }

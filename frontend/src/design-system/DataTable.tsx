@@ -29,7 +29,8 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
-  compact, density, expanded, afterRow, footerControls, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
+  compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
+  rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -47,17 +48,21 @@ export function DataTable<Row>({
   loadingMore?: boolean;
   onLoadMore?: () => void;
   total?: number | null;
-  pagination?: { start: number; end?: number; label?: ReactNode; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
+  pagination?: { start: number; end?: number; label?: ReactNode; onPrevious?: () => void; onNext?: () => void; busy?: boolean; pageLabel?: string };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
   renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  renderExpanded?: (row: Row, visibleCells: number) => ReactNode;
+  toolbar?: ReactNode;
+  toolbarEnd?: ReactNode;
+  footerControls?: ReactNode;
+  wrapCells?: boolean;
   compact?: boolean;
-  density?: "compact" | "standard";
+  density?: "compact" | "comfortable" | "standard";
   expanded?: (row: Row) => ReactNode;
   afterRow?: (row: Row) => ReactNode;
-  footerControls?: ReactNode;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -76,8 +81,7 @@ export function DataTable<Row>({
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
-  return <div className="sli-ds-table" data-compact={compact || undefined} data-density={density}>
-    {toggleable.length ? <details className="sli-ds-table__columns">
+  const columnMenu = toggleable.length ? <details className="sli-ds-table__columns">
       <summary>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
         {table.getAllLeafColumns().filter((column) => toggleable.some((item) => item.key === column.id)).map((column) => <label key={column.id}>
@@ -85,7 +89,9 @@ export function DataTable<Row>({
           {String(column.columnDef.header)}
         </label>)}
       </div>
-    </details> : null}
+    </details> : null;
+  return <div className="sli-ds-table" data-wrap={wrapCells || undefined} data-compact={compact || undefined} data-density={density}>
+    {toolbar || toolbarEnd ? <div className="sli-ds-table__toolbar">{toolbar}{columnMenu}{toolbarEnd}</div> : columnMenu}
     <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
       <table data-responsive={columns.some((column) => column.mobile === false) || undefined}>
         <caption className="sli-ds-sr-only">{caption}</caption>
@@ -109,6 +115,7 @@ export function DataTable<Row>({
           const detail = group?.collapsed ? null : rowDetail?.(row.original);
           const inlineContent = group?.collapsed ? null : expandedContent?.(row.original);
           const selected = selectedKey === row.id;
+          const visibleCells = row.getVisibleCells();
           const expansion = group?.collapsed ? null : expanded?.(row.original);
           const extra = group?.collapsed ? null : afterRow?.(row.original);
           return <Fragment key={row.id}>
@@ -119,7 +126,7 @@ export function DataTable<Row>({
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
             aria-expanded={renderExpandedRow ? selected : undefined}
             aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
-            {row.getVisibleCells().map((cell) => {
+            {visibleCells.map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
@@ -133,6 +140,7 @@ export function DataTable<Row>({
             {extra ? <tr><td colSpan={columnCount}>{extra}</td></tr> : null}
             {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
             {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
+            {!group?.collapsed ? renderExpanded?.(row.original, visibleCells.length) : null}
             {inlineContent != null ? <tr className="sli-ds-table__expanded"><td colSpan={columnCount}>{inlineContent}</td></tr> : null}
           </Fragment>;
         })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
@@ -141,7 +149,7 @@ export function DataTable<Row>({
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
       {footerControls}
       {pagination ? <>
-        <span>{pagination.label ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
+        <span>{pagination.label ?? pagination.pageLabel ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
           total: typeof total === "number" ? formatNumber(total) : t("table.noValue") })}</span>
         <div className="sli-ds-header__actions">
           <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onPrevious} onClick={pagination.onPrevious}>{t("table.previous")}</button>

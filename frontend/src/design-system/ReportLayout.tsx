@@ -14,7 +14,7 @@ import { Panel } from "./Primitives";
  * Reports fill the slots; they do not define their own page geometry.
  * While loading, the metrics/table slots show skeletons of the final geometry.
  */
-export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, split = false }: {
+export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, side, split = false }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -41,6 +41,7 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   busy?: boolean;
   children?: ReactNode;
   drawer?: ReactNode;
+  side?: ReactNode;
   inlineDrawer?: ReactNode;
   split?: boolean;
 }) {
@@ -48,8 +49,9 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   const result = state === "loading"
     ? <LoadingRegion>{metrics ? null : <MetricStripSkeleton/>}<TableSkeleton/></LoadingRegion>
     : blocking ? stateView ?? <StateView state={state} message={stateMessage} detail={stateDetail} actions={stateActions} onRetry={onRetry}/> : children;
-  const views = tabbed ? <TabPanel>{result}</TabPanel> : blocking && !split ? result : <div className="sli-ds-report__views" data-split={Boolean(inlineDrawer) || undefined}>
-    {inlineDrawer ? <div className="sli-ds-report__list">{result}</div> : result}
+  const reportContent = side ? <div className="sli-ds-report__side">{result}{side}</div> : result;
+  const views = tabbed ? <TabPanel>{reportContent}</TabPanel> : blocking && !split ? result : <div className="sli-ds-report__views" data-split={Boolean(inlineDrawer) || undefined}>
+    {inlineDrawer ? <div className="sli-ds-report__list">{reportContent}</div> : reportContent}
     {inlineDrawer}
   </div>;
   const content = <>

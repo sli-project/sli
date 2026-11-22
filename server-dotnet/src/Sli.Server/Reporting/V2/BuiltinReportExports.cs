@@ -35,10 +35,17 @@ public sealed partial class BuiltinReportExports(ReportRunner runner, IAccessFac
     }
     async Task<ReportExport> Security(ReportQueryContext c, CancellationToken ct)
     {
-        var period = AdPeriod.Parse(c.Params["period"]!["from_utc"]!.ToString(), c.Params["period"]!["to_utc"]!.ToString(), "UTC", "security_events");
+        var period = AdPeriod.Parse(c.Params["period"]!["from_utc"]!.ToString(), c.Params["period"]!["to_utc"]!.ToString(), "UTC", "security_events",
+            c.Params["changes_view"] is null ? 31 : 365);
         if (c.Paging.Tab == "persistence-changes") return await Persistence(c, period, ct);
         var query = new QueryCollection(c.Params.Where(p => p.Value is JsonValue).ToDictionary(p => p.Key, p => new StringValues(p.Value!.ToString())));
-        var filters = AdSecurity.Normalize(query);
+        var filters = AdSecurity.Normalize(query, domainChanges: true);
+        if (filters["changes_view"] is not null)
+        {
+            filters["repeat_mode"] = "individual";
+            filters["changes_order"] = "desc";
+            filters.Remove("batch");
+        }
         long? selected = c.Params["domain"] is {} domain ? long.Parse(domain.ToString(), CultureInfo.InvariantCulture) : null;
         var domains = new List<long>();
         if (selected is {} chosen) {

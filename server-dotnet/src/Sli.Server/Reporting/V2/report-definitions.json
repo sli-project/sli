@@ -4294,6 +4294,49 @@
     "key": "security.events.chains",
     "params": [
       {
+        "key": "changes_view",
+        "label": "Change type",
+        "kind": "choice",
+        "options": [
+          { "value": "all", "label": "All changes" },
+          { "value": "accounts", "label": "Accounts" },
+          { "value": "groups", "label": "Groups" },
+          { "value": "passwords", "label": "Passwords" },
+          { "value": "audit", "label": "Audit" }
+        ],
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "repeat_mode",
+        "label": "Collapse repeats",
+        "kind": "choice",
+        "options": [
+          { "value": "collapsed", "label": "Collapsed" },
+          { "value": "individual", "label": "Individual" }
+        ],
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "changes_order",
+        "label": "Change order",
+        "kind": "choice",
+        "options": [
+          { "value": "desc", "label": "Newest first" },
+          { "value": "asc", "label": "Oldest first" }
+        ],
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "batch",
+        "label": "Change group",
+        "kind": "int",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "domain",
         "label": "Домен",
         "kind": "domain",
@@ -4384,6 +4427,7 @@
         "key": "event_id",
         "label": "Код события",
         "kind": "int",
+        "options_from": "change_operation",
         "field_categories": [],
         "max_length": 256
       },

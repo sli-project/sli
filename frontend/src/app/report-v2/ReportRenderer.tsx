@@ -1,4 +1,5 @@
 import { EventJournal } from "./journal";
+import { DomainChanges } from "./DomainChanges";
 import { ProblemsQueue, ProblemJournal } from "./ProblemsQueue";
 import { workstationColumns } from "./workstation-columns";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
@@ -118,6 +119,11 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <EventJournal definition={definition.data} initialSearch={initialSearch}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "security.events.chains" && definition.data.params.some(({ key }) => key === "changes_view")) {
+    const search = new URLSearchParams(initialSearch ?? window.location.search);
+    if (search.get("category") !== "authentication" && !["4624", "4625", "4771", "4776"].includes(search.get("event_id") ?? ""))
+      return <DomainChanges definition={definition.data} initialSearch={initialSearch}/>;
+  }
   if (reportKey === "ad.gpo.v2" && definition.data.views.some((view) => view.component === "gpo.policy-list"))
     return <GpoPolicyReport definition={definition.data} search={initialSearch}/>;
   if (reportKey === "security.problems" && definition.data.params.some(({ key }) => key === "queue_view")) return <ProblemsQueue definition={definition.data} initialSearch={initialSearch}/>;

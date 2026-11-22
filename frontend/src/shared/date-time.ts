@@ -78,7 +78,7 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
   try {
     return new Intl.DateTimeFormat(intlLocale(), {
       timeZone: timeZone === "browser" ? undefined : timeZone,
-      ...(timeOnly ? { hour: "2-digit" as const, minute: "2-digit" as const, hourCycle: "h23" as const } : {
+      ...(timeOnly ? { hour: "2-digit" as const, minute: "2-digit" as const, ...(seconds ? { second: "2-digit" as const } : {}), hourCycle: "h23" as const } : {
       ...(withYear ? { year: "numeric" as const } : {}), month: en ? "short" : "2-digit", day: en ? "numeric" : "2-digit",
       ...(withTime ? { hour: en ? "numeric" : "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hourCycle: en ? "h12" : "h23" } : {}),
       }),

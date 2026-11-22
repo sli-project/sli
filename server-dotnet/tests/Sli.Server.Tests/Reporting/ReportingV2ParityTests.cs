@@ -292,8 +292,9 @@ public sealed class ReportingV2ParityTests
         var definitions = new ReportRuleCatalog(new PluginGenerationReader(null)).Rules.Select(r => registry.Get(r.RegistryKey)!).ToArray();
         var securityDefinition = registry.Get("security.events.chains")!;
         var security = new ReportAccess(securityDefinition, AccessFor(securityDefinition, actions: ["view"])).Declaration();
-        Assert.True(security["params"]![0]!["hidden"]!.GetValue<bool>());
-        Assert.Equal("domain", security["params"]![0]!["options_from"]!.GetValue<string>());
+        var domain = Assert.Single(security["params"]!.AsArray(), param => param?["key"]?.GetValue<string>() == "domain");
+        Assert.True(domain!["hidden"]!.GetValue<bool>());
+        Assert.Equal("domain", domain["options_from"]!.GetValue<string>());
         foreach (string path in new[] { "actor.name", "affected_account.name", "outcome_code" }) Assert.Contains(security["columns"]!.AsArray(), c => c!["path"]!.GetValue<string>() == path);
         Assert.True(security["export"]!.GetValue<bool>());
         Assert.Equal("table", security["views"]!.AsArray().Single(v => v!["key"]!.GetValue<string>() == "events")!["kind"]!.GetValue<string>());
