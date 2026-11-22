@@ -150,6 +150,8 @@ public sealed class ReportV2FilteredExportTests
             return Task.FromResult(new JsonObject { ["state"] = "available", ["current"] = Snapshot.DeepClone() });
         }
         public Task<JsonObject> GraphAsync(JsonObject snapshot, long[]? domains, CancellationToken ct) => throw new InvalidOperationException("Unexpected graph read");
+        public Task<JsonObject> PolicyHistoryAsync(long[] domains, DateTimeOffset from, DateTimeOffset to, string policyId, string guid, CancellationToken ct)
+            => throw new InvalidOperationException("Unexpected policy history read");
         public Task<JsonObject> HistoryAsync(long[]? domains, DateTimeOffset from, DateTimeOffset to, string query, CancellationToken ct)
         {
             HistoryReads++; Assert.Equal(new long[] { 1 }, domains); Assert.Equal("synthetic", query);

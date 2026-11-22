@@ -18,6 +18,7 @@ export function ReportWorkspacePage({ reportKey, journalSearch }: { reportKey: s
   const location = useLocation();
   const navigate = useNavigate();
   if (reportKey === "events.journal" && journalSearch !== undefined) return <ReportRenderer reportKey={reportKey} initialSearch={journalSearch}/>;
+  if (reportKey === "ad.gpo.v2") return <ReportRenderer reportKey={reportKey} initialSearch={location.searchStr}/>;
   if (!workspace || reportKey.startsWith("file-audit.")) return <PluginReportPage reportKey={reportKey}/>;
   if (accessStatus === "отказ" || catalog.isError) return <StateView state="unavailable"/>;
   if (catalog.isLoading || !access) return <StateView state="loading"/>;

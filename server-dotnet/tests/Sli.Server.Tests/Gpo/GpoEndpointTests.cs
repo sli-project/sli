@@ -102,6 +102,44 @@ public sealed class GpoEndpointTests
     {
         var store=new GpoReportTests.Store();using var host=await Host(store,scope:"{\"kind\":\"server\",\"ids\":[1]}");using var client=host.GetTestClient();using var response=await client.GetAsync(Prefix+"/data",TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);Assert.Contains("report_scope_not_executable",await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));Assert.Equal(0,store.Reads);
     }
+    [Fact]
+    public async Task Policy_card_and_history_use_the_selected_granted_domain()
+    {
+        var snapshot=GpoReportTests.ReviewSnapshot();
+        var policy=Assert.Single(snapshot.Rows("gpos"));
+        policy["computer"]!["sysvol_version"]=2;
+        snapshot["settings"]=JsonNode.Parse("""
+            [{"id":"setting-a","gpo_id":"synthetic-policy","side":"computer","setting_name":"Timeout","path":"Security/Timeout","value_display":"600"},
+             {"id":"setting-b","gpo_id":"another-policy","side":"computer","setting_name":"Other","value_display":"500"}]
+            """);
+        var store=new GpoReportTests.Store {
+            Pair=new JsonObject { ["state"]="available",["domain_id"]=1,["current"]=snapshot },
+            PolicyHistory=JsonNode.Parse("""
+                {"state":"ok","items":[{"id":"change-a","object_type":"gpo_setting","object_id":"setting-a","kind":"attribute_changed",
+                 "field":"value_display","observed_at":"2026-10-07T00:00:00Z","before_value":"900","after_value":"600"}]}
+                """)!.AsObject()
+        };
+        using var host=await Host(store);using var client=host.GetTestClient();
+        var ct=TestContext.Current.CancellationToken;
+        using var denied=await client.GetAsync(Prefix+"/data?tab=gpos&policy_id=synthetic-policy&domain=2",ct);
+        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        Assert.Equal(0,store.Reads);
+        using var response=await client.GetAsync(Prefix+"/data?tab=gpos&policy_id=synthetic-policy&domain=1",ct);
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(new long[]{1},store.Domains);
+        var details=JsonNode.Parse(await response.Content.ReadAsStringAsync(ct))!["collections"]!;
+        Assert.Equal("Timeout",Assert.Single(details["settings"]!.AsArray())!["setting_name"]!.GetValue<string>());
+        Assert.Equal(2,Assert.Single(details["versions"]!.AsArray())!["computer_sysvol_version"]!.GetValue<int>());
+        using var history=await client.GetAsync(Prefix+"/data?tab=changes&policy_id=synthetic-policy&domain=1",ct);
+        history.EnsureSuccessStatusCode();
+        var change=Assert.Single(JsonNode.Parse(await history.Content.ReadAsStringAsync(ct))!["collections"]!["changes"]!.AsArray())!;
+        Assert.Equal("Timeout",change["name"]!.GetValue<string>());
+        Assert.Equal("900",change["before_value"]!.GetValue<string>());
+        Assert.Equal("600",change["after_value"]!.GetValue<string>());
+        using var export=await client.GetAsync(Prefix+"/export.csv?tab=gpos&view=unlinked_version_mismatch&domain=1",ct);
+        export.EnsureSuccessStatusCode();
+        Assert.Contains("Synthetic policy",await export.Content.ReadAsStringAsync(ct));
+    }
     [Fact] public async Task Corrupt_source_is_503_and_never_exposes_source_fields()
     {
         var store=new GpoReportTests.Store {Error=new GpoSourceException()};using var host=await Host(store);using var client=host.GetTestClient();using var response=await client.GetAsync(Prefix+"/data",TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.ServiceUnavailable,response.StatusCode);Assert.Contains("source_contract_error",await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));

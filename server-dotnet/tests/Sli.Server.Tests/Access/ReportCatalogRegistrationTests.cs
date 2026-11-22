@@ -258,6 +258,7 @@ public sealed class ReportCatalogRegistrationTests
         { await Task.Yield(); Reads++; duringRead(); return await gpo.PairAsync(domains, ct); }
         public Task<JsonObject> GraphAsync(JsonObject snapshot, long[]? domains, CancellationToken ct) => gpo.GraphAsync(snapshot, domains, ct);
         public Task<JsonObject> HistoryAsync(long[]? domains, DateTimeOffset from, DateTimeOffset to, string query, CancellationToken ct) => gpo.HistoryAsync(domains, from, to, query, ct);
+        public Task<JsonObject> PolicyHistoryAsync(long[] domains, DateTimeOffset from, DateTimeOffset to, string policyId, string guid, CancellationToken ct) => gpo.PolicyHistoryAsync(domains, from, to, policyId, guid, ct);
     }
 
     private static AccessFacts Facts() => new(false, "viewer", [], [],

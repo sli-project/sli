@@ -22,4 +22,26 @@ public sealed class GpoHistoryTests
         var result=await GpoChangeHistory.ReadAsync([c],[1],Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-02T00:00:00Z"),Stamp("2026-01-01T00:00:00Z"),365,"",Read,TestContext.Current.CancellationToken);Assert.Single(result.Rows("items"));Assert.Equal("synthetic-gpo",result["items"]![0].Text("object_id"));
         rows[0]["payload_json"]="{}";await Assert.ThrowsAsync<InvalidDataException>(()=>GpoChangeHistory.ReadAsync([c],[1],Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-02T00:00:00Z"),Stamp("2026-01-01T00:00:00Z"),365,"",Read,TestContext.Current.CancellationToken));
     }
+    [Fact]
+    public async Task Policy_history_only_returns_matching_records_and_verified_values()
+    {
+        var confirmation=Confirmation("b","a","2026-10-01T12:00:00Z");
+        string batch=confirmation.Text("batch_id");
+        JsonObject Record(string policy,string after)
+        {
+            var payload=new JsonObject { ["object_type"]="gpo_setting",["object_id"]="synthetic-setting",
+                ["related_object_id"]=policy,["kind"]="attribute_changed",["field"]="value_display",
+                ["before_sha256"]=Hash(JsonValue.Create("900 seconds")),["after_sha256"]=Hash(JsonValue.Create("600 seconds")) };
+            return new JsonObject { ["record_id"]=Hash(new JsonArray(batch,payload.DeepClone())),
+                ["payload_json"]=payload.ToJsonString(),["before_value"]="900 seconds",["after_value"]=after };
+        }
+        var records=new List<JsonObject> { Record("synthetic-policy","incorrect value"),Record("synthetic-policy-other","600 seconds") };
+        confirmation["record_count"]=records.Count;
+        confirmation["records_sha256"]=Hash(new JsonArray(records.Select(row=>(JsonNode)new JsonArray(row.Text("record_id"),row.Text("payload_json"))).ToArray()));
+        var result=await GpoChangeHistory.ReadAsync([confirmation],[1],Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-02T00:00:00Z"),
+            Stamp("2026-01-01T00:00:00Z"),365,"",(_,_,_,_,_)=>Task.FromResult(records),TestContext.Current.CancellationToken,"synthetic-policy");
+        var change=Assert.Single(result.Rows("items"));
+        Assert.Equal("900 seconds",change.Text("before_value"));
+        Assert.Null(change["after_value"]);
+    }
 }

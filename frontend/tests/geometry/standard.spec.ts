@@ -241,7 +241,8 @@ for (const screen of screens) {
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
     // AD checks have hidden object-preview tables inside each closed row.
     const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
-    await expect(page.locator('main').locator(rows)).toHaveCount(60);
+    const list = screen.key === 'ad.gpo.v2' ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
+    await expect(list.locator(rows)).toHaveCount(60);
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -383,11 +384,19 @@ for (const width of [1920, 2560]) {
 test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 11);
   await page.goto('/app/report/ad.gpo.v2?domain=1');
-  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(definitions.get('ad.gpo.v2')!.title, { timeout: 30_000 });
-  await expect(page.locator('main tbody tr')).toHaveCount(11);
+  const { title } = definitions.get('ad.gpo.v2')!;
+  await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
+  await expect(page.getByRole('table', { name: title, exact: true }).locator('tbody tr')).toHaveCount(11);
   await page.evaluate(async () => { await document.fonts.ready; });
   const measurement = await measureStandard(page);
-  expect((await page.locator('.sli-ds-field > label').filter({ hasText: 'Поиск' }).boundingBox())!.height).toBeLessThanOrEqual(30);
+  const search = page.getByRole('searchbox', { name: 'Название политики', exact: true });
+  const filter = page.getByRole('button', { name: /^Без связей/ });
+  await expect(search).toBeVisible();
+  await expect(filter).toBeVisible();
+  const searchBox = (await search.boundingBox())!;
+  const filterBox = (await filter.boundingBox())!;
+  expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(filterBox.x);
+  expect(Math.max(searchBox.y, filterBox.y)).toBeLessThan(Math.min(searchBox.y + searchBox.height, filterBox.y + filterBox.height));
   console.log(JSON.stringify({ screen: 'ad.gpo.v2', shortList: true, ...measurement }));
   expect(standardViolations(measurement, 11)).toEqual([]);
   expect(new URL(page.url()).searchParams.get('domain')).toBe('1');

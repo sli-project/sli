@@ -41,6 +41,29 @@ internal static class GpoInventory
     }
     static bool Numeric(JsonNode? n,out double value) { value=0;return n?.GetValueKind()!=System.Text.Json.JsonValueKind.True&&n?.GetValueKind()!=System.Text.Json.JsonValueKind.False&&double.TryParse(n?.ToString(),NumberStyles.Float,CultureInfo.InvariantCulture,out value); }
     static int Score(JsonObject reason)=>(reason.Text("category") switch { "deviation"=>0,"unverified"=>1,_=>2 })*100+(int)reason.Number("rank");
+    internal static bool VersionMismatch(JsonObject policy) => policy.Rows("reasons").Any(reason => reason.Text("code")=="version_mismatch");
+
+    internal static JsonObject Versions(JsonObject policy)
+    {
+        var versions=new JsonObject();
+        foreach(string side in new[]{"computer","user"})
+            foreach(string field in new[]{"directory_version","sysvol_version"})
+                if(long.TryParse(policy[side].Text(field),NumberStyles.Integer,CultureInfo.InvariantCulture,out long value)&&value>=0)
+                    versions[side+"_"+field]=value;
+        return versions;
+    }
+
+    internal static JsonObject ListRow(JsonObject policy)
+    {
+        var row=Row(policy);
+        foreach(var version in Versions(policy)) row[version.Key]=version.Value?.DeepClone();
+        foreach(string side in new[]{"computer","user"})
+            row[side+"_setting_count"]=policy[side]?["settings_count"]?.DeepClone();
+        if(row.Number("setting_count")==0&&policy["source_states"]?["report"].Text("status")!="observed") row["setting_count"]=null;
+        row["unlinked"]=policy.Rows("reasons").Any(reason=>reason.Text("code")=="unlinked");
+        if(row.Number("link_count")==0&&!row.True("unlinked")) row["link_count"]=null;
+        return row;
+    }
     internal static JsonObject Row(JsonObject g)
     {
         var reasons=g.Rows("reasons").ToArray();var row=new JsonObject();
@@ -50,18 +73,20 @@ internal static class GpoInventory
         foreach(var (key,cat) in new[]{("reason_titles","deviation"),("unverified_titles","unverified"),("assignment_titles","assignment")}) { string titles=string.Join(", ",reasons.Where(r=>r.Text("category")==cat).Select(r=>r.Text("title")));row[key]=titles.Length==0?null:JsonValue.Create(titles); }
         row["priority"]=reasons.FirstOrDefault()?.Text("priority")??"none";row["next_step"]=reasons.FirstOrDefault()?["next"]?.DeepClone();row["owner"]=g["owner"]?["name"]?.DeepClone();return row;
     }
-    internal static (JsonArray Items,int Total,bool NotEvaluated) Filter(JsonObject snapshot,string view,string query="")
+    internal static (JsonArray Items,int Total,bool NotEvaluated) Filter(JsonObject snapshot,string view,string query="",bool nameOnly=false)
     {
         bool linksObserved=snapshot["source_states"]?["links"].Text("status")=="observed";
-        if(view=="unlinked"&&!linksObserved) return (new(),0,true);
+        bool unlinked=view is "unlinked" or "unlinked_version_mismatch";
+        if(unlinked&&!linksObserved) return (new(),0,true);
         var rows=new List<JsonObject>();
         foreach(var original in snapshot.Rows("gpos"))
         {
             var g=original.Copy();g["reasons"]=Reasons(g,snapshot);
             if(view is "attention" or "unverified" or "assignment"&&!g.Rows("reasons").Any(r=>r.Text("category")==(view=="attention"?"deviation":view))) continue;
             bool linked=(g["link_ids"] as JsonArray)?.Count>0;
-            if(view=="linked"&&!linked||view=="unlinked"&&(linked||g["source_states"]?["links"].Text("status")!="observed")) continue;
-            if(Contains(g,query)) rows.Add(g);
+            if(view=="linked"&&!linked||unlinked&&(linked||g["source_states"]?["links"].Text("status")!="observed")) continue;
+            if(view is "version_mismatch" or "unlinked_version_mismatch"&&!VersionMismatch(g)) continue;
+            if(nameOnly?Fold(g.Text("display_name")).Contains(Fold(query),StringComparison.Ordinal):Contains(g,query)) rows.Add(g);
         }
         rows=rows.OrderBy(g=>g.Rows("reasons").Select(Score).DefaultIfEmpty(1000).Min()).ToList();return (Array(rows.Take(10000)),rows.Count,false);
     }

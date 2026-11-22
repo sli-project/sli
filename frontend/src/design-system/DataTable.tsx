@@ -17,6 +17,7 @@ export type TableColumn<Row> = {
   hiddenByDefault?: boolean;
   /** Omit secondary columns on narrow screens while keeping row details available. */
   mobile?: boolean;
+  wideOnly?: boolean;
   wrap?: boolean;
   width?: string;
   minWidth?: string;
@@ -28,7 +29,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
-  compact, density, expanded, afterRow, footerControls, rowGroup, rowDetail, emptyContent, renderExpandedRow,
+  compact, density, expanded, afterRow, footerControls, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -38,6 +39,7 @@ export function DataTable<Row>({
   onRowClick?: (row: Row) => void;
   selectedKey?: string | null;
   caption: string;
+  expandedContent?: (row: Row) => ReactNode;
   rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
   rowDetail?: (row: Row) => ReactNode;
   emptyContent?: ReactNode;
@@ -91,7 +93,7 @@ export function DataTable<Row>({
           const column = header.column.columnDef.meta as TableColumn<Row>;
           const active = sort?.field === column.key;
           const ariaSort = active ? (sort?.direction === "asc" ? "ascending" : "descending") : column.sortable && onSort ? "none" : undefined;
-          return <th key={header.id} scope="col" data-mobile={column.mobile} style={{ width: column.width, minWidth: column.minWidth }} data-align={column.align ?? (column.kind === "number" ? "end" : "start")} aria-sort={ariaSort}>
+          return <th key={header.id} scope="col" data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined} style={{ width: column.width, minWidth: column.minWidth }} data-align={column.align ?? (column.kind === "number" ? "end" : "start")} aria-sort={ariaSort}>
             {column.sortable && onSort
               ? <button type="button" className="sli-ds-table__sort" onClick={() => onSort(column.key)}>
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -105,6 +107,7 @@ export function DataTable<Row>({
           const group = rowGroup?.(row.original);
           const groupStart = group && (index === 0 || rowGroup?.(visibleRows[index - 1].original).key !== group.key);
           const detail = group?.collapsed ? null : rowDetail?.(row.original);
+          const inlineContent = group?.collapsed ? null : expandedContent?.(row.original);
           const selected = selectedKey === row.id;
           const expansion = group?.collapsed ? null : expanded?.(row.original);
           const extra = group?.collapsed ? null : afterRow?.(row.original);
@@ -121,7 +124,8 @@ export function DataTable<Row>({
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined}
+                data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>}
@@ -129,6 +133,7 @@ export function DataTable<Row>({
             {extra ? <tr><td colSpan={columnCount}>{extra}</td></tr> : null}
             {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
             {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
+            {inlineContent != null ? <tr className="sli-ds-table__expanded"><td colSpan={columnCount}>{inlineContent}</td></tr> : null}
           </Fragment>;
         })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>

@@ -39,6 +39,7 @@ import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, ComputerReasons, computerFactValue, computerSummary, computerTableColumns } from "../../plugins/ad/ComputerChecks";
 import { UserChanges, UserChecks, UserReasons, userSummary, userTableColumns } from "../../plugins/ad/UserChecks";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
+import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -117,6 +118,8 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <EventJournal definition={definition.data} initialSearch={initialSearch}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "ad.gpo.v2" && definition.data.views.some((view) => view.component === "gpo.policy-list"))
+    return <GpoPolicyReport definition={definition.data} search={initialSearch}/>;
   if (reportKey === "security.problems" && definition.data.params.some(({ key }) => key === "queue_view")) return <ProblemsQueue definition={definition.data} initialSearch={initialSearch}/>;
   if (reportKey === "ad.infrastructure" && definition.data.views.some((view) => view.key === "controls")) {
     return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
