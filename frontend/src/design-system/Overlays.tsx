@@ -3,7 +3,7 @@ import { t } from "../i18n";
 import { DetailDrawer } from "./DetailDrawer";
 import { Icon } from "./Icon";
 
-export type ModalState = { title: string; subtitle?: string; body: ReactNode; footer?: ReactNode; formId?: string; onSubmit?: (event: FormEvent<HTMLFormElement>) => void };
+export type ModalState = { title: string; subtitle?: string; body: ReactNode; footer?: ReactNode; formId?: string; onSubmit?: (event: FormEvent<HTMLFormElement>) => void; bodyOwnsForm?: boolean };
 export type DrawerState = { title: string; body: ReactNode; eyebrow?: string; variant?: "default" | "entity" };
 export type OverlayApi = {
   openModal: (modal: ModalState) => void;
@@ -75,18 +75,21 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [drawer, modal]);
+  const ModalContent = modal?.bodyOwnsForm ? "div" : "form";
   return <OverlayContext.Provider value={{ openModal, closeModal, openDrawer, closeDrawer, toast }}>
     {children}
     {modal ? <div className="sli-ds-modal" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModal(); }}>
       <div className="sli-ds-modal__panel" role="dialog" aria-modal="true" aria-labelledby="sli-ds-modal-title" ref={modalRef}>
-        <form id={modal.formId} onSubmit={modal.onSubmit}>
+        <ModalContent id={modal.formId} onSubmit={(event: FormEvent<HTMLElement>) => {
+          if (event.currentTarget instanceof HTMLFormElement) modal.onSubmit?.(event as FormEvent<HTMLFormElement>);
+        }}>
           <div className="sli-ds-modal__head">
             <div><h2 id="sli-ds-modal-title">{modal.title}</h2>{modal.subtitle ? <p>{modal.subtitle}</p> : null}</div>
             <button className="sli-ds-button" data-variant="ghost" type="button" onClick={closeModal} aria-label={t("drawer.close")}><Icon name="close"/></button>
           </div>
           <div className="sli-ds-modal__body">{modal.body}</div>
           {modal.footer ? <div className="sli-ds-modal__footer">{modal.footer}</div> : null}
-        </form>
+        </ModalContent>
       </div>
     </div> : null}
     <DetailDrawer open={Boolean(drawer)} title={drawer?.title ?? ""} subtitle={drawer?.eyebrow} onClose={closeDrawer}>{drawer?.body}</DetailDrawer>

@@ -90,12 +90,14 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
 async function installStandardFixtures(page: Page, count = 60) {
   const unexpected: string[] = [];
   const servedData: string[] = [];
+  const decisions: unknown[] = [];
+  let firstProblemStatus = 'new';
   await page.addInitScript(() => {
     localStorage.setItem('sli.locale', 'ru');
     localStorage.setItem('sli.theme', 'light');
   });
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
-    const pathname = new URL(route.request().url()).pathname;
+    const { pathname, searchParams } = new URL(route.request().url());
     let body: unknown;
     let status = 200;
     if (pathname === '/api/v1/ui/bootstrap') body = { api_version: 'v1', effective_role: 'admin',
@@ -107,6 +109,20 @@ async function installStandardFixtures(page: Page, count = 60) {
     else if (pathname === '/api/v1/overview') body = { collection_freshness: { state: 'partial' } };
     else if (pathname === '/api/v1/domains') body = { items: [{ id: 1, display_name: 'example.test',
       freshness: { snapshot_state: 'partial', observed_at_utc: observed } }] };
+    else if (pathname === '/api/findings/risk-responsibles' && route.request().method() === 'GET') {
+      body = { items: [] };
+    }
+    else if (pathname === '/api/findings/queue-decisions' && route.request().method() === 'POST') {
+      const decision = route.request().postDataJSON();
+      decisions.push(decision);
+      firstProblemStatus = decision.state;
+      body = { status: 'ok', changed: 1 };
+    }
+    else if (pathname === '/api/v2/reports/security.problems/rows/1/detail' && route.request().method() === 'GET') {
+      body = { ...resultFor(definitions.get('security.problems')!, 0), items: [{
+        event_id: 4625, event_db_id: 1, evidence_id: 1, time_created_utc: observed,
+      }] };
+    }
     else if (pathname === '/api/v2/reports/security.problems/password-coverage' && route.request().method() === 'GET') {
       body = {
         contract_id: 'sli.report-result.v2', report_key: 'security.problems', state: 'partial',
@@ -120,8 +136,18 @@ async function installStandardFixtures(page: Page, count = 60) {
       const match = pathname.match(/^\/api\/v2\/reports\/([^/]+)(\/data)?$/);
       const definition = match && definitions.get(decodeURIComponent(match[1]) as typeof screens[number]['key']);
       if (definition) {
-        body = match![2] ? resultFor(definition, count) : definition;
-        if (match![2]) servedData.push(definition.key);
+        if (match![2]) {
+          const result = resultFor(definition, count);
+          if (definition.key === 'security.problems') {
+            result.items[0].status = firstProblemStatus;
+            if (searchParams.has('id')) {
+              result.items = result.items.filter(item => String(item.id) === searchParams.get('id'));
+              result.filtered_count = result.items.length;
+            }
+          }
+          body = result;
+          servedData.push(definition.key);
+        } else body = definition;
       } else {
         unexpected.push(`${route.request().method()} ${pathname}`);
         status = 501; body = { error: 'standard_unmocked_request' };
@@ -129,7 +155,7 @@ async function installStandardFixtures(page: Page, count = 60) {
     }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  return { unexpected, servedData };
+  return { unexpected, servedData, decisions };
 }
 
 async function measureStandard(page: Page) {
@@ -190,7 +216,7 @@ function standardViolations(m: Awaited<ReturnType<typeof measureStandard>>, mini
 
 for (const screen of screens) {
   test(`UI standard: ${screen.key}`, async ({ page }, testInfo) => {
-    const { unexpected, servedData } = await installStandardFixtures(page);
+    const { unexpected, servedData, decisions } = await installStandardFixtures(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`/app/report/${screen.key}`);
@@ -201,8 +227,6 @@ for (const screen of screens) {
     const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
     const list = screen.key === 'ad.gpo.v2' ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
     await expect(list.locator(rows)).toHaveCount(60);
-    if (screen.key === 'security.problems')
-      await expect(page.locator('main tbody tr').first().getByRole('button', { name: 'Решено' })).toBeVisible();
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -215,6 +239,29 @@ for (const screen of screens) {
     const screenshot = testInfo.outputPath('screen.png');
     await page.screenshot({ path: screenshot });
     await testInfo.attach('screen.png', { path: screenshot, contentType: 'image/png' });
+    if (screen.key === 'security.problems') {
+      expect(measurements.horizontalOverflow).toBe(false);
+      const scroll = page.locator('main .sli-ds-table__scroll').first();
+      expect(await scroll.evaluate(box => box.scrollWidth - box.clientWidth)).toBeLessThanOrEqual(1);
+      const first = page.locator('main').locator(rows).first();
+      const title = 'Изменены настройки учётной записи';
+      await first.getByRole('link', { name: `${title} · Объект 1`, exact: true }).click();
+      const panel = page.getByRole('dialog', { name: title });
+      await expect(panel).toBeInViewport({ ratio: 1 });
+      await expect(panel.getByText('4625', { exact: true })).toBeVisible();
+      expect(await panel.locator('.sli-ds-drawer__body').evaluate(box => box.scrollWidth - box.clientWidth)).toBeLessThanOrEqual(1);
+      const panelScreenshot = testInfo.outputPath('problem-panel.png');
+      await page.screenshot({ path: panelScreenshot });
+      await testInfo.attach('problem-panel.png', { path: panelScreenshot, contentType: 'image/png' });
+      const state = panel.getByRole('combobox', { name: 'Состояние' });
+      await state.selectOption('closed');
+      const decision = page.getByRole('dialog', { name: 'Изменить состояние' });
+      await decision.getByLabel('Причина решения').selectOption('fixed');
+      await decision.getByRole('button', { name: 'Сохранить решение' }).click();
+      await expect(decision).toBeHidden();
+      await expect(state).toHaveValue('closed');
+      expect(decisions).toEqual([{ ids: [1], state: 'closed', classification: 'fixed' }]);
+    }
     expect(unexpected, 'all API traffic must be synthetic and handled').toEqual([]);
     expect(errors, 'screen must render without errors even in monitoring mode').toEqual([]);
     expect(servedData).toContain(screen.key);

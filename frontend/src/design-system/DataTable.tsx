@@ -29,7 +29,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
-  rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
+  compact, density, expanded, afterRow, footerControls, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -47,12 +47,17 @@ export function DataTable<Row>({
   loadingMore?: boolean;
   onLoadMore?: () => void;
   total?: number | null;
-  pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
+  pagination?: { start: number; end?: number; label?: ReactNode; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
   renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  compact?: boolean;
+  density?: "compact" | "standard";
+  expanded?: (row: Row) => ReactNode;
+  afterRow?: (row: Row) => ReactNode;
+  footerControls?: ReactNode;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -71,7 +76,7 @@ export function DataTable<Row>({
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
-  return <div className="sli-ds-table">
+  return <div className="sli-ds-table" data-compact={compact || undefined} data-density={density}>
     {toggleable.length ? <details className="sli-ds-table__columns">
       <summary>{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
@@ -102,8 +107,10 @@ export function DataTable<Row>({
           const group = rowGroup?.(row.original);
           const groupStart = group && (index === 0 || rowGroup?.(visibleRows[index - 1].original).key !== group.key);
           const detail = group?.collapsed ? null : rowDetail?.(row.original);
-          const expanded = group?.collapsed ? null : expandedContent?.(row.original);
+          const inlineContent = group?.collapsed ? null : expandedContent?.(row.original);
           const selected = selectedKey === row.id;
+          const expansion = group?.collapsed ? null : expanded?.(row.original);
+          const extra = group?.collapsed ? null : afterRow?.(row.original);
           return <Fragment key={row.id}>
             {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
             {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
@@ -122,16 +129,19 @@ export function DataTable<Row>({
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>}
+            {expansion ? <tr><td colSpan={columnCount} className="sli-ds-table__expanded">{expansion}</td></tr> : null}
+            {extra ? <tr><td colSpan={columnCount}>{extra}</td></tr> : null}
             {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
             {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
-            {expanded != null ? <tr className="sli-ds-table__expanded"><td colSpan={columnCount}>{expanded}</td></tr> : null}
+            {inlineContent != null ? <tr className="sli-ds-table__expanded"><td colSpan={columnCount}>{inlineContent}</td></tr> : null}
           </Fragment>;
         })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
+      {footerControls}
       {pagination ? <>
-        <span>{t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
+        <span>{pagination.label ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
           total: typeof total === "number" ? formatNumber(total) : t("table.noValue") })}</span>
         <div className="sli-ds-header__actions">
           <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onPrevious} onClick={pagination.onPrevious}>{t("table.previous")}</button>
