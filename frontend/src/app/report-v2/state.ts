@@ -35,7 +35,6 @@ export function filterFields(definition: ReportDefinitionDto, live?: Record<stri
 
 /** Common primary controls; unrecognized report forms keep their first four fields. */
 export function primaryFilterKeys(definition: ReportDefinitionDto): string[] {
-  if (definition.key === "events.journal") return ["q", "period"];
   const visible = definition.params.filter((param) => !param.hidden);
   const primary = visible.filter((param) => param.kind === "domain" || param.kind === "period" || param.required || ["q", "view", "threshold_days"].includes(param.key));
   return (primary.length ? primary : visible.slice(0, 4)).map((param) => param.key);

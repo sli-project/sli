@@ -172,11 +172,19 @@ end $$;
 alter table public.schema_migrations add column if not exists sha256 text;
 """]
     for item in migrations:
+        enter, leave = "set role adlog_storage_owner;", "reset role;"
+        if (item.version, item.name) == (397, "problem_queue_workflow"):
+            # The published preflight reads the report catalog before SET ROLE.
+            # The existing NOLOGIN migrator has runtime catalog access and can
+            # switch to the storage owner for DDL. RESET ROLE in the migration
+            # returns to that migrator for the ledger insert.
+            enter = "set local session authorization adlog_storage_migrator;"
+            leave = "reset session authorization;"
         parts.extend([
             f"select not exists(select 1 from public.schema_migrations where version={item.version})"
             " as sli_upgrade_pending \\gset\n\\if :sli_upgrade_pending\n",
-            f"\\echo PostgreSQL: migration {item.version}\nset role adlog_storage_owner;\n",
-            transactional_sql(item.path.read_text(encoding="utf-8")), "\nreset role;\n",
+            f"\\echo PostgreSQL: migration {item.version}\n{enter}\n",
+            transactional_sql(item.path.read_text(encoding="utf-8")), f"\n{leave}\n",
             f"""do $$ begin
     if not exists(select 1 from public.schema_migrations
                   where version={item.version} and name={literal(item.name)}) then

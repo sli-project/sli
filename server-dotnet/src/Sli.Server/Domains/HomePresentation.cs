@@ -1,5 +1,8 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Domains;
 
@@ -12,6 +15,68 @@ internal static class HomePresentation
     });
     internal static string Text(string code) => Russian.Value.GetValueOrDefault(code, code);
     internal static JsonObject Message(string code) => new() { ["code"] = code, ["params"] = new JsonObject(), ["text"] = Text(code) };
+
+    internal static string? DisplayName(string? value)
+    {
+        var name = value?.Trim();
+        return name is null or "" or "-" or "—" || name.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("sid:", StringComparison.OrdinalIgnoreCase) ? null
+            : string.Concat(name.EnumerateRunes().Take(512).Select(rune => rune.ToString()));
+    }
+
+    internal static (string? Name, string? Fact) PeriodProblem(JsonObject finding, HomeSummaryQuery query, bool identity)
+    {
+        string rule = finding.Text("rule_code") ?? "";
+        var password = finding["password"];
+        if (ProblemPresentation.IsPasswordFinding(rule))
+        {
+            const string prefix = "home.period.problem.";
+            var locale = DomainHttp.SelectEnglish(query.Language) ? "en" : "ru";
+            var culture = CultureInfo.GetCultureInfo(locale);
+            string? Title() => ProblemPresentation.HasRuleMessage(rule, "title", query.Language)
+                ? DisplayName(ProblemPresentation.RuleMessage(finding, "title", query.Language).Text("text")) : null;
+            string NumberMessage(string key, long count) => ProblemPresentation.Message(prefix + key, query.Language,
+                new() { ["count"] = count.ToString("N0", culture) }).Text("text")!;
+
+            if (password.Boolean("password_success") == true)
+            {
+                finding = finding.DeepClone().AsObject();
+                finding["presentation_facts"] = new JsonObject { ["password_success"] = true };
+            }
+            var accounts = password.Number("accounts");
+            var addresses = password.Number("addresses");
+            var name = accounts > 1 ? NumberMessage("accounts", accounts) : DisplayName(password.Text("account"));
+            string? title = Title();
+            if (password is null) return (null, title);
+
+            var attempts = password.Number("attempts");
+            var detail = new List<string>();
+            if (attempts > 0) detail.Add(NumberMessage("attempts", attempts));
+            if (addresses > 1) detail.Add(NumberMessage("addresses", addresses));
+            else if (DisplayName(password.Text("address")) is { } address) detail.Add(address);
+            if (password.Stamp("first_at") is { } first && password.Stamp("last_at") is { } last)
+            {
+                var zone = TimeZoneInfo.FindSystemTimeZoneById(query.TimeZone);
+                var from = TimeZoneInfo.ConvertTime(first, zone);
+                var to = TimeZoneInfo.ConvertTime(last, zone);
+                var format = from.Date == to.Date ? "HH:mm" : "g";
+                detail.Add(first == last ? from.ToString(format, culture) : $"{from.ToString(format, culture)}–{to.ToString(format, culture)}");
+            }
+            return (name, string.Join(" · ", detail.Prepend(title).Where(text => text is not null)) is { Length: > 0 } fact ? fact : null);
+        }
+
+        var subject = finding["subject"];
+        var group = DisplayName(subject.Text("group_name"));
+        var member = DisplayName(subject.Text("member_name"));
+        var target = group is not null && member is not null ? $"{group} · {member}"
+            : group ?? DisplayName(finding.Text("entity_name")) ?? DisplayName(subject.Text("account")) ?? DisplayName(finding.Text("target"));
+        if (rule is "semantic.security.audit_controls_changed" or "semantic.qw.audit-disabled" or "semantic.qw.security-log-cleared")
+            target = DisplayName(subject.Text("computer")) ?? target;
+        target ??= DisplayName(finding.Text("actor"));
+        return (identity ? target : null, ProblemPresentation.HasRuleMessage(rule, "title", query.Language)
+            ? DisplayName(ProblemPresentation.RuleMessage(finding, "title", query.Language).Text("text")) : null);
+    }
+
     internal static JsonObject Finding(JsonObject finding, string language = "", bool identity = true, bool technical = true)
     {
         finding = finding.DeepClone().AsObject();

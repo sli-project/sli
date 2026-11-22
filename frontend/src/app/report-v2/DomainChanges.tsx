@@ -185,7 +185,7 @@ function ChangeDetails({ change, query, timeZone, close, pivot }: {
     const value = search.get(from);
     if (value) eventSearch.set(to, value);
   }
-  return <DetailDrawer open inline={!wide} title={change.title} subtitle={change.group || change.object} onClose={close}
+  return <DetailDrawer open inline={!wide} inlineKeyboard={false} title={change.title} subtitle={change.group || change.object} onClose={close}
     headerActions={<Button variant="ghost" aria-label={labels(wide ? "dock_details" : "expand_details")} onClick={() => setWide(!wide)}>{wide ? "↙" : "↗"}</Button>}
     footer={<>
       {change.id ? <a className="sli-ds-button" data-variant="primary" href={`/app/events/${encodeURIComponent(change.id)}?${eventSearch}`}>{labels("open_event")}</a> : null}

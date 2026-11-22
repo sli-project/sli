@@ -99,6 +99,10 @@ function ShellContent() {
   const sidebarSections = inAdminZone ? adminSections : workSections;
   const isHome = location.pathname === "/";
   const isReport = location.pathname.startsWith("/report/");
+  const isProblemsQueue = location.pathname === "/report/security.problems";
+  const queueAgents = useQuery({ queryKey: ["shell", "agents"], queryFn: api.agentCollection,
+    enabled: isProblemsQueue && Boolean(access.data), staleTime: 60_000, retry: false });
+  const agents = queueAgents.data?.agent_collection;
   const workspaceAccess = access.data?.capabilities.includes("workspace.view") ? access.data : undefined;
   const domainControl = workspaceAccess && isReport ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
   const scopeKey = isHome ? committedSearch : JSON.stringify([selectedDomain(committedSearch), search.get("scope")]);
@@ -178,11 +182,15 @@ function ShellContent() {
       <div className="sli-ds-shell__scrim" aria-hidden="true" onClick={() => { setMobileMenuOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}/>
       <header className="sli-ds-shell__topbar">
         <button className="sli-ds-button sli-ds-shell__menu-button" data-variant="ghost" ref={mobileMenuButtonRef} type="button" aria-label={t("shell.menu.open")} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Icon name="menu"/></button>
-        <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
+        {isProblemsQueue ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}><ol>
+          <li>{t("problems.queue.crumb")}</li><li aria-current="page">{t("problems.queue.crumbTitle")}</li>
+        </ol></nav> : <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
           <Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/>
           <input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/>
-        </form>
+        </form>}
+        {isProblemsQueue && agents && agents.state !== "unavailable" && Number.isFinite(agents.active_agents) && Number.isFinite(agents.current_agents)
+          ? <span className="sli-ds-shell__indicator">{t("problems.queue.agentStatus", { current: agents.current_agents, total: agents.active_agents })}</span> : null}
         <div className="sli-ds-shell__profile" ref={profileMenuRef}>
           <button type="button" className="sli-ds-button sli-ds-shell__control" aria-label={username} aria-haspopup="menu" aria-expanded={profileMenuOpen} onClick={() => setProfileMenuOpen((open) => !open)}>
             <span aria-hidden="true" className="sli-ds-shell__avatar">{initials}</span><span className="sli-ds-shell__label-title" title={username}>{username}</span><Icon name="chevron-down"/>

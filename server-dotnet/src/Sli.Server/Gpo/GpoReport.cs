@@ -28,7 +28,7 @@ internal static class GpoReport
     }
     internal static async Task<JsonObject> QueryAsync(IGpoReadStore store,long[]? domains,GpoRequest request,CancellationToken ct)
     {
-        if(request.Tab=="changes")
+        if(request.Tab=="changes"&&request.PolicyId is null)
         {
             var h=await store.HistoryAsync(domains,request.From,request.To,request.Query,ct);var ls=new JsonArray();string state=h.Text("state");
             if(state=="unavailable") ls.Add(Limitation("history_unavailable","Подтверждённая история изменений недоступна."));
@@ -44,6 +44,7 @@ internal static class GpoReport
             string state=Sli.Server.Reporting.V2.ReportResult.SourceState(pair.Text("state"));
             return Result(state is "denied" or "processing" or "error"?state:"error",coverage:new JsonObject { ["reason"]="gpo_snapshot_unavailable" });
         }
+        if(request.PolicyId is { } policyId) return await GpoPolicyCard.QueryAsync(store,pair,snapshot,policyId,request,ct);
         if(request.Tab is "filtering" or "delegation" or "linked_scopes")
         {
             var effectiveSnapshot=snapshot;var matches=snapshot.Rows("gpos").Where(g=>request.Query.Length>0&&Fold(g.Text("display_name")+" "+g.Text("id")+" "+g.Text("guid")).Contains(Fold(request.Query),StringComparison.Ordinal)).ToArray();
@@ -61,7 +62,8 @@ internal static class GpoReport
             if(coverage.True("truncated")) limitations.Add(Limitation(request.Tab+"_truncated","Достигнут предел строк или шагов обхода; часть путей может отсутствовать."));
             return Result(state,coverage:coverage,collections:new JsonObject { [request.Tab]=rows },limitations:limitations);
         }
-        var listed=GpoInventory.Filter(snapshot,request.View,request.Query);var items=listed.Items.OfType<JsonObject>().Select(GpoInventory.Row).ToArray();
+        var listed=GpoInventory.Filter(snapshot,request.View,request.Query,request.Tab=="gpos");
+        var items=listed.Items.OfType<JsonObject>().Select(g=>request.Tab=="gpos"?GpoInventory.ListRow(g):GpoInventory.Row(g)).ToArray();
         if(request.Sort is not null)
         {
             string path=Metadata["declaration"].Rows("columns").Single(c=>c.Text("key")==request.Sort).Text("path");var present=items.Where(i=>i[path] is not null&&i.Text(path).Length>0);
@@ -83,6 +85,6 @@ internal static class GpoReport
         { string key=option.Text("value");int count=GpoInventory.Filter(snapshot,key).Total;metrics.Add(new JsonObject { ["key"]=key,["label"]=option["label"]?.DeepClone(),["value"]=count,["tone"]=key=="attention"&&count>0?"warning":key=="all"?"accent":"neutral",["filter"]=new JsonObject { ["view"]=key } }); }
         var missing=snapshot["source_states"] is JsonObject ss?ss.Where(p=>p.Value is JsonObject&&p.Value.Text("status") is not ("observed" or "no_record" or "not_applicable")).Select(p=>(JsonNode)JsonValue.Create(p.Key)!):[];
         string status=snapshot.Text("collection_status");string resultState=items.Length==0&&!listed.NotEvaluated?"empty":"ok";if(status.Length>0&&status is not ("complete" or "completed")||listed.NotEvaluated) resultState="partial";
-        return Result(resultState,Array(items),new JsonObject { ["state"]=status.Length>0?status:"unknown",["observed_at_utc"]=snapshot["observed_at"]?.DeepClone(),["snapshots"]=pair["state"]?.DeepClone(),["missing_sources"]=Array(missing) },collections,limits,listed.Total,metrics);
+        return Result(resultState,Array(items),new JsonObject { ["state"]=status.Length>0?status:"unknown",["observed_at_utc"]=snapshot["observed_at"]?.DeepClone(),["domain_id"]=pair["domain_id"]?.DeepClone(),["snapshots"]=pair["state"]?.DeepClone(),["missing_sources"]=Array(missing) },collections,limits,listed.Total,metrics);
     }
 }

@@ -38,7 +38,7 @@ internal sealed class HomeDecisionSummary(HomeSummaryReaders reads)
         try
         {
             if (principal.Type == "session") since = (await reads.Read(HomeSummarySql.PreviousLogin, ct, ("user", principal.Id))).FirstOrDefault().Stamp("previous_login_at");
-            rows = await reads.Read(HomeDecisionSql.Groups(identity && cohortsAllowed, allDomains), ct, ("ids", ids), ("from", query.Period?.From),
+            rows = await reads.Read(HomeDecisionSql.Groups(identity && cohortsAllowed, allDomains, excludeDeferred: true), ct, ("ids", ids), ("from", query.Period?.From),
                 ("to", query.Period?.To), ("zone", query.TimeZone), ("since", since));
             var runtime = HomeSummaryReaders.Runtime((await reads.Read(HomeSummarySql.Heartbeat, ct)).FirstOrDefault(), query.Now);
             state = runtime == "stale" ? "stale" : runtime != "active" ? "partial" : rows.Count == 0 ? "empty" : "ok";

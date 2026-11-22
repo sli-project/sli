@@ -14,6 +14,7 @@ public interface IProblemRepository
     Task<JsonObject> FindingsAsync(FindingQuery query, ProblemAccess access, CancellationToken ct);
     Task<JsonObject?> ReadQueuePasswordCoverageAsync(long[]? domains, CancellationToken ct) => throw new NotSupportedException();
     Task<JsonObject> StatusAsync(long id, FindingStatusInput input, string actor, CancellationToken ct);
+    Task<JsonObject> QueueDecisionAsync(QueueDecision input, ProblemAccess access, Principal principal, CancellationToken ct) => throw new NotSupportedException();
     Task<JsonObject> RiskAsync(long id, RiskInput input, CancellationToken ct);
     Task<JsonObject> ResponsiblesAsync(CancellationToken ct);
     Task<JsonObject> RiskAuditAsync(long id, long? before, CancellationToken ct);

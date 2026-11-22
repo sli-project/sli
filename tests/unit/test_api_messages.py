@@ -165,12 +165,11 @@ def test_catalog_completeness_and_frontend_wording():
         "not_evaluated", "details_unavailable", "denied", "not_applicable",
         "admitted", "diagnostic", "excluded",
     )}
-    # Retained-name and daily-cohort presentation messages are shared with the home queue.
+    # Problem identity and occurrence messages are shared with the frontend.
     expected |= {
         "security.problems.identity.name", "security.problems.identity.sources",
         "security.problems.identity.sources_partial", "security.problems.identity.unavailable",
-        "security.problems.assignee.unassigned", "home.queue.day", "home.queue.assignee.mixed",
-        "home.queue.identity_details", "home.queue.snapshot_name",
+        "security.problems.assignee.unassigned",
         "home.queue.occurrences.one", "home.queue.occurrences.few",
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
@@ -210,15 +209,16 @@ def test_catalog_completeness_and_frontend_wording():
     legacy_problem_codes = {f"security.problems.presentation.{field}" for field in (
         "watch_limitation", "decoy_limitation", "default_next", "audit_limitations", "wording_limitation",
     )}
-    def is_delivery_message(code):
-        return code.startswith(("notifications.message.", "notifications.bot."))
+    # Home period facts are formatted on the server, like notification text.
+    def is_server_rendered_message(code):
+        return code.startswith(("notifications.message.", "notifications.bot.", "home.period.problem."))
 
     def is_domain_change_action(code):
         return code.startswith("reports.v2.security.events.chains.actions.")
 
     assert set(catalog("ru")) == set(catalog("en"))
     assert {
-        code for code in catalog("ru") if not is_delivery_message(code) and not is_domain_change_action(code)
+        code for code in catalog("ru") if not is_server_rendered_message(code) and not is_domain_change_action(code)
     } == expected | legacy_problem_codes
     attribute_change = "reports.v2.security.events.chains.actions.5136"
     for locale in ("ru", "en"):
@@ -227,7 +227,7 @@ def test_catalog_completeness_and_frontend_wording():
         assert message(attribute_change, locale=locale)["text"] == frontend[attribute_change]
         for code, text in catalog(locale).items():
             assert text
-            if code in legacy_problem_codes or is_delivery_message(code):
+            if code in legacy_problem_codes or is_server_rendered_message(code):
                 assert code not in frontend
                 assert message(code, locale=locale)["text"] == text
             else:

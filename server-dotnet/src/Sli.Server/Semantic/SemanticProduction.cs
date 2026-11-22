@@ -353,6 +353,7 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
         : result["error"] is not null || !CycleHasWork(result) ? "production_sleep" : "production_drain";
     internal static bool CycleHasWork(JsonNode? result) => result.Number("completed") > 0 || result.Number("failed") > 0
         || result?["processing"].Number("claimed") > 0 || result?["dispatch"].Number("claimed") > 0 || result?["risk"].Number("claimed") > 0
+        || result?["password_producer"].Number("jobs") > 0 || result?["password_risk"].Number("claimed") > 0
         || result.Number("risk_queued") > 0 || result?["producer_backfill"].Number("scanned") > 0;
 
     internal static async Task<int> RunCyclesAsync(SemanticProductionOptions options, Func<CancellationToken, Task<JsonObject>> cycle,

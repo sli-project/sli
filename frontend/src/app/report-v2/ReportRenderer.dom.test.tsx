@@ -63,8 +63,9 @@ function renderReport(reportKey = "demo.events") {
   return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
 }
 
-it.each(["list", "drawer"] as const)("resolves a problem from the %s in two actions", async (surface) => {
-  const raw = { ...definition, ...reportDefinitions.find((item) => item.key === "security.problems"), detail: "fields" } as ReportDefinitionDto;
+it.each(["list", "drawer"] as const)("resolves a problem from the legacy %s in two actions", async (surface) => {
+  const problems = reportDefinitions.find((item) => item.key === "security.problems")!;
+  const raw = { ...definition, ...problems, params: problems.params.filter(({ key }) => key !== "queue_view" && key !== "queue_assignee"), detail: "fields" } as ReportDefinitionDto;
   const problem = { id: 7, title_text: "Synthetic problem", status: "confirmed", allowed_statuses: ["confirmed", "active", "closed"] };
   dataResponse.body = page({ report_key: raw.key, items: [problem] });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).includes("/data?") ? dataResponse.body : raw)));
@@ -293,7 +294,8 @@ it.each((["ru", "en"] as const).flatMap(locale =>
       return new Response(JSON.stringify(data ? page({ report_key: key, state, items: [], collections: {}, filtered_count: 0 }) : raw),
         { headers: { "Content-Type": "application/json" } });
     }));
-    const { container } = renderReport(key);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><OverlayProvider><ReportRenderer reportKey={key}/></OverlayProvider></QueryClientProvider>);
     await waitFor(() => {
       expect(dataRequested).toBe(true);
       expect(container.querySelector('.sli-ds-report[data-state]:not([data-state="loading"])')).toBeTruthy();
@@ -333,9 +335,9 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
   expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
   const table = screen.getByRole("table");
-  expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(locale === "ru"
-    ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
-    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"]);
+  const headers = locale === "ru" ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
+    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"];
+  expect(within(table).getAllByRole("columnheader")).toEqual(headers.map((name) => within(table).getByRole("columnheader", { name })));
   expect(within(table).getAllByRole("row")[1].querySelectorAll("td")[3].textContent).toBe("—");
   fireEvent.click(screen.getByText(t("table.columns")));
   for (const key of ["actor_identifier", "entity_identifiers", "identity_sources"] as const) {
