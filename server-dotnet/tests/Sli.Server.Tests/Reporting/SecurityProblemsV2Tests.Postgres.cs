@@ -47,6 +47,13 @@ public sealed partial class SecurityProblemsV2Tests
                     create table finding_evidence(id bigint,finding_id bigint,event_id bigint,created_at timestamptz default '2026-10-01T00:00:00Z',evidence_role text,note text);
                     create table storage_v2_channel(id bigint,value text);
                     create table servers(id bigint,domain_id bigint,hostname text);
+                    create table domains(id bigint,netbios_name text,fqdn text);
+                    insert into domains values(7,'EXAMPLE','example.test');
+                    create table ad_context_entity_aliases(domain_id bigint,entity_id bigint,alias_type text,normalized_value text);
+                    create table ad_context_entity_versions(id bigint,entity_id bigint,source_run_id uuid,source_section text,
+                        attributes_json jsonb,valid_from_utc timestamptz,valid_to_utc timestamptz);
+                    create table ad_context_runs(run_id uuid,domain_id bigint,status text,observed_at_utc timestamptz);
+                    create table ad_context_sections(run_id uuid,section_name text,status text);
                     create table finding_event_details337(finding_id bigint,event_db_id bigint,event_id int,time_created_utc timestamptz,
                         domain_id bigint,server_id bigint,target_user_sid text,membership_member_sid text,channel text,identity_provider text,
                         target_domain_name text,target_user_name text,ip_address text,workstation_name text,
@@ -74,6 +81,11 @@ public sealed partial class SecurityProblemsV2Tests
                       (3,null,'suppression',null,'active',now()+interval '1 day','semantic.synthetic');
                     insert into finding_entities(finding_id,entity_id) select id,case when id=93 then 8 else 9 end from findings_active;
                     """);
+                string migration = await File.ReadAllTextAsync(Path.Combine(PostCollectionPostgres.Repository(),
+                    "config/postgres_migrations/395_problem_account_identity.sql"), Ct);
+                int begin = migration.IndexOf("create function public.password_problem_facts395", StringComparison.Ordinal);
+                int end = migration.IndexOf("create function public.notification_password_facts395", StringComparison.Ordinal);
+                await p.Sql("create role adlog_user;\n" + migration[begin..end]);
                 return p;
             } catch { await p.DisposeAsync(); throw; }
         }

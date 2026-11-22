@@ -110,7 +110,9 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
   if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
-  if (reportKey === "ad.infrastructure") return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
+  if (reportKey === "ad.infrastructure" && definition.data.views.some((view) => view.key === "controls")) {
+    return <AdStateReport definition={definition.data} initialSearch={initialSearch}/>;
+  }
   return isFileAuditReport(reportKey) ? <FileAuditReport key={reportKey} definition={definition.data}/> : <ReportBody definition={definition.data} initialSearch={initialSearch} {...tabs}/>;
 }
 

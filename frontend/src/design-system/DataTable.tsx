@@ -17,6 +17,7 @@ export type TableColumn<Row> = {
   hiddenByDefault?: boolean;
   /** Omit secondary columns on narrow screens while keeping row details available. */
   mobile?: boolean;
+  wrap?: boolean;
   width?: string;
   minWidth?: string;
   align?: "start" | "end";
@@ -27,7 +28,7 @@ export type TableColumn<Row> = {
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
   hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
-  rowGroup, rowDetail, emptyContent,
+  rowGroup, rowDetail, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -47,6 +48,7 @@ export function DataTable<Row>({
   pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
+  renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
 }) {
@@ -105,17 +107,19 @@ export function DataTable<Row>({
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
-            aria-selected={onRowClick ? selected : undefined}>
+            aria-expanded={renderExpandedRow ? selected : undefined}
+            aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
             {row.getVisibleCells().map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
           </tr>}
             {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
+            {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
           </Fragment>;
         })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>

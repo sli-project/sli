@@ -104,7 +104,11 @@ public sealed class DetectionSourceLockPostgresTests(ITestOutputHelper output)
                 cycles++;
                 if(!blocked) {
                     var results=await pending;
-                    await using var watermark=new NpgsqlCommand("select count(*)=2 and min(watermark)>=@target from semantic_password_checkpoints",owner);
+                    await using var watermark=new NpgsqlCommand("""
+                        select count(distinct p.rule_id)=2 and bool_and(coalesce(c.watermark>=@target,false))
+                        from password_pass_state393 p join semantic_password_checkpoints c
+                          on c.scope_digest=p.scope_digest and c.pin=p.live_pin
+                        """,owner);
                     watermark.Parameters.AddWithValue("target",target);
                     if(results.All(r=>r.Status=="committed")&&await watermark.ExecuteScalarAsync(ct) is true)worked++;
                 }
@@ -120,8 +124,6 @@ public sealed class DetectionSourceLockPostgresTests(ITestOutputHelper output)
             await using var checks=new NpgsqlCommand($"select count(*) from semantic_account_{family}_checks",owner);
             Assert.Equal(10L,await checks.ExecuteScalarAsync(ct));
         }
-        await using(var checkpoints=new NpgsqlCommand("select count(*) from semantic_password_checkpoints where watermark is not null",owner))
-            Assert.Equal(2L,await checkpoints.ExecuteScalarAsync(ct));
         await using(var count=new NpgsqlCommand("select count(*) from event_hot",owner))Assert.Equal(10L,await count.ExecuteScalarAsync(ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }

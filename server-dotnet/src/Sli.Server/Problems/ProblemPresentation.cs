@@ -122,7 +122,10 @@ public static class ProblemPresentation
         }
         var source = finding["presentation_facts"]?["source"] ?? finding["source"];
         if (technical && !Regex.IsMatch(ProblemJson.Text(source), @"\A\d+\z")) parameters["source"] = Name(source);
-        parameters["count"] = finding["presentation_facts"]?["count"]?.DeepClone() ?? finding["occurrence_count"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone();
+        bool guessing = ProblemJson.Text(finding["rule_code"]) == "semantic.qw.password-brute-force" &&
+            !ProblemJson.Bool(finding["presentation_facts"]?["password_success"]);
+        parameters["count"] = (guessing ? finding["occurrence_count"] : finding["presentation_facts"]?["count"])?.DeepClone() ??
+            finding["presentation_facts"]?["count"]?.DeepClone() ?? finding["occurrence_count"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone();
         parameters["time"] = finding["presentation_facts"]?["time"]?.DeepClone() ?? finding["last_seen_utc"]?.DeepClone();
         if (ProblemJson.Text(finding["rule_code"]) is "semantic.qw.kerberoasting" or "semantic.qw.asrep-roasting")
             parameters["minutes"] = finding["presentation_facts"]?["minutes"]?.DeepClone();
@@ -306,6 +309,7 @@ public static class ProblemPresentation
                         : source;
                 }
                 row["entity_text"] = (entity is JsonObject message ? message["text"] : entity)?.DeepClone();
+                row["target"] = parameters["account"]?.DeepClone();
                 if (includeDescription) row["entity_messages"] = entity is null ? new JsonArray() : new JsonArray(entity.DeepClone());
             } else if (row["entity_text"] is null) {
                 row["entity_text"] = (parameters["target"] ?? parameters["member"] ?? parameters["computer"])?.DeepClone();

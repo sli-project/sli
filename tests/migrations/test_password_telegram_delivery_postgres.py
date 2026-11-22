@@ -5,6 +5,7 @@ extra SQL grant. Only Telegram's send boundary is replaced; no credential or
 network access is possible. This is not installed-system/provider acceptance.
 """
 import os
+from datetime import timedelta
 from hashlib import sha256
 from uuid import uuid4
 
@@ -83,7 +84,7 @@ def test_cold_delivery_role_can_resolve_recipient_without_service_marker_access(
     outbox.require_recipient(recipient)
 
 
-def _native_source(connect):
+def _native_source(connect, with_success):
     """Synthetic imported native receipts only, not detector state or findings."""
     from psycopg.types.json import Jsonb
 
@@ -96,12 +97,22 @@ def _native_source(connect):
         at = conn.execute("select clock_timestamp()-interval '400 seconds' as at").fetchone()["at"]
         natives = []
         event_ids = []
-        for number in range(1, 11):
+        for number in range(1, 12 if with_success else 11):
+            success = number == 11
+            kind = 4624 if success else 4625
+            timestamp = at + timedelta(seconds=1) if success else at
             packet = uuid4()
             digest = sha256(f"t009-native-{number}".encode()).digest()
             envelope = {"agent_id": str(agent), "source_instance_id": str(host), "generation": str(host)}
-            row = {"record_id": number, "event_id": 4625, "time_created": at.isoformat(),
-                   "computer_name": "fixture-collector", "channel": "Security", "xml": _xml(at, number).replace('<System>', '<System><Provider Name="Microsoft-Windows-Security-Auditing"/><Channel>Security</Channel>')}
+            xml = _xml(timestamp, number).replace(
+                '<System>', '<System><Provider Name="Microsoft-Windows-Security-Auditing"/><Channel>Security</Channel>'
+            )
+            if success:
+                xml = xml.replace("<EventID>4625</EventID>", "<EventID>4624</EventID>").replace(
+                    '<Data Name="Status">0xc000006a</Data>', '<Data Name="LogonType">3</Data>'
+                )
+            row = {"record_id": number, "event_id": kind, "time_created": timestamp.isoformat(),
+                   "computer_name": "fixture-collector", "channel": "Security", "xml": xml}
             conn.execute("""insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt)
                 values(%s,'sli.windows.ad-dc',%s,%s,%s,%s,%s)""",
                 (agent, number, packet, digest.hex(), Jsonb(envelope), Jsonb({"status": "committed"})))
@@ -119,11 +130,11 @@ def _native_source(connect):
     return agent, domain, event_ids
 
 
-def _produce(connect, worker_dsn, directory):
+def _produce(connect, worker_dsn, directory, with_success):
     import psycopg
     from psycopg.rows import dict_row
 
-    agent, domain, events = _native_source(connect)
+    agent, domain, events = _native_source(connect, with_success)
     with psycopg.connect(worker_dsn, autocommit=True, row_factory=dict_row) as worker:
         worker.execute("set role adlog_semantic_worker")
         assert assert_semantic_worker_least_privilege(worker.cursor())["exclusive_worker_membership"]
@@ -145,24 +156,37 @@ def _produce(connect, worker_dsn, directory):
     return result, domain, events
 
 
-@pytest.mark.parametrize("revoke", [None, "owner", "recipient"])
-def test_password_publication_retained_events_and_real_delivery_dispatch(delivery_db, postgres_semantic_worker_dsn, monkeypatch, tmp_path, revoke):
+@pytest.mark.parametrize(("with_success", "revoke"), [
+    pytest.param(False, None, id="medium-does-not-notify"),
+    pytest.param(True, None, id="critical-delivered"),
+    pytest.param(True, "owner", id="critical-owner-revoked"),
+    pytest.param(True, "recipient", id="critical-recipient-revoked"),
+])
+def test_password_publication_retained_events_and_real_delivery_dispatch(
+    delivery_db, postgres_semantic_worker_dsn, monkeypatch, tmp_path, with_success, revoke,
+):
     with delivery_db() as admin:
         owner, recipient = _users(admin)
         subscription = uuid4()
         admin.execute("""insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
             values(%s,%s,%s,'telegram',true)""", (subscription, owner, recipient))
         admin.execute("update notification_channels set enabled=true where kind='telegram'")
-    published, domain, events = _produce(delivery_db, postgres_semantic_worker_dsn, tmp_path)
+    published, domain, events = _produce(delivery_db, postgres_semantic_worker_dsn, tmp_path, with_success)
     with delivery_db() as admin:
         finding = admin.execute("select * from findings where id=%s", (published["finding_id"],)).fetchone()
         assert finding["rule_code"] == "semantic.qw.password-brute-force"
-        assert finding["evidence_count"] == len(events) == 10
-        pending, = admin.execute("select * from notification_outbox").fetchall()
+        assert finding["evidence_count"] == len(events)
+        queued = admin.execute("select * from notification_outbox").fetchall()
+        if not with_success:
+            assert finding["severity"] == "medium"
+            assert queued == []
+            return
+        assert finding["severity"] == "critical"
+        pending, = queued
         assert pending["state"] == "pending" and pending["attempts"] == 0
         assert pending["object_kind"] == "semantic_finding" and pending["channel"] == "telegram"
         assert str(pending["publication_scenario_id"]) == str(published["scenario_id"])
-        assert pending["object_severity"] in {"high", "critical"}
+        assert pending["object_severity"] == "critical"
     _bind_runtime(monkeypatch, delivery_db, "adlog_user")
     with delivery_db("adlog_user") as web:
         copies = web.execute("select event_id,domain_id from finding_event_copies337 where finding_id=%s",

@@ -74,8 +74,8 @@ public sealed partial class SecurityProblemsV2Tests
                 var xml = System.Xml.Linq.XElement.Parse(e.SourceXml);
                 string account = xml.Descendants(xml.Name.Namespace + "Data").Single(d => (string?)d.Attribute("Name") == "TargetUserName").Value;
                 await using var command = new NpgsqlCommand("""
-                    insert into finding_event_details337(finding_id,event_db_id,event_id,time_created_utc,target_user_name,target_domain_name,ip_address)
-                    values(1,@id,@event,@at,@account,'example.test','192.0.2.10');
+                    insert into finding_event_details337(finding_id,event_db_id,event_id,time_created_utc,target_user_name,target_domain_name,ip_address,domain_id)
+                    values(1,@id,@event,@at,@account,'example.test','192.0.2.10',7);
                     update findings_active set evidence_count=evidence_count+1 where id=1;
                     """, pg.Db);
                 command.Parameters.AddWithValue("id", e.Witness.NativeId); command.Parameters.AddWithValue("event", e.EventId);
@@ -93,8 +93,8 @@ public sealed partial class SecurityProblemsV2Tests
             string title = success ? language == "ru" ? "После перебора паролей вход удался" : "Sign-in succeeded after password guessing"
                 : kind == "brute" ? language == "ru" ? "Подбирают пароль к учётной записи" : "Password guessing against an account"
                 : language == "ru" ? "С одного адреса пробуют входить под многими учётными записями" : "One source tries many accounts";
-            string what = success ? language == "ru" ? "example.test\\user1 вошла с 192.0.2.10 в 2026-11-13T08:00:40+00:00 после 15 неудачных попыток с этого же адреса." : "example.test\\user1 signed in from 192.0.2.10 at 2026-11-13T08:00:40+00:00 after 15 failed attempts from the same source."
-                : kind == "brute" ? language == "ru" ? $"К учётной записи example.test\\user {attempts} неудачных входов с 192.0.2.10 с 2026-11-13T08:00:00+00:00." : $"{attempts} failed sign-ins to example.test\\user from 192.0.2.10 since 2026-11-13T08:00:00+00:00."
+            string what = success ? language == "ru" ? "user1 вошла с 192.0.2.10 в 2026-11-13T08:00:40+00:00 после 15 неудачных попыток с этого же адреса." : "user1 signed in from 192.0.2.10 at 2026-11-13T08:00:40+00:00 after 15 failed attempts from the same source."
+                : kind == "brute" ? language == "ru" ? $"К учётной записи user {attempts} неудачных входов с 192.0.2.10 с 2026-11-13T08:00:00+00:00." : $"{attempts} failed sign-ins to user from 192.0.2.10 since 2026-11-13T08:00:00+00:00."
                 : language == "ru" ? "С 192.0.2.10 неудачные входы в 15 учётных записей с 2026-11-13T08:00:00+00:00." : "Failed sign-ins to 15 accounts from 192.0.2.10 since 2026-11-13T08:00:00+00:00.";
             Assert.Equal(title, view["title"]!.ToString()); Assert.Equal(what, view["summary"]!.ToString());
             string next = success ? language == "ru" ? "1) Немедленно смените пароль учётной записи. 2) Завершите её сеансы. 3) Проверьте в «Изменениях в домене», что она делала после входа." : "1) Change the account password immediately. 2) End its sessions. 3) Check Domain changes for its actions after the sign-in."
@@ -111,7 +111,7 @@ public sealed partial class SecurityProblemsV2Tests
         Assert.Equal(emission.EpisodeKey, Assert.Single(repeat.Emissions).EpisodeKey);
         await AddEvents(repeated);
         var again = Assert.Single((await pg.Repository.FindingsAsync(query, Access, Ct))["items"]!.AsArray())!;
-        Assert.Equal(events.Length + repeated.Length, again["occurrence_count"]!.GetValue<long>());
+        Assert.Equal(failures.Length + repeated.Length, again["occurrence_count"]!.GetValue<long>());
         var repeatedHome = Assert.Single(await pg.Rows(HomeDecisionSql.Groups(true), ("ids", new long[] { 7 }), ("from", null), ("to", null), ("since", null)))!;
         Assert.Equal(again["occurrence_count"]!.GetValue<long>(), repeatedHome["occurrence_count"]!.GetValue<long>());
     }
