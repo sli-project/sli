@@ -11,6 +11,7 @@ import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { ReportDenied } from "./ReportDenied";
 import { statusLabel } from "../problem-lifecycle";
+import "./ProblemsQueue.css";
 
 const views = ["all", "open", "active", "deferred", "resolved"] as const;
 const states = ["new", "active", "deferred", "closed", "false_positive"] as const;
@@ -287,12 +288,14 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       state={denied ? "denied" : list.isLoading ? "loading" : error ? "error" : "ok"}
       busy={list.isFetching && !list.isLoading} stateView={denied ? <ReportDenied reportKey={definition.key}/> : error ? <StateView state="error" detail={t("problems.queue.loadFailed")} onRetry={() => void list.refetch()}/> : undefined}
       actions={denied ? undefined : <Button icon="refresh" disabled={list.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>}
-      tabs={controls} drawer={active && selected !== null ? <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
-        retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} tab={panelTab} onTab={setPanelTab} canManage={canManage}
-        canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}
-        onClose={() => select(null)} previous={position > 0 ? () => select(visibleRows[position - 1].id) : undefined}
-        next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
-        onChange={(kind, choose) => decide(kind, [active.id], choose)}/> : undefined}>
+      tabs={controls} drawer={active && selected !== null ? <div data-problems-queue-drawer>
+        <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
+          retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} tab={panelTab} onTab={setPanelTab} canManage={canManage}
+          canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}
+          onClose={() => select(null)} previous={position > 0 ? () => select(visibleRows[position - 1].id) : undefined}
+          next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
+          onChange={(kind, choose) => decide(kind, [active.id], choose)}/>
+      </div> : undefined}>
       <DataTable caption={definition.title} columns={availableColumns.filter(({ key }) => !hidden.includes(key))} rows={visibleRows} rowKey={(row) => String(row.id)}
         onRowClick={(row) => select(row.id)} selectedKey={selected === null ? null : String(selected)} density={compact ? "compact" : "standard"} showFooter={false}
         sort={{ field: "last_seen_utc", direction }} onSort={() => { setDirection((current) => current === "asc" ? "desc" : "asc"); clearRows(); }}
