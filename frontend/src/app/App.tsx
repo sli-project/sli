@@ -1,5 +1,5 @@
 import { AccessRequestContext } from "./access-request-state";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { api } from "../api/client";
@@ -11,10 +11,8 @@ import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "
 import { DomainSwitcher } from "./DomainSwitcher";
 import { selectedDomain } from "./domain-navigation";
 import { PageHeaderContext } from "../design-system/PageHeader";
-import type { PeriodPreset, PeriodValue } from "../design-system/PeriodPicker";
-import { homeParams } from "./home-view";
 
-import { DEFAULT_TIME_ZONE, TimeZoneContext, useTimeZone } from "../shared/time-zone";
+import { DEFAULT_TIME_ZONE, TimeZoneContext } from "../shared/time-zone";
 export { DEFAULT_TIME_ZONE, useTimeZone } from "../shared/time-zone";
 
 const storedTimeZone = () => {
@@ -42,32 +40,6 @@ export const useEffectiveAccess = () => useContext(EffectiveAccessContext);
 export type СостояниеПрав = "загружается" | "отказ" | "получены";
 const AccessStatusContext = createContext<СостояниеПрав>("загружается");
 export const useAccessStatus = () => useContext(AccessStatusContext);
-
-function HomeHeaderScope({ access, domain, children }: { access: EffectiveAccessState; domain?: (id?: string) => ReactNode; children: ReactNode }) {
-  const { timeZone } = useTimeZone();
-  const { searchStr } = useLocation();
-  const navigate = useNavigate();
-  const params = homeParams(searchStr, timeZone);
-  // Observe the query owned by Home, with no independent fetch on mount.
-  const summary = useQuery({
-    queryKey: ["home", "summary", "v3", params.toString(), getLocale(), access],
-    queryFn: () => api.homeDecisions(params),
-    enabled: false,
-  });
-  const preset = params.get("period");
-  const value: PeriodValue | undefined = preset && ["24h", "7d", "30d", "90d", "custom"].includes(preset)
-    ? { preset: preset as PeriodPreset, from: params.get("from") ?? undefined, to: params.get("to") ?? undefined }
-    : undefined;
-  const changePeriod = (period?: PeriodValue) => {
-    void navigate({ search: ((previous: Record<string, unknown>) => ({ ...previous, period: period?.preset, from: period?.from, to: period?.to })) as never });
-  };
-  return <PageHeaderContext.Provider value={{ domain, controls: access ? {
-    period: { value, onChange: changePeriod, onClear: changePeriod },
-    updatedAt: summary.data?.updated_at_utc,
-    refreshing: summary.isFetching,
-    onRefresh: () => { void summary.refetch({ cancelRefetch: false }); },
-  } : undefined }}>{children}</PageHeaderContext.Provider>;
-}
 
 function ShellContent() {
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.bootstrap, staleTime: 60_000 });
@@ -132,7 +104,7 @@ function ShellContent() {
     enabled: isProblemsQueue && Boolean(access.data), staleTime: 60_000, retry: false });
   const agents = queueAgents.data?.agent_collection;
   const workspaceAccess = access.data?.capabilities.includes("workspace.view") ? access.data : undefined;
-  const domainControl = workspaceAccess && (isHome || isReport) ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
+  const domainControl = workspaceAccess && isReport ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
   const scopeKey = isHome ? committedSearch : JSON.stringify([selectedDomain(committedSearch), search.get("scope")]);
   const openSearch = (rawValue: string) => {
     const target = globalSearchTarget(rawValue);
@@ -236,8 +208,7 @@ function ShellContent() {
       </header>
       <main className="sli-ds-shell__main" id="main" tabIndex={-1}>
         <div className="sli-ds-shell__content" key={scopeKey}>
-          {isHome ? <HomeHeaderScope access={access.data} domain={domainControl}><Outlet/></HomeHeaderScope>
-            : <PageHeaderContext.Provider value={{ domain: domainControl }}><Outlet/></PageHeaderContext.Provider>}
+          <PageHeaderContext.Provider value={{ domain: domainControl }}><Outlet/></PageHeaderContext.Provider>
           {inAdminZone ? <AdminRelatedLinks pathname={location.pathname} access={{ capabilities, reports: new Set(reports.map((report) => report.report_key)) }}/> : null}
         </div>
       </main>

@@ -17,6 +17,7 @@ export type TableColumn<Row> = {
   hiddenByDefault?: boolean;
   /** Omit secondary columns on narrow screens while keeping row details available. */
   mobile?: boolean;
+  wrap?: boolean;
   width?: string;
   minWidth?: string;
   align?: "start" | "end";
@@ -26,7 +27,8 @@ export type TableColumn<Row> = {
 
 export function DataTable<Row>({
   columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, density, afterRow,
+  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true, density,
+  rowGroup, rowDetail, emptyContent, renderExpandedRow, afterRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -36,6 +38,9 @@ export function DataTable<Row>({
   onRowClick?: (row: Row) => void;
   selectedKey?: string | null;
   caption: string;
+  rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
+  rowDetail?: (row: Row) => ReactNode;
+  emptyContent?: ReactNode;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -43,6 +48,7 @@ export function DataTable<Row>({
   pagination?: { start: number; end?: number; onPrevious?: () => void; onNext?: () => void; busy?: boolean };
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
+  renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
   density?: "compact" | "standard";
@@ -62,6 +68,8 @@ export function DataTable<Row>({
     state: { columnVisibility: { ...defaultVisibility, ...visibility } }, onColumnVisibilityChange: setVisibility, manualSorting: true,
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
+  const visibleRows = table.getRowModel().rows;
+  const columnCount = table.getVisibleLeafColumns().length;
 
   return <div className="sli-ds-table" data-density={density}>
     {toggleable.length ? <details className="sli-ds-table__columns">
@@ -90,24 +98,34 @@ export function DataTable<Row>({
               : flexRender(header.column.columnDef.header, header.getContext())}
           </th>;
         })}</tr>)}</thead>
-        <tbody>{table.getRowModel().rows.map((row) => {
+        <tbody>{visibleRows.map((row, index) => {
+          const group = rowGroup?.(row.original);
+          const groupStart = group && (index === 0 || rowGroup?.(visibleRows[index - 1].original).key !== group.key);
+          const detail = group?.collapsed ? null : rowDetail?.(row.original);
           const selected = selectedKey === row.id;
-          const extra = afterRow?.(row.original);
-          return <Fragment key={row.id}><tr data-selected={selected || undefined} data-clickable={onRowClick ? true : undefined}
+          const extra = group?.collapsed ? null : afterRow?.(row.original);
+          return <Fragment key={row.id}>
+            {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
+            {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
             onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
-            aria-selected={onRowClick ? selected : undefined}>
+            aria-expanded={renderExpandedRow ? selected : undefined}
+            aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
             {row.getVisibleCells().map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
               const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
               const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
-              return <td key={cell.id} data-mobile={column.mobile} style={{ minWidth: column.minWidth }} title={title}
+              return <td key={cell.id} data-mobile={column.mobile} data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={title}
                 data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
             })}
-          </tr>{extra ? <tr><td colSpan={row.getVisibleCells().length}>{extra}</td></tr> : null}</Fragment>;
-        })}</tbody>
+          </tr>}
+            {extra ? <tr><td colSpan={columnCount}>{extra}</td></tr> : null}
+            {detail ? <tr data-detail><td colSpan={columnCount}>{detail}</td></tr> : null}
+            {!group?.collapsed && selected && renderExpandedRow ? <tr><td data-wrap colSpan={columnCount}>{renderExpandedRow(row.original)}</td></tr> : null}
+          </Fragment>;
+        })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>
     </div>
     {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">

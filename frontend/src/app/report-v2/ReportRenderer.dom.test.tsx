@@ -63,8 +63,9 @@ function renderReport(reportKey = "demo.events") {
   return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
 }
 
-it.each(["list", "drawer"] as const)("resolves a problem from the %s in two actions", async (surface) => {
-  const raw = { ...definition, ...reportDefinitions.find((item) => item.key === "security.problems"), detail: "fields" } as ReportDefinitionDto;
+it.each(["list", "drawer"] as const)("resolves a problem from the legacy %s in two actions", async (surface) => {
+  const problems = reportDefinitions.find((item) => item.key === "security.problems")!;
+  const raw = { ...definition, ...problems, params: problems.params.filter(({ key }) => key !== "queue_view" && key !== "queue_assignee"), detail: "fields" } as ReportDefinitionDto;
   const problem = { id: 7, title_text: "Synthetic problem", status: "confirmed", allowed_statuses: ["confirmed", "active", "closed"] };
   dataResponse.body = page({ report_key: raw.key, items: [problem] });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).includes("/data?") ? dataResponse.body : raw)));
@@ -128,16 +129,8 @@ it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-
   expect(container.querySelector('.sli-ds-metrics')).toBeNull();
   for (const text of ["Synthetic zero metric", "Synthetic unknown metric", "Synthetic passed metric", "Данные не собраны", "Не оценено", "Synthetic limitation", t("reports.passport.more")]) expect(screen.queryByText(text)).toBeNull();
   expect(screen.queryByRole("group", { name: t("reports.renderer.quick_scenarios") })).toBeNull();
-  const additional = screen.getByText(t("reports.filters.more")).closest("details")!;
-  expect(additional.open).toBe(false);
-  expect(additional.contains(screen.getByLabelText(locale === "ru" ? "Раздел" : "Section"))).toBe(true);
-  fireEvent.click(screen.getByText(t("table.columns")));
-  fireEvent.click(screen.getByRole("checkbox", { name: locale === "ru" ? "Тип объекта" : "Object type" }));
-  expect(within(table).getByRole("columnheader", { name: locale === "ru" ? /Тип объекта/ : /Object type/ })).toBeTruthy();
-  fireEvent.click(within(table).getByText("Synthetic successful check"));
-  const drawer = screen.getByRole("dialog");
-  expect(within(drawer).queryByText("Данные не собраны")).toBeNull();
-  expect(within(drawer).queryByText(locale === "ru" ? "Не оценено" : "Not assessed")).toBeNull();
+  expect(screen.getByRole("searchbox", { name: t("reports.ad.state.search") })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: t("reports.ad.state.area") })).toBeTruthy();
 });
 
 it.each(["ru", "en"] as const)("keeps both change collections in one infrastructure tab (%s)", async (locale) => {
@@ -156,7 +149,7 @@ it.each(["ru", "en"] as const)("keeps both change collections in one infrastruct
   const changesTitle = locale === "ru" ? "Изменения AD" : "AD changes";
   const membershipTitle = locale === "ru" ? "Изменения привилегированного членства" : "Privileged membership changes";
   expect(screen.queryByRole("tab", { name: membershipTitle })).toBeNull();
-  expect(screen.getByRole("tab", { name: changesTitle }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("tab", { name: new RegExp("^" + changesTitle) }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: changesTitle }), "changes");
   await waitFor(() => expect(requested.some((url) => url.includes("tab=changes"))).toBe(true));
@@ -300,7 +293,8 @@ it.each((["ru", "en"] as const).flatMap(locale =>
       return new Response(JSON.stringify(data ? page({ report_key: key, state, items: [], collections: {}, filtered_count: 0 }) : raw),
         { headers: { "Content-Type": "application/json" } });
     }));
-    const { container } = renderReport(key);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><OverlayProvider><ReportRenderer reportKey={key}/></OverlayProvider></QueryClientProvider>);
     await waitFor(() => {
       expect(dataRequested).toBe(true);
       expect(container.querySelector('.sli-ds-report[data-state]:not([data-state="loading"])')).toBeTruthy();
@@ -340,9 +334,9 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
   expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
   const table = screen.getByRole("table");
-  expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(locale === "ru"
-    ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
-    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"]);
+  const headers = locale === "ru" ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
+    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"];
+  expect(within(table).getAllByRole("columnheader")).toEqual(headers.map((name) => within(table).getByRole("columnheader", { name })));
   expect(within(table).getAllByRole("row")[1].querySelectorAll("td")[3].textContent).toBe("—");
   fireEvent.click(screen.getByText(t("table.columns")));
   for (const key of ["actor_identifier", "entity_identifiers", "identity_sources"] as const) {
@@ -749,8 +743,9 @@ it.each(["ru", "en"] as const)("qualifies metric values with unknown period cove
   expect(metrics.textContent).toContain("0");
 });
 
-it.each(["security.problems", "ad.infrastructure"])("opens the exact server-checked deep link row for %s", async (key) => {
-  const parameter = key === "security.problems" ? "id" : "row_id";
+it("opens the exact server-checked problem deep link", async () => {
+  const key = "security.problems";
+  const parameter = "id";
   const raw: ReportDefinitionDto = { ...definition, key, row_key: parameter, params: [{ key: parameter, label: "Synthetic id", kind: "text", hidden: true }] };
   window.history.replaceState(null, "", `/app/report/${key}?${parameter}=123`);
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/data?")
@@ -1133,54 +1128,6 @@ function mockVpnReport(preset = "7d") {
 }
 
 describe("ReportRenderer", () => {
-  it("preserves AD filters and exports when selecting a tab without duplicate shortcuts", async () => {
-    const raw: ReportDefinitionDto = {
-      ...definition, key: "ad.infrastructure", title: "Synthetic infrastructure",
-      params: [
-        { key: "view", kind: "choice", label: "Section", default: "overview", options: [{ value: "overview", label: "Overview" }, { value: "replication", label: "Replication" }] },
-        { key: "qualification", kind: "choice", label: "Result", options: [{ value: "failed", label: "Failed" }] },
-        { key: "entity_type", kind: "choice", label: "Type", options: [{ value: "replication_link", label: "Replication link" }] },
-        { key: "q", kind: "text", label: "Search" },
-        { key: "threshold_days", kind: "int", label: "Threshold", default: 30 },
-      ],
-      views: [{ kind: "table", key: "controls", title: "Controls" }, { kind: "table", key: "semantic", source: "semantic", title: "Findings", columns: [{ key: "title", path: "title", label: "Finding", kind: "text" }] }],
-      presets: [{ label: "Synthetic replication", params: { view: "replication" } }],
-    };
-    window.history.replaceState(null, "", "/app/report/ad.infrastructure?tab=semantic&q=synthetic&qualification=failed&entity_type=replication_link&threshold_days=90");
-    const rawPage = page({ collections: { semantic: [{ title: "Synthetic finding" }] }, metrics: [{ key: "failed", label: "Synthetic failures", value: 1, filter: { qualification: "failed" } }] });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      requested.push(url);
-      return new Response(JSON.stringify(url.includes("/data?") ? rawPage : raw), { status: 200, headers: { "Content-Type": "application/json" } });
-    }));
-    renderReport();
-    await screen.findByRole("table", { name: "Findings" });
-    const additional = screen.getByText(/Ещё фильтры/).closest("details")!;
-    expect(additional.open).toBe(true);
-    expect(additional.contains(screen.getByLabelText("Result"))).toBe(true);
-    expect(additional.contains(screen.getByLabelText("Search"))).toBe(false);
-    const initialExport = new URL(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href")!, "http://corp.example.test");
-    expect(initialExport.searchParams.get("tab")).toBe("semantic");
-    expect(screen.queryByRole("button", { name: "Synthetic replication" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Synthetic failures/ })).toBeNull();
-    await userEvent.click(screen.getByRole("tab", { name: "Controls" }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Controls" }).getAttribute("aria-selected")).toBe("true"));
-    expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(screen.getByRole("tab", { name: "Controls" }).id);
-    const params = new URLSearchParams(window.location.search);
-    expect(params.get("q")).toBe("synthetic");
-    expect(params.get("qualification")).toBe("failed");
-    expect(params.get("entity_type")).toBe("replication_link");
-    expect(params.get("threshold_days")).toBe("90");
-    expect(params.get("view")).toBe("overview");
-    const exported = new URL(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href")!, "http://corp.example.test").searchParams;
-    expect(exported.get("tab")).toBe("controls");
-    for (const [key, value] of params) expect(exported.get(key)).toBe(value);
-    expect(exported.has("limit")).toBe(false);
-    await userEvent.click(screen.getByRole("button", { name: "Сбросить" }));
-    await waitFor(() => expect(new URLSearchParams(window.location.search).has("q")).toBe(false));
-    expect(new URLSearchParams(window.location.search).get("threshold_days")).toBe("30");
-  });
-
   it("resets grouped filters while preserving the selected domain and custom period", async () => {
     const raw: ReportDefinitionDto = { ...definition,
       params: [...definition.params, { key: "q", kind: "text", label: "Search" }, { key: "threshold_days", kind: "int", label: "Threshold", default: 30 }],

@@ -170,8 +170,8 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const active = detailRow ?? visibleRows.find((row) => row.id === selected);
   const position = visibleRows.findIndex((row) => row.id === selected);
   const denied = list.error instanceof ApiResponseError && [401, 403].includes(list.error.status) || result?.state === "denied";
-  const error = list.isError || result?.state === "error" || result?.state === "not_collected";
-  const incomplete = (result?.state === "partial" || result?.state === "stale" || result?.state === "processing") && rows.length === 0;
+  const error = list.isError || result?.state === "error";
+  const incomplete = (result?.state === "not_collected" || result?.state === "partial" || result?.state === "stale" || result?.state === "processing") && rows.length === 0;
   const counts = incomplete ? {} : record(result?.series?.queue_counts);
   const names = new Set([...(result?.filter_options?.queue_assignee?.map(({ value }) => value) ?? []), ...(users.data?.items.map(({ username }) => username) ?? []), ...rows.map((row) => row.assignee), owner]);
   const client = useQueryClient();
