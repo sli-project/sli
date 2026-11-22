@@ -178,11 +178,14 @@ def test_catalog_completeness_and_frontend_wording():
         "home.queue.occurrences.one", "home.queue.occurrences.few",
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
+    frontend_only_user_labels = tuple(f"reports.ad.users.{section}." for section in (
+        "deviation", "list", "card", "event",
+    ))
     expected |= {key for key in frontend_catalog("ru") if key.startswith((
         "reports.v2.security.problems.", "security.problems.status.", "security.problems.entity.",
         "security.problems.actor.", "security.problems.presentation.", "security.problems.ad_hardening.", "investigations.caseStatus.", "reports.ad.checks.",
         "reports.ad.users.", "events.semantic.", "reports.v2.file-audit.overview.limitations.",
-    ))}
+    )) and not key.startswith(frontend_only_user_labels)}
     # AD report metadata codes mirror the frontend keys; test_report_metadata_codes.py proves they are complete.
     expected |= {code for code in catalog("ru") if code.startswith(AD_REPORT_PREFIXES)}
     expected |= {f"access.builtin.package.{key}.{field}"
