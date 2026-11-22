@@ -67,7 +67,8 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   await user.click(attack);
   const panel = await screen.findByRole("dialog", { name: "Password spray" });
   expect(await within(panel).findByText("4625")).toBeTruthy();
-  expect(within(panel).getByRole("link", { name: "Investigate" }).getAttribute("href")).toContain("finding=41");
+  expect(within(panel).getByRole("link", { name: "Open in journal" }).getAttribute("href"))
+    .toBe("/app/report/events.journal?finding=41&domain=7");
   await user.click(within(panel).getByRole("button", { name: "Next problem" }));
   expect(await screen.findByRole("dialog", { name: "Audit policy changed" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Close" }));
