@@ -87,7 +87,7 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
   };
 }
 
-async function installStandardFixtures(page: Page, count = 60) {
+async function installStandardFixtures(page: Page, count = 60, firstProblemEvidence = 1) {
   const unexpected: string[] = [];
   const servedData: string[] = [];
   const decisions: unknown[] = [];
@@ -98,6 +98,7 @@ async function installStandardFixtures(page: Page, count = 60) {
   });
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const { pathname, searchParams } = new URL(route.request().url());
+    const problemDetail = pathname.match(/^\/api\/v2\/reports\/security\.problems\/rows\/([12])\/detail$/);
     let body: unknown;
     let status = 200;
     if (pathname === '/api/v1/ui/bootstrap') body = { api_version: 'v1', effective_role: 'admin',
@@ -118,10 +119,15 @@ async function installStandardFixtures(page: Page, count = 60) {
       firstProblemStatus = decision.state;
       body = { status: 'ok', changed: 1 };
     }
-    else if (pathname === '/api/v2/reports/security.problems/rows/1/detail' && route.request().method() === 'GET') {
-      body = { ...resultFor(definitions.get('security.problems')!, 0), items: [{
-        event_id: 4625, event_db_id: 1, evidence_id: 1, time_created_utc: observed,
-      }] };
+    else if (problemDetail && route.request().method() === 'GET') {
+      const evidenceCount = problemDetail[1] === '1' ? firstProblemEvidence : 1;
+      body = {
+        ...resultFor(definitions.get('security.problems')!, 0),
+        items: Array.from({ length: evidenceCount }, (_, index) => ({
+          event_id: 4625, event_db_id: index + 1, evidence_id: index + 1,
+          time_created_utc: observed, hostname: 'dc.example.test',
+        })),
+      };
     }
     else if (pathname === '/api/v2/reports/security.problems/password-coverage' && route.request().method() === 'GET') {
       body = {
@@ -140,6 +146,16 @@ async function installStandardFixtures(page: Page, count = 60) {
           const result = resultFor(definition, count);
           if (definition.key === 'security.problems') {
             result.items[0].status = firstProblemStatus;
+            if (firstProblemEvidence > 1) {
+              result.items.forEach((item, index) => {
+                if (index % 3 !== 1) return;
+                item.entity_text = 'Служебная учётная запись подразделения внутренних операций';
+                item.queue_attack = {
+                  accounts: ['operator.one', 'operator.two', 'operator.three', 'operator.four'],
+                  addresses: ['192.0.2.10'], account_count: 12, event_count: 64,
+                };
+              });
+            }
             if (searchParams.has('id')) {
               result.items = result.items.filter(item => String(item.id) === searchParams.get('id'));
               result.filtered_count = result.items.length;
@@ -284,6 +300,87 @@ for (const screen of screens) {
   });
 }
 
+for (const width of [1920, 2560]) {
+  test(`Problems detail actions and keyboard access at ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1080 });
+    const { unexpected } = await installStandardFixtures(page, 50, 25);
+    await page.goto('/app/report/security.problems?domain=1');
+    const queue = page.locator('main .sli-ds-report__split');
+    const queueRows = queue.getByRole('table').first().locator('tbody > tr');
+    const finding = (index: number) => queueRows.nth(index).getByRole('link', { name: /Изменены настройки учётной записи/ });
+    await finding(0).press('Enter');
+
+    const panel = queue.locator('.sli-ds-drawer__panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveJSProperty('role', width === 1920 ? 'dialog' : null);
+    const linkedEvents = panel.getByRole('link', { name: '4625', exact: true });
+    await expect(linkedEvents).toHaveCount(25);
+    const journal = panel.getByRole('link', { name: 'Открыть в журнале' });
+    await expect(journal).toHaveAttribute('href', '/app/report/events.journal?finding=1&domain=1');
+    const measurements = await panel.evaluate(detail => {
+      const box = detail.getBoundingClientRect();
+      const list = document.querySelector<HTMLElement>('main .sli-ds-report__split .sli-ds-table__scroll')!;
+      const listBox = list.getBoundingClientRect();
+      const body = detail.querySelector<HTMLElement>('.sli-ds-drawer__body')!;
+      const rows = [...list.querySelectorAll('tbody > tr')].map(row => row.getBoundingClientRect());
+      const actions = [...detail.querySelectorAll('.sli-ds-drawer__footer > :is(a, button)')].map(action => {
+        const bounds = action.getBoundingClientRect();
+        return { top: bounds.top, bottom: bounds.bottom };
+      });
+      return {
+        width: innerWidth, height: innerHeight,
+        panel: { top: box.top, bottom: box.bottom, height: box.height, left: box.left },
+        actions, bodyScroll: body.scrollHeight - body.clientHeight,
+        fullRows: rows.filter(row => row.top >= listBox.top && row.bottom <= listBox.bottom).length,
+        rowHeights: [...new Set(rows.map(row => row.height))], tableRight: listBox.right,
+        tableOverflows: list.scrollWidth - list.clientWidth, pageOverflows: document.documentElement.scrollWidth - innerWidth,
+        pageScroll: scrollY,
+      };
+    });
+    await testInfo.attach('panel-geometry.json', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
+    await page.screenshot({ path: testInfo.outputPath('synthetic-panel.png') });
+    console.log(JSON.stringify(measurements));
+    expect(measurements.actions).toHaveLength(3);
+    expect(measurements.pageScroll).toBe(0);
+    expect(measurements.pageOverflows).toBeLessThanOrEqual(1);
+    expect(measurements.tableOverflows).toBeLessThanOrEqual(1);
+    expect(measurements.bodyScroll).toBeGreaterThan(0);
+    if (width === 2560) expect(measurements.panel.left).toBeGreaterThanOrEqual(measurements.tableRight);
+    for (const bounds of measurements.actions) {
+      expect(bounds.top).toBeGreaterThanOrEqual(0);
+      expect(bounds.bottom).toBeLessThanOrEqual(1080);
+    }
+
+    await linkedEvents.first().focus();
+    for (let i = 1; i < 25; i++) await page.keyboard.press('Tab');
+    await expect(linkedEvents.last()).toBeFocused();
+    await expect(linkedEvents.last()).toHaveAttribute('href', '/app/events/25');
+    await expect(linkedEvents.last()).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Tab');
+    const original = panel.getByRole('link', { name: /Открыть исходное событие/ });
+    await expect(original).toBeFocused();
+    await expect(original).toHaveAttribute('href', '/app/events/1');
+    await expect(original).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Tab');
+    await expect(journal).toBeFocused();
+    await expect(journal).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => scrollY)).toBe(0);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/app\/report\/events\.journal\?finding=1&domain=1$/);
+    await expect(page.getByRole('link', { name: '4625', exact: true })).toHaveCount(25);
+    await expect(page.getByRole('link', { name: 'Проблема №1' })).toHaveAttribute('href', '/app/report/security.problems?id=1&domain=1');
+
+    await page.goBack();
+    await finding(1).press('Enter');
+    await expect(panel.getByRole('link', { name: '4625', exact: true })).toHaveCount(1);
+    const shortJournal = panel.getByRole('link', { name: 'Открыть в журнале' });
+    await expect(shortJournal).toBeInViewport({ ratio: 1 });
+    await shortJournal.press('Escape');
+    await expect(panel).toHaveCount(0);
+    if (width === 1920) await expect(finding(1)).toBeFocused();
+    expect(unexpected).toEqual([]);
+  });
+}
 test('GPO short list shows all eleven policies', async ({ page }, testInfo) => {
   const { unexpected } = await installStandardFixtures(page, 11);
   await page.goto('/app/report/ad.gpo.v2?domain=1');
