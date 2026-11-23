@@ -11,7 +11,7 @@ namespace Sli.Server.Semantic.Risk;
 public sealed record PasswordRiskOptions(bool Once=false,int PollSeconds=10,int MaxJobs=16,int LeaseSeconds=300);
 public sealed record PasswordRiskBatch(int Claimed,int Completed,int Failed,int Published,int Pending,int Frozen);
 internal sealed record PasswordRiskLease(Guid Id,Guid Token,int Attempt,int MaxAttempts);
-internal sealed record PasswordRiskWork(PasswordRiskLease Lease,string Mode,PasswordRiskProposal Proposal,JsonObject Completeness);
+internal sealed record PasswordRiskWork(PasswordRiskLease Lease,string Mode,PasswordRiskProposal Proposal,JsonObject Completeness,bool LockedEpisodeProof);
 internal sealed record PasswordRiskOutcome(string State,long? Finding=null);
 
 // One committed lease, one separately owned publication transaction, and fenced failure recovery.
@@ -158,7 +158,11 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
 
     private static async Task<PasswordRiskWork> Load(RiskSql sql,PasswordRiskLease lease,CancellationToken ct)
     {
-        RiskJson.Require((await sql.Rows("select 1 as present from public.schema_migrations where version=52 and name='semantic_conclusion_completeness'",ct)).Count==1,"password_risk_schema_required");
+        var schema=await sql.Rows("""
+            select to_regprocedure('public.read_locked_password_episode402(jsonb,jsonb,text)') is not null as locked_episode_proof
+            from public.schema_migrations where version=52 and name='semantic_conclusion_completeness'
+            """,ct);
+        RiskJson.Require(schema.Count==1,"password_risk_schema_required");
         var rows=await sql.Rows("""
             select j.job_id::text as job_id,j.evaluation_mode,j.source_kind,j.source_reference,j.qw_signal_id,
               p.policy_id,p.policy_version,p.source_kind as policy_source_kind,p.definition_json,encode(p.definition_sha256,'hex') as sha256,
@@ -177,7 +181,8 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
         var policy=PasswordRiskPolicy.Compile(RiskJson.String(row,"policy_id"),RiskJson.Int(row,"policy_version"),RiskJson.Obj(row["definition_json"]));
         RiskJson.Require(policy.Sha256==RiskJson.String(row,"sha256"),"password_risk_policy_hash_conflict");
         var signal=await PasswordRiskProof.LoadSignal(sql,RiskJson.String(row,"source_reference"),ct);RiskJson.Require(signal.Mode==mode,"password_risk_mode_mismatch");
-        var proposal=PasswordRiskProposal.Create(policy,signal);return new(lease,mode,proposal,PasswordRiskCompleteness.Capture(DateTimeOffset.UtcNow,proposal.At));
+        var proposal=PasswordRiskProposal.Create(policy,signal);
+        return new(lease,mode,proposal,PasswordRiskCompleteness.Capture(DateTimeOffset.UtcNow,proposal.At),schema[0].Flag("locked_episode_proof"));
     }
 
     private static async Task<PasswordRiskOutcome> Execute(RiskSql sql,PasswordRiskWork work,int evaluationMs,CancellationToken ct)
@@ -187,10 +192,15 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
             await sql.Execute("select pg_advisory_xact_lock(hashtextextended(@identity,0))",ct,("identity",work.Proposal.Identity));
             scenario=await PasswordRiskScenario.Find(sql,work.Proposal,ct);
             if(scenario!=null)await PasswordRiskProof.ScenarioSignals(sql,Guid.Parse(RiskJson.String(scenario,"scenario_id")),work.Proposal.Signal,ct);
-            var ledger=await PasswordRiskProof.Lock(sql,work.Proposal.Signal,ct);
-            if(ledger==null){await Ack(sql,work.Lease,true,ct);return new("episode_frozen");}
+            PasswordRiskEpisode? episode=null;
+            bool locked;
+            if(work.LockedEpisodeProof) {
+                episode=await PasswordRiskProof.LockEpisode(sql,work.Proposal.Signal,ct);
+                locked=episode is not null;
+            } else locked=await PasswordRiskProof.Lock(sql,work.Proposal.Signal,ct) is not null;
+            if(!locked){await Ack(sql,work.Lease,true,ct);return new("episode_frozen");}
             scenario=await PasswordRiskScenario.Persist(sql,work.Proposal,scenario,ct);Guid scenarioId=Guid.Parse(RiskJson.String(scenario,"scenario_id"));
-            var episode=await PasswordRiskProof.LoadEpisode(sql,work.Proposal.Signal,ct);
+            episode??=await PasswordRiskProof.LoadEpisode(sql,work.Proposal.Signal,ct);
             var members=await PasswordRiskProof.ScenarioSignals(sql,scenarioId,work.Proposal.Signal,ct);
             if(!episode.ContainsExactly(members.Select(s=>s.Id))) {
                 await sql.Execute("update public.semantic_security_scenarios set evidence_state='evidence_pending' where scenario_id=@scenario",ct,("scenario",scenarioId));scenario["evidence_state"]="evidence_pending";

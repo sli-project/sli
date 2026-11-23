@@ -16,6 +16,11 @@ internal static class PasswordRiskProof
     internal static async Task<PasswordRiskEpisode> LoadEpisode(RiskSql sql,PasswordRiskSignal signal,CancellationToken ct)
     {
         var rows=await sql.Rows("select signal_id,document_json from public.read_password_episode_portions_v2(@scope::jsonb,@execution::jsonb,@episode)",ct,("scope",signal.Rule.Scope.Document),("execution",signal.Rule.Execution),("episode",signal.Episode));
+        return ReadEpisode(rows,signal);
+    }
+
+    private static PasswordRiskEpisode ReadEpisode(IReadOnlyList<JsonObject> rows,PasswordRiskSignal signal)
+    {
         RiskJson.Require(rows.Count is >=1 and <=256,"password_risk_evidence_pending");var signals=new List<PasswordRiskSignal>();
         foreach(var row in rows){var item=PasswordRiskSignal.Read(RiskJson.Obj(row["document_json"]));RiskJson.Require(item.Id==RiskJson.String(row,"signal_id"),"password_risk_chain_invalid");signals.Add(item);}
         return PasswordRiskEpisode.Read(signals,signal.Id);
@@ -23,12 +28,29 @@ internal static class PasswordRiskProof
 
     internal static async Task<JsonObject?> Lock(RiskSql sql,PasswordRiskSignal signal,CancellationToken ct)
     {
+        var row=await LockRow(sql,signal,
+            "select public.lock_password_publication_v2(@scope::jsonb,@execution::jsonb,@episode) as publication",ct);
+        return row is null?null:RiskJson.Obj(row["publication"]);
+    }
+
+    internal static async Task<PasswordRiskEpisode?> LockEpisode(RiskSql sql,PasswordRiskSignal signal,CancellationToken ct)
+    {
+        var row=await LockRow(sql,signal,
+            "select ledger as publication,portions from public.read_locked_password_episode402(@scope::jsonb,@execution::jsonb,@episode)",ct);
+        if(row is null)return null;
+        var portions=row["portions"] as JsonArray??throw new PasswordRiskFailure("password_risk_evidence_pending");
+        RiskJson.Require(portions.Count is >=1 and <=256,"password_risk_evidence_pending");
+        return ReadEpisode(portions.Select(RiskJson.Obj).ToArray(),signal);
+    }
+
+    private static async Task<JsonObject?> LockRow(RiskSql sql,PasswordRiskSignal signal,string query,CancellationToken ct)
+    {
         await sql.Execute("savepoint password_risk_publication_lock",ct);
         try {
-            var rows=await sql.Rows("select public.lock_password_publication_v2(@scope::jsonb,@execution::jsonb,@episode) as publication",ct,("scope",signal.Rule.Scope.Document),("execution",signal.Rule.Execution),("episode",signal.Episode));
+            var rows=await sql.Rows(query,ct,("scope",signal.Rule.Scope.Document),("execution",signal.Rule.Execution),("episode",signal.Episode));
             await sql.Execute("release savepoint password_risk_publication_lock",ct);
             RiskJson.Require(rows.Count==1&&rows[0]["publication"] is JsonObject,"password_risk_episode_invalid");
-            var ledger=RiskJson.Obj(rows[0]["publication"]);return ledger["frozen"]?.GetValue<bool>()==true?null:ledger;
+            var ledger=RiskJson.Obj(rows[0]["publication"]);return ledger["frozen"]?.GetValue<bool>()==true?null:rows[0];
         }catch(PostgresException error)when(error.MessageText=="episode_frozen") {
             await sql.Execute("rollback to savepoint password_risk_publication_lock",ct);await sql.Execute("release savepoint password_risk_publication_lock",ct);return null;
         }
