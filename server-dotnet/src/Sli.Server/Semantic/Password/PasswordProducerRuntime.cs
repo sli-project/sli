@@ -87,9 +87,11 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
             if(!await SourceLock(true,ct))return [new(Failed:false,Status:"busy",Diagnostic:DetectionDiagnostics.Describe(new PasswordFailure("password_producer_busy"),step))];
             try {
                 var caches=new Dictionary<string,Dictionary<long,PasswordNative>>();
-                Task<PasswordProducerOutcome> Run(PasswordRule rule,CancellationToken token) {
+                async Task<PasswordProducerOutcome> Run(PasswordRule rule,CancellationToken token) {
                     if(!caches.TryGetValue(rule.Pin,out var cache))caches[rule.Pin]=cache=[];
-                    return producer.RunAsync(db,rule,token,cache);
+                    var result = await producer.RunAsync(db,rule,token,cache);
+                    PasswordProofObservation.Write(result.RetainedProof,Console.Error);
+                    return result;
                 }
                 var live=new List<PasswordRule>();var catchup=new List<PasswordRule>();
                 step="password_plan388";

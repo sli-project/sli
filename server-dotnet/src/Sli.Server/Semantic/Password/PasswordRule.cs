@@ -149,8 +149,11 @@ public sealed class PasswordRule
         if(!records.TryGetValue(w.NativeId,out var n))throw new PasswordFailure("password_v2_native_unavailable");if(n.Witness!=w||w.Scope!=Scope||!n.ProvesEntity(this,entity))throw new PasswordFailure("password_v2_continuity_native_conflict");
     }
     public PasswordBudget VerifyChain(IReadOnlyList<PasswordEmission> chain,IEnumerable<PasswordNative> native)
+        => VerifyNativeChain(chain, Records(native));
+
+    private PasswordBudget VerifyNativeChain(IReadOnlyList<PasswordEmission> chain,Dictionary<long,PasswordNative> records)
     {
-        var records=Records(native);if(chain.Count==0)throw new PasswordFailure("password_v2_continuity_missing");PasswordEmission? previous=null;var budget=new PasswordBudget();
+        if(chain.Count==0)throw new PasswordFailure("password_v2_continuity_missing");PasswordEmission? previous=null;var budget=new PasswordBudget();
         var provenFailures=new List<PasswordNative>();
         foreach(var e in chain.OrderBy(e=>e.Sequence)) {
             if(e.Pin!=Pin||e.Sequence!=(previous?.Sequence??0)+1||e.EpisodeKey!=chain[0].EpisodeKey||e.Entity!=chain[0].Entity||e.Epoch!=chain[0].Epoch)throw new PasswordFailure("password_v2_continuity_identity");
@@ -178,6 +181,30 @@ public sealed class PasswordRule
         }return budget;
     }
     public PasswordProposal Advance(PasswordState state,IReadOnlyList<PasswordNative> events,DateTimeOffset now,IReadOnlyList<PasswordEmission>? history=null,IReadOnlyList<PasswordNative>? retained=null,DateTimeOffset? readFrom=null)
+        => Advance(state, events, now, history, retained, readFrom, null);
+
+    private sealed record RetainedChainProof(Dictionary<long,PasswordNative> Records, PasswordFailure? CombinedLimit);
+
+    internal PasswordProposal AdvanceWithRetainedChain(PasswordState state,IReadOnlyList<PasswordNative> events,DateTimeOffset now,
+        IReadOnlyList<PasswordEmission> history,IReadOnlyList<PasswordNative> retained,DateTimeOffset? readFrom,
+        IEnumerable<PasswordNative> chainNative,PasswordFailure? combinedLimit)
+    {
+        var chainRecords = Records(chainNative);
+        if (chainRecords.Values.Any(n => n.Witness.Scope != Scope))
+            throw new PasswordFailure("password_v2_native_scope");
+        return Advance(state, events, now, history, retained, readFrom, new RetainedChainProof(chainRecords, combinedLimit));
+    }
+
+    internal static void AddProofRecords(Dictionary<long,PasswordNative> target,IEnumerable<PasswordNative> source)
+    {
+        foreach (var native in source)
+            if (!target.TryAdd(native.Witness.NativeId, native) && target[native.Witness.NativeId] != native)
+                throw new PasswordFailure("password_v2_native_content_conflict");
+    }
+
+    private PasswordProposal Advance(PasswordState state,IReadOnlyList<PasswordNative> events,DateTimeOffset now,
+        IReadOnlyList<PasswordEmission>? history,IReadOnlyList<PasswordNative>? retained,DateTimeOffset? readFrom,
+        RetainedChainProof? chainProof)
     {
         // A larger SQL slice is replayed through the same 600-second engine.
         // In particular, separate episodes of one entity must both be emitted.
@@ -185,15 +212,12 @@ public sealed class PasswordRule
             var slicedState=state;var slicedEmissions=new List<PasswordEmission>();var counts=new Dictionary<string,int>();
             var admitted=new Dictionary<string,PasswordEpisode>(StringComparer.Ordinal);
             var checkedNative=Records(retained??[]);
-            foreach(var (id,native) in Records(events)) {
-                if(checkedNative.TryGetValue(id,out var previous)&&previous!=native)throw new PasswordFailure("password_v2_native_content_conflict");
-                checkedNative[id]=native;
-            }
+            AddProofRecords(checkedNative, Records(events).Values);
             var nativeRows=checkedNative.Values.ToArray();
             for(var through=readFrom.Value.AddSeconds(720);;through=through.AddSeconds(600)) {
                 through=through<now?through:now;
                 var incoming=events.Where(n=>n.Witness.At>=through.AddSeconds(-720)&&n.Witness.At<=through).ToArray();
-                var part=Advance(slicedState,incoming,through,(history??[]).Concat(slicedEmissions).ToArray(),nativeRows);
+                var part=Advance(slicedState,incoming,through,(history??[]).Concat(slicedEmissions).ToArray(),nativeRows,null,chainProof);
                 if(part.State.Watermark!=through.AddSeconds(-120))return new(state,[],part.Diagnostics,part.StateBytes);
                 slicedState=part.State;slicedEmissions.AddRange(part.Emissions);
                 foreach(var emission in part.Emissions)admitted[emission.EpisodeKey]=part.State.Episodes.Single(e=>e.Key==emission.EpisodeKey);
@@ -211,6 +235,15 @@ public sealed class PasswordRule
         PasswordProposal Reject(string code)=>new(state,[],new Dictionary<string,int>{{code,1}});
         if(state.Watermark.HasValue&&cutoff<state.Watermark)return Reject("clock_regression");
         var records=Records(retained);foreach(var (id,native) in Records(events)){if(records.TryGetValue(id,out var old)&&old!=native)throw new PasswordFailure("password_v2_native_content_conflict");if(native.Witness.Scope!=Scope)throw new PasswordFailure("password_v2_native_scope");records[id]=native;}
+        if (chainProof != null) {
+            PasswordProofBudget.Check(PasswordProofPhase.RetainedChain, records.Count, records.Values.Sum(n => (long)n.Witness.XmlBytes));
+            AddProofRecords(records, chainProof.Records.Values);
+        }
+        void VerifyProof(IReadOnlyList<PasswordEmission> chain)
+        {
+            if (chainProof == null) VerifyChain(chain, records.Values);
+            else VerifyNativeChain(chain, records);
+        }
         long epoch=state.Epoch;var watermark=state.Watermark;var oldWindow=state.Window;var episodes=state.Episodes.ToDictionary(e=>e.Entity,StringComparer.Ordinal);
         if(watermark.HasValue&&lower>watermark){epoch++;Note("coverage_gap");oldWindow=[];episodes.Clear();watermark=null;}
         watermark??=lower.AddTicks(-10);var seen=oldWindow.ToDictionary(m=>m.Witness.NativeId);var pending=seen.Where(p=>p.Value.Witness.At>watermark).Select(p=>p.Key).ToHashSet();
@@ -275,11 +308,19 @@ public sealed class PasswordRule
         var emissions=new List<PasswordEmission>();foreach(var (entity,episode) in episodes.OrderBy(p=>p.Key,StringComparer.Ordinal).ToArray()) {
             var root=proofs.GetValueOrDefault(episode.Key)??[];IReadOnlyList<PasswordWitness> added=newByKey.GetValueOrDefault(episode.Key)??[];if(episode.Frozen||root.Count==0&&added.Count==0)continue;
             var chain=history.Where(e=>e.EpisodeKey==episode.Key).ToArray();PasswordWitness? predecessor=null;
-            if(episode.RootId!=null){VerifyChain(chain,records.Values);if(chain[^1].Id!=episode.LastEmission)throw new PasswordFailure("password_v2_continuity_state");predecessor=chain[^1].Endpoint;}
+            if(episode.RootId!=null){VerifyProof(chain);if(chain[^1].Id!=episode.LastEmission)throw new PasswordFailure("password_v2_continuity_state");predecessor=chain[^1].Endpoint;}
             var counted=(root.Count>0?root:added).Select(w=>records[w.NativeId].Member).ToArray();
             var emission=new PasswordEmission(episode.Key,Pin,epoch,entity,episode.Sequence+1,episode.Seed,root,added,predecessor,episode.LastEmission,counted.Count(m=>m.Failure=="known_bad_password"),counted.Count(m=>m.Failure=="unknown_account"),counted.Count(m=>m.Failure=="other_failure"),counted.Select(m=>m.TargetKey).Distinct().Count(),root.Count>0?episode.Prequalification:[]);
-            PasswordBudget budget;try{budget=episode.Budget.Reserve(emission.Occurrences);}catch(PasswordFailure e)when(e.Message=="password_v2_episode_budget_exhausted"){episodes[entity]=episode with{Frozen=true};Note("episode_evidence_budget_exhausted");continue;}
-            VerifyChain(chain.Append(emission).ToArray(),records.Values);emissions.Add(emission);episodes[entity]=episode with{RootId=episode.RootId??emission.Id,LastEmission=emission.Id,Sequence=emission.Sequence,EvidenceBudget=budget,Origin=[]};
+            PasswordBudget budget;
+            try { budget=episode.Budget.Reserve(emission.Occurrences); }
+            catch (PasswordFailure e) when (e.Message=="password_v2_episode_budget_exhausted") {
+                // The old combined limit stopped this batch. Expanding the
+                // proof read must not turn it into a freeze: the producer's
+                // existing first-pair denial must independently qualify.
+                if (episode.RootId != null && chainProof?.CombinedLimit is { } limit) throw limit;
+                episodes[entity]=episode with{Frozen=true};Note("episode_evidence_budget_exhausted");continue;
+            }
+            VerifyProof(chain.Append(emission).ToArray());emissions.Add(emission);episodes[entity]=episode with{RootId=episode.RootId??emission.Id,LastEmission=emission.Id,Sequence=emission.Sequence,EvidenceBudget=budget,Origin=[]};
         }
         // Only an endpoint within 600 seconds can connect to a later decision.
         // Published history and unresolved barriers remain owned by the SQL ledger.
