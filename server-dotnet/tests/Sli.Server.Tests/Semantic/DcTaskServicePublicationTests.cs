@@ -365,6 +365,7 @@ public sealed class DcTaskServicePublicationTests
 
     private static async Task CheckMigrationRoundTrip(SqlPostgresFixture fixture, NpgsqlConnection owner, CancellationToken ct)
     {
+        await fixture.RollbackAfterAsync(401, ct);
         string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/401_dc_task_service_catalog.sql");
         // Match native PostgreSQL provisioning before executing SQL as the native admin login.
         await PostCollectionPostgres.Sql(owner, """
