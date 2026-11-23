@@ -51,6 +51,7 @@ RUNTIME_UNITS = {
     'sli-backup.timer': 'Unit=sli-backup.service\n',
     'sli-backup.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch capture\n',
     'sli-backup-drill.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch drill\n',
+    'sli-backup-settings.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch settings\n',
     **{'sli-' + name.replace('executor-', 'executor@') + '.service':
        f'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_runtime.py launch {name}\n'
        for name in RUNTIME_SERVICES},

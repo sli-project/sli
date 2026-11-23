@@ -34,7 +34,8 @@ def test_beta_excludes_services_even_when_all_profiles_enabled(monkeypatch):
         assert set(rendered) == {'sli-dotnet.target', *map(runtime.dotnet_unit_name, expected)}
         assert 'Requires=sli-dotnet.target\n' in runtime.units(config)['sli.target']
         assert all('python3' not in body for body in rendered.values())
-        assert all(' launch ' not in body for body in runtime.units(config).values())
+        assert all(' launch ' not in body for name, body in runtime.units(config).items()
+                   if name != 'sli-backup-settings.service')
         for excluded in ('what-where-when', 'remote-access', 'report-producer'):
             with pytest.raises(runtime.RuntimeErrorCode, match='native_profile_disabled'):
                 runtime.dotnet_unit(release, config, excluded)

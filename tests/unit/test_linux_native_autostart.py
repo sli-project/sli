@@ -50,7 +50,11 @@ def test_clean_install_units_have_complete_boot_chain(tmp_path, monkeypatch, mod
     assert not values(target, "Conflicts")
     assert "sli-ready.service" in values(target, "Requires") & values(target, "After")
     assert names <= values(target, "Wants")
-    assert values(target, "Wants") - {"sli-health.timer"} == names
+    assert values(target, "Wants") - {"sli-health.timer", "sli-backup-settings.service"} == names
+    coordinator = rendered["sli-backup-settings.service"]
+    assert values(coordinator, "PartOf") == {"sli-dotnet.target"}
+    assert values(coordinator, "RuntimeDirectory") == {"sli/backup-settings"}
+    assert "native_backup.py launch settings" in coordinator
     for name in names:
         assert "sli-ready.service" in values(rendered[name], "Requires") & values(rendered[name], "After")
 
@@ -110,7 +114,7 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
         installed_at = json.loads(installed_path.read_text())["installed_at_utc"]
         assert datetime.fromisoformat(installed_at).tzinfo == timezone.utc
         assert calls.index("acceptance") < calls.index("recovery") < calls.index(enable)
-        assert calls.index(enable) < calls.index(enable_backup)
+        assert enable_backup not in calls
         assert json.loads((state / "package-install.json").read_text())["status"] == "configured"
         monkeypatch.setattr(install, "CURRENT", release)
         monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())

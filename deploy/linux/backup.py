@@ -1243,7 +1243,7 @@ def capture_backup(root: Path, retention: int, selected: tuple[str, ...], *, wri
     return final
 
 
-def capture_admission(root: Path) -> None:
+def capture_admission(root: Path, *, regular=False) -> None:
     from deploy.linux.backup_restore_check import postgres_admission
 
     with pg_passfile() as passfile, pg_connect(passfile) as connection:
@@ -1251,14 +1251,16 @@ def capture_admission(root: Path) -> None:
         point = connection.execute(PG_CAPACITY_SQL).fetchone()[0]
     component = {'database_size_bytes': point['database_size_bytes']}
     if native_mode():
-        from deploy.linux.native_backup import capture_volume_admission, ROOT
+        from deploy.linux.native_backup import capture_volume_admission, same_disk, ROOT
         from deploy.linux.native_host import Host
-        filesystems = {role: {'device': backup_policy.filesystem(Path(path).resolve()),
-                             'free_bytes': shutil.disk_usage(Path(path).resolve()).free}
-                       for role, path in pg_capacity_paths(point).items()}
-        estimate = Host().backup_space_estimate(ROOT, pg_bytes=point['database_size_bytes'])
-        admission = capture_volume_admission(root, root, filesystems,
-                                             estimate['capture_bytes'], work_required=0)
+        paths = {role: Path(path).resolve() for role, path in pg_capacity_paths(point).items()}
+        filesystems = {role: {'device': backup_policy.filesystem(path), 'free_bytes': shutil.disk_usage(path).free}
+                       for role, path in paths.items()}
+        if regular and any(same_disk(root, path) for path in paths.values()):
+            raise BackupError('native_backup_root_same_device')
+        estimate = Host().backup_space_estimate(root if regular else ROOT, pg_bytes=point['database_size_bytes'])
+        admit = backup_policy.volume_admission if regular else capture_volume_admission
+        admission = admit(root, root, filesystems, estimate['capture_bytes'], work_required=0)
     else:
         admission = postgres_admission(root, point, component)
     if admission['status'] != 'admitted':

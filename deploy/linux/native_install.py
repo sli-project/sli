@@ -254,11 +254,17 @@ def backup_schedule():
 
 
 def start_backup_schedule(schedule):
-    # Only first-time setup creates a boot link. Fencing stops the timer and
-    # unit rendering replaces the vendor file, preserving operator links/masks.
-    if schedule is None:
-        command(['systemctl', 'enable', '--now', BACKUP_TIMER])
-    elif schedule in ENABLED_BACKUP_SCHEDULES:
+    # Only the settings coordinator may create a boot link. Fencing stops
+    # the timer without removing links or masks.
+    if schedule in ENABLED_BACKUP_SCHEDULES:
+        from deploy.linux.native_backup_settings import SettingsError, read_policy
+
+        try:
+            policy = read_policy()
+        except SettingsError:
+            return
+        if policy is not None and not policy['enabled']:
+            return
         command(['systemctl', 'start', BACKUP_TIMER])
 
 
@@ -442,6 +448,7 @@ def reconfigure_agents(release):
             # Refuse local edits before stopping anything, including after interruption.
             require(trusted(runtime.CONFIG).decode("utf-8") in {intent["old_runtime"], intent["new_runtime"]},
                     "native_agents_reconfigure_conflict")
+            schedule = backup_schedule()
             intent["status"] = "applying"
             atomic(intent_path, intent)
             command(["systemctl", "disable", "sli.target"])
@@ -462,7 +469,8 @@ def reconfigure_agents(release):
             wait_health()
             intent["status"] = "configured"
             atomic(intent_path, intent)
-            command(["systemctl", "enable", "--now", "sli.target", "sli-backup.timer"])
+            command(["systemctl", "enable", "--now", "sli.target"])
+            start_backup_schedule(schedule)
         except Exception:
             runtime.stop_writers()
             raise

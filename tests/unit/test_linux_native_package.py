@@ -323,7 +323,7 @@ def test_dotnet_generator_covers_selected_services_with_python_policy(tmp_path, 
     names = {service: f"sli-dotnet-{service}.service" for service in selected}
     assert {path.name for path in destination.iterdir()} == {"sli-dotnet.target", *names.values()}
     target = (destination / "sli-dotnet.target").read_text()
-    assert "Wants=sli-health.timer " + " ".join(names.values()) + "\n" in target
+    assert "Wants=sli-health.timer sli-backup-settings.service " + " ".join(names.values()) + "\n" in target
     assert "Conflicts=" not in target
     assert "PartOf=sli.target\n" in target
     assert "[Install]" not in target
@@ -889,7 +889,7 @@ def test_reinstall_rejects_changed_manifest_without_mutation(lifecycle):
 def test_remove_stops_writers_without_touching_registry_recovery_or_link(lifecycle, monkeypatch):
     install.configure("test")
     assert lifecycle.calls.index("workers-healthy") < lifecycle.calls.index("backup-configured")
-    assert ["systemctl", "enable", "--now", "sli-backup.timer"] in lifecycle.calls
+    assert ["systemctl", "enable", "--now", "sli-backup.timer"] not in lifecycle.calls
     before = {p: p.read_bytes() for p in lifecycle.state.iterdir()}
     lifecycle.calls.clear()
     monkeypatch.setattr(install.os, "geteuid", lambda: 0)
