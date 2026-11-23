@@ -1,0 +1,9 @@
+# Guides
+
+[Русская версия](../ru/README.md) · [Repository README](../../README.md)
+
+Start with the Debian archive. These guides cover the native Debian beta and its .NET agent.
+
+- [Install the server and sign in](install.md)
+- [Update, back up, roll back or restore the server](upgrade-recovery.md)
+- [Connect a Windows agent](windows-agent.md)
