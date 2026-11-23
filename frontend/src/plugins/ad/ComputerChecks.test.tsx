@@ -6,6 +6,7 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { ReportRenderer } from "../../app/report-v2/ReportRenderer";
 import { ComputerChecks, computerRole, computerTableColumns } from "./ComputerChecks";
 import { DataTable, OverlayProvider } from "../../design-system";
+import { formatDateTime } from "../../shared/date-time";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
@@ -275,11 +276,16 @@ it("uses exact computer scope for card changes, problems, and source event links
   expect(within(card).getByRole("link", { name: "#9" }).getAttribute("href")).toContain("/app/events/9?");
   fireEvent.click(within(card).getByRole("tab", { name: "Входы" }));
   await within(card).findByText("synthetic-user (2 за период)");
-  const repeats = within(card).getByRole("button", { name: /×2/ });
-  expect(repeats.getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(repeats);
-  expect(within(card).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
+  const table = within(card).getByRole("table", { name: "Наблюдения за период" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(2);
+  expect(within(rows[0]).getByRole("cell", { name: formatDateTime("2026-11-22T07:13:00Z") })).toBeTruthy();
+  expect(within(rows[1]).getByRole("cell", { name: formatDateTime("2026-11-22T07:12:00Z") })).toBeTruthy();
+  expect(within(rows[0]).getByRole("link", { name: "#15" }).getAttribute("href")).toContain("/app/events/15?");
+  expect(within(rows[1]).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
   expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/15?");
+  fireEvent.click(rows[1]);
+  expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/14?");
 });
 
 it("opens every open state for the computer and keeps the scope in the queue request", async () => {
