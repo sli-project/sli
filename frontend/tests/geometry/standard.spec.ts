@@ -87,15 +87,15 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
   };
 }
 
-async function installStandardFixtures(page: Page, count = 60, firstProblemEvidence = 1) {
+async function installStandardFixtures(page: Page, count = 60, firstProblemEvidence = 1, preferences = { locale: 'ru', theme: 'light' }) {
   const unexpected: string[] = [];
   const servedData: string[] = [];
   const decisions: unknown[] = [];
   let firstProblemStatus = 'new';
-  await page.addInitScript(() => {
-    localStorage.setItem('sli.locale', 'ru');
-    localStorage.setItem('sli.theme', 'light');
-  });
+  await page.addInitScript(({ locale, theme }) => {
+    localStorage.setItem('sli.locale', locale);
+    localStorage.setItem('sli.theme', theme);
+  }, preferences);
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const { pathname, searchParams } = new URL(route.request().url());
     const problemDetail = pathname.match(/^\/api\/v2\/reports\/security\.problems\/rows\/([12])\/detail$/);
@@ -473,3 +473,92 @@ test('measurement detects a banner and paragraph above the table', async ({ page
     'bannersAboveTable: 1', 'paragraphsAboveTable: 1', 'calloutsAboveTable: 1', 'forbiddenText: not proven',
   ]));
 });
+
+for (const locale of ['ru', 'en']) {
+  for (const width of [1920, 2560]) {
+    test('AD state details at ' + width + ' (' + locale + ')', async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 1080 });
+      const { unexpected } = await installStandardFixtures(page, 0, 1, { locale, theme: 'dark' });
+      const russian = locale === 'ru';
+      const title = russian ? 'Порог блокировки' : 'Lockout threshold';
+      const value = russian ? '21 поп.' : '21 attempts';
+      const condition = russian ? '5–10 попыток' : '5–10 attempts';
+      const basis = russian ? 'Правило отчёта v1' : 'Report rule v1';
+      const definition = definitions.get('ad.infrastructure')!;
+      const reportPath = '/api/v2/reports/ad.infrastructure';
+      const spn = 'HTTP/service.example.test';
+      const owners = ['svc_demo_reports', 'svc_demo_archive'].map((name, index) => ({
+        entity_id: 40 + index, entity_name: name, owner_count: 2, domain_id: 1, run_id: 'demo-run',
+        spn, normalized_spn: spn.toLowerCase(), observed_at_utc: observed,
+      }));
+      await page.route(url => url.pathname === reportPath + '/data' && url.searchParams.get('tab') === 'spn_collisions',
+        route => route.fulfill({ json: { ...resultFor(definition, 0), state: 'ok', collections: { spn_collisions: owners } } }));
+      const current = {
+        row_id: '7:password.lockout_threshold', control_id: 'password.lockout_threshold', entity_id: 7,
+        entity_type: 'password_policy', label: title, domain_id: 1, domain_name: 'example.test', domain_entity_id: 17,
+        actual_value: 21, expected_condition: condition, qualification: 'failed', observed_at_utc: observed,
+        authority: 'report_rule_v1', authority_text: basis, source_section: 'domain_posture',
+      };
+      await page.route(url => url.pathname === reportPath + '/data' && url.searchParams.get('tab') === 'controls',
+        route => route.fulfill({ json: { ...resultFor(definition, 0), state: 'ok', items: [current], filtered_count: 1 } }));
+      await page.route(url => url.pathname.startsWith(reportPath + '/rows/'), async route => {
+        const params = new URL(route.request().url()).searchParams;
+        expect(params.get('domain')).toBe('1');
+        const terminal = params.has('cursor');
+        await route.fulfill({ json: { ...resultFor(definition, 0), state: terminal ? 'empty' : 'ok', items: terminal ? [] : [
+          { row_id: 1, actual_value: 21, observed_at_utc: observed },
+        ], has_more: true, next_cursor: '1' } });
+      });
+
+      await page.goto('/app/report/ad.infrastructure?domain=1');
+      await page.getByRole('button', { name: title, exact: true }).click();
+      const panel = page.getByRole('complementary', { name: title });
+      const history = page.getByRole('table', { name: new RegExp((russian ? 'История значения' : 'Value history') + ' · ' + title) });
+      await expect(panel.getByText(value, { exact: true })).toBeVisible();
+      await expect(panel.getByText(condition, { exact: true })).toBeVisible();
+      await expect(history.getByRole('cell', { name: value })).toBeVisible();
+      const more = page.getByRole('button', { name: russian ? 'Показать ещё' : 'Show more' });
+      await more.click();
+      await expect(more).toBeHidden();
+      await expect(history.getByRole('cell', { name: value })).toBeVisible();
+
+      const scroll = page.locator('main .sli-ds-table__scroll').first();
+      expect(await scroll.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      const listBounds = (await scroll.boundingBox())!;
+      expect((await panel.boundingBox())!.x).toBeGreaterThan(listBounds.x + listBounds.width);
+      const areaName = russian ? 'Область' : 'Area';
+      const area = page.getByText(areaName, { exact: true });
+      const control = (await page.getByRole('combobox', { name: areaName }).boundingBox())!;
+      expect(control.x + control.width).toBeLessThanOrEqual(listBounds.x + listBounds.width + 1);
+      expect(await area.evaluate(element => {
+        const range = new Range();
+        range.selectNodeContents(element);
+        return range.getClientRects().length;
+      })).toBe(1);
+      const screenshot = testInfo.outputPath('ad-state-observation.png');
+      await page.screenshot({ path: screenshot });
+      await testInfo.attach('ad-state-observation.png', { path: screenshot, contentType: 'image/png' });
+
+      await panel.getByRole('tab', { name: russian ? 'Объект' : 'Object' }).click();
+      await expect(panel.getByRole('link', { name: 'example.test' })).toHaveAttribute('href', /\/app\/entities\/17\?/);
+      const affected = panel.getByRole('region', { name: russian ? 'Затронутые объекты' : 'Affected objects' });
+      await expect(affected.getByText('—', { exact: true })).toBeVisible();
+      await expect(affected.getByRole('link')).toHaveCount(0);
+      await panel.getByRole('tab', { name: russian ? 'Правило' : 'Rule' }).click();
+      await expect(panel.getByText(basis, { exact: true })).toBeVisible();
+
+      if (russian && width === 1920) {
+        await page.getByRole('tab', { name: 'Коллизии SPN 1' }).click();
+        await page.getByRole('button', { name: spn, exact: true }).click();
+        const collision = page.getByRole('complementary', { name: spn });
+        await collision.getByRole('tab', { name: 'Объект' }).click();
+        const links = collision.getByRole('region', { name: 'Затронутые объекты' }).getByRole('link');
+        await expect(links).toHaveText(['svc_demo_reports', 'svc_demo_archive']);
+        const objects = testInfo.outputPath('ad-state-affected-objects.png');
+        await page.screenshot({ path: objects });
+        await testInfo.attach('ad-state-affected-objects.png', { path: objects, contentType: 'image/png' });
+      }
+      expect(unexpected).toEqual([]);
+    });
+  }
+}

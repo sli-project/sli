@@ -1,8 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
-import { DataTable, Icon, ReportLayout, SeverityBadge, StateView, TabList, Tabs, type PeriodPreset, type PeriodValue, type TableColumn } from "../../design-system";
+import { DataTable, DetailDrawer, FactList, Icon, MetricStrip, ReportLayout, SeverityBadge, StateView, TabList, TabPanel, Tabs, useDateFormatters, type PeriodPreset, type PeriodValue, type TableColumn } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { formatNumber, EMPTY_VALUE } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
@@ -25,17 +25,25 @@ const observed = (row: Row) => row.qualification === "failed" || row.qualificati
 const outcome = (row: Row) => row.qualification === "failed" ? copy("deviation") : row.qualification === "passed" ? copy("passed") : EMPTY_VALUE;
 const label = (row: Row) => String(row.label ?? EMPTY_VALUE);
 const objectName = (row: Row) => String((area(row) === "password_policy" ? row.domain_name : row.entity_name) ?? EMPTY_VALUE).slice(0, 512);
+const expected = (row: Row) => row.authority === "not_defined" ? EMPTY_VALUE : String(row.expected_condition ?? EMPTY_VALUE);
+const entityId = (entity: unknown) => /^[1-9]\d*$/.test(String(entity)) ? String(entity) : null;
 const source = (row: Row) => row.authority === "collector_diagnostic" && area(row) === "domain_controller" ? copy("diagnostics")
   : row.source_section === "domain_health" && area(row) === "replication_link" ? copy("replication")
   : row.source_section === "domain_posture" || row.source_section === "domain_health" ? "AD" : EMPTY_VALUE;
 const inApp = (path: string) => withReturnTo(path, `${window.location.pathname}${window.location.search}`);
 
 function entityLink(name: string, entity: unknown) {
-  return /^[1-9]\d*$/.test(String(entity)) ? <a href={inApp(`/app/entities/${encodeURIComponent(String(entity))}`)} onClick={(event) => event.stopPropagation()}>{name}</a> : name;
+  return entityId(entity) ? <a href={inApp(`/app/entities/${encodeURIComponent(String(entity))}`)} onClick={(event) => event.stopPropagation()}>{name}</a> : name;
 }
 
 function objectLink(row: Row) {
   return entityLink(objectName(row), area(row) === "password_policy" ? row.domain_entity_id : row.entity_id);
+}
+
+function controllerEvents(row: Row) {
+  const host = area(row) === "domain_controller" && typeof row.object_context === "object" && row.object_context !== null
+    ? (row.object_context as Row).dns_host_name : undefined;
+  return typeof host === "string" && host ? <a href={inApp(reportHref("events.journal", { server: host.slice(0, 256), domain: String(row.domain_id ?? "") }))}>{copy("object_events")}</a> : null;
 }
 
 function problemLink(row: Row) {
@@ -47,14 +55,19 @@ function Failure({ subject, retry }: { subject: string; retry: () => void }) {
   return <div role="alert">{copy("load_failed", { subject })}{" "}<button type="button" className="sli-ds-button" onClick={retry}>{t("state.retry")}</button></div>;
 }
 
+const historyUnavailable = ["error", "denied", "unavailable", "not_collected", "processing"];
+
 function ParameterHistory({ row, reportKey, params }: { row: Row; reportKey: string; params: string }) {
   const history = useInfiniteQuery({ queryKey: ["report-v2", reportKey, "history", id(row), params, row.observed_at_utc],
     initialPageParam: null as string | null,
-    getNextPageParam: (last: ReportResultDto) => last.has_more ? last.next_cursor : null,
-    queryFn: ({ pageParam }) => {
+    getNextPageParam: (last: ReportResultDto, _pages, _cursor, cursors) => last.items.length > 0 && last.has_more
+      && last.next_cursor && !cursors.includes(last.next_cursor) ? last.next_cursor : null,
+    queryFn: async ({ pageParam }) => {
       const query = new URLSearchParams(params);
       if (pageParam) query.set("cursor", pageParam);
-      return api.reportV2Detail(reportKey, id(row), query);
+      const page = await api.reportV2Detail(reportKey, id(row), query);
+      if (historyUnavailable.includes(page.state) || page.state === "partial" && page.items.length === 0) throw new Error(page.state);
+      return page;
     }, retry: false, staleTime: 60_000, refetchOnWindowFocus: false });
   const items = history.data?.pages.flatMap((page) => page.items) ?? [];
   const title = copy("history_title", { parameter: label(row), object: objectName(row) });
@@ -63,16 +76,16 @@ function ParameterHistory({ row, reportKey, params }: { row: Row; reportKey: str
     { key: "actual_text", label: copy("value"), width: "var(--sli-field-max-width)", render: (item) => item === items[0] ? <strong>{valueText(item, row)}</strong> : valueText(item, row) },
     { key: "source", label: copy("source"), render: () => source(row) },
   ];
-  const host = area(row) === "domain_controller" && typeof row.object_context === "object" && row.object_context !== null
-    ? (row.object_context as Row).dns_host_name : undefined;
   return <section className="sli-ds-table__detail">
     <h3>{title}</h3>
     {history.isPending ? <StateView state="loading" compact skeleton="table"/>
-      : history.isError && !items.length || ["error", "denied"].includes(history.data?.pages[0]?.state ?? "") ? <Failure subject={copy("history")} retry={() => void history.refetch()}/>
+      : history.isError && !items.length ? <Failure subject={copy("history")} retry={() => void history.refetch()}/>
       : <DataTable caption={title} columns={columns} rows={items}
-        rowKey={(item) => String(item.row_id ?? item.observed_at_utc)} stickyHeader={false} showFooter={Boolean(history.hasNextPage)} hasMore={history.hasNextPage}
-        loadingMore={history.isFetchingNextPage} onLoadMore={() => void history.fetchNextPage()} emptyContent={EMPTY_VALUE}/>}
-    {typeof host === "string" && host ? <a href={inApp(reportHref("events.journal", { server: host.slice(0, 256), domain: String(row.domain_id ?? "") }))}>{copy("object_events")}</a> : null}
+        rowKey={(item) => String(item.row_id ?? item.observed_at_utc)} stickyHeader={false} showFooter={Boolean(history.hasNextPage) && !history.isFetchNextPageError}
+        hasMore={history.hasNextPage && !history.isFetchNextPageError} loadingMore={history.isFetchingNextPage}
+        onLoadMore={() => void history.fetchNextPage()} emptyContent={EMPTY_VALUE}/>}
+    {history.isFetchNextPageError ? <Failure subject={copy("history")} retry={() => void history.fetchNextPage()}/> : null}
+    {controllerEvents(row)}
   </section>;
 }
 
@@ -105,6 +118,53 @@ function valueText(item: Row, parameter = item): string {
   return observed(item) || parameter !== item ? String(item.actual_text ?? EMPTY_VALUE).slice(0, 512) : EMPTY_VALUE;
 }
 
+const detailTabs = ["observation", "object", "rule"] as const;
+type Fact = { label: string; value: ReactNode };
+
+function CheckPanel({ title, row, actual, condition, basis, dataSource, object, affected, events, onClose }: {
+  title: string; row: Row; actual: number | string; condition: string; basis?: string; dataSource: string; object: ReactNode;
+  affected: Row[]; events?: ReactNode; onClose: () => void;
+}) {
+  const [tab, setTab] = useState("observation");
+  const { formatCell } = useDateFormatters();
+  const affectedHeading = useId();
+  const objectContext = row.object_context as Row | undefined;
+  const context: Fact[] = Array.isArray(row.context) ? row.context.flatMap((item: Row) =>
+    typeof item.label === "string" && typeof item.value === "string"
+      ? [{ label: item.label, value: item.code === "last_replication_attempt_utc" ? formatCell(objectContext?.last_replication_attempt_utc, "datetime") : item.value }] : []) : [];
+  const replication = area(row) === "replication_link";
+  return <DetailDrawer open inline title={title} onClose={onClose} subtitle={outcome(row)}>
+    <Tabs items={detailTabs.map((key) => ({ key, label: copy("detail." + key) }))} active={tab} onChange={setTab}>
+      <TabList label={copy("details")} variant="underline"/>
+      <TabPanel>
+        {tab === "observation" ? <>
+          <MetricStrip compact label={copy("detail.observation")} items={[
+            { key: "actual", label: copy("actual"), value: actual, tone: row.qualification === "failed" ? "danger" : "neutral" },
+            { key: "expected", label: copy("expected"), value: condition },
+          ]}/>
+          <FactList facts={[
+            { label: copy("observed"), value: formatCell(row.observed_at_utc, "datetime") },
+            { label: copy("source"), value: dataSource },
+            ...(replication ? context : []),
+          ]}/>
+        </> : tab === "object" ? <>
+          <FactList facts={[{ label: copy("object"), value: object }, ...(replication ? [] : context)]}/>
+          <section className="sli-ds-fact-section" aria-labelledby={affectedHeading}>
+            <h3 id={affectedHeading}>{copy("affected_objects")}</h3>
+            {affected.length ? <ul className="sli-ds-path">
+              {affected.map((item) => <li key={String(item.entity_id)}>{entityLink(String(item.entity_name ?? EMPTY_VALUE), item.entity_id)}</li>)}
+            </ul> : <div>{EMPTY_VALUE}</div>}
+          </section>
+          {events}
+        </> : <FactList facts={[
+          { label: copy("expected"), value: condition },
+          { label: copy("rule_source"), value: basis },
+        ]}/>}
+      </TabPanel>
+    </Tabs>
+  </DetailDrawer>;
+}
+
 const wideQuery = "(min-width: 2200px)";
 function subscribeWide(listener: () => void) {
   const media = window.matchMedia?.(wideQuery);
@@ -112,25 +172,36 @@ function subscribeWide(listener: () => void) {
   return () => media?.removeEventListener("change", listener);
 }
 
-function Parameters({ rows, reportKey, params, initialOpen, filters, setFilters, wide }: { rows: Row[]; reportKey: string; params: string; initialOpen?: string; wide: boolean;
-  filters: ParameterFilters; setFilters: (filters: ParameterFilters) => void }) {
+function parameterRows(rows: Row[], { result, query, area: filterArea }: ParameterFilters) {
+  const search = query.trim().toLocaleLowerCase();
+  return areas.flatMap((key) => rows.filter((row) => area(row) === key)
+    .sort((a, b) => Number(b.qualification === "failed") - Number(a.qualification === "failed")))
+    .filter((row) => (!filterArea || area(row) === filterArea) && (result === "all" || row.qualification === result)
+      && (!search || [label(row), objectName(row), valueText(row)].some((value) => value.toLocaleLowerCase().includes(search))));
+}
+
+function Parameters({ rows, filtered, reportKey, params, initialOpen, filters, setFilters, wide, selected, select }: {
+  rows: Row[]; filtered: Row[]; reportKey: string; params: string; initialOpen?: string; wide: boolean;
+  filters: ParameterFilters; setFilters: (filters: ParameterFilters) => void;
+  selected: string | null; select: (row: Row, trigger?: HTMLElement) => void;
+}) {
   const { result, query, area: filterArea } = filters;
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string[]>(initialOpen ? [initialOpen] : []);
-  const search = query.trim().toLocaleLowerCase();
   const toggle = (key: string, update: (fn: (current: string[]) => string[]) => void) => update((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  const open = (row: Row, trigger?: HTMLElement) => { select(row, trigger); toggle(id(row), setExpanded); };
   const groupRows = (key: string) => rows.filter((row) => area(row) === key);
   const count = (items: Row[], status: string) => status === "all" ? items.length : items.filter((row) => row.qualification === status).length;
-  const filtered = areas.flatMap((key) => groupRows(key).sort((a, b) => Number(b.qualification === "failed") - Number(a.qualification === "failed")))
-    .filter((row) => (!filterArea || area(row) === filterArea) && (result === "all" || row.qualification === result)
-      && (!search || [label(row), objectName(row), valueText(row)].some((value) => value.toLocaleLowerCase().includes(search))));
+
   const columns: TableColumn<Row>[] = [
     { key: "label", label: copy("parameter"), render: (row) => <button type="button" className="sli-ds-table__disclosure" aria-expanded={expanded.includes(id(row))}
-      onClick={(event) => { event.stopPropagation(); toggle(id(row), setExpanded); }}><Icon name="chevron"/>{label(row)}</button> },
+      onClick={(event) => { event.stopPropagation(); open(row, event.currentTarget); }}><Icon name="chevron"/>{label(row)}</button> },
     { key: "object", label: copy("object"), render: objectLink },
-    { key: "actual", label: copy("actual"), render: (row) => row.qualification === "failed" ? <strong>{valueText(row)}</strong> : valueText(row) },
-    { key: "expected", label: copy("expected"), render: (row) => row.authority === "not_defined" ? EMPTY_VALUE : String(row.expected_condition ?? EMPTY_VALUE) },
-    { key: "result", label: copy("result"), render: (row) => row.qualification === "failed" ? <strong>{outcome(row)}</strong> : outcome(row) },
+    { key: "actual", label: copy("actual"), render: (row) => valueText(row) },
+    { key: "expected", label: copy("expected"), render: expected },
+    { key: "result", label: copy("result"), render: (row) => row.qualification === "failed"
+      ? <span style={{ color: "var(--sli-danger)" }}><span aria-hidden="true">✕ </span>{outcome(row)}</span>
+      : outcome(row) },
     { key: "observed_at_utc", label: copy("observed"), kind: "datetime" },
   ];
   if (wide) columns.push({ key: "previous", label: copy("previous"), render: (row) => row.previous_value == null ? EMPTY_VALUE : valueText({ actual_value: row.previous_value, actual_text: row.previous_text }, row) },
@@ -139,12 +210,12 @@ function Parameters({ rows, reportKey, params, initialOpen, filters, setFilters,
     <div className="sli-ds-table__toolbar" role="group" aria-label={copy("result")}>
       {results.map((status) => <button key={status} type="button" className="sli-ds-chip" aria-pressed={status === result} onClick={() => setFilters({ ...filters, result: status })}>{copy(`filter.${status}`)} <strong>{formatNumber(count(rows, status))}</strong></button>)}
       <label className="sli-ds-field"><input type="search" maxLength={256} aria-label={copy("search")} placeholder={copy("search")} value={query} onChange={(event) => setFilters({ ...filters, query: event.target.value })}/></label>
-      <label className="sli-ds-table__toolbar-choice">{copy("area")} <span className="sli-ds-field"><select value={filterArea} onChange={(event) => setFilters({ ...filters, area: event.target.value })}>
+      <label className="sli-ds-table__toolbar-choice"><span style={{ whiteSpace: "nowrap" }}>{copy("area")}</span> <span className="sli-ds-field" style={{ minWidth: "var(--sli-field-min-width)" }}><select value={filterArea} onChange={(event) => setFilters({ ...filters, area: event.target.value })}>
         <option value="">{copy("filter.all")}</option>{areas.filter((key) => groupRows(key).length).map((key) => <option key={key} value={key}>{copy(`area.${key}`)}</option>)}
       </select></span></label>
     </div>
     <DataTable caption={copy("tab.controls")} columns={columns} rows={filtered} rowKey={id} showFooter={false} emptyContent={EMPTY_VALUE}
-      onRowClick={(row) => toggle(id(row), setExpanded)} rowGroup={(row) => {
+      selectedKey={selected} onRowClick={open} rowGroup={(row) => {
         const key = area(row);
         const items = groupRows(key);
         const closed = collapsed.includes(key);
@@ -156,14 +227,22 @@ function Parameters({ rows, reportKey, params, initialOpen, filters, setFilters,
   </>;
 }
 
-function collisions(result?: ReportResultDto) {
-  const grouped = new Map<string, Row[]>();
+function collisions(result?: ReportResultDto): Array<Row & { row_id: string; owners: Row[] }> {
+  const grouped = new Map<string, Map<string, Row>>();
   for (const row of result?.collections?.spn_collisions ?? []) {
-    if (Number(row.owner_count) < 2) continue;
-    const key = JSON.stringify([row.domain_id, row.run_id, row.normalized_spn ?? row.spn]);
-    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+    const entity = entityId(row.entity_id);
+    const spn = row.normalized_spn ?? row.spn;
+    const ownerCount = Number(row.owner_count);
+    if (!entity || !entityId(row.domain_id) || !row.run_id || !spn || !Number.isInteger(ownerCount) || ownerCount < 2) continue;
+    const key = JSON.stringify([String(row.domain_id), row.run_id, spn]);
+    const owners = grouped.get(key) ?? new Map<string, Row>();
+    owners.set(entity, row);
+    grouped.set(key, owners);
   }
-  return [...grouped].map(([row_id, owners]) => ({ ...owners[0], row_id, owners }));
+  return [...grouped].map(([row_id, group]) => {
+    const owners = [...group.values()];
+    return { ...owners[0], row_id, owners };
+  });
 }
 
 export function AdStateReport({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
@@ -178,6 +257,17 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
   const views = tabs.flatMap((key) => definition.views.filter((view) => view.key === key));
   const [selected, select] = useState(() => new URLSearchParams(initialSearch ?? window.location.search).get("tab") ?? "controls");
   const active = views.find((view) => view.key === selected) ?? views[0];
+  const initialOpen = typeof values.row_id === "string" ? values.row_id : undefined;
+  const [detail, setDetail] = useState<{ tab: string; key: string } | null>(() => initialOpen ? { tab: "controls", key: initialOpen } : null);
+  const detailTrigger = useRef<HTMLElement | null>(null);
+  const selectDetail = (row: Row, trigger?: HTMLElement) => {
+    detailTrigger.current = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    setDetail({ tab: active.key, key: id(row) });
+  };
+  const closeDetail = () => {
+    setDetail(null);
+    if (detailTrigger.current?.isConnected) detailTrigger.current.focus();
+  };
   const ready = valuesReady(definition, values, active.key);
   const queryParams = (tab: string) => {
     const params = apiParams(definition, values, { timeZone, view: tab });
@@ -221,6 +311,10 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
   const current = byTab[active.key];
   const controls = byTab.controls?.data?.items.filter(observed) ?? [];
   const spns = collisions(byTab.spn_collisions?.data);
+  const filteredControls = parameterRows(controls, filters);
+  const detailKey = detail?.tab === active.key ? detail.key : null;
+  const check = active.key === "controls" ? filteredControls.find((row) => id(row) === detailKey) : undefined;
+  const collision = active.key === "spn_collisions" ? spns.find((row) => id(row) === detailKey) : undefined;
   const countFor = (key: string) => {
     const data = byTab[key]?.data;
     if (!data || ["error", "denied", "unavailable", "not_collected", "processing"].includes(data.state)) return undefined;
@@ -267,7 +361,8 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
   if (active.key === "spn_collisions") {
     rows = spns;
     columns = [
-      { key: "spn", label: "SPN" },
+      { key: "spn", label: "SPN", render: (row) => <button type="button" className="sli-ds-table__disclosure"
+        onClick={(event) => { event.stopPropagation(); selectDetail(row, event.currentTarget); }}>{String(row.spn ?? EMPTY_VALUE)}</button> },
       { key: "owners", label: copy("owners"), render: (row) => (row.owners as Row[]).map((owner, index) => <span key={String(owner.entity_id)}>{index > 0 ? ", " : ""}{entityLink(String(owner.entity_name ?? EMPTY_VALUE), owner.entity_id)}</span>) },
       { key: "observed_at_utc", label: copy("detected"), kind: "datetime" },
     ];
@@ -291,11 +386,21 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       { key: "actor", label: copy("initiator"), render: () => copy("snapshot_comparison") },
     ];
   }
+  const panel = check ? <CheckPanel key={id(check)} row={check} title={label(check)} actual={valueText(check)} condition={expected(check)} dataSource={source(check)}
+    basis={typeof check.authority_text === "string" ? check.authority_text : undefined}
+    object={area(check) === "domain_controller" && check.qualification === "failed" ? objectName(check) : objectLink(check)}
+    affected={area(check) === "domain_controller" && check.qualification === "failed" && entityId(check.entity_id) ? [check] : []}
+    events={controllerEvents(check)} onClose={closeDetail}/>
+    : collision ? <CheckPanel key={id(collision)} row={{ ...collision, qualification: "failed" }} dataSource="AD"
+      title={String(collision.spn ?? EMPTY_VALUE)} actual={Number(collision.owner_count)}
+      condition={copy("spn_rule")} basis={copy("spn_basis")} object={String(collision.spn ?? EMPTY_VALUE)}
+      affected={collision.owners} onClose={closeDetail}/> : undefined;
+
   return <Tabs items={displayViews.map((view) => {
     const count = countFor(view.key);
     return { key: view.key, label: <>{copy(`tab.${view.key}`)}{typeof count === "number" ? <> <strong>{formatNumber(count)}</strong></> : null}</> };
   })} active={displayKey} onChange={select}>
-    <ReportLayout title={copy("title")} domain={domain} tabs={<TabList label={t("reports.views.tabs_aria")}/>} tabbed panel
+    <ReportLayout title={copy("title")} domain={domain} tabs={<TabList label={t("reports.views.tabs_aria")}/>} tabbed panel split="inline" drawer={denied || failed ? undefined : panel}
       state={denied ? "denied" : failed ? "error" : current.isLoading ? "loading" : "ok"}
       stateView={denied ? <ReportDenied reportKey={definition.key} title={copy("title")}/> : failed ? <Failure subject={title} retry={() => void current.refetch()}/> : undefined}
       controls={denied ? undefined : { period: period ? { value: values.period as PeriodValue, presets: period.presets as PeriodPreset[],
@@ -308,13 +413,14 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
         } : undefined,
         refreshing: current.isFetching, updatedAt: current.data && !failed ? current.data.window.generated_at_utc ?? current.dataUpdatedAt : undefined }}
       actions={definition.export && ready && !denied && !failed ? <a className="sli-ds-button" href={`/api/v2/reports/${definition.key}/export.csv?${exportParams}`} download><Icon name="download"/>{t("reports.renderer.export_csv")}</a> : null}>
-      {active.key === "controls" ? <Parameters key={detailParams.toString()} rows={controls} reportKey={definition.key} params={detailParams.toString()}
+      {active.key === "controls" ? <Parameters key={detailParams.toString()} rows={controls} filtered={filteredControls} reportKey={definition.key} params={detailParams.toString()}
         filters={filters} setFilters={setFilters} wide={wide}
-        initialOpen={typeof values.row_id === "string" ? values.row_id : undefined}/> : <>
+        initialOpen={initialOpen} selected={detailKey} select={selectDetail}/> : <>
         {["changes", "privileged_changes"].includes(active.key) ? <label className="sli-ds-field">{copy("tab.parameter_changes")}<select value={active.key} onChange={(event) => select(event.target.value)}>
           {views.filter((view) => ["parameter_changes", "changes", "privileged_changes"].includes(view.key) && view.access?.allowed !== false).map((view) => <option key={view.key} value={view.key}>{view.key === "parameter_changes" ? copy("tab.parameter_changes") : view.title}</option>)}
         </select></label> : null}
         <DataTable caption={title} columns={columns} rows={rows} rowKey={(row) => String(row.row_id ?? row.finding_id ?? row.id ?? JSON.stringify(row))}
+          selectedKey={detailKey} onRowClick={active.key === "spn_collisions" ? selectDetail : undefined}
           showFooter={active.key === "parameter_changes" && Boolean(changes.hasNextPage)} hasMore={active.key === "parameter_changes" && changes.hasNextPage}
           loadingMore={changes.isFetchingNextPage} onLoadMore={() => void changes.fetchNextPage()} total={active.key === "parameter_changes" ? countFor(active.key) : undefined}
           emptyContent={active.key === "spn_collisions" && countFor(active.key) === 0 ? copy("no_collisions") : EMPTY_VALUE}/>

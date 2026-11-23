@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import definitions from "../../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json";
-import { api } from "../../api/client";
+import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { localeRuntime, setLocale } from "../../i18n";
 import { ReportRenderer } from "./ReportRenderer";
@@ -141,4 +141,124 @@ it("switches to SPN collisions and linked findings using their report collection
   fireEvent.click(screen.getByRole("tab", { name: "AD changes 1" }));
   expect(await screen.findByText(/14 characters →/)).toBeTruthy();
   expect(screen.getByText("Snapshot comparison")).toBeTruthy();
+});
+
+it("opens check details by keyboard without moving history out of its row", async () => {
+  const row = { ...controls[1], actual_value: 20, expected_condition: "5–10", authority_text: "Report rule", domain_entity_id: 42 };
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => result(params.get("tab") === "controls" ? [row] : []));
+  renderReport();
+  const toggle = await screen.findByRole("button", { name: "Lockout threshold" });
+  toggle.focus();
+  fireEvent.click(toggle);
+  const drawer = within(await screen.findByRole("complementary", { name: "Lockout threshold" }));
+  const observation = drawer.getByRole("tab", { name: "Observation" });
+  expect(drawer.getByText("20 attempts")).toBeTruthy();
+  expect(drawer.getByText("5–10")).toBeTruthy();
+  const history = await screen.findByRole("table", { name: /Value history · Lockout threshold/ });
+  expect(history.closest("tr[data-detail]")).toBeTruthy();
+  observation.focus();
+  fireEvent.keyDown(observation, { key: "ArrowRight" });
+  expect(drawer.getByRole("tab", { name: "Object", selected: true })).toBe(document.activeElement);
+  expect(drawer.getByRole("link", { name: "example.test" }).getAttribute("href")).toContain("/app/entities/42");
+  expect(drawer.getByRole("heading", { name: "Affected objects" })).toBeTruthy();
+  expect(drawer.getByText("—")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+  expect(drawer.getByText("Report rule")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(screen.queryByRole("complementary", { name: "Lockout threshold" })).toBeNull();
+  expect(document.activeElement).toBe(toggle);
+  expect(history.isConnected).toBeTruthy();
+});
+
+it("links a failed controller check to the controller that was actually checked", async () => {
+  const row = { ...controls[2], actual_value: "failed", qualification: "failed", domain_id: 2,
+    object_context: { dns_host_name: "dc01.example.test" }, authority: "collector_diagnostic" };
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => result(params.get("tab") === "controls" ? [row] : []));
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "DNS" }));
+  const drawer = within(await screen.findByRole("complementary", { name: "DNS" }));
+  fireEvent.click(drawer.getByRole("tab", { name: "Object" }));
+  const affected = within(drawer.getByRole("region", { name: "Affected objects" }));
+  const [controller] = affected.getAllByRole("link");
+  expect(controller.textContent).toBe("dc01.example.test");
+  const target = new URL(controller.getAttribute("href")!, window.location.origin);
+  expect(target.pathname).toBe("/app/entities/8");
+  expect(target.searchParams.get("return_to")).toContain("domain=2");
+  expect(drawer.getByRole("link", { name: "Object events" }).getAttribute("href")).toContain("domain=2");
+});
+
+it("lists distinct confirmed SPN owners in their own domain and snapshot", async () => {
+  const owner = { domain_id: 2, run_id: "run-a", spn: "HTTP/svc.example.test", normalized_spn: "http/svc.example.test", owner_count: 2, observed_at_utc: observed };
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === "spn_collisions"
+    ? { ...result([], { spn_collisions: [
+      { ...owner, entity_id: 42, entity_name: "account-a" },
+      { ...owner, entity_id: 42, entity_name: "account-a" },
+      { ...owner, entity_id: 43, entity_name: "account-b" },
+      { ...owner, entity_id: 52, entity_name: "other-domain", domain_id: 5 },
+      { ...owner, entity_id: 62, entity_name: "other-run", run_id: "run-b" },
+    ] }), state: "partial" }
+    : result(params.get("tab") === "controls" ? controls : []));
+  renderReport();
+  fireEvent.click(await screen.findByRole("tab", { name: "SPN collisions 3" }));
+  fireEvent.click((await screen.findAllByRole("button", { name: "HTTP/svc.example.test" }))[0]);
+  const drawer = within(await screen.findByRole("complementary", { name: "HTTP/svc.example.test" }));
+  fireEvent.click(drawer.getByRole("tab", { name: "Object" }));
+  const links = within(drawer.getByRole("region", { name: "Affected objects" })).getAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual(["account-a", "account-b"]);
+  expect(links.map((link) => link.getAttribute("href")?.split("?")[0])).toEqual(["/app/entities/42", "/app/entities/43"]);
+});
+
+it("keeps existing history after a final empty page and drops the stale continuation", async () => {
+  vi.mocked(api.reportV2Detail)
+    .mockResolvedValueOnce({ ...result([{ row_id: 1, actual_value: 16, observed_at_utc: observed }]), has_more: true, next_cursor: "1" })
+    .mockResolvedValueOnce({ ...result(), state: "empty", has_more: true, next_cursor: "1" });
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  const historyHeading = await screen.findByRole("heading", { name: /Value history · Minimum password length/ });
+  const history = within(historyHeading.closest("section")!);
+  const more = await history.findByRole("button", { name: "Show more" });
+  fireEvent.click(more);
+  await waitFor(() => expect(history.queryByRole("button", { name: "Show more" })).toBeNull());
+  expect(history.getByRole("cell", { name: "16 characters" })).toBeTruthy();
+  expect(vi.mocked(api.reportV2Detail).mock.calls[1][2].get("cursor")).toBe("1");
+});
+
+it("shows an unavailable history as a recoverable failure", async () => {
+  vi.mocked(api.reportV2Detail).mockResolvedValueOnce({ ...result(), state: "not_collected" })
+    .mockResolvedValueOnce({ ...result(), state: "empty" });
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  const unavailable = await screen.findByRole("alert");
+  expect(unavailable.textContent).toContain("Could not load Value history");
+  fireEvent.click(within(unavailable).getByRole("button", { name: "Retry" }));
+  expect(await screen.findByRole("table", { name: /Value history · Minimum password length/ })).toBeTruthy();
+});
+
+it("hides a deep-linked check and its history when the domain is denied", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.infrastructure?domain=5&row_id=7%3Apassword.lockout_threshold");
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === "controls"
+    ? { ...result([controls[1]]), state: "denied" }
+    : result());
+  renderReport();
+  await screen.findByRole("link", { name: "My access" });
+  expect(screen.queryByRole("button", { name: "Lockout threshold" })).toBeNull();
+  expect(screen.queryByRole("complementary", { name: "Lockout threshold" })).toBeNull();
+  expect(api.reportV2Detail).not.toHaveBeenCalled();
+});
+
+it("preserves confirmed history while retrying an unavailable continuation", async () => {
+  const firstPage = { ...result([{ row_id: 1, actual_value: 16, observed_at_utc: observed }]), state: "partial" as const, has_more: true, next_cursor: "1" };
+  vi.mocked(api.reportV2Detail).mockResolvedValueOnce(firstPage)
+    .mockRejectedValueOnce(new ApiResponseError(503, "report_read_timeout"))
+    .mockResolvedValueOnce(result([{ row_id: 2, actual_value: 14, observed_at_utc: "2026-11-09T04:20:00Z" }]));
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
+  const failure = await screen.findByRole("alert");
+  const history = screen.getByRole("table", { name: /Value history · Minimum password length/ });
+  expect(within(history).getByRole("cell", { name: "16 characters" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  fireEvent.click(within(failure).getByRole("button", { name: "Retry" }));
+  expect(await within(history).findByRole("cell", { name: "14 characters" })).toBeTruthy();
+  expect(vi.mocked(api.reportV2Detail).mock.calls.map(([, , query]) => query.get("cursor"))).toEqual([null, "1", "1"]);
 });
