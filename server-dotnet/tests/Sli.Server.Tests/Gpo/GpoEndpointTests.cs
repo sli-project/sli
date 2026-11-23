@@ -21,6 +21,8 @@ namespace Sli.Server.Tests.Gpo;
 public sealed class GpoEndpointTests
 {
     const string Prefix="/api/v2/reports/ad.gpo.v2";
+    const string PolicySnapshots = Prefix + "/data?tab=gpos&policy_id=synthetic-policy&domain=1";
+    const string SnapshotIds = "&before_snapshot=10000000-0000-0000-0000-000000000001&after_snapshot=10000000-0000-0000-0000-000000000003";
     sealed class Authentication(bool valid,string role) : IPrincipalAuthenticator
     {
         public ValueTask<AuthenticationResult> AuthenticateAsync(HttpContext c,CancellationToken ct)=>ValueTask.FromResult(valid?AuthenticationResult.Success(new("session",1,role)):AuthenticationResult.Denied(401,"authentication_required"));
@@ -43,6 +45,7 @@ public sealed class GpoEndpointTests
         {
             s.AddRouting();s.AddLogging();s.AddSingleton<IConfiguration>(config);s.AddSingleton(new AuthRequestPolicy(config));s.AddSingleton(new TransportGate(config));
             s.AddSingleton<IPrincipalAuthenticator>(new Authentication(authenticated,role));s.AddSingleton<IAccessFactsRepository>(new Facts(allowed,owner,export,scope,fields));s.AddSingleton<IReportCatalogProvider>(new ReportRuleCatalog(new PluginGenerationReader(null)));s.AddSingleton<IGpoReadStore>(store);
+            if (store is IGpoSnapshotReadStore snapshots) s.AddSingleton(snapshots);
         }).Configure(app=>{if(deadline is not null)app.Use((c,next)=>{c.Features.Set(deadline);return next(c);});app.UseRouting();app.UseEndpoints(r=>r.MapGpoReports());})).StartAsync(TestContext.Current.CancellationToken);
     }
     [Theory] [InlineData("")] [InlineData("/data?view=all")] [InlineData("/export.csv?view=all")]
@@ -144,6 +147,113 @@ public sealed class GpoEndpointTests
     {
         var store=new GpoReportTests.Store {Error=new GpoSourceException()};using var host=await Host(store);using var client=host.GetTestClient();using var response=await client.GetAsync(Prefix+"/data",TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.ServiceUnavailable,response.StatusCode);Assert.Contains("source_contract_error",await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
+
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public async Task Snapshot_comparison_requires_report_fields_and_domain(bool allowed, bool fullFields, bool crossDomain)
+    {
+        var store = new GpoReportTests.Store();
+        using var host = await Host(store, allowed: allowed, fields: fullFields ? null : ["identity_basic", "technical"]);
+        using var client = host.GetTestClient();
+        var url = crossDomain ? PolicySnapshots.Replace("domain=1", "domain=2") : PolicySnapshots;
+        using var response = await client.GetAsync(url + SnapshotIds, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, store.Reads);
+    }
+
+    [Theory]
+    [InlineData("&before_snapshot=10000000-0000-0000-0000-000000000001")]
+    [InlineData("&before_snapshot=invalid&after_snapshot=10000000-0000-0000-0000-000000000003")]
+    [InlineData("&before_snapshot=10000000-0000-0000-0000-000000000003&after_snapshot=10000000-0000-0000-0000-000000000003")]
+    public async Task Invalid_snapshot_pair_is_rejected_before_reading(string parameters)
+    {
+        var store = new GpoReportTests.Store();
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        using var response = await client.GetAsync(PolicySnapshots + parameters, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, store.Reads);
+    }
+
+    [Fact]
+    public async Task A_missing_snapshot_is_distinct_from_a_successful_empty_comparison()
+    {
+        var store = new GpoReportTests.Store();
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        var ct = TestContext.Current.CancellationToken;
+        using var list = await client.GetAsync(PolicySnapshots + "&snapshots=1", ct);
+        list.EnsureSuccessStatusCode();
+        var collection = JsonNode.Parse(await list.Content.ReadAsStringAsync(ct))!["collections"]!;
+        Assert.Empty(collection.Rows("snapshots"));
+        using var pair = await client.GetAsync(PolicySnapshots + SnapshotIds, ct);
+        pair.EnsureSuccessStatusCode();
+        var body = JsonNode.Parse(await pair.Content.ReadAsStringAsync(ct))!;
+        Assert.Equal("unavailable", body["coverage"].Text("snapshot_comparison_state"));
+        Assert.Null(body["collections"]!["snapshot_comparison"]);
+    }
+
+    [Fact]
+    public async Task Comparison_matches_changed_collector_ids_and_only_returns_visible_settings_of_the_selected_policy()
+    {
+        var store = new GpoReportTests.Store();
+        var old = SyntheticSnapshot(1, """
+            [{"id":"timeout-value-900","gpo_id":"synthetic-policy","side":"computer","extension":"security","path":"Policy/Timeout","setting_name":"Timeout","value_display":"900","fingerprint":"synthetic-hidden-fingerprint"},
+             {"id":"timeout-user","gpo_id":"synthetic-policy","side":"user","extension":"security","path":"Policy/Timeout","setting_name":"Timeout","value_display":"450"},
+             {"id":"desktop","gpo_id":"synthetic-policy","side":"user","extension":"personalization","path":"Desktop/Theme","setting_name":"Theme","value_display":"Blue"},
+             {"id":"hidden-before","gpo_id":"synthetic-policy","side":"computer","extension":"security","path":"Policy/Password","setting_name":"Password","value_display":"synthetic-value-before"},
+             {"id":"other-policy","gpo_id":"another-policy","side":"computer","path":"Other/Timeout","setting_name":"Other policy","value_display":"synthetic-unrelated-value"}]
+            """);
+        var current = SyntheticSnapshot(3, """
+            [{"id":"timeout-value-600","gpo_id":"synthetic-policy","side":"computer","extension":"security","path":"Policy/Timeout","setting_name":"Timeout","value_display":"600"},
+             {"id":"timeout-user","gpo_id":"synthetic-policy","side":"user","extension":"security","path":"Policy/Timeout","setting_name":"Timeout","value_display":"450"},
+             {"id":"audit","gpo_id":"synthetic-policy","side":"computer","extension":"security","path":"Logging/Audit","setting_name":"Audit","value_display":"Enabled"},
+             {"id":"hidden-after","gpo_id":"synthetic-policy","side":"computer","extension":"security","path":"Policy/Password","setting_name":"Password","value_display":"synthetic-value-after"}]
+            """);
+        var same = old with { Id = SnapshotId(2), ObservedAt = old.ObservedAt.AddDays(1) };
+        store.Snapshots.AddRange([(1, "synthetic-policy", old), (1, "synthetic-policy", same), (1, "synthetic-policy", current),
+            (1, "synthetic-policy", current with { Id = SnapshotId(4), ObservedAt = current.ObservedAt.AddDays(1) }),
+            (2, "synthetic-policy", current with { Id = SnapshotId(5) }), (1, "another-policy", current with { Id = SnapshotId(6) })]);
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        var ct = TestContext.Current.CancellationToken;
+
+        var list = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + "&snapshots=1", ct))!;
+        var choices = list["collections"].Rows("snapshots").ToArray();
+        Assert.Equal(new[] { SnapshotId(4), SnapshotId(3), SnapshotId(2), SnapshotId(1) }, choices.Select(row => Guid.Parse(row.Text("id"))));
+        Assert.All(choices, row => Assert.Equal(2, row.Count));
+
+        string response = await client.GetStringAsync(PolicySnapshots + SnapshotIds, ct);
+        var changes = JsonNode.Parse(response)!["collections"].Rows("snapshot_comparison");
+        Assert.Collection(changes,
+            row => Assert.Equal(("Audit", "added", "", "Enabled"), Change(row)),
+            row => { Assert.Equal(("Timeout", "changed", "900", "600"), Change(row)); Assert.Equal("computer", row.Text("side")); },
+            row => Assert.Equal(("Theme", "removed", "Blue", ""), Change(row)));
+        Assert.DoesNotContain("fingerprint", response);
+        Assert.DoesNotContain("synthetic-value-", response);
+        Assert.DoesNotContain("unrelated-value", response);
+        Assert.Equal(new long[] { 1 }, store.Domains);
+
+        var unchanged = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + SnapshotIds.Replace(SnapshotId(3).ToString(), SnapshotId(2).ToString()), ct))!;
+        Assert.Empty(Assert.IsType<JsonArray>(unchanged["collections"]!["snapshot_comparison"]));
+
+        foreach (int forbiddenSnapshot in new[] { 5, 6 })
+        {
+            var denied = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + SnapshotIds.Replace(SnapshotId(3).ToString(), SnapshotId(forbiddenSnapshot).ToString()), ct))!;
+            Assert.Equal("unavailable", denied["coverage"].Text("snapshot_comparison_state"));
+            Assert.Null(denied["collections"]!["snapshot_comparison"]);
+        }
+
+        static (string, string, string, string) Change(JsonObject row) =>
+            (row.Text("setting_name"), row.Text("kind"), row.Text("before_value"), row.Text("after_value"));
+    }
+
+    private static Guid SnapshotId(int number) => Guid.Parse($"10000000-0000-0000-0000-{number:D12}");
+
+    private static GpoPolicySnapshot SyntheticSnapshot(int number, string settings) => new(SnapshotId(number),
+        Stamp("2026-11-19T12:00:00Z").AddDays(number - 1), new JsonObject { ["settings"] = JsonNode.Parse(settings) });
     [Fact] public async Task History_export_fails_when_confirmed_storage_is_unavailable()
     {
         var store=new GpoReportTests.Store();using var host=await Host(store);using var client=host.GetTestClient();using var response=await client.GetAsync(Prefix+"/export.csv?tab=changes",TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.BadRequest,response.StatusCode);Assert.Contains("gpo_history_not_exportable",await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));

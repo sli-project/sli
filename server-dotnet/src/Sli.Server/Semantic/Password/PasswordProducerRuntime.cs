@@ -187,6 +187,8 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
         foreach(var scope in sources.Distinct()){ct.ThrowIfCancellationRequested();
             var results=Work is null ? await RunSourceAsync(scope,ct) : await Work.Run("password_source:"+PasswordJson.Hash(scope.Document),()=>RunSourceAsync(scope,ct),ct);
             if(results is null)continue;foreach(var result in results) {
+                if(result.Work?["proof_budget"] is JsonObject proofBudget)
+                    Console.Error.WriteLine("password_producer_reduced_slice:"+proofBudget.ToJsonString());
                 if(result.Failed){failed++;if(result.Diagnostic is {} diagnostic)diagnostics.Add(diagnostic);else diagnostics.Add(new PasswordFailure("password_v2_outcome_invalid"));}else if(result.Status is "unconfigured" or "busy"){skipped++;if(result.Diagnostic is {} diagnostic)Console.Error.WriteLine("password_producer_cycle_skipped:"+diagnostic.ToJsonString());}else if(result.Status=="disabled")disabled++;else if(result.Status=="committed"){committed++;jobs+=result.Jobs;}else throw new PasswordFailure("password_v2_outcome_invalid");
             }
         }

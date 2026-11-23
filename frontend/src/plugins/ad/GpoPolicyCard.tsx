@@ -6,6 +6,7 @@ import { DataTable, TabList, TabPanel, Tabs, type TableColumn } from "../../desi
 import { Icon } from "../../design-system/Icon";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { plural, t, type MessageKey } from "../../i18n";
+import { GpoSnapshotComparison } from "./GpoSnapshotComparison";
 
 const sides = ["computer", "user"] as const;
 type Side = typeof sides[number];
@@ -102,7 +103,10 @@ export function GpoPolicyCard({ definition, domain, policy, tab, setTab, revisio
           return label ? t(label) : "—";
         } },
       ]}/>;
-      case "versions": return <PolicyVersions versions={fields?.versions ?? []} domain={domain}/>;
+      case "versions": return <>
+        <PolicyVersions versions={fields?.versions ?? []} domain={domain}/>
+        {domain ? <GpoSnapshotComparison key={revision} reportKey={definition.key} domain={domain} policyId={policy.id} revision={revision}/> : null}
+      </>;
       case "changes": return history.isPending ? <span role="status">{t("state.loading")}</span> :
         history.isError || historyState === "unavailable" || history.data?.state === "error" || history.data?.state === "denied" ?
           <div role="alert">{t("reports.gpo.history_failed")}{" "}

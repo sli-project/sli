@@ -70,7 +70,7 @@ internal static class GpoPolicyCard
     static JsonObject Project(JsonObject source, params string[] fields) => new(fields
         .Where(source.ContainsKey).Select(field => KeyValuePair.Create(field, Bounded(source[field]))));
 
-    static JsonNode? Bounded(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<string>(out var text)
+    internal static JsonNode? Bounded(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<string>(out var text)
         ? JsonValue.Create(string.Concat(text.EnumerateRunes().Take(2048).Select(rune => rune.ToString())))
         : value is JsonValue ? value.DeepClone() : null;
 }
