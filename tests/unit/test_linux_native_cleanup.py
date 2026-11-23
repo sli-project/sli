@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from deploy.linux import native_backup as native, native_runtime as runtime
+from deploy.linux import native_backup_settings as settings
 from deploy.linux import native_upgrade as upgrade, native_install as install, restore_existing, backup_policy, backup, native_host
 from tests.unit.test_linux_native_backup_admission import drill_storage  # noqa: F401
 from tests.unit.test_linux_native_upgrade_prepare import preparation, TX  # noqa: F401
@@ -288,6 +289,12 @@ def test_operation_collects_abandoned_drill_before_admission(cleanup_host, monke
         raise RuntimeError('admission_failed')
     monkeypatch.setattr(backup, 'backup_lock', lambda root: nullcontext())
     if operation == 'capture':
+        selected = cleanup_host / 'regular-archives'
+        selected.mkdir()
+        monkeypatch.setattr(settings, 'read_policy',
+                            lambda: {'enabled': True, 'identity': {'uuid': 'fixture-volume'}})
+        monkeypatch.setattr(settings, 'selected_storage',
+                            lambda state, *, create: nullcontext((selected, lambda: None)))
         monkeypatch.setattr(native_host, 'administrative_lock', nullcontext)
         monkeypatch.setattr(native_host.Host, 'receipt', fail)
         action = native.capture
@@ -297,6 +304,7 @@ def test_operation_collects_abandoned_drill_before_admission(cleanup_host, monke
         monkeypatch.setattr(upgrade, 'preflight', fail)
         action = lambda: upgrade.prepare('new', TX)
     else:
+        monkeypatch.setattr(settings, 'read_policy', lambda: None)
         action = native.drill
     expected = 'native_drill_no_backup' if operation == 'drill' else 'admission_failed'
     with pytest.raises(RuntimeError, match=expected):

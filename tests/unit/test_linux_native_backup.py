@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import backup, native_host, native_runtime, restore_existing
+from deploy.linux import backup, native_backup_settings, native_host, native_runtime, restore_existing
 from deploy.linux import native_backup as native
 
 pytestmark = pytest.mark.skipif(os.name == 'nt', reason='POSIX ownership, fcntl, fsync and cgroups; portable EXTCH tests run separately')
@@ -55,7 +55,7 @@ def recovery_set(root, stamp, *, legacy_clickhouse=True):
 
 @pytest.fixture
 def storage(tmp_path, monkeypatch):
-    monkeypatch.setattr(backup, 'capture_admission', lambda root: None)
+    monkeypatch.setattr(backup, 'capture_admission', lambda root, **kwargs: None)
     root = tmp_path / 'backups'
     root.mkdir()
     status_data = tmp_path / 'status-data'
@@ -73,6 +73,10 @@ def storage(tmp_path, monkeypatch):
     monkeypatch.setattr(backup_policy.shutil, 'disk_usage', lambda path: SimpleNamespace(
         free=100 * 1024**3, total=200 * 1024**3))
     monkeypatch.setattr(native_host, 'administrative_lock', nullcontext)
+    monkeypatch.setattr(native_backup_settings, 'read_policy',
+                        lambda: {'enabled': True, 'identity': {'uuid': 'fixture-volume'}})
+    monkeypatch.setattr(native_backup_settings, 'selected_storage',
+                        lambda state, **options: nullcontext((root, lambda: None)))
     return root
 
 
@@ -81,7 +85,7 @@ def test_timer_and_service_contract():
     assert 'OnCalendar=*-*-* 02:00:00' in units['sli-backup.timer']
     assert 'Persistent=true' in units['sli-backup.timer']
     assert 'PartOf=sli.target' in units['sli-backup.service']
-    assert 'launch capture' in units['sli-backup.service']
+    assert 'launch scheduled-capture' in units['sli-backup.service']
     assert 'UMask=0077' in units['sli-backup.service']
     assert 'KillMode=control-group' in units['sli-backup.service']
 
@@ -443,8 +447,9 @@ def test_launcher_works_without_import_path_and_drops_inherited_environment(tmp_
     monkeypatch.setenv('WATCHDOG_USEC', '1800000000')
     native.launch('drill')
     executable, argv, env = calls[-1][1]
-    assert executable == '/accepted/python'
-    assert argv == ['/accepted/python', '-B', '-m', 'deploy.linux.native_backup', 'drill']
+    assert executable == '/usr/bin/unshare'
+    assert argv == ['/usr/bin/unshare', '--mount', '--propagation', 'private', '--',
+                    '/accepted/python', '-B', '-m', 'deploy.linux.native_backup', 'drill']
     assert set(env) == {'PATH', 'LC_ALL', 'PYTHONDONTWRITEBYTECODE',
                         'NOTIFY_SOCKET', 'INVOCATION_ID', 'WATCHDOG_PID', 'WATCHDOG_USEC'}
     assert env['NOTIFY_SOCKET'] == '@sli-test'

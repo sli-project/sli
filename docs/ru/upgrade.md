@@ -48,8 +48,7 @@ bash ./install-beta-kit
 df -h /var/backups/sli/native /srv/sli-db
 ```
 
-При нехватке выводятся том, нужные и свободные байты. Сохраните набор из поля
-`backup_id` в `/var/backups/sli/native/restore-verified.json`. Пока нужен откат,
+При нехватке выводятся том, нужные и свободные байты. Пока нужен откат,
 храните контрольную копию
 из поля `checkpoint` в `journal.json` обновления. Текущие контрольные копии
 хранятся в `/var/backups/sli/native/upgrade-checkpoints/<ID-транзакции>`.
@@ -101,19 +100,27 @@ sudo find /var/lib/sli/transactions -name result.json -printf '%T@ %p\n' | sort 
 
 ## Нативные резервные копии
 
-Проверьте ежедневный таймер, затем создайте первую копию и прочитайте результат.
+В разделе **Настройки → Резервное копирование** выберите подготовленный каталог
+на подключённой локальной файловой системе, отдельной от баз данных. При новой
+установке ежедневное расписание выключено. Включите его для автоматического
+копирования. Команда `sudo sli-backup` создаёт копию на выбранном томе и при
+выключенном расписании.
+
+Если выбран `/mnt/sli-archives`, следующие команды проверяют таймер и показывают
+результат ручного копирования.
 
 ```sh
 sudo systemctl list-timers sli-backup.timer
-sudo sli-backup && sudo cat /var/backups/sli/native/last-result.json
+sudo sli-backup && sudo cat /mnt/sli-archives/sli-regular-backups/last-result.json
 ```
 
 Команда печатает каталог готового набора. Сверьте его имя с `backup_id` при
-`status=backup_created` и `terminal=true`. Храните прежние проверенные наборы,
-пока новый не пройдёт [пробное восстановление](#пробное-восстановление). Без внешнего тома
-копий режим каталога допускает локальные копии в `/var/backups/sli/native`.
-Внешний том SLI подключает в `/var/backups/sli`. Проверьте
-[требования к месту](#проверьте-свободное-место) на файловой системе, где хранятся копии.
+`status=backup_created` и `terminal=true`. Храните набор, указанный в
+`restore-verified.json` в каталоге архивов, пока новый не пройдёт
+[пробное восстановление](#пробное-восстановление). Проверьте
+[требования к месту](#проверьте-свободное-место) на выбранной файловой системе.
+Если том недоступен или подменён, регулярные копии не создаются. Контрольные
+точки обновления хранятся в `/var/backups/sli/native/upgrade-checkpoints`.
 
 ### Пробное восстановление
 
@@ -133,10 +140,12 @@ sudo journalctl -u sli-backup-drill.service -f
 На разных томах один B резервируется на томе копий, остальное — на рабочем
 томе. Если копия и рабочий каталог находятся на одной файловой системе,
 сложите потребности. По завершении прочитайте
-`sudo cat /var/backups/sli/native/drill-result.json`. Сверьте ожидаемый
+`sudo cat /mnt/sli-archives/sli-regular-backups/drill-result.json`, подставив
+выбранный путь. Сверьте ожидаемый
 `backup_id`, время `completed_at_utc` текущего запуска и поля
 `status=restore_verified`, `terminal=true`, `databases_stopped=true`. Сверьте
-`manifest_sha256` с `sudo sha256sum /var/backups/sli/native/<backup-id>/manifest.json`
+`manifest_sha256` с
+`sudo sha256sum /mnt/sli-archives/sli-regular-backups/<backup-id>/manifest.json`
 для этого набора.
 
 ## Восстановление и откат

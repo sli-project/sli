@@ -28,10 +28,12 @@ RUNTIME_HELPER = Path('/usr/lib/sli/native_runtime.py')
 CGROUP_ROOT = Path('/sys/fs/cgroup')
 PROC_ROOT = Path('/proc')
 MEMINFO = Path('/proc/meminfo')
+VIRTUAL_DEVICES = Path('/sys/devices/virtual')
 CONFIG = Path('/etc/sli')
 STATE = Path('/var/lib/sli/state')
 DATA = Path('/var/lib/sli')
 SYSTEMD_ENVIRONMENT = ('INVOCATION_ID', 'NOTIFY_SOCKET', 'WATCHDOG_PID', 'WATCHDOG_USEC')
+REGULAR_ACTIONS = ('capture', 'scheduled-capture', 'drill')
 # Native host state never belongs to the replaceable application data tree.
 try:
     from deploy.linux.native_runtime import PRESERVED_DATA_DIRECTORIES as EXCLUDED_FILES
@@ -53,7 +55,8 @@ FAILURE_MESSAGES = {
     'native_backup_root_untrusted': 'The configured backup directory has unsafe ownership, permissions or links.',
     'native_backup_root_same_device': 'The backup directory must be on a different device from the databases.',
     'native_backup_root_insufficient_space': 'The backup volume lacks space for the recovery set.',
-    'native_backup_root_mount_mismatch': 'The configured backup volume is not mounted at /var/backups/sli.',
+    'native_backup_root_mount_mismatch': 'The configured backup mount is unavailable or its identity could not be verified.',
+    'native_backup_storage_unconfigured': 'Choose a mounted archive directory in Backup settings first.',
     'native_backup_hash_mismatch': 'Backup integrity check failed / Проверка целостности резервной копии не пройдена.',
     'native_backup_data_mismatch': 'Backup data check failed / Проверка данных резервной копии не пройдена.',
     'native_restore_source_not_private': 'Use a recovery set accessible only to root / Копия должна быть доступна только root.',
@@ -91,7 +94,7 @@ def units():
         'Unit=sli-backup.service\n[Install]\nWantedBy=sli.target\n',
         'sli-backup.service': '[Unit]\nDescription=SLI native recovery set\nPartOf=sli.target\n'
         'After=sli-ready.service\nRequires=sli-ready.service\n[Service]\nType=exec\n' + watchdog +
-        f'ExecStart=/usr/bin/python3 -I -B {HELPER} launch capture\n'
+        f'ExecStart=/usr/bin/python3 -I -B {HELPER} launch scheduled-capture\n'
         'WorkingDirectory=/opt/sli/current\nUMask=0077\nTimeoutStartSec=12h\nTimeoutStopSec=120\nKillMode=control-group\n'
         'NoNewPrivileges=yes\nProtectHome=yes\nPrivateTmp=yes\n' + SOCKET_SANDBOX,
         'sli-backup-drill.service': '[Unit]\nDescription=SLI isolated restore drill\n'
@@ -174,7 +177,12 @@ def launch(action, arguments=()):
     if action == 'restore':
         arguments = (str(Path(arguments[0]).absolute()),)
     os.chdir(root)
-    os.execve(manifest['python'], [manifest['python'], '-B', '-m', 'deploy.linux.native_backup', action, *arguments],
+    argv = [manifest['python'], '-B', '-m', 'deploy.linux.native_backup', action, *arguments]
+    if action in REGULAR_ACTIONS:
+        # Keep the verified mount tree attached through the complete archive
+        # operation. Host unmount events cannot expose a backing directory here.
+        argv = ['/usr/bin/unshare', '--mount', '--propagation', 'private', '--', *argv]
+    os.execve(argv[0], argv,
               {'PATH': '/usr/lib/postgresql/18/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                'LC_ALL': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1',
                **{key: os.environ[key] for key in ('SLI_RESTORE_CHECK_ROOT', 'SLI_BACKUP_RETENTION',
@@ -325,15 +333,16 @@ def prune(new):
     from deploy.linux import backup, backup_policy
 
     # Keep the last successful drill until another restore has actually passed.
-    receipt = ROOT / 'restore-verified.json'
+    root = new.parent
+    receipt = root / 'restore-verified.json'
     protected = json.loads(receipt.read_bytes())['backup_id'] if receipt.exists() else None
     verify(new)
-    candidates = sorted(path for path in ROOT.iterdir() if not path.is_symlink() and path.is_dir()
+    candidates = sorted(path for path in root.iterdir() if not path.is_symlink() and path.is_dir()
                         and backup.BACKUP_NAME.fullmatch(path.name))
     daily, weekly = backup_policy.retention_settings()
     keep = backup_policy.retained_sets(candidates, daily, weekly)
     warnings = []
-    for path in ROOT.iterdir():
+    for path in root.iterdir():
         if (not path.is_symlink() and path.is_dir() and backup.BACKUP_NAME.fullmatch(path.name)
                 and path not in keep and path.name < new.name and path.name != protected):
             try:
@@ -393,37 +402,59 @@ def publish_summary(root, warnings=()):
 
 
 def same_disk(backup_root, postgres_root):
-    """Compare filesystem devices and their underlying Linux block devices."""
+    """Compare block-device topology, or return None when it cannot be verified."""
     def disks(device):
         entry = Path(f'/sys/dev/block/{os.major(device)}:{os.minor(device)}')
-        if not entry.exists():
-            return set()
         return parents(entry.resolve(strict=True))
 
     def parents(entry):
         if (entry / 'partition').is_file():
             return parents(entry.parent)
-        slaves = list((entry / 'slaves').glob('*'))
-        return set().union(*(parents(path.resolve(strict=True)) for path in slaves)) if slaves else {entry}
+        slaves = list((entry / 'slaves').iterdir())
+        if slaves:
+            return set().union(*(parents(path.resolve(strict=True)) for path in slaves))
+        if entry.is_relative_to(VIRTUAL_DEVICES):
+            # A loop file or other unreported backing device can share the
+            # database disk despite having a different filesystem st_dev.
+            raise OSError('unverified virtual block-device backing')
+        return {entry}
 
     try:
         source = backup_root.stat().st_dev
         target = postgres_root.stat().st_dev
         if source == target:
             return True
-        return bool(disks(source) & disks(target)) if sys.platform == 'linux' else False
+        return bool(disks(source) & disks(target)) if sys.platform == 'linux' else None
     except OSError:
         return None
 
 
-def capture():
-    from deploy.linux import backup
+def require_separate_disk(root, database_paths):
+    for database in database_paths:
+        relation = same_disk(root, database)
+        require(relation is not None, 'native_backup_root_mount_mismatch')
+        require(not relation, 'native_backup_root_same_device')
+
+
+def capture(*, scheduled=False):
+    from deploy.linux import backup, native_backup_settings as policy, native_host, native_runtime
 
     with backup.backup_lock(ROOT):
-        return capture_locked(ROOT)
+        state = policy.read_policy()
+        if scheduled and state is not None and not state['enabled']:
+            return
+        with native_host.administrative_lock():
+            native_runtime.no_transaction()
+            if state is None:
+                state = policy.load_or_migrate()
+        if scheduled and not state['enabled']:
+            return
+        require(state.get('identity') is not None, 'native_backup_storage_unconfigured')
+        with policy.selected_storage(state, create=True) as (root, check):
+            return capture_locked(root, storage_check=check)
 
 
-def capture_locked(root, *, writers_fenced=False):
+def capture_locked(root, *, writers_fenced=False, storage_check=None):
     """Caller holds the canonical backup lock; upgrade owns the fence."""
     from deploy.linux import backup
     from deploy.linux import native_host as host
@@ -449,7 +480,11 @@ def capture_locked(root, *, writers_fenced=False):
             require(installed.get('release') == str(release) and installed.get('manifest_sha256') == digest,
                     'native_backup_registry_mismatch')
         with environment(settings()):
-            backup.capture_admission(root)
+            if storage_check is None:
+                backup.capture_admission(root)
+            else:
+                backup.capture_admission(root, regular=True)
+                storage_check()
         ensure_directory(staging, 0o700, exist_ok=False)
         data_root = staging / 'data'
         ensure_directory(data_root, 0o700, exist_ok=False)
@@ -491,6 +526,8 @@ def capture_locked(root, *, writers_fenced=False):
                                           'mode': 'fenced' if writers_fenced else 'bounded_acquisition_window'},
                     'content_checksums': backup.content_inventory(staging, check=inventory_progress())}
         backup.write_json(staging / 'manifest.json', manifest)
+        if storage_check is not None:
+            storage_check()
         staging.rename(final)
         verify(final)
         from deploy.linux.operation_wait import record_success
@@ -503,6 +540,8 @@ def capture_locked(root, *, writers_fenced=False):
             publish_summary(root, warnings)
         return final
     except Exception:
+        if storage_check is not None:
+            storage_check()
         backup.write_json(root / 'last-result.json', {'schema_version': 1, 'status': 'failed',
                                                      'backup_id': stamp, 'terminal': True})
         raise
@@ -739,15 +778,21 @@ def isolated_databases(work, *, cleanup=None):
 
 
 def drill():
-    from deploy.linux import backup
+    from deploy.linux import backup, native_backup_settings as policy
 
     with backup.backup_lock(ROOT):
-        candidates = sorted(path for path in ROOT.iterdir()
-                            if path.is_dir() and not path.is_symlink() and backup.BACKUP_NAME.fullmatch(path.name))
-        if not candidates:
+        state = policy.read_policy()
+        if not state or state['identity'] is None:
             cleanup_drills()
-        require(candidates, 'native_drill_no_backup')
-        return drill_locked(candidates[-1], ROOT)
+            raise RuntimeError('native_drill_no_backup')
+        with policy.selected_storage(state) as (root, _):
+            names = root.iterdir() if root.is_dir() else ()
+            candidates = sorted(path for path in names if path.is_dir() and not path.is_symlink()
+                                and backup.BACKUP_NAME.fullmatch(path.name))
+            if not candidates:
+                cleanup_drills()
+            require(candidates, 'native_drill_no_backup')
+            return drill_locked(candidates[-1], root)
 
 
 def drill_locked(selected, root, *, prune_sets=True, upgrade_checkpoint=False):
@@ -847,7 +892,7 @@ def drill_locked(selected, root, *, prune_sets=True, upgrade_checkpoint=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('capture', 'drill', 'launch', 'restore'))
+    parser.add_argument('action', choices=(*REGULAR_ACTIONS, 'launch', 'restore', 'settings'))
     parser.add_argument('operation', nargs='?')
     parser.add_argument('source', nargs='?')
     args = parser.parse_args(argv)
@@ -861,7 +906,7 @@ def main(argv=None):
         signal.signal(signal.SIGTERM, interrupted)
         signal.signal(signal.SIGINT, interrupted)
         if args.action == 'launch':
-            require(args.operation in {'capture', 'drill', 'restore'}
+            require(args.operation in (*REGULAR_ACTIONS, 'restore', 'settings')
                     and (args.operation == 'restore') == (args.source is not None))
             launch(args.operation, (args.source,)) if args.source else launch(args.operation)
         elif args.action == 'restore':
@@ -869,10 +914,18 @@ def main(argv=None):
 
             require(args.operation is not None and args.source is None)
             restore(Path(args.operation))
-        elif args.action == 'capture':
-            result = capture()
-            if result is not None:
-                print(f'Backup / Копия: {result}', flush=True)
+        elif args.action in {'capture', 'scheduled-capture'}:
+            require(args.operation is None and args.source is None)
+            result = capture() if args.action == 'capture' else capture(scheduled=True)
+            if result is None:
+                print('native_backup_schedule_disabled', flush=True)
+                return 0
+            print(f'Backup / Копия: {result}', flush=True)
+        elif args.action == 'settings':
+            from deploy.linux.native_backup_settings import serve
+
+            require(args.operation is None and args.source is None)
+            serve()
         else:
             drill()
     except Exception as error:  # noqa: BLE001 - only fixed diagnostics may cross the CLI boundary

@@ -149,8 +149,14 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     assert (disabled in events) == legacy_present
     if legacy_present:
         assert events.index(stopped) < events.index(disabled) < events.index(['systemctl', 'daemon-reload'])
-    assert not any(' launch ' in body for path, body in files.items()
-                   if path.startswith('/usr/lib/systemd/system/'))
+    launch_commands = [(path, line) for path, body in files.items()
+                       if path.startswith('/usr/lib/systemd/system/')
+                       for line in body.splitlines() if ' launch ' in line]
+    assert launch_commands == [
+        ('/usr/lib/systemd/system/sli-backup-settings.service',
+         'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch settings'),
+    ]
+    assert not any(event[:2] in (['systemctl', 'start'], ['systemctl', 'enable']) for event in events)
 
 
 def test_worker_provisioning_error_is_fail_closed_and_redacted(monkeypatch, tmp_path):

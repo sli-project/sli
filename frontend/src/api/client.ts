@@ -2142,6 +2142,10 @@ export type EventRelations = { api_version: "v1"; event_db_id: number; truncated
 export type EventEntities = { api_version: "v1"; event_db_id: number; event_found?: boolean | null; evidence_status?: "present" | "zero_extracted" | "event_not_found" | "timeout"; warning?: string | null; limit: number; items: Array<{ id: number; type: string; natural_key: string; display_name?: string | null; link_role: string; confidence: number }> };
 
 /** Настройка платформы (страница «Настройки платформы», решение владельца 2026-10-01). */
+export type BackupSettingsUpdate = { enabled: boolean; path: string | null; revision: string };
+export type BackupSettings = BackupSettingsUpdate & { storage_status: "unconfigured" | "ready" | "unavailable" };
+type BackupSettingsResponse = BackupSettings | { enabled: false; path: null; revision: null; storage_status: "unavailable" };
+
 export type PlatformSetting = {
   effective_value?: string | null;
   effective_state?: "available" | "unknown" | "unavailable";
@@ -2445,6 +2449,8 @@ export const api = {
   saveNotificationSchedule: (id: string | null, body: import("./notification-types").NotificationScheduleInput & { revision?: number }) => requestMutation<{ item: import("./notification-types").NotificationSchedule }>(`/api/v1/notification-subscriptions/schedules${id ? `/${encodeURIComponent(id)}` : ""}`, "POST", body),
   testNotificationChannel: (id: string, problemId: string) => requestMutation<{ item: import("./notification-types").NotificationDelivery }>(`/api/v1/notification-subscriptions/${encodeURIComponent(id)}/test`, "POST", { problem_id: problemId }),
   platformSettings: () => request<{ items: PlatformSetting[] }>("/api/v1/platform-settings"),
+  backupSettings: (signal?: AbortSignal) => request<BackupSettingsResponse>("/api/v1/admin/backup-settings", signal),
+  updateBackupSettings: (body: BackupSettingsUpdate) => requestMutation<BackupSettings>("/api/v1/admin/backup-settings", "PUT", body),
   semanticControls: () => request<SemanticControls>("/api/v1/platform-settings/semantic-control"),
   updateSemanticControl: (change: SemanticControlChange) => requestMutation<{ status: string }>("/api/v1/platform-settings/semantic-control", "POST", change),
   plugins: () => request<{ items: PluginState[]; can_manage: boolean }>("/api/v1/plugins"),

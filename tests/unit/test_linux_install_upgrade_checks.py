@@ -157,7 +157,12 @@ def test_beta_configuration_creates_dotnet_services_without_database_containers(
     destination = system.root / "generated"
     destination.mkdir()
     generator.generate(runtime, "beta", destination)
-    units = {path.name: path.read_text() for path in destination.iterdir()}
+    units = {path.name: path.read_text(encoding="utf-8") for path in destination.iterdir() if path.is_file()}
+    backup_override = destination / "sli-backup.service.d/50-sli-scheduled-capture.conf"
+    assert backup_override.read_text(encoding="utf-8") == (
+        "[Service]\nExecStart=\n"
+        "ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch scheduled-capture\n"
+    )
     assert "sli-dotnet-api.service" in units
     assert "sli-dotnet-post-collection.service" in units
     assert "sli-dotnet-ad-snapshot-manifest-coordinator.service" in units

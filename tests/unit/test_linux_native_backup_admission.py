@@ -8,6 +8,7 @@ import pytest
 
 from deploy.linux import backup, backup_policy as policy, native_backup as native, native_host
 from deploy.linux import native_clickhouse_endpoint as clickhouse, restore_existing, update_checkpoint
+from deploy.linux import native_backup_settings
 from tests.unit.test_linux_native_backup import recovery_set
 
 
@@ -25,6 +26,8 @@ def drill_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(clickhouse, 'database_directory', lambda: '/var/lib/sli-db')
     monkeypatch.setattr(clickhouse, 'site_configuration', dict)
     monkeypatch.setattr(backup, 'backup_lock', lambda root: nullcontext())
+    monkeypatch.setattr(native_backup_settings, 'read_policy', lambda: {'identity': {'uuid': 'archive-volume'}})
+    monkeypatch.setattr(native_backup_settings, 'selected_storage', lambda state: nullcontext((root, None)))
     monkeypatch.setattr(backup, 'size_bytes', lambda path: policy.GIB)
     monkeypatch.setattr(native, 'ensure_directory', lambda path, mode, **kw:
                         path.mkdir(parents=True, exist_ok=kw.get('exist_ok', True)))

@@ -49,8 +49,12 @@ RUNTIME_UNITS = {
     'sli-ready.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_runtime.py control ready\n',
     'sli-health.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_runtime.py control health\n',
     'sli-backup.timer': 'Unit=sli-backup.service\n',
-    'sli-backup.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch capture\n',
+    'sli-backup.service': (
+        'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch capture\n',
+        'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch scheduled-capture\n',
+    ),
     'sli-backup-drill.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch drill\n',
+    'sli-backup-settings.service': 'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch settings\n',
     **{'sli-' + name.replace('executor-', 'executor@') + '.service':
        f'ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_runtime.py launch {name}\n'
        for name in RUNTIME_SERVICES},
@@ -140,7 +144,9 @@ def unit_inventory(packages):
     for directory, units in ((SYSTEM_UNITS, LOCAL_UNITS), (VENDOR_UNITS, RUNTIME_UNITS)):
         for name, directive in units.items():
             path = directory / name
-            if '\n' + directive in unit_text(path):
+            body = unit_text(path)
+            directives = (directive,) if isinstance(directive, str) else directive
+            if any('\n' + item in body for item in directives):
                 rendered.add(path)
     database_mount = SYSTEM_UNITS / DB_MOUNT
     body = unit_text(database_mount)

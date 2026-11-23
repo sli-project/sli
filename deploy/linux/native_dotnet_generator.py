@@ -30,6 +30,12 @@ def generate(runtime, release, destination, *, publication=None):
             body = body.replace(f'WorkingDirectory={packaged}\n', f'WorkingDirectory={publication.as_posix()}\n')
         with (destination / name).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(body)
+    schedule_override = getattr(runtime, "backup_schedule_override", None)
+    if schedule_override is not None:
+        directory = destination / "sli-backup.service.d"
+        directory.mkdir()
+        with (directory / "50-sli-scheduled-capture.conf").open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(schedule_override())
 
 
 def generate_installed(runtime, destination):

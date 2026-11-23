@@ -645,8 +645,13 @@ def test_configure_retires_legacy_writers_before_reload_without_starting(config,
     stopped = ["systemctl", "stop", *map(native.unit_name, native.SERVICES)]
     disabled = ["systemctl", "disable", *map(native.unit_name, native.SERVICES)]
     assert calls.index(stopped) < calls.index(disabled) < calls.index(["systemctl", "daemon-reload"])
-    assert not any(" launch " in body for name, (body, _) in files.items()
-                   if name.startswith("/usr/lib/systemd/system/"))
+    launch_commands = [(name, line) for name, (body, _) in files.items()
+                       if name.startswith("/usr/lib/systemd/system/")
+                       for line in body.splitlines() if " launch " in line]
+    assert launch_commands == [
+        ("/usr/lib/systemd/system/sli-backup-settings.service",
+         "ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch settings"),
+    ]
     assert json.loads(files[str(native.CONFIG)][0]) == config
     assert "f /run/sli-native-host.lock 0600 root root" in files["/usr/lib/tmpfiles.d/sli-runtime.conf"][0]
     assert ["systemctl", "daemon-reload"] in calls

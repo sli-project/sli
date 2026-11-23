@@ -388,8 +388,14 @@ def dotnet_units(release, config):
     result["sli-dotnet.target"] = (
         "[Unit]\nDescription=SLI .NET application writers\nPartOf=sli.target\n"
         "Requires=sli-ready.service\nAfter=sli-ready.service\n"
-        "Wants=sli-health.timer " + " ".join(map(dotnet_unit_name, apps)) + "\n")
+        "Wants=sli-health.timer sli-backup-settings.service " + " ".join(map(dotnet_unit_name, apps)) + "\n")
     return result
+
+
+def backup_schedule_override():
+    # On upgrade the vendor unit may be the previous release's template.
+    return ("[Service]\nExecStart=\n"
+            "ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch scheduled-capture\n")
 
 
 def application_unit(config, service, spec, apps, *, dotnet=False):
@@ -436,6 +442,14 @@ def units(config):
         "sli-runtime.target": "[Unit]\nDescription=SLI application compatibility target\nRequires=sli-dotnet.target\nAfter=sli-dotnet.target\nPartOf=sli.target\n",
         "sli.slice": "[Unit]\nDescription=SLI applications\n[Slice]\nTasksMax=2048\n",
         "sli-health.timer": "[Unit]\nDescription=SLI health schedule\nPartOf=sli-dotnet.target\n[Timer]\nOnActiveSec=30s\nOnUnitActiveSec=30s\nUnit=sli-health.service\n",
+        "sli-backup-settings.service": (
+            "[Unit]\nDescription=SLI native backup settings\nPartOf=sli-dotnet.target\n"
+            "After=sli-ready.service\n[Service]\nType=exec\n"
+            "ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch settings\n"
+            "WorkingDirectory=/opt/sli/current\nRuntimeDirectory=sli/backup-settings\n"
+            "RuntimeDirectoryMode=0711\nUMask=0077\nRestart=on-failure\nRestartSec=3s\n"
+            "NoNewPrivileges=yes\nRestrictAddressFamilies=AF_UNIX\nProtectHome=yes\n" +
+            clickhouse.SOCKET_SANDBOX),
     }
     admin_credentials = {"postgres_password"}
     for command in ("ready", "health"):

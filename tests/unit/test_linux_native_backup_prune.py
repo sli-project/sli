@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import backup, native_backup as native, native_host, native_runtime
+from deploy.linux import backup, native_backup as native, native_backup_settings, native_host, native_runtime
 
 
 def write_set(root, stamp):
@@ -37,7 +37,11 @@ def capture_host(tmp_path, monkeypatch):
     monkeypatch.setattr(native, 'ensure_directory', lambda path, mode, **kw:
                         path.mkdir(parents=True, exist_ok=kw.get('exist_ok', True)))
     monkeypatch.setattr(backup, 'backup_lock', lambda root: nullcontext())
-    monkeypatch.setattr(backup, 'capture_admission', lambda root: None)
+    monkeypatch.setattr(backup, 'capture_admission', lambda root, *, regular: None)
+    monkeypatch.setattr(native_backup_settings, 'read_policy',
+                        lambda: {'enabled': True, 'identity': {'uuid': 'test-volume'}})
+    monkeypatch.setattr(native_backup_settings, 'selected_storage',
+                        lambda state, *, create: nullcontext((root, lambda: None)))
     monkeypatch.setattr(backup, 'utc_now', lambda: datetime(2026, 10, 31, tzinfo=timezone.utc))
     monkeypatch.setattr(native_host, 'administrative_lock', nullcontext)
     monkeypatch.setattr(native_host, 'Host', lambda: SimpleNamespace(

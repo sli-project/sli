@@ -257,7 +257,7 @@ def test_backup_root_mount_is_required_by_all_services_and_timer(storage):
     config = dict(install.runtime_settings(ch.parse_site("")), profiles=["light", "heavy", "long"])
     expected = set(host.units()) | set(native_backup.units()) | set(runtime.dotnet_units("test", config)) | {
         name for name in runtime.units(install.runtime_settings(ch.parse_site(""))) if not name.endswith(".slice")}
-    assert machine.backup_dependent_units() == expected
+    assert machine.backup_dependent_units() == expected - {"sli-backup-settings.service"}
 
 
 def test_legacy_backup_root_does_not_write_mount(tmp_path, monkeypatch):
@@ -305,6 +305,7 @@ def reconfiguration(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "no_transaction", lambda **kwargs: None)
     monkeypatch.setattr(runtime, "stop_writers", lambda: calls.append("writers-stopped"))
     monkeypatch.setattr(install, "command", lambda argv, **kwargs: calls.append(argv))
+    monkeypatch.setattr(install, "backup_schedule", lambda: "disabled")
     monkeypatch.setattr(install, "wait_api", lambda config: calls.append("api-checked"))
     monkeypatch.setattr(install, "wait_health", lambda: calls.append("health-checked"))
     return SimpleNamespace(state=state, old=old, site=site, calls=calls, config=config_path)
@@ -317,6 +318,8 @@ def test_reconfigure_agents_preserves_profiles_and_updates_receipt(reconfigurati
     assert actual == dict(ctx.old, agents=True)
     assert "LoadCredential=agent_issuer_key:" in runtime.dotnet_unit("test", json.loads(ctx.config.read_text()))
     assert ctx.calls.index("secrets-checked") < ctx.calls.index("writers-stopped") < ctx.calls.index("api-checked")
+    assert not any(call[:2] in [["systemctl", "enable"], ["systemctl", "start"]]
+                   and "sli-backup.timer" in call for call in ctx.calls if isinstance(call, list))
     assert json.loads((ctx.state / "package-install.json").read_text())["site_sha256"] == install.site_digest(ctx.site)
     assert json.loads((ctx.state / "agents-reconfigure.json").read_text())["status"] == "configured"
     ctx.site["agents"] = False

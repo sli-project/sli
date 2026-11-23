@@ -516,14 +516,7 @@ class Host:
             self.backup_trusted(source)
             if self.backup_device(source) == self.backup_device(self.path(MOUNT)):
                 raise HostError("native_backup_root_same_device")
-            estimate = self.backup_space_estimate(source / 'native')
-            for volume, required in backup_policy.space_requirements(
-                    source, source, estimate, include_drill=False).items():
-                free = self.backup_free(backup_policy.existing_parent(volume))
-                if free < required:
-                    backup_policy.report_refusal({'reason': 'insufficient_backup_disk_space', 'volume': str(volume),
-                                                  'required_bytes': required, 'free_bytes': free})
-                    raise HostError("native_backup_root_insufficient_space")
+            self.require_backup_capacity(source, source / 'native')
             return source
         except HostError as error:
             if str(error) == "native_symlink_forbidden":
@@ -531,6 +524,16 @@ class Host:
             raise
         except OSError:
             raise HostError("native_backup_root_invalid") from None
+
+    def require_backup_capacity(self, source, archive_root):
+        estimate = self.backup_space_estimate(archive_root)
+        for volume, required in backup_policy.space_requirements(
+                source, source, estimate, include_drill=False).items():
+            free = self.backup_free(backup_policy.existing_parent(volume))
+            if free < required:
+                backup_policy.report_refusal({'reason': 'insufficient_backup_disk_space', 'volume': str(volume),
+                                              'required_bytes': required, 'free_bytes': free})
+                raise HostError("native_backup_root_insufficient_space")
 
     def backup_dependent_units(self):
         # The runtime catalog is stdlib-only, including in the installed host CLI.

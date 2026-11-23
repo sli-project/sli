@@ -2,12 +2,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { PlatformSetting } from "../../api/client";
+import { ApiResponseError, type PlatformSetting } from "../../api/client";
 
-const state = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), domains: vi.fn(), controls: vi.fn(), accounts: vi.fn(), owner: true, registry: false, watch: false }));
-vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner,
+const state = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), domains: vi.fn(), controls: vi.fn(), accounts: vi.fn(),
+  backup: vi.fn(), saveBackup: vi.fn(), accessLoaded: true, owner: true, canManage: false, registry: false, watch: false }));
+vi.mock("../App", () => ({ useEffectiveAccess: () => state.accessLoaded ? ({ platform_owner: state.owner,
+  capabilities: state.canManage ? ["access.manage"] : [],
   reports: [...(state.registry ? [{ report_key: "decoys.registry", allowed: true }] : []),
-    ...(state.watch ? [{ report_key: "watch.registry", allowed: true }] : [])] }) }));
+    ...(state.watch ? [{ report_key: "watch.registry", allowed: true }] : [])] }) : undefined }));
 vi.mock("./decoys", () => ({ DecoyRegistry: () => <div data-testid="decoy-registry"/> }));
 vi.mock("../account-watch", () => ({ AccountWatch: () => <div data-testid="watch-registry"/> }));
 vi.mock("../../api/client", async (importOriginal) => {
@@ -15,6 +17,8 @@ vi.mock("../../api/client", async (importOriginal) => {
   return { ...actual, api: { ...actual.api,
     platformSettings: () => state.list(),
     updatePlatformSetting: (key: string, value: string) => state.update(key, value),
+    backupSettings: () => state.backup(),
+    updateBackupSettings: (body: unknown) => state.saveBackup(body),
     setupDomains: () => state.domains(), reportV2Data: (_key: string, params: URLSearchParams) => state.accounts(params), semanticControls: () => state.controls(),
   } };
 });
@@ -44,13 +48,130 @@ const input = (key: Parameters<typeof t>[0]) => screen.getByLabelText(t(key)) as
 const change = (key: Parameters<typeof t>[0], value: string) => fireEvent.change(input(key), { target: { value } });
 beforeEach(() => {
   vi.resetAllMocks(); state.owner = true; state.watch = false; state.registry = false;
+  state.accessLoaded = true; state.canManage = false;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   state.list.mockResolvedValue({ items });
   state.accounts.mockResolvedValue({ items: [{ sid, sam: "fixture-service" }, { sid: sid2, sam: "fixture-backup" }] });
   state.domains.mockResolvedValue({ items: [{ fqdn: "example.test" }, { fqdn: "second.example.test" }, { fqdn: "old.example.test", is_archived: true }] });
   state.update.mockImplementation(async (key: string, value: string) => ({ item: setting(key, value) }));
+  state.backup.mockResolvedValue({ enabled: false, path: null, revision: "backup-1", storage_status: "unconfigured" });
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
+
+it.each([false, true])("shows no regular backup controls without confirmed ownership (access loaded: %s)", async (loaded) => {
+  state.accessLoaded = loaded; state.owner = false; state.canManage = true;
+  mount();
+  if (loaded) await screen.findByLabelText(t("platformSettings.ad.password.title"));
+  expect(screen.queryByRole("heading", { name: "Резервное копирование" })).toBeNull();
+  expect(state.backup).not.toHaveBeenCalled();
+});
+
+it("waits for the saved state and never infers disabled from an unavailable coordinator", async () => {
+  state.backup.mockImplementation(() => new Promise(() => {}));
+  const initial = mount();
+  const section = () => within(screen.getByRole("region", { name: "Резервное копирование" }));
+  expect(section().getByRole("status")).toBeTruthy();
+  expect(section().queryByRole("checkbox")).toBeNull();
+  initial.unmount();
+
+  state.backup.mockResolvedValue({ enabled: false, path: null, revision: null, storage_status: "unavailable" });
+  mount();
+  expect((await section().findByRole("alert")).textContent).toContain("Не удалось загрузить настройки резервного копирования");
+  expect(section().queryByRole("checkbox")).toBeNull();
+  expect(state.saveBackup).not.toHaveBeenCalled();
+  state.backup.mockResolvedValue({ enabled: true, path: "/mnt/backup/live", revision: "backup-2", storage_status: "ready" });
+  fireEvent.click(section().getByRole("button", { name: t("state.retry") }));
+  expect((await section().findByRole<HTMLInputElement>("checkbox")).checked).toBe(true);
+});
+
+it.each([
+  ["ru", "Резервное копирование", "Регулярное резервное копирование", "Каталог на сервере", "Сохранить настройки резервного копирования", "Настройки резервного копирования сохранены."],
+  ["en", "Backup", "Scheduled backups", "Directory on the server", "Save backup settings", "Backup settings saved."],
+] as const)("saves a server directory with optimistic concurrency and shows the confirmed state (%s)", async (locale, title, toggle, directory, saveLabel, saved) => {
+  setLocale(locale);
+  const confirmed = { enabled: true, path: "/mnt/backups/confirmed", revision: "backup-2", storage_status: "ready" };
+  let resolveSave!: (value: typeof confirmed) => void;
+  state.saveBackup.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+  const page = mount();
+  const section = within(screen.getByRole("region", { name: title }));
+  const enabled = await section.findByRole<HTMLInputElement>("checkbox", { name: toggle });
+  const path = section.getByRole<HTMLInputElement>("textbox", { name: directory });
+  const save = section.getByRole<HTMLButtonElement>("button", { name: saveLabel });
+  expect(enabled.checked).toBe(false);
+  expect(path.disabled).toBe(true);
+  fireEvent.click(enabled);
+  fireEvent.change(path, { target: { value: "C:\\backups" } });
+  expect(save.disabled).toBe(true);
+  fireEvent.change(path, { target: { value: "/mnt/backups/chosen" } });
+  fireEvent.click(save);
+  await waitFor(() => expect(state.saveBackup).toHaveBeenCalledWith({
+    enabled: true, path: "/mnt/backups/chosen", revision: "backup-1",
+  }));
+  expect(enabled.disabled).toBe(true);
+  expect(path.disabled).toBe(true);
+  expect(state.update).not.toHaveBeenCalled();
+  resolveSave(confirmed);
+  expect((await section.findByRole("status")).textContent).toBe(saved);
+  expect(path.value).toBe(confirmed.path);
+  expect(save.disabled).toBe(true);
+  state.backup.mockResolvedValue(confirmed);
+  page.unmount();
+  mount();
+  const reopened = within(screen.getByRole("region", { name: title }));
+  expect((await reopened.findByRole<HTMLInputElement>("checkbox", { name: toggle })).checked).toBe(true);
+  expect(reopened.getByRole<HTMLInputElement>("textbox", { name: directory }).value).toBe(confirmed.path);
+});
+
+it("disables the schedule on an unavailable volume and keeps the last saved directory", async () => {
+  const existing = { enabled: true, path: "/mnt/backup/previous", revision: "backup-3", storage_status: "unavailable" };
+  state.backup.mockResolvedValue(existing);
+  state.saveBackup.mockResolvedValue({ ...existing, enabled: false, revision: "backup-4" });
+  mount();
+  const section = within(screen.getByRole("region", { name: "Резервное копирование" }));
+  const enabled = await section.findByRole<HTMLInputElement>("checkbox");
+  const path = section.getByRole<HTMLInputElement>("textbox");
+  expect(section.getByText("Хранилище недоступно.")).toBeTruthy();
+  fireEvent.change(path, { target: { value: "/mnt/backup/draft" } });
+  fireEvent.click(enabled);
+  expect(path.value).toBe(existing.path);
+  fireEvent.click(section.getByRole("button", { name: "Сохранить настройки резервного копирования" }));
+  await waitFor(() => expect(state.saveBackup).toHaveBeenCalledWith({ enabled: false, path: existing.path, revision: "backup-3" }));
+  expect(await section.findByText("Сохранённое расписание выключено.")).toBeTruthy();
+});
+
+it("shows a localized storage error at the field without exposing the raw server text", async () => {
+  state.saveBackup.mockRejectedValue(new ApiResponseError(400, "native_backup_root_same_device", "private host diagnostic"));
+  mount();
+  const section = within(screen.getByRole("region", { name: "Резервное копирование" }));
+  fireEvent.click(await section.findByRole("checkbox"));
+  const path = section.getByRole<HTMLInputElement>("textbox");
+  fireEvent.change(path, { target: { value: "/mnt/backups" } });
+  fireEvent.click(section.getByRole("button", { name: "Сохранить настройки резервного копирования" }));
+  const error = await section.findByRole("alert");
+  expect(error.textContent).toBe("Выберите каталог на другом диске, отдельно от базы данных.");
+  expect(path.getAttribute("aria-describedby")).toContain(error.id);
+  expect(path.value).toBe("/mnt/backups");
+  expect(section.queryByText("private host diagnostic")).toBeNull();
+  expect(section.getByText("Сохранённое расписание выключено.")).toBeTruthy();
+});
+
+it("requires a new read after a revision conflict and does not resubmit stale settings", async () => {
+  state.backup.mockResolvedValueOnce({ enabled: true, path: "/mnt/old", revision: "backup-1", storage_status: "ready" })
+    .mockResolvedValueOnce({ enabled: true, path: "/mnt/current", revision: "backup-2", storage_status: "ready" });
+  state.saveBackup.mockRejectedValueOnce(new ApiResponseError(409, "backup_settings_revision_conflict"));
+  mount();
+  const section = within(screen.getByRole("region", { name: "Резервное копирование" }));
+  fireEvent.click(await section.findByRole("checkbox"));
+  const save = section.getByRole<HTMLButtonElement>("button", { name: "Сохранить настройки резервного копирования" });
+  fireEvent.click(save);
+  expect((await section.findByRole("alert")).textContent).toContain("Настройки изменились.");
+  expect(save.disabled).toBe(true);
+  fireEvent.click(section.getByRole("button", { name: "Загрузить настройки заново" }));
+  await waitFor(() => expect(section.getByRole<HTMLInputElement>("textbox").value).toBe("/mnt/current"));
+  expect(state.backup).toHaveBeenCalledTimes(2);
+  expect(state.saveBackup).toHaveBeenCalledTimes(1);
+  expect(section.getByRole<HTMLInputElement>("checkbox").checked).toBe(true);
+});
 
 it.each(["ru", "en"] as const)("renders one form and saves only the two changed fields (%s)", async (locale) => {
   setLocale(locale);
