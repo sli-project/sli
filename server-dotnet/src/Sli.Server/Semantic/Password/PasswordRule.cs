@@ -270,7 +270,12 @@ public sealed class PasswordRule
             if(!names.TryGetValue(entity,out var counts))names[entity]=counts=new(StringComparer.Ordinal);
             queue.Enqueue(member);string target=member.TargetKey!;counts[target]=counts.GetValueOrDefault(target)+1;
         }
-        foreach(var old in Ordered(oldWindow.Where(m=>m.Witness.At<=watermark)))if(old.Reason!="successful_logon"&&old.EntityFor(this) is string entity)AddCandidate(entity,old);
+        // A saved window can also contain observations outside the active origin.
+        // Only that origin can supply the exact evidence required for a new root.
+        var prequalificationWitnesses = episodes.Values.Where(e => e.RootId == null && !e.Frozen)
+            .SelectMany(e => e.Prequalification).ToHashSet();
+        foreach(var old in Ordered(oldWindow.Where(m=>m.Witness.At<=watermark&&prequalificationWitnesses.Contains(m.Witness))))
+            if(old.Reason!="successful_logon"&&old.EntityFor(this) is string entity)AddCandidate(entity,old);
         var successRoutes=BruteSuccessRoutes(oldWindow,records.Values);
         foreach(var member in finalized) {
             var witness=member.Witness;
@@ -296,7 +301,10 @@ public sealed class PasswordRule
                 if (legacyPreceding.Select(n=>n.Member.TargetKey).Distinct().Count()<5||!legacyPreceding.Any(n=>n.Member.TargetKey==member.TargetKey))continue;
             }
             if(episode==null||witness.At-episode.Last.At>TimeSpan.FromSeconds(600)) {
-                if(episode!=null)VerifyWitness(entity,episode.Last,records);episode=new(EpisodeKey(epoch,entity,witness),entity,witness,witness,Origin:[witness]);originChecked.Add(episode.Key);
+                if(episode!=null)VerifyWitness(entity,episode.Last,records);
+                queues.Remove(entity);
+                names.Remove(entity);
+                episode=new(EpisodeKey(epoch,entity,witness),entity,witness,witness,Origin:[witness]);originChecked.Add(episode.Key);
             } else {
                 if(episode.RootId==null&&!episode.Frozen&&!proofs.ContainsKey(episode.Key)) {
                     if(!originChecked.Contains(episode.Key)){if(episode.Prequalification.Count==0||episode.Prequalification[0]!=episode.Seed||episode.Prequalification[^1]!=episode.Last)return Reject("prequalification_native_unavailable");try{VerifyPath(entity,episode.Prequalification,records);}catch(PasswordFailure e)when(e.Message=="password_v2_native_unavailable"){return Reject("prequalification_native_unavailable");}originChecked.Add(episode.Key);}

@@ -66,6 +66,37 @@ public sealed class PasswordRetainedProofTests
     }
 
     [Fact]
+    public void A_new_origin_after_a_frozen_barrier_does_not_use_already_finalized_window_members()
+    {
+        var (rule, history, initial) = Initial();
+        var frozen = Assert.Single(initial.State.Episodes) with { Frozen = true };
+        var older = Enumerable.Range(10, 4).Select(i => Witness(i, 600 + i, $"fixture{i}")).ToArray();
+        var next = Enumerable.Range(20, 5).Select(i => Witness(i, 600 + i, $"fixture{i}")).ToArray();
+        var saved = PasswordState.Read((initial.State with
+        {
+            Watermark = older[^1].Witness.At,
+            Members = older.Select(n => n.Member).ToArray(),
+            Active = [frozen],
+        }).Document);
+        var first = rule.Advance(saved, [next[0]], next[0].Witness.At.AddSeconds(120),
+            retained: history.Concat(older).ToArray());
+        Assert.Empty(first.Diagnostics);
+        Assert.Empty(first.Emissions);
+        Assert.Equal(next[0].Witness.At, first.State.Watermark);
+        Assert.All(older, n => Assert.Contains(n.Member, first.State.Window));
+        Assert.Equal(new[] { next[0].Witness }, Assert.Single(first.State.Episodes).Prequalification);
+
+        var restored = PasswordState.Read(first.State.Document);
+        var full = rule.Advance(restored, next[1..], next[^1].Witness.At.AddSeconds(120),
+            retained: history.Concat(older).Append(next[0]).ToArray());
+        var root = Assert.Single(full.Emissions);
+        Assert.Equal(next.Select(n => n.Witness), root.RootProof);
+        Assert.Equal(root.RootProof, root.Origin);
+        Assert.NotEqual(frozen.Key, root.EpisodeKey);
+        Assert.Equal(5, rule.VerifyChain([root], next).RefOccurrences);
+    }
+
+    [Fact]
     public void A_conflicting_overlap_or_missing_history_cannot_continue()
     {
         var (rule, history, initial) = Initial();
