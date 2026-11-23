@@ -7,6 +7,7 @@ import { ReportRenderer } from "../../app/report-v2/ReportRenderer";
 import { ComputerChecks, computerRole, computerTableColumns } from "./ComputerChecks";
 import { DataTable, OverlayProvider } from "../../design-system";
 import { formatDateTime } from "../../shared/date-time";
+import { DEFAULT_TIME_ZONE } from "../../shared/time-zone";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
@@ -279,8 +280,8 @@ it("uses exact computer scope for card changes, problems, and source event links
   const table = within(card).getByRole("table", { name: "Наблюдения за период" });
   const rows = within(table).getAllByRole("row").slice(1);
   expect(rows).toHaveLength(2);
-  expect(within(rows[0]).getByRole("cell", { name: formatDateTime("2026-11-22T07:13:00Z") })).toBeTruthy();
-  expect(within(rows[1]).getByRole("cell", { name: formatDateTime("2026-11-22T07:12:00Z") })).toBeTruthy();
+  expect(within(rows[0]).getByRole("cell", { name: formatDateTime("2026-11-22T07:13:00Z", DEFAULT_TIME_ZONE) })).toBeTruthy();
+  expect(within(rows[1]).getByRole("cell", { name: formatDateTime("2026-11-22T07:12:00Z", DEFAULT_TIME_ZONE) })).toBeTruthy();
   expect(within(rows[0]).getByRole("link", { name: "#15" }).getAttribute("href")).toContain("/app/events/15?");
   expect(within(rows[1]).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
   expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/15?");

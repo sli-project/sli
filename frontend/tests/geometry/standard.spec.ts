@@ -247,8 +247,9 @@ for (const screen of screens) {
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
     // AD checks have hidden object-preview tables inside each closed row.
     const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
-    const list = screen.key === 'ad.gpo.v2' ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
-    await expect(list.locator(rows)).toHaveCount(60);
+    const isGpo = screen.key === 'ad.gpo.v2';
+    const list = isGpo ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
+    await expect(list.locator(rows)).toHaveCount(isGpo ? 50 : 60);
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -261,6 +262,31 @@ for (const screen of screens) {
     const screenshot = testInfo.outputPath('screen.png');
     await page.screenshot({ path: screenshot });
     await testInfo.attach('screen.png', { path: screenshot, contentType: 'image/png' });
+    if (isGpo) {
+      const footer = page.locator('main .sli-ds-table__footer');
+      const next = footer.getByRole('button', { name: 'Вперёд', exact: true });
+      const previous = footer.getByRole('button', { name: 'Назад', exact: true });
+      const policyNames = list.locator('tbody tr > td:first-child');
+      const finalOnFirst = policyNames.filter({ hasText: /^Объект 50$/ });
+      const firstOnNext = policyNames.filter({ hasText: /^Объект 51$/ });
+      await expect(footer.getByRole('combobox', { name: 'Строк на странице' })).toHaveValue('50');
+      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(finalOnFirst).toHaveCount(1);
+      await expect(firstOnNext).toHaveCount(0);
+      await expect(previous).toBeDisabled();
+      await next.click();
+      await expect(list.locator(rows)).toHaveCount(10);
+      await expect(footer.getByText('51–60 из 60', { exact: true })).toBeVisible();
+      await expect(finalOnFirst).toHaveCount(0);
+      await expect(firstOnNext).toHaveCount(1);
+      await expect(policyNames.filter({ hasText: /^Объект 60$/ })).toHaveCount(1);
+      await expect(next).toBeDisabled();
+      await previous.click();
+      await expect(list.locator(rows)).toHaveCount(50);
+      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(finalOnFirst).toHaveCount(1);
+      await expect(firstOnNext).toHaveCount(0);
+    }
     if (screen.key === 'security.problems') {
       expect(measurements.horizontalOverflow).toBe(false);
       const scroll = page.locator('main .sli-ds-table__scroll').first();

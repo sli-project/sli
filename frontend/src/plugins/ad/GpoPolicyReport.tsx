@@ -4,6 +4,7 @@ import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
 import { DataTable, ReportLayout, type TableColumn } from "../../design-system";
 import { Icon } from "../../design-system/Icon";
+import "../../design-system/split-report.css";
 import { t } from "../../i18n";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
