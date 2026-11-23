@@ -79,6 +79,7 @@ def test_restore_returns_files_settings_and_original_agent_trust(tmp_path, monke
 
 def test_rollback_preserves_current_data_before_replaying_the_accepted_checkpoint(tmp_path, monkeypatch):
     commands = []
+    timer = SimpleNamespace(state='disabled')
     source = SimpleNamespace(path=tmp_path / 'source', value={'previous': 'beta-old',
                              'previous_version': '1.0-1~deb13', 'checkpoint': 'backup'})
     journal = SimpleNamespace(path=tmp_path / 'rollback', value={'status': 'recovering'}, write=lambda: None)
@@ -94,7 +95,19 @@ def test_rollback_preserves_current_data_before_replaying_the_accepted_checkpoin
     monkeypatch.setattr(restore.upgrade, 'checkpoint_receipt', lambda _: commands.append('verify'))
     monkeypatch.setattr(restore.upgrade, 'checkpoint_root', lambda _: tmp_path)
     monkeypatch.setattr(restore.native, 'verify', lambda _: None)
-    monkeypatch.setattr(restore, 'apt_rollback', lambda *args, download_only=False: commands.append('download' if download_only else 'downgrade'))
+    def apt(*args, download_only=False):
+        commands.append('download' if download_only else 'downgrade')
+        if not download_only:
+            timer.state = 'enabled'  # Old package postinst did this during downgrade.
+
+    def systemctl(argv, **kwargs):
+        assert argv == ['systemctl', 'disable', '--now', 'sli-backup.timer']
+        commands.append('disable-backup')
+        timer.state = 'disabled'
+
+    monkeypatch.setattr(restore, 'apt_rollback', apt)
+    monkeypatch.setattr(restore.install, 'command', systemctl)
+    monkeypatch.setattr(restore.install, 'backup_schedule', lambda: timer.state)
     monkeypatch.setattr(restore, 'begin', lambda *args, **kw: journal)
     monkeypatch.setattr(restore.upgrade, 'fence', lambda: commands.append('fence'))
     monkeypatch.setattr(restore, 'save_current', lambda _: commands.append('preserve'))
@@ -107,5 +120,6 @@ def test_rollback_preserves_current_data_before_replaying_the_accepted_checkpoin
 
     restore.rollback()
 
-    assert commands == ['verify', 'download', 'fence', 'preserve', 'source', 'beta-old', 'downgrade', 'start']
+    assert commands == ['verify', 'download', 'fence', 'preserve', 'source', 'beta-old', 'downgrade', 'disable-backup', 'start']
     assert journal.value['accepted_release'] == 'beta-old'
+    assert journal.value['backup_schedule'] == timer.state == 'disabled'

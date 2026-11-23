@@ -168,6 +168,8 @@ def restore_verified(private, identifier, fresh):
     value = journal.value
     native.require(value['input_sha256'] == checksum and value['previous'] == release,
                    'native_restore_retry_same_backup')
+    if not value['fresh']:
+        upgrade.remember_backup_schedule(journal)
     if value['status'] != 'committed':
         if value['fresh']:
             prepare_host(journal, site)
@@ -259,9 +261,11 @@ def accept(journal, release, checked_runtime=None):
 
 
 def finish(journal, status, checked_runtime=None):
+    schedule = None if journal.value.get('fresh') else upgrade.remember_backup_schedule(journal)
     upgrade.publish(journal, status, accepted_release=journal.value['accepted_release'])
     upgrade.start_checked(checked_runtime)
-    install.command(['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer'])
+    install.command(['systemctl', 'enable', '--now', 'sli.target'])
+    install.start_backup_schedule(schedule)
     journal.value['services_restored'] = True
     journal.write()
     upgrade.publish(journal, status, accepted_release=journal.value['accepted_release'], services_restored=True)
@@ -339,6 +343,7 @@ def rollback(kit=None):
                 print('Checking the previous Debian kit / Проверяем предыдущий комплект Debian', flush=True)
                 apt_rollback(version, packages, download_only=True)
                 journal = begin('rollback', candidate=current, previous=release, checkpoint_transaction=source.path.name)
+            schedule = upgrade.remember_backup_schedule(journal)
             if journal.value['status'] != 'rolled_back':
                 if not journal.value.get('checkpoint_restored'):
                     upgrade.fence()
@@ -353,5 +358,8 @@ def rollback(kit=None):
         # Maintainer scripts take the canonical lock themselves. They will see
         # the previous release already selected and must not prepare it again.
         print('Installing the previous packages / Устанавливаем предыдущие пакеты', flush=True)
-        apt_rollback(version, packages)
+        try:
+            apt_rollback(version, packages)
+        finally:
+            install.undo_legacy_backup_enable(schedule)
         finish(journal, 'rolled_back', upgrade.retained_runtime(recovery))

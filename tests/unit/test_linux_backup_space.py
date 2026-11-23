@@ -162,6 +162,7 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(native_runtime, 'stop_writers', lambda: pytest.fail('admission must leave writers running'))
     monkeypatch.setattr(native_install, 'command', lambda *args: pytest.fail('admission must not change services'))
     monkeypatch.setattr(native_install, 'wait_health', lambda: None)
+    monkeypatch.setattr(native_install, 'backup_schedule', lambda: 'disabled')
 
     class AdmissionComplete(Exception):
         pass

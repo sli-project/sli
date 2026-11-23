@@ -246,6 +246,7 @@ def test_failed_migrated_candidate_restores_database_acl_and_starts_previous_rel
     monkeypatch.setattr(install, 'STATE', tmp_path / 'state')
     monkeypatch.setattr(install, 'inventory', lambda release: (tmp_path / release, {}, 'digest'))
     monkeypatch.setattr(install, 'command', lambda argv: calls.append(argv))
+    monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
     monkeypatch.setattr(install, 'atomic', lambda path, data: results.append(data))
     monkeypatch.setattr(runtime, 'configuration', lambda: pytest.fail('no agents reconfiguration intent'))
     upgrade.record_failure(journal, install.UnitCommandFailure('sli-health.service', 1, 'synthetic health failure'))

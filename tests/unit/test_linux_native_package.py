@@ -742,6 +742,7 @@ def lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(install, "command", lambda argv, **kwargs: calls.append(argv))
     monkeypatch.setattr(install, "wait_api", lambda config: calls.append("api-ready"))
     monkeypatch.setattr(install, "wait_health", lambda: calls.append("workers-healthy"))
+    monkeypatch.setattr(install, "backup_schedule", lambda: "enabled")
     monkeypatch.setattr(native_backup, "configure", lambda: calls.append("backup-configured"))
     monkeypatch.setattr(native_upgrade, "save_recovery", lambda *args: calls.append("recovery-saved"))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
