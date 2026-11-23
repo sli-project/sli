@@ -72,6 +72,34 @@ public sealed partial class SecurityProblemsV2Tests
         Assert.Equal(original, source.ToJsonString());
     }
 
+    [Theory]
+    [InlineData("en", "dc_scheduled_task_created")]
+    [InlineData("ru", "dc_scheduled_task_created")]
+    [InlineData("en", "dc_service_installed")]
+    [InlineData("ru", "dc_service_installed")]
+    public void DomainControllerFindingsKeepObservedFactsWithoutGenericAdvice(string locale, string rule)
+    {
+        var source = O("""{"id":42,"severity":"high","target":"fixture-object","actor":"fixture-admin","evidence":[{"event_db_id":17,"hostname":"fixture-dc"}]}""");
+        source["rule_code"] = $"semantic.security.{rule}";
+        var row = ProblemPresentation.Finding(source, Access, locale);
+        string what = row["what_happened"]!.ToString();
+        Assert.Contains("fixture-object", what);
+        Assert.Contains("fixture-admin", what);
+        Assert.Equal(17, row["evidence"]![0]!["event_db_id"]!.GetValue<int>());
+        Assert.Equal("fixture-dc", row["evidence"]![0]!["hostname"]!.ToString());
+        foreach (string field in new[] { "why_text", "next_text", "why_code", "next_step_code", "why_it_matters", "recommended_action" })
+        {
+            Assert.True(row.ContainsKey(field));
+            Assert.Null(row[field]);
+        }
+        Assert.False(row["presentation_messages"]!.AsObject().ContainsKey("why_text"));
+        Assert.False(row["presentation_messages"]!.AsObject().ContainsKey("next_text"));
+        var home = HomePresentation.Finding(source, locale);
+        Assert.Contains("fixture-object", home["what"]!.ToString());
+        Assert.Null(home["why"]);
+        Assert.Null(home["next_step"]);
+    }
+
     [Fact]
     public void AuditActorAndUnknownRuleUseRuleCatalogAndNoInventedActor()
     {

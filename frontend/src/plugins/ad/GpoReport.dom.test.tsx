@@ -220,8 +220,14 @@ it("reports an expired snapshot without loading the current policy or its histor
   expiredSnapshot = inventorySnapshot;
   latestSnapshot = nextSnapshot;
   openDetails("linked", "links");
-  expect(await screen.findByText("This policy snapshot is unavailable.")).toBeTruthy();
+  expect(await screen.findByText("Policy data for the selected time is unavailable.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Back to policies" }).getAttribute("href")).toContain("domain=7");
   expect(requests.filter((url) => url.pathname.endsWith("/data")).map((url) => url.searchParams.get("snapshot"))).toEqual([inventorySnapshot]);
+});
+
+it("names the unavailable setting in the selected policy version", async () => {
+  openDetails("linked", "settings", "missing-setting");
+  expect(await screen.findByText("The selected setting is missing from the policy data for that time.")).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Timeout" })).toBeTruthy();
 });
 
