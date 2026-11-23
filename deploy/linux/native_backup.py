@@ -782,7 +782,9 @@ def drill():
 
     with backup.backup_lock(ROOT):
         state = policy.read_policy()
-        require(state and state['identity'], 'native_drill_no_backup')
+        if not state or state['identity'] is None:
+            cleanup_drills()
+            raise RuntimeError('native_drill_no_backup')
         with policy.selected_storage(state) as (root, _):
             names = root.iterdir() if root.is_dir() else ()
             candidates = sorted(path for path in names if path.is_dir() and not path.is_symlink()
