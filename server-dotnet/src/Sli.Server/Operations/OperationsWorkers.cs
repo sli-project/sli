@@ -62,8 +62,53 @@ public sealed partial class OperationsService
         }
         var result = new JsonObject { ["status"] = errorType is null ? "ok" : "unavailable", ["source"] = "postgres_runtime_worker_heartbeats", ["error_type"] = errorType, ["items"] = items };
         if (includeQueues) result["semantic_queues"] = await QueuesAsync(ct);
+        else
+        {
+            var semantic = items.OfType<JsonObject>().FirstOrDefault(item => S(item["worker_name"]) == "semantic");
+            bool semanticStopped = S(semantic?["status"]) == "stopped";
+            bool semanticStale = S(semantic?["state"]) == "stale";
+            result["password_detection"] = await PasswordDetectionAsync(semanticStopped, semanticStale, ct);
+        }
         return result;
     }
+
+    // The ordinary web role supplies its active domain inventory. Only the
+    // projection owner reads the protected checkpoint and native-event tables.
+    internal const string PasswordLiveStatusSql = """
+        select rule_id,state,observed_at from public.read_password_live_status400(
+            array(select d.id::bigint from public.domains d where not d.is_archived))
+        """;
+
+    private async Task<JsonObject> PasswordDetectionAsync(bool semanticStopped, bool semanticStale, CancellationToken ct)
+    {
+        static JsonObject UnavailableStatus() => new() { ["status"] = "unavailable", ["items"] = new JsonArray() };
+        try
+        {
+            var rows = await queries.ReadAsync(PasswordLiveStatusSql, ct);
+            var items = new JsonArray();
+            var rules = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var node in rows)
+            {
+                if (node is not JsonObject row) return UnavailableStatus();
+                string rule = S(row["rule_id"]), state = S(row["state"]);
+                if (rule is not ("qw.password-brute-force" or "qw.password-spray") || !rules.Add(rule)
+                    || state is not ("failed" or "behind" or "catching_up" or "history_pending" or "recovered" or "current" or "quiet" or "unknown" or "disabled"))
+                    return UnavailableStatus();
+                var observed = Time(row["observed_at"]);
+                if (state is not ("unknown" or "disabled" or "history_pending") && observed is null) return UnavailableStatus();
+                if (state == "behind" && (semanticStopped || semanticStale) || state == "catching_up" && semanticStopped)
+                    state = "stalled";
+                items.Add(new JsonObject { ["rule_id"] = rule, ["state"] = state,
+                    ["observed_at"] = observed is {} at ? Stamp(at) : null });
+            }
+            return items.Count == 2 ? new() { ["status"] = "ok", ["items"] = items } : UnavailableStatus();
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return UnavailableStatus();
+        }
+    }
+
     static readonly HashSet<string> Retired = ["ad_context_snapshot", "ad_snapshot_projection", "computers_v5_snapshot", "computers_v6_snapshot", "computers_v6_source", "users_v2_snapshot", "storage_v2_outbox", "collection", "agent_import", "gpo_snapshot", "password_producer", "password_risk", "smtp_delivery", "telegram_delivery"];
     static readonly HashSet<string> NativeRoles = ["post_collection", "entity_state", "what_where_when_projection", "semantic", "ad_snapshot_manifest_coordinator", "plugin_radius_session_observation", "notification_delivery", "core_job_executor_light", "core_job_executor_heavy", "core_job_executor_long", "radius_accounting"];
     // Extra executor profiles run only when the install enabled them: shown from a heartbeat row or file, hidden otherwise, and a stopped one is a failure.

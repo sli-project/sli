@@ -1,4 +1,4 @@
-import type { AgentCollectionHealth, RuntimeWorker, SetupDomain } from "../../api/client";
+import type { AgentCollectionHealth, PasswordDetectionStatus, RuntimeWorker, SetupDomain } from "../../api/client";
 import { t, type MessageKey } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { EMPTY_VALUE } from "../../shared/format";
@@ -121,13 +121,42 @@ export function statusSources(health: AgentCollectionHealth | null | undefined, 
     });
 }
 
-export function statusServices(workers: RuntimeWorker[], timeZone: string) {
+const passwordRules: Record<PasswordDetectionStatus["items"][number]["rule_id"], MessageKey> = {
+  "qw.password-brute-force": "security.problems.presentation.qw.password-brute-force.title",
+  "qw.password-spray": "security.problems.presentation.qw.password-spray.title",
+};
+
+const passwordStates: Record<PasswordDetectionStatus["items"][number]["state"], MessageKey> = {
+  failed: "systemStatus.passwordDetection.failed",
+  stalled: "systemStatus.passwordDetection.stalled",
+  behind: "systemStatus.passwordDetection.behind",
+  catching_up: "systemStatus.passwordDetection.catchingUp",
+  history_pending: "systemStatus.passwordDetection.historyPending",
+  recovered: "systemStatus.passwordDetection.recovered",
+  current: "systemStatus.passwordDetection.current",
+  quiet: "systemStatus.passwordDetection.quiet",
+  unknown: "systemStatus.passwordDetection.unknown",
+  disabled: "systemStatus.service.disabled",
+};
+
+export function statusPasswordRules(status: PasswordDetectionStatus | undefined, timeZone: string) {
+  if (status?.status !== "ok") return [];
+  return status.items.filter(({ rule_id, state }) => Object.hasOwn(passwordRules, rule_id) && Object.hasOwn(passwordStates, state))
+    .map(({ rule_id, state, observed_at }) => ({
+      id: rule_id, name: t(passwordRules[rule_id]), state: t(passwordStates[state]),
+      tone: state === "failed" || state === "stalled" ? "error" : ["current", "quiet", "recovered"].includes(state) ? "current" : "neutral",
+      observed: formatDateTime(observed_at, timeZone, { withYear: false, seconds: true }),
+    }));
+}
+
+export function statusServices(workers: RuntimeWorker[], timeZone: string, showRuleStatus = false) {
   return workers.filter((worker) => Object.hasOwn(services, worker.worker_name)).map((worker) => {
     const stopped = worker.feature_enabled === false || worker.state === "disabled";
     const running = !stopped && worker.state === "active" && !["failed", "error", "blocked", "partial", "warning", "stopped"].includes(worker.status ?? "");
     const unobserved = worker.state === "unknown" || worker.state === "not_registered";
+    const runningLabel = showRuleStatus && worker.worker_name === "semantic" ? "systemStatus.service.processRunning" : "systemStatus.service.running";
     return { id: worker.worker_name, name: t(services[worker.worker_name]),
-      state: t(running ? "systemStatus.service.running" : stopped ? "systemStatus.service.disabled" : unobserved ? "systemStatus.service.check" : "systemStatus.service.failed"),
+      state: t(running ? runningLabel : stopped ? "systemStatus.service.disabled" : unobserved ? "systemStatus.service.check" : "systemStatus.service.failed"),
       tone: running ? "current" : stopped || unobserved ? "neutral" : "error",
       started: formatDateTime(worker.started_at, timeZone, { withYear: false }),
     };

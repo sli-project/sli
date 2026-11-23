@@ -1265,6 +1265,15 @@ export type StorageOverview = {
   };
 };
 
+export type PasswordDetectionStatus = {
+  status: "ok" | "unavailable";
+  items: {
+    rule_id: "qw.password-brute-force" | "qw.password-spray";
+    state: "failed" | "stalled" | "behind" | "catching_up" | "history_pending" | "recovered" | "current" | "quiet" | "unknown" | "disabled";
+    observed_at: string | null;
+  }[];
+};
+
 export type OperationsOverview = {
   agent_collection?: AgentCollectionHealth | null;
   api_version: "v1";
@@ -1293,6 +1302,7 @@ export type OperationsOverview = {
     source?: string;
     error_type?: string | null;
     items?: RuntimeWorker[];
+    password_detection?: PasswordDetectionStatus;
     /**
      * `H4` и `L3`: глубина очередей, возраст старейшего готового задания,
      * повторы, карантин и просроченные аренды. Источник —
