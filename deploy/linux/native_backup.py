@@ -28,6 +28,7 @@ RUNTIME_HELPER = Path('/usr/lib/sli/native_runtime.py')
 CGROUP_ROOT = Path('/sys/fs/cgroup')
 PROC_ROOT = Path('/proc')
 MEMINFO = Path('/proc/meminfo')
+VIRTUAL_DEVICES = Path('/sys/devices/virtual')
 CONFIG = Path('/etc/sli')
 STATE = Path('/var/lib/sli/state')
 DATA = Path('/var/lib/sli')
@@ -401,7 +402,7 @@ def publish_summary(root, warnings=()):
 
 
 def same_disk(backup_root, postgres_root):
-    """Compare filesystem devices and their underlying Linux block devices."""
+    """Compare block-device topology, or return None when it cannot be verified."""
     def disks(device):
         entry = Path(f'/sys/dev/block/{os.major(device)}:{os.minor(device)}')
         return parents(entry.resolve(strict=True))
@@ -409,8 +410,14 @@ def same_disk(backup_root, postgres_root):
     def parents(entry):
         if (entry / 'partition').is_file():
             return parents(entry.parent)
-        slaves = list((entry / 'slaves').glob('*'))
-        return set().union(*(parents(path.resolve(strict=True)) for path in slaves)) if slaves else {entry}
+        slaves = list((entry / 'slaves').iterdir())
+        if slaves:
+            return set().union(*(parents(path.resolve(strict=True)) for path in slaves))
+        if entry.is_relative_to(VIRTUAL_DEVICES):
+            # A loop file or other unreported backing device can share the
+            # database disk despite having a different filesystem st_dev.
+            raise OSError('unverified virtual block-device backing')
+        return {entry}
 
     try:
         source = backup_root.stat().st_dev

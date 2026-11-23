@@ -291,3 +291,55 @@ def test_host_launcher_dispatches_regular_actions_in_private_namespace(monkeypat
     else:
         assert executable == python
         assert argv == payload
+
+
+@pytest.fixture
+def sysfs_block_devices(monkeypatch, tmp_path):
+    devices = tmp_path / "sys/devices"
+    virtual = devices / "virtual"
+    pci = devices / "pci0000_00"
+    nvme = pci / "0000_00_02.0/nvme/nvme0/nvme0n1"
+    virtio = pci / "0000_00_03.0/virtio0/block/vda"
+    mapper = virtual / "block/dm-0"
+    sysfs = {
+        "259:0": nvme,
+        "252:0": virtio,
+        "7:0": virtual / "block/loop0",
+        "254:0": virtual / "block/zram0",
+        "253:0": mapper,
+    }
+    for entry in sysfs.values():
+        (entry / "slaves").mkdir(parents=True)
+    # Represent the kernel's sysfs links without filesystem symlink privileges.
+    targets = {Path(f"/sys/dev/block/{dev}"): path for dev, path in sysfs.items()}
+    slave = mapper / "slaves/vda"
+    slave.touch()
+    targets[slave] = virtio
+    resolve = Path.resolve
+    monkeypatch.setattr(Path, "resolve", lambda path, **kwargs: targets[path] if path in targets else resolve(path, **kwargs))
+    monkeypatch.setattr(backup, "VIRTUAL_DEVICES", virtual, raising=False)
+    monkeypatch.setattr(backup.sys, "platform", "linux")
+    monkeypatch.setattr(backup.os, "major", lambda device: device, raising=False)
+    monkeypatch.setattr(backup.os, "minor", lambda device: 0, raising=False)
+
+    def mounted_on(device):
+        return SimpleNamespace(stat=lambda: SimpleNamespace(st_dev=device))
+
+    return {major: mounted_on(major) for major in (259, 252, 7, 254, 253)}
+
+
+def test_nvme_and_virtio_devices_are_distinct_and_mapper_follows_its_slave(sysfs_block_devices):
+    nvme, virtio, mapper = (sysfs_block_devices[device] for device in (259, 252, 253))
+    assert backup.same_disk(nvme, virtio) is False
+    assert backup.same_disk(mapper, nvme) is False
+    assert backup.same_disk(mapper, virtio) is True
+    backup.require_separate_disk(nvme, [virtio])
+
+
+@pytest.mark.parametrize("virtual_device", [7, 254], ids=["loop", "zram"])
+def test_virtual_leaf_without_backing_topology_cannot_prove_separation(sysfs_block_devices, virtual_device):
+    selected = sysfs_block_devices[virtual_device]
+    postgres = sysfs_block_devices[259]
+    assert backup.same_disk(selected, postgres) is None
+    with pytest.raises(RuntimeError, match="native_backup_root_mount_mismatch"):
+        backup.require_separate_disk(selected, [postgres])
