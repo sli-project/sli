@@ -10,10 +10,11 @@ namespace Sli.Server.Tests.Gpo;
 public sealed class GpoReportTests
 {
     internal static JsonObject Vectors([System.Runtime.CompilerServices.CallerFilePath] string file="") => JsonNode.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(file)!,"source-vectors.json")))!.AsObject();
-    internal sealed class Store : IGpoReadStore
+    internal sealed class Store : IGpoReadStore, IGpoSnapshotReadStore
     {
         public JsonObject Pair=Vectors()["pair"]!.AsObject();public int Reads;public long[]? Domains;public Exception? Error;
         public JsonObject? PolicyHistory;
+        public readonly List<(long Domain, string PolicyId, GpoPolicySnapshot Snapshot)> Snapshots = [];
         public Task<JsonObject> PairAsync(long[]? domains,CancellationToken ct) { Reads++;Domains=domains;if(Error is {} e) throw e;return Task.FromResult(Pair.Copy()); }
         public Task<JsonObject> GraphAsync(JsonObject s,long[]? domains,CancellationToken ct) { Reads++;Domains=domains;return Task.FromResult(Vectors()["effective"]![0]!["graph"]!.AsObject().Copy()); }
         public Task<JsonObject> HistoryAsync(long[]? domains,DateTimeOffset from,DateTimeOffset to,string q,CancellationToken ct) { Reads++;Domains=domains;return Task.FromResult(new JsonObject { ["state"]="unavailable",["items"]=new JsonArray(),["coverage"]=new JsonObject { ["state"]="unavailable" } }); }
@@ -21,6 +22,16 @@ public sealed class GpoReportTests
         {
             Reads++;Domains=domains;
             return Task.FromResult(PolicyHistory?.Copy()??new JsonObject { ["state"]="unavailable",["items"]=new JsonArray() });
+        }
+        public Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
+            (Guid Before, Guid After)? comparison, CancellationToken ct)
+        {
+            Reads++;
+            Domains = [domain];
+            IReadOnlyList<GpoPolicySnapshot> rows = Snapshots.Where(entry => entry.Domain == domain && entry.PolicyId == policyId)
+                .Select(entry => entry.Snapshot).Where(snapshot => comparison is not { } pair || snapshot.Id == pair.Before || snapshot.Id == pair.After)
+                .OrderByDescending(snapshot => snapshot.ObservedAt).ToArray();
+            return Task.FromResult(rows);
         }
     }
     static GpoRequest Request(string view="all",string? tab=null)=>new(view,"",tab,null,"asc",500,null,"UTC",Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-08T00:00:00Z"));

@@ -29,6 +29,15 @@ const details = {
 };
 const changes = [{ id: "change", object_id: "timeout", object_type: "gpo_setting", field: "value_display", kind: "attribute_changed",
   name: "Timeout", observed_at: newer, before_value: "900 seconds", after_value: "600 seconds" }];
+const snapshots = [
+  { id: "snapshot-4", observed_at: newer }, { id: "snapshot-3", observed_at: older },
+  { id: "snapshot-2", observed_at: "2026-11-20T12:00:00Z" }, { id: "snapshot-1", observed_at: "2026-11-19T12:00:00Z" },
+];
+const comparison = [
+  { id: "change-1", side: "computer", setting_name: "Timeout", path: "Security/Timeout", kind: "changed", before_value: "900 seconds", after_value: "600 seconds" },
+  { id: "change-2", side: "user", setting_name: "Theme", path: "Desktop/Theme", kind: "added", after_value: "Enabled" },
+  { id: "change-3", side: "user", setting_name: "Wallpaper", path: "Desktop/Wallpaper", kind: "removed", before_value: "<img src=x>" },
+];
 const requests: URL[] = [];
 
 beforeEach(() => {
@@ -41,8 +50,12 @@ beforeEach(() => {
     requests.push(url);
     const id = url.searchParams.get("policy_id");
     const history = id && url.searchParams.get("tab") === "changes";
+    const snapshotList = url.searchParams.has("snapshots");
+    const before = url.searchParams.get("before_snapshot");
     const data = { contract_id: "sli.report-result.v2", report_key: "ad.gpo.v2", state: "partial",
-      items: id ? [] : policies, collections: !id ? {} : history ? { changes } : details,
+      items: id ? [] : policies, collections: !id ? {} : history ? { changes } :
+        snapshotList ? { snapshots: id === "linked" ? snapshots : snapshots.slice(0, 1) } :
+          before ? { snapshot_comparison: before === "snapshot-2" ? [] : comparison } : details,
       has_more: false, next_cursor: null, series: {}, window: {}, metrics: [], filter_options: {},
       coverage: { observed_at_utc: newer, policy_history_state: history ? "ok" : undefined },
       limitations: [{ code: "fixture", text: "Removed collection explanation" }],
@@ -119,5 +132,40 @@ it("finds settings by path and value, expands history inline, and renders host v
   expect(within(card).queryByText("Timeout")).toBeNull();
   fireEvent.click(within(card).getByRole("button", { name: "User 1" }));
   expect(within(card).getByRole("button", { name: "Theme" })).toBeTruthy();
+});
+
+it("compares either of two selected dates in the policy card and distinguishes an equal pair", async () => {
+  renderReport();
+  fireEvent.click(await screen.findByRole("button", { name: "Linked policy: 2 links" }));
+  const card = within(screen.getByRole("region", { name: "Linked policy" }));
+  fireEvent.click(card.getByRole("tab", { name: "Versions" }));
+  const before = await card.findByRole("combobox", { name: "Before" });
+  const after = card.getByRole("combobox", { name: "After" });
+  expect(within(before).getAllByRole("option")).toHaveLength(4);
+  expect(within(before).getAllByRole("option")[0].textContent).not.toMatch(/snapshot-/);
+  const run = card.getByRole("button", { name: "Compare snapshots" });
+  fireEvent.change(before, { target: { value: "snapshot-1" } });
+  fireEvent.change(after, { target: { value: "snapshot-3" } });
+  fireEvent.click(run);
+  const result = within(await card.findByRole("table", { name: "Snapshot comparison" }));
+  expect(result.getByRole("row", { name: /Timeout.*Changed.*900 seconds.*600 seconds/ })).toBeTruthy();
+  expect(result.getByRole("row", { name: /Theme.*Added.*Enabled/ })).toBeTruthy();
+  expect(result.getByRole("row", { name: /Wallpaper.*Removed.*<img src=x>/ })).toBeTruthy();
+  expect(card.queryByRole("img")).toBeNull();
+  const request = requests.find((url) => url.searchParams.has("before_snapshot"))!;
+  expect(Object.fromEntries(request.searchParams)).toMatchObject({ policy_id: "linked", domain: "7", before_snapshot: "snapshot-1", after_snapshot: "snapshot-3" });
+  fireEvent.change(before, { target: { value: "snapshot-2" } });
+  expect(card.queryByRole("table", { name: "Snapshot comparison" })).toBeNull();
+  fireEvent.click(run);
+  expect(await card.findByText("No differences in visible settings")).toBeTruthy();
+});
+
+it("keeps versions visible when a policy has fewer than two comparable snapshots", async () => {
+  renderReport();
+  const card = within(await screen.findByRole("region", { name: "Updated policy" }));
+  fireEvent.click(card.getByRole("tab", { name: "Versions" }));
+  expect(await card.findByText("Two snapshots are required for comparison")).toBeTruthy();
+  expect(card.getByRole("table", { name: "Version history" })).toBeTruthy();
+  expect(card.queryByRole("button", { name: "Compare snapshots" })).toBeNull();
 });
 
