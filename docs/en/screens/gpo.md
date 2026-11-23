@@ -1,6 +1,6 @@
 # Group policies
 
-[Русская версия](../ru/gpo.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/gpo.md) · [Work screens](../user-guide.md)
 
 Open **Group policies** at `/app/report/ad.gpo.v2`. Select a domain, search
 by policy and use **Version mismatch** or **Unlinked** to narrow the list.

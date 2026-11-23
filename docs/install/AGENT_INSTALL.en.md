@@ -2,7 +2,7 @@
 
 [Русская версия](AGENT_INSTALL.ru.md) · [Server installation](SERVER_INSTALL.en.md)
 
-These procedures describe the older Python agent and Docker evaluation workflow. For the .NET agent shipped with the native Debian beta, use [Connect a Windows agent](../en/windows-agent.md).
+These procedures describe the older Python agent and Docker evaluation workflow. For the .NET agent shipped with the native Debian beta, use [Connect a Windows agent](../en/agents.md).
 
 The Apache-2.0 Python agent makes outbound HTTPS connections from monitored
 Windows hosts, including DCs and workstations. It has no database credentials

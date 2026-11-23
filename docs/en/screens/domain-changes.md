@@ -1,6 +1,6 @@
 # Domain changes
 
-[Русская версия](../ru/domain-changes.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/domain-changes.md) · [Work screens](../user-guide.md)
 
 Open **Domain changes** at `/app/report/security.events.chains` to review
 changes recorded in domain events.

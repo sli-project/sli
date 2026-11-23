@@ -1,6 +1,6 @@
 # Компьютеры
 
-[English version](../en/computers.md) · [Рабочие экраны](user-guide.md)
+[English version](../../en/screens/computers.md) · [Рабочие экраны](../user-guide.md)
 
 Откройте **Компьютеры** по пути `/app/report/ad.computers.v6`. Выберите
 домен и найдите компьютер либо просмотрите доступные проверки.

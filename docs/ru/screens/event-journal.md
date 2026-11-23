@@ -1,6 +1,6 @@
 # Журнал событий
 
-[English version](../en/event-journal.md) · [Рабочие экраны](user-guide.md)
+[English version](../../en/screens/event-journal.md) · [Рабочие экраны](../user-guide.md)
 
 Откройте **Журнал событий** по пути `/app/report/events.journal`, чтобы
 найти и проверить отдельные собранные события.

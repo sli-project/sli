@@ -1,6 +1,6 @@
 # Administration
 
-[Русская версия](../ru/administration.md) · [Guide index](README.md)
+[Русская версия](../ru/admin.md) · [Guide index](README.md)
 
 In the native Debian beta, open **Administration** after signing in. The paths
 below are relative to the HTTPS address of your SLI server. Menu entries and
@@ -54,7 +54,7 @@ are processed.
 The page requires the platform owner or `access.manage`. Some actions, such
 as group deployment, permanent removal and sequence recovery, are reserved
 for the platform owner. For enrollment and replacement, follow the
-[Windows agent guide](windows-agent.md). For an agent that has stopped
+[Windows agent guide](agents.md). For an agent that has stopped
 reporting, see [Agent checks](troubleshooting.md#agent-checks).
 
 ## Users and roles
@@ -89,8 +89,9 @@ administrator access with `access.manage` and permission to configure the
 channel. Use a bot under your organization's control.
 
 1. Paste the token from `@BotFather` in the Telegram setup panel and select
-   **Verify**. Enter a Telegram proxy there if the server needs one to reach
-   Telegram. Keep the token and any proxy credentials out of diagnostics.
+   **Verify**. If the Debian server needs a proxy or VPN to reach Telegram,
+   configure its connection as described below. Keep the token out of
+   diagnostics.
 2. Send `/start` to the bot from the intended chat. In SLI, select **Find
    chat**, choose the chat and select **Save**. Binding enables the channel
    and sets up a rule for your account. Check the destination shown in the
@@ -105,6 +106,42 @@ channel. Use a bot under your organization's control.
 
 An empty chat list, a disabled test control and an unknown send outcome have
 different remedies. See [Telegram checks](troubleshooting.md#telegram-checks).
+
+### Proxy or VPN
+
+The native notification services use the Debian server's network route and
+the `notification_proxy` setting in `/etc/sli/site.toml`. This site setting
+takes precedence over the proxy field in the Telegram panel.
+
+For a new installation that needs an HTTP CONNECT proxy, prepare the site file
+before running `install-beta-kit` or the first `sudo sli-setup` after the APT
+packages are installed. Create `/etc/sli` with
+`sudo install -d -m 0755 /etc/sli` and use `sudoedit /etc/sli/site.toml`.
+For a new file, replace every placeholder below with the site's settings. If
+you already have a prepared site file, keep its other settings and add or
+update only `notification_proxy`.
+
+```toml
+domain_fqdn = "<lowercase-ad-domain>"
+server_name = "<sli-server-name>"
+bind = "<local-debian-address>"
+https_port = 443
+agents = true
+owner_setup = true
+notification_proxy = "http://<proxy-host>:<proxy-port>"
+```
+
+Use an HTTP CONNECT endpoint reachable from Debian with an explicit port,
+without credentials, a path or a trailing slash. Then continue the chosen
+[installation procedure](install.md) using the same site settings. On an
+existing installation, rerunning `sli-setup` checks the saved site
+configuration, so use the configured connection or have the Debian network
+administrator arrange the route.
+
+For a VPN, configure routing on the Debian server so its outgoing HTTPS
+connection to Telegram goes through the tunnel. If a proxy is configured,
+the notification services connect to that proxy. After the route is ready,
+select **Verify** in Telegram setup, then **Send test** after binding the chat.
 
 ## Storage
 
@@ -122,7 +159,7 @@ backups have their own lifecycles. Before shortening history, review the time
 range required for investigations and check the last qualifying backup.
 
 The latest backup timestamp, when shown, helps locate the backup run. Use the
-[backup and recovery guide](upgrade-recovery.md#run-a-restore-drill)
+[backup and recovery guide](upgrade.md#run-a-restore-drill)
 to check the backup result and evidence from a restore drill. See
 [Storage checks](troubleshooting.md#storage-checks) if growth or free space
 requires attention.

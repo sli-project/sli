@@ -1,6 +1,6 @@
 # AD state
 
-[Русская версия](../ru/ad-state.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/ad-state.md) · [Work screens](../user-guide.md)
 
 Open **AD state** at `/app/report/ad.infrastructure`. Select an accessible
 domain and check when it was observed.

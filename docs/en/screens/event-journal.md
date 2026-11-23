@@ -1,6 +1,6 @@
 # Event journal
 
-[Русская версия](../ru/event-journal.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/event-journal.md) · [Work screens](../user-guide.md)
 
 Open **Event journal** at `/app/report/events.journal` to find and verify
 individual collected events.

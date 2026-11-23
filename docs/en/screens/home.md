@@ -1,6 +1,6 @@
 # Home
 
-[Русская версия](../ru/home.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/home.md) · [Work screens](../user-guide.md)
 
 Open **Home** at `/app/`. Use it to choose a domain and see what needs
 attention in the selected period.

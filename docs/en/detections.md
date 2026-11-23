@@ -3,8 +3,8 @@
 [Русская версия](../ru/detections.md) · [Work screens](user-guide.md)
 
 This catalog covers ten signals in source release `a164f00`. Work with
-already collected records. In [Problems](problems.md), open the finding
-and review **Evidence**. In the [Event journal](event-journal.md), confirm
+already collected records. In [Problems](screens/problems.md), open the finding
+and review **Evidence**. In the [Event journal](screens/event-journal.md), confirm
 the event's time, domain, source, log and record identity. Keep source gaps
 and the scope of your access in mind. Priorities below come from the
 rule code or event catalog. Automatic publication depends on eligible
@@ -38,7 +38,7 @@ evidence and the applicable policy for the source.
 - **Priority.** Critical.
 - **Operator response.** Start the account incident process promptly.
   Preserve the matched records, coordinate a password reset and session
-  revocation, and review [Domain changes](domain-changes.md) for actions
+  revocation, and review [Domain changes](screens/domain-changes.md) for actions
   after the sign-in.
 
 See [password evidence and severity](../../server-dotnet/src/Sli.Server/Semantic/Password/PasswordSignal.cs)
@@ -99,7 +99,7 @@ See [identity rule recognition and priority](../../server-dotnet/src/Sli.Server/
 
 - **Signal.** Collected service events can show that the SLI agent service
   stopped (7036) or that its startup was disabled (7040 or 7045). Use
-  [System status](administration.md#system-status) and the agent page
+  [System status](admin.md#system-status) and the agent page
   to check delivery around that time.
 - **Priority.** High for a matching service finding.
 - **Operator response.** Check the host and any maintenance record. Preserve
@@ -112,7 +112,7 @@ See [log, audit and agent rule definitions](../../server-dotnet/src/Sli.Server/S
 
 - **Signal.** Security event 4698 records task registration. System event
   7045 from Service Control Manager records service installation. Find the
-  retained records in the [Event journal](event-journal.md).
+  retained records in the [Event journal](screens/event-journal.md).
 - **Priority.** The event catalog labels both records informational, in the
   important collection tier. Treat them as journal evidence. This release
   does not establish a combined automatically published problem for ordinary

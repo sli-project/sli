@@ -1,6 +1,6 @@
 # Computers
 
-[Русская версия](../ru/computers.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/computers.md) · [Work screens](../user-guide.md)
 
 Open **Computers** at `/app/report/ad.computers.v6`. Select the domain and
 search for the computer or review the available checks.

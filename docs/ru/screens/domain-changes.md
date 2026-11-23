@@ -1,6 +1,6 @@
 # Изменения в домене
 
-[English version](../en/domain-changes.md) · [Рабочие экраны](user-guide.md)
+[English version](../../en/screens/domain-changes.md) · [Рабочие экраны](../user-guide.md)
 
 Откройте **Изменения в домене** по пути `/app/report/security.events.chains`,
 чтобы разобрать изменения, зафиксированные в доменных событиях.

@@ -1,6 +1,6 @@
 # Update, backups, rollback and restore
 
-[Русская версия](../ru/upgrade-recovery.md) · [Guide index](README.md)
+[Русская версия](../ru/upgrade.md) · [Guide index](README.md)
 
 ## Upgrade
 
@@ -221,6 +221,6 @@ The flag erases local databases, settings, keys, the offline CA on this host,
 local backups and the managed cold tablespace directory. It keeps shared Debian
 and database packages, external backup volumes and copies stored offline.
 
-Verify the result of a Windows agent removal in the [agent guide](windows-agent.md#remove-the-agent).
+Verify the result of a Windows agent removal in the [agent guide](agents.md#remove-the-agent).
 
 For development, use the separate [dev container workflow](../../CONTRIBUTING.md).

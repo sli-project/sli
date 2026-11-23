@@ -1,6 +1,6 @@
 # Пользователи
 
-[English version](../en/users.md) · [Рабочие экраны](user-guide.md)
+[English version](../../en/screens/users.md) · [Рабочие экраны](../user-guide.md)
 
 Откройте **Пользователи** по пути `/app/report/ad.users.v2`. Выберите домен
 и проверьте время снимка для выбранной области.

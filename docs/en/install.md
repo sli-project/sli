@@ -64,7 +64,7 @@ openssl x509 -in /var/lib/sli/tls-ca.crt -noout -fingerprint -sha256
 Check that the printed address resolves and is reachable from your PC and the
 domain controller. On a fresh installation, sign in with `admin` / `admin`,
 set a password of at least 12 characters, then
-[connect the domain controller](windows-agent.md).
+[connect the domain controller](agents.md).
 
 ## Optional setup settings
 
@@ -156,6 +156,6 @@ sudo apt update && sudo apt install sli && sudo sli-setup
 sudo apt update && sudo apt upgrade
 ```
 
-For rollback, use the [recovery guide](upgrade-recovery.md#roll-back-an-upgrade).
+For rollback, use the [recovery guide](upgrade.md#roll-back-an-upgrade).
 Check that APT has the exact previous package versions or keep the verified
 archive for that release.

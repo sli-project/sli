@@ -9,16 +9,16 @@ source data.
 
 | Screen | Path |
 | --- | --- |
-| [Home](home.md) | `/app/` |
-| [Problems](problems.md) | `/app/report/security.problems` |
-| [Event journal](event-journal.md) | `/app/report/events.journal` |
-| [Domain changes](domain-changes.md) | `/app/report/security.events.chains` |
-| [AD state](ad-state.md) | `/app/report/ad.infrastructure` |
-| [Users](users.md) | `/app/report/ad.users.v2` |
-| [Computers](computers.md) | `/app/report/ad.computers.v6` |
-| [Group policies](gpo.md) | `/app/report/ad.gpo.v2` |
+| [Home](screens/home.md) | `/app/` |
+| [Problems](screens/problems.md) | `/app/report/security.problems` |
+| [Event journal](screens/event-journal.md) | `/app/report/events.journal` |
+| [Domain changes](screens/domain-changes.md) | `/app/report/security.events.chains` |
+| [AD state](screens/ad-state.md) | `/app/report/ad.infrastructure` |
+| [Users](screens/users.md) | `/app/report/ad.users.v2` |
+| [Computers](screens/computers.md) | `/app/report/ad.computers.v6` |
+| [Group policies](screens/gpo.md) | `/app/report/ad.gpo.v2` |
 
 The [detection catalog](detections.md) explains how to review ten security
 signals using retained observations. For account permissions and data-source
-health, see [Administration](administration.md) and
+health, see [Administration](admin.md) and
 [Troubleshooting](troubleshooting.md).

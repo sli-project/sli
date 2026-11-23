@@ -1,6 +1,6 @@
 # Connect a Windows agent
 
-[Русская версия](../ru/windows-agent.md) · [Guide index](README.md)
+[Русская версия](../ru/agents.md) · [Guide index](README.md)
 
 Use the x64 .NET agent provided by the SLI server. Make sure the Windows
 domain controller can reach the server directly over HTTPS.
@@ -76,7 +76,25 @@ removing it, restoring the old Windows service may require that MSI.
 
 ## Remove the agent
 
-On Windows, remove **SLI Agent .NET** from **Installed apps**. Its service is
-`SLIAgentNet`. The entry **SLI Agent** belongs to the older MSI. To revoke the
-server registration as well, open the computer in **Agents** and choose
-**Disable agent**.
+To remove a registered MSI installation remotely, sign in as the platform
+owner. In **Agents**, select the computer, open **Actions**, choose
+**Uninstall agent** and confirm. The server revokes the certificates and
+retains the collected history. An offline agent receives the command when it
+reconnects. Check the removal status in the agent details. **Agent reported
+local key and buffer cleanup** confirms that cleanup. On Windows, check
+**Installed apps** and the service to verify MSI removal.
+
+To remove the agent locally, use a Windows administrator account. Remove
+**SLI Agent .NET** from **Installed apps**. Its service is `SLIAgentNet`.
+The entry **SLI Agent** belongs to the older MSI. Verify removal with
+PowerShell. An empty result indicates the service is absent.
+
+```powershell
+Get-Service -Name SLIAgentNet -ErrorAction SilentlyContinue
+```
+
+For local removal, open the computer in SLI **Agents** and choose
+**Disable agent** while the registration is still active. This revokes its
+certificates and retains server-side history. Windows Installer handles
+removal of the local service. Standard local uninstall can retain an unsent
+queue under `%ProgramData%\SLI\AgentNet\retained-queue-*`.

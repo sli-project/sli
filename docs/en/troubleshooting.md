@@ -4,7 +4,7 @@
 
 Start with the first step that failed. Record its time and time zone, the
 installed release and the message or result code. For problems that appeared
-during an update, start with [Verify or resume the update](upgrade-recovery.md#verify-or-resume-the-update).
+during an update, start with [Verify or resume the update](upgrade.md#verify-or-resume-the-update).
 
 | Symptom | Start with |
 | --- | --- |
@@ -70,7 +70,7 @@ server's readiness checks.
 
    A successful TCP test checks reachability. For a certificate or enrollment
    error, verify HTTPS trust and command validity in the
-   [Windows agent guide](windows-agent.md). If the service is absent, check
+   [Windows agent guide](agents.md). If the service is absent, check
    which MSI was installed. Review **Last contact** in SLI after checking
    the service and connection.
 
@@ -88,8 +88,9 @@ server's readiness checks.
 ## Telegram checks
 
 - **Bot verification fails.** Check the token in the Telegram setup panel and
-  connectivity from the Debian server. If the server needs a proxy, configure
-  it in that panel and verify the bot again.
+  connectivity from the Debian server. Check the
+  [native proxy or VPN configuration](admin.md#proxy-or-vpn) before verifying
+  the bot again.
 - **The chat list is empty.** Send `/start` again from the intended chat,
   then select **Find chat** and save the destination.
 - **The test control is disabled.** Check your configuration permission,
@@ -117,10 +118,10 @@ df -h /srv/sli-db /var/backups/sli/native
 ```
 
 Check the last backup result and the journal for the affected service with
-the [native backup procedure](upgrade-recovery.md#native-backups). A space
+the [native backup procedure](upgrade.md#native-backups). A space
 or volume refusal identifies the directory or volume to inspect. If a mount
 is missing, restore the intended mount before writing more data to that
-path. Use the [space requirements](upgrade-recovery.md#check-free-space) to
+path. Use the [space requirements](upgrade.md#check-free-space) to
 plan headroom for an upgrade or drill. PostgreSQL data, backup manifests and
 pending update checkpoints should be kept intact while diagnosing the issue.
 

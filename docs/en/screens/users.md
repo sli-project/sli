@@ -1,6 +1,6 @@
 # Users
 
-[Русская версия](../ru/users.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/users.md) · [Work screens](../user-guide.md)
 
 Open **Users** at `/app/report/ad.users.v2`. Select a domain and check the
 snapshot time shown for the selected scope.

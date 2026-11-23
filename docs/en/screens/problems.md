@@ -1,6 +1,6 @@
 # Problems
 
-[Русская версия](../ru/problems.md) · [Work screens](user-guide.md)
+[Русская версия](../../ru/screens/problems.md) · [Work screens](../user-guide.md)
 
 Open **Problems** at `/app/report/security.problems` to investigate
 published findings and track decisions in their accessible domain scope.
@@ -13,7 +13,7 @@ published findings and track decisions in their accessible domain scope.
    publication times. Expand grouped repeats to inspect individual problems.
 3. Where source evidence is accessible, open the source event or follow
    **Open in journal** to the [Event journal](event-journal.md) for this problem.
-   [Detections](detections.md) explains how to interpret recurring signals.
+   [Detections](../detections.md) explains how to interpret recurring signals.
 4. With management rights, change the status or defer a problem. Use
    assignment where that action is permitted. Check the history for the
    recorded decision. These actions update the SLI problem, while any

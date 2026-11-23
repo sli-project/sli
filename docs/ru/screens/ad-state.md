@@ -1,6 +1,6 @@
 # Состояние AD
 
-[English version](../en/ad-state.md) · [Рабочие экраны](user-guide.md)
+[English version](../../en/screens/ad-state.md) · [Рабочие экраны](../user-guide.md)
 
 Откройте **Состояние AD** по пути `/app/report/ad.infrastructure`. Выберите
 доступный домен и проверьте время наблюдения.
