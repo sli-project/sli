@@ -19,11 +19,13 @@ using Npgsql;
 using Sli.Server.Auth.InitialOwner;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
+using Sli.Server.Operations;
 using Sli.Server.Agents.Certificates;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Domains;
+using Sli.Server.Tests.Operations;
 using Sli.Server.Tests.Storage;
 using Xunit;
 
@@ -118,6 +120,8 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             """, admin);
         seed.Parameters.AddWithValue("event_id", eventId);
         await seed.ExecuteNonQueryAsync(ct);
+        using var backupSettingsSocket = new BackupSettingsEndpointTests.SocketExchange(
+            """{"ok":true,"enabled":true,"path":"/mnt/synthetic-backup","revision":"r1","storage_status":"ready"}""" + "\n");
         using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(SafeTestEnvironment.ConfigureApiHost).WithWebHostBuilder(b => b
             .UseTestServer()
             .ConfigureLogging(l => l.ClearProviders())
@@ -133,6 +137,8 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             }))
             .ConfigureServices(s => {
                 s.RemoveAll<INotificationSetupClient>(); s.AddSingleton<INotificationSetupClient, SetupTransport>(); s.RemoveAll<AgentIssuingCa>(); s.AddSingleton(certificates.Ca);
+                s.RemoveAll<BackupSettingsClient>();
+                s.AddSingleton(new BackupSettingsClient(_ => ValueTask.FromResult<Stream>(backupSettingsSocket)));
                 s.AddSingleton(transportTrust);
             }));
         // TestServer replaces only the transport. Schannel credentials are not
@@ -172,6 +178,13 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/setup/domain-controllers", new { hostname = "dc.example.test", domain = "example.test" }, 201);
         await Check("/api/v1/setup/domain-controllers/dc.example.test", new { enabled = false });
         await Check("/api/v1/platform-settings/ad.inactivity_days", new { value = "30" });
+        client.DefaultRequestHeaders.Add("Origin", "https://localhost");
+        var regularBackup = await Check("/api/v1/admin/backup-settings",
+            new { enabled = true, path = "/mnt/synthetic-backup", revision = "0" }, method: "PUT");
+        client.DefaultRequestHeaders.Remove("Origin");
+        Assert.Equal("r1", regularBackup?["revision"]?.GetValue<string>());
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"action":"set","enabled":true,"path":"/mnt/synthetic-backup","revision":"0"}"""),
+            JsonNode.Parse(backupSettingsSocket.Outgoing.ToArray())));
         await Check("/api/plugins/sli.ad/settings", new { key = "ad.password_max_age_days", value = 30 }, method: "PUT");
         await Check("/api/v1/plugins/sli.ad", new { enabled = true, expected_revision = 1 });
         var definition = new { report_key = "studio.sql", name = "SQL report", owner = "fixture", purpose = "SQL contract", dataset_key = "entities.v2", fields = new[] { "id", "display_name" }, actions = new[] { "view" }, status = "published" };

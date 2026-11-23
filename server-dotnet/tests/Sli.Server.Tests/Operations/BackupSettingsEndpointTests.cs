@@ -258,7 +258,7 @@ public sealed class BackupSettingsEndpointTests
         }
     }
 
-    private sealed class SocketExchange(string reply) : Stream
+    internal sealed class SocketExchange(string reply) : Stream
     {
         private readonly MemoryStream incoming = new(Encoding.UTF8.GetBytes(reply));
         public MemoryStream Outgoing { get; } = new();
