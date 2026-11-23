@@ -216,19 +216,39 @@ public sealed class PasswordProducer
                 if(!affected.Contains(episode.Entity)||episode.Frozen)continue;
                 if(episode.RootId!=null&&!(entityState.Watermark.HasValue&&lower>entityState.Watermark)) {
                     var added=pending.Where(m=>Entity(m)==episode.Entity&&m.Witness.At<=final&&(!entityState.Watermark.HasValue||m.Witness.At>entityState.Watermark)).Select(m=>m.Witness).ToArray();
-                    if(added.Length>0&&added.Min(w=>w.At)-episode.Last.At<=TimeSpan.FromSeconds(600)){var chain=await History(sql,rule,episode,historySignals,ct);histories.AddRange(chain);needed.AddRange(chain.SelectMany(e=>e.Occurrences));}
+                    if(added.Length>0&&added.Min(w=>w.At)-episode.Last.At<=TimeSpan.FromSeconds(600)){var chain=await History(sql,rule,episode,historySignals,ct);histories.AddRange(chain);}
                 }
             }
-            needed.AddRange(entityState.Window.Where(m=>m.EntityFor(rule)!=null&&affected.Contains(m.EntityFor(rule)!)).Select(m=>m.Witness));
-            try{budget.Plan(needed);}catch(PasswordFailure e)when(e.Message=="password_v2_proof_bound") {
-                var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct);if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null);}throw;
+            var affectedWindow = entityState.Window.Where(m=>m.EntityFor(rule)!=null&&affected.Contains(m.EntityFor(rule)!)).Select(m=>m.Witness);
+            var historyWitnesses = histories.SelectMany(e => e.Occurrences).ToArray();
+            var combinedWitnesses = needed.Concat(historyWitnesses).Concat(affectedWindow);
+            PasswordFailure? combinedLimit = null;
+            try { budget.Plan(combinedWitnesses); }
+            catch (PasswordFailure e) when (e.Message=="password_v2_proof_bound") {
+                var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct);
+                if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null);}
+                if (!adaptive || rule.Kind != "spray" || !rule.NormalizedAccounts || historyWitnesses.Length == 0)
+                    throw;
+                combinedLimit = e;
             }
-            await budget.Fetch(sql,rule.Scope,needed,ct,retainedWindow);
+            // A committed chain and a candidate window are separate bounded
+            // reads. Keep the normal path when their combined proof fits.
+            await budget.Fetch(sql,rule.Scope,combinedLimit == null ? combinedWitnesses : needed.Concat(affectedWindow),ct,retainedWindow);
+            NativeBudget? chainBudget = null;
+            var signalRecords = budget.Records;
+            if (combinedLimit != null) {
+                chainBudget = new NativeBudget([],rule.NormalizedAccounts,PasswordProofPhase.RetainedChain);
+                await chainBudget.Fetch(sql,rule.Scope,historyWitnesses,ct,budget.Records);
+                signalRecords = new Dictionary<long,PasswordNative>(budget.Records);
+                PasswordRule.AddProofRecords(signalRecords, chainBudget.Records.Values);
+            }
             foreach(var document in historySignals){var portion=PasswordJson.Obj(document["password_context"]);var chain=histories.Where(e=>e.EpisodeKey==PasswordJson.Text(portion["episode_key"])).OrderBy(e=>e.Sequence).ToArray();int sequence=portion["sequence"]!.GetValue<int>();var emission=chain.Single(e=>e.Sequence==sequence);
-                if(!JsonNode.DeepEquals(document,PasswordSignal.Create(rule,emission,portion,PasswordJson.Time(document["received_at_utc"]),budget.Records.Values,chain.Where(e=>e.Sequence<sequence).ToArray())))throw new PasswordFailure("password_v2_chain_invalid");}
+                if(!JsonNode.DeepEquals(document,PasswordSignal.Create(rule,emission,portion,PasswordJson.Time(document["received_at_utc"]),(chainBudget??budget).Records.Values,chain.Where(e=>e.Sequence<sequence).ToArray())))throw new PasswordFailure("password_v2_chain_invalid");}
             foreach(var (entity,b) in entityBarriers)if(!budget.Native(PasswordWitness.Read(b["seed"])).ProvesEntity(rule,entity)||!budget.Native(PasswordWitness.Read(b["tracking_endpoint"])).ProvesEntity(rule,entity))throw new PasswordFailure("password_v2_barrier_native_conflict");
             var entityIncomingIds=entityIncoming.Select(n=>n.Witness.NativeId).ToHashSet();var retained=budget.Records.Values.Where(n=>!entityIncomingIds.Contains(n.Witness.NativeId)).ToArray();
-            var proposal=rule.Advance(working,entityIncoming,now,histories,retained,lower);
+            var proposal = chainBudget == null
+                ? rule.Advance(working,entityIncoming,now,histories,retained,lower)
+                : rule.AdvanceWithRetainedChain(working,entityIncoming,now,histories,retained,lower,chainBudget.Records.Values,combinedLimit);
             if(proposal.State.Watermark!=final||proposal.Diagnostics.Any(p=>p.Value!=0&&!LossCodes.Contains(p.Key)))throw new PasswordFailure("password_v2_proposal_unavailable") {ProposalDiagnostics=proposal.Diagnostics,WatermarkMatches=proposal.State.Watermark==final,StateBytes=proposal.StateBytes};
             var nextEpisodes=proposal.State.Episodes.ToDictionary(e=>e.Entity,StringComparer.Ordinal);var emissions=proposal.Emissions.ToList();
             foreach(var (entity,b) in entityBarriers) {
@@ -247,8 +267,16 @@ public sealed class PasswordProducer
             var plannedHistory=histories.ToList();
             foreach(var emission in emissions) {
                 var chain=plannedHistory.Where(h=>h.EpisodeKey==emission.EpisodeKey).OrderBy(h=>h.Sequence).ToArray();
-                var signals=emission.Contexts(chain.FirstOrDefault()?.Id).Select(c=>PasswordSignal.Create(rule,emission,c,PasswordJson.Time(attempt["attempted_at"]),budget.Records.Values,chain)).ToArray();JsonObject? expected=null;
-                if(emission.Sequence>1){if(chain.Length==0)throw new PasswordFailure("password_v2_continuity_state");expected=rule.VerifyChain(chain,budget.Records.Values).Document;expected["last_sequence"]=chain[^1].Sequence;expected["last_emission_id"]=chain[^1].Id;}
+                var signals=emission.Contexts(chain.FirstOrDefault()?.Id).Select(c=>PasswordSignal.Create(rule,emission,c,PasswordJson.Time(attempt["attempted_at"]),signalRecords.Values,chain)).ToArray();JsonObject? expected=null;
+                if(emission.Sequence>1) {
+                    if(chain.Length==0)throw new PasswordFailure("password_v2_continuity_state");
+                    IEnumerable<PasswordNative> proof = chainBudget == null ? signalRecords.Values
+                        : chain.SelectMany(e => e.Occurrences).DistinctBy(w => w.NativeId)
+                            .Select(w => signalRecords.TryGetValue(w.NativeId, out var value)
+                                ? value : throw new PasswordFailure("password_v2_native_unavailable"));
+                    expected=rule.VerifyChain(chain,proof).Document;
+                    expected["last_sequence"]=chain[^1].Sequence;expected["last_emission_id"]=chain[^1].Id;
+                }
                 reservations.Add((emission,signals,expected));
                 plannedHistory.Add(emission);
             }
@@ -256,8 +284,10 @@ public sealed class PasswordProducer
             foreach(var (code,count) in proposal.Diagnostics)
                 counts[code]=code=="coverage_gap"?Math.Max(counts.GetValueOrDefault(code),count):counts.GetValueOrDefault(code)+count;
             var entityWork=budget.Work;
-            foreach(string key in new[]{"native_items","xml_bytes"})work[key]=Math.Max(work[key]!.GetValue<int>(),entityWork[key]!.GetValue<int>());
-            work["retained_queries"]=work["retained_queries"]!.GetValue<int>()+entityWork["retained_queries"]!.GetValue<int>();
+            var chainWork = chainBudget?.Work;
+            foreach(string key in new[]{"native_items","xml_bytes"})
+                work[key]=Math.Max(work[key]!.GetValue<int>(),Math.Max(entityWork[key]!.GetValue<int>(),chainWork?[key]?.GetValue<int>()??0));
+            work["retained_queries"]=work["retained_queries"]!.GetValue<int>()+entityWork["retained_queries"]!.GetValue<int>()+(chainWork?["retained_queries"]?.GetValue<int>()??0);
         }
         var combined=nextState! with{Members=nextMembers.OrderBy(m=>m.Witness.At).ThenBy(m=>m.Witness.NativeId).ToArray(),Active=nextActive.OrderBy(e=>e.Entity,StringComparer.Ordinal).ToArray(),Closed=nextClosed.OrderBy(e=>e.Key,StringComparer.Ordinal).ToArray()};
         var fitted=combined.Fit(out int stateBytes);
