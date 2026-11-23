@@ -342,6 +342,46 @@ def test_manifest_cannot_understate_measured_set_size(tmp_path):
     assert policy.last_backup_size(tmp_path, machine_id='local') == measured
 
 
+def test_large_native_manifest_requires_complete_local_inventory(tmp_path):
+    selected = tmp_path / 'upgrade-checkpoints' / 'tx' / '20261001T010000.000000Z'
+    data = selected / 'data' / selected.name
+    data.mkdir(parents=True)
+    backup.write_json(data / 'manifest.json', {
+        'status': 'success', 'components': {'postgres': {}, 'files': {}}})
+    companion = selected / 'companion'
+    companion.mkdir()
+    # Unicode names are escaped by the real JSON writer, which keeps this
+    # fixture above 4 MiB with a modest number of small regular files.
+    stem = '\u0444' * 65
+    for index in range(8700):
+        (companion / f'{stem}{index}').write_bytes(b'checkpoint data')
+    manifest = {
+        'schema_version': 1, 'backup_id': selected.name, 'status': 'backup_created',
+        'machine_id': 'a' * 64, 'data_path': data.relative_to(selected).as_posix(),
+        'created_at_utc': '2026-10-01T01:00:00+00:00',
+        'size_bytes': backup.size_bytes(selected), 'database_size_bytes': 4096,
+        'consistency_point': {'writers_fenced': True, 'capture_window_seconds': 1.0, 'mode': 'fenced'},
+        'content_checksums': backup.content_inventory(selected),
+    }
+    path = selected / 'manifest.json'
+    backup.write_json(path, manifest)
+    raw = path.read_bytes()
+    assert len(raw) > 4 * 1024**2
+    assert policy.last_backup_size(tmp_path, machine_id='a' * 64) == policy.tree_bytes(selected)
+    assert policy.last_backup_size(tmp_path, machine_id='b' * 64) is None
+
+    path.write_bytes(raw[:-50])
+    assert policy.last_backup_size(tmp_path, machine_id='a' * 64) is None
+
+    first = manifest['content_checksums'][f'companion/{stem}0']['sha256'].encode('ascii')
+    path.write_bytes(raw.replace(first, b'g' * 64, 1))
+    assert policy.last_backup_size(tmp_path, machine_id='a' * 64) is None
+
+    path.write_bytes(raw)
+    (companion / f'{stem}0').unlink()
+    assert policy.last_backup_size(tmp_path, machine_id='a' * 64) is None
+
+
 @pytest.mark.parametrize('previous,latest,expected', [(15, 16, 17), (16, 15, 15)])
 def test_local_history_adds_only_positive_growth(tmp_path, previous, latest, expected):
     write_size_manifest(tmp_path, 1, previous * GIB)
