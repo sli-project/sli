@@ -19,20 +19,27 @@ public sealed class ShortEventAdmissionPostgresTests
     internal static readonly Guid Packet = new("00000000-0000-4000-8000-000000003490");
 
     internal static async Task RegisterDcAsync(NpgsqlConnection db, Guid agent, Guid host, long server,
-        long domain, string hostName, string channel, CancellationToken ct)
+        long domain, string hostName, string channel, CancellationToken ct, string? additionalChannel = null,
+        bool history = false)
     {
         await using var registry = new NpgsqlCommand("""
             insert into servers(id,domain_id,hostname,role,is_active) values(@server,@domain,@name,'domain_controller',true);
             insert into sli_agents(id,host_id,key_fingerprint,registration_host_name,assigned_modules)
                 values(@agent,@host,repeat('c',64),@name,jsonb_build_array(jsonb_build_object('module_id','sli.windows.ad-dc','enabled',true,
                 'config',jsonb_build_object('source_name',@name,'connect_address',@name,'policy_revision','1',
-                'channels',jsonb_build_object(@channel,true),'channel_generations',jsonb_build_object(@channel,@host::text)))));
+                'channels',jsonb_build_object(@channel,true) || jsonb_build_object(@additional,true),
+                'channel_generations',jsonb_build_object(@channel,@host::text) ||
+                    jsonb_build_object(@additional,@host::text)))) ||
+                    case when @history then jsonb_build_array(jsonb_build_object('module_id','sli.windows.ad-dc-history',
+                        'enabled',true,'config','{}'::jsonb)) else '[]'::jsonb end);
             insert into sli_agent_module_bindings(agent_id,module_id,source_instance_id,source_name,channel,module_version,policy_revision)
                 values(@agent,'sli.windows.ad-dc',@host::text,@name,'ad-dc','1.0.0','1');
             """,db);
         registry.Parameters.AddWithValue("agent",agent); registry.Parameters.AddWithValue("host",host);
         registry.Parameters.AddWithValue("server",server); registry.Parameters.AddWithValue("domain",domain);
         registry.Parameters.AddWithValue("name",hostName); registry.Parameters.AddWithValue("channel",channel);
+        registry.Parameters.AddWithValue("additional",additionalChannel ?? channel);
+        registry.Parameters.AddWithValue("history",history);
         await registry.ExecuteNonQueryAsync(ct);
     }
 
@@ -44,7 +51,7 @@ public sealed class ShortEventAdmissionPostgresTests
         string[]? nativeTimestamps = null, string[]? nativeAccounts = null, string[]? nativeAddresses = null,
         Guid? packetId = null, int sequence = 1, int firstRecordId = 1, string hostName = "dc.example.test",
         IReadOnlyDictionary<string, string>? nativeFields = null, string? eventChannel = null,
-        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null)
+        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null, bool history = false)
     {
         var agent = registered?.Agent ?? Agent; var host = registered?.Host ?? hostId ?? Agent;
         var packet = packetId ?? Packet;
@@ -78,19 +85,21 @@ public sealed class ShortEventAdmissionPostgresTests
             string xml = $"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='{provider}'/><EventID>{kind}</EventID><EventRecordID>{natives.Count+firstRecordId}</EventRecordID><TimeCreated SystemTime='{stamp}'/><Channel>{channel}</Channel><Computer>{hostName}</Computer></System>{payload}</Event>";
             natives.Add(EventXml.Parse(xml,hostName,hostName,channel));
         }
-        var envelope = new JsonObject { ["agent_id"]=agent.ToString(),["module_id"]="sli.windows.ad-dc",["source_instance_id"]=host.ToString(),["generation"]=host.ToString() };
+        string module = history ? "sli.windows.ad-dc-history" : "sli.windows.ad-dc";
+        var envelope = new JsonObject { ["agent_id"]=agent.ToString(),["module_id"]=module,["source_instance_id"]=host.ToString(),["generation"]=host.ToString() };
         if (registered is null)
-            await RegisterDcAsync(db, agent, host, server, domain, hostName, channel, ct);
+            await RegisterDcAsync(db, agent, host, server, domain, hostName, channel, ct, history: history);
         await using (var seed = new NpgsqlCommand("""
             insert into log_sources(name) values(@channel) on conflict do nothing;
             insert into storage_v2_channel(value) values(@channel) on conflict do nothing;
             insert into sli_agent_receipts(agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt)
-                values(@agent,'sli.windows.ad-dc',@sequence,@packet,@hash,@envelope,'{"status":"committed"}');
+                values(@agent,@module,@sequence,@packet,@hash,@envelope,'{"status":"committed"}');
             insert into sli_agent_packet_inbox(packet_id,envelope,packet,event_rows,imported_at)
                 values(@packet,@envelope,jsonb_build_object('contract','sli.collection-packet.v1','header',jsonb_build_object('channel',@channel,'source',@name)),@rows,now());
             """,db)) {
             seed.Parameters.AddWithValue("agent",agent); seed.Parameters.AddWithValue("packet",packet); seed.Parameters.AddWithValue("channel",channel);
             seed.Parameters.AddWithValue("name",hostName);
+            seed.Parameters.AddWithValue("module",module);
             seed.Parameters.AddWithValue("sequence",sequence);
             seed.Parameters.AddWithValue("hash",Packets.Digest(envelope)); seed.Parameters.AddWithValue("envelope",NpgsqlDbType.Jsonb,envelope.ToJsonString());
             seed.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,natives.ToJsonString()); await seed.ExecuteNonQueryAsync(ct);
