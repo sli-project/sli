@@ -235,16 +235,29 @@ public sealed class RadiusObservationHostTests
             """, Ct);
         var cursors = new List<long>();
         await RadiusObservationHost.WithConsumerLogin(new Connections(pg.ConnectionString), async dsn => {
-            await using var child = new NpgsqlConnection(dsn); await child.OpenAsync(Ct);
-            var result = await RadiusObservationCycle.RunAsync(child, p => { cursors.Add(p["cursor_delivery_id"]!.GetValue<long>()); return Task.CompletedTask; }, Ct);
-            Assert.Equal(61, result["processed"]!.GetValue<long>());
-            result = await RadiusObservationCycle.RunAsync(child, _ => Task.CompletedTask, Ct); Assert.Equal(0, result["claimed"]!.GetValue<long>());
-            Assert.Equal(61, result["cursor_delivery_id"]!.GetValue<long>());
+            int childPid;
+            await using (var child = new NpgsqlConnection(dsn))
+            {
+                await child.OpenAsync(Ct);
+                childPid = child.ProcessID;
+                var result = await RadiusObservationCycle.RunAsync(child, p => { cursors.Add(p["cursor_delivery_id"]!.GetValue<long>()); return Task.CompletedTask; }, Ct);
+                Assert.Equal(61, result["processed"]!.GetValue<long>());
+                result = await RadiusObservationCycle.RunAsync(child, _ => Task.CompletedTask, Ct);
+                Assert.Equal(0, result["claimed"]!.GetValue<long>());
+                Assert.Equal(61, result["cursor_delivery_id"]!.GetValue<long>());
+            }
+
+            // The server can still report the fixture's backend after the client disconnects.
+            using var cleanup = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+            cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+            while (await RadiusJobs.Scalar(admin, "select exists(select 1 from pg_stat_activity where pid=$1)", cleanup.Token, childPid) is true)
+                await Task.Delay(25, cleanup.Token);
         }, Ct);
         Assert.Contains(61L, cursors);
         Assert.Equal(61L, await RadiusJobs.Scalar(admin, "select count(*) from radius_session_projection_receipts", Ct));
         Assert.Equal(61L, await RadiusJobs.Scalar(admin, "select count(*) from acquisition_delivery_outbox where delivery_state='delivered' and attempt_count=1", Ct));
         Assert.Equal(2L, await RadiusJobs.Scalar(admin, "select count(*) from plugin_component_leases_v1 where release_outcome='completed'", Ct));
+        Assert.Equal(0L, await RadiusJobs.Scalar(admin, "select count(*) from pg_roles where rolname like 'adlog_radius_consumer_%'", Ct));
     }
 
     [Fact]
