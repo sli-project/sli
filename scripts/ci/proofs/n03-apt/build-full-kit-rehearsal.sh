@@ -26,7 +26,8 @@ previous_sha=ae98209ccaa7d11ea5c322484d39076fd45c92ac00c9974b02ccbdfbfb56e4a6
     sha256sum --strict -c SHA256SUMS
     install -m 0400 -- "$archive" "$work/$archive"
 )
-python3 -B -m deploy.linux.build_beta_kit \
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$(pwd -P)" \
+    python3 -B -m deploy.linux.build_beta_kit \
     --commit "$previous_commit" --verify-offline-kit "$work/$archive"
 tar --no-same-owner --no-same-permissions -xzf "$work/$archive" -C "$work/predecessor"
 historical="$work/predecessor/sli-debian-beta-kit"
