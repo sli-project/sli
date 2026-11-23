@@ -16,7 +16,7 @@ public sealed class DomainEventRowsTests(ITestOutputHelper output)
     static readonly DateTimeOffset Attempt = Day.AddHours(1);
     static readonly AdPeriod Period = new(Day.AddDays(-6), Day.AddDays(1));
     static AdReportRequest Request(int limit = 50, string? cursor = null, JsonObject? filters = null) => new("security", false, false, 7, Period, limit, filters ?? new(), cursor);
-    static JsonObject Event(int code) => new() { ["event_db_id"] = 1, ["event_id"] = code, ["time_created_utc"] = "2026-11-14T01:00:00Z" };
+    static JsonObject Event(int code) => new() { ["event_db_id"] = 1, ["event_id"] = code, ["time_created_utc"] = AdJson.Iso(Attempt) };
 
     [Fact]
     public async Task Windows_failure_pair_is_one_row_before_paging_without_hiding_other_attempts()
