@@ -41,7 +41,12 @@ public sealed class OperationsEndpointTests
         public int RuntimeStorageReads;
         public JsonObject? CockpitStatus;
         public Dictionary<string, JsonObject> Native = new();
-        public override JsonObject? Json(string relative, int maxBytes = 2097152) => relative == "data/maintenance/postgres_backup_restore_last.json" ? new() { ["status"] = "verified" } : null;
+        public override JsonObject? Json(string relative, int maxBytes = 2097152) => relative switch
+        {
+            "data/maintenance/postgres_backup_restore_last.json" => new() { ["status"] = "verified" },
+            "data/runtime/storage-database-usage.json" => base.Json(relative, maxBytes),
+            _ => null,
+        };
         public override JsonArray LogTail(string name, int lines) => [];
         internal override JsonObject? WebConsoleStatus() => CockpitStatus;
         internal override IEnumerable<string> CollectorLogLines() => [];

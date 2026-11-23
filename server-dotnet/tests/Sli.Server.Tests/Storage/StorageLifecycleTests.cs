@@ -25,6 +25,13 @@ public sealed class StorageLifecycleTests
         internal bool ProcessLock = true, LostLock;
         internal Func<CancellationToken, Task<JsonObject>>? Partition;
         internal Action<JsonObject>? OnHeartbeat;
+        internal Func<Task<long>> DatabaseSize = () => Task.FromResult(1024L);
+        internal int DatabaseSizeReads;
+        public Task<long> ReadDatabaseSizeAsync(CancellationToken ct)
+        {
+            DatabaseSizeReads++;
+            return DatabaseSize();
+        }
         public Task<bool> TryLockAsync(string name, CancellationToken ct) => Task.FromResult(ProcessLock);
         public Task EnsureLocksAsync(CancellationToken ct) { if (LostLock) throw new LifecycleBlocked("storage_lifecycle_lock_lost"); return Task.CompletedTask; }
         public Task ReleaseLockAsync(string name, CancellationToken ct) => Task.CompletedTask;
@@ -136,10 +143,52 @@ public sealed class StorageLifecycleTests
         Assert.NotNull(output["last_successful_watermark"]);
     }
     [Fact]
+    public async Task Measures_database_size_at_startup_and_at_six_hour_intervals()
+    {
+        using var state = new State();
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        DateTime clock = Now;
+        var session = new Session();
+        session.DatabaseSize = () => Task.FromResult(clock == Now ? 1024L : 0L);
+        var worker = new StorageLifecycleWorker(session, state.Files, () => clock, delay: (wait, _) =>
+        {
+            clock += wait;
+            if (clock > Now.AddHours(6)) stop.Cancel();
+            return Task.CompletedTask;
+        });
+        var samples = new List<long>();
+        Assert.Equal(0, await worker.RunAsync(new(), _ =>
+        {
+            var sample = state.Files.Read("storage-database-usage.json")!;
+            samples.Add(LifecycleJson.Number(sample, "database_bytes"));
+        }, stop.Token));
+        Assert.Equal(2, session.DatabaseSizeReads);
+        Assert.Equal(25, samples.Count);
+        Assert.All(samples.Take(24), bytes => Assert.Equal(1024L, bytes));
+        Assert.Equal(0L, samples[^1]);
+        Assert.Equal(LifecycleJson.Iso(Now.AddHours(6)), state.Files.Read("storage-database-usage.json")!["observed_at_utc"]!.ToString());
+    }
+
+    [Fact]
+    public async Task Failed_database_measurement_preserves_previous_size_and_does_not_stop_retention()
+    {
+        using var state = new State();
+        var session = new Session { DatabaseSize = () => Task.FromException<long>(new TimeoutException()) };
+        var previous = new JsonObject { ["database_bytes"] = 1024L, ["observed_at_utc"] = LifecycleJson.Iso(Now.AddHours(-3)) };
+        state.Files.Write("storage-database-usage.json", previous);
+        Assert.Equal(0, await new StorageLifecycleWorker(session, state.Files, () => Now)
+            .RunAsync(new(Once: true), _ => { }, TestContext.Current.CancellationToken));
+        Assert.Contains("partitions", session.Phases);
+        Assert.Equal(1, session.DatabaseSizeReads);
+        Assert.True(JsonNode.DeepEquals(previous, state.Files.Read("storage-database-usage.json")));
+    }
+
+    [Fact]
     public async Task Process_lock_conflict_does_not_touch_storage()
     {
         using var state=new State(); var session=new Session {ProcessLock=false};
         Assert.Equal(9,await new StorageLifecycleWorker(session,state.Files).RunAsync(new(Once:true),_=>{},TestContext.Current.CancellationToken));
+        Assert.Equal(0, session.DatabaseSizeReads);
         Assert.Empty(session.Phases); Assert.Empty(Directory.GetFiles(state.Path));
     }
     [Fact]

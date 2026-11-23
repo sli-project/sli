@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Operations.OpsJson;
 
 namespace Sli.Server.Operations;
@@ -60,12 +61,21 @@ public sealed partial class OperationsService
     // collection/workers and pg_database_size; none belongs on this request path.
     internal JsonObject StorageOverview()
     {
-        var footprint = files.Footprint(Now);
-        var measuredComponents = (footprint["components"] as JsonArray ?? []).OfType<JsonObject>().ToArray();
-        string[] keys = ["postgres_database"];
+        var now = Now;
+        var footprint = files.Footprint(now);
+        var sample = files.Json("data/runtime/" + StorageLifecycleWorker.DatabaseUsageFile, maxBytes: 1024);
+        var database = DatabaseMeasurement(sample?["database_bytes"], sample?["observed_at_utc"], now);
+        var manualComponent = (footprint["components"] as JsonArray ?? []).OfType<JsonObject>()
+            .FirstOrDefault(row => S(row["key"]) == "postgres_database");
+        var manual = S(footprint["status"]) == "stale" ? null : DatabaseMeasurement(manualComponent?["bytes"],
+            footprint["postgres"]?["database"]?["checked_at"] ?? footprint["generated_at_utc"], now);
+        if (manual is { } fallback && (database is null || fallback.ObservedAt > database.Value.ObservedAt))
+            database = fallback;
+
         var components = new JsonArray();
-        foreach (var row in measuredComponents.Where(r => keys.Contains(S(r["key"]))))
-            components.Add(new JsonObject { ["key"] = Copy(row["key"]), ["human"] = Copy(row["human"]), ["bytes"] = Copy(row["bytes"]) });
+        if (database is { } measured)
+            components.Add(new JsonObject { ["key"] = "postgres_database", ["human"] = Human(measured.Bytes),
+                ["bytes"] = measured.Bytes, ["observed_at_utc"] = Stamp(measured.ObservedAt) });
         var disk = files.DiskPressure()["disk"] as JsonObject;
         var measurements = new JsonObject();
         foreach (string name in new[] { "used", "free" })
@@ -80,6 +90,14 @@ public sealed partial class OperationsService
                 ["footprint"] = new JsonObject { ["components"] = components,
                     ["backups"] = new JsonObject { ["last_backup_at_utc"] = Copy(footprint["backups"]?["last_backup_at_utc"]),
                         ["same_disk_as_postgres"] = Copy(footprint["backups"]?["same_disk_as_postgres"]) } } } };
+    }
+
+    static (long Bytes, DateTimeOffset ObservedAt)? DatabaseMeasurement(JsonNode? size, JsonNode? observed, DateTimeOffset now)
+    {
+        if (size is not JsonValue value || !value.TryGetValue<long>(out long bytes) || bytes < 0
+            || Time(observed) is not { } recorded || recorded > now || now - recorded > TimeSpan.FromDays(1))
+            return null;
+        return (bytes, recorded);
     }
 
     internal async Task<JsonObject> PostgresAsync(int limit, CancellationToken ct)

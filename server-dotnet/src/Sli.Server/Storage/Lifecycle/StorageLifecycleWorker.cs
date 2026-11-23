@@ -1,10 +1,12 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Npgsql;
 
 namespace Sli.Server.Storage.Lifecycle;
 
 internal interface ILifecycleSession : IAsyncDisposable
 {
+    Task<long> ReadDatabaseSizeAsync(CancellationToken ct);
     Task<JsonObject> ExpirePartitionsAsync(DateTime now, CancellationToken ct);
     Task<bool> TryLockAsync(string name, CancellationToken ct);
     Task EnsureLocksAsync(CancellationToken ct);
@@ -21,6 +23,8 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
 {
     internal const string LockName = "ad_log_reports_runtime_storage_lifecycle_process";
     internal const int InboxIntervalSeconds = 900;
+    internal const string DatabaseUsageFile = "storage-database-usage.json";
+    private static readonly TimeSpan DatabaseUsageInterval = TimeSpan.FromHours(6);
     JsonObject? progress;
     void ReportProgress(string phase, JsonObject result)
     {
@@ -96,6 +100,7 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
         var prior = files.Read("storage-lifecycle-last.json");
         string? watermark = prior?["last_successful_watermark"]?.ToString(), updated = prior?["watermark_updated_at"]?.ToString();
         DateTime nextFullCycle = DateTime.MinValue;
+        DateTime nextDatabaseMeasurement = DateTime.MinValue;
         int interval = Math.Min(InboxIntervalSeconds, options.IntervalSeconds);
         await session.HeartbeatAsync("starting", "startup", interval, prior ?? new JsonObject(), ct);
         while (!ct.IsCancellationRequested) {
@@ -107,7 +112,15 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             using var pulseStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var pulse = PulseAsync(interval, prior ?? new JsonObject(), pulseStop.Token);
             JsonObject result;
-            try { result = await CycleAsync(options, ct, output, inboxOnly); }
+            try
+            {
+                if (started >= nextDatabaseMeasurement)
+                {
+                    nextDatabaseMeasurement = started + DatabaseUsageInterval;
+                    await CaptureDatabaseUsageAsync(ct);
+                }
+                result = await CycleAsync(options, ct, output, inboxOnly);
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception error) {
                 result = (JsonObject?)(Volatile.Read(ref progress)?.DeepClone()) ?? new JsonObject();
@@ -138,6 +151,21 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             else await Task.Yield();
         }
         return 0;
+    }
+    async Task CaptureDatabaseUsageAsync(CancellationToken ct)
+    {
+        try
+        {
+            long bytes = await session.ReadDatabaseSizeAsync(ct);
+            files.Write(DatabaseUsageFile, new JsonObject {
+                ["database_bytes"] = bytes, ["observed_at_utc"] = LifecycleJson.Iso(Now),
+            });
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested
+            && e is (NpgsqlException or TimeoutException or IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException))
+        {
+            // Keep the last observation until it expires. A failed measurement must not stop retention.
+        }
     }
     async Task PulseAsync(int interval, JsonObject prior, CancellationToken ct)
     {

@@ -10,6 +10,7 @@ namespace Sli.Server.Storage.Lifecycle;
 internal sealed class LifecycleRuntime : ILifecycleSession
 {
     readonly NpgsqlDataSource source;
+    readonly string databaseMeasurementConnection;
     readonly Func<string, string?> get;
     readonly LifecycleFiles files;
     NpgsqlConnection? locked;
@@ -27,7 +28,25 @@ internal sealed class LifecycleRuntime : ILifecycleSession
         var cs = new NpgsqlConnectionStringBuilder(dsn!) { Pooling = false, Multiplexing = false,
             CommandTimeout = 0, Options = "-c role=adlog_storage_lifecycle_worker -c statement_timeout=0 -c lock_timeout=0" };
         source = NpgsqlDataSource.Create(cs.ConnectionString);
+        // The native login owns CONNECT. The retention role selected on the pinned
+        // connection does not. Sample under the same login on a separate read-only connection.
+        cs.ApplicationName = "sli_storage_database_usage";
+        cs.Timeout = 5;
+        cs.CommandTimeout = 5;
+        cs.Options = "-c default_transaction_read_only=on -c statement_timeout=5000";
+        databaseMeasurementConnection = cs.ConnectionString;
     }
+    public async Task<long> ReadDatabaseSizeAsync(CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        await using var connection = new NpgsqlConnection(databaseMeasurementConnection);
+        await connection.OpenAsync(deadline.Token);
+        await using var command = new NpgsqlCommand("select pg_catalog.pg_database_size(pg_catalog.current_database())", connection);
+        return await command.ExecuteScalarAsync(deadline.Token) is long bytes && bytes >= 0
+            ? bytes : throw new InvalidDataException("database_usage_unavailable");
+    }
+
     internal static byte[] ReadSecret(string path)
     {
         using var stream = File.OpenRead(path); byte[] bytes = new byte[65537]; int n = 0, read;
