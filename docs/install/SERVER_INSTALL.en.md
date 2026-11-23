@@ -1,12 +1,7 @@
-# Server installation
+# Install from the archive
 
 [Русская версия](SERVER_INSTALL.ru.md)
 
-On Debian 13 amd64, start by downloading `sli-debian-beta-kit.tar.gz` and
-`SHA256SUMS` from the same `beta-…` entry in [Releases](https://github.com/sli-project/sli/releases).
-Follow the README to [verify and install the archive](../../README.md#install-from-the-archive)
-and [sign in for the first time](../../README.md#first-sign-in).
+On Debian 13 amd64, use the [archive installation guide](../en/install.md) for a fresh installation and first sign-in. For an existing beta installation, see [upgrade and recovery](../en/upgrade.md).
 
-The README also covers [optional setup settings](../../README.md#optional-setup-settings),
-[upgrades](../../README.md#upgrade) and
-[reinstallation with retained data](../../README.md#reinstallation-with-retained-data).
+The [public SLI repository](https://github.com/sli-project/sli#installation) also provides the installation entry point.
