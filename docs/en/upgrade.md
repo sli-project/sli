@@ -68,15 +68,31 @@ the update fails, record the reason code, check the `sli-upgrade-*` and
 sudo find /var/lib/sli/transactions -name result.json -printf '%T@ %p\n' | sort -nr | head
 ```
 
-If the coordinator reports `resume-package`, run the printed
-`sudo sli-native-upgrade resume-package <target-version>` after APT exits.
-Read `target_version` in the transaction's `journal.json`. In a kit directory,
-`dpkg-deb -f ./sli_*.deb Version` shows the version of the `sli` package. For an
-APT update, `apt-cache policy sli` shows the candidate version.
-Restarting the previous runtime and reconciling installed packages are separate
-steps. After a rollback, reconciliation can require previous `.deb` versions
-available to APT. If no transaction was created, fix the reported error and
-retry using your original delivery path.
+Wait for APT to exit before resuming a transaction or reconciling packages.
+Use the target version from the installer's printed recovery command and
+confirm it against `target_version` in that transaction's `journal.json`. In a
+kit directory, `dpkg-deb -f ./sli_*.deb Version` shows the version of the `sli`
+package. For an APT update, `apt-cache policy sli` shows the candidate version.
+
+- If the transaction is unfinished and the coordinator reports
+  `resume-package`, run the printed
+  `sudo sli-native-upgrade resume-package <target-version>`.
+- If `journal.json` records `status=rolled_back`, `step=after` and
+  `services_restored=true` and `result.json` reports
+  `package_reconciliation_required=true`, run
+  `sudo sli-native-upgrade reconcile <target-version>`. Reconciliation
+  requires the exact previous versions of `sli`, `sli-host` and
+  `sli-rollback-hold` from configured APT sources. Keep the verified
+  previous kit so you have those exact package files if needed. If those
+  versions are unavailable to APT, package reconciliation remains pending.
+- If no transaction was created, fix the reported error and retry using your
+  original delivery path.
+
+After reconciliation, check that both files have the same `transaction`,
+`status=rolled_back` and the expected previous `accepted_release`. In
+`journal.json`, verify `step=after` and `services_restored=true`. In
+`result.json`, confirm `terminal=true` and `package_reconciliation_required=false`.
+Check service health and the restored version in **System status** as above.
 
 When upgrading an older installation, keep its retained ClickHouse data through
 the rollback window. Before any cleanup, verify that the directory belongs to

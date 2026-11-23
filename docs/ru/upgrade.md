@@ -69,15 +69,31 @@ df -h /var/backups/sli/native /srv/sli-db
 sudo find /var/lib/sli/transactions -name result.json -printf '%T@ %p\n' | sort -nr | head
 ```
 
-Если координатор указал `resume-package`, после выхода APT выполните
-напечатанную команду `sudo sli-native-upgrade resume-package <target-version>`.
-Значение `target_version` есть в `journal.json` транзакции. В каталоге комплекта
-`dpkg-deb -f ./sli_*.deb Version` покажет версию пакета `sli`. Для APT-обновления
-`apt-cache policy sli` покажет версию-кандидат.
-Перезапуск прежнего выпуска и согласование установленных пакетов выполняются
-отдельно. После отката для согласования могут понадобиться прежние версии
-`.deb` в источниках APT. Если транзакция ещё не создана, устраните указанную
-причину и повторите обновление исходным способом.
+Дождитесь выхода APT, прежде чем продолжить транзакцию или согласовать пакеты.
+Возьмите целевую версию из команды восстановления, напечатанной установщиком,
+и сверьте её с `target_version` в `journal.json` этой транзакции. В каталоге
+комплекта `dpkg-deb -f ./sli_*.deb Version` покажет версию пакета `sli`.
+Для обновления через APT команда `apt-cache policy sli` покажет версию-кандидат.
+
+- Если транзакция не завершена и координатор указал `resume-package`,
+  выполните напечатанную команду
+  `sudo sli-native-upgrade resume-package <target-version>`.
+- Если в `journal.json` указаны `status=rolled_back`, `step=after` и
+  `services_restored=true`, а в `result.json` указано
+  `package_reconciliation_required=true`, выполните
+  `sudo sli-native-upgrade reconcile <target-version>`. Для согласования
+  нужны точные прежние версии пакетов `sli`, `sli-host` и
+  `sli-rollback-hold` из настроенных источников APT. Сохраните проверенный
+  прежний комплект, чтобы при необходимости взять из него пакеты этих версий.
+  Если эти версии недоступны APT, согласование пакетов остаётся незавершённым.
+- Если транзакция ещё не создана, устраните указанную причину и повторите
+  обновление исходным способом.
+
+После согласования сверяйте в обоих файлах один и тот же `transaction`,
+`status=rolled_back` и ожидаемый прежний выпуск в `accepted_release`. В `journal.json`
+сверьте `step=after` и `services_restored=true`, а в `result.json` —
+`terminal=true` и `package_reconciliation_required=false`. Проверьте службы
+и восстановленную версию на странице **Состояние системы**, как описано выше.
 
 После обновления старой установки храните данные ClickHouse до конца срока
 отката. Перед очисткой проверьте, что каталог принадлежит SLI на нужном
