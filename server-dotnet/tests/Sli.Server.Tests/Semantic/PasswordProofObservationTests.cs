@@ -22,7 +22,11 @@ public sealed class PasswordProofObservationTests
         observation.ReceiveHistory(3);
         observation.EnterSplit();
         observation.EnterSplit();
-        clock.Advance(7);
+        observation.ReceiveWindow(2);
+        observation.ReceiveNative(3);
+        observation.ParseNative();
+        using (observation.Measure(PasswordProofTiming.HistoryRead)) clock.Advance(4);
+        clock.Advance(3);
         observation.RejectAttempt();
         observation.EndAttempt();
 
@@ -36,14 +40,21 @@ public sealed class PasswordProofObservationTests
         observation.Verify(1, 11);
         observation.Charge(11);
         observation.Charge(18);
-        clock.Advance(5);
+        observation.ReceiveNative(2);
+        observation.ReuseParse();
+        using (observation.Measure(PasswordProofTiming.Rule)) clock.Advance(5);
         observation.EndAttempt();
-        clock.Advance(3);
+        using (observation.Measure(PasswordProofTiming.Commit)) clock.Advance(3);
 
         var summary = Assert.IsType<JsonObject>(observation.Report(committed: true));
         Assert.True(JsonNode.DeepEquals(summary, JsonNode.Parse("""
             {"attempts":2,"rejected_attempts":1,"split_attempts":1,"split_entities":2,
              "window_reads":2,"native_reads":3,"history_reads":2,"history_rows":4,
+             "window_rows":2,"native_rows":5,"managed_parses":1,"managed_parse_reuses":1,
+             "parse_memo_entries":0,"parse_memo_payload_bytes":0,
+             "phase_ms":{"window_read":0,"window_parse":0,"prepare":0,"native_check":0,"native_read":0,
+                         "history_read":4,"history_check":0,"rule":5,"checkpoint":0,"publication":0,
+                         "finalizer":0,"commit":3},
              "verified_refs":3,"verified_xml_bytes":29,"charged_refs":3,"charged_xml_bytes":47,
              "attempt_elapsed_ms":12,"max_attempt_ms":7,
              "invocation_elapsed_ms":21,"committed":true}
