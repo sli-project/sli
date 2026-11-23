@@ -140,6 +140,7 @@ public static class ProblemPresentation
     internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
+        if (IsDcCatalogFinding(rule) && suffix is "why" or "next") return new();
         bool password = IsPasswordFinding(rule);
         if (password && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
         var parameters = RuleParameters(finding, access, language);
@@ -249,7 +250,7 @@ public static class ProblemPresentation
         foreach (var (field, value) in fields)
         {
             row[field] = value is JsonObject message ? message["text"]?.DeepClone() : value?.DeepClone();
-            if (value is JsonObject msg) messages[field] = msg.DeepClone();
+            if (value is JsonObject { Count: > 0 } msg) messages[field] = msg.DeepClone();
         }
         foreach (var (code, field) in new[] { ("title_code", "title_text"), ("what_code", "what_happened"), ("why_code", "why_text"), ("next_step_code", "next_text") })
             if (fields.TryGetValue(field, out var value)) row[code] = (value as JsonObject)?["code"]?.DeepClone();

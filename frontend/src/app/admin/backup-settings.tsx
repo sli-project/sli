@@ -80,14 +80,11 @@ export function BackupSettingsSection() {
           onChange={(event) => edit({ enabled: event.target.checked, path })}/>{" "}
           {t("backupSettings.enabled")}</label>
         <div className="sli-ds-form__row">
-          <div className="sli-ds-form__label">
-            <label htmlFor="backup-settings-path">{t("backupSettings.path")}</label>
-            <p id="backup-settings-path-help">{t("backupSettings.pathHelp")}</p>
-          </div>
+          <label className="sli-ds-form__label" htmlFor="backup-settings-path">{t("backupSettings.path")}</label>
           <div className="sli-ds-form__value sli-ds-field">
             <input id="backup-settings-path" type="text" autoComplete="off" spellCheck={false} value={path}
               disabled={locked || !enabled} aria-invalid={Boolean(pathError)}
-              aria-describedby={pathError ? "backup-settings-path-help backup-settings-path-error" : "backup-settings-path-help"}
+              aria-describedby={pathError ? "backup-settings-path-error" : undefined}
               onChange={(event) => edit({ enabled, path: event.target.value })}/>
             {pathError ? <p className="sli-ds-field__error" id="backup-settings-path-error" role="alert">{t(pathError)}</p> : null}
           </div>

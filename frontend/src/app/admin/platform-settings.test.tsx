@@ -146,10 +146,11 @@ it("shows a localized storage error at the field without exposing the raw server
   fireEvent.click(await section.findByRole("checkbox"));
   const path = section.getByRole<HTMLInputElement>("textbox");
   fireEvent.change(path, { target: { value: "/mnt/backups" } });
+  expect(path.hasAttribute("aria-describedby")).toBe(false);
   fireEvent.click(section.getByRole("button", { name: "Сохранить настройки резервного копирования" }));
   const error = await section.findByRole("alert");
   expect(error.textContent).toBe("Выберите каталог на другом диске, отдельно от базы данных.");
-  expect(path.getAttribute("aria-describedby")).toContain(error.id);
+  expect(path.getAttribute("aria-describedby")).toBe(error.id);
   expect(path.value).toBe("/mnt/backups");
   expect(section.queryByText("private host diagnostic")).toBeNull();
   expect(section.getByText("Сохранённое расписание выключено.")).toBeTruthy();
