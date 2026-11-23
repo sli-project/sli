@@ -50,19 +50,65 @@ public sealed class OperationsStorageViewTests
         Assert.DoesNotContain("private-db-password", body.ToJsonString());
     }
 
-    [Fact]
-    public async Task WorkersViewDoesNotReadQueuesStorageOrCollectors()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WorkersViewReadsOnlyHeartbeatsAndPasswordHealth(bool projectionUnavailable)
     {
         using var app = await OperationsEndpointTests.Start();
-        app.Queries.FailContaining = "semantic_processing_outbox";
+        app.Queries.FailContaining = projectionUnavailable ? "read_password_live_status400" : "semantic_processing_outbox";
+        var observed = OperationsEndpointTests.Now.ToString("O");
+        app.Queries.Workers = new JsonArray(new JsonObject
+        {
+            ["worker_name"] = "semantic", ["worker_id"] = "fixture-semantic", ["status"] = "running", ["heartbeat_at"] = observed,
+        });
+        app.Queries.Results[OperationsService.PasswordLiveStatusSql] = new JsonArray(
+            new JsonObject { ["rule_id"] = "qw.password-brute-force", ["state"] = "current", ["observed_at"] = observed },
+            new JsonObject { ["rule_id"] = "qw.password-spray", ["state"] = "quiet", ["observed_at"] = observed });
+
         using var response = await app.Client.GetAsync("/api/v1/operations/overview?view=workers", TestContext.Current.CancellationToken);
         var body = await OperationsEndpointTests.Body(response);
         Assert.True(response.IsSuccessStatusCode);
-        Assert.Equal("ok", (string?)body["workers"]?["status"]);
-        Assert.Equal(1, app.Queries.Reads);
-        Assert.Null(body["workers"]?["semantic_queues"]);
-        Assert.Null(body["postgres"]); Assert.Null(body["collector_health"]);
+        var workers = body["workers"]!.AsObject();
+        Assert.Equal("ok", (string?)workers["status"]);
+        var semantic = Assert.Single(workers["items"]!.AsArray(), worker => (string?)worker?["worker_name"] == "semantic");
+        Assert.Equal("fixture-semantic", (string?)semantic?["worker_id"]);
+        Assert.Equal("active", (string?)semantic?["state"]);
+
+        var detection = workers["password_detection"]!.AsObject();
+        var rules = detection["items"]!.AsArray();
+        Assert.Equal(projectionUnavailable ? "unavailable" : "ok", (string?)detection["status"]);
+        if (projectionUnavailable)
+        {
+            Assert.Empty(rules);
+            Assert.DoesNotContain("private-db-password", body.ToJsonString());
+        }
+        else
+        {
+            Assert.Equal(new[] { "qw.password-brute-force", "qw.password-spray" }, rules.Select(row => (string?)row?["rule_id"]));
+            Assert.Equal(new[] { "current", "quiet" }, rules.Select(row => (string?)row?["state"]));
+        }
+
+        Assert.Collection(app.Queries.Calls,
+            heartbeat =>
+            {
+                Assert.Equal("select worker_name,worker_id,process_pid,status,phase,expected_interval_seconds,details_json,started_at,heartbeat_at from runtime_worker_heartbeats order by worker_name", heartbeat.Sql);
+                Assert.Empty(heartbeat.Parameters);
+            },
+            health =>
+            {
+                Assert.Equal("""
+                    select rule_id,state,observed_at from public.read_password_live_status400(
+                        array(select d.id::bigint from public.domains d where not d.is_archived))
+                    """, health.Sql);
+                Assert.Empty(health.Parameters);
+            });
+        Assert.Null(workers["semantic_queues"]);
+        Assert.Null(body["storage"]);
+        Assert.Null(body["postgres"]);
+        Assert.Null(body["collector_health"]);
         Assert.Equal(0, app.Files.FootprintReads);
+        Assert.Equal(0, app.Files.RuntimeStorageReads);
     }
 
     [Fact]
