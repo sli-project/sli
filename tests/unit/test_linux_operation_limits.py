@@ -213,18 +213,25 @@ def test_exec_launch_preserves_coordinator_watchdog_environment(tmp_path, monkey
     monkeypatch.setattr(target.os, 'execve', lambda *args: calls.append(args))
     expected = {'NOTIFY_SOCKET': '@sli-test', 'WATCHDOG_PID': str(os.getpid()),
                 'WATCHDOG_USEC': '1800000000', 'INVOCATION_ID': 'a' * 32}
-    for key, value in expected.items():
+    backup_options = {'SLI_RESTORE_CHECK_ROOT': '/test/restore-check',
+                      'SLI_BACKUP_RETENTION': '7', 'SLI_BACKUP_WEEKLY_RETENTION': '4'}
+    for key, value in (expected | backup_options).items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv('PYTHONPATH', 'untrusted')
     monkeypatch.setenv('LD_PRELOAD', 'untrusted')
     if action == 'backup':
         target.launch('drill')
+        expected_argv = ['/usr/bin/unshare', '--mount', '--propagation', 'private', '--',
+                         '/accepted/python', '-B', '-m', 'deploy.linux.native_backup', 'drill']
+        expected.update(backup_options)
     else:
         target.launch('new', 'b' * 32)
-    executable, argv, env = calls[0]
-    assert executable == '/accepted/python'
-    assert all(env.get(key) == value for key, value in expected.items())
-    assert 'PYTHONPATH' not in env and 'LD_PRELOAD' not in env
+        script = Path('/var/lib/sli/recovery/old/release/deploy/linux/native_upgrade.py')
+        expected_argv = ['/accepted/python', '-I', '-B', str(script), 'prepare', 'new', 'b' * 32]
+    assert calls == [(expected_argv[0], expected_argv, {
+        'PATH': '/usr/lib/postgresql/18/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        'LC_ALL': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1', **expected,
+    })]
 
 
 @pytest.mark.skipif(sys.platform != 'linux', reason='Linux UNIX datagram/abstract sockets')
