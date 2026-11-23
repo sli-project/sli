@@ -29,6 +29,26 @@ export function computerEmpty() {
   return <p role="status">{dash()}</p>;
 }
 
+export function ComputerLogonsEmpty({ state }: { state: unknown }) {
+  switch (state) {
+    case "not_collected": return <p role="status">{t("reports.computers.logons_not_collected")}</p>;
+    case "partial": return <p role="status">{t("reports.computers.logons_partial")}</p>;
+    case "available": case "empty_unverified": case "empty": case "ok":
+      return <p role="status">{t("reports.computers.logons_empty")}</p>;
+    default: return null;
+  }
+}
+
+export function computerLogonCount(row: Row) {
+  const count = Number(row.login_count);
+  if (count > 0 || (row.login_count === 0 && row.observation_state === "empty_unverified")) return formatNumber(count);
+  switch (row.observation_state) {
+    case "not_collected": return t("reports.v2.ad.computer-logons.columns.state.labels.not_collected");
+    case "partial": return t("reports.v2.ad.computer-logons.columns.state.labels.partial");
+    default: return dash();
+  }
+}
+
 export function computerLogonsLink(row: Row) {
   const domain = id(row.domain_id);
   return path("ad.computer-logons", { ...(domain ? { domain_id: domain } : {}), q: text(row.dns_host_name) ?? text(row.display_name) ?? "" });
@@ -232,7 +252,8 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
       rowKey={(observation) => observation.observationKey} compact
       onRowClick={(observation) => selectObservation(observation.observationKey)} selectedKey={opened?.observationKey}
       hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage}
-      onLoadMore={() => void query.fetchNextPage()} showFooter={query.hasNextPage}/> : computerEmpty()}
+      onLoadMore={() => void query.fetchNextPage()} showFooter={query.hasNextPage}/>
+      : <ComputerLogonsEmpty state={result?.coverage.observation_state ?? result?.state}/>}
     {href && opened ? <div className="sli-ds-header__row">
       <span>{formatDateTime(text(opened.observed_at_utc))} · {text(opened.user_name) ?? dash()} · #{String(opened.source_event_id)}</span>
       <div className="sli-ds-header__actions"><a className="sli-ds-button" data-variant="primary" href={href}>{t("reports.computers.open_event")}</a></div>
@@ -240,8 +261,9 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
   </>;
 }
 
-export function ComputerPanel({ row, logons, logonParams, changes, canCompare, onClose, timeZone }: {
+export function ComputerPanel({ row, logons, logonsNotCollected = false, logonParams, changes, canCompare, onClose, timeZone }: {
   row: Row; logons: boolean; logonParams: string; changes: ReportColumnDto[]; canCompare: boolean; onClose: () => void; timeZone: string;
+  logonsNotCollected?: boolean;
 }) {
   const [tab, setTab] = useState(canCompare && row.object_guid && row.change_type ? "changes" : "facts");
   const [expanded, setExpanded] = useState(false);
@@ -249,7 +271,8 @@ export function ComputerPanel({ row, logons, logonParams, changes, canCompare, o
   const canSee = (key: string) => access?.reports.some((report) => report.allowed && report.report_key === key);
   const logonsAllowed = row.computer_type === "workstation" && Boolean(id(row.entity_id)) && canSee("ad.computer-logons");
   const entity = id(row.entity_id);
-  const observations = <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
+  const observations = logonsNotCollected ? <ComputerLogonsEmpty state="not_collected"/>
+    : <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
   const name = text(row.display_name) ?? text(row.name) ?? dash();
   const tabs = [
     { key: "facts", label: "reports.computers.details" },

@@ -42,7 +42,7 @@ import { UserChanges, UserChecks, userTableColumns } from "../../plugins/ad/User
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
-import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
+import { ComputerLogonsEmpty, ComputerPanel, computerEmpty, computerInventoryColumns, computerLogonCount } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -559,7 +559,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : t("reports.computers.page", { page: userPage + 1 }) : undefined };
   const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
     : columns.filter((column) => column.key !== "state").map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false,
-      ...(column.key === "count" ? { render: (row: Row) => Number(row.login_count) > 0 ? formatCell(row.login_count, "number") : t("table.noValue") } : {}) }));
+      ...(column.key === "count" ? { render: computerLogonCount } : {}) }));
+  const computerEmptyView = !computerLogons ? computerEmpty()
+    : first && ready && !data.isPlaceholderData && !data.error
+      ? <ComputerLogonsEmpty state={first.coverage.observation_state ?? state}/> : null;
+  const logonsNotCollected = computerLogons && state === "not_collected" && !data.isPlaceholderData;
   const scopeInstant = computerLogons ? bounds?.to : typeof snapshotAt === "string" ? snapshotAt : undefined;
   const computerScope = computersScreen && scopeInstant ? <span className="sli-ds-badge">
     {first?.domains?.length === 1 && !bodyFields.some((field) => field.key === "domain") ? <>{first.domains[0].display_name} · </> : null}
@@ -662,7 +666,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : independentUsers && state === "empty" ? <p>{t("table.noValue")}</p>
       : eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : domainEvents && state === "empty" ? domainEventsEmpty
-      : computersScreen && state === "empty" ? computerEmpty()
+      : computersScreen && state === "empty" ? computerEmptyView
       : (domainEvents || problemQueue || infrastructure || computersScreen || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
       subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
@@ -672,7 +676,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     onRetry={() => void data.refetch()}
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
     sideSize={computerLogons ? "wide" : "standard"}
-    side={activeComputer && !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state) ? <ComputerPanel key={`${rowKey(activeComputer)}:${baseParams}:${refreshWindow}`} row={activeComputer} logons={computerLogons}
+    side={activeComputer && (logonsNotCollected || !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state)) ? <ComputerPanel key={`${rowKey(activeComputer)}:${baseParams}:${refreshWindow}`} row={activeComputer} logons={computerLogons} logonsNotCollected={logonsNotCollected}
       logonParams={computerLogons ? baseParams : cardLogonParams.toString()} changes={compareView?.columns ?? []}
       canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/> : undefined}
     split={independentUsers ? "inline" : undefined}
@@ -721,7 +725,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           {[25, 50, 100, 200].map((size) => <button key={size} type="button" className="sli-ds-chip" aria-pressed={size === computerPageSize}
             onClick={() => { setSelected(null); setComputerPageSize(size); }}>{size}</button>)}
         </div>}/>
-        : computerEmpty()
+        : computerEmptyView
       : gpoReport && view !== mainView
       ? (first?.collections?.[view.source ?? ""]?.length
         ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={tableColumns(view.columns ?? [], timeZone)} rows={first.collections[view.source ?? ""]} rowKey={(row) => JSON.stringify(row)}/>
