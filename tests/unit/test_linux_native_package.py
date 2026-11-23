@@ -321,7 +321,7 @@ def test_dotnet_generator_covers_selected_services_with_python_policy(tmp_path, 
     }
     selected = runtime.selected(config)
     names = {service: f"sli-dotnet-{service}.service" for service in selected}
-    assert {path.name for path in destination.iterdir()} == {"sli-dotnet.target", *names.values()}
+    assert {path.name for path in destination.iterdir()} == {"sli-dotnet.target", "sli-backup.service.d", *names.values()}
     target = (destination / "sli-dotnet.target").read_text()
     assert "Wants=sli-health.timer sli-backup-settings.service " + " ".join(names.values()) + "\n" in target
     assert "Conflicts=" not in target
@@ -482,7 +482,11 @@ def test_generator_follows_restored_release_after_candidate_unpack(tmp_path, mon
         selected['release'] = release
         destination = tmp_path / ('units-' + release)
         destination.mkdir()
+        if release == 'accepted':
+            monkeypatch.delattr(runtime, 'backup_schedule_override')
         native_dotnet_generator.generate_installed(runtime, destination)
+        override = destination / 'sli-backup.service.d/50-sli-scheduled-capture.conf'
+        assert override.exists() is (release == 'candidate')
         unit = (destination / 'sli-dotnet-executor-light.service').read_text()
         binary = candidate if release == 'candidate' else accepted
         assert f'ExecStart={binary.as_posix()}/Sli.Server core-job-executor' in unit

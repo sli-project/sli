@@ -28,7 +28,10 @@ def test_clean_install_units_have_complete_boot_chain(tmp_path, monkeypatch, mod
     destination = tmp_path / "generator"
     destination.mkdir()
     native_dotnet_generator.generate(runtime, "test", destination)
-    rendered.update({path.name: path.read_text() for path in destination.iterdir()})
+    rendered.update({path.name: path.read_text() for path in destination.iterdir() if path.is_file()})
+    override = destination / "sli-backup.service.d/50-sli-scheduled-capture.conf"
+    assert "ExecStart=\nExecStart=" in override.read_text()
+    assert "launch scheduled-capture\n" in override.read_text()
 
     platform = rendered["sli.target"]
     assert values(platform, "WantedBy") == {"multi-user.target"}

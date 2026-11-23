@@ -129,12 +129,12 @@ def storage_identity(value, *, capacity=False):
         machine.backup_trusted(path)
         require(path.is_dir(), "native_backup_root_invalid")
         pgdata = Path(native_host.POSTGRES_DATA_DIRECTORY)
-        database_paths = [Path(native_host.MOUNT), pgdata, pgdata / "pg_wal"]
+        database_paths = [Path(native_host.MOUNT)]
+        database_paths.extend(item for item in (pgdata, pgdata / "pg_wal") if item.exists() or item.is_symlink())
         tablespaces = pgdata / "pg_tblspc"
         if tablespaces.is_dir():
             database_paths.extend(tablespaces.iterdir())
-        require(not any(item.exists() and native_backup.same_disk(path, item)
-                        for item in database_paths), "native_backup_root_same_device")
+        native_backup.require_separate_disk(path, database_paths)
         # A bind mount can use a different name for the canonical recovery tree.
         site_root = clickhouse.site_configuration().get("backup_root")
         if site_root:
@@ -166,13 +166,16 @@ def load_or_migrate():
     if native_install.backup_schedule() in native_install.ENABLED_BACKUP_SCHEDULES:
         path = clickhouse.site_configuration().get("backup_root")
         if path is not None:
-            state["path"] = path
             try:
+                canonical_path(path)
+                state["path"] = path
                 state.update(enabled=True, identity=storage_identity(path, capacity=True))
-            except (SettingsError, native_host.HostError):
+            except RuntimeError:
                 pass  # A compatible old destination may be selected after repair.
         if not state["enabled"]:
             apply_schedule(False)
+        if state["path"] is not None:
+            state["revision"] = secrets.token_hex(16)
     save_policy(state)
     return state
 
@@ -187,12 +190,22 @@ def operation():
         yield
 
 
+def bootstrap():
+    try:
+        if read_policy() is None:
+            with operation():
+                load_or_migrate()
+        return True
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+        return False
+
+
 def response(state):
     status = "unconfigured"
     if state["path"] is not None:
         status = "unavailable"
         if state["identity"] is not None:
-            with suppress(SettingsError, native_host.HostError):
+            with suppress(RuntimeError):
                 if storage_identity(state["path"]) == state["identity"]:
                     status = "ready"
     return {"ok": True, "enabled": state["enabled"], "path": state["path"],
@@ -228,11 +241,7 @@ def handle(request):
     try:
         validate_request(request)
         if request["action"] == "get":
-            state = read_policy()
-            if state is None:
-                with operation():
-                    state = load_or_migrate()
-            return response(state)
+            return response(read_policy() or initial_policy())
         with operation():
             return update(load_or_migrate(), request)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
@@ -302,8 +311,19 @@ def serve():
         os.chown(SOCKET, 0, gid)
         SOCKET.chmod(0o660)
         listener.listen(8)
+        # A candidate may start before setup publishes readiness or while its
+        # upgrade coordinator holds the lock. Retry after serving the socket.
+        migrated = bootstrap()
+        if not migrated:
+            listener.settimeout(3)
         while True:
-            connection, _ = listener.accept()
+            try:
+                connection, _ = listener.accept()
+            except TimeoutError:
+                if not migrated and bootstrap():
+                    migrated = True
+                    listener.settimeout(None)
+                continue
             with connection, suppress(OSError):
                 serve_connection(connection, uid)
 

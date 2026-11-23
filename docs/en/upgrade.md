@@ -47,9 +47,8 @@ on the actual backup and data filesystems.
 df -h /var/backups/sli/native /srv/sli-db
 ```
 
-Refusals show the volume, required bytes and free bytes. Preserve the recovery
-set named by `backup_id` in `/var/backups/sli/native/restore-verified.json`.
-Keep the rollback checkpoint identified by `checkpoint`
+Refusals show the volume, required bytes and free bytes. Keep the rollback
+checkpoint identified by `checkpoint`
 in the upgrade's `journal.json` for as long as you need to roll back. Current
 checkpoints are under `/var/backups/sli/native/upgrade-checkpoints/<transaction-id>`.
 
@@ -101,19 +100,25 @@ the needed ClickHouse history.
 
 ## Native backups
 
-Check the daily timer, then take the first backup and read its result.
+In **Settings → Backup**, choose a prepared directory on a mounted local
+filesystem separate from the databases. New installations have the daily
+schedule disabled. Enable it to run backups automatically. You can run
+`sudo sli-backup` on the selected volume with the schedule disabled.
+
+The following commands check the timer and read the result of a manual backup
+when the selected directory is `/mnt/sli-archives`.
 
 ```sh
 sudo systemctl list-timers sli-backup.timer
-sudo sli-backup && sudo cat /var/backups/sli/native/last-result.json
+sudo sli-backup && sudo cat /mnt/sli-archives/sli-regular-backups/last-result.json
 ```
 
 The command prints the completed set's directory. Match its name to `backup_id`
-with `status=backup_created` and `terminal=true`. Keep older verified sets until
-the new set passes a [restore drill](#run-a-restore-drill). Without an external backup volume,
-directory mode allows local backups under `/var/backups/sli/native`. With an
-external volume, SLI mounts it at `/var/backups/sli`. Check the [space requirements](#check-free-space)
-on the filesystem that actually holds the backups.
+with `status=backup_created` and `terminal=true`. Keep the set named in
+`restore-verified.json` within that archive directory until a newer set passes
+a [restore drill](#run-a-restore-drill). Check the [space requirements](#check-free-space)
+on the selected filesystem. An unavailable or changed volume blocks regular
+backups. Upgrade checkpoints use `/var/backups/sli/native/upgrade-checkpoints`.
 
 ### Run a restore drill
 
@@ -133,10 +138,12 @@ measured size of the selected set and P is the PostgreSQL size recorded in its
 manifest. With separate volumes, allow B on the backup volume and the remaining
 space in the workspace. Add both requirements if the backup and workspace share
 one filesystem. After the run finishes, read
-`sudo cat /var/backups/sli/native/drill-result.json`. Check the expected
+`sudo cat /mnt/sli-archives/sli-regular-backups/drill-result.json`, using your
+selected path. Check the expected
 `backup_id`, a `completed_at_utc` from this run, `status=restore_verified`,
 `terminal=true` and `databases_stopped=true`. Compare `manifest_sha256` with
-`sudo sha256sum /var/backups/sli/native/<backup-id>/manifest.json` for that set.
+`sudo sha256sum /mnt/sli-archives/sli-regular-backups/<backup-id>/manifest.json`
+for that set.
 
 ## Restore and rollback
 

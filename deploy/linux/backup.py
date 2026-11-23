@@ -1251,13 +1251,13 @@ def capture_admission(root: Path, *, regular=False) -> None:
         point = connection.execute(PG_CAPACITY_SQL).fetchone()[0]
     component = {'database_size_bytes': point['database_size_bytes']}
     if native_mode():
-        from deploy.linux.native_backup import capture_volume_admission, same_disk, ROOT
+        from deploy.linux.native_backup import capture_volume_admission, require_separate_disk, ROOT
         from deploy.linux.native_host import Host
         paths = {role: Path(path).resolve() for role, path in pg_capacity_paths(point).items()}
         filesystems = {role: {'device': backup_policy.filesystem(path), 'free_bytes': shutil.disk_usage(path).free}
                        for role, path in paths.items()}
-        if regular and any(same_disk(root, path) for path in paths.values()):
-            raise BackupError('native_backup_root_same_device')
+        if regular:
+            require_separate_disk(root, paths.values())
         estimate = Host().backup_space_estimate(root if regular else ROOT, pg_bytes=point['database_size_bytes'])
         admit = backup_policy.volume_admission if regular else capture_volume_admission
         admission = admit(root, root, filesystems, estimate['capture_bytes'], work_required=0)

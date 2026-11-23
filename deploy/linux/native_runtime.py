@@ -392,6 +392,12 @@ def dotnet_units(release, config):
     return result
 
 
+def backup_schedule_override():
+    # On upgrade the vendor unit may be the previous release's template.
+    return ("[Service]\nExecStart=\n"
+            "ExecStart=/usr/bin/python3 -I -B /usr/lib/sli/native_backup.py launch scheduled-capture\n")
+
+
 def application_unit(config, service, spec, apps, *, dotnet=False):
     user = spec[0]
     env, secrets = environment(service, config, dotnet=dotnet)
