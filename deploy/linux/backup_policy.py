@@ -5,12 +5,15 @@ import json
 import os
 import re
 import shutil
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
 GIB = 1024**3
 # Small explicit allowance for live writes during a bounded backup/drill.
 DATA_RESERVE = GIB
+MANIFEST_METADATA_BYTES = 4 * 1024**2
+BACKUP_NAME = re.compile(r'\d{8}T\d{6}\.\d{6}Z')
 
 
 def space_estimate(pg_bytes: int = 0, *, backup_bytes: int | None = None,
@@ -54,6 +57,57 @@ def space_estimate(pg_bytes: int = 0, *, backup_bytes: int | None = None,
             'data_growth_bytes': DATA_RESERVE}
 
 
+def _unique_json_object(pairs: list[tuple]) -> dict:
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError('linux_backup_invalid_manifest')
+    return result
+
+
+def _large_native_manifest(path: Path, stream, machine_id: str | None) -> dict:
+    """Bound the native checksum inventory using existing regular files."""
+    if machine_id is None:
+        raise ValueError('linux_backup_invalid_manifest')
+    sizes = {}
+    limit = MANIFEST_METADATA_BYTES
+    for item in path.parent.rglob('*'):
+        info = item.lstat()
+        if stat.S_ISDIR(info.st_mode):
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('linux_backup_invalid_files')
+        if item == path:
+            continue
+        name = item.relative_to(path.parent).as_posix()
+        sizes[name] = info.st_size
+        # The native writer uses indented JSON and ASCII escapes. Budget an
+        # entire enclosing object per entry to cover commas and indentation.
+        limit += len(json.dumps({'content_checksums': {
+            name: {'sha256': '0' * 64, 'size': info.st_size}
+        }}, indent=2))
+    stream.seek(0)
+    raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError('linux_backup_invalid_manifest')
+    value = json.loads(raw, object_pairs_hook=_unique_json_object)
+    inventory = value.get('content_checksums')
+    data_path = value.get('data_path')
+    if (type(value.get('schema_version')) is not int or value['schema_version'] != 1
+            or value.get('status') != 'backup_created' or value.get('machine_id') != machine_id
+            or not isinstance(data_path, str) or not data_path.startswith('data/')
+            or not BACKUP_NAME.fullmatch(data_path.removeprefix('data/'))
+            or f'{data_path}/manifest.json' not in sizes
+            or value.get('size_bytes') != sum(sizes.values())
+            or not isinstance(inventory, dict) or inventory.keys() != sizes.keys()):
+        raise ValueError('linux_backup_invalid_manifest')
+    for name, entry in inventory.items():
+        if (not isinstance(entry, dict) or entry.keys() != {'sha256', 'size'}
+                or type(entry['size']) is not int or entry['size'] != sizes[name]
+                or not isinstance(entry['sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', entry['sha256'])):
+            raise ValueError('linux_backup_invalid_manifest')
+    return value
+
+
 def last_backup_size(root: Path, *, machine_id: str | None = None,
                      companion_bytes: int | None = None) -> int | None:
     """Measured local sets plus positive growth; legacy sets predate machine IDs."""
@@ -62,16 +116,19 @@ def last_backup_size(root: Path, *, machine_id: str | None = None,
     sizes = []
     paths = list(root.glob('*/manifest.json')) + list(root.glob('upgrade-checkpoints/*/*/manifest.json'))
     for path in sorted(paths, key=lambda p: p.parent.name, reverse=True):
-        if (not re.fullmatch(r'\d{8}T\d{6}\.\d{6}Z', path.parent.name)
-                or any(item.is_symlink() for item in (path, path.parent, *path.parents))):
+        if (not BACKUP_NAME.fullmatch(path.parent.name)
+                or any(item.is_symlink() for item in (path, *path.parents))):
             continue
         try:
+            if not path.is_file():
+                continue
             # Manifests are untrusted metadata, never instructions or credentials.
             with path.open('rb') as stream:
-                raw = stream.read(4 * 1024**2 + 1)
-            if len(raw) > 4 * 1024**2:
-                continue
-            value = json.loads(raw)
+                raw = stream.read(MANIFEST_METADATA_BYTES + 1)
+                if len(raw) > MANIFEST_METADATA_BYTES:
+                    value = _large_native_manifest(path, stream, machine_id)
+                else:
+                    value = json.loads(raw)
             size = value.get('size_bytes')
             if (value.get('status') in {'success', 'backup_created'}
                     and value.get('backup_id') == path.parent.name
@@ -88,7 +145,7 @@ def last_backup_size(root: Path, *, machine_id: str | None = None,
                 sizes.append(sample)
                 if len(sizes) == 2:
                     return sizes[0] + max(0, sizes[0] - sizes[1])
-        except (OSError, ValueError, TypeError, AttributeError):
+        except (OSError, ValueError, TypeError, AttributeError, RecursionError):
             continue
     return sizes[0] if sizes else None
 
