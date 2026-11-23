@@ -23,7 +23,10 @@ phase seed_manifest
 trap 'printf "\nSLI_REGULAR_BACKUP_PROOF_FAILED %s\n" "$stage"; systemctl --no-block poweroff' ERR
 
 seed=/run/sli-proof-seed
-work=$(mktemp -d /run/sli-backup-guest.XXXXXXXX)
+# The ISO stays noexec. Native wheel extensions need an executable root filesystem.
+work=$(mktemp -d /var/lib/sli-backup-guest.XXXXXXXX)
+[[ $work =~ ^/var/lib/sli-backup-guest\.[A-Za-z0-9]{8}$ ]]
+trap 'rm -rf --one-file-system -- "$work"' EXIT
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C.UTF-8
 export PSYCOPG_IMPL=binary
@@ -32,6 +35,8 @@ export PSYCOPG_IMPL=binary
 cd "$seed"
 sha256sum --strict --check manifest.sha256
 phase python_dependencies
+read -r work_mount work_options < <(findmnt --noheadings --output TARGET,OPTIONS --target "$work")
+[[ $work_mount == / && ,$work_options, != *,noexec,* ]]
 python3 -I -B - "$seed" "$work" <<'PY'
 import os
 from pathlib import Path
