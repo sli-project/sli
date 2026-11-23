@@ -24,15 +24,22 @@ WHEELS = {
 MARKER = b"SLI_REGULAR_BACKUP_PROOF_PASS " + PIN.encode("ascii")
 FAILURE = b"SLI_REGULAR_BACKUP_PROOF_FAILED"
 SERIAL_LIMIT = 2 * 1024 * 1024
-STAGES = frozenset(b"""seed_mount guest_entry mount_namespace seed_manifest python_dependencies
+STAGES = frozenset(b"""seed_mount guest_entry mount_namespace seed_manifest python_dependencies python_native_import
                     device_identity filesystem_setup capture_proof shutdown""".split())
 EXCEPTIONS = frozenset(b"""AssertionError CalledProcessError FileNotFoundError ImportError KeyError
                         ModuleNotFoundError OSError PermissionError RuntimeError TimeoutExpired
                         ValueError OtherException""".split())
 DEPENDENCIES = frozenset(b"""python_cp313_amd64 python_abi_mismatch vendor_exec vendor_noexec
-                            binary_extensions_missing binary_imported elf_mapping_denied elf_stack_denied
+                            binary_extensions_missing binary_extensions_present binary_imported elf_mapping_denied elf_stack_denied
                             elf_missing_zlib elf_missing_gcc_runtime elf_missing_cpp_runtime elf_library_missing
-                            elf_symbol_version elf_format python_module_missing unclassified_import_error""".split())
+                            elf_symbol_version elf_format python_module_missing unclassified_import_error
+                            import_started import_returned import_contract_refused import_child_start_refused
+                            import_child_timeout import_child_stop_unconfirmed import_child_exit_zero import_child_exit_error
+                            import_child_signal import_wait_futex import_wait_entropy import_wait_io
+                            import_wait_running_or_hidden import_wait_unclassified import_wait_unavailable
+                            pure_enter pure_loader pq_dispatch_enter pq_dispatch_loader binary_pq_enter binary_pq_loader
+                            binary_extension_enter binary_extension_loader stdlib_ssl_enter stdlib_ssl_loader
+                            stdlib_hashlib_enter stdlib_hashlib_loader""".split())
 RESULT = {
     "source": PIN, "scope": "source-only-synthetic-archive", "same_disk_peer": "rejected",
     "separate_guest_disk": "published_and_hash_verified", "schedule": "remained_off",
@@ -83,7 +90,7 @@ def create_seed(source, wheelhouse, seed):
         check_file(wheel, "sha256", digest)
         shutil.copyfile(wheel, seed / filename)
         check_file(seed / filename, "sha256", digest)
-    for name in ("prove_regular_backup.py", "guest.sh"):
+    for name in ("prove_regular_backup.py", "guest.sh", "wheel_probe.py"):
         shutil.copyfile(HERE / name, seed / name)
     with archive.open("rb") as stream:
         checksums = {"source.tar": hashlib.file_digest(stream, "sha256").hexdigest()} | WHEELS
@@ -204,16 +211,15 @@ def require_terminal(serial):
 
 
 def proof_diagnostics(serial):
-    diagnostic = []
+    diagnostic = {}
     for line in serial[:SERIAL_LIMIT].splitlines():
         kind, _, value = line.partition(b" ")
         if ((kind in (b"SLI_REGULAR_BACKUP_PROOF_STAGE", FAILURE) and value in STAGES)
                 or (kind == b"SLI_REGULAR_BACKUP_PROOF_EXCEPTION" and value in EXCEPTIONS)
                 or (kind == b"SLI_REGULAR_BACKUP_PROOF_DEPENDENCY" and value in DEPENDENCIES)):
-            diagnostic.append(line.decode("ascii"))
-            if len(diagnostic) == 24:
-                break
-    return diagnostic
+            diagnostic[line] = None
+    lines = [line.decode("ascii") for line in diagnostic]
+    return lines if len(lines) <= 24 else lines[:8] + lines[-16:]
 
 
 def run_guest(source, wheelhouse, image, digest, scratch):
@@ -247,13 +253,17 @@ def run_guest(source, wheelhouse, image, digest, scratch):
             raise ValueError("guest log exceeded the proof limit")
         serial = log.read_bytes()
         result = require_terminal(serial)
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
         stages = []
         if log.exists():
             with log.open("rb") as stream:
                 stages = proof_diagnostics(stream.read(SERIAL_LIMIT))
         print("\n".join(stages or ["SLI_REGULAR_BACKUP_PROOF_DIAGNOSTICS_ABSENT"]), file=sys.stderr)
-        raise
+        if isinstance(error, subprocess.TimeoutExpired):
+            raise SystemExit("qemu_guest_timeout") from None
+        if isinstance(error, subprocess.CalledProcessError):
+            raise SystemExit("qemu_guest_exit_nonzero") from None
+        raise SystemExit("qemu_guest_proof_incomplete") from None
     check_file(base, "sha512", digest)
     print(json.dumps(result, sort_keys=True))
     print(MARKER.decode("ascii"))

@@ -51,37 +51,6 @@ def dependency_marker(marker):
     print("SLI_REGULAR_BACKUP_PROOF_DEPENDENCY " + marker, flush=True)
 
 
-def import_failure(error):
-    # The psycopg adapter wraps native loader errors. Classify the innermost
-    # cause without exporting paths, environment data, or the error text.
-    cause = error
-    for _ in range(4):
-        if cause.__cause__ is None:
-            break
-        cause = cause.__cause__
-    detail = str(cause)
-    if "failed to map segment from shared object" in detail:
-        return "elf_mapping_denied"
-    if "cannot enable executable stack" in detail:
-        return "elf_stack_denied"
-    if "cannot open shared object file" in detail:
-        for name, marker in (
-            ("libz.so.1", "elf_missing_zlib"),
-            ("libgcc_s.so.1", "elf_missing_gcc_runtime"),
-            ("libstdc++.so.6", "elf_missing_cpp_runtime"),
-        ):
-            if detail.startswith(name + ":"):
-                return marker
-        return "elf_library_missing"
-    if "undefined symbol" in detail or ("version " in detail and " not found" in detail):
-        return "elf_symbol_version"
-    if "ELF" in detail:
-        return "elf_format"
-    if isinstance(cause, ModuleNotFoundError):
-        return "python_module_missing"
-    return "unclassified_import_error"
-
-
 sys.excepthook = lambda kind, _error, _traceback: print(
     "\nSLI_REGULAR_BACKUP_PROOF_EXCEPTION " + kind.__name__, file=sys.stderr, flush=True)
 expected_suffix = ".cpython-313-x86_64-linux-gnu.so"
@@ -100,21 +69,17 @@ for name in checksum_names:
     if name.endswith(".whl"):
         with zipfile.ZipFile(seed / name) as wheel:
             wheel.extractall(work / "packages")
-sys.path.insert(0, str(work / "packages"))
 vendor = work / "packages"
 mount_flags = os.statvfs(vendor).f_flag
 dependency_marker("vendor_noexec" if mount_flags & os.ST_NOEXEC else "vendor_exec")
 if not all((vendor / "psycopg_binary" / (name + expected_suffix)).is_file() for name in ("pq", "_psycopg")):
     dependency_marker("binary_extensions_missing")
     raise RuntimeError("pinned wheel is missing its native extensions")
-try:
-    import psycopg
-except ImportError as error:
-    dependency_marker(import_failure(error))
-    raise
-assert psycopg.__version__ == "3.3.4" and psycopg.pq.__impl__ == "binary"
-dependency_marker("binary_imported")
+dependency_marker("binary_extensions_present")
 PY
+
+phase python_native_import
+python3 -I -B "$seed/wheel_probe.py" "$work/packages"
 
 phase device_identity
 udevadm settle --timeout=20
