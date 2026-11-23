@@ -43,6 +43,13 @@ UI_DOMAIN_TESTS = {
     "tests/core/test_report_domain.py",
 }
 SUITES = ("source", "checkpoint", "posix", "unit")
+POSTGRES_INSTALLER_PATHS = (
+    "deploy/linux/native_pg_", "deploy/linux/backup", "deploy/linux/native_package.py",
+    "deploy/linux/native_backup.py", "deploy/linux/native_restore.py", "deploy/linux/native_upgrade.py",
+    "deploy/linux/restore_existing.py", "deploy/linux/restore_sandbox.py",
+    "tests/unit/test_linux_native_pg_", "tests/unit/test_linux_backup_", "tests/unit/test_linux_restore_",
+    "tests/unit/test_linux_native_backup", "tests/unit/test_linux_native_restore", "tests/unit/test_linux_native_upgrade",
+)
 
 
 def matches(path: str, patterns: tuple[str, ...]) -> bool:
@@ -79,9 +86,8 @@ def plan_jobs(paths: list[str]) -> dict[str, bool]:
     broad = not areas or bool(areas & {"ci", "migrations", "dependencies", "api", "unknown"})
     # Recovery helpers, migration tooling and shared agent transport have live PG contracts.
     postgres = broad or bool(risks) or any(
-        path.startswith(("deploy/linux/native_pg_", "deploy/linux/backup", "deploy/linux/native_package",
-                         "tests/unit/test_linux_native_pg_", "tests/unit/test_linux_backup_",
-                         "agent-dotnet/src/Sli.Agent.Protocol/", "agent-dotnet/src/Sli.Agent.Core/", f"{SERVER}Agents/"))
+        path.startswith(POSTGRES_INSTALLER_PATHS
+                        + ("agent-dotnet/src/Sli.Agent.Protocol/", "agent-dotnet/src/Sli.Agent.Core/", f"{SERVER}Agents/"))
         or path in {"deploy/linux/native_install.py", "deploy/linux/sli_update.py",
                     "tests/unit/test_linux_install_upgrade_checks.py"}
         for path in paths

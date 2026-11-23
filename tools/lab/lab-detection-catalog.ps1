@@ -1,3 +1,4 @@
+﻿#Requires -Version 5.1
 # Replay synthetic Windows events in the .NET detector and local test database.
 # Run after building server-dotnet/Sli.Server.slnx with the local .NET environment loaded.
 $ErrorActionPreference = 'Stop'

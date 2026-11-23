@@ -122,3 +122,61 @@ def test_agent_transport_changes_retain_certificate_and_packet_contracts():
     paths = ["agent-dotnet/src/Sli.Agent.Protocol/Packet.cs"]
     selected = pr_scope.pytest_arguments(ROOT, paths)["unit"]
     assert {"tests/unit/test_agent_tls.py", "tests/unit/test_agent_packets_api.py"} <= set(selected)
+
+def test_shipped_helper_import_and_sql_asset_preserve_mixed_test_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(shipped_python_tests, "INSTALLER_ROOTS", ("native_install",))
+    cases = {
+        "deploy/linux/native_install.py": "",
+        "deploy/linux/native_package.py": 'HELPERS = ("native_restore.py", "native-pins.json")',
+        "deploy/linux/native_restore.py": "from server import recovery",
+        "server/recovery.py": "",
+        "server/legacy.py": "",
+        "tests/support/first.py": "from tests.support import second",
+        "tests/support/second.py": "from tests.support import first\nfrom server import recovery",
+        "tests/test_helper.py": "from tests.support import first\nfrom server import legacy",
+        "tests/test_sql.py": 'from server import legacy\nfrom pathlib import Path\nMIGRATIONS = Path("config") / "postgres_migrations"',
+        "tests/test_uncategorized.py": "import pytest",
+        "tests/test_retired.py": "from server import legacy",
+    }
+    for name, source in cases.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    selected, excluded, closure, _ = shipped_python_tests.select_tests(tmp_path)
+
+    assert {"tests/test_helper.py", "tests/test_sql.py", "tests/test_uncategorized.py"} <= set(selected)
+    assert excluded == ["tests/test_retired.py"]
+    assert {"deploy/linux/native_restore.py", "server/recovery.py"} <= closure
+
+
+def test_split_gates_and_security_contracts_remain_selected(tmp_path, monkeypatch):
+    monkeypatch.setattr(shipped_python_tests, "INSTALLER_ROOTS", ("native_install",))
+    files = {
+        "deploy/linux/native_install.py": "",
+        "server/legacy.py": "",
+        "server/sli/agents/ca.py": "",
+        "tests/test_ca.py": "from server.sli.agents import ca",
+        "tests/test_backup.py": "from server import legacy",
+        "tests/test_retired.py": "from server import legacy",
+        "scripts/ci/pr_checkpoint_tests.txt": "tests/test_backup.py::test_checkpoint",
+    }
+    for name, source in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    selected, excluded, _, _ = shipped_python_tests.select_tests(tmp_path)
+
+    assert {"tests/test_ca.py", "tests/test_backup.py"} <= set(selected)
+    assert excluded == ["tests/test_retired.py"]
+
+@pytest.mark.parametrize("path", [
+    "deploy/linux/native_backup.py", "deploy/linux/native_restore.py", "deploy/linux/native_upgrade.py",
+    "deploy/linux/restore_existing.py", "deploy/linux/restore_sandbox.py",
+    "tests/unit/test_linux_native_upgrade_prepare.py",
+])
+def test_recovery_changes_keep_checkpoint_and_postgres_gates(path):
+    jobs = pr_scope.plan_jobs([path])
+    assert jobs["unit"] and jobs["checkpoint"] and jobs["postgres"]
+    assert not jobs["broad"]
