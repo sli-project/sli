@@ -1,0 +1,27 @@
+{
+  "inrelease_sha256": "bfacad4ca61899ce20d4a0d439f29339f66541561b67506364efb88e27dee870",
+  "packages": {
+    "libssl3t64": {
+      "Architecture": "amd64",
+      "Filename": "pool/main/o/openssl/libssl3t64_3.5.9-1~deb13u1_amd64.deb",
+      "SHA256": "ffefb9af363e0e4592251b2533eb06453c8e470f7772e40263c4b2129251a6d5",
+      "Size": "2464736",
+      "Version": "3.5.9-1~deb13u1"
+    },
+    "openssl": {
+      "Architecture": "amd64",
+      "Filename": "pool/main/o/openssl/openssl_3.5.9-1~deb13u1_amd64.deb",
+      "SHA256": "faf53a993766c81f94f35b6a31202f0dcd936e1529791790a393aa59f41c0993",
+      "Size": "1518324",
+      "Version": "3.5.9-1~deb13u1"
+    },
+    "openssl-provider-legacy": {
+      "Architecture": "amd64",
+      "Filename": "pool/main/o/openssl/openssl-provider-legacy_3.5.9-1~deb13u1_amd64.deb",
+      "SHA256": "67c70904c8d494b4631e136a6bdb692cbb44515757d63c55e7bd1d2016f9f09f",
+      "Size": "322440",
+      "Version": "3.5.9-1~deb13u1"
+    }
+  },
+  "packages_index_sha256": "be3d7d96a040eda0505c1808cccc67f183bbc05dff0842c50f88e6c396557412"
+}

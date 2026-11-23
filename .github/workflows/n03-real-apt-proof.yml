@@ -1,0 +1,74 @@
+name: Standalone real n03 APT proof
+
+on:
+  push:
+    branches:
+      - beta1/proof-real-n03-apt-20261123
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  proof:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download sli-debian-beta-kit-1b5daf4e66640b7390105b4b5345332deca6f9ce
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: '14824973514'
+          run-id: '45190713233'
+          repository: sli-project/sli
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/official-n03-kit
+      - name: Verify kit and run both disposable APT transactions
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d "$RUNNER_TEMP/sli-real-n03-apt.XXXXXXXX")
+          [[ $work == "$RUNNER_TEMP/sli-real-n03-apt."* ]]
+          trap 'rm -r -- "$work"' EXIT
+          artifact="$RUNNER_TEMP/official-n03-kit"
+          proof="$GITHUB_WORKSPACE/scripts/ci/proofs/n03-apt"
+          mkdir "$work/kit"
+          (
+            cd "$artifact"
+            archive=sli-debian-beta-kit.tar.gz
+            [[ -f $archive && ! -L $archive && -f SHA256SUMS && ! -L SHA256SUMS ]]
+            printf '%s  %s\n' ae98209ccaa7d11ea5c322484d39076fd45c92ac00c9974b02ccbdfbfb56e4a6 "$archive" | cmp - SHA256SUMS
+            sha256sum --strict -c SHA256SUMS
+            PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -c \
+              'import sys; from pathlib import Path; from deploy.linux.build_beta_kit import verify_offline_kit; verify_offline_kit(Path(sys.argv[1]), sys.argv[2])' \
+              "$archive" 1b5daf4e66640b7390105b4b5345332deca6f9ce
+            tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$work/kit"
+          )
+          python3 -I -B "$proof/prepare.py" --producer "$proof/repackage_runtime_control.py" \
+            --pins "$GITHUB_WORKSPACE/deploy/linux/native_pins.json" \
+            --kit "$work/kit/sli-debian-beta-kit" --stage "$work/inputs"
+
+          base=docker.io/library/debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
+          timeout --kill-after=5s 90s docker pull --platform linux/amd64 "$base"
+          docker image inspect --format 'Debian {{.Id}} {{json .RepoDigests}}' "$base"
+          failed=0
+          for mode in upgrade clean-current; do
+            if docker run --rm --pull=never --network none --platform linux/amd64 \
+              --security-opt no-new-privileges \
+              --env SLI_REAL_APT_FIXTURE=pinned-n03-wrapper \
+              --mount "type=bind,source=$work/inputs,target=/fixture/inputs,readonly" \
+              --mount "type=bind,source=$proof/run.sh,target=/fixture/run.sh,readonly" \
+              "$base" /usr/bin/timeout --kill-after=5s 180s /bin/bash /fixture/run.sh "$mode"; then
+              continue
+            else
+              status=$?
+              printf '::error::Disposable n03 APT proof for %s failed with exit code %s\n' "$mode" "$status"
+              failed=1
+            fi
+          done
+          (( failed == 0 ))
