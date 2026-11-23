@@ -16,12 +16,15 @@ returns table(rule_id text, state text, observed_at timestamptz)
 language sql stable security definer set search_path=pg_catalog,pg_temp as $$
     with rules(rule_id) as (
         values ('qw.password-brute-force'::text),('qw.password-spray'::text)
-    ), sources as materialized (
+    ), mapped_sources as materialized (
         select m.agent_id,m.password_detection_domain_id as domain_id,
             public.password_v2_configured_identity(m.agent_id)->'scope' as scope
         from public.sli_agent_module_bindings m
         where m.module_id='sli.windows.ad-dc' and m.password_detection_domain_id=any(allowed_domains)
           and public.semantic_source_active320(m.agent_id,m.module_id,'Security')
+    ), sources as materialized (
+        -- Domain reconciliation can precede native source attestation.
+        select agent_id,domain_id,scope from mapped_sources where scope is not null
     ), checkpoints as materialized (
         select s.*,r.rule_id,c.watermark,c.last_attempt_at,c.last_completed_at,c.health_status,c.loss_buckets,
             public.password_v2_coverage_policy(c.execution_json) as policy,(c.execution_json->>'rule_version')::integer as rule_version,

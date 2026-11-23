@@ -15,6 +15,24 @@ public sealed class OperationsPasswordDetectionStatusTests
     private const string WorkersRoute = "/api/v1/operations/overview?view=workers";
 
     [Fact]
+    public async Task Mapped_controller_without_native_scope_reports_unknown_rule_statuses()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var connections = new Connections(fixture);
+        await RegisterMappedControllerWithoutNativeScope(owner, connections, ShortEventAdmissionPostgresTests.Agent,
+            900001, "dc.example.test", ct);
+
+        using var app = await OperationsEndpointTests.Start(postgresQueries: new OperationsQueries(connections));
+        var workers = await Workers(app);
+        Assert.Equal("ok", workers["password_detection"]!["status"]!.GetValue<string>());
+        Assert.Equal("unknown", ReadRule(workers, "brute")["state"]!.GetValue<string>());
+        Assert.Equal("unknown", ReadRule(workers, "spray")["state"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Status_separates_live_failures_and_recovery_from_a_running_process_and_backlog()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -199,6 +217,28 @@ public sealed class OperationsPasswordDetectionStatusTests
         await fixture.Pg.ApplyFileAsync(predecessor, null, ct);
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         Assert.Equal("recovered", ReadRule(await Workers(app), "brute")["state"]!.GetValue<string>());
+        await RegisterMappedControllerWithoutNativeScope(owner, new Connections(fixture), Guid.NewGuid(),
+            900002, "dc-sibling.example.test", ct);
+        Assert.Equal("recovered", ReadRule(await Workers(app), "brute")["state"]!.GetValue<string>());
+    }
+
+    private static async Task RegisterMappedControllerWithoutNativeScope(NpgsqlConnection owner, Connections connections,
+        Guid agent, long server, string hostname, CancellationToken ct)
+    {
+        await ShortEventAdmissionPostgresTests.RegisterDcAsync(owner, agent, agent, server, 1, hostname, "Security", ct);
+        await using (var runtime = await connections.OpenAsync(ct))
+        await using (var bind = new NpgsqlCommand("select public.reconcile_password_detection_domain371(@agent)", runtime))
+        {
+            bind.Parameters.AddWithValue("agent", agent);
+            Assert.Equal(1L, await bind.ExecuteScalarAsync(ct));
+        }
+        await using var verify = new NpgsqlCommand("""
+            select public.password_v2_configured_identity(agent_id) is null
+            from public.sli_agent_module_bindings
+            where agent_id=@agent and module_id='sli.windows.ad-dc' and password_detection_domain_id=1
+            """, owner);
+        verify.Parameters.AddWithValue("agent", agent);
+        Assert.Equal(true, await verify.ExecuteScalarAsync(ct));
     }
 
     private static async Task<JsonObject> Workers(OperationsEndpointTests.App app)
