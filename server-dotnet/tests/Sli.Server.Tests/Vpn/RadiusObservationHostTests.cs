@@ -224,6 +224,29 @@ public sealed class RadiusObservationHostTests
             """, Ct);
     }
 
+    private static async Task RunWithConsumerConnectionAsync(NpgsqlConnection admin, string dsn, Func<NpgsqlConnection, Task> run)
+    {
+        int? childPid = null;
+        try
+        {
+            await using var child = new NpgsqlConnection(dsn);
+            await child.OpenAsync(Ct);
+            childPid = child.ProcessID;
+            await run(child);
+        }
+        finally
+        {
+            if (childPid is int pid)
+            {
+                // The server can still report the fixture's backend after the client disconnects.
+                using var cleanup = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+                cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+                while (await RadiusJobs.Scalar(admin, "select exists(select 1 from pg_stat_activity where pid=$1)", cleanup.Token, pid) is true)
+                    await Task.Delay(25, cleanup.Token);
+            }
+        }
+    }
+
     [Fact]
     public async Task Recurring_cycle_commits_more_than_fifty_receipts_and_replays_without_duplicates()
     {
@@ -234,25 +257,15 @@ public sealed class RadiusObservationHostTests
             insert into acquisition_delivery_outbox(delivery_id,observation_id,subscription_id) select i,md5(i::text)::uuid,'vpn-radius-session-observations-radius01-v1' from generate_series(1,61) i;
             """, Ct);
         var cursors = new List<long>();
-        await RadiusObservationHost.WithConsumerLogin(new Connections(pg.ConnectionString), async dsn => {
-            int childPid;
-            await using (var child = new NpgsqlConnection(dsn))
+        await RadiusObservationHost.WithConsumerLogin(new Connections(pg.ConnectionString),
+            dsn => RunWithConsumerConnectionAsync(admin, dsn, async child =>
             {
-                await child.OpenAsync(Ct);
-                childPid = child.ProcessID;
                 var result = await RadiusObservationCycle.RunAsync(child, p => { cursors.Add(p["cursor_delivery_id"]!.GetValue<long>()); return Task.CompletedTask; }, Ct);
                 Assert.Equal(61, result["processed"]!.GetValue<long>());
                 result = await RadiusObservationCycle.RunAsync(child, _ => Task.CompletedTask, Ct);
                 Assert.Equal(0, result["claimed"]!.GetValue<long>());
                 Assert.Equal(61, result["cursor_delivery_id"]!.GetValue<long>());
-            }
-
-            // The server can still report the fixture's backend after the client disconnects.
-            using var cleanup = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-            cleanup.CancelAfter(TimeSpan.FromSeconds(5));
-            while (await RadiusJobs.Scalar(admin, "select exists(select 1 from pg_stat_activity where pid=$1)", cleanup.Token, childPid) is true)
-                await Task.Delay(25, cleanup.Token);
-        }, Ct);
+            }), Ct);
         Assert.Contains(61L, cursors);
         Assert.Equal(61L, await RadiusJobs.Scalar(admin, "select count(*) from radius_session_projection_receipts", Ct));
         Assert.Equal(61L, await RadiusJobs.Scalar(admin, "select count(*) from acquisition_delivery_outbox where delivery_state='delivered' and attempt_count=1", Ct));
@@ -270,10 +283,9 @@ public sealed class RadiusObservationHostTests
             insert into acquisition_delivery_outbox(delivery_id,observation_id,subscription_id) select i,md5(i::text)::uuid,'vpn-radius-session-observations-radius01-v1' from generate_series(1,2) i;
             """, Ct);
         var cursors = new List<long>();
-        var error = await Assert.ThrowsAsync<VpnInputException>(() => RadiusObservationHost.WithConsumerLogin(new Connections(pg.ConnectionString), async dsn => {
-            await using var child = new NpgsqlConnection(dsn); await child.OpenAsync(Ct);
-            await RadiusObservationCycle.RunAsync(child, p => { cursors.Add(p["cursor_delivery_id"]!.GetValue<long>()); return Task.CompletedTask; }, Ct);
-        }, Ct));
+        var error = await Assert.ThrowsAsync<VpnInputException>(() => RadiusObservationHost.WithConsumerLogin(new Connections(pg.ConnectionString),
+            dsn => RunWithConsumerConnectionAsync(admin, dsn, child => RadiusObservationCycle.RunAsync(child,
+                p => { cursors.Add(p["cursor_delivery_id"]!.GetValue<long>()); return Task.CompletedTask; }, Ct)), Ct));
         Assert.Equal("exact_session_key_required", error.Message); Assert.Equal(1L, cursors[^1]);
         Assert.Equal(1L, await RadiusJobs.Scalar(admin, "select count(*) from radius_session_projection_receipts", Ct));
         Assert.Equal(1L, await RadiusJobs.Scalar(admin, "select count(*) from acquisition_delivery_outbox where delivery_id=2 and delivery_state='failed' and attempt_count=1 and available_at>now() and last_error_code='consumer_processing_failed' and lease_token is null", Ct));
