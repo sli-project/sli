@@ -355,12 +355,20 @@ public sealed class PasswordProducer
         using (observation?.Measure(PasswordProofTiming.Publication))
         {
             foreach(var (emission,signals,expected) in reservations) {
-                if(barriers.TryGetValue(emission.Entity,out var b)&&emission.EpisodeKey!=PasswordJson.Text(b["episode_key"])) {
-                    var tracking=await sql.Call("track_password_frozen_entity_v2",ct,scope,execution,token,revision,PasswordJson.Text(b["episode_key"]),emission.Seed.Document,(long)emission.Epoch,lower,final);work["tracking_calls"]=work["tracking_calls"]!.GetValue<int>()+1;
-                    if(tracking?["status"]?.GetValue<string>()!="successor_authorized"||tracking["successor_episode_key"]?.GetValue<string>()!=emission.EpisodeKey)throw new PasswordFailure("password_v2_successor_conflict");
-                }
-                var reservation=await sql.Call("reserve_password_episode_emission",ct,scope,execution,token,revision,expected,PasswordJson.Array(signals,s=>s.DeepClone()));work["reservation_calls"]=work["reservation_calls"]!.GetValue<int>()+1;work["reservation_occurrences"]=work["reservation_occurrences"]!.GetValue<int>()+emission.Occurrences.Count;
-                if(reservation?["status"]?.GetValue<string>()!="reserved"||!reservation["signal_ids"]!.AsArray().Select(PasswordJson.Text).SequenceEqual(signals.Select(PasswordSignal.Id)))throw new PasswordFailure("password_v2_reservation_conflict");
+                await StageReservation(barriers, emission.Entity, emission.EpisodeKey, signals.Select(PasswordSignal.Id),
+                    async predecessor => {
+                        var tracking = await sql.Call("track_password_frozen_entity_v2",ct,scope,execution,token,revision,
+                            predecessor,emission.Seed.Document,(long)emission.Epoch,lower,final);
+                        work["tracking_calls"]=work["tracking_calls"]!.GetValue<int>()+1;
+                        return tracking;
+                    },
+                    async () => {
+                        var reservation = await sql.Call("reserve_password_episode_emission",ct,scope,execution,token,
+                            revision,expected,PasswordJson.Array(signals,s=>s.DeepClone()));
+                        work["reservation_calls"]=work["reservation_calls"]!.GetValue<int>()+1;
+                        work["reservation_occurrences"]=work["reservation_occurrences"]!.GetValue<int>()+emission.Occurrences.Count;
+                        return reservation;
+                    });
                 queued.AddRange(signals);touched.Add(emission.EpisodeKey);
             }
             foreach(var signal in queued)jobs+=await Enqueue(sql,rule,signal,ct);
@@ -440,6 +448,31 @@ public sealed class PasswordProducer
             return await Complete(sql,rule,attempt,"qualified_denial",new JsonObject{["version"]="sli.password.v2.producer-batch.1",["episode_key"]=episode.Key,["predecessor"]=episode.Last.Document,["endpoint"]=endpoint.Document},ct);
         }return null;
     }
+    internal static async Task StageReservation(
+        Dictionary<string, JsonObject> barriers, string entity, string episodeKey, IEnumerable<string> signalIds,
+        Func<string, Task<JsonNode?>> authorize, Func<Task<JsonNode?>> reserve)
+    {
+        string? predecessor = barriers.TryGetValue(entity, out var barrier) ? PasswordJson.Text(barrier["episode_key"]) : null;
+        if (predecessor == episodeKey)
+            predecessor = null;
+        if (predecessor != null) {
+            var tracking = await authorize(predecessor);
+            if (tracking?["status"]?.GetValue<string>() != "successor_authorized" ||
+                tracking["successor_episode_key"]?.GetValue<string>() != episodeKey)
+                throw new PasswordFailure("password_v2_successor_conflict");
+        }
+
+        var reservation = await reserve();
+        if (reservation?["status"]?.GetValue<string>() != "reserved" ||
+            !reservation["signal_ids"]!.AsArray().Select(PasswordJson.Text).SequenceEqual(signalIds))
+            throw new PasswordFailure("password_v2_reservation_conflict");
+
+        // Successful reservation resolves the predecessor in SQL. This map
+        // belongs to the current batch, and a retried batch reads it anew.
+        if (predecessor != null)
+            barriers.Remove(entity);
+    }
+
     private static async Task<int> Enqueue(PasswordSql sql,PasswordRule rule,JsonObject signal,CancellationToken ct)
     {
         string sourceId=PasswordSignal.Id(signal);

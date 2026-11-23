@@ -57,7 +57,8 @@ internal sealed class DetectionDiagnostics
         "password_v2_signal_invalid", "password_v2_state_invalid", "password_v2_state_scope",
         "password_v2_storage_unavailable", "password_v2_successor_conflict", "password_v2_time_invalid",
         "password_v2_source_denied", "password_v2_context_bound", "password_v2_ledger_conflict", "password_v2_checkpoint_corrupt",
-        "password_v2_arguments_invalid", "password_v2_entity_prelock_required"
+        "password_v2_arguments_invalid", "password_v2_entity_prelock_required",
+        "password_v2_episode_absent", "password_v2_barrier_conflict", "password_v2_lifetime_immutable"
     };
     private static readonly string[] Operations = [
         "semantic_import_refresh320", "semantic_default_refresh320", "semantic_import_progress320",
