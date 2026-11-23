@@ -29,6 +29,10 @@ STAGES = frozenset(b"""seed_mount guest_entry mount_namespace seed_manifest pyth
 EXCEPTIONS = frozenset(b"""AssertionError CalledProcessError FileNotFoundError ImportError KeyError
                         ModuleNotFoundError OSError PermissionError RuntimeError TimeoutExpired
                         ValueError OtherException""".split())
+DEPENDENCIES = frozenset(b"""python_cp313_amd64 python_abi_mismatch vendor_exec vendor_noexec
+                            binary_extensions_missing binary_imported elf_mapping_denied elf_stack_denied
+                            elf_missing_zlib elf_missing_gcc_runtime elf_missing_cpp_runtime elf_library_missing
+                            elf_symbol_version elf_format python_module_missing unclassified_import_error""".split())
 RESULT = {
     "source": PIN, "scope": "source-only-synthetic-archive", "same_disk_peer": "rejected",
     "separate_guest_disk": "published_and_hash_verified", "schedule": "remained_off",
@@ -204,7 +208,8 @@ def proof_diagnostics(serial):
     for line in serial[:SERIAL_LIMIT].splitlines():
         kind, _, value = line.partition(b" ")
         if ((kind in (b"SLI_REGULAR_BACKUP_PROOF_STAGE", FAILURE) and value in STAGES)
-                or (kind == b"SLI_REGULAR_BACKUP_PROOF_EXCEPTION" and value in EXCEPTIONS)):
+                or (kind == b"SLI_REGULAR_BACKUP_PROOF_EXCEPTION" and value in EXCEPTIONS)
+                or (kind == b"SLI_REGULAR_BACKUP_PROOF_DEPENDENCY" and value in DEPENDENCIES)):
             diagnostic.append(line.decode("ascii"))
             if len(diagnostic) == 24:
                 break
