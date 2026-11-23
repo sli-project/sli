@@ -9,6 +9,10 @@ on:
       commit:
         required: true
         type: string
+      n03_kit_rehearsal:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,8 +38,16 @@ jobs:
         shell: pwsh
         env:
           KIT_COMMIT: ${{ inputs.commit }}
+          N03_KIT_REHEARSAL: ${{ inputs.n03_kit_rehearsal }}
         run: |
-          if ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:KIT_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full SHA on main.' }
+          if ($env:KIT_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full source SHA.' }
+          if ($env:N03_KIT_REHEARSAL -ceq 'true') {
+            if ($env:GITHUB_REPOSITORY -cne 'sli-project/sli' -or
+                $env:GITHUB_REF -cne 'refs/heads/beta1/n03-full-kit-rehearsal-local' -or
+                $env:KIT_COMMIT -cne $env:GITHUB_SHA) {
+              throw 'Rehearsal MSI must use the exact rehearsal branch head in sli-project/sli.'
+            }
+          } elseif ($env:GITHUB_REF -cne 'refs/heads/main') { throw 'Expected the full SHA on main.' }
           git merge-base --is-ancestor $env:KIT_COMMIT $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Agent source commit is outside main.' }
           git checkout --detach $env:KIT_COMMIT
@@ -139,4 +151,4 @@ jobs:
           name: sli-agent-dotnet-msi-${{ inputs.commit || github.sha }}
           path: agent-msi-artifact
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ inputs.n03_kit_rehearsal && 1 || 14 }}
