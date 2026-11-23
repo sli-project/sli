@@ -1,0 +1,84 @@
+name: Standalone Debian n03 OpenSSL ABI proof
+
+on:
+  push:
+    branches:
+      - beta1/proof-n03-openssl-abi-20261123
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run the immutable n03 against the floor and current Debian OpenSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d "$RUNNER_TEMP/sli-n03-abi.XXXXXXXX")
+          trap 'rm -f -- "$work/runtime.deb" "$work/3.5.7.log" "$work/3.5.9.log"; rmdir -- "$work"' EXIT
+          runtime="$work/runtime.deb"
+          source='https://github.com/sli-project/sli/releases/download/beta-input-cp3146-n03-20261026/sli-runtime-cp3146-n03-20261026_3.14.6-1.deb13_amd64.deb'
+          curl -fLSs --proto '=https' --proto-redir '=https' --retry 2 --retry-max-time 90 \
+            --max-time 90 --output "$runtime" "$source"
+          printf '%s  %s\n' 46986d230f363f3af7e2fd4c4f25ee3da9ae3964982812f404f24b6d654a44d9 "$runtime" | sha256sum -c
+          base=docker.io/library/debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
+          timeout --kill-after=5s 90s docker pull --platform linux/amd64 "$base"
+          docker image inspect --format 'Debian {{.Id}} {{json .RepoDigests}}' "$base"
+
+          failed=0
+          for version in '3.5.7-1~deb13u3' '3.5.9-1~deb13u1'; do
+            release=${version%%-*}
+            tag="sli-n03-abi:$release"
+            set +e
+            (
+              set -euo pipefail
+              timeout --kill-after=10s 240s docker build --no-cache --platform linux/amd64 \
+                --build-arg ABI_BASE="$base" --build-arg ABI_SSL="$version" --tag "$tag" - <<'DOCKERFILE'
+          ARG ABI_BASE
+          FROM ${ABI_BASE}
+          ARG ABI_SSL
+          RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
+              for package in libssl3t64 openssl openssl-provider-legacy; do \
+                  previous=$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true); \
+                  if [ -n "$previous" ] && dpkg --compare-versions "$previous" gt "$ABI_SSL"; then \
+                      printf '%s would require a downgrade from %s to %s\n' "$package" "$previous" "$ABI_SSL" >&2; exit 1; \
+                  fi; \
+              done; \
+              apt-get -o APT::Update::Error-Mode=any update; \
+              apt-cache policy libssl3t64 openssl openssl-provider-legacy; \
+              apt-get install -y --no-remove --no-install-recommends \
+                  ca-certificates binutils libbz2-1.0 libc6 libffi8 libgcc-s1 libgdbm-compat4t64 libgdbm6t64 \
+                  liblzma5 libncursesw6 libreadline8t64 libsqlite3-0 libtinfo6 libuuid1 libzstd1 zlib1g \
+                  "libssl3t64=$ABI_SSL" "openssl=$ABI_SSL" "openssl-provider-legacy=$ABI_SSL"
+          DOCKERFILE
+              docker run --rm --pull=never --network none --platform linux/amd64 \
+                --security-opt no-new-privileges \
+                --env SLI_NATIVE_ABI_FIXTURE=n03-openssl-abi \
+                --mount "type=bind,source=$runtime,target=/fixture/runtime.deb,readonly" \
+                --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/run_n03_abi_smoke.sh,target=/fixture/run-smoke.sh,readonly" \
+                --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/n03_abi_memory_bio.py,target=/fixture/abi-memory-bio.py,readonly" \
+                "$tag" /usr/bin/timeout --kill-after=5s 90s /bin/bash /fixture/run-smoke.sh "$version" | tee "$work/$release.log"
+            )
+            result=$?
+            set -e
+            if (( result != 0 )); then
+              printf '::error::Disposable n03 OpenSSL proof for %s failed with exit code %s\n' "$version" "$result"
+              failed=1
+            fi
+          done
+          (( failed == 0 ))
+
+          floor_dependencies=$(grep -Ex 'N03_NON_SSL_DEPS_SHA256 [0-9a-f]{64}' "$work/3.5.7.log")
+          current_dependencies=$(grep -Ex 'N03_NON_SSL_DEPS_SHA256 [0-9a-f]{64}' "$work/3.5.9.log")
+          [[ $floor_dependencies == "$current_dependencies" ]]
+          floor_payload=$(grep -Ex 'N03_RUNTIME_TREE_SHA256 [0-9a-f]{64}' "$work/3.5.7.log")
+          current_payload=$(grep -Ex 'N03_RUNTIME_TREE_SHA256 [0-9a-f]{64}' "$work/3.5.9.log")
+          [[ $floor_payload == "$current_payload" ]]
