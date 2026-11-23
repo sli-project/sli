@@ -17,14 +17,34 @@ from pathlib import Path
 import re
 import sys
 import textwrap
+from functools import cache
 
 
-# The 15 beta helpers identified in 80-py-inventory (14 November 2026).
+# Release-tree entry points used by the Debian package and its build, install,
+# upgrade and recovery wrappers. The host package contributes its own HELPERS.
 INSTALLER_ROOTS = (
-    "backup", "backup_restore_check", "entrypoint", "healthcheck",
-    "installed_state", "migrate", "native_backup", "native_install",
-    "native_plugins", "native_setup", "notification_delivery", "plugin_update",
-    "restore_existing", "sli_secrets", "sli_update",
+    "backup", "backup_restore_check", "build_apt_repo", "build_beta_kit",
+    "entrypoint", "healthcheck", "installed_state", "migrate", "native_backup",
+    "native_dotnet_generator", "native_install", "native_package",
+    "native_pg_inventory", "native_pg_migrate", "native_plugin_runtime",
+    "native_plugins", "native_restore", "native_setup", "notification_delivery",
+    "plugin_update", "restore_existing", "sli_secrets", "sli_update",
+)
+HOST_PACKAGE = "deploy/linux/native_package.py"
+PR_TEST_MANIFESTS = ("pr_source_tests.txt", "pr_checkpoint_tests.txt", "pr_posix_tests.txt")
+# Keep explicit trust boundaries while the old Python implementation is
+# present, including installed-agent lifecycle, native fencing and manifests.
+SECURITY_SOURCES = (
+    "server/api/http_server.py", "server/api/proxy.py", "server/api/routes/auth.py",
+    "server/sli/access/", "server/sli/agents/", "server/sli/ops/tls_client.py",
+    "server/sli/sources/plugin_package_manifest.py", "server/sli/sources/plugin_worker_",
+)
+SECURITY_TESTS = {"tests/tooling/test_sli_agent_local_install.py"}
+# Include path components used in Path(...)/"postgres_migrations" as well as
+# joined strings. Tests can exercise the shipped ledger and SQL via a legacy adapter.
+SHIPPED_ASSET = re.compile(
+    r"\b(?:postgres_migrations|postgres_baseline|postgres_schema(?:_v8)?\.sql|native_pg_ledger\.json"
+    r"|(?:server-dotnet|agent-dotnet|config/clickhouse)/[\w./-]+)\b"
 )
 MIGRATION_TESTS = {
     "tests/access/test_existing_postgres_bootstrap.py",
@@ -59,10 +79,10 @@ REPORT_ACCESS_TESTS = {
 SOURCE_ROOTS = ("server", "deploy", "scripts", "sli_agent", "sli_collect", "tools")
 SKIP_DIRS = {"__pycache__", ".venv", "node_modules", ".git"}
 MODULE_REFERENCE = re.compile(
-    r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools)(?:\.[A-Za-z_]\w*)+"
+    r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools|tests)(?:\.[A-Za-z_]\w*)+"
 )
 SOURCE_REFERENCE = re.compile(
-    r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools)(?:/[\w.-]+)+\.py\b"
+    r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools|tests)(?:/[\w.-]+)+\.py\b"
 )
 
 
@@ -114,7 +134,7 @@ def references(path: str, tree: ast.AST, index: dict[str, str], *, embedded=Fals
             if not embedded:
                 # Registry/deferred-hook module names are whole literals.
                 # Documentation and example snippets are not import edges.
-                if value.startswith("server."):
+                if MODULE_REFERENCE.fullmatch(value):
                     add(value)
                 continue
             for match in MODULE_REFERENCE.finditer(value):
@@ -168,8 +188,22 @@ def dynamic_references(root: Path, path: str, index: dict[str, str]) -> set[str]
     return found
 
 
+def installer_roots(root: Path) -> set[str]:
+    roots = {f"deploy/linux/{name}.py" for name in INSTALLER_ROOTS}
+    if (root / HOST_PACKAGE).is_file():
+        for statement in parse(root, HOST_PACKAGE).body:
+            if isinstance(statement, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "HELPERS" for target in statement.targets
+            ):
+                roots.update(f"deploy/linux/{name}" for name in ast.literal_eval(statement.value) if name.endswith(".py"))
+                break
+        else:
+            raise ValueError("Native package HELPERS inventory is missing")
+    return roots
+
+
 def installer_closure(root: Path, index: dict[str, str]) -> set[str]:
-    pending = [f"deploy/linux/{name}.py" for name in INSTALLER_ROOTS]
+    pending = list(installer_roots(root))
     visited = set()
     while pending:
         path = pending.pop()
@@ -181,47 +215,84 @@ def installer_closure(root: Path, index: dict[str, str]) -> set[str]:
         # Importing a module also executes its package initializers.
         for parent in Path(path).parents:
             initializer = (parent / "__init__.py").as_posix()
-            if initializer in index.values():
+            if index.get(module_name(initializer)) == initializer:
                 dependencies.add(initializer)
         pending.extend(dependencies - visited)
     return visited
 
 
+def required_test_paths(root: Path) -> set[str]:
+    required = REPORT_ACCESS_TESTS | SECURITY_TESTS
+    for name in PR_TEST_MANIFESTS:
+        manifest = root / "scripts/ci" / name
+        if manifest.is_file():
+            required.update(line.split("::", 1)[0] for line in manifest.read_text(encoding="utf-8").splitlines())
+    return required
+
+
 def select_tests(root: Path, *, include_legacy_reports: bool = False):
     index = source_index(root)
     closure = installer_closure(root, index)
+    tests = [path.relative_to(root).as_posix() for path in python_files(root / "tests")]
+    index.update({module_name(path): path for path in tests})
+    required = required_test_paths(root)
+
+    @cache
+    def inspect_test(path: str) -> tuple[set[str], bool]:
+        tree = parse(root, path)
+        imports = {ref for ref in references(path, tree, index, embedded=True)
+                   if not ref.endswith("/__init__.py") or ref.startswith("tests/")}
+        assets = any(isinstance(node, ast.Constant) and isinstance(node.value, str)
+                     and SHIPPED_ASSET.search(node.value.replace("\\", "/")) for node in ast.walk(tree))
+        return imports, assets
+
     selected, excluded = [], []
-    groups = {"installer": 0, "migrations": 0, "closure": 0,
-              "shipped": 0, "mixed": 0, "other": 0, "legacy_reports": 0}
-    for file in python_files(root / "tests"):
-        if not file.name.startswith("test_"):
+    groups = {name: 0 for name in ("installer", "migrations", "closure", "protected",
+                                   "transitive", "shipped", "mixed", "other", "retired", "legacy_reports")}
+    for path in tests:
+        if not Path(path).name.startswith("test_"):
             continue
-        path = file.relative_to(root).as_posix()
-        direct = {ref for ref in references(path, parse(root, path), index, embedded=True)
-                  if not ref.endswith("/__init__.py")}
-        installer = any(ref.startswith("deploy/linux/") for ref in direct)
+        direct, direct_asset = inspect_test(path)
+        imports = {ref for ref in direct if not ref.startswith("tests/")}
+        dependencies = set(imports)
+        asset = direct_asset
+        pending = [ref for ref in direct if ref.startswith("tests/")]
+        seen = {path}
+        while pending:
+            helper = pending.pop()
+            if helper in seen:
+                continue
+            seen.add(helper)
+            refs, helper_asset = inspect_test(helper)
+            dependencies.update(ref for ref in refs if not ref.startswith("tests/"))
+            pending.extend(ref for ref in refs if ref.startswith("tests/") and ref not in seen)
+            asset |= helper_asset
+
+        installer = any(ref.startswith("deploy/linux/") for ref in dependencies)
         migrations = path.startswith("tests/migrations/") or path in MIGRATION_TESTS
-        shipped = any(ref.startswith("server/") for ref in direct & closure)
-        server_only = bool(direct) and all(ref.startswith("server/") for ref in direct)
+        shipped = any(ref.startswith("server/") for ref in dependencies & closure)
+        protected = (path in required or path.startswith("tests/access/")
+                     or any(ref.startswith(SECURITY_SOURCES) for ref in dependencies))
+        server_only = bool(imports) and all(ref.startswith("server/") for ref in dependencies)
         groups["installer"] += installer
         groups["migrations"] += migrations
         groups["closure"] += shipped
-        if path in REPORT_ACCESS_TESTS:
-            selected.append(path)
-        elif not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only and not migrations:
-            groups["legacy_reports"] += 1
-            excluded.append(path)
-        elif installer or migrations or shipped:
+        groups["protected"] += protected
+        groups["transitive"] += bool((dependencies - imports) & closure) or asset and not direct_asset
+        if protected or migrations or asset:
             groups["shipped"] += 1
             selected.append(path)
-        elif any(ref.startswith("server/") for ref in direct):
-            if server_only:
-                excluded.append(path)
-            else:
-                groups["mixed"] += 1
-                selected.append(path)
+        elif not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only:
+            groups["legacy_reports"] += 1
+            excluded.append(path)
+        elif installer or shipped:
+            groups["shipped"] += 1
+            selected.append(path)
+        elif server_only:
+            groups["retired"] += 1
+            excluded.append(path)
         else:
-            groups["other"] += 1
+            groups["mixed" if any(ref.startswith("server/") for ref in dependencies) else "other"] += 1
             selected.append(path)
     return selected, excluded, closure, groups
 
