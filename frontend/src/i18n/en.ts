@@ -259,7 +259,7 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.passwordDetection.recovered": "Processing resumed",
   "systemStatus.passwordDetection.current": "Up to date",
   "systemStatus.passwordDetection.quiet": "No new events",
-  "systemStatus.passwordDetection.unknown": "No processing data",
+  "systemStatus.passwordDetection.unknown": "Check the event source",
   "systemStatus.passwordDetection.unavailable": "Could not load password detection status",
   "systemStatus.service.processRunning": "Process is running",
   "systemStatus.service.running": "Running",

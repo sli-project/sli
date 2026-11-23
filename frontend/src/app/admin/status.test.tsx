@@ -625,6 +625,23 @@ it.each(["en", "ru"] as const)("shows live and historical password backlogs inde
   expect(within(table).queryByText(t("systemStatus.passwordDetection.stalled"))).toBeNull();
 });
 
+it.each([
+  ["en", "Check the event source"],
+  ["ru", "Проверьте источник событий"],
+] as const)("shows an action for both password rules with unobserved processing (%s)", async (locale, action) => {
+  setLocale(locale);
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: {
+    status: "ok", items: [], password_detection: { status: "ok", items: [
+      { rule_id: "qw.password-brute-force", state: "unknown", observed_at: null },
+      { rule_id: "qw.password-spray", state: "unknown", observed_at: null },
+    ] },
+  } });
+  renderPage();
+
+  const table = await screen.findByRole("table", { name: t("systemStatus.passwordDetection.title") });
+  expect(within(table).getAllByText(action)).toHaveLength(2);
+});
+
 it("reports missing password telemetry without a healthy rule result", async () => {
   vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: {
     status: "ok", items: [], password_detection: { status: "unavailable", items: [] },

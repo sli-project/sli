@@ -256,7 +256,7 @@ export const ru = {
   "systemStatus.passwordDetection.recovered": "Обработка возобновилась",
   "systemStatus.passwordDetection.current": "События обработаны",
   "systemStatus.passwordDetection.quiet": "Нет новых событий",
-  "systemStatus.passwordDetection.unknown": "Нет данных об обработке",
+  "systemStatus.passwordDetection.unknown": "Проверьте источник событий",
   "systemStatus.passwordDetection.unavailable": "Не удалось загрузить состояние парольных правил",
   "systemStatus.service.processRunning": "Процесс запущен",
   "systemStatus.service.running": "Работает",
