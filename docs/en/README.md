@@ -10,3 +10,5 @@ Start with the Debian archive. These guides cover the native Debian beta and its
 - [Administer the platform](administration.md)
 - [Troubleshoot installation and operations](troubleshooting.md)
 - [Frequently asked questions](faq.md)
+- [Work screens](user-guide.md)
+- [Detection catalog](detections.md)

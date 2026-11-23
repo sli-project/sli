@@ -107,7 +107,8 @@ See the [security policy](SECURITY.md) and the [administrator guide](docs/en/adm
 | Frequently asked questions | [FAQ](docs/en/faq.md) | [Частые вопросы](docs/ru/faq.md) |
 
 - [Contributing, checks and migrations](CONTRIBUTING.md)
-- [User guide](docs/USER_GUIDE.md)
+- [Work screens](docs/en/user-guide.md)
+- [Detection catalog](docs/en/detections.md)
 
 ## License
 
