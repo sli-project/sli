@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
 using static Sli.Server.Ad.AdJson;
@@ -101,7 +102,11 @@ internal static class AdLogonReports
         int offset=0;if(r.Row is null&&after is not null){int index=rows.FindIndex(row=>row.Int("entity_id")==after.Int("entity_id")&&row.Text("display_name")?.ToLowerInvariant()==after.Text("display_name"));if(index<0)throw new AdInputException("invalid_cursor");offset=index+1;}
         var page=rows.Skip(offset).Take(r.Limit).ToArray();bool more=rows.Count>offset+page.Length;
         result["items"]=Array(page);result["has_more"]=more;result["next_cursor"]=more?AdCursors.LogonEncode(cursorKind,binding,r.Row is null?Obj(new{display_name=page[^1].Text("display_name")?.ToLowerInvariant(),entity_id=page[^1].Int("entity_id")}):Obj(new{observed_at_utc=page[^1].Text("observed_at_utc"),projection_id=page[^1].Int("projection_id")})):null;
-        if(r.Row is not null)foreach(var item in result["items"]!.AsArray().OfType<JsonObject>())item.Remove("projection_id");
+        if (r.Row is not null) foreach (var item in result["items"]!.AsArray().OfType<JsonObject>())
+        {
+            item["row_id"] = item.Int("projection_id").ToString(CultureInfo.InvariantCulture);
+            item.Remove("projection_id");
+        }
         return result;
     }
 

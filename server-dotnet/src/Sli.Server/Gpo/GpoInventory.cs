@@ -78,6 +78,7 @@ internal static class GpoInventory
         bool linksObserved=snapshot["source_states"]?["links"].Text("status")=="observed";
         bool unlinked=view is "unlinked" or "unlinked_version_mismatch";
         if(unlinked&&!linksObserved) return (new(),0,true);
+        string term = Fold(query);
         var rows=new List<JsonObject>();
         foreach(var original in snapshot.Rows("gpos"))
         {
@@ -86,7 +87,9 @@ internal static class GpoInventory
             bool linked=(g["link_ids"] as JsonArray)?.Count>0;
             if(view=="linked"&&!linked||unlinked&&(linked||g["source_states"]?["links"].Text("status")!="observed")) continue;
             if(view is "version_mismatch" or "unlinked_version_mismatch"&&!VersionMismatch(g)) continue;
-            if(nameOnly?Fold(g.Text("display_name")).Contains(Fold(query),StringComparison.Ordinal):Contains(g,query)) rows.Add(g);
+            if (nameOnly
+                ? Fold(g.Text("display_name")).Contains(term, StringComparison.Ordinal) || Fold(g.Text("guid")).Contains(term, StringComparison.Ordinal)
+                : Contains(g, query)) rows.Add(g);
         }
         rows=rows.OrderBy(g=>g.Rows("reasons").Select(Score).DefaultIfEmpty(1000).Min()).ToList();return (Array(rows.Take(10000)),rows.Count,false);
     }

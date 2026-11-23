@@ -10,6 +10,7 @@ internal sealed record GpoPolicySnapshot(Guid Id, DateTimeOffset ObservedAt, Jso
 
 internal interface IGpoSnapshotReadStore
 {
+    Task<GpoPolicySnapshot?> ExactSnapshotAsync(long domain, Guid snapshot, CancellationToken ct);
     Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
         (Guid Before, Guid After)? comparison, CancellationToken ct);
 }

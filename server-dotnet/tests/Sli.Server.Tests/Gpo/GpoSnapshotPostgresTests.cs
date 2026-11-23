@@ -1,4 +1,7 @@
+using System.Net;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Sli.Server.Agents.SnapshotPublication;
@@ -59,9 +62,60 @@ public sealed class GpoSnapshotPostgresTests
             Assert.Null(denied["collections"]!["snapshot_comparison"]);
         }
 
-        async Task<Guid> PublishAsync(long target, int day, string value, string collection = "complete", string report = "observed",
-            string policy = "synthetic-policy")
+        Task<Guid> PublishAsync(long target, int day, string value, string collection = "complete", string report = "observed",
+            string policy = "synthetic-policy") => PublishVersionAsync(db, target, day, value, ct, collection, report, policy);
+    }
+
+    [Fact]
+    public async Task Exact_detail_from_real_inventory_keeps_the_first_version_and_its_scope_after_new_publication()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var db = await fixture.Pg.OpenAsync(ct);
+        await using var domainQuery = new NpgsqlCommand("select id from domains where fqdn='example.test'", db);
+        long domain = (long)(await domainQuery.ExecuteScalarAsync(ct))!;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
+            ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
+        }).Build();
+        var store = new GpoReadStore(new PostgresConnectionFactory(config), config);
+        using var host = await GpoEndpointTests.Host(store, scope: JsonSerializer.Serialize(new { kind = "domain", ids = new[] { domain } }));
+        using var client = host.GetTestClient();
+        string inventory = $"/api/v2/reports/ad.gpo.v2/data?tab=gpos&view=all&domain={domain}";
+        Guid first = await PublishVersionAsync(db, domain, 1, "600", ct, version: 7, scopeName: "First scope", size: 1);
+        var list = JsonNode.Parse(await client.GetStringAsync(inventory, ct))!;
+        Assert.Equal(first.ToString("D"), list["coverage"].Text("snapshot_id"));
+
+        Guid second = await PublishVersionAsync(db, domain, 2, "900", ct, version: 12, scopeName: "Second scope", size: 1);
+        var refreshed = JsonNode.Parse(await client.GetStringAsync(inventory, ct))!;
+        Assert.Equal(second.ToString("D"), refreshed["coverage"].Text("snapshot_id"));
+
+        string detail = inventory + "&policy_id=synthetic-policy&snapshot=";
+        var pinned = JsonNode.Parse(await client.GetStringAsync(detail + first, ct))!;
+        Assert.Equal(first.ToString("D"), pinned["coverage"].Text("snapshot_id"));
+        Assert.Equal(list["coverage"].Text("observed_at_utc"), pinned["coverage"].Text("observed_at_utc"));
+        Assert.Equal("600", Assert.Single(pinned["collections"].Rows("settings")).Text("value_display"));
+        Assert.Equal("First scope", Assert.Single(pinned["collections"].Rows("links")).Text("scope_name"));
+        Assert.Equal(7, Assert.Single(pinned["collections"].Rows("versions")).Number("computer_directory_version"));
+        using var denied = await client.GetAsync(detail.Replace($"domain={domain}", $"domain={domain + 20}") + first, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+        await using var expire = new NpgsqlCommand("""
+            delete from public.gpo_report_v2_source_snapshots where domain_id=@domain and source_run_id=@snapshot
+            """, db);
+        expire.Parameters.AddWithValue("domain", domain);
+        expire.Parameters.AddWithValue("snapshot", first);
+        Assert.Equal(1, await expire.ExecuteNonQueryAsync(ct));
+        using var expired = await client.GetAsync(detail + first, ct);
+        Assert.Equal(HttpStatusCode.NotFound, expired.StatusCode);
+        Assert.DoesNotContain("Second scope", await expired.Content.ReadAsStringAsync(ct));
+    }
+
+    private static async Task<Guid> PublishVersionAsync(NpgsqlConnection db, long target, int day, string value, CancellationToken ct,
+        string collection = "complete", string report = "observed", string policy = "synthetic-policy",
+        int version = 1, string? scopeName = null, int size = 230)
+    {
             string stamp = $"2026-10-{day:D2}T12:00:00Z";
             var snapshot = JsonNode.Parse("""
                 {"schema_version":"sli.ad-gpo.snapshot/1.0","collector_version":"synthetic-gpo","demo":false,
@@ -82,7 +136,18 @@ public sealed class GpoSnapshotPostgresTests
             snapshot["settings"]![0]!["gpo_id"] = policy;
             snapshot["settings"]![0]!["id"] = "setting-" + value;
             snapshot["settings"]![0]!["value_display"] = value;
-            for (int i = 1; i < 230; i++)
+            snapshot["gpos"]![0]!["computer"] = new JsonObject { ["directory_version"] = version, ["sysvol_version"] = version };
+            if (scopeName is not null)
+            {
+                snapshot["scopes"]!.AsArray().Add(new JsonObject { ["id"] = "scope", ["name"] = scopeName });
+                snapshot["links"]!.AsArray().Add(new JsonObject
+                {
+                    ["id"] = "link", ["scope_id"] = "scope", ["scope_name"] = scopeName, ["gpo_id"] = policy,
+                    ["raw_options"] = 0, ["enabled"] = true, ["enforced"] = false,
+                });
+                snapshot["gpos"]![0]!["link_ids"] = new JsonArray("link");
+            }
+            for (int i = 1; i < size; i++)
             {
                 snapshot["settings"]!.AsArray().Add(new JsonObject
                 {
@@ -96,6 +161,5 @@ public sealed class GpoSnapshotPostgresTests
             await GpoSnapshotStore.StoreAndVerifyAsync(db, tx, target, id, snapshot, insert: true, ct);
             await tx.CommitAsync(ct);
             return id;
-        }
     }
 }

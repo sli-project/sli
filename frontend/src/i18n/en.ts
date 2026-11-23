@@ -54,6 +54,9 @@ export const en: Record<MessageKey, string> = {
   "reports.gpo.sysvol": "SYSVOL",
   "reports.gpo.version_history": "Version history",
   "reports.gpo.compare_snapshots": "Compare snapshots",
+  "reports.gpo.back_to_list": "Back to policies",
+  "reports.gpo.snapshot_unavailable": "This policy snapshot is unavailable.",
+  "reports.gpo.setting_unavailable": "The selected setting is not in this snapshot.",
   "reports.gpo.snapshot_before": "Before",
   "reports.gpo.snapshot_after": "After",
   "reports.gpo.snapshot_comparison": "Snapshot comparison",
@@ -8568,7 +8571,6 @@ export const en: Record<MessageKey, string> = {
   "reports.computers.info": "Info",
   "reports.computers.critical": "Critical",
   "reports.computers.journal": "Open event journal",
-  "reports.computers.collapse": "Collapse repeats",
   "reports.computers.membership_added": "Added to group",
   "reports.computers.membership_removed": "Removed from group",
 };

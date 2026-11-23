@@ -13,6 +13,7 @@ import { ReportState } from "./ReportState";
 import { computerRole } from "../../plugins/ad/ComputerChecks";
 
 type Row = Record<string, unknown>;
+type ObservationRow = Row & { observationKey: string };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value : undefined;
 const id = (value: unknown) => /^[1-9][0-9]*$/.test(String(value)) ? String(value) : undefined;
 const record = (value: unknown) => (value && typeof value === "object" ? value : {}) as Row;
@@ -174,9 +175,7 @@ function ComputerChanges({ row, columns, timeZone }: { row: Row; columns: Report
 function Observations({ row, params, strip }: { row: Row; params: string; strip: boolean }) {
   const entity = id(row.entity_id);
   const { formatDateTime } = useDateFormatters();
-  const [selectedEvent, selectEvent] = useState<Row>();
-  const [collapse, setCollapse] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [selectedKey, selectObservation] = useState<string>();
   const query = useInfiniteQuery({
     queryKey: ["report-v2", "computer-observations", entity, params],
     queryFn: ({ pageParam }) => {
@@ -195,38 +194,21 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
   const result = query.data?.pages[0];
   const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
   const summary = result?.computer_logon_activity;
-  const opened = selectedEvent ?? rows[0];
-  const href = eventHref(opened?.source_event_id);
-  const eventKey = (observation: Row) => String(observation.source_event_id ?? JSON.stringify(observation));
-  const groups: Row[][] = [];
-  for (const observation of rows) {
-    const previous = groups.at(-1)?.[0];
-    const hour = text(observation.observed_at_utc)?.slice(0, 13);
-    if (collapse && previous && hour && hour === text(previous.observed_at_utc)?.slice(0, 13)
-      && observation.user_name === previous.user_name) groups.at(-1)!.push(observation);
-    else groups.push([observation]);
-  }
-  const grouped = groups.flatMap((group) => {
-    if (group.length === 1) return group;
-    const first = group[0];
-    return [{ ...first, repeat: group }, ...(expanded.has(eventKey(first)) ? group : [])];
+  // Older responses can omit row_id. Distinguish their duplicate observations
+  // only within the current result, without using the evidence link as identity.
+  const legacyCounts = new Map<string, number>();
+  const observations = rows.map((observation): ObservationRow => {
+    const rowId = id(observation.row_id);
+    if (rowId) return { ...observation, observationKey: rowId };
+    const fields = JSON.stringify([observation.observed_at_utc, observation.user_name, observation.source_event_id]);
+    const occurrence = (legacyCounts.get(fields) ?? 0) + 1;
+    legacyCounts.set(fields, occurrence);
+    return { ...observation, observationKey: `legacy:${fields}:${occurrence}` };
   });
-  const columns: TableColumn<Row>[] = [
-    { key: "observed_at_utc", label: t("reports.computers.time"), kind: "datetime", render: (observation) => {
-      const at = formatDateTime(text(observation.observed_at_utc));
-      const repeats = observation.repeat as Row[] | undefined;
-      if (!repeats) return at;
-      const key = eventKey(observation);
-      return <button className="sli-ds-table__link" type="button" aria-expanded={expanded.has(key)} onClick={(event) => {
-        event.stopPropagation();
-        setExpanded((current) => {
-          const next = new Set(current);
-          if (next.has(key)) next.delete(key);
-          else next.add(key);
-          return next;
-        });
-      }}>{formatDateTime(text(repeats.at(-1)?.observed_at_utc))} – {at} · ×{formatNumber(repeats.length)}</button>;
-    } },
+  const opened = observations.find((observation) => observation.observationKey === selectedKey) ?? observations[0];
+  const href = eventHref(opened?.source_event_id);
+  const columns: TableColumn<ObservationRow>[] = [
+    { key: "observed_at_utc", label: t("reports.computers.time"), kind: "datetime" },
     ...(rows.some((observation) => observation.user_display_name) ? [{ key: "user_display_name", label: t("reports.computers.user") }] : []),
     { key: "user_name", label: t("reports.computers.account") },
     { key: "source_event_id", label: t("reports.computers.source_event"), render: eventLink },
@@ -246,12 +228,11 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
     </> : null}
     {summary?.top ? <FactList facts={[{ label: t("reports.computers.top_account"),
       value: t("reports.computers.account_count", { account: summary.top.account, count: formatNumber(summary.top.count) }) }]}/> : null}
-    {rows.length ? <><label className="sli-ds-header__meta"><input type="checkbox" checked={collapse}
-      onChange={(event) => setCollapse(event.target.checked)}/>{t("reports.computers.collapse")}</label>
-      <DataTable caption={t("reports.computers.observations")} columns={columns} rows={grouped}
-      rowKey={(observation) => observation.repeat ? `repeat:${eventKey(observation)}` : eventKey(observation)} compact
-      onRowClick={selectEvent} selectedKey={opened ? eventKey(opened) : null} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage}
-      onLoadMore={() => void query.fetchNextPage()} showFooter={query.hasNextPage}/></> : computerEmpty()}
+    {observations.length ? <DataTable caption={t("reports.computers.observations")} columns={columns} rows={observations}
+      rowKey={(observation) => observation.observationKey} compact
+      onRowClick={(observation) => selectObservation(observation.observationKey)} selectedKey={opened?.observationKey}
+      hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage}
+      onLoadMore={() => void query.fetchNextPage()} showFooter={query.hasNextPage}/> : computerEmpty()}
     {href && opened ? <div className="sli-ds-header__row">
       <span>{formatDateTime(text(opened.observed_at_utc))} · {text(opened.user_name) ?? dash()} · #{String(opened.source_event_id)}</span>
       <div className="sli-ds-header__actions"><a className="sli-ds-button" data-variant="primary" href={href}>{t("reports.computers.open_event")}</a></div>
@@ -268,6 +249,7 @@ export function ComputerPanel({ row, logons, logonParams, changes, canCompare, o
   const canSee = (key: string) => access?.reports.some((report) => report.allowed && report.report_key === key);
   const logonsAllowed = row.computer_type === "workstation" && Boolean(id(row.entity_id)) && canSee("ad.computer-logons");
   const entity = id(row.entity_id);
+  const observations = <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
   const name = text(row.display_name) ?? text(row.name) ?? dash();
   const tabs = [
     { key: "facts", label: "reports.computers.details" },
@@ -283,10 +265,10 @@ export function ComputerPanel({ row, logons, logonParams, changes, canCompare, o
   return <DetailDrawer open inline={!expanded} title={name} subtitle={logons ? t("reports.computers.observations") : text(row.dns_host_name)}
     onClose={expanded ? () => setExpanded(false) : onClose} footer={footer}
     inlineKeyboard={false} headerActions={!expanded ? <Button variant="ghost" aria-label={t("reports.computers.expand")} onClick={() => setExpanded(true)}>↗</Button> : undefined}>
-    {logons ? <Observations row={row} params={logonParams} strip={false}/> : <Tabs items={tabs.map((item) => ({ ...item, label: t(item.label as MessageKey) }))} active={tab} onChange={setTab}>
+    {logons ? observations : <Tabs items={tabs.map((item) => ({ ...item, label: t(item.label as MessageKey) }))} active={tab} onChange={setTab}>
       <TabList label={t("reports.computers.details")}/>
       <TabPanel>{tab === "changes" ? <ComputerChanges row={row} columns={changes} timeZone={timeZone}/>
-        : tab === "logons" ? <Observations row={row} params={logonParams} strip/>
+        : tab === "logons" ? observations
         : <ComputerFacts row={row}/>}</TabPanel>
     </Tabs>}
   </DetailDrawer>;

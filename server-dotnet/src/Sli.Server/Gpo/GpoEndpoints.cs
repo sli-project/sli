@@ -19,11 +19,12 @@ internal sealed record GpoRequest(string View,string Query,string? Tab,string? S
     internal long? DomainId { get; init; }
     internal bool ListPolicySnapshots { get; init; }
     internal (Guid Before, Guid After)? ComparePolicySnapshots { get; init; }
+    internal Guid? ExactSnapshot { get; init; }
 
     internal static GpoRequest Parse(IQueryCollection query,DateTimeOffset now)
     {
         string First(string key)=>query[key].FirstOrDefault()?.Trim()??"";
-        var known=new HashSet<string>{"period","view","q","from","to","cursor","limit","sort","direction","tz","tab","policy_id","domain","snapshots","before_snapshot","after_snapshot"};
+        var known=new HashSet<string>{"period","view","q","from","to","cursor","limit","sort","direction","tz","tab","policy_id","domain","snapshots","before_snapshot","after_snapshot","snapshot"};
         string? unknown=query.Keys.Except(known).Order(StringComparer.Ordinal).FirstOrDefault();if(unknown is not null) throw new ArgumentException("report_parameter_unknown:"+unknown);
         string zone=First("tz");if(zone.Length==0) zone="UTC";TimeZoneInfo timezone;
         try { timezone=TimeZoneInfo.FindSystemTimeZoneById(zone); }catch(Exception e) when(e is TimeZoneNotFoundException or InvalidTimeZoneException) { throw new ArgumentException("report_timezone_invalid"); }
@@ -80,10 +81,18 @@ internal sealed record GpoRequest(string View,string Query,string? Tab,string? S
                 snapshots = (before, after);
             }
         }
+        Guid? exactSnapshot = null;
+        if (query.ContainsKey("snapshot"))
+        {
+            if (listSnapshots || compareSnapshots || tab is not ("gpos" or "changes") || policyId.Length == 0 || domainId is null
+                || !Guid.TryParseExact(First("snapshot"), "D", out var id) || id == Guid.Empty)
+                throw new ArgumentException("report_parameter_invalid:snapshot");
+            exactSnapshot = id;
+        }
         return new(view,First("q"),tab.Length==0?null:tab,sort.Length==0?null:sort,direction,limit,First("cursor"),zone,from,to)
         {
             PolicyId = policyId.Length > 0 ? policyId : null, DomainId = domainId,
-            ListPolicySnapshots = listSnapshots, ComparePolicySnapshots = snapshots,
+            ListPolicySnapshots = listSnapshots, ComparePolicySnapshots = snapshots, ExactSnapshot = exactSnapshot,
         };
     }
 }
@@ -161,11 +170,13 @@ public static class GpoEndpoints
             if(export&&request.PolicyId is not null) throw new ArgumentException("report_parameter_invalid:policy_id");
             var result = request.ListPolicySnapshots || request.ComparePolicySnapshots is not null
                 ? await GpoSnapshotComparison.QueryAsync(services.GetRequiredService<IGpoSnapshotReadStore>(), request, ct)
+                : request.ExactSnapshot is not null
+                ? await GpoPolicyCard.ExactAsync(services.GetRequiredService<IGpoReadStore>(), services.GetRequiredService<IGpoSnapshotReadStore>(), request, ct)
                 : await GpoReport.QueryAsync(services.GetRequiredService<IGpoReadStore>(), domains, request, ct);
             ct.ThrowIfCancellationRequested();result["access"]=AccessSummary();
             if(!catalog.Recheck(captured).Rules.Any(r=>r.RegistryKey=="ad.gpo.v2"&&!r.DeclarationOnly)) { await DomainHttp.WriteAsync(c,new {error="report_plugin_unavailable"},503,ct);return; }
             result["state_message"]=Metadata["messages"]![DomainHttp.SelectEnglish(c.Request.Headers.AcceptLanguage.ToString())?"en":"ru"]!["reports.state."+result.Text("state")]!.DeepClone();
-            if(!export) { await DomainHttp.WriteAsync(c,result,200,ct);return; }
+            if(!export) { await DomainHttp.WriteAsync(c,result,result["state_details"].Text("reason") == "gpo_snapshot_unavailable" && request.ExactSnapshot is not null ? 404 : 200,ct);return; }
             if(result.Text("state")=="error") throw new ArgumentException("gpo_history_not_exportable");
             var view=Metadata["declaration"].Rows("views").FirstOrDefault(v=>v.Text("key")==request.Tab)??Metadata["declaration"].Rows("views").First();
             var columns=view["columns"] as JsonArray??Metadata["declaration"]!["columns"]!.AsArray();var rows=view.Text("source")=="items"?result.Rows("items"):result["collections"].Rows(view.Text("source"));var array=rows.ToArray();

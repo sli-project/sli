@@ -50,6 +50,9 @@ export const ru = {
   "reports.gpo.sysvol": "SYSVOL",
   "reports.gpo.version_history": "История версий",
   "reports.gpo.compare_snapshots": "Сравнить снимки",
+  "reports.gpo.back_to_list": "К списку политик",
+  "reports.gpo.snapshot_unavailable": "Этот снимок политики недоступен.",
+  "reports.gpo.setting_unavailable": "В этом снимке нет выбранной настройки.",
   "reports.gpo.snapshot_before": "Было",
   "reports.gpo.snapshot_after": "Стало",
   "reports.gpo.snapshot_comparison": "Сравнение снимков",
@@ -8562,7 +8565,6 @@ export const ru = {
   "reports.computers.info": "Инфо",
   "reports.computers.critical": "Критическая",
   "reports.computers.journal": "Открыть журнал событий",
-  "reports.computers.collapse": "Свернуть повторы",
   "reports.computers.membership_added": "Добавлен в группу",
   "reports.computers.membership_removed": "Удалён из группы",
 } as const;
