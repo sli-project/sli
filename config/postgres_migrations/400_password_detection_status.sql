@@ -78,15 +78,18 @@ language sql stable security definer set search_path=pg_catalog,pg_temp as $$
             end as state
         from observations o
     ), best as (
-        select distinct on (c.rule_id) c.rule_id,c.state,
-            case when c.state in ('disabled','unknown') then null
-                 when c.state='failed' then coalesce(c.last_failure,c.last_attempt_at,c.last_completed_at)
-                 when c.state='history_pending' then c.history_progress
-                 else c.last_completed_at end as observed_at
+        select distinct on (c.rule_id) c.rule_id,c.state,t.observed_at
         from classified c
+        cross join lateral (
+            select case when c.state in ('disabled','unknown') then null
+                        when c.state='failed' then coalesce(c.last_failure,c.last_attempt_at,c.last_completed_at)
+                        when c.state='history_pending' then c.history_progress
+                        else c.last_completed_at end as observed_at
+        ) t
         order by c.rule_id,case c.state when 'failed' then 1 when 'behind' then 2
             when 'catching_up' then 3 when 'history_pending' then 4 when 'unknown' then 5
             when 'recovered' then 6 when 'current' then 7 when 'quiet' then 8 else 9 end,
+             (case when c.state='failed' then t.observed_at end) desc nulls last,
             c.last_completed_at desc nulls last
     )
     select r.rule_id,coalesce(b.state,'unknown'),b.observed_at from rules r

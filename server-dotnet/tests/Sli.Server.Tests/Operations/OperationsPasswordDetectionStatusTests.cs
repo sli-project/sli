@@ -33,6 +33,78 @@ public sealed class OperationsPasswordDetectionStatusTests
     }
 
     [Fact]
+    public async Task Status_selects_latest_failure_timestamp_across_sources_without_events()
+    {
+        const string rule = "qw.password-brute-force";
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 399);
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/400_password_detection_status.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var connections = new Connections(fixture);
+        var first = ShortEventAdmissionPostgresTests.Agent;
+        var second = Guid.Parse("00000000-0000-4000-8000-000000000350");
+        await RegisterMappedControllerWithoutNativeScope(owner, connections, first, 900001, "dc-one.example.test", ct);
+        await RegisterMappedControllerWithoutNativeScope(owner, connections, second, 900002, "dc-two.example.test", ct);
+        var now = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var latest = now.AddMinutes(-5);
+        // Seed only source metadata and status checkpoints. The read model may receive
+        // independent completion and failure times, without running either producer.
+        await using (var seed = new NpgsqlCommand("""
+            insert into public.finding_evidence_source_bindings(principal_oid,principal_name,installation_id,plugin_id,
+                source_instance_id,source_generation,storage_kind,log_source_id,agent_id)
+            select roles.oid,roles.rolname,i.installation_id,b.module_id,b.source_instance_id,b.source_instance_id,'core_event',
+                   case when b.agent_id=@first then 900001 else 900002 end,b.agent_id
+            from public.sli_agent_module_bindings b cross join public.semantic_default_installation i cross join pg_roles roles
+            where b.agent_id in (@first,@second) and b.module_id='sli.windows.ad-dc' and roles.rolname='sli_semantic_login';
+
+            with candidate(agent,completed_at,failure_at) as (
+                values (@first,@now-interval '20 minutes',@now-interval '10 minutes'),
+                       (@second,@now-interval '40 minutes',@latest)
+            ), configured as (
+                select public.password_v2_configured_identity(agent)->'scope' as scope,completed_at,failure_at
+                from candidate
+            ), executions as (
+                select *,public.password_v2_coverage_execution(scope,@rule) as execution,
+                       floor(extract(epoch from failure_at)/3600)::bigint as failure_hour
+                from configured
+            ), checkpoints as (
+                insert into public.semantic_password_checkpoints(scope_digest,pin,scope_json,execution_json,owner_domain_id,
+                    last_attempt_at,last_completed_at,health_status,health_reason,loss_buckets)
+                select public.password_v2_scope_key(scope),encode(sha256(convert_to(public.password_v2_json_compact(execution),'UTF8')),'hex'),
+                       scope,execution,1,failure_at,completed_at,'error','source_error',
+                       jsonb_build_object('source_error',jsonb_set(to_jsonb(array_fill(null::jsonb,array[25])),
+                           array[(failure_hour%25)::text],jsonb_build_object('hour',failure_hour,'count',1,
+                               'observed_min',public.password_v2_iso(failure_at),'observed_max',public.password_v2_iso(failure_at),
+                               'from',null,'to',null)))
+                from executions returning scope_digest,pin
+            )
+            insert into public.password_pass_state393(scope_digest,rule_id,definition_revision,live_pin)
+            select scope_digest,@rule,2,pin from checkpoints;
+            """, owner))
+        {
+            seed.Parameters.AddWithValue("first", first);
+            seed.Parameters.AddWithValue("second", second);
+            seed.Parameters.AddWithValue("now", now);
+            seed.Parameters.AddWithValue("latest", latest);
+            seed.Parameters.AddWithValue("rule", rule);
+            await seed.ExecuteNonQueryAsync(ct);
+        }
+        await using (var events = new NpgsqlCommand("select count(*) from public.event_hot", owner))
+            Assert.Equal(0L, await events.ExecuteScalarAsync(ct));
+
+        using var app = await OperationsEndpointTests.Start(postgresQueries: new OperationsQueries(connections), clock: TimeProvider.System);
+        app.Files.Native["semantic"] = new JsonObject { ["status"] = "running", ["heartbeat_at_utc"] = OpsJson.Stamp(now) };
+        var workers = await Workers(app);
+        Assert.Contains(workers["items"]!.AsArray(), row => (string?)row?["worker_name"] == "semantic" && (string?)row?["state"] == "active");
+        var failure = ReadRule(workers, "brute");
+        Assert.Equal("failed", (string?)failure["state"]);
+        Assert.Equal(latest, OpsJson.Time(failure["observed_at"]));
+        Assert.Equal("unknown", (string?)ReadRule(workers, "spray")["state"]);
+    }
+
+    [Fact]
     public async Task Status_separates_live_failures_and_recovery_from_a_running_process_and_backlog()
     {
         var ct = TestContext.Current.CancellationToken;
