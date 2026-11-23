@@ -30,6 +30,12 @@ public sealed class HomeSummaryReaders(IHomeSummaryRepository repository, Sli.Se
         return rows;
     }
 
+    internal Task<IReadOnlyList<JsonObject>> ReadActivity(string sql, CancellationToken ct, params (string Key, object? Value)[] values)
+    {
+        ct.ThrowIfCancellationRequested();
+        return repository.ReadActivityAsync(sql, values.ToDictionary(v => v.Key, v => v.Value), ct);
+    }
+
     internal static string Runtime(JsonObject? heartbeat, DateTimeOffset now)
     {
         var details = heartbeat?["details_json"];
