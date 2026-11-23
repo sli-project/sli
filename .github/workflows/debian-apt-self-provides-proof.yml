@@ -1,0 +1,32 @@
+name: Synthetic Debian APT self-provides proof
+
+on:
+  push:
+    branches:
+      - ci/debian-apt-self-provides-proof-20261123
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run the synthetic APT proof in Debian 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/library/debian:trixie
+          docker pull --platform linux/amd64 "$image"
+          image_id=$(docker image inspect --format '{{.Id}}' "$image")
+          docker image inspect --format 'Debian image ID {{.Id}}, repository digests {{json .RepoDigests}}' "$image_id"
+          docker run --rm --pull=never --network none --platform linux/amd64 \
+            --env SLI_SYNTHETIC_APT_ROOT=sli-runtime-self-provides-proof \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/debian_apt_self_provides_proof.sh,target=/fixture/run-proof.sh,readonly" \
+            "$image_id" /bin/bash /fixture/run-proof.sh
