@@ -39,11 +39,19 @@ const comparison = [
   { id: "change-3", side: "user", setting_name: "Wallpaper", path: "Desktop/Wallpaper", kind: "removed", before_value: "<img src=x>" },
 ];
 const requests: URL[] = [];
+const inventorySnapshot = "10000000-0000-0000-0000-000000000001";
+const nextSnapshot = "10000000-0000-0000-0000-000000000002";
+let latestSnapshot: string;
+let expiredSnapshot: string | undefined;
+let inventoryPolicies: typeof policies;
 
 beforeEach(() => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale("en");
   requests.length = 0;
+  latestSnapshot = inventorySnapshot;
+  expiredSnapshot = undefined;
+  inventoryPolicies = policies;
   window.history.replaceState(null, "", "/app/report/ad.gpo.v2?domain=7");
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), window.location.origin);
@@ -52,12 +60,24 @@ beforeEach(() => {
     const history = id && url.searchParams.get("tab") === "changes";
     const snapshotList = url.searchParams.has("snapshots");
     const before = url.searchParams.get("before_snapshot");
+    const exact = url.searchParams.get("snapshot");
+    if (exact && url.searchParams.get("domain") !== "7") return Response.json({ error: "denied" }, { status: 403 });
+    if (exact && (exact === expiredSnapshot || ![inventorySnapshot, nextSnapshot].includes(exact))) {
+      return Response.json({ error: "missing" }, { status: 404 });
+    }
+    const observedAt = (exact ?? latestSnapshot) === inventorySnapshot ? older : newer;
+    const selected = exact === nextSnapshot ? {
+      ...details, settings: [{ ...details.settings[0], value_display: "1200 seconds" }],
+      links: [{ ...details.links[0], scope_name: "New Workstations" }],
+      versions: [{ ...snapshot, computer_directory_version: 12, computer_sysvol_version: 11 }],
+    } : { ...details, versions: [{ ...snapshot, observed_at: older }] };
     const data = { contract_id: "sli.report-result.v2", report_key: "ad.gpo.v2", state: "partial",
-      items: id ? [] : policies, collections: !id ? {} : history ? { changes } :
+      items: exact ? policies.filter((row) => row.id === id) : id ? [] : inventoryPolicies,
+      collections: !id ? {} : history ? { changes } :
         snapshotList ? { snapshots: id === "linked" ? snapshots : snapshots.slice(0, 1) } :
-          before ? { snapshot_comparison: before === "snapshot-2" ? [] : comparison } : details,
+          before ? { snapshot_comparison: before === "snapshot-2" ? [] : comparison } : selected,
       has_more: false, next_cursor: null, series: {}, window: {}, metrics: [], filter_options: {},
-      coverage: { observed_at_utc: newer, policy_history_state: history ? "ok" : undefined },
+      coverage: { snapshot_id: exact ?? latestSnapshot, domain_id: 7, observed_at_utc: observedAt, policy_history_state: history ? "ok" : undefined },
       limitations: [{ code: "fixture", text: "Removed collection explanation" }],
     };
     return new Response(JSON.stringify(url.pathname.endsWith("/data") ? data : { ...gpoDeclaration.declaration, filter_options: {} }),
@@ -71,6 +91,32 @@ function renderReport() {
     <ReportRenderer reportKey="ad.gpo.v2"/>
   </QueryClientProvider>);
 }
+
+function openAddress(address: string) {
+  cleanup();
+  window.history.replaceState(null, "", address);
+  return renderReport();
+}
+
+function openDetails(id = "linked", tab = "settings", selected?: string) {
+  const params = new URLSearchParams({ policy_id: id, domain: "7", snapshot: inventorySnapshot, detail_tab: tab });
+  if (selected) params.set("setting", selected);
+  return openAddress("/app/report/ad.gpo.v2?" + params);
+}
+
+it("links the inventory name to the identified snapshot and keeps its filtered list address", async () => {
+  renderReport();
+  const search = await screen.findByRole("searchbox", { name: "Policy name" });
+  fireEvent.change(search, { target: { value: "Updated" } });
+  const policy = await screen.findByRole("link", { name: "Updated policy" }, { timeout: 1000 });
+  const detail = new URL(policy.getAttribute("href")!, window.location.origin);
+  expect(detail.searchParams.get("domain")).toBe("7");
+  expect(detail.searchParams.get("policy_id")).toBe("updated");
+  expect(detail.searchParams.get("snapshot")).toBe(inventorySnapshot);
+  const back = new URL(detail.searchParams.get("return_to")!, window.location.origin);
+  expect(back.searchParams.get("q")).toBe("Updated");
+  expect(requests.filter((request) => request.searchParams.has("policy_id"))).toHaveLength(0);
+});
 
 it("sorts recent changes first and combines search with counted filters", async () => {
   renderReport();
@@ -90,37 +136,39 @@ it("sorts recent changes first and combines search with counted filters", async 
   expect(within(table).queryByText("Unobserved links")).toBeNull();
 });
 
-it("opens a policy beneath the list and navigates its sections, versions, and changes", async () => {
+it("opens the older snapshot on its own page after a new one is published", async () => {
   renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Linked policy: 2 links" }));
-  const card = screen.getByRole("region", { name: "Linked policy" });
-  expect(await within(card).findByText("Workstations")).toBeTruthy();
-  fireEvent.click(within(card).getByRole("tab", { name: "Permissions" }));
-  expect(within(card).getByText("Edit, delete, and modify permissions")).toBeTruthy();
-  fireEvent.click(within(card).getByRole("tab", { name: "Versions" }));
-  expect(within(within(card).getByRole("table", { name: "Version history" })).getByText("6 / 6")).toBeTruthy();
-  fireEvent.click(await within(card).findByRole("tab", { name: "Changes 1" }));
-  expect(within(card).getByText("900 seconds →", { exact: false })).toBeTruthy();
-  expect(within(card).getByText("600 seconds")).toBeTruthy();
-  const divider = screen.getByRole("separator", { name: "Resize policy list" });
-  fireEvent.keyDown(divider, { key: "ArrowUp" });
-  expect(divider.getAttribute("aria-valuenow")).toBe("35");
-  fireEvent.click(within(card).getByRole("button", { name: "Open full page" }));
+  const link = await screen.findByRole("link", { name: "Linked policy: 2 links" });
+  const address = link.getAttribute("href")!;
+  latestSnapshot = nextSnapshot;
+  openAddress(address);
+  await screen.findByRole("heading", { name: "Linked policy" });
+  expect(await screen.findByText("Workstations")).toBeTruthy();
+  expect(screen.queryByText("New Workstations")).toBeNull();
+  expect(document.querySelector("time")?.dateTime).toBe(older);
+  fireEvent.click(screen.getByRole("tab", { name: "Permissions" }));
+  expect(screen.getByText("Edit, delete, and modify permissions")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+  expect(within(screen.getByRole("table", { name: "Version history" })).getAllByText("7 / 7").length).toBeGreaterThan(0);
+  fireEvent.click(await screen.findByRole("tab", { name: "Changes 1" }));
+  expect(screen.getByText("900 seconds →", { exact: false })).toBeTruthy();
+  expect(screen.getByText("600 seconds")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  expect(screen.getByText("600 seconds")).toBeTruthy();
+  expect(screen.queryByText("1200 seconds")).toBeNull();
   expect(screen.queryByRole("table", { name: "Group Policies" })).toBeNull();
-  fireEvent.click(within(card).getByRole("button", { name: "Restore list" }));
-  expect(screen.getByRole("table", { name: "Group Policies" })).toBeTruthy();
-  fireEvent.click(within(card).getByRole("button", { name: "Close" }));
-  expect(screen.queryByRole("region", { name: "Linked policy" })).toBeNull();
+  expect(requests.filter((url) => url.searchParams.has("snapshot")).every((url) => url.searchParams.get("snapshot") === inventorySnapshot)).toBe(true);
+  const back = screen.getByRole("link", { name: "Back to policies" });
+  openAddress(back.getAttribute("href")!);
+  expect(await screen.findByRole("link", { name: "Linked policy" })).toBe(document.activeElement);
 });
 
 it("finds settings by path and value, expands history inline, and renders host values as text", async () => {
-  renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Linked policy: 3 settings" }));
-  const card = screen.getByRole("region", { name: "Linked policy" });
+  openDetails("linked", "settings", "timeout");
+  const card = await screen.findByRole("tabpanel");
   const search = await within(card).findByRole("searchbox", { name: "Search by name, path, and value" });
   fireEvent.change(search, { target: { value: "Screen lock" } });
   const timeout = within(card).getByRole("button", { name: "Timeout" });
-  fireEvent.click(timeout);
   expect(timeout.getAttribute("aria-expanded")).toBe("true");
   expect(within(card).getByText("Security/Screen lock")).toBeTruthy();
   expect(await within(card).findByText(/was 900 seconds/)).toBeTruthy();
@@ -132,13 +180,13 @@ it("finds settings by path and value, expands history inline, and renders host v
   expect(within(card).queryByText("Timeout")).toBeNull();
   fireEvent.click(within(card).getByRole("button", { name: "User 1" }));
   expect(within(card).getByRole("button", { name: "Theme" })).toBeTruthy();
+  fireEvent.click(within(card).getByRole("button", { name: "Theme" }));
+  expect(new URLSearchParams(window.location.search).get("setting")).toBe("theme");
 });
 
 it("compares either of two selected dates in the policy card and distinguishes an equal pair", async () => {
-  renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Linked policy: 2 links" }));
-  const card = within(screen.getByRole("region", { name: "Linked policy" }));
-  fireEvent.click(card.getByRole("tab", { name: "Versions" }));
+  openDetails("linked", "versions");
+  const card = within(await screen.findByRole("tabpanel"));
   const before = await card.findByRole("combobox", { name: "Before" });
   const after = card.getByRole("combobox", { name: "After" });
   expect(within(before).getAllByRole("option")).toHaveLength(4);
@@ -161,11 +209,19 @@ it("compares either of two selected dates in the policy card and distinguishes a
 });
 
 it("keeps versions visible when a policy has fewer than two comparable snapshots", async () => {
-  renderReport();
-  const card = within(await screen.findByRole("region", { name: "Updated policy" }));
-  fireEvent.click(card.getByRole("tab", { name: "Versions" }));
+  openDetails("updated", "versions");
+  const card = within(await screen.findByRole("tabpanel"));
   expect(await card.findByText("Two snapshots are required for comparison")).toBeTruthy();
   expect(card.getByRole("table", { name: "Version history" })).toBeTruthy();
   expect(card.queryByRole("button", { name: "Compare snapshots" })).toBeNull();
+});
+
+it("reports an expired snapshot without loading the current policy or its history", async () => {
+  expiredSnapshot = inventorySnapshot;
+  latestSnapshot = nextSnapshot;
+  openDetails("linked", "links");
+  expect(await screen.findByText("This policy snapshot is unavailable.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Back to policies" }).getAttribute("href")).toContain("domain=7");
+  expect(requests.filter((url) => url.pathname.endsWith("/data")).map((url) => url.searchParams.get("snapshot"))).toEqual([inventorySnapshot]);
 });
 

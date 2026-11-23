@@ -1,18 +1,21 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../api/client";
+import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
-import { DataTable, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
+import { DataTable, ReportLayout, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
 import { Icon } from "../../design-system/Icon";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { plural, t, type MessageKey } from "../../i18n";
 import { GpoSnapshotComparison } from "./GpoSnapshotComparison";
+import { ReportDenied } from "../../app/report-v2/ReportDenied";
 
 const sides = ["computer", "user"] as const;
 type Side = typeof sides[number];
 type Versions = Partial<Record<`${Side}_${"directory_version" | "sysvol_version"}`, number>> & { observed_at?: string };
 export type PolicyRow = Versions & {
   id: string;
+  guid?: string;
+  gpo_status?: string;
   display_name: string;
   setting_count?: number | null;
   computer_setting_count?: number | null;
@@ -59,23 +62,56 @@ const changeLabels: Record<string, MessageKey> = {
   "user.directory_version": "reports.gpo.user_ad", "user.sysvol_version": "reports.gpo.user_sysvol",
 };
 
-export function GpoPolicyCard({ definition, domain, policy, tab, setTab, revision }: {
-  definition: ReportDefinitionDto; domain: string; policy: PolicyRow; tab: PolicyTab; setTab: (tab: PolicyTab) => void; revision: number;
+export function GpoPolicyCard({ definition, domain, initial, backHref }: {
+  definition: ReportDefinitionDto; domain: string; initial: URLSearchParams; backHref: string;
 }) {
+  const policyId = initial.get("policy_id");
+  const snapshot = initial.get("snapshot");
+  const enabled = Boolean(domain && policyId && snapshot);
+  const [tab, setTab] = useState<PolicyTab>(() => tabs.find((key) => key === initial.get("detail_tab")) ?? "settings");
+  const [item, setItem] = useState(initial.get("setting"));
+  const { formatDateTime } = useDateFormatters();
+  const changeLocation = (nextTab: PolicyTab, nextItem: string | null) => {
+    const address = new URL(window.location.href);
+    address.searchParams.set("detail_tab", nextTab);
+    if (nextItem) address.searchParams.set("setting", nextItem);
+    else address.searchParams.delete("setting");
+    window.history.replaceState(window.history.state, "", address);
+    setTab(nextTab);
+    setItem(nextItem);
+  };
+  const snapshotParams = { domain, policy_id: policyId ?? "", snapshot: snapshot ?? "" };
   const detail = useQuery({
-    queryKey: ["report-v2", "gpo-policy", domain, policy.id, revision],
-    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "gpos", view: "all", policy_id: policy.id,
-      ...(domain ? { domain } : {}) })),
+    queryKey: ["report-v2", "gpo-policy", domain, policyId, snapshot],
+    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "gpos", view: "all", ...snapshotParams })),
+    enabled,
     staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
   });
+  const policy = detail.data?.items.find((row) => row.id === policyId) as PolicyRow | undefined;
+  const exact = detail.data?.coverage.snapshot_id === snapshot && String(detail.data?.coverage.domain_id) === domain;
   const history = useQuery({
-    queryKey: ["report-v2", "gpo-policy-history", domain, policy.id, revision],
-    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "changes", period: "90d", policy_id: policy.id,
-      ...(domain ? { domain } : {}) })),
+    queryKey: ["report-v2", "gpo-policy-history", domain, policyId, snapshot],
+    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "changes", period: "90d", ...snapshotParams })),
+    enabled: enabled && exact && Boolean(policy),
     staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
   });
+  const back = <a className="sli-ds-button" href={backHref}>{t("reports.gpo.back_to_list")}</a>;
+  if (detail.data?.state === "denied" || detail.error instanceof ApiResponseError && [401, 403].includes(detail.error.status))
+    return <ReportLayout title={t("reports.gpo.title")} domain={domain} actions={back} state="denied"
+      stateView={<ReportDenied reportKey={definition.key}/>}/>;
+  if (!enabled || detail.error instanceof ApiResponseError && detail.error.status === 404
+      || detail.isSuccess && detail.data.state !== "error" && (!policy || !exact))
+    return <ReportLayout title={t("reports.gpo.title")} domain={domain} actions={back}>
+      <p role="status">{t("reports.gpo.snapshot_unavailable")}</p>
+    </ReportLayout>;
+  if (detail.isError || detail.data?.state === "error") return <ReportLayout title={t("reports.gpo.title")} domain={domain} actions={back}
+    state="error" stateView={<div role="alert">{t("reports.gpo.card_failed")}{" "}
+      <button className="sli-ds-button" type="button" onClick={() => void detail.refetch()}>{t("state.retry")}</button>
+    </div>}/>;
+  if (!policy) return <ReportLayout title={t("reports.gpo.title")} domain={domain} actions={back} state="loading"/>;
   const fields = detail.data?.collections as CardCollections | undefined;
-  const changes = (history.data?.collections as CardCollections | undefined)?.changes ?? [];
+  const matchedHistory = history.data?.coverage.snapshot_id === snapshot && String(history.data?.coverage.domain_id) === domain;
+  const changes = matchedHistory ? (history.data?.collections as CardCollections | undefined)?.changes ?? [] : [];
   const historyState = history.data?.coverage.policy_history_state;
   const historyCount = historyState === "ok" || historyState === "empty" || changes.length > 0 ? changes.length : undefined;
   const linkCount = policy.link_count ?? (fields?.links?.length ? fields.links.length : undefined);
@@ -84,12 +120,9 @@ export function GpoPolicyCard({ definition, domain, policy, tab, setTab, revisio
     return { key, label: <>{t(`reports.gpo.${key}`)}{count == null ? null : <> <b>{count}</b></>}</> };
   });
   const content = () => {
-    if (detail.isPending) return <span role="status">{t("state.loading")}</span>;
-    if (detail.isError || detail.data?.state === "error" || detail.data?.state === "denied") return <div role="alert">
-      {t("reports.gpo.card_failed")} <button className="sli-ds-button" type="button" onClick={() => void detail.refetch()}>{t("state.retry")}</button>
-    </div>;
     switch (tab) {
-      case "settings": return fields?.settings?.length ? <PolicySettings settings={fields.settings} changes={changes}/> : "—";
+      case "settings": return fields?.settings?.length ? <PolicySettings settings={fields.settings} changes={changes} item={item}
+        selectItem={(id) => changeLocation("settings", id)}/> : item ? t("reports.gpo.setting_unavailable") : "—";
       case "links": return <CardTable caption={t("reports.gpo.links")} rows={fields?.links ?? []} columns={[
         { key: "scope_name", label: t("reports.gpo.scope") },
         { key: "order", label: t("reports.gpo.order"), kind: "number" },
@@ -105,49 +138,73 @@ export function GpoPolicyCard({ definition, domain, policy, tab, setTab, revisio
       ]}/>;
       case "versions": return <>
         <PolicyVersions versions={fields?.versions ?? []} domain={domain}/>
-        {domain ? <GpoSnapshotComparison key={revision} reportKey={definition.key} domain={domain} policyId={policy.id} revision={revision}/> : null}
+        <GpoSnapshotComparison reportKey={definition.key} domain={domain} policyId={policy.id} revision={detail.dataUpdatedAt}/>
       </>;
       case "changes": return history.isPending ? <span role="status">{t("state.loading")}</span> :
-        history.isError || historyState === "unavailable" || history.data?.state === "error" || history.data?.state === "denied" ?
+        history.isError || !matchedHistory || historyState === "unavailable" || history.data?.state === "error" || history.data?.state === "denied" ?
           <div role="alert">{t("reports.gpo.history_failed")}{" "}
-            <button className="sli-ds-button" type="button" onClick={() => void history.refetch()}>{t("state.retry")}</button></div> : <PolicyChanges changes={changes}/>;
+            <button className="sli-ds-button" type="button" onClick={() => void history.refetch()}>{t("state.retry")}</button></div>
+          : historyState === "not_collected" ? <p role="status">{t("reports.state.not_collected")}</p>
+          : <PolicyChanges changes={changes}/>;
     }
   };
-  return <Tabs active={tab} items={items} onChange={(key) => setTab(key as PolicyTab)}>
-    <TabList label={policy.display_name}/>
-    <div className="sli-ds-split-report__body"><TabPanel>{content()}</TabPanel></div>
-  </Tabs>;
+  const observed = detail.data?.coverage.observed_at_utc;
+  const sources = detail.data?.coverage.policy_sources as Record<string, string | undefined> | undefined;
+  const sourceState = sources?.[tab === "settings" ? "report" : tab === "rights" ? "permissions" : tab === "versions" ? "gpt" : tab];
+  const sourceMessage = !sourceState || ["observed", "no_record", "not_applicable"].includes(sourceState) ? null
+    : sourceState === "partial" ? t("reports.state.partial")
+    : ["failed", "access_denied", "parse_error"].includes(sourceState) ? t("reports.state.unavailable") : t("reports.state.not_collected");
+  const status = ["AllSettingsEnabled", "AllSettingsDisabled", "UserSettingsDisabled", "ComputerSettingsDisabled"]
+    .find((value) => value === policy.gpo_status);
+  return <ReportLayout title={policy.display_name} domain={domain} actions={back}>
+    <div className="sli-ds-header__meta">
+      {typeof observed === "string" ? <span>{t("reports.gpo.observed")} <time dateTime={observed} title={observed}>{formatDateTime(observed)}</time></span> : null}
+      {policy.guid ? <span>GUID <code>{policy.guid}</code></span> : null}
+      {status ? <span>{t(`reports.v2.ad.gpo.v2.columns.status.labels.${status}` as MessageKey)}</span> : null}
+    </div>
+    <Tabs active={tab} items={items} onChange={(key) => changeLocation(key as PolicyTab, item)}>
+      <TabList label={policy.display_name}/>
+      <TabPanel>
+        {sourceMessage ? <p role="status">{sourceMessage}</p> : null}
+        {content()}
+      </TabPanel>
+    </Tabs>
+  </ReportLayout>;
 }
 
 function CardTable<Row extends { id: string }>({ caption, rows, columns }: { caption: string; rows: Row[]; columns: TableColumn<Row>[] }) {
   return <DataTable caption={caption} rows={rows} columns={columns} rowKey={(row) => row.id} stickyHeader={false} showFooter={false} emptyContent="—"/>;
 }
 
-function PolicySettings({ settings, changes }: { settings: Setting[]; changes: Change[] }) {
+function PolicySettings({ settings, changes, item, selectItem }: {
+  settings: Setting[]; changes: Change[]; item: string | null; selectItem: (id: string | null) => void;
+}) {
   const { formatDateTime } = useDateFormatters();
-  const [side, setSide] = useState<Side>(() => settings.some((row) => row.side === "computer") ? "computer" : "user");
+  const [side, setSide] = useState<Side>(() => settings.find((row) => row.id === item)?.side
+    ?? (settings.some((row) => row.side === "computer") ? "computer" : "user"));
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState<number>();
   const matchingSide = settings.filter((row) => row.side === side);
   const categories = [...new Set(matchingSide.map((row) => row.category).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
   const text = query.trim().toLocaleLowerCase();
   const rows = matchingSide.filter((row) => (!category || row.category === category) &&
-    [row.setting_name, row.path, row.value_display].some((value) => (value ?? "").toLocaleLowerCase().includes(text)));
+    [row.setting_name, row.path, row.value_display].some((value) => (value ?? "").toLocaleLowerCase().includes(text)))
+    .sort((left, right) => (left.category ?? "").localeCompare(right.category ?? "") ||
+      (left.setting_name ?? "").localeCompare(right.setting_name ?? "") || (left.path ?? "").localeCompare(right.path ?? ""));
+  const itemIndex = rows.findIndex((row) => row.id === item);
+  const pageIndex = Math.min(page ?? Math.floor(Math.max(0, itemIndex) / pageSize), Math.max(0, Math.ceil(rows.length / pageSize) - 1));
+  const start = pageIndex * pageSize;
   const lastChanges = new Map<string, Change>();
   for (const change of changes) {
     if (change.object_type === "gpo_setting" && change.field === "value_display" && !lastChanges.has(change.object_id)) lastChanges.set(change.object_id, change);
   }
-  const open = (row: Setting) => setExpanded((previous) => {
-    const next = new Set(previous);
-    if (next.has(row.id)) next.delete(row.id);
-    else next.add(row.id);
-    return next;
-  });
+  const open = (row: Setting) => { setPage(pageIndex); selectItem(item === row.id ? null : row.id); };
   const columns: TableColumn<Setting>[] = [
     { key: "setting_name", label: t("reports.gpo.parameter"), width: "40%", render: (row) => <button type="button"
-      className="sli-ds-table__disclosure" aria-expanded={expanded.has(row.id)} onClick={(event) => { event.stopPropagation(); open(row); }}>
-      <Icon name={expanded.has(row.id) ? "chevron-down" : "chevron"}/>{row.setting_name || "—"}
+      className="sli-ds-table__disclosure" aria-expanded={item === row.id} onClick={(event) => { event.stopPropagation(); open(row); }}>
+      <Icon name={item === row.id ? "chevron-down" : "chevron"}/>{row.setting_name || "—"}
     </button> },
     { key: "value_display", label: t("reports.gpo.value"), width: "27%" },
     { key: "category", label: t("reports.gpo.category") },
@@ -159,19 +216,23 @@ function PolicySettings({ settings, changes }: { settings: Setting[]; changes: C
         {sides.map((key) => {
           const count = settings.filter((row) => row.side === key).length;
           return count ? <button type="button" key={key} className="sli-ds-chip" aria-pressed={side === key}
-            onClick={() => { setSide(key); setCategory(""); setQuery(""); }}>{t(`reports.gpo.${key}`)} <b>{count}</b></button> : null;
+            onClick={() => { setSide(key); setCategory(""); setQuery(""); setPage(0); selectItem(null); }}>{t(`reports.gpo.${key}`)} <b>{count}</b></button> : null;
         })}
       </div>
       <label className="sli-ds-field" data-grow="" data-search=""><Icon name="search"/><input type="search" aria-label={t("reports.gpo.search_settings")} placeholder={t("reports.gpo.search_settings")}
-        value={query} onChange={(event) => setQuery(event.target.value)}/></label>
-      {categories.length ? <label className="sli-ds-field"><select aria-label={t("reports.gpo.category")} value={category} onChange={(event) => setCategory(event.target.value)}>
+        value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></label>
+      {categories.length ? <label className="sli-ds-field"><select aria-label={t("reports.gpo.category")} value={category} onChange={(event) => { setCategory(event.target.value); setPage(0); }}>
         <option value="">{t("reports.gpo.all_categories")}</option>
         {categories.map((value) => <option key={value}>{value}</option>)}
       </select></label> : null}
     </div>
-    <DataTable caption={t("reports.gpo.settings")} rows={rows} columns={columns} rowKey={(row) => row.id}
-      onRowClick={open} stickyHeader={false} showFooter={false} emptyContent="—" expandedContent={(row) => {
-        if (!expanded.has(row.id)) return null;
+    {item && !settings.some((row) => row.id === item) ? <p role="status">{t("reports.gpo.setting_unavailable")}</p> : null}
+    <DataTable caption={t("reports.gpo.settings")} rows={rows.slice(start, start + pageSize)} columns={columns} rowKey={(row) => row.id}
+      total={rows.length} pageSize={{ value: pageSize, options: [25, 50, 100, 200], onChange: (size) => { setPageSize(size); setPage(0); } }}
+      pagination={{ start: start + 1, onPrevious: pageIndex > 0 ? () => setPage(pageIndex - 1) : undefined,
+        onNext: start + pageSize < rows.length ? () => setPage(pageIndex + 1) : undefined }}
+      onRowClick={open} emptyContent="—" expandedContent={(row) => {
+        if (item !== row.id) return null;
         const change = lastChanges.get(row.id);
         const before = change?.after_value === row.value_display ? change?.before_value : undefined;
         return <div className="sli-ds-table__row-details">

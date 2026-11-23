@@ -85,6 +85,9 @@ internal static class GpoReport
         { string key=option.Text("value");int count=GpoInventory.Filter(snapshot,key).Total;metrics.Add(new JsonObject { ["key"]=key,["label"]=option["label"]?.DeepClone(),["value"]=count,["tone"]=key=="attention"&&count>0?"warning":key=="all"?"accent":"neutral",["filter"]=new JsonObject { ["view"]=key } }); }
         var missing=snapshot["source_states"] is JsonObject ss?ss.Where(p=>p.Value is JsonObject&&p.Value.Text("status") is not ("observed" or "no_record" or "not_applicable")).Select(p=>(JsonNode)JsonValue.Create(p.Key)!):[];
         string status=snapshot.Text("collection_status");string resultState=items.Length==0&&!listed.NotEvaluated?"empty":"ok";if(status.Length>0&&status is not ("complete" or "completed")||listed.NotEvaluated) resultState="partial";
-        return Result(resultState,Array(items),new JsonObject { ["state"]=status.Length>0?status:"unknown",["observed_at_utc"]=snapshot["observed_at"]?.DeepClone(),["domain_id"]=pair["domain_id"]?.DeepClone(),["snapshots"]=pair["state"]?.DeepClone(),["missing_sources"]=Array(missing) },collections,limits,listed.Total,metrics);
+        return Result(resultState,Array(items),new JsonObject { ["state"]=status.Length>0?status:"unknown",
+            ["observed_at_utc"]=(pair["observed_at_utc"] ?? snapshot["observed_at"])?.DeepClone(),
+            ["snapshot_id"]=pair["snapshot_id"]?.DeepClone(),["domain_id"]=pair["domain_id"]?.DeepClone(),
+            ["snapshots"]=pair["state"]?.DeepClone(),["missing_sources"]=Array(missing) },collections,limits,listed.Total,metrics);
     }
 }

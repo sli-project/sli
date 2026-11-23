@@ -33,6 +33,13 @@ public sealed class GpoReportTests
                 .OrderByDescending(snapshot => snapshot.ObservedAt).ToArray();
             return Task.FromResult(rows);
         }
+        public Task<GpoPolicySnapshot?> ExactSnapshotAsync(long domain, Guid snapshot, CancellationToken ct)
+        {
+            Reads++;
+            Domains = [domain];
+            return Task.FromResult(Snapshots.Where(entry => entry.Domain == domain && entry.Snapshot.Id == snapshot)
+                .Select(entry => entry.Snapshot).SingleOrDefault());
+        }
     }
     static GpoRequest Request(string view="all",string? tab=null)=>new(view,"",tab,null,"asc",500,null,"UTC",Stamp("2026-10-01T00:00:00Z"),Stamp("2026-10-08T00:00:00Z"));
     // Minimal observed snapshot from tests/reports/test_gpo_review_categories.py.

@@ -6,16 +6,30 @@ namespace Sli.Server.Gpo;
 
 internal static class GpoPolicyCard
 {
+    private static JsonObject SnapshotUnavailable() => GpoReport.Result("not_collected",
+        coverage: new JsonObject { ["reason"] = "gpo_snapshot_unavailable" });
+
+    internal static async Task<JsonObject> ExactAsync(IGpoReadStore store, IGpoSnapshotReadStore snapshots,
+        GpoRequest request, CancellationToken ct)
+    {
+        long domain = request.DomainId!.Value;
+        var selected = await snapshots.ExactSnapshotAsync(domain, request.ExactSnapshot!.Value, ct);
+        if (selected?.Payload is not { } snapshot) return SnapshotUnavailable();
+
+        return await QueryAsync(store, new JsonObject { ["domain_id"] = domain }, snapshot, request.PolicyId!, request, ct, selected);
+    }
+
     internal static async Task<JsonObject> QueryAsync(IGpoReadStore store, JsonObject pair, JsonObject snapshot,
-        string policyId, GpoRequest request, CancellationToken ct)
+        string policyId, GpoRequest request, CancellationToken ct, GpoPolicySnapshot? exact = null)
     {
         var policy = snapshot.Rows("gpos").FirstOrDefault(row => row.Text("id") == policyId);
-        if (policy is null) return GpoReport.Result("empty");
+        if (policy is null) return exact is null ? GpoReport.Result("empty") : SnapshotUnavailable();
 
         var settings = Select("settings", "side", "setting_name", "category", "path", "value_display");
         var links = Select("links", "scope_name", "order", "enabled", "enforced");
         var permissions = Select("permissions", "trustee_name", "permission");
         var current = Observation(snapshot, policy);
+        if (exact is not null) current["observed_at"] = Iso(exact.ObservedAt);
         var versions = new JsonArray(current);
         long domain = pair.Number("domain_id");
         if (domain > 0 && pair.Number("previous_domain_id") == domain && pair["previous"] is JsonObject previous
@@ -27,9 +41,26 @@ internal static class GpoPolicyCard
         var data = historyRequested ? new JsonObject() :
             new JsonObject { ["settings"] = settings, ["links"] = links, ["permissions"] = permissions, ["versions"] = versions };
         var coverage = new JsonObject { ["observed_at_utc"] = snapshot["observed_at"]?.DeepClone() };
+        JsonArray? items = null;
+        if (exact is not null)
+        {
+            coverage["observed_at_utc"] = Iso(exact.ObservedAt);
+            coverage["domain_id"] = domain;
+            coverage["snapshot_id"] = exact.Id.ToString("D");
+            var header = Project(policy, "id", "display_name", "guid", "gpo_status");
+            items = new JsonArray(header);
+            var sources = new JsonObject();
+            foreach (string source in new[] { "report", "links", "permissions" })
+                sources[source] = Bounded(policy["source_states"]?[source]?["status"] ?? snapshot["source_states"]?[source]?["status"]);
+            sources["gpt"] = Bounded(policy["source_states"]?["gpt"]?["status"] ?? policy["source_states"]?["sysvol_gpt"]?["status"]);
+            coverage["policy_sources"] = sources;
+        }
         if (historyRequested && domain > 0)
         {
-            var history = await store.PolicyHistoryAsync([domain], request.From, request.To, policyId, policy.Text("guid"), ct);
+            // The history reader uses a half-open interval and PostgreSQL timestamps have microsecond precision.
+            var to = exact?.ObservedAt.AddTicks(10) ?? request.To;
+            var from = exact is null ? request.From : to - (request.To - request.From);
+            var history = await store.PolicyHistoryAsync([domain], from, to, policyId, policy.Text("guid"), ct);
             coverage["policy_history_state"] = history["state"]?.DeepClone();
             var names = settings.OfType<JsonObject>().ToDictionary(row => row.Text("id"), row => row.Text("setting_name"));
             var targets = links.OfType<JsonObject>().ToDictionary(row => row.Text("id"), row => row.Text("scope_name"));
@@ -44,7 +75,7 @@ internal static class GpoPolicyCard
                 return row;
             }));
         }
-        return GpoReport.Result("ok", coverage: coverage, collections: data);
+        return GpoReport.Result("ok", items, coverage, data);
 
         JsonArray Select(string collection, params string[] fields) => Array(snapshot.Rows(collection)
             .Where(row => row.Text("gpo_id") == policyId)

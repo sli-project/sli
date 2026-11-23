@@ -22,18 +22,25 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
                   and schema_version='sli.ad-gpo.snapshot/1.0'
                 order by source_completed_at_utc desc, source_run_id desc limit 1
             )
-            select snapshot.payload_json,snapshot.payload_sha256,snapshot.domain_id
+            select snapshot.payload_json,snapshot.payload_sha256,snapshot.domain_id,snapshot.source_run_id,snapshot.source_observed_at_utc
             from gpo_report_v2_source_snapshots snapshot
             join newest on newest.domain_id=snapshot.domain_id
             where snapshot.import_status='completed' and snapshot.schema_version='sli.ad-gpo.snapshot/1.0'
             order by snapshot.source_completed_at_utc desc, snapshot.source_run_id desc limit 2
             """,db,tx) { CommandTimeout = 0 };BindDomains(cmd,domains);var snapshots=new List<JsonObject>();long? domain=null,previousDomain=null;
+        string? snapshotId = null, observedAt = null;
         await using(var reader=await cmd.ExecuteReaderAsync(ct)) while(await reader.ReadAsync(ct))
         {
-            if(snapshots.Count==0) domain=reader.GetInt64(2);else previousDomain=reader.GetInt64(2);
+            if (snapshots.Count == 0)
+            {
+                domain = reader.GetInt64(2);
+                snapshotId = reader.GetGuid(3).ToString("D");
+                observedAt = Iso(reader.GetFieldValue<DateTimeOffset>(4));
+            }
+            else previousDomain = reader.GetInt64(2);
             snapshots.Add(ValidateSnapshot(reader.GetString(0),reader.IsDBNull(1)?null:(byte[])reader.GetValue(1)));
         }
-        await tx.CommitAsync(ct);return new JsonObject { ["state"]=snapshots.Count==0?"not_collected":snapshots.Count==1?"partial":"available",["current"]=snapshots.FirstOrDefault(),["previous"]=snapshots.Skip(1).FirstOrDefault(),["domain_id"]=domain,["previous_domain_id"]=previousDomain };
+        await tx.CommitAsync(ct);return new JsonObject { ["state"]=snapshots.Count==0?"not_collected":snapshots.Count==1?"partial":"available",["current"]=snapshots.FirstOrDefault(),["previous"]=snapshots.Skip(1).FirstOrDefault(),["domain_id"]=domain,["previous_domain_id"]=previousDomain,["snapshot_id"]=snapshotId,["observed_at_utc"]=observedAt };
     }
     internal static JsonObject ValidateSnapshot(string json,byte[]? hash)
     {
@@ -46,6 +53,26 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
         catch(Exception e) when(e is JsonException or InvalidDataException or ArgumentException or InvalidOperationException) { throw new GpoSourceException(); }
     }
     internal static void BindDomains(NpgsqlCommand cmd,long[]? domains)=>cmd.Parameters.AddWithValue("domains",NpgsqlDbType.Array|NpgsqlDbType.Bigint,domains is null?DBNull.Value:domains);
+
+    public async Task<GpoPolicySnapshot?> ExactSnapshotAsync(long domain, Guid snapshot, CancellationToken ct)
+    {
+        await using var db = await connections.OpenAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            select source_observed_at_utc, payload_json, payload_sha256
+            from gpo_report_v2_source_snapshots
+            where domain_id = @domain and source_run_id = @snapshot and import_status = 'completed'
+              and collection_status <> 'failed'
+              and schema_version = 'sli.ad-gpo.snapshot/1.0'
+              and payload_json->>'collection_status' = collection_status
+              and jsonb_array_length(payload_json->'settings') = setting_count
+            """, db) { CommandTimeout = 0 };
+        cmd.Parameters.AddWithValue("domain", domain);
+        cmd.Parameters.AddWithValue("snapshot", snapshot);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        if (reader.IsDBNull(2)) throw new GpoSourceException();
+        return new(snapshot, reader.GetFieldValue<DateTimeOffset>(0), ValidateSnapshot(reader.GetString(1), reader.GetFieldValue<byte[]>(2)));
+    }
 
     public async Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
         (Guid Before, Guid After)? comparison, CancellationToken ct)

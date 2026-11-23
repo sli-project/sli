@@ -23,6 +23,66 @@ public sealed class GpoEndpointTests
     const string Prefix="/api/v2/reports/ad.gpo.v2";
     const string PolicySnapshots = Prefix + "/data?tab=gpos&policy_id=synthetic-policy&domain=1";
     const string SnapshotIds = "&before_snapshot=10000000-0000-0000-0000-000000000001&after_snapshot=10000000-0000-0000-0000-000000000003";
+
+    [Fact]
+    public async Task Exact_policy_reads_the_inventory_snapshot_after_a_new_snapshot_is_published()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var first = Version(1, "600", "Old scope", 7);
+        var next = Version(2, "900", "New scope", 12);
+        var store = new GpoReportTests.Store { Pair = Pair(first) };
+        store.Snapshots.Add((1, "synthetic-policy", first));
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+
+        var inventory = JsonNode.Parse(await client.GetStringAsync(Prefix + "/data?tab=gpos&view=all&domain=1", ct))!;
+        Assert.Equal(first.Id.ToString("D"), inventory["coverage"].Text("snapshot_id"));
+        Assert.Equal(first.ObservedAt, Stamp(inventory["coverage"].Text("observed_at_utc")));
+
+        store.Snapshots.Add((1, "synthetic-policy", next));
+        store.Snapshots.Add((2, "synthetic-policy", Version(3, "500", "Foreign scope", 4)));
+        store.Pair = Pair(next);
+        var refreshed = JsonNode.Parse(await client.GetStringAsync(Prefix + "/data?tab=gpos&view=all&domain=1", ct))!;
+        Assert.Equal(next.Id.ToString("D"), refreshed["coverage"].Text("snapshot_id"));
+        var exact = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + "&snapshot=" + first.Id, ct))!;
+        Assert.Equal(first.Id.ToString("D"), exact["coverage"].Text("snapshot_id"));
+        Assert.Equal(first.ObservedAt, Stamp(exact["coverage"].Text("observed_at_utc")));
+        Assert.Equal("Synthetic policy", Assert.Single(exact.Rows("items")).Text("display_name"));
+        Assert.Equal("600", Assert.Single(exact["collections"].Rows("settings")).Text("value_display"));
+        Assert.Equal("Old scope", Assert.Single(exact["collections"].Rows("links")).Text("scope_name"));
+        Assert.Equal(7, Assert.Single(exact["collections"].Rows("versions")).Number("computer_directory_version"));
+
+        using var foreign = await client.GetAsync(PolicySnapshots + "&snapshot=" + SnapshotId(3), ct);
+        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        using var wrongDomain = await client.GetAsync(PolicySnapshots.Replace("domain=1", "domain=2") + "&snapshot=" + SnapshotId(3), ct);
+        Assert.Equal(HttpStatusCode.Forbidden, wrongDomain.StatusCode);
+        store.Snapshots.RemoveAll(entry => entry.Snapshot.Id == first.Id);
+        using var expired = await client.GetAsync(PolicySnapshots + "&snapshot=" + first.Id, ct);
+        Assert.Equal(HttpStatusCode.NotFound, expired.StatusCode);
+        Assert.DoesNotContain("New scope", await expired.Content.ReadAsStringAsync(ct));
+
+        static JsonObject Pair(GpoPolicySnapshot source) => new()
+        {
+            ["state"] = "available", ["domain_id"] = 1, ["snapshot_id"] = source.Id.ToString("D"),
+            ["observed_at_utc"] = Iso(source.ObservedAt), ["current"] = source.Payload!.DeepClone(),
+        };
+        static GpoPolicySnapshot Version(int day, string value, string scope, int version)
+        {
+            var payload = GpoReportTests.ReviewSnapshot();
+            var observed = new DateTimeOffset(2026, 10, day, 0, 0, 0, TimeSpan.Zero);
+            payload["observed_at"] = Iso(observed);
+            payload["gpos"]![0]!["computer"]!["directory_version"] = version;
+            payload["settings"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "timeout", ["gpo_id"] = "synthetic-policy", ["side"] = "computer", ["value_display"] = value,
+            });
+            payload["links"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "link", ["gpo_id"] = "synthetic-policy", ["scope_name"] = scope,
+            });
+            return new(SnapshotId(day), observed, payload);
+        }
+    }
     sealed class Authentication(bool valid,string role) : IPrincipalAuthenticator
     {
         public ValueTask<AuthenticationResult> AuthenticateAsync(HttpContext c,CancellationToken ct)=>ValueTask.FromResult(valid?AuthenticationResult.Success(new("session",1,role)):AuthenticationResult.Denied(401,"authentication_required"));
