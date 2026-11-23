@@ -27,7 +27,7 @@ public sealed class AdComputerLogonActivityTests
             insert into what_where_when_observations values
                 (1, 101, '00000000-0000-0000-0000-000000000001', 'synthetic-user', '2026-11-01T16:59:00Z'),
                 (2, 102, '00000000-0000-0000-0000-000000000001', 'Synthetic-User', '2026-11-01T17:00:00Z'),
-                (3, 103, '00000000-0000-0000-0000-000000000001', 'synthetic-user', '2026-11-01T18:00:00Z'),
+                (3, 104, '00000000-0000-0000-0000-000000000001', 'synthetic-user', '2026-11-01T18:00:00Z'),
                 (4, 104, '00000000-0000-0000-0000-000000000001', 'other-user', '2026-11-01T19:00:00Z'),
                 (5, 105, '00000000-0000-0000-0000-000000000002', 'synthetic-user', '2026-11-01T20:00:00Z'),
                 (6, 106, '00000000-0000-0000-0000-000000000001', 'synthetic-user', '2026-11-04T00:00:00Z');
@@ -50,7 +50,10 @@ public sealed class AdComputerLogonActivityTests
             "table", null, false, 1, null, "Asia/Bangkok");
         var first = await AdLogonReports.ReadAsync(db, input, [source], ct);
         var summary = first["computer_logon_activity"]!;
-        Assert.Equal(104, Assert.Single(first["items"]!.AsArray()).Int("source_event_id"));
+        var firstObservation = Assert.Single(first["items"]!.AsArray())!.AsObject();
+        Assert.Equal("4", firstObservation.Text("row_id"));
+        Assert.Equal(104, firstObservation.Int("source_event_id"));
+        Assert.False(firstObservation.ContainsKey("projection_id"));
         Assert.Equal(4, summary.Int("total"));
         Assert.Equal(2m, summary["typical"]!.GetValue<decimal>());
         Assert.Equal(3, summary["top"].Int("count"));
@@ -60,7 +63,10 @@ public sealed class AdComputerLogonActivityTests
             day => { Assert.Equal("2026-11-02", day.Text("day")); Assert.Equal(3, day.Int("count")); });
 
         var second = await AdLogonReports.ReadAsync(db, input with { Cursor = first.Text("next_cursor") }, [source], ct);
-        Assert.Equal(103, Assert.Single(second["items"]!.AsArray()).Int("source_event_id"));
+        var secondObservation = Assert.Single(second["items"]!.AsArray())!.AsObject();
+        Assert.Equal("3", secondObservation.Text("row_id"));
+        Assert.Equal(firstObservation.Int("source_event_id"), secondObservation.Int("source_event_id"));
+        Assert.False(secondObservation.ContainsKey("projection_id"));
         var filtered = (JsonObject)input.Params.DeepClone();
         filtered["user"] = "other-user";
         var onlyOther = await AdLogonReports.ReadAsync(db, input with { Params = filtered }, [source], ct);

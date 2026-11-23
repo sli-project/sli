@@ -8562,7 +8562,6 @@ export const ru = {
   "reports.computers.info": "Инфо",
   "reports.computers.critical": "Критическая",
   "reports.computers.journal": "Открыть журнал событий",
-  "reports.computers.collapse": "Свернуть повторы",
   "reports.computers.membership_added": "Добавлен в группу",
   "reports.computers.membership_removed": "Удалён из группы",
 } as const;

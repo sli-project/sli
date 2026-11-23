@@ -8568,7 +8568,6 @@ export const en: Record<MessageKey, string> = {
   "reports.computers.info": "Info",
   "reports.computers.critical": "Critical",
   "reports.computers.journal": "Open event journal",
-  "reports.computers.collapse": "Collapse repeats",
   "reports.computers.membership_added": "Added to group",
   "reports.computers.membership_removed": "Removed from group",
 };
