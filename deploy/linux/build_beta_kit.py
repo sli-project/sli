@@ -395,7 +395,7 @@ def prepare_release(checkout, release, runtime_path, artifact, postgres_version,
     })
 
 
-def finish(output, commit, release, version, *, toolchain, installer_root=ROOT):
+def finish(output, commit, release, version, *, toolchain, installer_root=ROOT, rehearsal=None):
     rows = []
     for path in sorted(output.glob('*.deb')):
         command(['dpkg-deb', '--info', path], stdout=subprocess.DEVNULL)
@@ -414,6 +414,8 @@ def finish(output, commit, release, version, *, toolchain, installer_root=ROOT):
                 'target': 'debian-13-amd64', 'toolchain': toolchain, 'packages': rows,
                 'installer': {'filename': installer.name, 'sha256': sha256(installer)},
                 'remover': {'filename': remover.name, 'sha256': sha256(remover)}}
+    if rehearsal is not None:
+        manifest['rehearsal'] = rehearsal
     write_json(output / 'manifest.json', manifest)
     sums = {row['filename']: row['sha256'] for row in rows}
     sums[installer.name] = manifest['installer']['sha256']
@@ -458,7 +460,7 @@ def archive_kit(packages):
             archive.add(path, arcname='sli-debian-beta-kit/' + path.name)
 
 
-def verify_offline_kit(path, commit):
+def verify_offline_kit(path, commit, *, allow_rehearsal=False):
     """Verify the native Debian archive before it is published."""
     checksums, metadata = {}, {}
     with tarfile.open(path, 'r|gz') as archive:
@@ -490,6 +492,12 @@ def verify_offline_kit(path, commit):
     if (not isinstance(manifest, dict) or manifest.get('git_commit') != commit
             or manifest.get('target') != 'debian-13-amd64'):
         raise ValueError('Beta kit manifest does not match the selected commit and target')
+    if ('rehearsal' in manifest) != allow_rehearsal:
+        raise ValueError('Beta kit must be verified in its explicit release or rehearsal mode')
+    if allow_rehearsal:
+        from deploy.linux import n03_kit_rehearsal
+
+        n03_kit_rehearsal.verify_manifest(manifest)
     packages = {row['filename']: row['sha256'] for row in manifest['packages']}
     if not packages or len(packages) != len(manifest['packages']) or not all(name.endswith('.deb') for name in packages):
         raise ValueError('Beta kit manifest must list its Debian packages')
@@ -502,7 +510,7 @@ def verify_offline_kit(path, commit):
         raise ValueError('Beta kit archive files do not match the manifest')
 
 
-def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk=False):
+def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk=False, rehearsal_previous_kit=None):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64' or os.geteuid() == 0:
         raise ValueError('Run the build as an ordinary user on an amd64 Linux runner')
     if not cache.is_dir() or output.exists() or output.is_symlink():
@@ -510,6 +518,12 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
     pg_env = postgres_environment(pg_bin)
     os.umask(0o022)
     commit = git(root, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}')
+    if rehearsal_previous_kit is not None:
+        from deploy.linux import n03_kit_rehearsal
+
+        if commit == n03_kit_rehearsal.PREVIOUS_COMMIT or not require_agent_sdk:
+            raise ValueError('Rehearsal needs a new source commit and its trusted agent SDK identity')
+        git(root, 'merge-base', '--is-ancestor', n03_kit_rehearsal.PREVIOUS_COMMIT, commit)
     epoch = int(git(root, 'show', '-s', '--format=%ct', commit))
     release = 'beta1-' + commit[:12]
     env = dict(os.environ, SOURCE_DATE_EPOCH=str(epoch), TZ='UTC', LC_ALL='C.UTF-8',
@@ -544,9 +558,17 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         if not native_package.VERSION.fullmatch(version):
             raise ValueError('VERSION is not valid for the Debian beta kit')
         pins = json.loads((checkout / 'deploy/linux/native_pins.json').read_text(encoding='utf-8'))
-        artifact, runtime_filename, locked = input_pins(pins)
         print(f'Verifying pinned packages for {commit}', flush=True)
-        copy_inputs(cache, packages, locked)
+        previous_args, rehearsal = [], None
+        if rehearsal_previous_kit is None:
+            artifact, runtime_filename, locked = input_pins(pins)
+            copy_inputs(cache, packages, locked)
+        else:
+            artifact, runtime_filename, previous = n03_kit_rehearsal.stage(
+                checkout, cache, packages, rehearsal_previous_kit)
+            command(['dpkg', '--compare-versions', version, 'gt', previous[1]])
+            previous_args = ['--previous', *previous]
+            rehearsal = artifact['pin_source']
         pg_deb_version = next(row['version'] for row in pins['packages'] if row['name'] == 'postgresql-18')
         pg_version = f"{pg_deb_version.split('-')[0]} (Debian {pg_deb_version})"
         ledger = json.loads((checkout / 'deploy/linux/native_pg_ledger.json').read_text(encoding='utf-8'))
@@ -571,9 +593,11 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         agent.rename(payload / 'web/app/installers')
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
-                 '--dotnet-published', published, *agent_args], cwd=checkout, env=env)
-        finish(packages, commit, release, version, toolchain=toolchain, installer_root=checkout)
+                 '--dotnet-published', published, *agent_args, *previous_args], cwd=checkout, env=env)
+        finish(packages, commit, release, version, toolchain=toolchain, installer_root=checkout, rehearsal=rehearsal)
         archive_kit(packages)
+        if rehearsal is not None:
+            verify_offline_kit(packages / 'sli-debian-beta-kit.tar.gz', commit, allow_rehearsal=True)
         packages.rename(output)
     return output
 
@@ -593,13 +617,20 @@ def main():
     parser.add_argument('--agent-msi', type=Path,
                         help='override SliAgent-<commit>.msi; its trusted .msi.json manifest stays in --debs')
     parser.add_argument('--require-agent-sdk', action='store_true', help='require the locked SDK in the agent manifest')
+    parser.add_argument('--rehearsal-previous-kit', type=Path,
+                        help='build an internal n03 rehearsal using the exact immutable predecessor archive')
+    parser.add_argument('--verify-rehearsal', action='store_true', help='verify only an explicitly marked internal rehearsal archive')
     args = parser.parse_args()
     if args.verify_offline_kit is None and args.debs is None:
         parser.error('--debs is required for downloading or verifying inputs and building')
+    if args.rehearsal_previous_kit is not None and args.output is None:
+        parser.error('--rehearsal-previous-kit requires --output')
+    if args.verify_rehearsal and args.verify_offline_kit is None:
+        parser.error('--verify-rehearsal requires --verify-offline-kit')
     try:
         if args.verify_offline_kit is not None:
             commit = git(ROOT, 'rev-parse', '--verify', '--end-of-options', args.commit + '^{commit}')
-            verify_offline_kit(args.verify_offline_kit, commit)
+            verify_offline_kit(args.verify_offline_kit, commit, allow_rehearsal=args.verify_rehearsal)
             print(f'Debian beta kit verified for {commit}')
         elif args.verify_inputs or args.fetch_inputs:
             cache = args.debs.resolve()
@@ -611,7 +642,8 @@ def main():
             print(f'{len(checked_inputs(cache, locked))} pinned packages verified for {commit}')
         else:
             print(build(ROOT, args.commit, args.debs.resolve(), args.output.absolute(), args.pg_bin.resolve(),
-                        agent_msi=args.agent_msi, require_agent_sdk=args.require_agent_sdk))
+                        agent_msi=args.agent_msi, require_agent_sdk=args.require_agent_sdk,
+                        rehearsal_previous_kit=args.rehearsal_previous_kit))
     except (ValueError, OSError, subprocess.CalledProcessError, tarfile.TarError, KeyError, TypeError) as error:
         parser.exit(1, f'Beta kit build failed: {error}\n')
 

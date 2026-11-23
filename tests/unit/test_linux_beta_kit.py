@@ -4,10 +4,11 @@ import os
 import shutil
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
-from deploy.linux import build_beta_kit as kit, native_plugins
+from deploy.linux import build_beta_kit as kit, n03_kit_rehearsal as rehearsal, native_plugins
 
 
 @pytest.mark.parametrize('tampered', [False, True])
@@ -45,18 +46,21 @@ def test_archive_contains_the_installer_and_verified_kit_bytes(tmp_path):
         }
 
 
-@pytest.mark.parametrize('change', [None, 'package', 'commit', 'unlisted'])
+@pytest.mark.parametrize('change', [None, 'package', 'commit', 'unlisted', 'rehearsal'])
 def test_verify_offline_kit_checks_the_archived_files_and_source(tmp_path, change):
     commit = 'a' * 40
     files = {'install-beta-kit': b'installer', 'remove-beta-kit': b'remover', 'sli-fixture.deb': b'package'}
     for name, body in files.items():
         (tmp_path / name).write_bytes(body)
     entries = {name: {'filename': name, 'sha256': kit.sha256(tmp_path / name)} for name in files}
-    kit.write_json(tmp_path / 'manifest.json', {
+    manifest = {
         'git_commit': 'b' * 40 if change == 'commit' else commit,
         'target': 'debian-13-amd64', 'packages': [entries['sli-fixture.deb']],
         'installer': entries['install-beta-kit'], 'remover': entries['remove-beta-kit'],
-    })
+    }
+    if change == 'rehearsal':
+        manifest['rehearsal'] = {'release_eligible': False}
+    kit.write_json(tmp_path / 'manifest.json', manifest)
     sums = {name: row['sha256'] for name, row in entries.items()}
     sums['manifest.json'] = kit.sha256(tmp_path / 'manifest.json')
     (tmp_path / 'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in sums.items()))
@@ -67,11 +71,53 @@ def test_verify_offline_kit_checks_the_archived_files_and_source(tmp_path, chang
     kit.archive_kit(tmp_path)
     archive = tmp_path / 'sli-debian-beta-kit.tar.gz'
     if change:
-        reason = 'selected commit and target' if change == 'commit' else 'do not match SHA256SUMS'
+        reason = {'commit': 'selected commit and target',
+                  'rehearsal': 'explicit release or rehearsal mode'}.get(change, 'do not match SHA256SUMS')
         with pytest.raises(ValueError, match=reason):
             kit.verify_offline_kit(archive, commit)
     else:
         kit.verify_offline_kit(archive, commit)
+
+
+@pytest.mark.parametrize('change', [None, 'second-runtime', 'system-pin', 'publication', 'predecessor'])
+def test_n03_rehearsal_manifest_binds_exact_wrapper_and_system_archives(change):
+    lock = rehearsal.system_inputs(kit.ROOT)
+    packages = [
+        {'filename': Path(row['Filename']).name, 'package': name, 'version': row['Version'],
+         'architecture': row['Architecture'], 'size': int(row['Size']), 'sha256': row['SHA256']}
+        for name, row in lock['packages'].items()
+    ]
+    packages.append({
+        'filename': f'{rehearsal.RUNTIME}_{rehearsal.WRAPPER_VERSION}_amd64.deb',
+        'package': rehearsal.RUNTIME, 'version': rehearsal.WRAPPER_VERSION,
+        'architecture': 'amd64', 'sha256': rehearsal.WRAPPER_SHA,
+    })
+    provenance = {
+        'source': 'local_n03_rehearsal', 'release_eligible': False,
+        'build_pins_sha256': rehearsal.BUILD_INPUTS_SHA, 'previous_kit': rehearsal.PREVIOUS.copy(),
+        'apt_proof_job': 137809451537, 'system_index_sha256': lock['packages_index_sha256'],
+        'system_inrelease_sha256': lock['inrelease_sha256'], 'control_only': {
+            'package': rehearsal.RUNTIME, 'architecture': 'amd64',
+            'source_version': rehearsal.ORIGINAL_VERSION, 'source_sha256': rehearsal.ORIGINAL_SHA,
+            'version': rehearsal.WRAPPER_VERSION, 'sha256': rehearsal.WRAPPER_SHA,
+            'data_tar_gz_sha256': rehearsal.PAYLOAD_SHA,
+            'provides': f'{rehearsal.RUNTIME} (= {rehearsal.ORIGINAL_VERSION})',
+        },
+    }
+    manifest = {'packages': packages, 'rehearsal': provenance}
+    if change == 'second-runtime':
+        packages.append(dict(packages[-1], version=rehearsal.ORIGINAL_VERSION))
+    elif change == 'system-pin':
+        packages[0]['sha256'] = 'a' * 64
+    elif change == 'publication':
+        provenance['release_eligible'] = True
+    elif change == 'predecessor':
+        provenance['previous_kit']['sha256'] = 'a' * 64
+    if change:
+        with pytest.raises(ValueError, match='Beta kit rehearsal'):
+            rehearsal.verify_manifest(manifest)
+    else:
+        rehearsal.verify_manifest(manifest)
 
 
 def test_copies_only_pinned_debs_and_leaves_cache_intact(tmp_path):
