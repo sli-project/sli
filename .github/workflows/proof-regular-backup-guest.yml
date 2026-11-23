@@ -1,0 +1,69 @@
+name: Disposable regular backup guest proof
+
+on:
+  push:
+    branches:
+      - beta1/proof-regular-backup-guest-20261123
+
+permissions:
+  contents: read
+
+jobs:
+  guest-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      IMAGE_ROOT: https://cloud.debian.org/images/cloud/trixie/20261123-2671
+      IMAGE_NAME: debian-13-generic-amd64-20261123-2671.qcow2
+      IMAGE_SHA512: 562a4614952657a6ab8a89cda56eaf1bc85c8dfea51155184267bb6b6361eff215baf6afa2f8c2c8c2bad328ac6c30eead80664286ef4c8538368aeb7f87104f
+      PSYCOPG_WHEEL_URL: https://files.pythonhosted.org/packages/5c/e0/7b3dee031daae7743609ce3c746565d4a3ed7c2c186479eb48e34e838c64/psycopg-3.3.4-py3-none-any.whl
+      PSYCOPG_BINARY_WHEEL_URL: https://files.pythonhosted.org/packages/e7/38/205d10bc1ad0df4a21c5c51659126bd3ea0ef98fcad1e852f78c249bb9c3/psycopg_binary-3.3.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils seabios fdisk xorriso
+          command -v git python3 curl qemu-system-x86_64 qemu-img sfdisk xorriso
+          qemu-system-x86_64 --version
+          qemu-system-x86_64 -accel help | grep -Fx tcg
+          python3 -c 'import sys; assert sys.version_info >= (3, 11)'
+          git cat-file -e '1b5daf4e66640b7390105b4b5345332deca6f9ce^{commit}'
+
+      - name: Verify the immutable image and run the offline guest
+        run: |
+          scratch=$(mktemp -d "$RUNNER_TEMP/regular-backup-guest.XXXXXXXX")
+          mkdir "$scratch/wheels"
+          curl_cmd=(curl --fail --silent --show-error --location
+                    --proto '=https' --proto-redir '=https' --connect-timeout 15 --retry 2 --max-time 300)
+          "${curl_cmd[@]}" --output "$scratch/SHA512SUMS" "$IMAGE_ROOT/SHA512SUMS"
+          python3 - "$scratch/SHA512SUMS" <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+
+          matches = []
+          for line in Path(sys.argv[1]).read_text(encoding="ascii").splitlines():
+              parts = line.split(maxsplit=1)
+              if len(parts) == 2 and parts[1].removeprefix("*") == os.environ["IMAGE_NAME"]:
+                  matches.append(parts[0])
+          if matches != [os.environ["IMAGE_SHA512"]]:
+              raise SystemExit("official immutable manifest does not match the pinned image")
+          print("Official immutable manifest matches the pinned SHA-512")
+          PY
+          "${curl_cmd[@]}" --output "$scratch/$IMAGE_NAME" "$IMAGE_ROOT/$IMAGE_NAME"
+          for url in "$PSYCOPG_WHEEL_URL" "$PSYCOPG_BINARY_WHEEL_URL"; do
+            "${curl_cmd[@]}" --output "$scratch/wheels/${url##*/}" "$url"
+          done
+          python3 -B tests/proofs/regular-backup-guest/boot_proof.py \
+            --source "$GITHUB_WORKSPACE" \
+            --wheelhouse "$scratch/wheels" \
+            --image "$scratch/$IMAGE_NAME" \
+            --image-sha512 "$IMAGE_SHA512"

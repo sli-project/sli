@@ -1,8 +1,8 @@
 # Disposable regular-backup guest proof
 
-This source-only proof exercises the backup code at `1b5daf4e66640b7390105b4b5345332deca6f9ce`. It requires an official, independently authenticated Debian 13 generic amd64 cloud image as a standalone QCOW2 file. The generic image uses the standard Debian kernel. An authenticated SHA-512 for an immutable build is required before a CI workflow can pin the boot image. [Debian Cloud images](https://wiki.debian.org/Cloud)
+This source-only proof exercises the backup code at `1b5daf4e66640b7390105b4b5345332deca6f9ce`. It uses the official Debian 13 generic amd64 cloud image as a standalone QCOW2 file. The one-off workflow pins build `20261123-2671` and compares the expected SHA-512 with the official immutable HTTPS manifest before downloading the image. [Debian Cloud images](https://wiki.debian.org/Cloud) · [Pinned manifest](https://cloud.debian.org/images/cloud/trixie/20261123-2671/SHA512SUMS)
 
-The launcher takes an already authenticated digest as input. Establish it through signed release metadata with an authorized Debian image signing key, or an independently verified boot image and attested digest. Computing a digest from the image you just downloaded only checks consistency. No network fetch, package manager, privileged host operation, or upload is part of this bootstrap.
+The local launcher takes an already authenticated digest as input. Obtain it from the official immutable HTTPS manifest or from independently verified release metadata. The local launcher runs without network access, package installation, privileged host operations, or uploads.
 
 ## Run on an unprivileged Linux host
 
