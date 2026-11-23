@@ -7,3 +7,6 @@ Start with the Debian archive. These guides cover the native Debian beta and its
 - [Install the server and sign in](install.md)
 - [Update, back up, roll back or restore the server](upgrade-recovery.md)
 - [Connect a Windows agent](windows-agent.md)
+- [Administer the platform](administration.md)
+- [Troubleshoot installation and operations](troubleshooting.md)
+- [Frequently asked questions](faq.md)

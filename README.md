@@ -76,7 +76,7 @@ After publication, follow the [signed APT repository instructions](docs/en/insta
 
 ## Administration
 
-Run `sudo sli-setup --web-console` to enable **Server console** on the **System status** page, then sign in with a Linux account that has sudo access.
+[Administration](docs/en/administration.md) covers system status, agents, local users, notifications and storage.
 
 ## Security model
 
@@ -91,7 +91,7 @@ outside the repository. Do not log secrets or private directory data.
 
 Collection is read-only and bounded. Storage deletion and warm-copy admission
 remain closed until explicitly approved through the operational gates.
-See the [security policy](SECURITY.md) and the [administrator guide](docs/ADMIN_GUIDE.md).
+See the [security policy](SECURITY.md) and the [administrator guide](docs/en/administration.md#users-and-roles).
 
 ## Documentation
 
@@ -102,9 +102,12 @@ See the [security policy](SECURITY.md) and the [administrator guide](docs/ADMIN_
 | Server installation and first sign-in | [Guide](docs/en/install.md) | [Руководство](docs/ru/install.md) |
 | Update, backups, rollback and restore | [Guide](docs/en/upgrade-recovery.md) | [Руководство](docs/ru/upgrade-recovery.md) |
 | Connect a Windows agent | [Guide](docs/en/windows-agent.md) | [Руководство](docs/ru/windows-agent.md) |
+| Administration | [Guide](docs/en/administration.md) | [Руководство](docs/ru/administration.md) |
+| Troubleshooting | [Guide](docs/en/troubleshooting.md) | [Руководство](docs/ru/troubleshooting.md) |
+| Frequently asked questions | [FAQ](docs/en/faq.md) | [Частые вопросы](docs/ru/faq.md) |
 
 - [Contributing, checks and migrations](CONTRIBUTING.md)
-- [Administrator guide](docs/ADMIN_GUIDE.md) and [user guide](docs/USER_GUIDE.md)
+- [User guide](docs/USER_GUIDE.md)
 
 ## License
 
