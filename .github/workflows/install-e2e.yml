@@ -171,6 +171,7 @@ jobs:
           fi
           unpack_kit candidate "$CANDIDATE_COMMIT"
       - name: Boot clean Debian 13 with systemd
+        id: boot
         shell: bash
         run: |
           set -euo pipefail
@@ -207,8 +208,22 @@ jobs:
       - name: Collect failure diagnostics
         if: failure()
         shell: bash
+        env:
+          BOOT_OUTCOME: ${{ steps.boot.outcome }}
         run: |
           set -euo pipefail
+          if [[ $BOOT_OUTCOME == failure ]]; then
+            if failed_units=$(docker exec sli-install-e2e systemctl list-units --state=failed --plain --no-legend --no-pager 2>/dev/null); then
+              printf '%s\n' "$failed_units" | LC_ALL=C awk '
+                $3 == "failed" && $1 ~ /^[[:alnum:]_.@\\-][[:alnum:]_.@:\\-]*[.](automount|device|mount|path|scope|service|slice|socket|swap|target|timer)$/ {
+                  if (++count <= 50) print "Failed systemd unit: " $1
+                }
+                END { if (!count) print "No failed systemd unit names reported." }
+              '
+            else
+              echo 'Failed systemd unit list unavailable.'
+            fi
+          fi
           logs="$RUNNER_TEMP/sli-install-logs"
           mkdir -p "$logs"
           docker logs sli-install-e2e > "$logs/container.log" 2>&1 || true
