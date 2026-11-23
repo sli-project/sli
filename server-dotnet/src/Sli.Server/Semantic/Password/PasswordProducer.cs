@@ -420,7 +420,7 @@ public sealed class PasswordProducer
         observation?.ReadHistory();
         List<JsonObject> rows;
         using (observation?.Measure(PasswordProofTiming.HistoryRead))
-            rows=await sql.Rows("select signal_id,document_json from public.read_password_episode_portions_v2(@s::jsonb,@e::jsonb,@key)",ct,("s",rule.Scope.Document),("e",rule.Execution),("key",episode.Key));
+            rows=await sql.Rows("select signal_id,document_json from public.read_password_episode_portions_v2(@s::jsonb,@e::jsonb,@key)",ct,observation,PasswordProofTiming.HistoryRead,("s",rule.Scope.Document),("e",rule.Execution),("key",episode.Key));
         observation?.ReceiveHistory(rows.Count);
         using var check = observation?.Measure(PasswordProofTiming.HistoryCheck);
         if(rows.Count is <1 or >256)throw new PasswordFailure("password_v2_chain_unavailable");var emissions=new List<PasswordEmission>();var contexts=new List<JsonObject>();var documents=new List<JsonObject>();
@@ -543,7 +543,7 @@ public sealed class PasswordProducer
             observation?.ReadNative();
             List<JsonObject> rows;
             using (observation?.Measure(PasswordProofTiming.NativeRead))
-                rows=await sql.Rows("select * from public.read_password_retained_proof_v2(@s::jsonb,@refs::jsonb)",ct,("s",scope.Document),("refs",PasswordJson.Array(missing,w=>w.Document)));
+                rows=await sql.Rows("select * from public.read_password_retained_proof_v2(@s::jsonb,@refs::jsonb)",ct,observation,PasswordProofTiming.NativeRead,("s",scope.Document),("refs",PasswordJson.Array(missing,w=>w.Document)));
             retainedQueries++;
             observation?.ReceiveNative(rows.Count);
             using var check = observation?.Measure(PasswordProofTiming.NativeCheck);
@@ -571,9 +571,16 @@ internal sealed class PasswordSql(NpgsqlConnection db,NpgsqlTransaction tx,Detec
         object? result=await cmd.ExecuteScalarAsync(ct);return result switch{null or DBNull=>null,bool b=>JsonValue.Create(b),string json=>JsonNode.Parse(json),_=>throw new PasswordFailure("password_v2_storage_unavailable")};
     }
     private static void Add(NpgsqlCommand cmd,string key,object value){if(value is JsonNode node)cmd.Parameters.AddWithValue(key,NpgsqlDbType.Jsonb,CanonicalJson.Serialize(node));else cmd.Parameters.AddWithValue(key,value);}
-    internal async Task<List<JsonObject>> Rows(string query,CancellationToken ct,params (string,object)[] args)
+    internal Task<List<JsonObject>> Rows(string query,CancellationToken ct,params (string,object)[] args)
+        => Rows(query, ct, null, default, args);
+
+    internal async Task<List<JsonObject>> Rows(string query,CancellationToken ct,PasswordProofObservation? observation,
+        PasswordProofTiming phase,params (string,object)[] args)
     {
-        diagnostics?.Query(query);SemanticWork.Query(db,query);await using var cmd=new NpgsqlCommand(query,db,tx){CommandTimeout=0};foreach(var (key,value) in args)Add(cmd,key,value);await using var reader=await cmd.ExecuteReaderAsync(ct);var rows=new List<JsonObject>();
+        diagnostics?.Query(query);SemanticWork.Query(db,query);await using var cmd=new NpgsqlCommand(query,db,tx){CommandTimeout=0};foreach(var (key,value) in args)Add(cmd,key,value);
+        if (observation != null && cmd.Parameters[phase == PasswordProofTiming.NativeRead ? "refs" : "key"].Value is string serialized)
+            observation.ObserveReadRequest(phase, serialized);
+        await using var reader=await cmd.ExecuteReaderAsync(ct);var rows=new List<JsonObject>();
         while(await reader.ReadAsync(ct)){if(rows.Count>=10001)throw new PasswordFailure("password_v2_reader_bound");var row=new JsonObject();for(int i=0;i<reader.FieldCount;i++){if(reader.IsDBNull(i)){row[reader.GetName(i)]=null;continue;}object value=reader.GetValue(i);row[reader.GetName(i)]=reader.GetDataTypeName(i) is "jsonb" or "json"?JsonNode.Parse((string)value):value switch{DateTime time=>JsonValue.Create(PasswordJson.Stamp(new DateTimeOffset(time))),long number=>JsonValue.Create(number),int number=>JsonValue.Create(number),bool flag=>JsonValue.Create(flag),string text=>JsonValue.Create(text),_=>throw new PasswordFailure("password_v2_reader_invalid")};}rows.Add(row);}return rows;
     }
     internal async Task Execute(string query,CancellationToken ct,params (string,object)[] args){diagnostics?.Query(query);SemanticWork.Query(db,query);await using var cmd=new NpgsqlCommand(query,db,tx){CommandTimeout=0};foreach(var (key,value) in args)Add(cmd,key,value);await cmd.ExecuteNonQueryAsync(ct);}

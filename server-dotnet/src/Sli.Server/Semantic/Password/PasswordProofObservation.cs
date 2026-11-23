@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
 namespace Sli.Server.Semantic.Password;
@@ -22,7 +24,8 @@ internal sealed class PasswordProofObservation
     private readonly TimeSpan[] phaseElapsed = new TimeSpan[(int)PasswordProofTiming.Count];
     private long windowRows, nativeRows, managedParses, managedParseReuses, memoPayloadBytes;
     private int memoEntries;
-    private bool attemptSplit;
+    private bool attemptSplit, attemptRejected;
+    private readonly ReadMetrics nativeRequests = new(128 * 1024 * 1024), historyRequests = new(1024 * 1024);
 
     internal PasswordProofObservation(TimeProvider? clock = null)
     {
@@ -34,6 +37,9 @@ internal sealed class PasswordProofObservation
     {
         attempts++;
         attemptSplit = false;
+        attemptRejected = false;
+        nativeRequests.Start(nativeReads, nativeRows, phaseElapsed[(int)PasswordProofTiming.NativeRead]);
+        historyRequests.Start(historyReads, historyRows, phaseElapsed[(int)PasswordProofTiming.HistoryRead]);
         attemptStarted = clock.GetTimestamp();
     }
 
@@ -42,6 +48,8 @@ internal sealed class PasswordProofObservation
         var elapsed = clock.GetElapsedTime(attemptStarted);
         attemptElapsed += elapsed;
         if (elapsed > maxAttempt) maxAttempt = elapsed;
+        nativeRequests.Finish(nativeReads, nativeRows, phaseElapsed[(int)PasswordProofTiming.NativeRead], attemptRejected);
+        historyRequests.Finish(historyReads, historyRows, phaseElapsed[(int)PasswordProofTiming.HistoryRead], attemptRejected);
     }
 
     internal void EnterSplit()
@@ -51,7 +59,12 @@ internal sealed class PasswordProofObservation
         attemptSplit = true;
     }
 
-    internal void RejectAttempt() => rejectedAttempts++;
+    internal void RejectAttempt()
+    {
+        rejectedAttempts++;
+        attemptRejected = true;
+    }
+
     internal void ReadWindow() => windowReads++;
     internal void ReadNative() => nativeReads++;
     internal void ReadHistory() => historyReads++;
@@ -60,6 +73,17 @@ internal sealed class PasswordProofObservation
     internal void ReceiveNative(int rows) => nativeRows += rows;
     internal void ParseNative() => managedParses++;
     internal void ReuseParse() => managedParseReuses++;
+
+    internal void ObserveReadRequest(PasswordProofTiming phase, string serialized)
+    {
+        // One invocation uses a fixed query, scope and execution for each phase.
+        // Only the already serialized refs or episode key can vary.
+        switch (phase)
+        {
+            case PasswordProofTiming.NativeRead: nativeRequests.Record(serialized); break;
+            case PasswordProofTiming.HistoryRead: historyRequests.Record(serialized); break;
+        }
+    }
 
     internal void SizeParseMemo(int items, long bytes)
     {
@@ -127,11 +151,80 @@ internal sealed class PasswordProofObservation
         ["verified_xml_bytes"] = verifiedXmlBytes,
         ["charged_refs"] = chargedRefs,
         ["charged_xml_bytes"] = chargedXmlBytes,
+        ["read_attempts"] = new JsonObject
+        {
+            ["rejected"] = new JsonObject { ["native"] = nativeRequests.Rejected.ToJson(), ["history"] = historyRequests.Rejected.ToJson() },
+            ["committed"] = committed
+                ? new JsonObject { ["native"] = nativeRequests.Candidate.ToJson(), ["history"] = historyRequests.Candidate.ToJson() }
+                : null,
+        },
         ["attempt_elapsed_ms"] = (long)attemptElapsed.TotalMilliseconds,
         ["max_attempt_ms"] = (long)maxAttempt.TotalMilliseconds,
         ["invocation_elapsed_ms"] = (long)clock.GetElapsedTime(invocationStarted).TotalMilliseconds,
         ["committed"] = committed,
     };
+
+    private readonly record struct ReadTotals(int Calls, long Rows, TimeSpan Duration, int Repeats, int Untracked)
+    {
+        public static ReadTotals operator +(ReadTotals left, ReadTotals right) =>
+            new(left.Calls + right.Calls, left.Rows + right.Rows, left.Duration + right.Duration,
+                left.Repeats + right.Repeats, left.Untracked + right.Untracked);
+
+        public static ReadTotals operator -(ReadTotals left, ReadTotals right) =>
+            new(left.Calls - right.Calls, left.Rows - right.Rows, left.Duration - right.Duration,
+                left.Repeats - right.Repeats, left.Untracked - right.Untracked);
+
+        internal JsonObject ToJson() => new()
+        {
+            ["calls"] = Calls, ["rows"] = Rows, ["ms"] = (long)Duration.TotalMilliseconds,
+            ["repeats"] = Repeats, ["untracked"] = Untracked,
+        };
+    }
+
+    private sealed class ReadMetrics(int maxHashedBytes)
+    {
+        private const int MaxTrackedRequests = 512;
+        private readonly HashSet<(ulong, ulong, ulong, ulong)> fingerprints = [];
+        private int hashedBytes, repeats, untracked;
+        private ReadTotals start;
+        internal ReadTotals Rejected { get; private set; }
+        internal ReadTotals Candidate { get; private set; }
+
+        internal void Record(string serialized)
+        {
+            if (serialized.Length > (maxHashedBytes - hashedBytes) / sizeof(char))
+            {
+                untracked++;
+                return;
+            }
+
+            // Hash a view over the bound argument, without retaining the request,
+            // serializing it again or copying its bytes.
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(serialized.AsSpan());
+            hashedBytes += bytes.Length;
+            Span<byte> digest = stackalloc byte[32];
+            _ = SHA256.HashData(bytes, digest);
+            var words = MemoryMarshal.Cast<byte, ulong>(digest);
+            var fingerprint = (words[0], words[1], words[2], words[3]);
+            if (fingerprints.Contains(fingerprint))
+                repeats++;
+            else if (fingerprints.Count < MaxTrackedRequests)
+                fingerprints.Add(fingerprint);
+            else
+                untracked++;
+        }
+
+        internal void Start(int calls, long rows, TimeSpan duration) => start = new(calls, rows, duration, repeats, untracked);
+
+        internal void Finish(int calls, long rows, TimeSpan duration, bool rejected)
+        {
+            var current = new ReadTotals(calls, rows, duration, repeats, untracked) - start;
+            if (rejected)
+                Rejected += current;
+            else
+                Candidate = current;
+        }
+    }
 
     internal static void Write(JsonObject? report, TextWriter sink)
     {

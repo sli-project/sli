@@ -56,6 +56,11 @@ public sealed class PasswordProofObservationTests
                          "history_read":4,"history_check":0,"rule":5,"checkpoint":0,"publication":0,
                          "finalizer":0,"commit":3},
              "verified_refs":3,"verified_xml_bytes":29,"charged_refs":3,"charged_xml_bytes":47,
+             "read_attempts":{
+               "rejected":{"native":{"calls":1,"rows":3,"ms":0,"repeats":0,"untracked":0},
+                           "history":{"calls":1,"rows":3,"ms":4,"repeats":0,"untracked":0}},
+               "committed":{"native":{"calls":2,"rows":2,"ms":0,"repeats":0,"untracked":0},
+                            "history":{"calls":1,"rows":1,"ms":0,"repeats":0,"untracked":0}}},
              "attempt_elapsed_ms":12,"max_attempt_ms":7,
              "invocation_elapsed_ms":21,"committed":true}
             """)));
@@ -78,6 +83,70 @@ public sealed class PasswordProofObservationTests
         Assert.Equal(split ? 1 : 0, summary["split_attempts"]!.GetValue<int>());
         Assert.Equal(rejected ? 1 : 0, summary["rejected_attempts"]!.GetValue<int>());
         Assert.Equal(committed, summary["committed"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void Read_attempts_count_exact_repeats_and_bound_tracking_per_invocation()
+    {
+        const string request = "[1,2]";
+        const string reordered = "[2,1]";
+        var clock = new TestClock();
+        var observation = new PasswordProofObservation(clock);
+        observation.BeginAttempt();
+        Read(observation, PasswordProofTiming.NativeRead, request, 2, 3);
+        Read(observation, PasswordProofTiming.HistoryRead, request, 1, 4);
+        observation.RejectAttempt();
+        observation.EndAttempt();
+
+        observation.BeginAttempt();
+        Read(observation, PasswordProofTiming.NativeRead, reordered, 2, 5);
+        Read(observation, PasswordProofTiming.HistoryRead, request, 1, 6);
+        observation.RejectAttempt();
+        observation.EndAttempt();
+
+        observation.BeginAttempt();
+        Read(observation, PasswordProofTiming.NativeRead, request, 2, 7);
+        Read(observation, PasswordProofTiming.HistoryRead, reordered, 1, 8);
+        observation.EndAttempt();
+
+        var summary = Assert.IsType<JsonObject>(observation.Report(committed: true));
+        Assert.True(JsonNode.DeepEquals(summary["read_attempts"], JsonNode.Parse("""
+            {"rejected":{"native":{"calls":2,"rows":4,"ms":8,"repeats":0,"untracked":0},
+                         "history":{"calls":2,"rows":2,"ms":10,"repeats":1,"untracked":0}},
+             "committed":{"native":{"calls":1,"rows":2,"ms":7,"repeats":1,"untracked":0},
+                          "history":{"calls":1,"rows":1,"ms":8,"repeats":0,"untracked":0}}}
+            """)));
+        Assert.Null(observation.Report(committed: false)!["read_attempts"]!["committed"]);
+
+        var nextInvocation = new PasswordProofObservation(clock);
+        nextInvocation.BeginAttempt();
+        Read(nextInvocation, PasswordProofTiming.NativeRead, request, 2, 1);
+        for (int i = 0; i < 512; i++)
+            Read(nextInvocation, PasswordProofTiming.NativeRead, i.ToString(), 0, 0);
+        string largeRequest = new('q', 512 * 1024);
+        Read(nextInvocation, PasswordProofTiming.HistoryRead, largeRequest, 0, 0);
+        Read(nextInvocation, PasswordProofTiming.HistoryRead, largeRequest, 0, 0);
+        nextInvocation.EnterSplit();
+        nextInvocation.EndAttempt();
+        Assert.True(JsonNode.DeepEquals(nextInvocation.Report(committed: true)!["read_attempts"]!["committed"],
+            JsonNode.Parse("""
+                {"native":{"calls":513,"rows":2,"ms":1,"repeats":0,"untracked":1},
+                 "history":{"calls":2,"rows":0,"ms":0,"repeats":0,"untracked":1}}
+                """)));
+
+        void Read(PasswordProofObservation target, PasswordProofTiming phase, string serialized, int rows, long ms)
+        {
+            bool native = phase == PasswordProofTiming.NativeRead;
+            if (native) target.ReadNative();
+            else target.ReadHistory();
+            using (target.Measure(phase))
+            {
+                target.ObserveReadRequest(phase, serialized);
+                clock.Advance(ms);
+            }
+            if (native) target.ReceiveNative(rows);
+            else target.ReceiveHistory(rows);
+        }
     }
 
     [Fact]
