@@ -1,0 +1,35 @@
+name: Synthetic Debian backup mount proof
+
+on:
+  push:
+    branches:
+      - ci/regular-backup-mount-proof-20261123
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify private mount propagation in Debian 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/library/debian:trixie
+          docker pull --platform linux/amd64 "$image"
+          image_id=$(docker image inspect --format '{{.Id}}' "$image")
+          docker image inspect --format 'Debian image ID {{.Id}}, repository digests {{json .RepoDigests}}' "$image_id"
+          # CAP_SYS_ADMIN permits the mount syscalls under Docker's default seccomp policy.
+          docker run --rm --pull=never --network none --platform linux/amd64 \
+            --cap-drop ALL --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+            --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nodev,nosuid,noexec,size=16m \
+            --env SLI_SYNTHETIC_MOUNT_ROOT=sli-native-private-mount-proof \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/regular_backup_mount_proof.sh,target=/fixture/run-proof.sh,readonly" \
+            "$image_id" /usr/bin/timeout --kill-after=2s 30s /bin/bash /fixture/run-proof.sh
