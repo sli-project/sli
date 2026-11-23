@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sli.Server.Ad;
 using Sli.Server.Gpo;
-using Sli.Server.Problems;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Domains.HomeJson;
@@ -126,14 +125,8 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             }
         });
 
-        Task<IReadOnlyList<JsonObject>> ReadProblems()
-        {
-            var (_, summary, args) = ProblemRepository.FindingsQueries(new FindingQuery(null, null, null, null, null, null,
-                null, queueIds, 25, false) { Population = "open", PageQueue = true, QueueList = true, GroupQueue = true, Timezone = query.TimeZone });
-            args.Remove("limit");
-            return reads.Read(HomePeriodSql.Problems(summary), ct,
-                [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical), .. args.Select(pair => (pair.Key, pair.Value))]);
-        }
+        Task<IReadOnlyList<JsonObject>> ReadProblems() =>
+            reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
 
         async Task<T?> ReadBlock<T>(string block, Task<T> read) where T : class
         {
@@ -187,7 +180,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                 return new(TimeZoneInfo.ConvertTimeToUtc(midnight, zone));
             }
             var history = Midnight(localStart.AddDays(-7));
-            return reads.Read(HomePeriodSql.Activity(EventReadService.ShortSource("@read_from", daily: false), scope.Sql), ct,
+            return reads.ReadActivity(HomePeriodSql.Activity(EventReadService.ShortSource("@read_from", daily: false), scope.Sql), ct,
                 [.. windowArgs, ("ids", new[] { chosen!.Id }), ("zone", query.TimeZone), ("hour", hour),
                  ("read_from", history > retention ? history : retention),
                  .. scope.Parameters.Select(p => (p.Key, (object?)p.Value))]);

@@ -178,7 +178,7 @@ public sealed partial class HomeSummaryEndpointTests
             await seed.ExecuteNonQueryAsync(ct);
         }
         await SeedGpo(db, end.AddMinutes(-25), ct);
-        var queries = new System.Collections.Concurrent.ConcurrentQueue<(string Sql, IReadOnlyDictionary<string, object?> Parameters)>();
+        var queries = new System.Collections.Concurrent.ConcurrentQueue<(string Sql, IReadOnlyDictionary<string, object?> Parameters, bool Activity)>();
         await using var database = new LocalHomeDatabase(pg);
         var repository = new ProfiledHomeRepository(new HomeSummaryRepository(database), queries);
         var config = new ConfigurationBuilder().Build();
@@ -219,7 +219,8 @@ public sealed partial class HomeSummaryEndpointTests
             var data = await Read(days);
             timer.Stop();
             await PostCollectionPostgres.Sql(db, "set jit=off", ct);
-            foreach (var (sql, parameters) in queries) {
+            foreach (var (sql, parameters, activity) in queries) {
+                await PostCollectionPostgres.Sql(db, activity ? "set enable_sort=off" : "set enable_sort=on", ct);
                 await using var explain = new NpgsqlCommand(
                     "explain (analyze, buffers) select to_jsonb(home_row) from (" + sql + ") home_row", db);
                 foreach (var (key, value) in parameters) explain.Parameters.AddWithValue(key, value!);
@@ -239,6 +240,12 @@ public sealed partial class HomeSummaryEndpointTests
         var week = await Measure(7);
         var russian = await Read(1, "ru");
         var noHistory = await Read(1, until: end.AddDays(-11));
+        var partial = await Read(1, until: end.AddMinutes(-15));
+        var partialHours = partial["activity"]!["hours"]!.AsArray();
+        Assert.Equal(end.AddDays(-1).AddMinutes(-15), partialHours[0].Stamp("at"));
+        Assert.Equal(750, partialHours[0].Number("failed"));
+        Assert.Equal(2250, partialHours[^1].Number("failed"));
+        Assert.Equal(3000, partialHours[^1].Number("typical"));
         var problems = payload["problems"]!;
         Assert.Equal(8, problems.Number("new_count"));
         Assert.Equal(1, problems.Number("closed_count"));
@@ -312,13 +319,19 @@ public sealed partial class HomeSummaryEndpointTests
     }
 
     private sealed class ProfiledHomeRepository(HomeSummaryRepository repository,
-        System.Collections.Concurrent.ConcurrentQueue<(string Sql, IReadOnlyDictionary<string, object?> Parameters)> queries)
+        System.Collections.Concurrent.ConcurrentQueue<(string Sql, IReadOnlyDictionary<string, object?> Parameters, bool Activity)> queries)
         : IHomeSummaryRepository
     {
         public Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct)
         {
-            queries.Enqueue((sql, parameters));
+            queries.Enqueue((sql, parameters, false));
             return repository.ReadAsync(sql, parameters, ct);
+        }
+
+        public Task<IReadOnlyList<JsonObject>> ReadActivityAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct)
+        {
+            queries.Enqueue((sql, parameters, true));
+            return repository.ReadActivityAsync(sql, parameters, ct);
         }
     }
 
