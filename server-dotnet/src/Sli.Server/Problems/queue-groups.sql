@@ -3,6 +3,7 @@ with queue_population as materialized (
                case when cohort.key->>0='password' then
                    first_value(findings.severity) over password_priority else findings.severity end as severity,
                first_value(password.facts) over password_priority as password_facts,
+               password.aliases as password_aliases,
                (__STATUS__) as status,(__ACCEPTED__) as risk_accepted,__ASSIGNEE__ as queue_assignee,
                sum(case when findings.rule_code in ('semantic.qw.privileged-group-addition','semantic.qw.security-log-cleared','semantic.qw.audit-disabled')
                    then greatest(1,(select count(distinct e.event_db_id) from finding_event_details337 e

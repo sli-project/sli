@@ -108,6 +108,9 @@ internal static class PasswordRiskPublication
             """,ct,("scenario",sid),("finding",finding),("job",work.Lease.Id),("fingerprint",fingerprint),("count",count));
         var replay=await sql.Rows("select finding_id,finding_fingerprint from public.semantic_finding_publications where scenario_id=@scenario",ct,("scenario",sid));
         RiskJson.Require(replay.Count==1&&RiskJson.Long(replay[0],"finding_id")==finding&&RiskJson.String(replay[0],"finding_fingerprint")==fingerprint,"password_risk_publication_replay_conflict");
+        var projection = await sql.Rows("select to_regprocedure('public.refresh_password_queue_presentation399(bigint)') is not null as available", ct);
+        if (projection[0]["available"]?.GetValue<bool>() == true)
+            await sql.Execute("select public.refresh_password_queue_presentation399(@finding)", ct, ("finding", finding));
         if(created.Count>0)await sql.Execute("""
             insert into public.finding_status_history(finding_id,old_status,new_status,changed_by,note)
             values(@finding,null,'new','semantic-worker','created from enabled semantic scenario')

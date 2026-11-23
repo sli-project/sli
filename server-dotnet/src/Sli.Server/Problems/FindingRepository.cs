@@ -129,7 +129,7 @@ public sealed partial class ProblemRepository
         ) risk on true
         """;
     // Keep the Home caller signature without selecting a retired event source.
-    internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true)
+    internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true, bool usePasswordProjection = false)
     {
         var args = new Dictionary<string, object?>();
         string effectiveStatus = query.QueueView is null ? EffectiveStatus : $"case when d.until_at>statement_timestamp() and findings.status in ('new','confirmed','repeated') then 'deferred' else ({EffectiveStatus}) end";
@@ -189,10 +189,12 @@ public sealed partial class ProblemRepository
             prefix = "with queue_findings as materialized (select * from findings_active)," +
                 ProblemCohorts.Queue(population, where, effectiveStatus, Accepted,
                     query.QueueView is null ? "" : $", ({queueState}), (({effectiveStatus})='false_positive')" +
-                        (query.QueueAssigneesVisible ? ", coalesce(findings.assigned_to,'')" : ""), query.QueueAssigneesVisible)[5..];
+                        (query.QueueAssigneesVisible ? ", coalesce(findings.assigned_to,'')" : ""), query.QueueAssigneesVisible, usePasswordProjection)[5..];
             population += " join queue_groups on queue_groups.id=findings.id";
             where = " where true"; summaryPopulation = "from queue_groups"; summaryWhere = "";
             groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc,queue_groups.severity as severity,queue_groups.password_facts - 'cohort_key' as presentation_facts";
+            if (usePasswordProjection && query.QueueView is not null && !query.Compact)
+                groupFields += ",queue_groups.password_aliases as queue_attack_aliases";
         }
         else if (query.Cohort is {} cohort) {
             var key = ProblemCohorts.Parse(cohort);
@@ -250,14 +252,16 @@ public sealed partial class ProblemRepository
     {
         await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
         if (query.PageQueue) await Execute(tx, "set transaction read only; set local jit=off", new(), ct);
-        var (page, summarySql, args) = FindingsQueries(query);
         // Validate the persisted authorization before reading the population.
         await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);
+        bool usePasswordProjection = query.GroupQueue && query.QueueList &&
+            (await One(tx, "select to_regprocedure('public.password_queue_presentation399(bigint,text)') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
+        var (page, summarySql, args) = FindingsQueries(query, usePasswordProjection: usePasswordProjection);
         JsonArray rows, summary;
         if (query.GroupQueue) {
             // Page and counters share the same classified population and
             // statement snapshot. Do not evaluate every finding twice.
-            string prefix = FindingsQueries(query, populationOnly: true).Page;
+            string prefix = FindingsQueries(query, populationOnly: true, usePasswordProjection: usePasswordProjection).Page;
             var bundle = await One(tx, prefix + $"""
                 select (select coalesce(jsonb_agg(to_jsonb(item)),'[]'::jsonb) from ({page[prefix.Length..]}) item) as items,
                     (select coalesce(jsonb_agg(to_jsonb(counter)),'[]'::jsonb) from ({summarySql[prefix.Length..]}) counter) as summary
@@ -270,6 +274,9 @@ public sealed partial class ProblemRepository
             summary = await Rows(tx, summarySql, args, ct);
         }
         bool more = rows.Count > query.Limit; if (more) rows.RemoveAt(query.Limit);
+        if (usePasswordProjection && query.QueueView is not null && !query.Compact)
+            foreach (var row in rows.OfType<JsonObject>())
+                if (row["queue_attack_aliases"] is null) row.Remove("queue_attack_aliases");
         var passwordRows = rows.OfType<JsonObject>().Where(row => ProblemPresentation.IsPasswordFinding(ProblemJson.Text(row["rule_code"])))
             .ToDictionary(row => ProblemJson.Long(row["id"]));
         if (passwordRows.Count > 0 && !query.Compact && !query.GroupQueue) {
@@ -281,7 +288,9 @@ public sealed partial class ProblemRepository
             foreach (var fact in passwordFacts.OfType<JsonObject>())
                 passwordRows[ProblemJson.Long(fact["id"])]["presentation_facts"] = fact["facts"]?.DeepClone();
         }
-        if (query.QueueView is not null && !query.Compact && passwordRows.Count > 0) {
+        long[] aliasIds = query.QueueView is not null && !query.Compact
+            ? passwordRows.Where(pair => pair.Value["queue_attack_aliases"] is null).Select(pair => pair.Key).ToArray() : [];
+        if (aliasIds.Length > 0) {
             // Project the two bounded text values before sorting, without carrying the retained event JSON.
             var aliases = await Rows(tx, """
                 select finding_id,
@@ -296,7 +305,7 @@ public sealed partial class ProblemRepository
                     from finding_event_details337 where finding_id=any(@ids) and event_id in (4624,4625,4771,4776)
                     offset 0
                 ) aliases group by finding_id
-                """, new() { ["ids"] = passwordRows.Keys.ToArray() }, ct);
+                """, new() { ["ids"] = aliasIds }, ct);
             foreach (var alias in aliases.OfType<JsonObject>()) passwordRows[ProblemJson.Long(alias["finding_id"])]["queue_attack_aliases"] = alias.DeepClone();
         }
         foreach (var row in rows.OfType<JsonObject>())

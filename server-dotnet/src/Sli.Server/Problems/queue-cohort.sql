@@ -1,6 +1,6 @@
 
     left join lateral (
-        select public.password_problem_facts395(findings.id,findings.rule_code) as facts
+        __PASSWORD_EVIDENCE__
         where findings.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
         offset 0
     ) password on true

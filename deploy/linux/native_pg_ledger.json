@@ -583,6 +583,8 @@
     "config/postgres_migrations/397_problem_queue_workflow.sql": "7cc816e0c92586a2b61c398416798749aaa273429c63288eda98a083db1d1f83",
     "config/postgres_migrations/398_password_proof_budget_progress.rollback.sql": "069a1c1abcc7781b8fceba4c4ac4a55284d750b52cd90879430540784f4d5e67",
     "config/postgres_migrations/398_password_proof_budget_progress.sql": "769c052829f305bf045b8887604b26099155e04c93977a1b9991d9954f532af7",
+    "config/postgres_migrations/399_password_queue_projection.rollback.sql": "cb611cde6952781243a0b4b47e26a9f4ea37575f872fd849a8cef1c71857b82d",
+    "config/postgres_migrations/399_password_queue_projection.sql": "0d97a8b0d34c48f1aaf8395b2f92ffbbe86ea98a5e6a8598df8635dfe3764d3a",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

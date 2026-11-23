@@ -53,7 +53,18 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
                 RiskJson.Require(rows.Count==1,"password_risk_lease_lost_failure");await failure.CommitAsync(ct);failed++;
             }
         }
+        if (claimed == 0) await RefreshStaleQueuePresentation(db,ct);
         return new(claimed,completed,failed,published,pending,frozen);
+    }
+
+    private static async Task RefreshStaleQueuePresentation(NpgsqlConnection db,CancellationToken ct)
+    {
+        await using var tx=await db.BeginTransactionAsync(IsolationLevel.ReadCommitted,ct);
+        var sql=new RiskSql(db,tx);
+        var capability=await sql.Rows("select to_regprocedure('public.refresh_stale_password_queue399()') is not null as supported",ct);
+        if (capability[0]["supported"]?.GetValue<bool>() == true)
+            await sql.Execute("select public.refresh_stale_password_queue399()",ct);
+        await tx.CommitAsync(ct);
     }
 
     private async Task<PasswordRiskLease?> Claim(NpgsqlConnection db,CancellationToken ct)
