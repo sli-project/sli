@@ -7,6 +7,7 @@ import { useTimeZone } from "../../shared/time-zone";
 import { zonedParts } from "../../shared/date-time";
 import { useEffectiveAccess } from "../App";
 import { AccountWatch } from "../account-watch";
+import { BackupSettingsSection } from "./backup-settings";
 import { DecoyRegistry } from "./decoys";
 
 const fields = [
@@ -83,6 +84,7 @@ export function PlatformSettingsPage() {
     <PageHeader title={t("platformSettings.page.title")}/>
     {!decoyOnly && (settings.isLoading ? <StateView state="loading"/> : settings.error ? <StateView state="unavailable" compact detail={t("platformSettings.loadFailed")} onRetry={() => void settings.refetch()}/> : null)}
     {!decoyOnly && settings.data ? <SettingsForm items={settings.data.items}/> : null}
+    {access?.platform_owner === true && !access.preview ? <BackupSettingsSection/> : null}
     {decoyOnly && decoyAccess ? <DecoyRegistry/> : null}
     {decoyOnly && watchAccess ? <AccountWatch/> : null}
   </section>;

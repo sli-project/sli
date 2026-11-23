@@ -139,6 +139,30 @@ describe("semantic control API", () => {
   });
 });
 
+describe("backup settings API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads and saves the whole settings object with its revision", async () => {
+    const initial = { enabled: true, path: "/mnt/backup/sli", revision: "backup-1", storage_status: "unavailable" };
+    const saved = { ...initial, enabled: false, revision: "backup-2" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => initial })
+      .mockResolvedValueOnce({ ok: true, json: async () => saved });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const signal = new AbortController().signal;
+    expect(await api.backupSettings(signal)).toEqual(initial);
+    expect(fetchMock.mock.calls[0]).toMatchObject(["/api/v1/admin/backup-settings", { credentials: "same-origin", signal }]);
+
+    const update = { enabled: false, path: initial.path, revision: initial.revision };
+    expect(await api.updateBackupSettings(update)).toEqual(saved);
+    const [url, options] = fetchMock.mock.calls[1];
+    expect(url).toBe("/api/v1/admin/backup-settings");
+    expect(options).toMatchObject({ method: "PUT", credentials: "same-origin" });
+    expect(JSON.parse(options.body)).toEqual(update);
+  });
+});
+
 describe("finding risk acceptance API", () => {
   afterEach(() => vi.unstubAllGlobals());
 
