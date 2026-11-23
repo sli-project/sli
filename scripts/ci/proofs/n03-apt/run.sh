@@ -29,8 +29,15 @@ compatible="$inputs/runtime-wrapper.deb"
 common=("$inputs"/common/*.deb)
 old_libs=("$inputs"/floor/*.deb)
 new_libs=("$inputs"/current/*.deb)
-apt=(apt-get -y --no-remove --no-download --no-install-recommends
-     -o APT::Get::allow-downgrades=false -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=-)
+work=$(mktemp -d /tmp/sli-real-n03-apt.XXXXXXXX)
+chmod 0755 "$work"
+touch "$work/sources.list"
+mkdir "$work/sources.list.d" "$work/lists"
+# APT must acquire the verified local archives to pass absolute paths to dpkg.
+# The container has no network and its APT sources and indexes start empty.
+apt=(apt-get -y --no-remove --no-install-recommends -o APT::Get::allow-downgrades=false
+     -o "Dir::Etc::sourcelist=$work/sources.list" -o "Dir::Etc::sourceparts=$work/sources.list.d"
+     -o "Dir::State::lists=$work/lists")
 
 assert_installed() {
     local status
@@ -48,6 +55,7 @@ assert_archive_packages() {
 install_exact() {
     local file name wanted present
     for file; do
+        [[ $file == /* && -f $file && ! -L $file ]] || fail 'An absolute local archive path is required.'
         name=$(dpkg-deb -f "$file" Package)
         wanted=$(dpkg-deb -f "$file" Version)
         present=$(dpkg-query -W -f='${Version}' "$name" 2>/dev/null || true)
@@ -140,8 +148,6 @@ new_library="libssl3t64 (>= $floor)"
 [[ $(dpkg-deb -f "$compatible" Depends) == "${old_dependencies/"$old_library"/"$new_library"}" ]]
 [[ $(dpkg-deb --fsys-tarfile "$original" | sha256sum) == "$(dpkg-deb --fsys-tarfile "$compatible" | sha256sum)" ]]
 
-work=$(mktemp -d /tmp/sli-real-n03-apt.XXXXXXXX)
-chmod 0755 "$work"
 dpkg-deb -x "$original" "$work/reference"
 inventory "$work/reference$prefix" > "$work/reference-tree"
 synthetic_package "$consumer" "$old_dep"
