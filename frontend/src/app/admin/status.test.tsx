@@ -592,3 +592,83 @@ it.each(["ru", "en"] as const)("shows running file-backed services and hides ret
   expect(table.textContent).not.toContain(t("systemStatus.service.disabled"));
   expect(table.textContent).not.toContain(t("systemStatus.service.check"));
 });
+
+it.each(["en", "ru"] as const)("shows live and historical password backlogs independently of the process in %s", async (locale) => {
+  setLocale(locale);
+  const observed = "2026-11-22T21:17:38Z";
+  const workers: NonNullable<OperationsOverview["workers"]> = {
+    status: "ok",
+    items: [{ worker_name: "semantic", label: "semantic", state: "active", status: "running", started_at: observed }],
+    password_detection: { status: "ok", items: [
+      { rule_id: "qw.password-brute-force", state: "behind", observed_at: observed },
+      { rule_id: "qw.password-spray", state: "history_pending", observed_at: observed },
+    ] },
+  };
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers });
+  renderPage();
+
+  const table = await screen.findByRole("table", { name: t("systemStatus.passwordDetection.title") });
+  const row = within(table).getByText(t("security.problems.presentation.qw.password-brute-force.title")).closest("tr")!;
+  expect(within(row).getByText(t("systemStatus.passwordDetection.behind"))).toBeTruthy();
+  expect(row.textContent).toContain(formatDateTime(observed, "UTC", { withYear: false, seconds: true }));
+  expect(within(table).getByText(t("systemStatus.passwordDetection.historyPending"))).toBeTruthy();
+  expect(within(table).queryByText(t("systemStatus.passwordDetection.stalled"))).toBeNull();
+  expect(screen.getByText(t("systemStatus.service.processRunning"))).toBeTruthy();
+
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { ...workers, password_detection: { status: "ok", items: [
+    { rule_id: "qw.password-brute-force", state: "recovered", observed_at: "2026-11-22T21:25:08Z" },
+    { rule_id: "qw.password-spray", state: "quiet", observed_at: observed },
+  ] } } });
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["operations-workers"] });
+  await within(table).findByText(t("systemStatus.passwordDetection.recovered"));
+  expect(within(table).getByText(t("systemStatus.passwordDetection.quiet"))).toBeTruthy();
+  expect(within(table).queryByText(t("systemStatus.passwordDetection.stalled"))).toBeNull();
+});
+
+it.each([
+  ["en", "Check the event source"],
+  ["ru", "Проверьте источник событий"],
+] as const)("shows an action for both password rules with unobserved processing (%s)", async (locale, action) => {
+  setLocale(locale);
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: {
+    status: "ok", items: [], password_detection: { status: "ok", items: [
+      { rule_id: "qw.password-brute-force", state: "unknown", observed_at: null },
+      { rule_id: "qw.password-spray", state: "unknown", observed_at: null },
+    ] },
+  } });
+  renderPage();
+
+  const table = await screen.findByRole("table", { name: t("systemStatus.passwordDetection.title") });
+  expect(within(table).getAllByText(action)).toHaveLength(2);
+});
+
+it("shows failed and stalled rules with their own observed time while the process is running", async () => {
+  const failedAt = "2026-11-22T21:40:33Z";
+  const stalledAt = "2026-11-22T21:18:00Z";
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: {
+    status: "ok",
+    items: [{ worker_name: "semantic", label: "semantic", state: "active", status: "running" }],
+    password_detection: { status: "ok", items: [
+      { rule_id: "qw.password-brute-force", state: "failed", observed_at: failedAt },
+      { rule_id: "qw.password-spray", state: "stalled", observed_at: stalledAt },
+    ] },
+  } });
+  renderPage();
+  const table = await screen.findByRole("table", { name: t("systemStatus.passwordDetection.title") });
+  const failure = within(table).getByText(t("systemStatus.passwordDetection.failed")).closest("tr")!;
+  const stalled = within(table).getByText(t("systemStatus.passwordDetection.stalled")).closest("tr")!;
+  expect(failure.textContent).toContain(formatDateTime(failedAt, "UTC", { withYear: false, seconds: true }));
+  expect(stalled.textContent).toContain(formatDateTime(stalledAt, "UTC", { withYear: false, seconds: true }));
+  const services = screen.getByRole("table", { name: t("systemStatus.services") });
+  expect(within(services).getByText(t("systemStatus.service.processRunning"))).toBeTruthy();
+  expect(within(services).queryByText(t("systemStatus.service.running"))).toBeNull();
+});
+
+it("reports missing password telemetry without a healthy rule result", async () => {
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: {
+    status: "ok", items: [], password_detection: { status: "unavailable", items: [] },
+  } });
+  renderPage();
+  expect(await screen.findByText(t("systemStatus.passwordDetection.unavailable"))).toBeTruthy();
+  expect(screen.queryByText(t("systemStatus.passwordDetection.current"))).toBeNull();
+});

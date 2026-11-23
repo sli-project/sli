@@ -53,7 +53,27 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
                 RiskJson.Require(rows.Count==1,"password_risk_lease_lost_failure");await failure.CommitAsync(ct);failed++;
             }
         }
+        if (published > 0 || claimed == 0) await TryRefreshStaleQueuePresentation(db,ct);
         return new(claimed,completed,failed,published,pending,frozen);
+    }
+
+    private static async Task TryRefreshStaleQueuePresentation(NpgsqlConnection db,CancellationToken ct)
+    {
+        try
+        {
+            // Publication has already committed. Bound only the optional projection transaction.
+            await using var tx = await db.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+            var sql = new RiskSql(db, tx);
+            await sql.Execute("set local lock_timeout='250ms'; set local statement_timeout='1500ms'", ct);
+            var capability = await sql.Rows("select to_regprocedure('public.refresh_stale_password_queue399()') is not null as supported", ct);
+            if (capability[0]["supported"]?.GetValue<bool>() == true)
+                await sql.Execute("select public.refresh_stale_password_queue399()", ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (NpgsqlException error) when (!ct.IsCancellationRequested)
+        {
+            Console.Error.WriteLine("password_queue_projection_deferred:" + (error is PostgresException pg ? pg.SqlState : "database_unavailable"));
+        }
     }
 
     private async Task<PasswordRiskLease?> Claim(NpgsqlConnection db,CancellationToken ct)

@@ -7,7 +7,7 @@ import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { formatDate, formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
-import { statusAdDcImportIssue, statusAuditChecks, statusServices, statusSources } from "./status-view";
+import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
 
@@ -53,7 +53,8 @@ export function SystemStatusPage() {
       state: t("agents.identityConflict"), action: t("agents.checkIdentity"), plain: false }] : []),
   ]);
   const workers = operations.data?.workers;
-  const services = statusServices(workers?.items ?? [], timeZone);
+  const services = statusServices(workers?.items ?? [], timeZone, canViewOperations);
+  const passwordRules = statusPasswordRules(workers?.password_detection, timeZone);
   const importIssue = statusAdDcImportIssue(workers?.items ?? []);
   const disk = storage.data?.storage.postgres_volume;
   const backup = storage.data?.storage.footprint?.backups;
@@ -143,6 +144,15 @@ export function SystemStatusPage() {
     {operations.isPending ? loading(serviceColumns.length) : workers && workers.status !== "unavailable" && workers.items && !operations.isError
       ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} caption={t("systemStatus.services")} showFooter={false}/>
       : failed(t("systemStatus.services"), operations.refetch)}
+    {canViewOperations && !operations.isPending && !operations.isError ? <>
+      <h2 className="sli-ds-section-title">{t("systemStatus.passwordDetection.title")}</h2>
+      {passwordRules.length ? <DataTable columns={[
+        { key: "name", label: t("systemStatus.passwordDetection.rule") },
+        { key: "state", label: t("systemStatus.state"), render: (row) => <Status tone={row.tone}>{row.state}</Status> },
+        { key: "observed", label: t("systemStatus.passwordDetection.observed") },
+      ]} rows={passwordRules} rowKey={(row) => row.id} caption={t("systemStatus.passwordDetection.title")} showFooter={false}/>
+        : <p role="status">{t("systemStatus.passwordDetection.unavailable")}</p>}
+    </> : null}
     {importIssue ? <p>{importIssue}</p> : null}
     {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[

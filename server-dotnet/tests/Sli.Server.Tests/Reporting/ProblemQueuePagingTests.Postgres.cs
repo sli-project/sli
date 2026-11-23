@@ -302,9 +302,9 @@ public sealed partial class ProblemQueuePagingTests
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
-    internal static async Task SeedPopulation(NpgsqlConnection db, CancellationToken ct)
+    internal static async Task SeedPopulation(NpgsqlConnection db, CancellationToken ct, int? pendingFinding = null)
     {
-        await PostCollectionPostgres.Sql(db, """
+        await PostCollectionPostgres.Sql(db, $$"""
             insert into servers(id,domain_id,hostname,fqdn,role)
                 select 1,id,'dc01','dc01.example.test','domain_controller' from domains where fqdn='example.test';
             insert into findings(id,fingerprint,rule_code,title,status,severity,source,actor,target,evidence_count,first_seen_utc,last_seen_utc)
@@ -333,7 +333,7 @@ public sealed partial class ProblemQueuePagingTests
             insert into semantic_risk_evaluation_results(job_id,scenario_id,evaluation_mode,risk_class,raw_score,display_score,hard_critical,confidence,confidence_score,coverage_status,evaluation_ms)
             select md5('job-'||n)::uuid,md5('scenario-'||n)::uuid,'enabled','low',1,1,false,'low',1,'unknown',1 from generate_series(1,214) n;
             insert into semantic_finding_publications(scenario_id,finding_id,first_job_id,finding_fingerprint,published_evidence_count)
-            select md5('scenario-'||n)::uuid,n,md5('job-'||n)::uuid,'semantic:'||encode(sha256(('finding-'||n)::bytea),'hex'),1 from generate_series(1,214) n where n<>210;
+            select md5('scenario-'||n)::uuid,n,md5('job-'||n)::uuid,'semantic:'||encode(sha256(('finding-'||n)::bytea),'hex'),1 from generate_series(1,214) n where n<>210 and n<>{{pendingFinding ?? 0}};
             insert into semantic_suppressions(semantic_type,domain_id,scope_kind,scope_value,reason,expires_at,created_by)
             select 'synthetic-rule',id,'subject_sid','S-1-5-21-100000001-200000002-300000003-9999','Synthetic suppression',now()+interval '1 day','synthetic-user' from domains where fqdn='example.test';
             insert into semantic_suppressions(semantic_type,scope_kind,scope_value,kind,finding_id,reason,responsible_user_id,expires_at,created_by)

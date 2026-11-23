@@ -583,6 +583,10 @@
     "config/postgres_migrations/397_problem_queue_workflow.sql": "7cc816e0c92586a2b61c398416798749aaa273429c63288eda98a083db1d1f83",
     "config/postgres_migrations/398_password_proof_budget_progress.rollback.sql": "069a1c1abcc7781b8fceba4c4ac4a55284d750b52cd90879430540784f4d5e67",
     "config/postgres_migrations/398_password_proof_budget_progress.sql": "769c052829f305bf045b8887604b26099155e04c93977a1b9991d9954f532af7",
+    "config/postgres_migrations/399_password_queue_projection.rollback.sql": "2e4cb99125a5fb50b773c0b68acc07474543aff166da65430a6a486ae9563373",
+    "config/postgres_migrations/399_password_queue_projection.sql": "4db88274d2ea7ceb68a3e75424253607223450f40412e35a022a7ee125b6ff00",
+    "config/postgres_migrations/400_password_detection_status.rollback.sql": "14edf9788c11fd355ad1d6aff63e02e49658344c80098b00e9572dc315836680",
+    "config/postgres_migrations/400_password_detection_status.sql": "6f65174bb3f2cc1b55beb24409e75bfedc2470b1114204c2051e7c0a05b49f15",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
