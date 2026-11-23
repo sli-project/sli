@@ -1,20 +1,27 @@
+using Sli.Server.Problems;
+
 namespace Sli.Server.Domains;
 
 internal static class HomePeriodSql
 {
-    internal static string Problems(string queueSummary) => $$"""
+    // A single admitted population serves both the period totals and the current queue count.
+    internal static readonly string Problems = $$"""
         with population as materialized (
             select findings.id,findings.rule_code,findings.severity,
-                   findings.actor,findings.target,findings.first_seen_utc::timestamptz as first_seen,
+                   findings.actor,findings.target,findings.source,findings.fingerprint,findings.first_seen_utc::timestamptz as first_seen,
                    findings.closed_at::timestamptz as closed_at,({{HomeSummarySql.EffectiveStatus}}) as status
             {{HomeSummarySql.Population}}
             where is_semantic_finding_published_v1(findings.id)
               and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
               and not coalesce(risk.state='active' and risk.expires_at>statement_timestamp(),false)
-              and not ({{Sli.Server.Problems.ProblemRepository.Suppressed}})
+              and not ({{ProblemRepository.Suppressed}})
               and semantic_finding_in_domains_v265(findings.id,@ids)
+        ), open_findings as materialized (
+            select id,rule_code,target,source,fingerprint
+            from population where status in ('new','confirmed','repeated','active','review')
         ), recent as materialized (
-            select * from population where first_seen>=@from and first_seen<@to
+            select id,rule_code,severity,actor,target,first_seen,closed_at,status
+            from population where first_seen>=@from and first_seen<@to
               and severity in ('critical','high','medium')
               and rule_code not in ('qw.ad-hardening.privileged-nonexpiring','qw.ad-hardening.machine-account-quota',
                                     'qw.ad-hardening.lockout-threshold')
@@ -24,7 +31,7 @@ internal static class HomePeriodSql
         )
         select count(*) filter(where first_seen>=@from and first_seen<@to) as new_count,
                count(*) filter(where closed_at>=@from and closed_at<@to) as closed_count,
-               (select coalesce(sum(queue.count),0) from ({{queueSummary}}) queue) as open_count,
+               (select count(distinct cohort.key) from open_findings findings {{ProblemCohorts.Sql("queue-cohort")}}) as open_count,
                (select jsonb_agg(to_jsonb(top) || jsonb_build_object('entity',(
                    select jsonb_build_object('id',min(entity.id),'name',min(entity.display_name)) from finding_entities linked
                    join entities_v2_active entity on entity.id=linked.entity_id and entity.domain_id=any(@ids)

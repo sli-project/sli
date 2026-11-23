@@ -8,16 +8,29 @@ namespace Sli.Server.Domains;
 public interface IHomeSummaryRepository
 {
     Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct);
+    Task<IReadOnlyList<JsonObject>> ReadActivityAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct) =>
+        ReadAsync(sql, parameters, ct);
 }
 
 /// <summary>Parameterized reads following the caller's cancellation token.</summary>
 public sealed class HomeSummaryRepository(IPostgresConnectionFactory connections) : IHomeSummaryRepository
 {
-    public async Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct)
+    public Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct) =>
+        ReadAsync(sql, parameters, preferHashAggregate: false, ct);
+
+    public Task<IReadOnlyList<JsonObject>> ReadActivityAsync(string sql, IReadOnlyDictionary<string, object?> parameters, CancellationToken ct) =>
+        ReadAsync(sql, parameters, preferHashAggregate: true, ct);
+
+    private async Task<IReadOnlyList<JsonObject>> ReadAsync(string sql, IReadOnlyDictionary<string, object?> parameters,
+        bool preferHashAggregate, CancellationToken ct)
     {
         await using var connection = await connections.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using (var limits = new NpgsqlCommand("set transaction read only; set local jit=off", connection, transaction) { CommandTimeout = 0 })
+        const string readOnly = "set transaction read only; set local jit=off";
+        // Activity groups a large event stream into a bounded set of hourly buckets.
+        // Discourage sorting every event when the hourly groups fit in memory.
+        var setup = preferHashAggregate ? readOnly + "; set local enable_sort=off" : readOnly;
+        await using (var limits = new NpgsqlCommand(setup, connection, transaction) { CommandTimeout = 0 })
         {
             await limits.ExecuteNonQueryAsync(ct);
         }
