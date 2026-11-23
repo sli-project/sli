@@ -3,6 +3,7 @@ select pg_advisory_xact_lock(hashtext('sli_dc_task_service_catalog401'));
 set local lock_timeout='5s';
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
+       or not pg_has_role(session_user,'adlog_user','MEMBER')
        or not exists(select 1 from public.schema_migrations where version=401 and name='dc_task_service_catalog')
        or exists(select 1 from public.schema_migrations where version>401) then
         raise exception 'dc_task_service401_rollback_preflight' using errcode='55000';
@@ -33,6 +34,9 @@ drop table public.dc_catalog_restore401;
 -- Keep trusted live/history origin for observations already attested by 401.
 -- It also prevents a restored upgrade from treating history as new input.
 drop table public.dc_catalog_policies401;
+reset role;
+set local role adlog_user;
+drop function public.lock_dc_catalog_host401(bigint,bigint);
 reset role;
 delete from public.schema_migrations where version=401 and name='dc_task_service_catalog';
 commit;

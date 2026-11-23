@@ -3,6 +3,7 @@ select pg_advisory_xact_lock(hashtext('sli_dc_task_service_catalog401'));
 set local lock_timeout='5s';
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
+       or not pg_has_role(session_user,'adlog_user','MEMBER')
        or not exists(select 1 from public.schema_migrations where version=400 and name='password_detection_status')
        or exists(select 1 from public.schema_migrations where version>=401) then
         raise exception 'dc_task_service401_preflight' using errcode='55000';
@@ -104,11 +105,40 @@ begin
     execute patched;
 end $patch$;
 
+-- Locking a row requires some UPDATE privilege in PostgreSQL. Keep that
+-- privilege with the existing table owner and expose only this checked read
+-- to the storage owner. No worker can execute the helper directly.
+create function public.lock_dc_catalog_host401(p_server bigint,p_domain bigint)
+returns boolean language sql volatile security definer set search_path=pg_catalog,pg_temp as $$
+    select exists (
+        select 1 from public.servers host
+        where host.id=p_server and host.domain_id=p_domain
+          and host.is_active and host.role='domain_controller'
+        for share of host
+    )
+$$;
+revoke all on function public.lock_dc_catalog_host401(bigint,bigint) from public;
+reset role;
+do $$
+declare had_create boolean:=has_schema_privilege('adlog_user','public','CREATE');
+begin
+    if not had_create then grant create on schema public to adlog_user; end if;
+    alter function public.lock_dc_catalog_host401(bigint,bigint) owner to adlog_user;
+    if not had_create then revoke create on schema public from adlog_user; end if;
+end $$;
+set local role adlog_user;
+grant execute on function public.lock_dc_catalog_host401(bigint,bigint) to adlog_storage_owner;
+reset role;
+set local role adlog_storage_owner;
+
 create function public.read_dc_catalog_action401(p_policy text,p_version integer,p_action uuid)
-returns jsonb language sql stable security definer set search_path=pg_catalog,pg_temp as $$
+returns jsonb language plpgsql volatile security definer set search_path=pg_catalog,pg_temp as $$
+declare evidence jsonb;
+begin
     select jsonb_build_object('event_id',source.id,'domain_id',source.domain_id,
         'server_id',source.server_id,'host',source.computer,'name',n.facts_json->>pin.object_field,
         'actor',case when source.event_id in(4697,4698) then nullif(btrim(source.subject_user_name),'') end)
+    into evidence
     from public.dc_catalog_policies401 pin
     join public.semantic_risk_policies policy on policy.policy_id=pin.policy_id and policy.policy_version=1
       and policy.definition_sha256=pin.definition_sha256 and policy.source_kind='canonical_action'
@@ -144,7 +174,13 @@ returns jsonb language sql stable security definer set search_path=pg_catalog,pg
              (source.event_id=4697 and source.channel='Security' and source.provider_name='Microsoft-Windows-Security-Auditing'
               or source.event_id=7045 and source.channel='System' and source.provider_name='Service Control Manager')))
       and (select count(*) from public.canonical_action_evidence all_links
-           where all_links.canonical_action_id=p_action)=1
+           where all_links.canonical_action_id=p_action)=1;
+    if evidence is null then return null; end if;
+    -- The caller holds the policy lock first. This second read rechecks the
+    -- current state after waiting and keeps it fixed through finding/outbox commit.
+    return evidence || jsonb_build_object('host_eligible',public.lock_dc_catalog_host401(
+        (evidence->>'server_id')::bigint,(evidence->>'domain_id')::bigint));
+end
 $$;
 revoke all on function public.read_dc_catalog_action401(text,integer,uuid) from public;
 grant execute on function public.read_dc_catalog_action401(text,integer,uuid) to adlog_semantic_worker;
@@ -178,9 +214,10 @@ $$;
 revoke all on function public.dc_catalog_finding401(bigint,uuid) from public;
 
 create function public.copy_dc_catalog_evidence401(p_finding bigint,p_scenario uuid)
-returns boolean language plpgsql security definer set search_path=pg_catalog,pg_temp as $$
+returns integer language plpgsql security definer set search_path=pg_catalog,pg_temp as $$
+declare repeats integer;
 begin
-    if not public.dc_catalog_finding401(p_finding,p_scenario) then return false; end if;
+    if not public.dc_catalog_finding401(p_finding,p_scenario) then return null; end if;
     with expected as materialized (
         select n.source_event_id,n.source_event_sha256,n.occurred_at_utc
         from public.semantic_scenario_evidence evidence join public.normalized_events n using(normalized_event_id)
@@ -200,16 +237,25 @@ begin
     join public.event_cold_facts c on c.event_id=e.source_event_id
       and c.time_created_utc=e.occurred_at_utc and c.source_sha256=e.source_event_sha256
     on conflict do nothing;
-    return
-        public.semantic_finding_in_domains_v265(p_finding,array[(
+    if not public.semantic_finding_in_domains_v265(p_finding,array[(
             select (s.strict_keys_json->>'domain_id')::bigint
             from public.semantic_security_scenarios s where s.scenario_id=p_scenario)])
-        and not exists (
+        or exists (
             select 1 from public.semantic_scenario_evidence e join public.normalized_events n using(normalized_event_id)
             where e.scenario_id=p_scenario and not exists(select 1 from public.finding_event_copies337 c
                where c.finding_id=p_finding and c.event_id=n.source_event_id and c.time_created_utc=n.occurred_at_utc
                  and c.source_sha256=n.source_event_sha256 and c.evidence_role='semantic_scenario')
-        );
+        ) then return null; end if;
+
+    -- Security and System may independently describe one installation.
+    -- Only repeats within a descriptor prove an additional occurrence.
+    select greatest(coalesce(max(observations.total),0)-1,0)::integer into repeats
+    from (
+        select count(distinct event_id) as total from public.finding_event_copies337
+        where finding_id=p_finding and evidence_role='semantic_scenario' and event_kind in(4697,4698,7045)
+        group by event_kind
+    ) observations;
+    return repeats;
 end $$;
 revoke all on function public.copy_dc_catalog_evidence401(bigint,uuid) from public;
 grant execute on function public.copy_dc_catalog_evidence401(bigint,uuid) to adlog_semantic_worker;
@@ -223,7 +269,7 @@ begin
     join public.semantic_risk_evaluation_results result on result.job_id=p.first_job_id and result.scenario_id=p.scenario_id
     where p.scenario_id=p_scenario and result.evaluation_mode='enabled' and result.conclusion_state='observed';
     if not found or not public.dc_catalog_finding401(finding,p_scenario)
-       or not public.copy_dc_catalog_evidence401(finding,p_scenario) then
+       or public.copy_dc_catalog_evidence401(finding,p_scenario) is null then
         raise exception 'dc_task_service401_publication_unavailable';
     end if;
     select max(c.time_created_utc) filter(where origin.module_id='sli.windows.ad-dc'

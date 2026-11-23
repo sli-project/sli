@@ -65,6 +65,8 @@ internal sealed partial class SemanticProduction
                         completed++;
                         continue;
                     }
+                    if (!dcEvidence.Flag("host_eligible"))
+                        throw new InvalidOperationException("dc_catalog_host_not_eligible");
                 }
                 var proposal = await Proposal(session, policy, sourceId, evaluationMode, ct, dcEvidence);
                 var snapshot = await Completeness(session, proposal, ct);

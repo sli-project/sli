@@ -20,6 +20,81 @@ namespace Sli.Server.Tests.Semantic;
 public sealed class DcTaskServicePublicationTests
 {
     [Fact]
+    public async Task Dc_registry_change_blocks_publication_until_eligible_retry()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var environment = new SemanticProducerPostgresTests.Admission();
+        environment.Set("SLI_PLUGIN_LOCK_DIR", Path.Combine(
+            PostCollectionPostgres.Repository(), "config/plugin_packages/v3"));
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
+            select '00000000-0000-4000-8000-000000002401',id,id,'telegram',true
+            from auth_users where username='platform-owner';
+            """, ct);
+        var records = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4698],
+            nativeFields: new Dictionary<string, string> { ["TaskName"] = "SyntheticRacingRegistry" });
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, records, ct);
+        await using var runtime = PasswordProducerRuntime.Create(name => name == "ADLOG_SEMANTIC_WORKER_DSN"
+            ? fixture.Dsn("sli_semantic_login") : null, _ => throw new InvalidOperationException());
+        await using var worker = await runtime.OpenAsync(ct);
+        var production = new SemanticProduction(runtime, SemanticRuntimeSettings.Read(Environment.GetEnvironmentVariable),
+            SemanticRuntimeSettings.FindingsMode, 16);
+        await SemanticProducerBackfill.RunAsync(worker, SemanticRuntimeSettings.FindingsMode, 16, ct);
+        Assert.Equal(1, (await production.ProcessOutbox(worker, ct)).Number("completed"));
+
+        await using var reassignment = await owner.BeginTransactionAsync(ct);
+        await using (var disable = new NpgsqlCommand("update public.servers set is_active=false where id=900001", owner, reassignment))
+            Assert.Equal(1, await disable.ExecuteNonQueryAsync(ct));
+        var attempt = production.ProcessRisk(worker, ct);
+        bool waitedForServer = false;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(8);
+        await using (var blocked = new NpgsqlCommand("select pg_backend_pid()=any(pg_blocking_pids(@worker))", owner, reassignment))
+        {
+            blocked.Parameters.AddWithValue("worker", worker.ProcessID);
+            while (!attempt.IsCompleted && DateTimeOffset.UtcNow < deadline)
+            {
+                if (await blocked.ExecuteScalarAsync(ct) is true)
+                {
+                    waitedForServer = true;
+                    break;
+                }
+                await Task.Delay(25, ct);
+            }
+        }
+        await reassignment.CommitAsync(ct);
+        var denied = await attempt;
+        Assert.True(waitedForServer);
+        Assert.Equal(1, denied.Number("failed"));
+        Assert.Equal(0, denied.Number("published"));
+        await using (var absent = new NpgsqlCommand("""
+            select not has_function_privilege('adlog_semantic_worker','public.lock_dc_catalog_host401(bigint,bigint)','execute')
+              and not has_column_privilege('adlog_storage_owner','public.servers','is_active','update')
+              and not has_schema_privilege('adlog_user','public','create')
+              and not exists(select 1 from public.semantic_finding_publications)
+              and not exists(select 1 from public.notification_outbox)
+            """, owner))
+            Assert.Equal(true, await absent.ExecuteScalarAsync(ct));
+
+        await PostCollectionPostgres.Sql(owner, """
+            update public.servers set is_active=true where id=900001;
+            update public.semantic_risk_evaluation_jobs set available_at=now() where evaluation_status='failed';
+            """, ct);
+        var retried = await production.ProcessRisk(worker, ct);
+        Assert.Equal(0, retried.Number("queued"));
+        Assert.Equal(1, retried.Number("published"));
+        await using var verified = new NpgsqlCommand("""
+            select (select count(*) from public.semantic_risk_evaluation_jobs)=1
+              and (select count(*) from public.semantic_finding_publications)=1
+              and (select count(*) from public.finding_event_copies337)=1
+              and (select count(*) from public.notification_outbox where state='pending')=1
+            """, owner);
+        Assert.Equal(true, await verified.ExecuteScalarAsync(ct));
+    }
+
+    [Fact]
     public async Task Scope_disabled_policy_and_history_apply_before_live_delivery()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -166,6 +241,7 @@ public sealed class DcTaskServicePublicationTests
             Assert.Equal(task ? "semantic.security.dc_scheduled_task_created" : "semantic.security.dc_service_installed", finding.Text("rule_code"));
             Assert.Equal("high", finding.Text("severity"));
             Assert.Equal(task ? 1 : 2, finding.Number("evidence_count"));
+            Assert.Equal(0, finding.Number("repeat_count"));
             Assert.Equal("synthetic-operator", finding.Text("actor"));
             Assert.Contains(task ? "scheduled task" : "service", ProblemPresentation.RuleMessage(finding, "title", "en").Text("text"));
             Assert.Contains(task ? "задача" : "служба", ProblemPresentation.RuleMessage(finding, "title", "ru").Text("text"));
@@ -290,20 +366,34 @@ public sealed class DcTaskServicePublicationTests
     private static async Task CheckMigrationRoundTrip(SqlPostgresFixture fixture, NpgsqlConnection owner, CancellationToken ct)
     {
         string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/401_dc_task_service_catalog.sql");
+        // Match native PostgreSQL provisioning before executing SQL as the native admin login.
         await PostCollectionPostgres.Sql(owner, """
+            create role sli_migration login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication;
+            do $$ begin
+                execute format('alter database %I owner to sli_migration',current_database());
+                execute format('revoke all on database %I from public',current_database());
+                execute format('grant connect on database %I to adlog_user',current_database());
+            end $$;
+            revoke create on schema public from public;
+            grant usage on schema public to adlog_user;
             update semantic_policy_admission set enabled=false,updated_by='synthetic:operator'
             where policy_id='l1-dc-scheduled-task-created' and policy_version=1;
             """, ct);
-        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), "postgres", ct);
         await using var predecessor = new NpgsqlCommand("""
             select max(version)=400 and to_regprocedure('public.read_dc_catalog_action401(text,integer,uuid)') is null
+                and to_regprocedure('public.lock_dc_catalog_host401(bigint,bigint)') is null
             from schema_migrations
             """, owner);
         Assert.Equal(true, await predecessor.ExecuteScalarAsync(ct));
-        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await fixture.Pg.ApplyFileAsync(migration, "postgres", ct);
         await using var preserved = new NpgsqlCommand("""
-            select not enabled and updated_by='synthetic:operator' and
-                (select count(*) from public.semantic_finding_publications)=2
+            select not enabled and updated_by='synthetic:operator'
+                and (select count(*) from public.semantic_finding_publications)=2
+                and (select datdba='sli_migration'::regrole from pg_database where datname=current_database())
+                and (select proowner='adlog_user'::regrole from pg_proc
+                    where oid='public.lock_dc_catalog_host401(bigint,bigint)'::regprocedure)
+                and not has_schema_privilege('adlog_user','public','create')
             from semantic_policy_admission where policy_id='l1-dc-scheduled-task-created' and policy_version=1
             """, owner);
         Assert.Equal(true, await preserved.ExecuteScalarAsync(ct));
