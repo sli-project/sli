@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Agents.Registry;
 using Sli.Server.Auth.Lifecycle.Security;
 using Sli.Server.Semantic.Risk;
 
@@ -9,6 +10,7 @@ namespace Sli.Server.Semantic;
 
 internal sealed record SemanticProposal(SemanticPolicy Policy, string SourceId, DateTimeOffset At, string Partition, JsonObject Strict, JsonObject Factors, Guid[] Evidence, JsonArray Native, JsonArray Coverage, string Conclusion = "observed")
 {
+    internal JsonObject? DcCatalogEvidence { get; init; }
     internal string Contribution => HashText($"risk-policy:{Policy.Id}:{Policy.Version}:{Policy.Source}:{SourceId}");
     internal string Step => HashText($"policy-step:risk-policy:{Policy.Id}:{Policy.Version}:{Policy.Source}:{SourceId}");
     internal string Identity => SemanticJson.Hash(new JsonObject { ["scenario_kind"] = Policy.Kind, ["result_class"] = Policy.Result, ["partition_key"] = Partition, ["strict_keys"] = Strict.Copy(), ["merge_window_seconds"] = Policy.Window });
@@ -50,7 +52,21 @@ internal sealed partial class SemanticProduction
                 if (development) RequireDevelopmentEvaluation(evaluationMode);
                 if (row.Text("effective_mode") != evaluationMode || row.Text("source_kind") != job.Text("source_kind")) throw new InvalidOperationException("semantic_risk_admission_changed");
                 if (evaluationMode == "enabled" && !(await session.QueryAsync("select enabled from semantic_policy_admission where policy_id=$1 and policy_version=$2", ct, policy.Id, policy.Version)).Single().Flag("enabled")) throw new InvalidOperationException("semantic_policy_admission_required");
-                var proposal = await Proposal(session, policy, job.Text("source_reference")!, evaluationMode, ct);
+                string sourceId = job.Text("source_reference")!;
+                JsonObject? dcEvidence = null;
+                if (policy.Source == "canonical_action" && policy.Id is ("l1-dc-scheduled-task-created" or "l1-dc-service-installed"))
+                {
+                    dcEvidence = (await session.QueryAsync("select public.read_dc_catalog_action401($1,$2,$3) as evidence", ct,
+                        policy.Id, policy.Version, Guid.Parse(sourceId))).Single()?["evidence"] as JsonObject;
+                    if (dcEvidence is null)
+                    {
+                        await Complete(session, "semantic_risk_evaluation_jobs", "evaluation_status", job, ct);
+                        await tx.CommitAsync(ct);
+                        completed++;
+                        continue;
+                    }
+                }
+                var proposal = await Proposal(session, policy, sourceId, evaluationMode, ct, dcEvidence);
                 var snapshot = await Completeness(session, proposal, ct);
                 string conclusion = ResolveConclusionState(proposal.Conclusion, snapshot);
                 Guid? scenario = null; JsonObject? persisted = null;
@@ -115,7 +131,7 @@ internal sealed partial class SemanticProduction
         if (document["acl_context"] is not null) { pin.Remove("scope"); pin["version"] = "sli.qw.file-acl-execution.v1"; pin["resource"] = document["acl_context"]!["resource"].Copy(); }
         return pin;
     }
-    internal static async Task<SemanticProposal> Proposal(ISemanticSession session, SemanticPolicy policy, string id, string mode, CancellationToken ct)
+    internal static async Task<SemanticProposal> Proposal(ISemanticSession session, SemanticPolicy policy, string id, string mode, CancellationToken ct, JsonObject? dcEvidence = null)
     {
         JsonArray evidence = new(), native = new(), coverage = new(); var strict = new JsonObject(); DateTimeOffset at; string partition, identity = "exact"; bool confirmed = false; int completeness = 100; string parser = "good", timeQuality = "good", conclusion = "observed";
         if (policy.Source is "canonical_action" or "correlation_candidate")
@@ -138,6 +154,16 @@ internal sealed partial class SemanticProduction
             foreach (string role in policy.Roles)
             {
                 var values = evidence.Select(x => x!["roles_json"].Text(role)).Where(x => !string.IsNullOrEmpty(x)).Distinct().ToArray(); if (values.Length != 1) throw new InvalidDataException("semantic_risk_strict_role_not_exact"); strict[role] = values[0];
+            }
+            if (dcEvidence is not null)
+            {
+                string objectName = UnicodeCaseFold.TrimAndFold(dcEvidence.Text("name")!);
+                string field = policy.Selector == "scheduled_task.created" ? "task_name" : "service_name";
+                if (source["attributes_json"]?["material_identity"].Text(field) != objectName
+                    || evidence.Count != 1 || evidence[0].Number("source_event_id") != dcEvidence.Number("event_id"))
+                    throw new InvalidDataException("dc_catalog_canonical_evidence_conflict");
+                strict["domain_id"] = dcEvidence["domain_id"]!.ToString();
+                strict["target_entity"] = objectName;
             }
             foreach (var atom in evidence)
             {
@@ -206,7 +232,7 @@ internal sealed partial class SemanticProduction
             coverage.Add(latest.Copy() ?? new JsonObject { ["control_id"] = control, ["coverage_status"] = "unknown", ["reason"] = "No control health observation is available", ["observed_at_utc"] = SemanticJson.Stamp(at) });
         }
         var factors = new JsonObject { ["identity_resolution"] = identity, ["state_confirmed"] = confirmed, ["multi_source_confirmed"] = false, ["sequence_completeness"] = completeness, ["time_quality"] = timeQuality, ["parser_quality"] = parser };
-        return new(policy, id, at, partition, strict, factors, evidence.Select(x => Guid.Parse(x.Text("normalized_event_id")!)).ToArray(), native, coverage, conclusion);
+        return new(policy, id, at, partition, strict, factors, evidence.Select(x => Guid.Parse(x.Text("normalized_event_id")!)).ToArray(), native, coverage, conclusion) { DcCatalogEvidence = dcEvidence };
     }
     internal static string CandidateIdentityResolution(JsonArray evidence, string[] strictRoles)
     {

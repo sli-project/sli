@@ -61,6 +61,8 @@ public static class ProblemPresentation
             "security.audit_controls_changed" => "audit",
             "security.privileged_group_member_added" => "privileged_group",
             "security.scheduled_task_created" => "scheduled_task",
+            "security.dc_scheduled_task_created" => "dc_scheduled_task",
+            "security.dc_service_installed" => "dc_service_installed",
             _ => Semantic.Detections.IdentityAttacks.Rules.GetValueOrDefault(id)
         };
         if (legacy is not null) {
@@ -87,6 +89,7 @@ public static class ProblemPresentation
         "semantic.qw.file-acl-broad-write" => "file_acl_broad_write", "" => null, var rule => rule };
 
     internal static bool CatalogDetection(string rule) => rule is "semantic.qw.privileged-group-addition" or "semantic.qw.security-log-cleared" or "semantic.qw.audit-disabled";
+    internal static bool IsDcCatalogFinding(string rule) => rule is "semantic.security.dc_scheduled_task_created" or "semantic.security.dc_service_installed";
     internal static bool IsPasswordFinding(string rule) => rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
     internal static JsonObject RuleParameters(JsonObject finding, ProblemAccess? access = null, string language = "")
     {
@@ -105,6 +108,8 @@ public static class ProblemPresentation
             var hosts = ProblemJson.Array(finding["evidence"]).OfType<JsonObject>().Select(e => Name(e["hostname"])).Where(h => h is not null).Distinct().ToArray();
             parameters["computer"] = Name(finding["computer"] ?? finding["hostname"] ?? finding["presentation_facts"]?["computer"]) ?? (hosts.Length == 1 ? hosts[0] : null);
             if (parameters["computer"] is null && ProblemJson.Text(finding["rule_code"]).StartsWith("semantic.qw.agent-", StringComparison.Ordinal)) parameters["computer"] = Name(finding["target"]);
+            if (IsDcCatalogFinding(ProblemJson.Text(finding["rule_code"])))
+                parameters["computer"] ??= Name(finding["source"]);
             parameters["host"] = parameters["computer"]?.DeepClone();
             if (CatalogDetection(ProblemJson.Text(finding["rule_code"]))) {
                 var facts = finding["presentation_facts"];
@@ -142,6 +147,11 @@ public static class ProblemPresentation
         if (suffix == "next" && (CatalogDetection(rule) || rule == "semantic.qw.agent-tamper") &&
             (parameters["actor"] is null || rule == "semantic.qw.privileged-group-addition" && parameters["member"] is null))
             code += "_without_names";
+        if (suffix == "what" && IsDcCatalogFinding(rule))
+        {
+            if (parameters["target"] is null) code += "_without_object";
+            else if (parameters["actor"] is not null) code += "_with_actor";
+        }
         var message = Message(code, language, parameters);
         if (suffix == "what" && CatalogDetection(rule)) {
             bool english = DomainHttp.SelectEnglish(language);
@@ -157,7 +167,7 @@ public static class ProblemPresentation
                 if (parameters[key] is null) foreach (string fragment in fragments) template = template.Replace(fragment, "");
             message["text"] = Render(template, parameters);
         }
-        if (suffix == "what" && !CatalogDetection(rule) && rule != "semantic.qw.agent-tamper" && rule is not ("semantic.qw.kerberoasting" or "semantic.qw.asrep-roasting") && (!password || string.IsNullOrWhiteSpace(ProblemJson.Text(message["text"])))) {
+        if (suffix == "what" && !IsDcCatalogFinding(rule) && !CatalogDetection(rule) && rule != "semantic.qw.agent-tamper" && rule is not ("semantic.qw.kerberoasting" or "semantic.qw.asrep-roasting") && (!password || string.IsNullOrWhiteSpace(ProblemJson.Text(message["text"])))) {
             string rendered = ProblemJson.Text(message["text"]);
             var facts = new[] { "actor", "account", "computer", "source", "count", "time" }
                 .Where(key => parameters[key] is not null && !rendered.Contains(parameters[key]!.ToString(), StringComparison.Ordinal))

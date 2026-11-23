@@ -148,10 +148,18 @@ internal sealed partial class SemanticProduction
         if (contributions.Count == 0 || contributions.Any(x => !x.Flag("admitted") || x.Text("lifecycle_status") is not ("shadow" or "enabled") || string.IsNullOrEmpty(x.Text("policy_sha256")) || x.Text("policy_sha256") != x.Text("definition_sha256"))) throw new InvalidOperationException("finding_contributions_not_admitted");
         var native = await ScenarioNative(session, sid, ct); await VerifyNative(session, native, ct);
         string fingerprint = "semantic:" + scenario.Text("scenario_key"), rule = "semantic." + scenario.Text("scenario_kind"); var strict = scenario["strict_keys_json"]!.AsObject(); string? actor = strict.Text("actor") ?? strict.Text("session_principal"), target = strict.Text("target_entity") ?? strict.Text("container_entity"), source = strict.Text("source_host") ?? strict.Text("source_ip");
+        if (p.DcCatalogEvidence is { } dcEvidence)
+        {
+            actor = dcEvidence.Text("actor");
+            target = dcEvidence.Text("name");
+            source = dcEvidence.Text("host");
+        }
         await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, fingerprint);
         var created = await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding7, ct, fingerprint, rule, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, scenario.Text("first_seen_utc"), scenario.Text("last_seen_utc"), actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.");
         var finding = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding8, ct, fingerprint)).Single()!; if (finding.Text("rule_code") != rule) throw new InvalidDataException("finding_fingerprint_conflict"); long id = finding.Number("id");
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding9, ct, id, sid);
+        if (p.DcCatalogEvidence is not null && !(await session.QueryAsync("select public.copy_dc_catalog_evidence401($1,$2) as copied", ct, id, sid)).Single().Flag("copied"))
+            throw new InvalidDataException("dc_catalog_finding_evidence_unavailable");
         native = await ScenarioNative(session, sid, ct); await VerifyNative(session, native, ct);
         foreach (var reference in native)
         {
@@ -160,18 +168,22 @@ internal sealed partial class SemanticProduction
         foreach (var pair in strict)
         {
             if (p.Policy.Source == "qw_signal" && pair.Key is "kind" or "entity" or "episode") continue;
+            if (p.DcCatalogEvidence is not null && pair.Key is ("domain_id" or "target_entity")) continue;
             string type = pair.Key switch { "source_host" => "host", "target_entity" when rule == "semantic.qw.agent-tamper" => "host", "source_ip" => "ip", "container_entity" => "group", _ => "account" };
             await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding10, ct, id, type, pair.Value!.ToString(), pair.Key, id, type, pair.Value.ToString(), pair.Key);
         }
         var evidence = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding11, ct, id, id)).Single()!;
         if (evidence.Number("count") <= 0) throw new InvalidOperationException("finding_without_exact_evidence");
-        int? repeats = rule == "semantic.qw.agent-tamper" ? Math.Max(0, (int)evidence.Number("count") - 1) : null;
+        int? repeats = rule == "semantic.qw.agent-tamper" || p.DcCatalogEvidence is not null
+            ? Math.Max(0, (int)evidence.Number("count") - 1) : null;
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding12, ct, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, scenario.Text("first_seen_utc"), scenario.Text("last_seen_utc"), actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.", (int)evidence.Number("count"), evidence["max_event_id"] is null ? null : evidence.Number("max_event_id"), id, repeats);
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding13, ct, sid, id, job, fingerprint, (int)evidence.Number("count"));
         var publication = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding14, ct, sid)).Single()!;
         if (publication.Number("finding_id") != id || publication.Text("finding_fingerprint") != fingerprint) throw new InvalidDataException("finding_publication_replay_conflict");
         if (created.Count > 0) await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding15, ct, id);
         if (p.Policy.Source == "qw_signal") await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding16, ct, sid);
+        if (p.DcCatalogEvidence is not null)
+            await session.QueryAsync("select public.enqueue_dc_catalog_notifications401($1) as enqueued", ct, sid);
         await RecordFindingIdentitySupersessions(session, sid, id, ct);
         return created.Count > 0;
     }
