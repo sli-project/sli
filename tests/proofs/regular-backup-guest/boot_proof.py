@@ -22,6 +22,13 @@ WHEELS = {
         "c677c4ad433cb7150c8cd304a0769ae3bcfbe5ea0676eb53faa7b1443b16d0d3",
 }
 MARKER = b"SLI_REGULAR_BACKUP_PROOF_PASS " + PIN.encode("ascii")
+FAILURE = b"SLI_REGULAR_BACKUP_PROOF_FAILED"
+SERIAL_LIMIT = 2 * 1024 * 1024
+STAGES = frozenset(b"""seed_mount guest_entry mount_namespace seed_manifest python_dependencies
+                    device_identity filesystem_setup capture_proof shutdown""".split())
+EXCEPTIONS = frozenset(b"""AssertionError CalledProcessError FileNotFoundError ImportError KeyError
+                        ModuleNotFoundError OSError PermissionError RuntimeError TimeoutExpired
+                        ValueError OtherException""".split())
 RESULT = {
     "source": PIN, "scope": "source-only-synthetic-archive", "same_disk_peer": "rejected",
     "separate_guest_disk": "published_and_hash_verified", "schedule": "remained_off",
@@ -39,9 +46,14 @@ runcmd:
     - -eu
     - -c
     - >-
+      exec >/dev/ttyS0 2>&1;
+      echo; echo SLI_REGULAR_BACKUP_PROOF_STAGE seed_mount;
+      trap 'echo; echo SLI_REGULAR_BACKUP_PROOF_FAILED seed_mount' ERR;
       mkdir /run/sli-proof-seed;
       mount -t iso9660 -o ro,nosuid,nodev,noexec /dev/disk/by-label/CIDATA /run/sli-proof-seed;
-      exec /bin/bash /run/sli-proof-seed/guest.sh
+      echo; echo SLI_REGULAR_BACKUP_PROOF_STAGE guest_entry;
+      trap 'echo; echo SLI_REGULAR_BACKUP_PROOF_FAILED guest_entry' ERR;
+      /bin/bash /run/sli-proof-seed/guest.sh
 """
 
 
@@ -181,9 +193,22 @@ def require_terminal(serial):
     lines = serial.splitlines()
     expected = json.dumps(RESULT, sort_keys=True).encode("ascii")
     if (lines.count(MARKER) != 1 or lines.count(expected) != 1 or
-            lines.index(MARKER) != lines.index(expected) + 1 or b"SLI_REGULAR_BACKUP_PROOF_FAILED" in lines):
+            lines.index(MARKER) != lines.index(expected) + 1 or
+            any(line == FAILURE or line.startswith(FAILURE + b" ") for line in lines)):
         raise ValueError("guest did not emit the exact proof result before its marker")
     return RESULT
+
+
+def proof_diagnostics(serial):
+    diagnostic = []
+    for line in serial[:SERIAL_LIMIT].splitlines():
+        kind, _, value = line.partition(b" ")
+        if ((kind in (b"SLI_REGULAR_BACKUP_PROOF_STAGE", FAILURE) and value in STAGES)
+                or (kind == b"SLI_REGULAR_BACKUP_PROOF_EXCEPTION" and value in EXCEPTIONS)):
+            diagnostic.append(line.decode("ascii"))
+            if len(diagnostic) == 24:
+                break
+    return diagnostic
 
 
 def run_guest(source, wheelhouse, image, digest, scratch):
@@ -213,15 +238,16 @@ def run_guest(source, wheelhouse, image, digest, scratch):
     log = scratch / "guest.log"
     try:
         subprocess.run(qemu_command() + boot, cwd=scratch, check=True, timeout=360)
-        if log.stat().st_size > 2 * 1024 * 1024:
+        if log.stat().st_size > SERIAL_LIMIT:
             raise ValueError("guest log exceeded the proof limit")
         serial = log.read_bytes()
         result = require_terminal(serial)
     except (OSError, subprocess.SubprocessError, ValueError):
+        stages = []
         if log.exists():
             with log.open("rb") as stream:
-                stream.seek(max(0, log.stat().st_size - 12000))
-                print(stream.read().decode("utf-8", errors="replace"), file=sys.stderr)
+                stages = proof_diagnostics(stream.read(SERIAL_LIMIT))
+        print("\n".join(stages or ["SLI_REGULAR_BACKUP_PROOF_DIAGNOSTICS_ABSENT"]), file=sys.stderr)
         raise
     check_file(base, "sha512", digest)
     print(json.dumps(result, sort_keys=True))
