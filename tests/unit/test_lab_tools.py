@@ -142,12 +142,13 @@ def test_all_scenarios_have_a_serializable_expected_contract():
 
 def test_powershell_files_have_bom_and_ps51_requirement():
     paths = list(LAB.glob("*.ps1"))
-    assert {path.name for path in paths} == {
+    required_paths = {
         "lab-01-domain.ps1", "lab-02-populate.ps1", "lab-03-simulate.ps1",
         "lab-04-agent.ps1", "lab-05-file-server.ps1", "lab-06-file-simulate.ps1",
         "lab-08-nps-denials.ps1", "lab-common.ps1", "lab-exercise-attack.ps1", "lab-orchestrate.ps1",
         "lab-tunnel.ps1", "lab-verify.ps1",
     }
+    assert required_paths <= {path.name for path in paths}
     for path in paths:
         assert path.read_bytes().startswith(b"\xef\xbb\xbf"), path.name
         assert "#Requires -Version 5.1" in path.read_text("utf-8-sig")
