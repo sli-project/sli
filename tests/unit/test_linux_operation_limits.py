@@ -84,6 +84,7 @@ def test_apt_setup_timeout_reaches_existing_rollback(monkeypatch, tmp_path):
     monkeypatch.setattr(install, 'inventory', lambda release: None)
     monkeypatch.setattr(runtime, 'no_transaction', lambda: None)
     monkeypatch.setattr(install, 'setup_deadline', lambda: nullcontext())
+    monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
 
     def blocked(*args):
         raise operation.OperationTimeout('operation_stalled', {})
@@ -333,7 +334,8 @@ def test_setup_parent_relays_only_exact_command_failure(tmp_path, monkeypatch, c
         assert 'synthetic-private' not in stderr
 
 
-def test_timed_out_accepted_reinstall_restarts_services(tmp_path, monkeypatch):
+@pytest.mark.parametrize('backup_schedule', ['enabled', 'disabled', 'masked'])
+def test_timed_out_accepted_reinstall_restarts_services(tmp_path, monkeypatch, backup_schedule):
     from deploy.linux import native_install as install, native_runtime as runtime, native_upgrade as upgrade
     root, state = tmp_path / 'release', tmp_path / 'state'
     root.mkdir()
@@ -350,6 +352,7 @@ def test_timed_out_accepted_reinstall_restarts_services(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, 'no_transaction', lambda: None)
     events = []
     monkeypatch.setattr(upgrade, 'start_checked', lambda: events.append('healthy'))
+    monkeypatch.setattr(install, 'backup_schedule', lambda: backup_schedule)
     monkeypatch.setattr(install, 'command', lambda argv, **kw: events.append(argv))
 
     def blocked(release):
@@ -360,4 +363,7 @@ def test_timed_out_accepted_reinstall_restarts_services(tmp_path, monkeypatch):
     with pytest.raises(operation.OperationTimeout, match='operation_stalled'):
         install.configure_guarded('release')
     assert json.loads((state / 'package-install.json').read_text()) == accepted
-    assert events == ['healthy', ['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer']]
+    expected = ['healthy', ['systemctl', 'enable', '--now', 'sli.target']]
+    if backup_schedule == 'enabled':
+        expected.append(['systemctl', 'start', 'sli-backup.timer'])
+    assert events == expected

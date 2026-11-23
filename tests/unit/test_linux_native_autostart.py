@@ -83,6 +83,7 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
             raise RuntimeError("synthetic_health_failed")
 
     monkeypatch.setattr(install, "wait_health", health)
+    monkeypatch.setattr(install, "backup_schedule", lambda: "disabled")
     monkeypatch.setattr(host, "Host", lambda: SimpleNamespace(receipt=lambda: None, configure=lambda: None,
                                                              postgres_system_identifier=lambda: '123456789'))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
@@ -102,17 +103,20 @@ def test_apt_clean_install_enables_boot_only_after_acceptance(tmp_path, monkeypa
     # The apt postinst stages the fresh installation through this coordinator.
     assert "else exec /usr/sbin/sli-native-install stage test" in package.scripts("test", "1.0-1~deb13")["postinst"]
     enable = ["systemctl", "enable", "sli.target"]
+    enable_backup = ["systemctl", "enable", "--now", "sli-backup.timer"]
     if accepted:
         install.configure("test")
         installed_path = state / "installed.json"
         installed_at = json.loads(installed_path.read_text())["installed_at_utc"]
         assert datetime.fromisoformat(installed_at).tzinfo == timezone.utc
         assert calls.index("acceptance") < calls.index("recovery") < calls.index(enable)
+        assert calls.index(enable) < calls.index(enable_backup)
         assert json.loads((state / "package-install.json").read_text())["status"] == "configured"
         monkeypatch.setattr(install, "CURRENT", release)
         monkeypatch.setattr(install, "trusted", lambda path: path.read_bytes())
         calls.clear()
         install.configure("test")
+        assert all("sli-backup.timer" not in argv for argv in calls)
         assert json.loads(installed_path.read_text())["installed_at_utc"] == installed_at
         reset = ["systemctl", "reset-failed", "sli[-.]*"]
         assert calls.index(["systemctl", "stop", "sli-ready.service"]) < calls.index(reset)

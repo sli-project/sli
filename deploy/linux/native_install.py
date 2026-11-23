@@ -40,6 +40,8 @@ STATE = Path("/var/lib/sli/state")
 RECOVERY = Path("/var/lib/sli/recovery")
 SECRETS = Path("/etc/sli/secrets")
 SITE = Path("/etc/sli/site.toml")
+BACKUP_TIMER = 'sli-backup.timer'
+ENABLED_BACKUP_SCHEDULES = {'enabled', 'enabled-runtime'}
 AGENT_SECRETS = ("agent_root_certificate", "agent_issuer_certificate", "agent_issuer_key", "agent_mtls_ca")
 FAILURE_CODES = frozenset({
     "native_site_operation_stall_invalid",
@@ -47,6 +49,7 @@ FAILURE_CODES = frozenset({
     "native_site_backup_root_invalid", "native_site_toml_invalid", "native_site_setting_unsupported",
     "native_backup_root_invalid", "native_backup_root_untrusted", "native_backup_root_same_device",
     "native_backup_root_insufficient_space", "native_backup_root_mount_mismatch", "native_backup_root_target_not_empty",
+    "native_backup_schedule_unconfirmed",
     "native_agents_reconfigure_site_mismatch", "native_agents_reconfigure_pending",
     "native_agents_reconfigure_conflict", "native_site_reconfigure_requires_coordinator",
 })
@@ -117,8 +120,10 @@ def configure_guarded(release):
             from deploy.linux import native_runtime as runtime, native_upgrade
             runtime.no_transaction()
             atomic(STATE / 'package-install.json', previous)
+            schedule = backup_schedule()
             native_upgrade.start_checked()
-            command(['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer'])
+            command(['systemctl', 'enable', '--now', 'sli.target'])
+            start_backup_schedule(schedule)
         raise
 
 
@@ -232,6 +237,36 @@ def command(argv, *, cwd=None, env=None, timeout=120):
               + "".join("\n  " + line[:240] for line in tail), file=sys.stderr, flush=True)
     require(result.returncode == 0, "native_install_command_failed")
     operations().made_progress()
+
+
+def backup_schedule():
+    result = subprocess.run(['systemctl', 'show', BACKUP_TIMER, '--no-pager',
+                             '--property=LoadState,UnitFileState'],
+                            capture_output=True, text=True, check=False, timeout=5,
+                            env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+    state = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    if state.get('LoadState') == 'not-found' and not state.get('UnitFileState'):
+        return 'not-found'
+    mode = state.get('UnitFileState')
+    require(result.returncode == 0 and bool(state.get('LoadState')) and bool(mode),
+            'native_backup_schedule_unconfirmed')
+    return mode
+
+
+def start_backup_schedule(schedule):
+    # Only first-time setup creates a boot link. Fencing stops the timer and
+    # unit rendering replaces the vendor file, preserving operator links/masks.
+    if schedule is None:
+        command(['systemctl', 'enable', '--now', BACKUP_TIMER])
+    elif schedule in ENABLED_BACKUP_SCHEDULES:
+        command(['systemctl', 'start', BACKUP_TIMER])
+
+
+def undo_legacy_backup_enable(schedule):
+    # Downgrading can execute a package's older postinst, which enabled this
+    # timer unconditionally. Do not touch links in normal upgrade recovery.
+    if schedule in {'disabled', 'not-found'} and backup_schedule() in ENABLED_BACKUP_SCHEDULES:
+        command(['systemctl', 'disable', '--now', BACKUP_TIMER])
 
 
 def inventory(release):
@@ -554,6 +589,7 @@ def configure(release):
                 require(not pgdata.exists() and not pgdata.is_symlink(), refusal)
             atomic(intent, dict(receipt_base, **preparation, status="configuring"))
     resuming = bool(installed) and receipt_base["first_start_pending"]
+    schedule = backup_schedule() if installed and not resuming else None
     if resuming:
         # Fence any writers left by a killed first start before checking owner
         # activation. Do not hold the host lock while stopping dependent units.
@@ -625,12 +661,15 @@ def configure(release):
         atomic(STATE / "package-install.json", dict(receipt_base, status="configured", first_start_pending=False))
         command(["systemctl", "enable", "sli.target"])
         command(["systemctl", "start", "sli.target"])
-        command(["systemctl", "enable", "--now", "sli-backup.timer"])
+        start_backup_schedule(schedule)
     except Exception:
         # Do not declare a partially accepted install reusable. No automatic destructive retry.
         try:
             if writers_configured:
-                command(["systemctl", "disable", "--now", "sli-backup.timer"])
+                if schedule is None:
+                    command(["systemctl", "disable", "--now", BACKUP_TIMER])
+                else:
+                    command(["systemctl", "stop", BACKUP_TIMER])
                 command(["systemctl", "stop", "sli-backup.service", "sli-backup-drill.service"], timeout=600)
                 runtime.stop_writers()
         finally:

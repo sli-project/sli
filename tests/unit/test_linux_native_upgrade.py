@@ -21,6 +21,7 @@ pytestmark = pytest.mark.skipif(os.name == 'nt', reason='POSIX durable transacti
 @pytest.fixture(autouse=True)
 def native_clickhouse_mode(monkeypatch):
     monkeypatch.setattr(upgrade, 'systemd_available', lambda: False)
+    monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
     # Temporary-root lifecycle fakes do not provision real system ownership.
     def directory(path, mode=0o755, *owners, **options):
         path.mkdir(mode=mode, parents=True, exist_ok=options.get('exist_ok', True))
@@ -698,7 +699,7 @@ def test_blocked_apt_setup_has_reason_and_returns_old_services(activation, monke
     assert result['status'] == 'rolled_back' and result['terminal']
     assert result['reason_code'] in {'operation_stalled', 'operation_deadline_exceeded'}
     assert 'switch-old' in a.operation.events and 'health' in a.operation.events
-    assert ['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer'] in a.operation.events
+    assert ['systemctl', 'enable', '--now', 'sli.target'] in a.operation.events
     assert signal.getitimer(signal.ITIMER_REAL) == (0, 0)
 
 

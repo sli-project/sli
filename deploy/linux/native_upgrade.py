@@ -471,6 +471,17 @@ def fence():
     database_quiet()
 
 
+def remember_backup_schedule(journal):
+    from deploy.linux import native_install as install
+
+    if 'backup_schedule' not in journal.value:
+        # A retained coordinator may have prepared the checkpoint. Its stop
+        # does not change UnitFileState, so old journals can still recover it.
+        journal.value['backup_schedule'] = install.backup_schedule()
+        journal.write()
+    return journal.value['backup_schedule']
+
+
 def preflight():
     from deploy.linux import native_host as host, native_runtime as runtime, native_install as install, native_backup as native
 
@@ -651,6 +662,7 @@ def prepare(candidate, transaction, *, target_version=None, previous_version=Non
         require(root.name != candidate, 'native_upgrade_same_release')
         if not path.exists():
             runtime.no_transaction()
+            schedule = install.backup_schedule()
             if reuse_existing:
                 validate_reuse_receipt(root)
                 require(previous_version == package_metadata(root)['version'], 'native_upgrade_intent_mismatch')
@@ -673,6 +685,7 @@ def prepare(candidate, transaction, *, target_version=None, previous_version=Non
                                'coordinator_sha256': digest(candidate_root / 'deploy/linux/native_upgrade.py')}
                                if reuse_existing else {}),
                            'checkpoint_storage': 'backup_volume', 'checkpoint_verification': 'integrity',
+                           'backup_schedule': schedule,
                            'status': 'preflight', 'step': 'before', 'created_at_utc': stamp,
                            'events': [{'phase': 'preflight', 'step': 'before', 'utc': stamp}]})
             directory = os.open(TRANSACTIONS, os.O_RDONLY | os.O_DIRECTORY)
@@ -691,6 +704,7 @@ def prepare(candidate, transaction, *, target_version=None, previous_version=Non
         failure_phase = 'native_upgrade_fence_failed'
         try:
             with install.setup_deadline():
+                remember_backup_schedule(journal)
                 if value['status'] == 'preflight':
                     if value['step'] == 'before':
                         journal.complete()
@@ -774,6 +788,7 @@ def restart_aborted_prepare(journal):
     value = journal.value
     require(value['status'] == 'aborted_before_checkpoint' and not value.get('schema_changed'),
             'native_upgrade_recovery_required')
+    schedule = remember_backup_schedule(journal)
     # Older accepted readiness helpers know rolled_back, but not the newer
     # pre-checkpoint abort status. Keep the precise phase in the durable journal.
     result_status = 'rolled_back' if value.get('reuse_existing') else 'aborted_before_checkpoint'
@@ -795,7 +810,8 @@ def restart_aborted_prepare(journal):
             start_checked(retained_runtime(recovery))
         else:
             start_checked()
-        install.command(['systemctl', 'start', 'sli.target', 'sli-backup.timer', 'sli-health.timer'])
+        install.command(['systemctl', 'start', 'sli.target', 'sli-health.timer'])
+        install.start_backup_schedule(schedule)
     except Exception:
         value.update(services_restored=False, restart_reason_code='native_upgrade_restart_failed')
         journal.write()
@@ -1421,6 +1437,7 @@ def finish_committed(journal, candidate):
     root, manifest, manifest_digest = candidate
     require(journal.value['status'] == 'committed', 'native_upgrade_reconciliation_required')
     require(package_metadata(root)['version'] == journal.value['target_version'], 'native_upgrade_package_mismatch')
+    schedule = remember_backup_schedule(journal)
     switch(root, manifest, manifest_digest)
     testing_units()
     if journal.value['step'] == 'before':
@@ -1432,7 +1449,8 @@ def finish_committed(journal, candidate):
     receipt.update(release=root.name, status='configured')
     install.atomic(install.STATE / 'package-install.json', receipt)
     start_checked()
-    install.command(['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer'])
+    install.command(['systemctl', 'enable', '--now', 'sli.target'])
+    install.start_backup_schedule(schedule)
     journal.value['services_restored'] = True
     journal.write()
     publish(journal, 'committed', accepted_release=root.name, schema_changed=journal.value.get('schema_changed', False),
@@ -1447,6 +1465,7 @@ def recover_compatible(journal):
     require(journal.value['status'] != 'committed'
             and not any(event['phase'] == 'committed' for event in journal.value.get('events', [])),
             'native_upgrade_committed_no_rollback')
+    remember_backup_schedule(journal)
     journal.value['recovery_in_progress'] = True
     journal.write()
     fence()
@@ -1493,6 +1512,7 @@ def finish_rollback(journal):
     from deploy.linux import native_install as install
 
     require(journal.value['status'] == 'rolled_back', 'native_upgrade_reconciliation_required')
+    schedule = remember_backup_schedule(journal)
     if journal.value['step'] == 'before':
         journal.complete(accepted_release=journal.value['previous'])
     publish(journal, 'rolled_back', accepted_release=journal.value['previous'], package_reconciliation_required=True)
@@ -1501,7 +1521,8 @@ def finish_rollback(journal):
         start_checked(retained_runtime(recovery))
     else:
         start_checked()
-    install.command(['systemctl', 'enable', '--now', 'sli.target', 'sli-backup.timer'])
+    install.command(['systemctl', 'enable', '--now', 'sli.target'])
+    install.start_backup_schedule(schedule)
     journal.value['services_restored'] = True
     journal.write()
     publish(journal, 'rolled_back', accepted_release=journal.value['previous'], package_reconciliation_required=True,
@@ -1567,6 +1588,7 @@ def _configure_package(journal, release):
     from deploy.linux import native_install as install
 
     value = journal.value
+    remember_backup_schedule(journal)
     if value['status'] == 'migrating' and value['step'] == 'before':
         # SQL files own their transaction boundaries. An absent durable
         # completion cannot distinguish a fully applied file from a
@@ -1593,14 +1615,18 @@ def reconcile(version):
                 'native_upgrade_reconciliation_required')
         previous = journal.value['previous_version']
         require(runtime.release()[0].name == journal.value['previous'], 'native_upgrade_registry_mismatch')
+        schedule = remember_backup_schedule(journal)
         # dpkg must merge its interrupted write journal before APT will run.
         # The rejected candidate's postinst deliberately returns 1 at rolled_back;
         # it cannot replay SQL. Fatal dpkg errors must stop before starting APT.
         repaired = subprocess.run(['dpkg', '--configure', 'sli'], capture_output=True, check=False, timeout=1200)
         require(repaired.returncode in {0, 1}, 'native_upgrade_package_recovery_failed')
         # APT obtains its own locks and refuses another active package manager.
-        install.command(['apt-get', '-y', '--allow-downgrades', 'install',
-                         *[name + '=' + previous for name in ('sli', 'sli-host', 'sli-rollback-hold')]], timeout=1200)
+        try:
+            install.command(['apt-get', '-y', '--allow-downgrades', 'install',
+                             *[name + '=' + previous for name in ('sli', 'sli-host', 'sli-rollback-hold')]], timeout=1200)
+        finally:
+            install.undo_legacy_backup_enable(schedule)
         for name in ('sli', 'sli-host', 'sli-rollback-hold'):
             value = subprocess.run(['dpkg-query', '-W', '-f=${Status}\t${Version}', name],
                                    capture_output=True, text=True, check=True, timeout=10).stdout

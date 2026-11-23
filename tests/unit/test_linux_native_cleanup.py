@@ -324,6 +324,7 @@ def test_terminal_cleanup_follows_service_acceptance(cleanup_host, monkeypatch, 
             raise RuntimeError('restart_failed')
     monkeypatch.setattr(upgrade, 'start_checked', start)
     monkeypatch.setattr(install, 'command', lambda *a, **k: None)
+    monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
     def action():
         if status == 'committed':
             upgrade.finish_committed(item, (Path('/accepted/new'), {}, 'digest'))

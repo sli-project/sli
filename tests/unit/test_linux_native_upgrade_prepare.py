@@ -16,6 +16,7 @@ from deploy.linux import native_pg_migrate, operation_wait
 
 VERSION = '2.0-1~deb13'
 TX = 'a' * 32
+READ_BACKUP_SCHEDULE = install.backup_schedule
 
 
 def make_integrity_receipt(journal):
@@ -639,6 +640,7 @@ def preparation(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, 'size_bytes', lambda path: 1)
     monkeypatch.setattr(upgrade.shutil, 'disk_usage', lambda path: SimpleNamespace(free=100 * 1024**3))
     monkeypatch.setattr(install, 'wait_health', lambda: None)
+    monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
     monkeypatch.setattr(upgrade, 'fence', lambda: events.append('fence'))
     monkeypatch.setattr(upgrade, 'file_metadata', lambda: {})
     monkeypatch.setattr(native, 'capture_locked', capture)
@@ -695,7 +697,7 @@ def test_prepare_failure_before_checkpoint_restores_previous_services(preparatio
     assert result['reason_code'] == 'native_writers_still_running'
     assert result['services_restored'] is True
     assert 'start-checked' in preparation.events and 'capture' not in preparation.events
-    assert ['systemctl', 'start', 'sli.target', 'sli-backup.timer', 'sli-health.timer'] in preparation.events
+    assert ['systemctl', 'start', 'sli.target', 'sli-health.timer'] in preparation.events
     runtime.no_transaction()
 
 
@@ -899,6 +901,107 @@ def test_reuse_failed_acceptance_restores_checkpoint_and_previous_release(reuse_
     assert result['accepted_release'] == 'old' and result['reason_code'] == 'native_install_api_unready'
     with pytest.raises(RuntimeError, match='native_upgrade_reconciliation_required'):
         upgrade.reuse_existing('new')
+
+
+@pytest.fixture
+def backup_schedule_fixture(preparation, monkeypatch):
+    timer = SimpleNamespace(state='disabled', active=False, condition=True)
+    events = preparation.events
+    fence = upgrade.fence
+
+    def inspect(argv, **kwargs):
+        assert argv[:3] == ['systemctl', 'show', 'sli-backup.timer']
+        events.append('backup-schedule-read')
+        if timer.state == 'not-found':
+            return SimpleNamespace(returncode=1, stdout='LoadState=not-found\n')
+        load_state = 'masked' if timer.state == 'masked' else 'loaded'
+        return SimpleNamespace(returncode=0, stdout=f'LoadState={load_state}\nUnitFileState={timer.state}\n')
+
+    def stop():
+        timer.active = False
+        fence()
+
+    def command(argv, **kwargs):
+        events.append(argv)
+        if 'sli-backup.timer' not in argv or argv[1] == 'stop':
+            return
+        if timer.state == 'masked':
+            raise RuntimeError('synthetic masked timer')
+        if argv[1] == 'enable':
+            timer.state = 'enabled'
+        if argv[1] == 'start' or '--now' in argv:
+            timer.active = timer.condition
+
+    monkeypatch.setattr(install.subprocess, 'run', inspect)
+    monkeypatch.setattr(install, 'backup_schedule', READ_BACKUP_SCHEDULE)
+    monkeypatch.setattr(upgrade, 'fence', stop)
+    monkeypatch.setattr(install, 'command', command)
+    return timer
+
+
+@pytest.mark.parametrize(('state', 'condition', 'running'), [
+    ('disabled', True, False), ('enabled', True, True),
+    ('enabled', False, False), ('masked', True, False), ('not-found', True, False),
+])
+def test_upgrade_preserves_backup_schedule_and_captures_checkpoint(
+        reuse_transaction, backup_schedule_fixture, state, condition, running):
+    timer = backup_schedule_fixture
+    timer.state, timer.active, timer.condition = state, running, condition
+    upgrade.reuse_existing('new')
+    journal = upgrade.package_transaction(VERSION)
+    assert journal.value['status'] == 'committed' and journal.value['services_restored'] is True
+    assert (timer.state, timer.active) == (state, running)
+    assert journal.value['backup_schedule'] == state
+    events = reuse_transaction.events
+    assert events.index('backup-schedule-read') < events.index('fence') < events.index('capture')
+    assert events.count('acceptance') == 2
+    assert upgrade.checkpoint_receipt(journal)['status'] == 'integrity_verified'
+
+
+def test_legacy_stopped_timer_stays_disabled_on_package_roll_back(
+        reuse_transaction, backup_schedule_fixture, monkeypatch):
+    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    upgrade.prepare_package(VERSION)
+    journal = upgrade.package_transaction(VERSION)
+    journal.value.pop('backup_schedule', None)
+    journal.write()
+    reuse_transaction.events.clear()
+    acceptance = upgrade.start_checked
+
+    def fail_candidate(*args):
+        if 'restore-checkpoint' not in reuse_transaction.events:
+            raise RuntimeError('native_install_api_unready')
+        acceptance(*args)
+
+    monkeypatch.setattr(upgrade, 'start_checked', fail_candidate)
+    with pytest.raises(RuntimeError, match='native_install_api_unready'):
+        upgrade.configure_package('new', VERSION)
+    journal = upgrade.package_transaction(VERSION)
+    assert journal.value['status'] == 'rolled_back' and journal.value['services_restored'] is True
+    assert (backup_schedule_fixture.state, backup_schedule_fixture.active) == ('disabled', False)
+    assert reuse_transaction.events.index('backup-schedule-read') < reuse_transaction.events.index('candidate-units')
+    assert 'capture' not in reuse_transaction.events
+
+
+def test_resume_after_fence_failure_preserves_masked_backup(
+        preparation, backup_schedule_fixture, monkeypatch):
+    backup_schedule_fixture.state = 'masked'
+    fence, start = upgrade.fence, upgrade.start_checked
+
+    def failed_fence():
+        fence()
+        fail_fence()
+
+    monkeypatch.setattr(upgrade, 'fence', failed_fence)
+    monkeypatch.setattr(upgrade, 'start_checked', lambda: (_ for _ in ()).throw(RuntimeError('failed readiness')))
+    with pytest.raises(RuntimeError, match='native_upgrade_restart_failed'):
+        upgrade.prepare_package(VERSION)
+    monkeypatch.setattr(upgrade, 'start_checked', start)
+    result = upgrade.resume_package(VERSION)
+    assert result['services_restored'] is True and result['backup_schedule'] == 'masked'
+    assert ['systemctl', 'start', 'sli.target', 'sli-health.timer'] in preparation.events
+    assert preparation.events.count('backup-schedule-read') == 1
+    assert backup_schedule_fixture.state == 'masked' and not backup_schedule_fixture.active
 
 
 def test_reuse_prepared_resume_keeps_new_coordinator_identity(reuse_transaction):
