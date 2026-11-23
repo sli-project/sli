@@ -45,6 +45,50 @@ function renderReport() {
   return render(<QueryClientProvider client={new QueryClient()}><ReportRenderer reportKey={definition.key}/></QueryClientProvider>);
 }
 
+it("accepts the legacy all view on a domain-scoped AD URL", async () => {
+  const rowId = controls[1].row_id;
+  const previous = "/app/report/events.journal?domain=2&view=all&sort=observed_at_utc&cursor=previous";
+  window.history.replaceState(null, "", previous);
+  const entry = { index: 1 };
+  window.history.pushState(entry, "", `/app/report/ad.infrastructure?domain=2&period=24h&view=all&row_id=${encodeURIComponent(rowId)}&return_to=%2Fapp%2Freport%2Fevents.journal&sort=observed_at_utc&cursor=foreign#check`);
+  const historyLength = window.history.length;
+  vi.mocked(api.reportV2Data).mockRestore();
+  const allowedViews = definition.params.find(({ key }) => key === "view")!.options!.map(({ value }) => value);
+  const fetchData = vi.fn<typeof fetch>(async (input) => {
+    const params = new URL(String(input), window.location.origin).searchParams;
+    if (params.has("view") && !allowedViews.includes(params.get("view")!)) {
+      return Response.json({ detail: "invalid report view" }, { status: 400 });
+    }
+    return Response.json(params.get("tab") === "controls" ? result(controls) : result());
+  });
+  vi.stubGlobal("fetch", fetchData);
+
+  const { unmount } = renderReport();
+  const requests = () => fetchData.mock.calls.map(([url]) => new URL(String(url), window.location.origin).searchParams);
+  await waitFor(() => expect(requests().some((params) => params.get("tab") === "controls")).toBe(true));
+  const controlsRequest = requests().find((params) => params.get("tab") === "controls")!;
+  expect(controlsRequest.get("view")).toBe("overview");
+  expect(controlsRequest.get("domain")).toBe("2");
+  expect(controlsRequest.get("period")).toBe("24h");
+  expect(controlsRequest.has("return_to")).toBe(false);
+  expect(requests().filter((params) => params.get("tab") !== "controls").every((params) => !params.has("view"))).toBe(true);
+  expect(await screen.findByRole("table", { name: /Value history · Lockout threshold/ })).toBeTruthy();
+  expect(vi.mocked(api.reportV2Detail).mock.calls[0][1]).toBe(rowId);
+  const current = new URL(window.location.href);
+  expect(current.searchParams.get("view")).toBe("overview");
+  expect(current.searchParams.get("return_to")).toBe("/app/report/events.journal");
+  expect(current.searchParams.has("sort")).toBe(false);
+  expect(current.searchParams.has("cursor")).toBe(false);
+  expect(current.hash).toBe("#check");
+  expect(window.history.length).toBe(historyLength);
+  expect(window.history.state).toEqual(entry);
+  unmount();
+  window.history.back();
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe(previous));
+  window.history.forward();
+  await waitFor(() => expect(window.location.href).toBe(current.href));
+});
+
 it("groups observed parameters, puts deviations first, and combines the filters", async () => {
   renderReport();
   await screen.findByRole("button", { name: "All 3" });
@@ -235,7 +279,7 @@ it("shows an unavailable history as a recoverable failure", async () => {
 });
 
 it("hides a deep-linked check and its history when the domain is denied", async () => {
-  window.history.replaceState(null, "", "/app/report/ad.infrastructure?domain=5&row_id=7%3Apassword.lockout_threshold");
+  window.history.replaceState(null, "", "/app/report/ad.infrastructure?domain=5&view=all&row_id=7%3Apassword.lockout_threshold");
   vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === "controls"
     ? { ...result([controls[1]]), state: "denied" }
     : result());

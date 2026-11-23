@@ -6,6 +6,7 @@ import { DataTable, DetailDrawer, FactList, Icon, MetricStrip, ReportLayout, Sev
 import { t, type MessageKey } from "../../i18n";
 import { formatNumber, EMPTY_VALUE } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
+import { safeInvestigationReturnTo } from "../investigation-context";
 import { preserveNavigationView } from "../navigation";
 import { tableColumns } from "./DetailSection";
 import { withReturnTo } from "./legacy";
@@ -248,7 +249,11 @@ function collisions(result?: ReportResultDto): Array<Row & { row_id: string; own
 export function AdStateReport({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
   const { timeZone } = useTimeZone();
   const wide = useSyncExternalStore(subscribeWide, () => window.matchMedia?.(wideQuery)?.matches ?? false, () => false);
-  const [values, setValues] = useState(() => valuesFromSearch(definition, new URLSearchParams(initialSearch ?? window.location.search)));
+  const [values, setValues] = useState(() => {
+    const initial = valuesFromSearch(definition, new URLSearchParams(initialSearch ?? window.location.search));
+    if (initial.view === "all") initial.view = "overview";
+    return initial;
+  });
   const [filters, setFilters] = useState<ParameterFilters>(() => ({
     result: values.qualification === "failed" || values.qualification === "passed" ? values.qualification : values.view === "risks" ? "failed" : "all",
     query: typeof values.q === "string" ? values.q : "",
@@ -351,7 +356,10 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       q: filters.query.trim() || undefined, entity_type: filters.area || undefined,
     });
     if (active.key !== "controls") search.set("tab", active.key);
-    preserveNavigationView(search, window.location.search);
+    const currentSearch = window.location.search;
+    preserveNavigationView(search, currentSearch);
+    const returnTo = safeInvestigationReturnTo(new URLSearchParams(currentSearch).get("return_to"), "");
+    if (returnTo) search.set("return_to", returnTo);
     const query = search.toString();
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
   }, [active.key, definition, filters, values]);
