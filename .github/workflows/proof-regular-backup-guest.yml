@@ -35,7 +35,11 @@ jobs:
           qemu-system-x86_64 --version
           qemu-system-x86_64 -accel help | grep -Fx tcg
           python3 -c 'import sys; assert sys.version_info >= (3, 11)'
-          git cat-file -e '1b5daf4e66640b7390105b4b5345332deca6f9ce^{commit}'
+          proof_commit=1b5daf4e66640b7390105b4b5345332deca6f9ce
+          if ! git cat-file -e "$proof_commit^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$proof_commit"
+          fi
+          test "$(git rev-parse --verify "$proof_commit^{commit}")" = "$proof_commit"
 
       - name: Verify the immutable image and run the offline guest
         run: |
