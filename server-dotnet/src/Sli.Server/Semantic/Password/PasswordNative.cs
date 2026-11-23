@@ -21,6 +21,26 @@ public sealed class PasswordFailure(string code) : Exception(code)
     internal IReadOnlyDictionary<string,int>? ProposalDiagnostics { get; init; }
     internal bool? WatermarkMatches { get; init; }
     internal int? StateBytes { get; init; }
+    internal PasswordProofBudget? ProofBudget { get; init; }
+}
+
+internal enum PasswordProofPhase { Reader, RetainedChain, Emission, Checkpoint, NativeVerification }
+
+internal sealed record PasswordProofBudget(PasswordProofPhase Phase,long? References=null,long? XmlBytes=null,long? DocumentBytes=null)
+{
+    internal const int MaxReferences=10000,MaxXmlBytes=33554432,MaxDocumentBytes=4194304;
+    internal static void Check(PasswordProofPhase phase,long references,long xmlBytes)
+    {
+        if(references>MaxReferences||xmlBytes>MaxXmlBytes)
+            throw new PasswordFailure("password_v2_proof_bound") { ProofBudget=new(phase,references,xmlBytes) };
+    }
+
+    internal JsonObject Document => new() {
+        ["phase"]=Phase.ToString(),
+        ["limit"]=DocumentBytes>MaxDocumentBytes?"document_bytes":References>MaxReferences?"references":XmlBytes>MaxXmlBytes?"xml_bytes":"native_proof",
+        ["references"]=References,["xml_bytes"]=XmlBytes,["document_bytes"]=DocumentBytes,
+        ["max_references"]=MaxReferences,["max_xml_bytes"]=MaxXmlBytes,["max_document_bytes"]=MaxDocumentBytes
+    };
 }
 
 internal static class PasswordJson

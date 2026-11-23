@@ -39,7 +39,7 @@ internal sealed class DetectionDiagnostics
         "password_v2_policy_unconfirmed", "password_v2_window_invalid", "password_v2_window_conflict",
         "password_v2_window_changed393", "password_v2_context_invalid",
         "password_v2_reader_invalid", "password_v2_reader_bound", "password_v2_native_unavailable",
-        "password_v2_native_content_conflict", "password_v2_proof_bound", "password_v2_chain_invalid",
+        "password_v2_native_content_conflict", "password_v2_proof_bound", "password_v2_proof_budget_exceeded", "password_v2_chain_invalid",
         "password_v2_barrier_native_conflict", "password_v2_completion_invalid", "password_v2_window_incomplete", "password_v2_worker_privilege_invalid",
         "password_v2_xml_budget_exceeded", "password_v2_window_truncated", "password_v2_outcome_invalid",
         "password_policy_rule_invalid", "password_policy_source_unavailable", "password_policy_unconfirmed",
@@ -90,6 +90,8 @@ internal sealed class DetectionDiagnostics
         if (state is not null && (state.Length != 5 || state.Any(c => c is not (>= '0' and <= '9' or >= 'A' and <= 'Z')))) state = "unknown";
         if (state == PostgresErrorCodes.LockNotAvailable && reason == "operation_failed") reason = "lock_busy";
         var result = new JsonObject { ["step"] = step, ["exception_type"] = error.GetType().Name, ["sql_state"] = state, ["reason"] = reason };
+        if(reason=="password_v2_proof_budget_exceeded")
+            result["proof_budget"]=new PasswordProofBudget(PasswordProofPhase.NativeVerification).Document;
         for (Exception? current = error; current is not null; current = current.InnerException)
             if (current is PasswordFailure password) {
                 // Text comes only from the fixed reason vocabulary and enum, never
@@ -97,6 +99,7 @@ internal sealed class DetectionDiagnostics
                 result["message"] = Reasons.Contains(password.Message)
                     ? "Password producer: " + password.Message.Replace("password_v2_", "", StringComparison.Ordinal).Replace('_', ' ') + "."
                     : "Password producer operation failed.";
+                if(password.ProofBudget is {} budget)result["proof_budget"]=budget.Document;
                 if (password.WindowCondition is {} windowCheck && Enum.IsDefined(windowCheck))
                     result["window_check"] = windowCheck.ToString();
                 if (password.Check is {} check && Enum.IsDefined(check)) {
