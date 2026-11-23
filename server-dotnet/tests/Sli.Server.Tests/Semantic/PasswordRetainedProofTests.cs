@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Npgsql;
+using Sli.Server.Semantic;
 using Sli.Server.Semantic.Password;
 using Xunit;
 
@@ -94,6 +96,103 @@ public sealed class PasswordRetainedProofTests
         Assert.Equal(root.RootProof, root.Origin);
         Assert.NotEqual(frozen.Key, root.EpisodeKey);
         Assert.Equal(5, rule.VerifyChain([root], next).RefOccurrences);
+    }
+
+    [Fact]
+    public async Task A_reserved_successor_consumes_its_barrier_once_in_emission_order()
+    {
+        var barriers = new Dictionary<string, JsonObject>
+        {
+            ["entity"] = new() { ["episode_key"] = "predecessor" },
+        };
+        var calls = new List<string>();
+
+        async Task Stage(string key, string signal)
+        {
+            await PasswordProducer.StageReservation(barriers, "entity", key, [signal],
+                predecessor => {
+                    calls.Add("track:" + predecessor);
+                    return Task.FromResult<JsonNode?>(new JsonObject {
+                        ["status"] = "successor_authorized", ["successor_episode_key"] = key,
+                    });
+                },
+                () => {
+                    calls.Add("reserve:" + signal);
+                    return Task.FromResult<JsonNode?>(new JsonObject {
+                        ["status"] = "reserved", ["signal_ids"] = new JsonArray(signal),
+                    });
+                });
+        }
+
+        await Stage("successor", "root");
+        await Stage("successor", "continuation");
+        await Stage("later", "separate-root");
+
+        Assert.Equal(new[] { "track:predecessor", "reserve:root", "reserve:continuation", "reserve:separate-root" }, calls);
+        Assert.Empty(barriers);
+
+        // A successful reservation can still roll back with the finalizer.
+        barriers = new() { ["entity"] = new() { ["episode_key"] = "predecessor" } };
+        await Stage("successor", "retry-root");
+        Assert.Equal(new[] { "track:predecessor", "reserve:retry-root" }, calls.Skip(4));
+    }
+
+    [Theory]
+    [InlineData("frozen", "signal", "successor", "password_v2_reservation_conflict")]
+    [InlineData("reserved", "different-signal", "successor", "password_v2_reservation_conflict")]
+    [InlineData("reserved", "signal", "wrong-episode", "password_v2_successor_conflict")]
+    public async Task A_rejected_transition_cannot_consume_the_barrier(
+        string status, string returnedSignal, string authorizedKey, string reason)
+    {
+        Dictionary<string, JsonObject> Prepared() => new()
+        {
+            ["entity"] = new() { ["episode_key"] = "predecessor" },
+        };
+        int tracked = 0, reservations = 0;
+
+        Task Stage(Dictionary<string, JsonObject> barriers, string reserveStatus, string signal, string successor) =>
+            PasswordProducer.StageReservation(barriers, "entity", "successor", ["signal"],
+                predecessor => {
+                    Assert.Equal("predecessor", predecessor);
+                    tracked++;
+                    return Task.FromResult<JsonNode?>(new JsonObject {
+                        ["status"] = "successor_authorized", ["successor_episode_key"] = successor,
+                    });
+                },
+                () => {
+                    reservations++;
+                    return Task.FromResult<JsonNode?>(new JsonObject {
+                        ["status"] = reserveStatus, ["signal_ids"] = new JsonArray(signal),
+                    });
+                });
+
+        var first = Prepared();
+        var failure = await Assert.ThrowsAsync<PasswordFailure>(() => Stage(first, status, returnedSignal, authorizedKey));
+        Assert.Equal(reason, failure.Message);
+        Assert.Contains("entity", first.Keys);
+        Assert.Equal(authorizedKey == "successor" ? 1 : 0, reservations);
+
+        var retried = Prepared(); // The new savepoint loads its own locked context from SQL.
+        await Stage(retried, "reserved", "signal", "successor");
+        Assert.Equal(2, tracked);
+    }
+
+    [Theory]
+    [InlineData("password_v2_episode_absent")]
+    [InlineData("password_v2_barrier_conflict")]
+    [InlineData("password_v2_lifetime_immutable")]
+    public void Frozen_transition_diagnostics_allow_only_exact_reason_tokens(string reason)
+    {
+        var error = new PostgresException(reason, "ERROR", "ERROR", "55000",
+            detail: "private-detail", where: "private-context");
+        var safe = DetectionDiagnostics.Describe(error, "track_password_frozen_entity_v2");
+        Assert.Equal(reason, safe["reason"]!.GetValue<string>());
+        Assert.Equal("55000", safe["sql_state"]!.GetValue<string>());
+        Assert.DoesNotContain("private-", safe.ToJsonString());
+
+        var modified = new PostgresException(reason + ": private-detail", "ERROR", "ERROR", "55000");
+        Assert.Equal("operation_failed",
+            DetectionDiagnostics.Describe(modified, "track_password_frozen_entity_v2")["reason"]!.GetValue<string>());
     }
 
     [Fact]
