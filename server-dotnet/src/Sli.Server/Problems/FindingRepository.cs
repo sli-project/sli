@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
@@ -250,7 +251,9 @@ public sealed partial class ProblemRepository
     }
     public async Task<JsonObject> FindingsAsync(FindingQuery query, ProblemAccess access, CancellationToken ct)
     {
-        await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
+        // Fallback aliases and the authorized queue page must see the same witnesses.
+        var isolation = query.QueueView is not null && !query.Compact ? IsolationLevel.RepeatableRead : IsolationLevel.ReadCommitted;
+        await using var db = await connections.OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(isolation, ct);
         if (query.PageQueue) await Execute(tx, "set transaction read only; set local jit=off", new(), ct);
         // Validate the persisted authorization before reading the population.
         await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);

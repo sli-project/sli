@@ -9,6 +9,47 @@ namespace Sli.Server.Tests.Reporting;
 
 public sealed class PasswordQueueProjectionTests(ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData("truncate public.ad_context_entity_aliases")]
+    [InlineData("truncate public.finding_event_copies337")]
+    [InlineData("update public.finding_event_copies337 set method=method || '{\"updated\":true}' where finding_id=1")]
+    public async Task Source_changes_commit_while_the_projection_is_locked(string change)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var source = await fixture.Pg.OpenAsync(ct);
+        await using var projection = await fixture.Pg.OpenAsync(ct);
+        await ProblemQueuePagingTests.SeedPopulation(source, ct);
+        await PostCollectionPostgres.Sql(source, """
+            update public.findings set rule_code='semantic.qw.password-spray' where id=1;
+            update public.finding_event_copies337 set method=jsonb_set(method,'{$principals}',
+                '{"TargetUserName":"first-account","IpAddress":"192.0.2.1"}') where finding_id=1;
+            select public.refresh_password_queue_presentation399(1);
+            """, ct);
+        Assert.True(await AliasesWereCached());
+
+        await using (var cacheLock = await projection.BeginTransactionAsync(ct))
+        {
+            await PostCollectionPostgres.Sql(projection, "lock table public.password_queue_projection399 in access exclusive mode", ct);
+            await using var changeTransaction = await source.BeginTransactionAsync(ct);
+            await PostCollectionPostgres.Sql(source, "set local lock_timeout='1s'", ct);
+            await PostCollectionPostgres.Sql(source, change, ct);
+            await changeTransaction.CommitAsync(ct);
+            await cacheLock.RollbackAsync(ct);
+        }
+
+        Assert.False(await AliasesWereCached());
+
+        async Task<bool> AliasesWereCached()
+        {
+            await using var query = new NpgsqlCommand("""
+                select aliases is not null from public.password_queue_presentation399(1,'semantic.qw.password-spray')
+                """, source);
+            return (bool)(await query.ExecuteScalarAsync(ct))!;
+        }
+    }
+
     [Fact]
     public async Task Projection_preserves_facts_and_falls_back_after_evidence_and_AD_changes()
     {

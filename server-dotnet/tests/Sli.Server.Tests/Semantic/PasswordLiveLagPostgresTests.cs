@@ -19,6 +19,7 @@ public sealed class PasswordLiveLagPostgresTests(ITestOutputHelper output)
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
+        await using var cacheGate = await fixture.Pg.OpenAsync(ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1).AddHours(18), TimeSpan.Zero);
         var clock = new TestClock(start);
         await PostCollectionPostgres.Sql(owner, """
@@ -163,6 +164,13 @@ public sealed class PasswordLiveLagPostgresTests(ITestOutputHelper output)
             int published = 0, failures = 0, polls = 0;
             bool drained = false;
             var pollDelay = TimeSpan.Zero;
+            await using var cacheLock = cycle == holdbackPolls ? await cacheGate.BeginTransactionAsync(ct) : null;
+            using var publishDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            if (cacheLock is not null)
+            {
+                await PostCollectionPostgres.Sql(cacheGate, "lock table public.password_queue_projection399 in access exclusive mode", ct);
+                publishDeadline.CancelAfter(TimeSpan.FromSeconds(30));
+            }
             Assert.Equal(0, await SemanticProduction.RunCyclesAsync(new(Limit: 1), async token =>
             {
                 polls++;
@@ -179,10 +187,15 @@ public sealed class PasswordLiveLagPostgresTests(ITestOutputHelper output)
             {
                 pollDelay += delay;
                 return Task.CompletedTask;
-            }, ct));
+            }, publishDeadline.Token));
             Assert.True(drained);
             Assert.Equal(0, failures);
             Assert.Equal(qualifies ? 2 : 0, published);
+            if (cacheLock is not null)
+            {
+                Assert.Equal(2L, await Count("select count(*) from public.semantic_finding_publications"));
+                await cacheLock.RollbackAsync(ct);
+            }
             output.WriteLine($"cycle={cycle} password publication poll delay={pollDelay.TotalSeconds:F0}s");
             Assert.Equal(TimeSpan.Zero, pollDelay);
             await using var stages = new NpgsqlCommand("""
@@ -250,7 +263,7 @@ public sealed class PasswordLiveLagPostgresTests(ITestOutputHelper output)
         Assert.Equal(0, (await Detect()).Sum(r => r.Jobs));
         Assert.Equal(0, (await new PasswordRiskConsumer(runtime, new()).RunOnceAsync(ct)).Claimed);
         Assert.Equal(6L, await Count("select count(*) from public.semantic_finding_publications"));
-        await fixture.AssertNoSqlErrorsAsync(ct);
+        await fixture.AssertNoSqlErrorsAsync(ct, allowLockTimeout: true);
     }
 
     private sealed class TestClock(DateTimeOffset at) : TimeProvider
