@@ -16,11 +16,15 @@ import zlib
 
 PACKAGE = "sli-runtime-cp3146-n03-20261026"
 ORIGINAL_VERSION = "3.14.6-1~deb13"
-COMPATIBILITY_VERSION = "3.14.6-2~deb13"
+COMPATIBILITY_VERSION = "3.14.6-3~deb13"
 ARCHITECTURE = "amd64"
 ORIGINAL_SHA256 = "46986d230f363f3af7e2fd4c4f25ee3da9ae3964982812f404f24b6d654a44d9"
 ORIGINAL_SIZE = 27_727_168
 ORIGINAL_LIBSSL = "libssl3t64 (= 3.5.7-1~deb13u3)"
+REHEARSAL_ALTERNATIVES = {
+    "libc6 (= 2.41-12+deb13u4)": "libc6 (= 2.41-12+deb13u5)",
+    "zlib1g (= 1:1.3.dfsg+really1.3.1-1+b1)": "zlib1g (= 1:1.3.dfsg+really1.3.1-1+deb13u1)",
+}
 CONTROL_FIELDS = (
     "Package", "Version", "Architecture", "Maintainer", "Section",
     "Priority", "Depends", "Description", "Installed-Size",
@@ -82,10 +86,13 @@ def rewrite_control(compressed, libssl_floor):
     dependencies = fields["Depends"].split(", ")
     matches = [EXACT_DEPENDENCY.fullmatch(dependency) for dependency in dependencies]
     if (len(matches) != 16 or any(match is None for match in matches)
-            or len({match[1] for match in matches}) != 16 or ORIGINAL_LIBSSL not in dependencies):
+            or len({match[1] for match in matches}) != 16
+            or not ({ORIGINAL_LIBSSL} | REHEARSAL_ALTERNATIVES.keys()) <= set(dependencies)):
         raise ValueError("Unexpected runtime control dependencies")
 
     dependencies[dependencies.index(ORIGINAL_LIBSSL)] = f"libssl3t64 (>= {libssl_floor})"
+    for historical, current in REHEARSAL_ALTERNATIVES.items():
+        dependencies[dependencies.index(historical)] = f"{historical} | {current}"
     fields["Depends"] = ", ".join(dependencies)
     fields["Version"] = COMPATIBILITY_VERSION
     fields["Provides"] = f"{PACKAGE} (= {ORIGINAL_VERSION})"
@@ -134,6 +141,7 @@ def repack_runtime(original, *, original_sha256, libssl_floor):
         "data_tar_gz_sha256": sha256(data).hexdigest(),
         "provides": f"{PACKAGE} (= {ORIGINAL_VERSION})",
         "libssl3t64_minimum": libssl_floor,
+        "rehearsal_alternatives": REHEARSAL_ALTERNATIVES,
     }
 
 
