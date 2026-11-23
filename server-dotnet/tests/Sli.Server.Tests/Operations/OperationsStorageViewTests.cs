@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Sli.Server.Operations;
+using Sli.Server.Storage.Lifecycle;
 using Xunit;
 
 namespace Sli.Server.Tests.Operations;
@@ -81,7 +82,7 @@ public sealed class OperationsStorageViewTests
         app.Queries.Reads = 0;
         app.Queries.Fail = true;
         app.Files.FootprintValue = JsonNode.Parse("""
-            {"components":[{"key":"postgres_database","human":"9 GB","bytes":9000},
+            {"generated_at_utc":"2026-11-05T11:00:00Z","components":[{"key":"postgres_database","human":"9.0 GB","bytes":9663676416},
              {"key":"clickhouse_volume_history","human":"11 GB","bytes":11000},
              {"key":"project_root","human":"3 GB"}],
              "backups":{"last_backup_at_utc":"2026-11-13T10:00:00Z","capacity_days":7,"same_disk_as_postgres":true}}
@@ -91,7 +92,7 @@ public sealed class OperationsStorageViewTests
         var body = await OperationsEndpointTests.Body(response);
         timer.Stop();
         Assert.True(response.IsSuccessStatusCode);
-        Assert.Equal("9 GB", (string?)body["storage"]?["footprint"]?["components"]?[0]?["human"]);
+        Assert.Equal("9.0 GB", (string?)body["storage"]?["footprint"]?["components"]?[0]?["human"]);
         Assert.Equal(1000000000000L, (long?)body["storage"]?["disk_pressure"]?["disk"]?["free_bytes"]);
         Assert.Equal(root, (string?)body["storage"]?["postgres_volume"]?["mount_point"]);
         Assert.Equal("2026-11-13T10:00:00Z", (string?)body["storage"]?["footprint"]?["backups"]?["last_backup_at_utc"]);
@@ -101,6 +102,66 @@ public sealed class OperationsStorageViewTests
         Assert.Equal(0, app.Files.RuntimeStorageReads);
         Assert.DoesNotContain("project_root", body.ToJsonString());
         Console.WriteLine($"HTTP in-memory host: full overview {before.Elapsed.TotalMilliseconds:F2} ms ({fullReads} SQL reads); storage view {timer.Elapsed.TotalMilliseconds:F2} ms (0 SQL reads)");
+    }
+
+    [Theory]
+    [InlineData(1048576L, -2, true)]
+    [InlineData(0L, -1, true)]
+    [InlineData(null, -1, false)]
+    [InlineData(-1L, -1, false)]
+    [InlineData(1048576L, -25, false)]
+    [InlineData(1048576L, 1, false)]
+    public async Task StorageViewReadsFreshLogicalSizeWithoutPhysicalFootprint(long? bytes, int hours, bool measured)
+    {
+        using var state = new Sli.Server.Tests.Storage.StorageLifecycleTests.State();
+        using var app = await OperationsEndpointTests.Start(settings: new() { ["Sli:DataDirectory"] = state.Path });
+        app.Queries.Fail = true;
+        DateTimeOffset observed = OperationsEndpointTests.Now.AddHours(hours);
+        if (bytes is not null)
+            state.Files.Write("storage-database-usage.json", new JsonObject {
+                ["database_bytes"] = bytes, ["observed_at_utc"] = observed.ToString("O"),
+            });
+
+        using var response = await app.Client.GetAsync("/api/v1/operations/overview?view=storage", TestContext.Current.CancellationToken);
+        var body = await OperationsEndpointTests.Body(response);
+        Assert.True(response.IsSuccessStatusCode);
+        var rows = body["storage"]!["footprint"]!["components"]!.AsArray();
+        if (measured)
+        {
+            var row = Assert.Single(rows);
+            Assert.Equal("postgres_database", (string?)row?["key"]);
+            Assert.Equal(bytes, (long?)row?["bytes"]);
+            Assert.Equal(bytes == 0 ? "0 B" : "1.0 MB", (string?)row?["human"]);
+            Assert.Equal(observed, DateTimeOffset.Parse((string)row!["observed_at_utc"]!));
+        }
+        else Assert.Empty(rows);
+        Assert.Equal(1000000000000L, (long?)body["storage"]?["disk_pressure"]?["disk"]?["free_bytes"]);
+        Assert.Equal(0, app.Queries.Reads);
+        Assert.Equal(0, app.Files.Scans);
+    }
+
+    [Theory]
+    [InlineData(-3, 1048576L)]
+    [InlineData(-1, 2097152L)]
+    public async Task StorageViewUsesTheNewestValidLogicalMeasurement(int manualAgeHours, long expectedBytes)
+    {
+        using var state = new Sli.Server.Tests.Storage.StorageLifecycleTests.State();
+        using var app = await OperationsEndpointTests.Start(settings: new() { ["Sli:DataDirectory"] = state.Path });
+        var now = OperationsEndpointTests.Now;
+        state.Files.Write("storage-database-usage.json", new JsonObject {
+            ["database_bytes"] = 1048576L, ["observed_at_utc"] = now.AddHours(-2).ToString("O"),
+        });
+        app.Files.FootprintValue = new JsonObject {
+            ["generated_at_utc"] = now.ToString("O"),
+            ["components"] = new JsonArray(new JsonObject { ["key"] = "postgres_database", ["bytes"] = 2097152L }),
+            ["postgres"] = new JsonObject { ["database"] = new JsonObject { ["checked_at"] = now.AddHours(manualAgeHours).ToString("O") } },
+        };
+
+        using var response = await app.Client.GetAsync("/api/v1/operations/overview?view=storage", TestContext.Current.CancellationToken);
+        var body = await OperationsEndpointTests.Body(response);
+        var row = Assert.Single(body["storage"]!["footprint"]!["components"]!.AsArray());
+        Assert.Equal(expectedBytes, (long?)row?["bytes"]);
+        Assert.Equal(0, app.Queries.Reads);
     }
 
     [Fact]

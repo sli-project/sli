@@ -82,6 +82,24 @@ it("omits tables without API values and retains a measured zero", async () => {
   const disk = await screen.findByRole("table", { name: "Диск" }); expect(within(disk).getByText("0 B")).toBeTruthy();
   expect(within(disk).queryByRole("columnheader", { name: "Свободно" })).toBeNull();
 });
+it.each([
+  { bytes: 1048576, text: "1.0 MB" },
+  { bytes: 0, text: "0 B" },
+  { bytes: null, text: "—" },
+])("keeps the logical database measurement separate from partition capacity ($text)", async ({ bytes, text }) => {
+  state.storage.mockResolvedValue({ storage: {
+    footprint: { components: bytes === null ? [] : [{
+      key: "postgres_database", bytes, human: text, observed_at_utc: "2026-11-20T02:00:00Z",
+    }] },
+    disk_pressure: { disk: { used_bytes: 20 * 1024 ** 3, free_bytes: 80 * 1024 ** 3, used_human: "20 GB", free_human: "80 GB" } },
+  } });
+  mount();
+  const disk = await screen.findByRole("table", { name: t("operations.disk.title") });
+  const database = within(disk).getByRole("row", { name: /База данных/ });
+  const partition = within(disk).getByRole("row", { name: /Раздел диска/ });
+  expect(within(database).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["База данных", text, "—"]);
+  expect(within(partition).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Раздел диска", "20 GB", "80 GB"]);
+});
 it("saves retention once and reports the time", async () => {
   mount(); const input = await screen.findByRole("spinbutton", { name: "История изменений AD/GPO" });
   const save = screen.getByRole("button", { name: "Сохранить" }) as HTMLButtonElement; expect(save.disabled).toBe(true);
