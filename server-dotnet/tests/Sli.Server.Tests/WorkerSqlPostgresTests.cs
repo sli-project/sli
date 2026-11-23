@@ -217,6 +217,16 @@ public sealed partial class WorkerSqlPostgresTests(ITestOutputHelper output)
         await PostCollectionPostgres.Sql(admin, "create role sql_nps_login login noinherit; grant adlog_nps_agent_import_worker to sql_nps_login", ct);
         string radiusRoute = Path.Combine(fixture.Pg.Root, "synthetic-radius-route.json");
         await File.WriteAllTextAsync(radiusRoute, RadiusCollectionRouteTests.Route, ct);
+        await using (var defaults = new NpgsqlCommand("""
+            select count(*) from semantic_risk_policies p
+            join semantic_policy_admission a using (policy_id,policy_version)
+            where p.policy_version=1
+              and p.policy_id in ('l1-dc-scheduled-task-created','l1-dc-service-installed')
+              and p.source_kind='canonical_action' and p.lifecycle_status='shadow'
+              and a.enabled is true and a.updated_by='system:defaults'
+            """, admin))
+            Assert.Equal(2L, await defaults.ExecuteScalarAsync(ct));
+
         await PostCollectionPostgres.Sql(admin, """
             insert into report_producer_principals select oid,rolname from pg_roles where rolname='sql_report_login';
             insert into finding_evidence_source_bindings(principal_oid,principal_name,installation_id,plugin_id,source_instance_id,source_generation,collection_scope_id,storage_kind,log_source_id,agent_id)
@@ -225,7 +235,9 @@ public sealed partial class WorkerSqlPostgresTests(ITestOutputHelper output)
             select oid,rolname,'00000000-0000-4000-8000-000000000001','sli.file-audit','sql-fixture','1','sql-fixture','file_audit_observation','00000000-0000-4000-8000-000000000001' from pg_roles where rolname='sli_semantic_login';
             insert into semantic_risk_policies(policy_id,policy_version,source_kind,lifecycle_status,definition_json,definition_sha256)
             values('synthetic-sql',1,'control_health','disabled','{}',sha256('{}'::bytea));
-            insert into semantic_policy_admission(policy_id,policy_version,enabled,updated_by) select policy_id,policy_version,lifecycle_status='enabled','synthetic-test' from semantic_risk_policies;
+            insert into semantic_policy_admission(policy_id,policy_version,enabled,updated_by)
+            select policy_id,policy_version,lifecycle_status='enabled','synthetic-test' from semantic_risk_policies
+            where (policy_id,policy_version) not in (('l1-dc-scheduled-task-created',1),('l1-dc-service-installed',1));
             insert into sli_plugin_file_audit.policy_revisions(agent_id,source_instance_id,revision,authored_at,actor_kind,actor_id,policy,policy_sha256)
             values('00000000-0000-4000-8000-000000000001','sql-fixture',1,now(),'session',1,'{}',repeat('a',64));
             """, ct);
