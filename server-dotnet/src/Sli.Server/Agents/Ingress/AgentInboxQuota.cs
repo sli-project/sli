@@ -125,13 +125,20 @@ public static class AgentInboxQuota
 
     public static string? CheckCapacity(long agentBytes, long pendingBytes, long packetBytes, long agents, long freeBytes, bool pending = true)
     {
-        if (freeBytes < 0) return "agent_inbox_disk_unavailable";
+        var disk = CheckDiskCapacity(packetBytes, freeBytes);
+        if (disk is not null) return disk;
         long writable = AgentInboxLimits.WritableBytes(freeBytes);
-        if (AgentInboxLimits.DiskBytes(packetBytes) > writable) return "agent_inbox_disk_bytes_limit";
         // Share the pending queue plus its remaining physical growth budget among registered agents.
         // The factor two is the same payload/index expansion allowance as the storage guard below.
         long share = pendingBytes / Math.Max(1, agents) + (writable / 2) / Math.Max(1, agents);
         return pending && agentBytes > share - packetBytes ? "agent_inbox_agent_bytes_limit" : null;
+    }
+
+    internal static string? CheckDiskCapacity(long packetBytes, long freeBytes)
+    {
+        if (freeBytes < 0) return "agent_inbox_disk_unavailable";
+        return AgentInboxLimits.DiskBytes(packetBytes) > AgentInboxLimits.WritableBytes(freeBytes)
+            ? "agent_inbox_disk_bytes_limit" : null;
     }
 
     private const double TupleHeaderBytes = 24 + 4;     // heap tuple header + line pointer
