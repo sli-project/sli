@@ -143,7 +143,9 @@ public static class SnapshotIngress
         long current = await AgentInboxQuota.LiveStorageBytesAsync(connection, transaction,
             ["sli_agent_snapshot_chunks", "sli_agent_snapshot_cycles", "sli_agent_snapshot_policies", "sli_agent_snapshot_bindings", "sli_agent_receipts"], ct);
         if (current > limits.StorageBytes - checked(2 * addition + 65536)) return "agent_snapshot_storage_bytes_limit";
-        return null;
+        var disk = AgentInboxQuota.CheckDiskCapacity(addition, limits.ReadFreeBytes());
+        if (disk is not null) limits.RecordDiskRejection(addition);
+        return disk;
     }
 
     public static async Task StoreAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, SnapshotPrepared plan, CancellationToken ct)

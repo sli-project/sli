@@ -35,7 +35,9 @@ public sealed class AgentSnapshotDispatcherDatabaseTests
         using var cert=new CertificateRequest("CN=synthetic",key,HashAlgorithmName.SHA256).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddDays(1));
         var signed=Packets.Make(new EcdsaPacketSigner(key),Agent.ToString("D"),1,sample,now,()=>Packet).ToJson();
         string dir=Path.Combine(Path.GetTempPath(),"sli-snapshot-dispatch-"+Guid.NewGuid().ToString("N")); var clock=new Clock(now);
-        var service=new AgentPacketService(clock,new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184),new AgentIngressDiagnostics(dir,NullLogger<AgentIngressDiagnostics>.Instance,clock));
+        var limits=new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184)
+            { FreeDiskBytes = () => long.MaxValue };
+        var service=new AgentPacketService(clock,limits,new AgentIngressDiagnostics(dir,NullLogger<AgentIngressDiagnostics>.Instance,clock));
         try
         {
             await using var database=await SyntheticDatabase.BorrowAsync(OwnedDatabaseBinding.FromEnvironment(),ct); await using var db=await database.OpenConnectionAsync(ct);

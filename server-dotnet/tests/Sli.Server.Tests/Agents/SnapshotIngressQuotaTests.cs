@@ -54,7 +54,7 @@ public sealed class SnapshotIngressQuotaTests
         var plan = new SnapshotPrepared(envelope, new JsonObject(), policy);
         var receipt = AgentReceipt.Make(envelope, "committed", null, DateTimeOffset.UtcNow);
         var limits = new AgentInboxLimits(1000, long.MaxValue / 4, 1000, long.MaxValue / 4,
-            1000, long.MaxValue / 4, storageLimit);
+            1000, long.MaxValue / 4, storageLimit) { FreeDiskBytes = () => long.MaxValue };
         await using (var tx = await db.BeginTransactionAsync(ct))
         {
             Assert.Null(await SnapshotIngress.CheckQuotaAsync(db, tx, plan, receipt, limits, ct));
