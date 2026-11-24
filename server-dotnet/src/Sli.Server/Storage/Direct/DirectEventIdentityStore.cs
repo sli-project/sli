@@ -13,7 +13,7 @@ internal static partial class DirectEventIdentityStore
         JsonObject sourceRow, string identityHash, CancellationToken ct) =>
         (await ReserveBatchAsync(authorization,workerDataSource,serverId,
             [new(channelId,recordId,timeUtc,sourceRow,identityHash)],ct))[0];
-    private static string RepresentationDigest(JsonObject row) => Convert.ToHexStringLower(
+    internal static string RepresentationDigest(JsonObject row) => Convert.ToHexStringLower(
         System.Security.Cryptography.SHA256.HashData(new System.Text.UTF8Encoding(false, true).GetBytes(SourceJson.SerializeSorted(row))));
 
 }

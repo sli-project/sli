@@ -118,6 +118,12 @@ if (args.Length > 0 && args[0] == "semantic-production-control")
     Environment.ExitCode = await SemanticProductionControlCommand.RunAsync(args[1..]);
     return;
 }
+if (args.Length > 0 && args[0] == "sigma-history-test")
+{
+    Environment.ExitCode = await SigmaHistoryTestCommand.RunAsync(args[1..]);
+    return;
+}
+
 if (args.Length > 0 && args[0] == "semantic-production-worker")
 {
     Environment.ExitCode = await Sli.Server.Operations.OperationsWorkerObservation.RunAsync("semantic", () => SemanticProductionCommand.RunAsync(args[1..]));
