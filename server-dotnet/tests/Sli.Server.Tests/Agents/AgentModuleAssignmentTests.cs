@@ -7,6 +7,38 @@ namespace Sli.Server.Tests.Agents;
 public sealed class AgentModuleAssignmentTests
 {
     [Fact]
+    public void NewWorkstationRoleWithEmptySettingsUsesOnlyPassportEvents()
+    {
+        var request = AgentModuleAssignmentService.ReadConfig(default, 4);
+        var policy = AgentModuleAssignmentRules.NormalizeWorkstation(request, useCollectionBaseline: true);
+
+        Assert.Equal("4", policy["policy_revision"]!.GetValue<string>());
+        Assert.Equal([1102, 4624, 4625, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045],
+            Assert.IsType<JsonArray>(policy["allow_event_ids"]).Select(value => value!.GetValue<int>()));
+        Assert.True(policy["families"]!["logons"]!.GetValue<bool>());
+        Assert.True(policy["families"]!["local_admins"]!.GetValue<bool>());
+        Assert.True(policy["families"]!["protection"]!.GetValue<bool>());
+        Assert.False(policy["families"]!["processes"]!.GetValue<bool>());
+        Assert.False(policy["families"]!["usb"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void WorkstationCollectionBaselinePreservesExplicitAndExistingSettings()
+    {
+        var custom = new JsonObject
+        {
+            ["policy_revision"] = "5",
+            ["allow_event_ids"] = new JsonArray(4688),
+        };
+        var chosen = AgentModuleAssignmentRules.NormalizeWorkstation(custom, useCollectionBaseline: true);
+        Assert.Equal(4688, Assert.Single(chosen["allow_event_ids"]!.AsArray())!.GetValue<int>());
+        Assert.True(chosen["families"]!["processes"]!.GetValue<bool>());
+
+        var existing = AgentModuleAssignmentRules.NormalizeWorkstation(new JsonObject { ["policy_revision"] = "5" });
+        Assert.Null(existing["allow_event_ids"]);
+        Assert.True(existing["families"]!["processes"]!.GetValue<bool>());
+    }
+    [Fact]
     public void SnapshotBindingRetainsIdentityAndRejectsChanges()
     {
         var old=JsonNode.Parse("""{"source_instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","domain_sid":"S-1-5-21-100000001-200000001-300000001","domain_dns":"example.test","scope":"OU=Example","policy_revision":"1"}""")!.AsObject();
