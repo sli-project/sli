@@ -125,7 +125,8 @@ def upgrade_sql(root: Path) -> str:
     An existing non-NULL attestation is never overwritten. Both historical
     checkout line endings are accepted, as in native_pg_inventory.
     """
-    inventory.verify_manifest(root, json.loads((root / "deploy/linux/native_pg_ledger.json").read_text()))
+    manifest = json.loads((root / "deploy/linux/native_pg_ledger.json").read_text())
+    inventory.verify_manifest(root, manifest)
     expected = inventory.expected_ledger(root)
     migrations = forward_migration_inventory(root / "config/postgres_migrations")
     schema = root / "config/postgres_schema_v8.sql"
@@ -180,6 +181,13 @@ alter table public.schema_migrations add column if not exists sha256 text;
             # returns to that migrator for the ledger insert.
             enter = "set local session authorization adlog_storage_migrator;"
             leave = "reset session authorization;"
+        elif (item.version, item.name) == (406, "native_radius_accounting_admission"):
+            # The published migration uses the peer session for the temporary
+            # schema grant and revoke, and switches to the owning roles for DDL.
+            if manifest["files"][item.path.relative_to(root).as_posix()] != (
+                    "ad1f1d4c269bc3834ca7cc934e2195982ee0ac18df3b8525557109db6392826a"):
+                raise ValueError("native_pg_sql_inventory_mismatch")
+            enter = "reset role;"
         parts.extend([
             f"select not exists(select 1 from public.schema_migrations where version={item.version})"
             " as sli_upgrade_pending \\gset\n\\if :sli_upgrade_pending\n",

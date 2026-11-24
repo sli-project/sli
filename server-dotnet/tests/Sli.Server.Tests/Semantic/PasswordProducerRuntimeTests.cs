@@ -63,10 +63,11 @@ public class PasswordProducerRuntimeTests
         var live = new[] { new PasswordRule(scope, revision: 395), new PasswordRule(scope, "spray", 395) };
         var history = new[] { new PasswordRule(scope), new PasswordRule(scope, "spray") };
         var clock = new ManualClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var sweepTarget = clock.At.AddSeconds(-120);
         var calls = new List<PasswordRule>();
         int sprayCalls = 0;
 
-        await PasswordProducerPoller.RunPassesAsync(live, history, (rule, _) =>
+        var outcomes = await PasswordProducerPoller.RunPassesAsync(live, history, (rule, _) =>
         {
             calls.Add(rule);
             if (rule.Revision == 395 && rule.Kind == "spray" && ++sprayCalls == 2)
@@ -77,6 +78,12 @@ public class PasswordProducerRuntimeTests
 
         Assert.Equal(new[] { "395:brute", "395:spray", "395:brute", "395:spray" },
             calls.Select(rule => $"{rule.Revision}:{rule.Kind}"));
+        Assert.Equal(4, outcomes.Count);
+        Assert.All(outcomes, outcome =>
+        {
+            Assert.Equal("committed", outcome.Status);
+            Assert.True(PasswordJson.Time(outcome.Work!["watermark"]) >= sweepTarget);
+        });
     }
 
     private sealed class ManualClock(DateTimeOffset at) : TimeProvider
