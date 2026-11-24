@@ -112,6 +112,22 @@ def test_native_workstation_defaults_and_explicit_opt_in(config, monkeypatch):
         assert explicit["SLI_CORE_JOB_WORKSTATIONS_RETENTION"] == "1"
 
 
+def test_native_accounting_credentials_are_explicit_and_separate(config):
+    defaults = native.dotnet_units("test", config)
+    assert all("SLI_RADIUS_ACCOUNTING_IMPORT_ENABLED" not in body for body in defaults.values())
+    enabled = native.dotnet_units("test", dict(config, radius_accounting_prepared=True))
+    api = enabled["sli-dotnet-api.service"]
+    worker = enabled["sli-dotnet-post-collection.service"]
+    for service in (api, worker):
+        assert 'Environment="SLI_RADIUS_ACCOUNTING_IMPORT_ENABLED=1"' in service
+        assert "LoadCredential=radius-agent-route:" in service
+        assert "SLI_NPS_AGENT_IMPORT_ENABLED" not in service
+    assert "radius-agent-dsn" not in api
+    assert "radius-agent-password" not in api
+    assert "LoadCredential=radius-agent-dsn:" in worker
+    assert "LoadCredential=radius-agent-password:" in worker
+
+
 def test_worker_paths_and_dedicated_logins(config):
     env, secrets = native.environment("post-collection", config)
     assert secrets == {"runtime_password", "storage_password", "context_password"}

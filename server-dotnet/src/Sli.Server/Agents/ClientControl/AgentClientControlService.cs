@@ -34,6 +34,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
             && (!await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
                 || !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,null,true,ct)))
             fileAssignment["enabled"]=false;
+        await AgentPolicyAssignments.FilterAccountingCheckInAsync(db,tx,result,ct);
         if (AgentEnrollmentService.CollectionProfile(configuration) == "beta" &&
             await AgentEnrollmentService.NeedsDcIdentityAsync(db, tx, identity.Id, ct))
             result["dc_identity_required"] = true;

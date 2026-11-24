@@ -58,6 +58,12 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         }
         catch (Exception ex) when (ex is AgentException or ProtocolException or InvalidOperationException or ArgumentException or FormatException or OverflowException)
         { throw new AgentControlException("invalid_agent_module_config"); }
+        if (module == NpsPolicy.Accounting && flag.GetBoolean())
+        {
+            var policy=NpsPolicy.Parse(module,config);
+            if (!await AgentPolicyAssignments.AccountingSourceEnabledAsync(db,tx,policy,policy,ct))
+                throw new AgentControlException("agent_source_not_bound",409);
+        }
         if (snapshot) await AgentSnapshotAssignment.ValidateAsync(db,tx,id,module,config,flag.GetBoolean(),ct);
         var oldModules=agent["assigned_modules"]!.AsArray(); var modules=new JsonArray();
         foreach (var item in oldModules)

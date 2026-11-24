@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Auth;
+using Sli.Server.Agents.Radius;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -19,6 +20,17 @@ public sealed partial class InstallationService
         {
             return await database.WriteAsync(async s =>
             {
+                if (id=="sli.remote-access" && enabled && Environment.GetEnvironmentVariable("SLI_DEPLOYMENT_MODE")=="native")
+                {
+                    if (RadiusAccountingMode.Effective() is not { } mode)
+                        throw new InstallationException("plugin_not_configured",409);
+                    await s.QueryAsync("select pg_advisory_xact_lock(hashtext('ad_log_reports_plugin_runtime_v76'))",ct);
+                    var exists=First(await s.QueryAsync("select to_regprocedure('public.radius_accounting_source_ready406(text,text,text,text,boolean)') is not null as ready",ct));
+                    if (exists?["ready"]?.GetValue<bool>() != true ||
+                        First(await s.QueryAsync("select public.radius_accounting_source_ready406(@p0,@p1,@p2,@p3,false) as ready",
+                            ct,mode.SourceId,mode.Subscription,mode.TransportBinding,mode.EndpointIdentity))?["ready"]?.GetValue<bool>() != true)
+                        throw new InstallationException("plugin_not_configured",409);
+                }
                 var row = First(await s.QueryAsync("select * from set_plugin_enabled_v1(@p0,@p1,@p2,@p3,@p4,@p5::boolean)", ct,
                     id, enabled, expected, actor.Type, actor.Id, configured.HasValue ? configured.Value : null));
                 return row is null ? throw new InstallationException("plugin_state_conflict", 409) : PluginState(row);
@@ -53,6 +65,8 @@ public sealed partial class InstallationService
     bool RemoteConfigured()
     {
         using var admission = Admission("sli.remote-access");
+        if (Environment.GetEnvironmentVariable("SLI_DEPLOYMENT_MODE")=="native")
+            return RadiusAccountingMode.Effective() is not null;
         return Bool(packages.RadiusRoute()?["accounting_ready"]);
     }
     static readonly IReadOnlyDictionary<string, string[]> PluginModules = new Dictionary<string, string[]> {
