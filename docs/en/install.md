@@ -34,6 +34,15 @@ curl -LO --fail "https://github.com/sli-project/sli/releases/download/$tag/SHA25
 sha256sum --check --strict SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
 ```
 
+For a kit supplied through GitHub Actions, open the **Debian beta kit** run for
+the intended source commit. Download and unpack its
+`sli-debian-beta-kit-<full-commit-sha>` artifact, if the run uploaded one. In
+the directory containing both files from that artifact, run:
+
+```sh
+sha256sum --check --strict SHA256SUMS && tar -xzf sli-debian-beta-kit.tar.gz
+```
+
 ### Run the installer
 
 Run the installer from the directory where you unpacked the archive.

@@ -101,7 +101,7 @@ the needed ClickHouse history.
 ## Native backups
 
 In **Settings → Backup**, choose a prepared directory on a mounted local
-filesystem separate from the databases. New installations have the daily
+filesystem on a different disk from the databases. New installations have the daily
 schedule disabled. Enable it to run backups automatically. You can run
 `sudo sli-backup` on the selected volume with the schedule disabled.
 
