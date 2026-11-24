@@ -198,7 +198,7 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
                 episode=await PasswordRiskProof.LockEpisode(sql,work.Proposal.Signal,ct);
                 locked=episode is not null;
             } else locked=await PasswordRiskProof.Lock(sql,work.Proposal.Signal,ct) is not null;
-            if(!locked){await Ack(sql,work.Lease,true,ct);return new("episode_frozen");}
+            if(!locked){await Ack(sql,work.Lease,ct);return new("episode_frozen");}
             scenario=await PasswordRiskScenario.Persist(sql,work.Proposal,scenario,ct);Guid scenarioId=Guid.Parse(RiskJson.String(scenario,"scenario_id"));
             episode??=await PasswordRiskProof.LoadEpisode(sql,work.Proposal.Signal,ct);
             var members=await PasswordRiskProof.ScenarioSignals(sql,scenarioId,work.Proposal.Signal,ct);
@@ -217,18 +217,16 @@ public sealed class PasswordRiskConsumer(PasswordProducerRuntime runtime,Passwor
             """,ct,("job",work.Lease.Id),("scenario",sid),("mode",work.Mode),("risk",assessment.Risk),("raw",assessment.Raw),("display",assessment.Display),("hard",assessment.HardCritical),("confidence",assessment.Confidence),("score",assessment.Score),("coverage",assessment.Coverage),("ms",evaluationMs),("snapshot",work.Completeness));
         long? finding=null;
         if(work.Mode=="enabled"&&state=="ready")finding=await PasswordRiskPublication.Publish(sql,work,scenario!,ct);
-        await Ack(sql,work.Lease,false,ct);return new(state,finding);
+        await Ack(sql,work.Lease,ct);return new(state,finding);
     }
 
-    private static async Task Ack(RiskSql sql,PasswordRiskLease lease,bool frozen,CancellationToken ct)
+    private static async Task Ack(RiskSql sql,PasswordRiskLease lease,CancellationToken ct)
     {
         var rows=await sql.Rows("""
             update public.semantic_risk_evaluation_jobs set evaluation_status='completed',completed_at=now(),heartbeat_at=now(),
-              lease_token=null,lease_until=null,updated_at=now(),
-              last_error_code=case when @frozen then 'episode_frozen' else last_error_code end,
-              last_error_detail=case when @frozen then 'episode_frozen' else last_error_detail end
+              lease_token=null,lease_until=null,updated_at=now(),last_error_code=null,last_error_detail=null
             where job_id=@job and evaluation_status='leased' and lease_token=@token returning job_id::text as job_id
-            """,ct,("frozen",frozen),("job",lease.Id),("token",lease.Token));
+            """,ct,("job",lease.Id),("token",lease.Token));
         RiskJson.Require(rows.Count==1,"password_risk_lease_lost");
     }
 }

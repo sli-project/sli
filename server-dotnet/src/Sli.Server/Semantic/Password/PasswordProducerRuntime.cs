@@ -172,6 +172,7 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
         var pending=new bool[rules.Count];
         Array.Fill(pending,true);
         var retries=new int[rules.Count];
+        var retriedQualifiedDenial=new bool[rules.Count];
         var watermarks=new DateTimeOffset?[rules.Count];
         var timeProvider=clock??TimeProvider.System;
         var target=targetWatermark??timeProvider.GetUtcNow()-(targetAge??TimeSpan.FromMinutes(12));
@@ -183,8 +184,12 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
             if(result.Diagnostic is {} detail)detail["rule_id"]=rules[i].Id;
             if(result.Failed&&result.Diagnostic is {} diagnostic)write("password_producer_batch_failed:"+diagnostic.ToJsonString());
             var watermark=result.Work?["watermark"] is {} mark ? PasswordJson.Time(mark) : (DateTimeOffset?)null;
+            // The freeze changed the durable checkpoint without advancing its watermark.
+            // Give this rule one more alternating turn per live sweep.
+            bool retryQualifiedDenial=result.CommittedQualifiedDenial&&!retriedQualifiedDenial[i];
+            retriedQualifiedDenial[i]|=retryQualifiedDenial;
             pending[i]=result.Failed||result.Status=="busy" ? ++retries[i]<4 :
-                result.Status=="committed"&&watermark<target&&(watermarks[i] is null||watermark>watermarks[i]);
+                result.Status=="committed"&&(retryQualifiedDenial||watermark<target&&(watermarks[i] is null||watermark>watermarks[i]));
             if(watermark.HasValue)watermarks[i]=watermark;
             SemanticWork.Progress(new JsonObject{["cursor"]=new JsonObject{["rule"]=rules[i].Kind,["watermark"]=result.Work?["watermark"]?.DeepClone(),["batches"]=results.Count},["heartbeat"]=SemanticJson.Stamp(timeProvider.GetUtcNow())});
         }

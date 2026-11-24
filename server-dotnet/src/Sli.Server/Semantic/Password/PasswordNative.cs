@@ -26,20 +26,21 @@ public sealed class PasswordFailure(string code) : Exception(code)
 
 internal enum PasswordProofPhase { Reader, RetainedChain, Emission, Checkpoint, NativeVerification }
 
-internal sealed record PasswordProofBudget(PasswordProofPhase Phase,long? References=null,long? XmlBytes=null,long? DocumentBytes=null)
+internal sealed record PasswordProofBudget(PasswordProofPhase Phase,long? References=null,long? XmlBytes=null,long? DocumentBytes=null,
+    int ReferenceLimit=PasswordProofBudget.MaxReferences)
 {
     internal const int MaxReferences=10000,MaxXmlBytes=33554432,MaxDocumentBytes=4194304;
-    internal static void Check(PasswordProofPhase phase,long references,long xmlBytes)
+    internal static void Check(PasswordProofPhase phase,long references,long xmlBytes,int referenceLimit=MaxReferences)
     {
-        if(references>MaxReferences||xmlBytes>MaxXmlBytes)
-            throw new PasswordFailure("password_v2_proof_bound") { ProofBudget=new(phase,references,xmlBytes) };
+        if(references>referenceLimit||xmlBytes>MaxXmlBytes)
+            throw new PasswordFailure("password_v2_proof_bound") { ProofBudget=new(phase,references,xmlBytes,ReferenceLimit:referenceLimit) };
     }
 
     internal JsonObject Document => new() {
         ["phase"]=Phase.ToString(),
-        ["limit"]=DocumentBytes>MaxDocumentBytes?"document_bytes":References>MaxReferences?"references":XmlBytes>MaxXmlBytes?"xml_bytes":"native_proof",
+        ["limit"]=DocumentBytes>MaxDocumentBytes?"document_bytes":References>ReferenceLimit?"references":XmlBytes>MaxXmlBytes?"xml_bytes":"native_proof",
         ["references"]=References,["xml_bytes"]=XmlBytes,["document_bytes"]=DocumentBytes,
-        ["max_references"]=MaxReferences,["max_xml_bytes"]=MaxXmlBytes,["max_document_bytes"]=MaxDocumentBytes
+        ["max_references"]=ReferenceLimit,["max_xml_bytes"]=MaxXmlBytes,["max_document_bytes"]=MaxDocumentBytes
     };
 }
 
