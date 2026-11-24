@@ -85,7 +85,7 @@ public static class RadiusAccountingImporter
         var rows=new List<(Guid Id,JsonObject Envelope,JsonObject Packet,JsonArray Rows)>();
         await using(var cmd=new NpgsqlCommand("""
             select packet_id,envelope::text,packet::text,event_rows::text from sli_agent_packet_inbox i
-            where imported_at is null and envelope->>'module_id'='sli.radius-accounting'
+            where imported_at is null and module_disabled_at is null and envelope->>'module_id'='sli.radius-accounting'
               and not exists(select 1 from sli_agent_packet_quarantine q where q.packet_id=i.packet_id)
             order by received_at,packet_id limit @limit for update skip locked
             """,db,tx)) { cmd.Parameters.AddWithValue("limit",limit);await using var reader=await cmd.ExecuteReaderAsync(ct);

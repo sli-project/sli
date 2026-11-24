@@ -30,7 +30,7 @@ internal sealed class RadiusInboxConsumer
             Guid packet; DateTime received; JsonObject envelope, payload; JsonArray rows;
             await using (var select = new NpgsqlCommand("""
                 select packet_id,received_at,envelope::text,packet::text,event_rows::text from sli_agent_packet_inbox i
-                where imported_at is null and envelope->>'module_id'='sli.radius-accounting'
+                where imported_at is null and module_disabled_at is null and envelope->>'module_id'='sli.radius-accounting'
                   and not exists(select 1 from sli_agent_packet_quarantine q where q.packet_id=i.packet_id)
                   and (@time is null or (received_at,packet_id) > (@time,@packet))
                 order by received_at,packet_id limit 1 for update skip locked
