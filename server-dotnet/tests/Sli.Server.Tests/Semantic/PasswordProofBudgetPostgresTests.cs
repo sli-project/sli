@@ -11,6 +11,181 @@ namespace Sli.Server.Tests.Semantic;
 
 public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData(429, 20000, 300)]
+    [InlineData(3, 30, 30000)]
+    public async Task Brute_advances_with_durable_prefixes_and_retains_the_exact_origin(int origins, int limit, int spacingMs)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 409);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
+        var seed = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, occurredAt: start,
+            eventKinds: [4625], nativeTargetSids: ["S-1-0-0"]);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, seed, ct);
+        await InstallTestClock(owner, ct);
+        await SetTestClock(owner, start.AddMinutes(2), ct);
+        await using var runtime = PasswordProducerRuntime.Create(
+            name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
+            _ => throw new InvalidOperationException());
+        await using var worker = await runtime.OpenAsync(ct);
+        var scope = await ConfigureScope(fixture, worker, ct);
+        var rule = new PasswordRule(scope);
+        await using (var plan = new NpgsqlCommand(
+            "select (public.password_plan388(@scope::jsonb,@rule)#>>'{live,rule_version}')::integer", worker)) {
+            plan.Parameters.AddWithValue("scope", scope.Document.ToJsonString());
+            plan.Parameters.AddWithValue("rule", rule.Id);
+            rule = new PasswordRule(scope, revision: (int)(await plan.ExecuteScalarAsync(ct))!);
+        }
+
+        var before = start.AddMilliseconds((limit - 1) * spacingMs);
+        var next = before.AddMilliseconds(spacingMs);
+        // Admit the boundary row up front. The durable cutoff, not arrival,
+        // decides when the next witness joins an origin.
+        await PasswordFirstBatchPostgresTests.SeedBacklog(owner, ct, limit + 1, spacing: spacingMs / 1000.0, noise: true,
+            clients: 1, accountCount: origins, continuityRows: limit + 1);
+        var qualificationTime = next.AddSeconds(130);
+        var qualification = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+            eventKinds: Enumerable.Repeat(4625, 10).ToArray(),
+            nativeTimestamps: Enumerable.Range(0, 10).Select(i => PasswordJson.Stamp(qualificationTime.AddSeconds(i))).ToArray(),
+            nativeAccounts: Enumerable.Repeat("noise1", 10).ToArray(),
+            nativeTargetSids: Enumerable.Repeat("S-1-0-0", 10).ToArray(),
+            registered: (ShortEventAdmissionPostgresTests.Agent, ShortEventAdmissionPostgresTests.Agent, 900001, 1),
+            packetId: Guid.NewGuid(), sequence: 203, firstRecordId: limit + 2);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, qualification, ct);
+
+        async Task<PasswordProducerOutcome> Run()
+        {
+            await using var restarted = await runtime.OpenAsync(ct);
+            return await new PasswordProducer().RunAsync(restarted, rule, ct);
+        }
+        await SetTestClock(owner, before.AddMinutes(2), ct);
+        DateTimeOffset? watermark = null;
+        for (int i = 0; i < 10 && watermark != before; i++) {
+            var batch = await Run();
+            Assert.False(batch.Failed, batch.Diagnostic?.ToJsonString());
+            watermark = PasswordJson.Time(batch.Work!["watermark"]);
+        }
+        Assert.Equal(before, watermark);
+
+        string oldKey;
+        PasswordWitness[] oldOrigin;
+        await using (var saved = new NpgsqlCommand("""
+            with checkpoint as (
+                select c.* from public.semantic_password_checkpoints c where c.pin=@pin
+            ), episodes as (
+                select e.value from checkpoint c
+                cross join lateral public.password_state_episodes385(c.state_document) e(value)
+            )
+            select (select count(*) from episodes where value->>'sequence'='0'),
+                (select sum(jsonb_array_length(value->'prequalification')) from episodes),
+                octet_length(c.state_document::text), e.value->>'key', (e.value->'prequalification')::text
+            from checkpoint c cross join episodes e
+            where public.password_v2_time(e.value#>'{seed,at}')=@initial
+            """, owner) { CommandTimeout = 0 }) {
+            saved.Parameters.AddWithValue("pin", rule.Pin);
+            saved.Parameters.AddWithValue("initial", start.AddMilliseconds(spacingMs));
+            await using var rows = await saved.ExecuteReaderAsync(ct);
+            Assert.True(await rows.ReadAsync(ct));
+            Assert.Equal((long)origins, rows.GetInt64(0));
+            Assert.Equal((long)limit, rows.GetInt64(1));
+            output.WriteLine($"At 409 cutoff {before:O}: {origins} origins, {limit} references, {rows.GetInt32(2)} JSONB bytes.");
+            oldKey = rows.GetString(3);
+            oldOrigin = JsonNode.Parse(rows.GetString(4))!.AsArray().Select(PasswordWitness.Read).ToArray();
+            Assert.False(await rows.ReadAsync(ct));
+        }
+        Assert.True(oldOrigin[0].At < before.AddSeconds(-600));
+        string migration = Path.Combine(PostCollectionPostgres.Repository(),
+            "config/postgres_migrations/410_password_origin_prefix.sql");
+        string rollback = Path.ChangeExtension(migration, ".rollback.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await fixture.Pg.ApplyFileAsync(rollback, null, ct);
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await using (var acl = new NpgsqlCommand("""
+            select c.relowner='adlog_storage_owner'::regrole
+                and not has_table_privilege('adlog_semantic_worker',c.oid,'SELECT,INSERT,UPDATE,DELETE')
+                and not has_table_privilege('adlog_user',c.oid,'SELECT,INSERT,UPDATE,DELETE')
+                and has_function_privilege('adlog_semantic_worker','public.read_password_checkpoint410(jsonb,jsonb)','EXECUTE')
+                and not has_function_privilege('adlog_user','public.read_password_checkpoint410(jsonb,jsonb)','EXECUTE')
+            from pg_class c where c.oid='public.password_origin_prefix410'::regclass
+            """, owner))
+            Assert.Equal(true, await acl.ExecuteScalarAsync(ct));
+
+        await SetTestClock(owner, next.AddMinutes(2), ct);
+        var advanced = await Run();
+        var diagnostic = advanced.Diagnostic?.ToJsonString();
+        output.WriteLine($"Witness {limit + 1} at {next:O}: {diagnostic ?? advanced.Work?.ToJsonString()}");
+        Assert.False(advanced.Failed, diagnostic);
+        Assert.Equal(next, PasswordJson.Time(advanced.Work!["watermark"]));
+
+        await using (var tx = await worker.BeginTransactionAsync(ct)) {
+            var sql = new PasswordSql(worker, tx);
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => sql.Call("read_password_checkpoint_v2", ct, scope.Document, rule.Execution));
+            Assert.Equal("password_v2_origin_prefix_reader_required", denied.MessageText);
+            await tx.RollbackAsync(ct);
+        }
+        await using (var tx = await worker.BeginTransactionAsync(ct)) {
+            var sql = new PasswordSql(worker, tx);
+            var attempt = PasswordJson.Obj(await sql.Call("begin_password_attempt", ct, scope.Document, rule.Execution));
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => sql.Call(
+                "complete_password_producer_batch_v2", ct, scope.Document, rule.Execution,
+                attempt["token"]!.GetValue<long>(), attempt["state_revision"]!.GetValue<long>(), "advance",
+                new JsonObject { ["version"] = "sli.password.v2.producer-batch.1" }));
+            Assert.Equal("password_v2_origin_prefix_reader_required", denied.MessageText);
+            await tx.RollbackAsync(ct);
+        }
+        var unsafeRollback = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Pg.ApplyFileAsync(rollback, null, ct));
+        Assert.Contains("password_origin_prefix410_rollback_pending_state", unsafeRollback.Message);
+
+        var qualifiedThrough = qualificationTime.AddSeconds(9);
+        await SetTestClock(owner, qualifiedThrough.AddMinutes(2), ct);
+        var qualified = await Run();
+        Assert.False(qualified.Failed, qualified.Diagnostic?.ToJsonString());
+        Assert.Equal(qualifiedThrough, PasswordJson.Time(qualified.Work!["watermark"]));
+        await using var root = new NpgsqlCommand("""
+            select (document_json->'password_context')::text from public.semantic_qw_signals
+            where document_json->>'episode_key'=@key and document_json#>>'{password_context,sequence}'='1'
+            order by (document_json#>>'{password_context,portion_index}')::int
+            """, owner);
+        root.Parameters.AddWithValue("key", oldKey);
+        var portions = new List<JsonObject>();
+        await using (var rows = await root.ExecuteReaderAsync(ct))
+            while (await rows.ReadAsync(ct)) portions.Add(JsonNode.Parse(rows.GetString(0))!.AsObject());
+        var admission = PasswordEmission.Reassemble(scope, portions);
+        Assert.Equal(oldKey, admission.EpisodeKey);
+        Assert.Equal(oldOrigin[0], admission.Seed);
+        Assert.Equal(oldOrigin, admission.Origin.Take(oldOrigin.Length).ToArray());
+
+        // Removing the native row for an unrelated, non-inline archived
+        // witness must block the next advance and its new finding jobs.
+        await using (var missing = new NpgsqlCommand("""
+            delete from public.event_hot h where h.event_id=(
+                select (p.witnesses->1#>>'{ref,native_id}')::bigint from public.password_origin_prefix410 p
+                where p.pin=@pin and p.episode_key<>@key and jsonb_array_length(p.witnesses)>2
+                order by p.witnesses->1->>'at' limit 1
+            )
+            """, owner)) {
+            missing.Parameters.AddWithValue("pin", rule.Pin);
+            missing.Parameters.AddWithValue("key", oldKey);
+            Assert.Equal(1, await missing.ExecuteNonQueryAsync(ct));
+        }
+        DateTimeOffset after=qualifiedThrough.AddSeconds(1);
+        await AdmitEvents(fixture, owner, [(4625, after, 800, 201)], sequence: 204, recordId: limit + 12, ct);
+        await SetTestClock(owner, after.AddMinutes(2), ct);
+        var unavailable = await Run();
+        Assert.True(unavailable.Failed, unavailable.Work?.ToJsonString());
+        Assert.Equal("complete_password_producer_batch_v2", unavailable.Diagnostic?["step"]?.GetValue<string>());
+        Assert.Equal("password_v2_retained_unavailable", unavailable.Diagnostic?["reason"]?.GetValue<string>());
+        await using var savedWatermark = new NpgsqlCommand("""
+            select watermark from public.semantic_password_checkpoints where pin=@pin
+            """, owner);
+        savedWatermark.Parameters.AddWithValue("pin", rule.Pin);
+        Assert.Equal(qualifiedThrough.UtcDateTime, await savedWatermark.ExecuteScalarAsync(ct));
+    }
+
     [Fact]
     public async Task Brute_advances_past_ten_thousand_continuity_witnesses_from_many_unqualified_origins()
     {

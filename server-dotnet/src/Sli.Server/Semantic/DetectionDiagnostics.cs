@@ -58,7 +58,8 @@ internal sealed class DetectionDiagnostics
         "password_v2_storage_unavailable", "password_v2_successor_conflict", "password_v2_time_invalid",
         "password_v2_source_denied", "password_v2_context_bound", "password_v2_ledger_conflict", "password_v2_checkpoint_corrupt",
         "password_v2_arguments_invalid", "password_v2_entity_prelock_required",
-        "password_v2_episode_absent", "password_v2_barrier_conflict", "password_v2_lifetime_immutable"
+        "password_v2_episode_absent", "password_v2_barrier_conflict", "password_v2_lifetime_immutable",
+        "password_v2_retained_unavailable", "password_v2_origin_prefix_conflict", "password_v2_origin_prefix_reader_required"
     };
     private static readonly string[] Operations = [
         "semantic_import_refresh320", "semantic_default_refresh320", "semantic_import_progress320",
@@ -70,6 +71,7 @@ internal sealed class DetectionDiagnostics
         "read_identity_attack_events_v301", "read_identity_attack_snapshot_v301",
         "ensure_default_qw_policy", "resolve_finding_evidence_ref", "identity_attack_episode_v301",
         "password_source_ready_v314", "password_event_clock362", "read_password_event_window362", "password_producer_source382", "begin_password_attempt", "read_password_checkpoint_v2",
+        "read_password_checkpoint410", "read_password_origin_prefix410",
         "read_default_password_window_v2", "prepare_password_producer_batch_v2",
         "read_password_episode_portions_v2", "read_password_retained_proof_v2", "track_password_frozen_entity_v2",
         "reserve_password_episode_emission", "complete_password_producer_batch_v2",

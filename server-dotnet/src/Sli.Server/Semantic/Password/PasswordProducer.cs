@@ -20,6 +20,9 @@ public sealed record PasswordProducerOutcome(int Jobs=0,bool Failed=true,string 
 // neither grants source identity nor bypasses the deferred SQL reservation guards.
 public sealed class PasswordProducer
 {
+    private const string PrefixBatchVersion="sli.password.v2.producer-batch.410";
+    private const string LegacyBatchVersion="sli.password.v2.producer-batch.1";
+
     public async Task<PasswordProducerOutcome> RunAsync(NpgsqlConnection db,PasswordRule rule,CancellationToken ct,Dictionary<long,PasswordNative>? retainedWindow=null)
     {
         var observation = rule.Kind == "spray" && rule.NormalizedAccounts ? new PasswordProofObservation() : null;
@@ -31,7 +34,7 @@ public sealed class PasswordProducer
     private static async Task<PasswordProducerOutcome> RunCore(NpgsqlConnection db,PasswordRule rule,CancellationToken ct,
         Dictionary<long,PasswordNative>? retainedWindow,PasswordProofObservation? observation)
     {
-        RequireOpen(db);JsonObject attempt;bool indexedState,adaptive,partitionedCheckpoint,chunkedContinuity;var diagnostics=new DetectionDiagnostics();
+        RequireOpen(db);JsonObject attempt;bool indexedState,adaptive,partitionedCheckpoint,chunkedContinuity,durablePrefix;var diagnostics=new DetectionDiagnostics();
         try {
             await using var tx=await db.BeginTransactionAsync(ct);var sql=new PasswordSql(db,tx,diagnostics);
             var readiness = await sql.Rows("select public.password_source_ready_v314(@s::jsonb) as ready",ct,("s",rule.Scope.Document));
@@ -43,12 +46,14 @@ public sealed class PasswordProducer
                     to_regprocedure('public.password_state_episodes385(jsonb)') is not null as indexed_state,
                     to_regprocedure('public.password_decision_limit398()') is not null as adaptive,
                     to_regprocedure('public.password_checkpoint_native_cost403(jsonb,jsonb,bytea,text,text[])') is not null as partitioned_checkpoint,
-                    to_regprocedure('public.password_continuity_native_cost409(jsonb,jsonb)') is not null as chunked_continuity
+                    to_regprocedure('public.password_continuity_native_cost409(jsonb,jsonb)') is not null as chunked_continuity,
+                    to_regprocedure('public.read_password_checkpoint410(jsonb,jsonb)') is not null as durable_prefix
                 """,ct,("s",rule.Scope.Document),("e",rule.Execution));
             if(pending[0]["event_clock"] is null) { await tx.CommitAsync(ct); return new(Failed:false,Status:"committed"); }
             indexedState=pending[0]["indexed_state"]!.GetValue<bool>();
             adaptive=pending[0]["adaptive"]!.GetValue<bool>();partitionedCheckpoint=pending[0]["partitioned_checkpoint"]!.GetValue<bool>();
             chunkedContinuity=pending[0]["chunked_continuity"]!.GetValue<bool>();
+            durablePrefix=rule.Kind=="brute"&&pending[0]["durable_prefix"]!.GetValue<bool>();
             attempt=PasswordJson.Obj(await sql.Call("begin_password_attempt",ct,rule.Scope.Document,rule.Execution));
             if(attempt["token"]!.GetValue<long>()<=0||attempt["state_revision"]!.GetValue<long>()<0)throw new PasswordFailure("password_v2_attempt_invalid");PasswordJson.Time(attempt["attempted_at"]);
             diagnostics.Step="password_attempt_commit";await tx.CommitAsync(ct);
@@ -67,7 +72,7 @@ public sealed class PasswordProducer
                     admission.Parameters.AddWithValue("id",PasswordSignal.PolicyId(rule));admission.Parameters.AddWithValue("definition",CanonicalJson.Serialize(PasswordSignal.PolicyDefinition(rule),ensureAscii:false));
                     object? result=await admission.ExecuteScalarAsync(ct);if(result is not bool decision)throw new PasswordFailure("password_v2_policy_unconfirmed");enabled=decision;
                 }
-                if(enabled)(completed,jobs,work,committedCache,qualifiedDenial)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,partitionedCheckpoint,chunkedContinuity,diagnostics,adaptive ? observation : null);
+                if(enabled)(completed,jobs,work,committedCache,qualifiedDenial)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,partitionedCheckpoint,chunkedContinuity,durablePrefix,diagnostics,adaptive ? observation : null);
                 diagnostics.Step="password_batch_commit";
                 using (observation?.Measure(PasswordProofTiming.Commit)) await tx.CommitAsync(ct);
             }
@@ -97,15 +102,18 @@ public sealed class PasswordProducer
 
     private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache,bool QualifiedDenial)> RunBatch(
         PasswordSql sql,NpgsqlTransaction tx,PasswordRule rule,JsonObject attempt,CancellationToken ct,
-        Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,bool chunkedContinuity,DetectionDiagnostics diagnostics,
+        Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,bool chunkedContinuity,bool durablePrefix,DetectionDiagnostics diagnostics,
         PasswordProofObservation? observation)
     {
         long token=attempt["token"]!.GetValue<long>(),revision=attempt["state_revision"]!.GetValue<long>();
         var scope=rule.Scope.Document;var execution=rule.Execution;
-        var checkpoint=PasswordJson.Obj(await sql.Call("read_password_checkpoint_v2",ct,scope,execution));
+        var checkpoint=PasswordJson.Obj(await sql.Call(durablePrefix?"read_password_checkpoint410":"read_password_checkpoint_v2",ct,scope,execution));
         if(checkpoint["active_token"]!.GetValue<long>()!=token||checkpoint["last_observed_token"]!.GetValue<long>()>=token||checkpoint["state_revision"]!.GetValue<long>()!=revision)
             throw new PasswordFailure("password_v2_attempt_conflict");
         var state=PasswordState.Read(checkpoint["state_document"]);
+        var prefixes=durablePrefix
+            ? checkpoint["origin_prefixes"]!.AsArray().Select(PasswordJson.Text).ToHashSet(StringComparer.Ordinal)
+            : null;
         const string savepoint="password_proof_slice";
         ExceptionDispatchInfo? rejected=null;
         JsonObject? lastBudget=null;
@@ -141,7 +149,7 @@ public sealed class PasswordProducer
                 if(rejectedClock.HasValue&&attemptedClock>=rejectedClock)
                     throw new PasswordFailure("password_v2_window_changed393");
                 if(adaptive)CheckReaderBudget(metadata);
-                var result=await Batch(sql,rule,attempt,ct,state,rows,metadata,retainedWindow,indexedState,adaptive,partitionedCheckpoint,chunkedContinuity,observation,parsing);
+                var result=await Batch(sql,rule,attempt,ct,state,rows,metadata,retainedWindow,indexedState,adaptive,partitionedCheckpoint,chunkedContinuity,prefixes,observation,parsing);
                 if(adaptive)await tx.ReleaseAsync(savepoint,ct);
                 if(lastBudget!=null){
                     result.Work["proof_backoffs"]=retries;
@@ -185,7 +193,7 @@ public sealed class PasswordProducer
 
     private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache,bool QualifiedDenial)> Batch(
         PasswordSql sql,PasswordRule rule,JsonObject attempt,CancellationToken ct,PasswordState state,List<JsonObject> rows,
-        JsonObject metadata,Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,bool chunkedContinuity,PasswordProofObservation? observation,
+        JsonObject metadata,Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,bool chunkedContinuity,HashSet<string>? prefixes,PasswordProofObservation? observation,
         PasswordNativeParsing? parsing)
     {
         long token=attempt["token"]!.GetValue<long>(),revision=attempt["state_revision"]!.GetValue<long>();var scope=rule.Scope.Document;var execution=rule.Execution;
@@ -220,6 +228,8 @@ public sealed class PasswordProducer
         var barriers=barriersJson.Select(PasswordJson.Obj).ToDictionary(b=>PasswordJson.Text(b["entity"]),StringComparer.Ordinal);
         if(barriers.Keys.Except(prelocked).Any())throw new PasswordFailure("password_v2_context_invalid") {Check=PasswordFailure.ContextCheck.MissingBarrierEntity};
         var episodes=state.Episodes.ToDictionary(e=>e.Entity,StringComparer.Ordinal);
+        string batchVersion=prefixes==null?LegacyBatchVersion:PrefixBatchVersion;
+        var spillBefore=prefixes==null?null:state.Watermark?.AddSeconds(-600);
         foreach(var (entity,b) in barriers){var frozen=BarrierEpisode(b);if(frozen.Sequence<=0)throw new PasswordFailure("password_v2_frozen_zero_unsupported");if(!episodes.TryGetValue(entity,out var old)||old.Key==frozen.Key)episodes[entity]=frozen;}
         // Fetch the small shared checkpoint overlap once, rather than issuing a
         // retained-proof query for each expired, unqualified account in noise.
@@ -248,6 +258,22 @@ public sealed class PasswordProducer
             var working=entityState with{Active=episodes.TryGetValue(entityKey,out var active)?[active]:[]};
             var pending=entityIncoming.Select(n=>n.Member).Concat(entityState.Window).ToArray();
             var affected=pending.Where(m=>m.Witness.At<=final&&(!state.Watermark.HasValue||m.Witness.At>state.Watermark)).Select(Entity).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            if(active!=null&&prefixes?.Contains(active.Key)==true&&affected.Contains(entityKey)&&!(state.Watermark.HasValue&&lower>state.Watermark)) {
+                var prefix=new List<PasswordWitness>();
+                int total;
+                do {
+                    var page=PasswordJson.Obj(await sql.Call("read_password_origin_prefix410",ct,scope,execution,token,revision,active.Key,prefix.Count));
+                    total=page["total"]!.GetValue<int>();
+                    var witnesses=page["witnesses"]!.AsArray();
+                    if(total>10000||witnesses.Count==0||prefix.Count+witnesses.Count>total)
+                        throw new PasswordFailure("password_v2_checkpoint_corrupt");
+                    prefix.AddRange(witnesses.Select(PasswordWitness.Read));
+                } while(prefix.Count<total);
+                var origin=prefix.Concat(active.Prequalification).ToArray();
+                if(origin[0]!=active.Seed||origin[^1]!=active.Last)
+                    throw new PasswordFailure("password_v2_checkpoint_corrupt");
+                working=working with{Active=[active with{Origin=origin}]};
+            }
             var entityBarriers=barriers.Where(p=>p.Key==entityKey).ToDictionary(p=>p.Key,p=>p.Value,StringComparer.Ordinal);
             var needed=new List<PasswordWitness>();var histories=new List<PasswordEmission>();var historySignals=new List<JsonObject>();
             foreach(var b in entityBarriers.Values){needed.Add(PasswordWitness.Read(b["seed"]));needed.Add(PasswordWitness.Read(b["tracking_endpoint"]));}
@@ -266,7 +292,7 @@ public sealed class PasswordProducer
             PasswordFailure? combinedLimit = null;
             try { budget.Plan(combinedWitnesses); }
             catch (PasswordFailure e) when (e.Message=="password_v2_proof_bound") {
-                var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct,observation);
+                var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct,observation,batchVersion);
                 if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null,true);}
                 if (!adaptive || rule.Kind != "spray" || !rule.NormalizedAccounts || historyWitnesses.Length == 0)
                     throw;
@@ -340,6 +366,15 @@ public sealed class PasswordProducer
         PasswordState combined;
         using (observation?.Measure(PasswordProofTiming.Checkpoint))
         {
+            if (spillBefore is { } boundary && nextState!.Epoch==state.Epoch) {
+                // Only the previous checkpoint can authorize a spill. New
+                // observations are later than its watermark.
+                for (int i=0;i<nextActive.Count;i++) {
+                    var episode=nextActive[i];
+                    if (episode.Sequence==0 && !episode.Frozen && episodes.TryGetValue(episode.Entity,out var old) && old.Key==episode.Key)
+                        nextActive[i]=episode with{Origin=episode.Prequalification.Where(w=>w.At>=boundary).ToArray()};
+                }
+            }
             combined=nextState! with{Members=nextMembers.OrderBy(m=>m.Witness.At).ThenBy(m=>m.Witness.NativeId).ToArray(),Active=nextActive.OrderBy(e=>e.Entity,StringComparer.Ordinal).ToArray(),Closed=nextClosed.OrderBy(e=>e.Key,StringComparer.Ordinal).ToArray()};
             var fitted=combined.Fit(out int stateBytes);
             if(fitted==null)
@@ -402,7 +437,7 @@ public sealed class PasswordProducer
         var diagnostics=new JsonObject();foreach(var (code,count) in counts)if(count!=0)diagnostics[code]=new JsonObject{["count"]=count,["from"]=PasswordJson.Stamp(lower),["to"]=PasswordJson.Stamp(final)};
         JsonObject completed;
         using (observation?.Measure(PasswordProofTiming.Finalizer))
-            completed=await Complete(sql,rule,attempt,"advance",new JsonObject{["version"]="sli.password.v2.producer-batch.1",["state"]=combined.Serialize(indexedState),["window"]=window,["diagnostics"]=diagnostics,["touched_episode_keys"]=PasswordJson.Array(touched.Order(StringComparer.Ordinal),e=>JsonValue.Create(e))},ct);
+            completed=await Complete(sql,rule,attempt,"advance",new JsonObject{["version"]=batchVersion,["state"]=combined.Serialize(indexedState),["window"]=window,["diagnostics"]=diagnostics,["touched_episode_keys"]=PasswordJson.Array(touched.Order(StringComparer.Ordinal),e=>JsonValue.Create(e))},ct);
         Dictionary<long,PasswordNative>? cache=null;
         if(retainedWindow!=null) {
             var keep=combined.Window.Select(m=>m.Witness.NativeId).ToHashSet();
@@ -464,7 +499,7 @@ public sealed class PasswordProducer
         if(contexts.Count!=0||emissions.Count==0||emissions[^1].Id!=episode.LastEmission||emissions[^1].Sequence!=episode.Sequence||emissions[0].Id!=episode.RootId)throw new PasswordFailure("password_v2_chain_invalid");return emissions;
     }
     private static async Task<JsonObject?> QualifiedDenial(PasswordSql sql,PasswordRule rule,JsonObject attempt,PasswordState state,IReadOnlyList<PasswordNative> incoming,NativeBudget budget,DateTimeOffset final,CancellationToken ct,
-        PasswordProofObservation? observation)
+        PasswordProofObservation? observation,string batchVersion)
     {
         foreach(var episode in state.Episodes) {
             if(episode.Sequence<=0||episode.Frozen)continue;var candidates=incoming.Where(n=>n.Member.EntityFor(rule)==episode.Entity&&n.Witness.At<=final&&(!state.Watermark.HasValue||n.Witness.At>state.Watermark)&&(n.Witness.At>episode.Last.At||n.Witness.At==episode.Last.At&&n.Witness.NativeId>episode.Last.NativeId)).OrderBy(n=>n.Witness.At).ThenBy(n=>n.Witness.NativeId).ToArray();
@@ -473,7 +508,7 @@ public sealed class PasswordProducer
             if(budget.Native(episode.Last).Member.EntityFor(rule)!=episode.Entity)throw new PasswordFailure("password_v2_native_content_conflict");
             if(episode.Budget.RefOccurrences+2<=10000&&episode.Budget.Portions+1<=256&&episode.Budget.XmlBytes+episode.Last.XmlBytes+endpoint.XmlBytes<=33554432)continue;
             using var finalizer = observation?.Measure(PasswordProofTiming.Finalizer);
-            return await Complete(sql,rule,attempt,"qualified_denial",new JsonObject{["version"]="sli.password.v2.producer-batch.1",["episode_key"]=episode.Key,["predecessor"]=episode.Last.Document,["endpoint"]=endpoint.Document},ct);
+            return await Complete(sql,rule,attempt,"qualified_denial",new JsonObject{["version"]=batchVersion,["episode_key"]=episode.Key,["predecessor"]=episode.Last.Document,["endpoint"]=endpoint.Document},ct);
         }return null;
     }
     internal static async Task StageReservation(
@@ -587,7 +622,8 @@ internal sealed class PasswordSql(NpgsqlConnection db,NpgsqlTransaction tx,Detec
     {
         diagnostics?.Query(name+"(");SqlArguments.Validate(args);
         string[] types=name switch {
-            "begin_password_attempt" or "read_password_checkpoint_v2"=>["jsonb","jsonb"],
+            "begin_password_attempt" or "read_password_checkpoint_v2" or "read_password_checkpoint410"=>["jsonb","jsonb"],
+            "read_password_origin_prefix410"=>["jsonb","jsonb","bigint","bigint","text","integer"],
             "prepare_password_producer_batch_v2"=>["jsonb","jsonb","bigint","bigint","text[]"],
             "reserve_password_episode_emission"=>["jsonb","jsonb","bigint","bigint","jsonb","jsonb"],
             "track_password_frozen_entity_v2"=>["jsonb","jsonb","bigint","bigint","text","jsonb","bigint","timestamptz","timestamptz"],
