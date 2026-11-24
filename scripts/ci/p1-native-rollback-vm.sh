@@ -6,7 +6,16 @@ if [[ $1 == guest ]]; then
     stage=provision_guest
     initial_log=/var/tmp/p1-predecessor.log
     scenario_log=/var/tmp/p1-rollback.log
-    exec >/dev/ttyS0 2>&1
+    evidence_device=/dev/virtio-ports/p1.evidence
+    for _ in {1..10}; do
+        [[ -c $evidence_device ]] && break
+        sleep 1
+    done
+    if [[ -c $evidence_device ]]; then
+        exec >"$evidence_device" 2>&1
+    else
+        exec >/dev/ttyS0 2>&1
+    fi
 
     finish_guest() {
         local code=$?
@@ -77,6 +86,7 @@ APT
 
     input=/mnt/p1-input
     stage=install_410
+    printf 'P1_EVIDENCE entering=%s\n' "$stage"
     base=$(mktemp -d /var/tmp/p1-predecessor.XXXXXXXX)
     tar -xzf "$input/predecessor.tar.gz" -C "$base"
     bash "$base/sli-debian-beta-kit/install-beta-kit" --server 127.0.0.1 --bind 127.0.0.1 --port 443 \
@@ -85,6 +95,7 @@ APT
     install -o root -g root -m 0600 /proc/sys/kernel/random/boot_id /run/sli-p1-acceptance.boot-id
 
     stage=upgrade_and_rollback
+    printf 'P1_EVIDENCE entering=%s\n' "$stage"
     read -r commit checksum <"$input/candidate.pin"
     bash "$input/p1-native-410-411-rollback.sh" "$input/predecessor.tar.gz" \
         "$input/candidate.tar.gz" "$commit" "$checksum" >"$scenario_log" 2>&1
@@ -183,18 +194,23 @@ qemu-img create -q -f qcow2 backup.qcow2 32G
 # to a single HTTPS origin, including any redirects on that same origin.
 python3 -B - <<'PY' &
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import re
 from shutil import copyfileobj
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 def allowed(url):
     parts = urlsplit(url)
+    # APT escapes the literal plus and tilde in Debian package versions.
+    if re.search(r"%(?!2[bB]|7[eE])", parts.path):
+        return False
+    path = unquote(parts.path)
     return (parts.scheme == "https" and parts.netloc == "deb.debian.org"
-            and parts.path.startswith(("/debian/", "/debian-security/"))
+            and path.startswith(("/debian/", "/debian-security/"))
             and not parts.query and not parts.fragment
-            and all(token not in parts.path for token in ("%", "\\", "/../", "//"))
-            and not parts.path.endswith("/.."))
+            and re.fullmatch(r"/[A-Za-z0-9._+~/-]+", path) is not None
+            and all(segment not in {"", ".", ".."} for segment in path[1:].split("/")))
 
 class Redirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -231,6 +247,12 @@ class Mirror(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET
 
+assert allowed("https://deb.debian.org/debian/pool/example_1%2bdeb13u1.deb")
+assert allowed("https://deb.debian.org/debian-security/pool/example_1%7edeb13u1.deb")
+assert not allowed("https://deb.debian.org/debian/%2e%2e/private")
+assert not allowed("https://deb.debian.org/debian/../private")
+assert not allowed("https://example.invalid/debian/pool/example.deb")
+
 ThreadingHTTPServer(("127.0.0.1", 3142), Mirror).serve_forever()
 PY
 mirror_pid=$!
@@ -246,6 +268,8 @@ curl -fsS --max-time 10 -I http://127.0.0.1:3142/debian/dists/trixie/InRelease >
 set +e
 timeout --signal=TERM --kill-after=20s 70m qemu-system-x86_64 \
     "${accelerator[@]}" -m 6144 -smp 4 -display none -monitor none -serial file:guest-console.log \
+    -device virtio-serial-pci -chardev file,id=proof,path=guest-evidence.log \
+    -device virtserialport,chardev=proof,name=p1.evidence \
     -drive if=none,id=os,format=qcow2,file=root.qcow2 -device virtio-blk-pci,drive=os,bootindex=1 \
     -drive file=seed.img,if=virtio,format=raw,readonly=on \
     -drive file=input.ext4,if=virtio,format=raw,readonly=on \
@@ -255,9 +279,9 @@ timeout --signal=TERM --kill-after=20s 70m qemu-system-x86_64 \
     -no-reboot
 qemu_status=$?
 set -e
-if [[ -f guest-console.log ]]; then
-    tr -d '\r' <guest-console.log | grep -a '^P1_EVIDENCE ' >"$evidence/guest.log" || true
-    cat "$evidence/guest.log"
-fi
+touch guest-console.log guest-evidence.log
+cat guest-console.log guest-evidence.log | tr -d '\r' |
+    grep -a '^P1_EVIDENCE ' >"$evidence/guest.log" || true
+cat "$evidence/guest.log"
 printf 'qemu_exit=%s\n' "$qemu_status" | tee -a "$evidence/pins.txt"
 [[ $qemu_status == 0 ]] && grep -Fxq 'P1_EVIDENCE status=0 stage=verified' "$evidence/guest.log"
