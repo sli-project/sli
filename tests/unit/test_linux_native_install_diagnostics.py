@@ -7,7 +7,36 @@ import pytest
 from deploy.linux import native_install as install
 from deploy.linux import native_host as host
 from deploy.linux import native_setup as setup
+from deploy.linux import native_upgrade as upgrade
 from deploy.linux import operation_wait as operation
+
+
+@pytest.mark.parametrize('code', [
+    'native_install_service_unready',
+    'native_backup_separate_volume_required',
+    'native_recovery_conflict',
+    'native_recovery_hash_mismatch',
+])
+def test_postinst_reports_fixed_configure_failure_without_exception_text(monkeypatch, capsys, tmp_path, code):
+    version = '2.0-1~deb13'
+
+    def fail_with(error):
+        def configure(release, package_version):
+            assert (release, package_version) == ('beta', version)
+            raise error
+
+        monkeypatch.setattr(upgrade, 'configure_package', configure)
+        assert upgrade.main(['configure-package', 'beta', version]) == 1
+        return capsys.readouterr().err
+
+    monkeypatch.setattr(upgrade.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(upgrade, 'TRANSACTIONS', tmp_path)
+
+    assert f'(reason_code={code})' in fail_with(RuntimeError(code))
+    for error in (RuntimeError(f'{code}: synthetic-private-detail'), OSError(code)):
+        output = fail_with(error)
+        assert '(reason_code=native_upgrade_failed)' in output
+        assert code not in output and 'synthetic-private-detail' not in output
 
 
 @pytest.mark.parametrize('outcomes', [(1, 2, 0), (1, 1)])
