@@ -1,4 +1,4 @@
-name: Inspect archived synthetic install diagnostics
+name: Trace one archived PostgreSQL first start
 
 on:
   push:
@@ -7,72 +7,138 @@ on:
 
 permissions:
   actions: read
+  contents: read
 
 jobs:
-  inspect:
+  bootstrap:
     if: github.repository == 'sli-project/sli'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           github-token: ${{ github.token }}
           run-id: '45510515483'
-          pattern: sli-install-e2e-?-logs
-          path: archived-install-logs
-      - name: Report bounded diagnostic markers
+          name: sli-debian-beta-kit-0f6093b3a9afcecb28fcdd47c7ed50522e50a156
+          path: ${{ runner.temp }}/sli-kits/base
+      - name: Verify the unmodified 410 Debian artifact
         shell: bash
         run: |
-          python3 - <<'PY'
+          set -euo pipefail
+          cd "$RUNNER_TEMP/sli-kits/base"
+          sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -c \
+            'import sys; from pathlib import Path; from deploy.linux.build_beta_kit import verify_offline_kit; verify_offline_kit(Path(sys.argv[1]), sys.argv[2])' \
+            sli-debian-beta-kit.tar.gz 0f6093b3a9afcecb28fcdd47c7ed50522e50a156
+          tar --extract --gzip --file=sli-debian-beta-kit.tar.gz
+          rm -- sli-debian-beta-kit.tar.gz
+      - name: Prepare the fixture-only exception probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 0755 "$RUNNER_TEMP/sli-bootstrap-probe"
+          cat > "$RUNNER_TEMP/sli-bootstrap-probe/sitecustomize.py" <<'PY'
+          import errno
+          import os
           import re
-          from pathlib import Path
+          import sys
 
-          names = ('setup.log', 'failed-units.log', 'services.log', 'container.log', 'upgrade.log')
-          codes = re.compile(r'\b(?:native_[a-z0-9_]{3,90}|operation_(?:stalled|deadline_exceeded))\b')
-          units = re.compile(r'\b(?:sli-[a-z0-9@-]+|postgresql(?:@[a-z0-9-]+)?)\.(?:service|target|mount|socket)\b')
-          exceptions = re.compile(r'^([A-Za-z][A-Za-z0-9_]{0,55}(?:Error|Exception)):', re.MULTILINE)
-          commands = re.compile(r'\b(?:sli-native-install|sli-setup|native_setup\.py|native_install\.py|systemctl|systemd-tmpfiles|initdb|findmnt|lsblk|mount|nginx)\b')
-          known = {
-              'permission_denied': 'permission denied',
-              'operation_not_permitted': 'operation not permitted',
-              'read_only_filesystem': 'read-only file system',
-              'no_space': 'no space left on device',
-              'already_mounted': 'already mounted',
-              'missing_file': 'no such file or directory',
-              'invalid_argument': 'invalid argument',
-              'not_a_mountpoint': 'not a mountpoint',
-              'address_in_use': 'address already in use',
-              'cannot_assign_address': 'cannot assign requested address',
-              'systemd_failed_start': 'failed to start',
-              'systemd_dependency_failed': 'dependency failed',
-              'exited_with_failure': 'code=exited',
-              'journal_empty': '-- no entries --',
-              'journal_unavailable': 'no journal files were found',
-              'no_failed_units': '0 loaded units listed',
-              'generic_first_start': 'could not finish its first start',
-              'database_mount': '/var/lib/sli-db',
-              'database_target': '/srv/sli-db',
-              'fstab': '/etc/fstab',
+          helper = '/usr/lib/sli/native_host.py'
+          phases = {'bootstrap_pg', 'credential', 'wait_bootstrap_postgres', 'run', 'main'}
+          resources = {
+              'postgres_password': 'postgres-credential',
+              'migration_password': 'migration-credential',
+              'runtime_password': 'runtime-credential',
+              '.sli-bootstrap.json': 'bootstrap-state',
           }
-          for scenario in 'ABC':
-              folder = Path(f'archived-install-logs/sli-install-e2e-{scenario}-logs')
-              if not folder.is_dir():
-                  raise SystemExit(f'Scenario {scenario}: archived diagnostics missing')
-              for name in names:
-                  path = folder / name
-                  if not path.is_file() or path.is_symlink() or path.stat().st_size > 65536:
-                      print(f'{scenario} {name}: unavailable')
-                      continue
-                  rows = path.read_text(encoding='utf-8', errors='replace').splitlines()
-                  found = 0
-                  for number, line in enumerate(rows, 1):
-                      lower = line.lower()
-                      tags = sorted({
-                          *codes.findall(line), *units.findall(line), *exceptions.findall(line),
-                          *(key for key, fragment in known.items() if fragment in lower),
-                      })
-                      if tags and found < 50:
-                          print(f'{scenario} {name}:{number}: {", ".join(tags)}; operation={",".join(sorted(set(commands.findall(line))))}')
-                          found += 1
-                  print(f'{scenario} {name}: lines={len(rows)} markers={found}')
+
+          def trace(frame, event, data):
+              phase = frame.f_code.co_name
+              if frame.f_code.co_filename != helper or phase not in phases:
+                  return None
+              if event == 'exception':
+                  cls, error, _ = data
+                  name = cls.__name__
+                  if re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,63}', name):
+                      reason = errno.errorcode.get(getattr(error, 'errno', None), 'none')
+                      filename = getattr(error, 'filename', None)
+                      resource = resources.get(os.path.basename(filename), 'other') if isinstance(filename, str) else 'none'
+                      print(f'sli_install_bootstrap_exception phase={phase} line={frame.f_lineno} type={name} errno={reason} resource={resource}',
+                            file=sys.stderr, flush=True)
+              return trace
+
+          if sys.argv[:2] == [helper, 'bootstrap-pg']:
+              print('sli_install_bootstrap_probe_active', file=sys.stderr, flush=True)
+              sys.settrace(trace)
           PY
+          chmod 0644 "$RUNNER_TEMP/sli-bootstrap-probe/sitecustomize.py"
+      - name: Boot clean Debian 13 with systemd
+        id: boot
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t sli-install-e2e - <<'DOCKERFILE'
+          FROM debian:trixie
+          RUN apt-get update && \
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                systemd systemd-sysv dbus sudo curl ca-certificates iproute2 && \
+              rm -f /usr/sbin/policy-rc.d && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+
+          # SLI requires 20 GiB available on ext4 or XFS. The runner needs to store
+          # only the blocks used by this disposable filesystem, with no customer data.
+          mkdir "$RUNNER_TEMP/sli-disk"
+          truncate -s 32G "$RUNNER_TEMP/sli-disk.img"
+          mkfs.ext4 -q -F "$RUNNER_TEMP/sli-disk.img"
+          sudo mount -o loop "$RUNNER_TEMP/sli-disk.img" "$RUNNER_TEMP/sli-disk"
+          sudo mkdir "$RUNNER_TEMP/sli-disk/database"
+
+          # The container shares the runner's kernel. Drop module loading for
+          # systemd itself so its module loader skips by its capability condition.
+          docker run --detach --name sli-install-e2e --hostname sli-e2e \
+            --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock --shm-size=1g \
+            --mount "type=bind,source=$RUNNER_TEMP/sli-disk/database,target=/var/lib/sli-db" \
+            --mount "type=bind,source=$RUNNER_TEMP/sli-kits,target=/kits,readonly" \
+            --mount "type=bind,source=$RUNNER_TEMP/sli-bootstrap-probe,target=/sli-bootstrap-probe,readonly" \
+            sli-install-e2e /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init
+          until docker exec sli-install-e2e systemctl show --property=Version --value; do
+            [[ $(docker inspect --format '{{.State.Running}}' sli-install-e2e) == true ]]
+            sleep 1
+          done
+          pid1_cap_bnd=$(docker exec sli-install-e2e awk '$1 == "CapBnd:" { print $2 }' /proc/1/status)
+          # CAP_SYS_MODULE is Linux capability 16.
+          if ! [[ $pid1_cap_bnd =~ ^[[:xdigit:]]{1,16}$ ]] || (( 16#$pid1_cap_bnd & (1 << 16) )); then
+            echo 'Could not confirm CAP_SYS_MODULE was dropped from the systemd bounding set.' >&2
+            exit 1
+          fi
+          docker exec sli-install-e2e systemctl is-system-running --wait
+          docker exec sli-install-e2e install -d -m 0755 /run/systemd/system/sli-bootstrap-pg.service.d
+          printf '%s\n' '[Service]' 'Environment=PYTHONPATH=/sli-bootstrap-probe' |
+            docker exec -i sli-install-e2e tee /run/systemd/system/sli-bootstrap-pg.service.d/90-diagnostics.conf >/dev/null
+          docker exec sli-install-e2e systemctl daemon-reload
+      - name: Run one first start and report allowlisted markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_exit=0
+          docker exec sli-install-e2e bash /kits/base/sli-debian-beta-kit/install-beta-kit \
+            > "$RUNNER_TEMP/sli-install-probe-private.log" 2>&1 || install_exit=$?
+          printf 'First-start exit: %s\n' "$install_exit"
+          docker exec sli-install-e2e systemctl show sli-postgresql.service sli-bootstrap-pg.service \
+            --property=Id,ActiveState,SubState,Result,ExecMainStatus --no-pager
+          docker exec sli-install-e2e journalctl -b -u sli-bootstrap-pg.service -o cat --no-pager |
+            grep -E '^sli_install_bootstrap_(probe_active$|exception phase=(bootstrap_pg|credential|wait_bootstrap_postgres|run|main) line=[0-9]+ type=[A-Za-z][A-Za-z0-9_]* errno=[A-Za-z0-9_]+ resource=[a-z-]+$)'
+      - name: Remove the container and unmount the test volume
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker inspect sli-install-e2e >/dev/null 2>&1; then
+            docker rm --force sli-install-e2e
+          fi
+          if mountpoint -q "$RUNNER_TEMP/sli-disk"; then
+            sudo umount "$RUNNER_TEMP/sli-disk"
+          fi
