@@ -44,16 +44,6 @@ public sealed class PasswordConcurrentImportWindowPostgresTests
         }
 
         await ShortEventAdmissionPostgresTests.WriteAsync(fixture, await Stage(1, threshold - 1, 1), ct);
-        await using (var app = new NpgsqlConnection(fixture.Dsn("adlog_user")))
-        {
-            await app.OpenAsync(ct);
-            await using var bind = new NpgsqlCommand("""
-                select public.provision_password_detection_domain_v2(@agent,1,null,'example.test','session:1')->>'status'
-                """, app);
-            bind.Parameters.AddWithValue("agent", agent);
-            Assert.Equal("configured", await bind.ExecuteScalarAsync(ct));
-        }
-
         await using var runtime = PasswordProducerRuntime.Create(
             name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
             _ => throw new InvalidOperationException());
@@ -65,6 +55,16 @@ public sealed class PasswordConcurrentImportWindowPostgresTests
             where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
             """, worker);
         var scope = PasswordScope.Read(JsonNode.Parse(Assert.IsType<string>(await source.ExecuteScalarAsync(ct)))!["scope"]);
+
+        await using (var app = new NpgsqlConnection(fixture.Dsn("adlog_user")))
+        {
+            await app.OpenAsync(ct);
+            await using var bind = new NpgsqlCommand("""
+                select public.provision_password_detection_domain_v2(@agent,1,null,'example.test','session:1')->>'status'
+                """, app);
+            bind.Parameters.AddWithValue("agent", agent);
+            Assert.Equal("configured", await bind.ExecuteScalarAsync(ct));
+        }
         await using var plan = new NpgsqlCommand("""
             select (public.password_plan388(@scope::jsonb,@rule)#>>'{live,rule_version}')::int
             """, worker);
