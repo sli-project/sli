@@ -227,8 +227,8 @@ public sealed class PolicyCycleTests : IDisposable
         using var key = identity.Certificate.GetECDsaPublicKey()!;
         var delivered = _requests.Where(x => x.Path == AgentHttpClient.PacketsPath).Select(x => x.Body!).ToArray();
         Assert.Equal(new long[] { 1, 2 }, delivered.Select(packet => packet["payload"]!["records"]![0]!["record_id"]!.GetValue<long>()));
-        var previous = Packets.Verify(delivered[0], key);
-        var next = Packets.Verify(delivered[1], key);
+        var previous = PacketVerifier.Verify(delivered[0], key);
+        var next = PacketVerifier.Verify(delivered[1], key);
         Assert.Equal(AdDcModule.ModuleId, next.ModuleId);
         Assert.Equal(previous.CursorAfter, next.CursorBefore);
 
