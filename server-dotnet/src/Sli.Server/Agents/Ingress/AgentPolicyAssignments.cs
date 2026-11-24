@@ -8,6 +8,29 @@ namespace Sli.Server.Agents.Ingress;
 /// <summary>Resolve the enabled capture-time assignment without widening current authority.</summary>
 public static class AgentPolicyAssignments
 {
+    internal static IDisposable? HoldFilePermissions()
+    {
+        try { return Control.AgentAssignmentPluginAdmission.Enter("sli.file-audit",
+            Environment.GetEnvironmentVariable("SLI_PLUGIN_RUNTIME_DIR"),Environment.GetEnvironmentVariable("SLI_PLUGIN_LOCK_DIR")); }
+        catch(Exception error) when(error is InvalidOperationException or IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    internal static async Task<bool> FilePermissionsAvailableAsync(NpgsqlConnection db,NpgsqlTransaction tx,CancellationToken ct)
+    {
+        await using var command=new NpgsqlCommand("select to_regprocedure('public.file_permissions_allowed405(uuid,text,text,boolean)') is not null",db,tx);
+        return await command.ExecuteScalarAsync(ct) is true;
+    }
+
+    internal static async Task<bool> FilePermissionsAllowedAsync(NpgsqlConnection db,NpgsqlTransaction tx,
+        Guid agent,string? revision,bool verified,CancellationToken ct)
+    {
+        await using var command=new NpgsqlCommand("select public.file_permissions_allowed405(@agent,@revision,null,@verified)",db,tx);
+        command.Parameters.AddWithValue("agent",agent);
+        command.Parameters.AddWithValue("revision",NpgsqlTypes.NpgsqlDbType.Text,(object?)revision??DBNull.Value);
+        command.Parameters.AddWithValue("verified",verified);
+        return await command.ExecuteScalarAsync(ct) is true;
+    }
+
     public static async Task<bool> ModuleEnabledAsync(NpgsqlConnection db,NpgsqlTransaction tx,string module,CancellationToken ct)
     {
         await using var command=new NpgsqlCommand("select public.agent_module_enabled_v380(@module)",db,tx);
@@ -19,20 +42,25 @@ public static class AgentPolicyAssignments
     public static async Task DisableUnavailableAsync(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject agent,CancellationToken ct)
     {
         var modules=agent["assigned_modules"]!.AsArray();
+        Guid id=Guid.Parse(agent["id"]!.GetValue<string>());
+        bool fileAllowed=modules.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()=="sli.file-audit")
+            && await FilePermissionsAvailableAsync(db,tx,ct)
+            && await FilePermissionsAllowedAsync(db,tx,id,null,false,ct);
         await using var command=new NpgsqlCommand("""
             select coalesce(jsonb_agg(case
-              when not public.agent_module_enabled_v380(coalesce(m->>'module_id',m#>>'{}')) then
+              when not public.agent_module_enabled_v380(coalesce(m->>'module_id',m#>>'{}'))
+                and not (@file_allowed and coalesce(m->>'module_id',m#>>'{}')='sli.file-audit') then
                 case when jsonb_typeof(m)='object' then jsonb_set(m,'{enabled}','false')
                   else jsonb_build_object('module_id',m#>>'{}','enabled',false) end
               else m end order by n),'[]'::jsonb)::text
             from jsonb_array_elements(@modules::jsonb) with ordinality as items(m,n)
             """,db,tx);
         command.Parameters.AddWithValue("modules",modules.ToJsonString());
+        command.Parameters.AddWithValue("file_allowed",fileAllowed);
         var available=JsonNode.Parse((string)(await command.ExecuteScalarAsync(ct))!)!.AsArray();
         if(JsonNode.DeepEquals(modules,available)) return;
         long current=agent["policy_revision"]!.GetValue<long>();
         long revision=Control.AgentModuleAssignmentRules.NextRevision(current,current);
-        Guid id=Guid.Parse(agent["id"]!.GetValue<string>());
         await Control.AgentManagementService.LockImportAsync(db,tx,id,ct);
         var changed=available.OfType<JsonObject>().Where(m=>!JsonNode.DeepEquals(m,
             modules.OfType<JsonObject>().FirstOrDefault(old=>old["module_id"]?.ToString()==m["module_id"]?.ToString()))).ToArray();
@@ -62,12 +90,20 @@ public static class AgentPolicyAssignments
     {
         // Accounting has a separate consumer that rechecks the live plugin and
         // assignment. A pause must not terminally hide already accepted bytes.
-        await using var command=new NpgsqlCommand("""
+        string gate=await FilePermissionsAvailableAsync(db,tx,ct)
+            ? """
+              case when i.envelope->>'module_id'='sli.file-audit' then public.file_permissions_allowed405(
+                  (select a.id from public.sli_agents a where a.id::text=i.envelope->>'agent_id'),
+                  i.envelope->>'policy_revision',null,true)
+                else public.agent_module_enabled_v380(i.envelope->>'module_id') end
+              """
+            : "public.agent_module_enabled_v380(i.envelope->>'module_id')";
+        await using var command=new NpgsqlCommand($"""
             with disabled as (
               select i.packet_id from sli_agent_packet_inbox i
               where i.imported_at is null and i.module_disabled_at is null
                 and i.envelope->>'module_id' is distinct from 'sli.radius-accounting'
-                and (not public.agent_module_enabled_v380(i.envelope->>'module_id')
+                and (not ({gate})
                   or exists(select 1 from sli_agents a cross join lateral jsonb_array_elements(a.assigned_modules) m
                     where a.id::text=i.envelope->>'agent_id' and m->>'module_id'=i.envelope->>'module_id'
                       and m->'enabled'='false'::jsonb))

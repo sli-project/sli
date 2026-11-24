@@ -9,6 +9,17 @@ namespace Sli.Server.Agents.Ingress;
 
 public static class AgentFileAuditValidator
 {
+    internal static bool PermissionsOnly(JsonObject packet)
+    {
+        if(packet["records"] is not JsonArray records) return false;
+        if(records.Count==1 && records[0] is JsonObject lone && lone["format"]?.ToString()=="event_xml")
+            return lone["payload"] is JsonObject gap && JsonRead.TryInteger(gap["event_id"],out var gapId) && gapId==1102
+                && packet["context"] is JsonObject context && context["read_error"]?.ToString()=="file_audit_journal_gap";
+        return records.All(row=>row is JsonObject record && record["format"]?.ToString()=="file_action"
+            && record["payload"] is JsonObject action && JsonRead.TryInteger(action["event_id"],out var eventId)
+            && eventId==4670 && action["operation"]?.ToString()=="permissions");
+    }
+
     public static JsonArray Validate(Envelope e,JsonObject packet,FileAuditPolicy policy,Guid host)
     {
         try { return ValidateCore(e,packet,policy,host); }

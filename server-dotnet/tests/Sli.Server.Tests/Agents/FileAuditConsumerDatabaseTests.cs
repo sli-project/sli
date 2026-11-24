@@ -6,9 +6,14 @@ using Npgsql;
 using NpgsqlTypes;
 using Sli.Agent.Protocol;
 using Sli.Server.Agents;
+using Sli.Server.Agents.ClientControl;
 using Sli.Server.Agents.Consumer;
+using Sli.Server.Agents.Control;
 using Sli.Server.Agents.FileAudit;
 using Sli.Server.Agents.Ingress;
+using Sli.Server.Access;
+using Sli.Server.Auth;
+using Sli.Server.Auth.Lifecycle.Security;
 using Xunit;
 using EventXml = Sli.Agent.Core.EventXml;
 
@@ -67,11 +72,236 @@ public class FileAuditConsumerDatabaseTests
         cmd.Parameters.AddWithValue("packet",packet);cmd.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,rows.ToJsonString());
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    [Fact]
+    public async Task Permissions_opt_in_requires_fresh_apply_and_exact_verified_directory()
+    {
+        var ct=TestContext.Current.CancellationToken;
+        await using var fixture=new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner=await fixture.Pg.OpenAsync(ct);
+        await Register(owner,ct);
+        await PostCollectionPostgres.Sql(owner,"""
+            update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')
+            where registration_host_name='files.example.test';
+            """,ct);
+        var (e,body,policy)=AgentFileAuditValidatorTests.ActionPacket("permissions",4670);
+        var initial=DateTimeOffset.Parse(e.ObservedAtUtc);
+        using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var cert=new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256)
+            .CreateSelfSigned(initial.AddDays(-1),initial.AddDays(1));
+        var service=new AgentPacketService(new Clock(initial),new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184),
+            new AgentIngressDiagnostics(fixture.Pg.Root,NullLogger<AgentIngressDiagnostics>.Instance,new Clock(initial)));
+        var identity=new AgentIdentity(Agent,AgentFileAuditValidatorTests.ActionHost,new string('a',64),"active");
+        var enroll=new FileAuditIngestService(null!);
+        var control=new FileAuditControlService(new AgentControlAudit());
+        var client=new AgentClientControlService(new AgentControlAudit(),new Clock(initial));
+        var access=new CapabilityDecisionSet(true,new HashSet<string>(),new HashSet<string>(),[],new Dictionary<string,System.Text.Json.JsonElement>());
+        var principal=new Principal("session",1,"admin");
+        var signer=new EcdsaPacketSigner(key);
+        JsonObject Signed(JsonObject packet,string revision,long sequence=1,Cursor? before=null,Cursor? after=null)
+        {
+            packet["context"]!["policy_revision"]=revision;
+            var sample=new Sample("sli.file-audit",e.SourceInstanceId,"Security",e.Generation,before??e.CursorBefore,after??e.CursorAfter,packet,
+                PolicyRevision:revision,ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
+            return Packets.Make(signer,Agent.ToString(),sequence,sample,initial).ToJson();
+        }
+        await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"1"),ct))["error_code"]!.ToString());
+            Assert.False(await AgentPolicyAssignments.FilePermissionsAllowedAsync(app,tx,Agent,null,false,ct));
+            var command=new JsonObject { ["contract_id"]="sli.file-audit.audit-command.v1",["command_id"]="explicit-apply",
+                ["action"]="apply",["policy_revision"]="2",["collection_scope_ids"]=new JsonArray("scope:files") };
+            await control.Enqueue(app,tx,new JsonObject { ["agent_id"]=Agent.ToString(),["expected_revision"]=1,
+                ["config"]=policy.Value.DeepClone(),["command"]=command,["enabled"]=true,["activate_collection"]=true },
+                principal,access,ct);
+            Assert.True(await AgentPolicyAssignments.FilePermissionsAllowedAsync(app,tx,Agent,"2",false,ct));
+            var pending=await client.CheckInAsync(app,tx,identity,ct);
+            Assert.Equal("apply",(string?)pending["file_audit"]?["command"]?["action"]);
+            Assert.Null(AgentPolicyAssignments.FindCurrent(pending["assigned_modules"]!.AsArray(),"sli.file-audit"));
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"2"),ct))["error_code"]!.ToString());
+            await tx.CommitAsync(ct);
+        }
+        foreach(var (objectType,offset) in new[] { ("file",-2),("directory",-1) })
+        {
+            var report=ReportForRoot(objectType,initial.AddSeconds(offset));
+            await using var tx=await app.BeginTransactionAsync(ct);
+            Assert.Equal("accepted",(await enroll.Ingest(app,tx,identity,report,ct,()=>new MemoryStream()))["status"]!.ToString());
+            Assert.Equal(objectType=="directory",await AgentPolicyAssignments.FilePermissionsAllowedAsync(app,tx,Agent,"2",true,ct));
+            var current=(await client.CheckInAsync(app,tx,identity,ct))["assigned_modules"]!.AsArray();
+            Assert.Equal(objectType=="directory",AgentPolicyAssignments.FindCurrent(current,"sli.file-audit") is not null);
+            await tx.CommitAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"1"),ct))["error_code"]!.ToString());
+            var raw=AgentFileAuditValidatorTests.ActionPacket().Packet;
+            Assert.Equal("agent_file_audit_packet_invalid",(await service.ReceiveAsync(app,tx,identity,cert,Signed(raw,"2"),ct))["error_code"]!.ToString());
+            Assert.Equal("committed",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"2"),ct))["status"]!.ToString());
+            var imported=await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(imported.Imported,imported.PendingReason);
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='permissions'",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is null and module_disabled_at is null",ct));
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            var queuedAction=body["records"]![0]!["payload"]!.DeepClone();
+            queuedAction["record_id"]=11;
+            var queued=CollectionPacket.Make("files.example.test","Security",e.Generation,
+                new JsonObject { ["after_record_id"]=10,["last_record_id"]=11 },
+                [new PacketRecord("file_action",11,queuedAction)],"not_proven",body["context"]!.AsObject(),initial);
+            var after=JsonNode.Parse(e.CursorAfter.Token)!.AsObject();after["record_id"]=11;after["bookmark"]="synthetic-11";
+            var receipt=await service.ReceiveAsync(app,tx,identity,cert,
+                Signed(queued,"2",2,e.CursorAfter,new Cursor("bookmark",after.ToJsonString())),ct);
+            Assert.True(receipt["status"]?.ToString()=="committed",receipt["error_code"]?.ToString());
+            await tx.CommitAsync(ct);
+        }
+        await using(var lockedInbox=await owner.BeginTransactionAsync(ct))
+        {
+            await using var claim=new NpgsqlCommand("select packet_id from sli_agent_packet_inbox where imported_at is null for update",owner,lockedInbox);
+            Assert.NotNull(await claim.ExecuteScalarAsync(ct));
+            await using var tx=await app.BeginTransactionAsync(ct);
+            await using var timeout=new NpgsqlCommand("set local lock_timeout='1s'",app,tx);
+            await timeout.ExecuteNonQueryAsync(ct);
+            var disabled=await Disable(tx,2);
+            Assert.Equal(3,disabled.GetProperty("policy_revision").GetInt32());
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"2"),ct))["error_code"]!.ToString());
+            Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,"3"),ct))["error_code"]!.ToString());
+            await tx.CommitAsync(ct);
+            await lockedInbox.CommitAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            await using var write=new NpgsqlCommand("""
+                select public.write_file_actions389(packet_id,event_rows)
+                from sli_agent_packet_inbox where imported_at is null
+                """,app,tx);
+            var denied=await Assert.ThrowsAsync<PostgresException>(()=>write.ExecuteNonQueryAsync(ct));
+            Assert.Equal("55000",denied.SqlState);
+            Assert.Equal("module_disabled",denied.MessageText);
+            await tx.RollbackAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            Assert.Equal(1,await AgentPolicyAssignments.MarkDisabledAsync(app,tx,16,ct));
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(2,await Number(owner,"select count(*) from sli_agent_receipts",ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is null and module_disabled_at is not null",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is null and module_disabled_at is null",ct));
+        Assert.Equal(2,await Number(owner,"select count(*) from sli_plugin_file_audit.audit_receipts",ct));
+
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            await Command(tx,3,"restore-verified","restore");
+            await Report(tx,"restore-verified","4","restore",2);
+            await Command(tx,4,"apply-before-ack","apply");
+            Assert.Equal("apply",(await client.CheckInAsync(app,tx,identity,ct))["file_audit"]?["command"]?["action"]?.ToString());
+            await tx.CommitAsync(ct);
+        }
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            await Disable(tx,5);
+            Assert.False((await client.CheckInAsync(app,tx,identity,ct)).ContainsKey("file_audit"));
+            await Command(tx,6,"restore-after-disable","restore");
+            var next=await client.CheckInAsync(app,tx,identity,ct);
+            Assert.Equal("restore",(string?)next["file_audit"]?["command"]?["action"]);
+            var unrelated=ReportForRoot("directory",initial.AddSeconds(3),"unrelated-command","5","apply");
+            var rejected=await Assert.ThrowsAsync<AgentControlException>(()=>enroll.Ingest(app,tx,identity,unrelated,ct,()=>new MemoryStream()));
+            Assert.Equal("file_audit_result_invalid",rejected.Message);
+            await Report(tx,"apply-before-ack","5","apply",3);
+            await Report(tx,"apply-before-ack","5","apply",3);
+            foreach(var rev in new[]{"5","6","7"})
+            {
+                Assert.False(await AgentPolicyAssignments.FilePermissionsAllowedAsync(app,tx,Agent,rev,true,ct));
+                Assert.Equal("module_disabled",(await service.ReceiveAsync(app,tx,identity,cert,Signed(body,rev),ct))["error_code"]!.ToString());
+            }
+            var pending=await control.Status(app,tx,Agent.ToString(),principal,access,ct);
+            Assert.Equal("pending",pending.GetProperty("state").GetString());
+            await Report(tx,"restore-after-disable","7","restore",4);
+            var restored=await control.Status(app,tx,Agent.ToString(),principal,access,ct);
+            Assert.Equal("verified",restored.GetProperty("state").GetString());
+            Assert.False(restored.GetProperty("may_own_audit").GetBoolean());
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(2,await Number(owner,"select count(*) from sli_agent_receipts",ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='permissions'",ct));
+        Assert.Equal(2,await Number(owner,"select count(*) from sli_plugin_file_audit.audit_receipts where command_id<>'explicit-apply'",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_plugin_file_audit.audit_receipts where command_id='apply-before-ack'",ct));
+
+        var migration=Path.Combine(PostCollectionPostgres.Repository(),"config/postgres_migrations/405_file_permissions_opt_in.sql");
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration,".rollback.sql"),null,ct);
+        Assert.Equal(404,await Number(owner,"select max(version) from schema_migrations",ct));
+        Assert.Equal(2,await Number(owner,"""
+            select count(*) from schema_migrations
+            where (version,name) in ((403,'password_checkpoint_proof'),(404,'password_live_recovery'))
+            """,ct));
+        Assert.Equal(1,await Number(owner,"""
+            select 1 where to_regprocedure('public.password_checkpoint_native_cost403(jsonb,jsonb,bytea,text,text[])') is not null
+                and to_regprocedure('public.password_parked_history404(bytea,text)') is not null
+            """,ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='permissions'",ct));
+        await fixture.Pg.ApplyFileAsync(migration,null,ct);
+        Assert.Equal(405,await Number(owner,"select max(version) from schema_migrations",ct));
+        await using(var tx=await app.BeginTransactionAsync(ct))
+        {
+            Assert.False(await AgentPolicyAssignments.FilePermissionsAllowedAsync(app,tx,Agent,null,true,ct));
+            await tx.CommitAsync(ct);
+        }
+
+        Task<System.Text.Json.JsonElement> Disable(NpgsqlTransaction tx,int revision)=>
+            control.Enqueue(app,tx,new JsonObject { ["agent_id"]=Agent.ToString(),["expected_revision"]=revision,["enabled"]=false },
+                principal,access,ct);
+
+        async Task Command(NpgsqlTransaction tx,int revision,string commandId,string action)
+        {
+            var command=new JsonObject { ["contract_id"]="sli.file-audit.audit-command.v1",["command_id"]=commandId,
+                ["action"]=action,["policy_revision"]=(revision+1).ToString(),["collection_scope_ids"]=new JsonArray("scope:files") };
+            var request=new JsonObject { ["agent_id"]=Agent.ToString(),["expected_revision"]=revision,
+                ["config"]=policy.Value.DeepClone(),["command"]=command };
+            if(action=="apply") { request["enabled"]=true; request["activate_collection"]=true; }
+            await control.Enqueue(app,tx,request,principal,access,ct);
+        }
+
+        async Task Report(NpgsqlTransaction tx,string commandId,string revision,string action,int seconds)
+        {
+            var report=ReportForRoot("directory",initial.AddSeconds(seconds),commandId,revision,action);
+            Assert.Equal("accepted",(await enroll.Ingest(app,tx,identity,report,ct,()=>new MemoryStream()))["status"]!.ToString());
+        }
+
+        JsonObject ReportForRoot(string type,DateTimeOffset observed,string commandId="explicit-apply",string revision="2",string action="apply")
+        {
+            var masks=new JsonObject(policy.RequiredMasks().Select(x=>
+                new KeyValuePair<string,JsonNode?>(x.Key,JsonValue.Create(x.Value))));
+            var observation=Iso8601.Format(observed);
+            var snapshot=new JsonObject {
+                ["contract_id"]="sli.file-audit.inventory.v1",["collection_scope_id"]="scope:files",["policy_revision"]=revision,
+                ["observed_at_utc"]=observation,["scan_id"]=AuthAudit.Uuid5(commandId+observation).ToString(),["page_number"]=0,
+                ["has_more"]=false,["completeness"]="complete",["unread_objects"]=0,
+                ["share"]=new JsonObject { ["name"]="Files",["path"]=@"C:\Files",["dacl"]="",["complete"]=true },
+                ["local_groups"]=new JsonObject { ["complete"]=true,["groups"]=new JsonArray() },
+                ["objects"]=new JsonArray(new JsonObject { ["path"]=@"C:\Files",["object_id"]="fixture",
+                    ["object_type"]=type,["owner_sid"]="S-1-5-18",["dacl"]="",["sacl"]="",
+                    ["sacl_protected"]=false,["sacl_missing"]=false })
+            };
+            string digest=Packets.Digest(snapshot);
+            snapshot["snapshot_sha256"]=digest;
+            snapshot["snapshot_id"]=AuthAudit.Uuid5(commandId+digest).ToString();
+            return new JsonObject { ["contract_id"]="sli.file-audit.audit-result.v1",["command_id"]=commandId,["action"]=action,
+                ["policy_revision"]=revision,["observed_at_utc"]=observation,["ownership_remaining"]=action!="restore",["snapshots"]=new JsonArray(snapshot),
+                ["scopes"]=new JsonArray(new JsonObject { ["collection_scope_id"]="scope:files",["state"]="verified",["reason_code"]="ok",
+                    ["required_masks"]=masks,["actual_masks"]=masks.DeepClone() }) };
+        }
+    }
+
     [Fact]
     public async Task Signed_folded_packet_keeps_signature_identity_scope_and_duplicate_checks()
     {
         var ct=TestContext.Current.CancellationToken;
-        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct,throughVersion:402);
         await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);
         await Register(owner,ct,@"C:\ΑΡΧΕΙΟΣ");
         var (e,writePacket,_)=AgentFileAuditValidatorTests.ActionPacket();
@@ -167,7 +397,7 @@ public class FileAuditConsumerDatabaseTests
     public async Task Folded_actions_are_atomic_weighted_replay_safe_and_expire_independently()
     {
         var ct=TestContext.Current.CancellationToken;
-        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct,throughVersion:402);
         await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);
         await Register(owner,ct);await Enable(owner,ct);
         foreach(var (operation,kind) in new[] { ("read",4663),("write",4663),("delete",4660),("rename",4663),("permissions",4670),("access_denied",5145) })
@@ -214,7 +444,7 @@ public class FileAuditConsumerDatabaseTests
     public async Task Invalid_second_action_rolls_back_the_whole_packet_and_disabled_module_imports_nothing()
     {
         var ct=TestContext.Current.CancellationToken;
-        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct,throughVersion:402);
         await using var owner=new NpgsqlConnection(fixture.Pg.ConnectionString);await owner.OpenAsync(ct);await Register(owner,ct);
         var packet=await Seed(owner,ct,"write",4663);
         await using var app=new NpgsqlConnection(fixture.Dsn("adlog_user"));await app.OpenAsync(ct);
@@ -263,7 +493,7 @@ public class FileAuditConsumerDatabaseTests
     public async Task Stored_integrity_mismatch_is_rejected_before_file_actions_are_written(string corruptPart)
     {
         var ct=TestContext.Current.CancellationToken;
-        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
+        await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct,throughVersion:402);
         await using var owner=await fixture.Pg.OpenAsync(ct);await Register(owner,ct);await Enable(owner,ct);
         var packet=await Seed(owner,ct,"write",4663);
         if(corruptPart=="envelope")
