@@ -74,6 +74,36 @@ def test_verify_offline_kit_checks_the_archived_files_and_source(tmp_path, chang
         kit.verify_offline_kit(archive, commit)
 
 
+@pytest.mark.parametrize('claim_present', [False, True])
+def test_verify_offline_kit_rejects_original_runtime_under_compatibility_claim(tmp_path, claim_present):
+    commit = 'a' * 40
+    original = 'sli-runtime-cp3146-n03-20261026_3.14.6-1~deb13_amd64.deb'
+    files = {original: b'original runtime fixture', 'install-beta-kit': b'installer',
+             'remove-beta-kit': b'remover'}
+    for name, body in files.items():
+        (tmp_path / name).write_bytes(body)
+    entries = {name: {'filename': name, 'sha256': kit.sha256(tmp_path / name)} for name in files}
+    manifest = {
+        'git_commit': commit,
+        'target': 'debian-13-amd64',
+        'packages': [{**entries[original], 'package': 'sli-runtime-cp3146-n03-20261026',
+                      'version': '3.14.6-1~deb13', 'architecture': 'amd64'}],
+        'installer': entries['install-beta-kit'],
+        'remover': entries['remove-beta-kit'],
+    }
+    if claim_present:
+        manifest['runtime_delivery'] = kit.N03_RUNTIME_DELIVERY
+    kit.write_json(tmp_path / 'manifest.json', manifest)
+    sums = {name: row['sha256'] for name, row in entries.items()}
+    sums['manifest.json'] = kit.sha256(tmp_path / 'manifest.json')
+    (tmp_path / 'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in sums.items()))
+    kit.archive_kit(tmp_path)
+    reason = 'the package inventory' if claim_present else 'the selected commit'
+    with pytest.raises(ValueError, match=f'[Rr]untime compatibility declaration does not match {reason}'):
+        kit.verify_offline_kit(tmp_path / 'sli-debian-beta-kit.tar.gz', commit,
+                              expected_runtime_delivery=kit.N03_RUNTIME_DELIVERY)
+
+
 def test_copies_only_pinned_debs_and_leaves_cache_intact(tmp_path):
     cache = tmp_path / 'cache'
     cache.mkdir()

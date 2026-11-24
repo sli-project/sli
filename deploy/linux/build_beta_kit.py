@@ -25,6 +25,12 @@ RELEASE_PATHS = ('server', 'scripts', 'sli_collect', 'sli_agent', 'config', 'dep
                  'web/app', 'requirements.lock.txt', 'VERSION')
 POSTGRES_ROLES = """SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls, rolinherit
 FROM pg_roles WHERE rolname ~ '^(sli_|adlog_)' ORDER BY rolname"""
+N03_RUNTIME_DELIVERY = {
+    'policy': 'n03-debian13-libssl-libc-zlib-v1',
+    'version': '3.14.6-3~deb13',
+    'sha256': '47c73edaaa05e8c429db44cb7d88a77f6224b1a9b1bd1aff3679a1de0dafb10f',
+    'data_tar_gz_sha256': '6510d97a1a18f7c0f18e5182627fe8bf3d56b00d2f4cd4232a7fd43d1f0adad2',
+}
 
 
 def write_json(path, value):
@@ -156,6 +162,48 @@ def input_pins(pins):
     return {**artifact, 'pin_source': pin_source}, runtime_filename, {
         **package_pins(pins), runtime_filename: artifact['sha256'],
     }
+
+
+def stage_runtime_delivery(packages, artifact, runtime_filename, delivery):
+    from deploy.linux import n03_runtime_control as control
+
+    # The standard fetch/provision path still consumes the original artifact
+    # and its exact dependencies. This replacement affects only the kit.
+    if (delivery != N03_RUNTIME_DELIVERY or artifact['sha256'] != control.ORIGINAL_SHA256
+            or runtime_filename != f'{control.PACKAGE}_{control.ORIGINAL_VERSION}_amd64.deb'):
+        raise ValueError('Unexpected runtime compatibility input or pin')
+    source = packages / runtime_filename
+    with source.open('rb') as stream:
+        original = stream.read(control.ORIGINAL_SIZE + 1)
+    if len(original) != control.ORIGINAL_SIZE:
+        raise ValueError('Incorrect runtime compatibility input size')
+    wrapper, checked = control.repack_runtime(
+        original, original_sha256=control.ORIGINAL_SHA256, libssl_floor='3.5.7-1~deb13u3')
+    if any(checked[key] != delivery[key] for key in ('version', 'sha256', 'data_tar_gz_sha256')):
+        raise ValueError('Runtime compatibility package differs from the qualified binary')
+    filename = f"{control.PACKAGE}_{delivery['version']}_amd64.deb"
+    with (packages / filename).open('xb') as stream:
+        stream.write(wrapper)
+    source.unlink()  # This is the private staging copy. The verified cache remains intact.
+    provenance = {'source': 'release_commit_control_only', 'original_sha256': artifact['sha256'],
+                  'delivery': delivery, 'apt_qualification_job': 137809451537}
+    return {**artifact, 'version': delivery['version'], 'sha256': delivery['sha256'],
+            'pin_source': provenance}, filename
+
+
+def verify_runtime_delivery(manifest):
+    from deploy.linux.n03_runtime_control import PACKAGE
+
+    delivery = manifest['runtime_delivery']
+    if delivery != N03_RUNTIME_DELIVERY:
+        raise ValueError('Unknown runtime compatibility declaration')
+    version = delivery['version']
+    expected = {'filename': f'{PACKAGE}_{version}_amd64.deb', 'package': PACKAGE,
+                'version': version, 'architecture': 'amd64', 'sha256': delivery['sha256']}
+    runtimes = [row for row in manifest['packages'] if row['filename'].startswith('sli-runtime-')
+                or str(row.get('package', '')).startswith('sli-runtime-')]
+    if len(runtimes) != 1 or any(runtimes[0].get(key) != value for key, value in expected.items()):
+        raise ValueError('Runtime compatibility declaration does not match the package inventory')
 
 
 def package_urls(row, captured_utc):
@@ -395,7 +443,7 @@ def prepare_release(checkout, release, runtime_path, artifact, postgres_version,
     })
 
 
-def finish(output, commit, release, version, *, toolchain, installer_root=ROOT):
+def finish(output, commit, release, version, *, toolchain, installer_root=ROOT, runtime_delivery=None):
     rows = []
     for path in sorted(output.glob('*.deb')):
         command(['dpkg-deb', '--info', path], stdout=subprocess.DEVNULL)
@@ -414,6 +462,9 @@ def finish(output, commit, release, version, *, toolchain, installer_root=ROOT):
                 'target': 'debian-13-amd64', 'toolchain': toolchain, 'packages': rows,
                 'installer': {'filename': installer.name, 'sha256': sha256(installer)},
                 'remover': {'filename': remover.name, 'sha256': sha256(remover)}}
+    if runtime_delivery is not None:
+        manifest['runtime_delivery'] = runtime_delivery
+        verify_runtime_delivery(manifest)
     write_json(output / 'manifest.json', manifest)
     sums = {row['filename']: row['sha256'] for row in rows}
     sums[installer.name] = manifest['installer']['sha256']
@@ -458,7 +509,7 @@ def archive_kit(packages):
             archive.add(path, arcname='sli-debian-beta-kit/' + path.name)
 
 
-def verify_offline_kit(path, commit):
+def verify_offline_kit(path, commit, *, expected_runtime_delivery=None):
     """Verify the native Debian archive before it is published."""
     checksums, metadata = {}, {}
     with tarfile.open(path, 'r|gz') as archive:
@@ -490,9 +541,13 @@ def verify_offline_kit(path, commit):
     if (not isinstance(manifest, dict) or manifest.get('git_commit') != commit
             or manifest.get('target') != 'debian-13-amd64'):
         raise ValueError('Beta kit manifest does not match the selected commit and target')
+    if expected_runtime_delivery is not None and manifest.get('runtime_delivery') != expected_runtime_delivery:
+        raise ValueError('Beta kit runtime compatibility declaration does not match the selected commit')
     packages = {row['filename']: row['sha256'] for row in manifest['packages']}
     if not packages or len(packages) != len(manifest['packages']) or not all(name.endswith('.deb') for name in packages):
         raise ValueError('Beta kit manifest must list its Debian packages')
+    if 'runtime_delivery' in manifest:
+        verify_runtime_delivery(manifest)
     for key, filename in [('installer', 'install-beta-kit'), ('remover', 'remove-beta-kit')]:
         if manifest[key]['filename'] != filename:
             raise ValueError(f'Beta kit manifest must list {filename}')
@@ -547,6 +602,9 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         artifact, runtime_filename, locked = input_pins(pins)
         print(f'Verifying pinned packages for {commit}', flush=True)
         copy_inputs(cache, packages, locked)
+        runtime_delivery = pins.get('runtime_delivery')
+        if 'runtime_delivery' in pins:
+            artifact, runtime_filename = stage_runtime_delivery(packages, artifact, runtime_filename, runtime_delivery)
         pg_deb_version = next(row['version'] for row in pins['packages'] if row['name'] == 'postgresql-18')
         pg_version = f"{pg_deb_version.split('-')[0]} (Debian {pg_deb_version})"
         ledger = json.loads((checkout / 'deploy/linux/native_pg_ledger.json').read_text(encoding='utf-8'))
@@ -572,7 +630,8 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
                  '--dotnet-published', published, *agent_args], cwd=checkout, env=env)
-        finish(packages, commit, release, version, toolchain=toolchain, installer_root=checkout)
+        finish(packages, commit, release, version, toolchain=toolchain, installer_root=checkout,
+               runtime_delivery=runtime_delivery)
         archive_kit(packages)
         packages.rename(output)
     return output
@@ -599,7 +658,8 @@ def main():
     try:
         if args.verify_offline_kit is not None:
             commit = git(ROOT, 'rev-parse', '--verify', '--end-of-options', args.commit + '^{commit}')
-            verify_offline_kit(args.verify_offline_kit, commit)
+            pins = json.loads(git(ROOT, 'show', f'{commit}:deploy/linux/native_pins.json'))
+            verify_offline_kit(args.verify_offline_kit, commit, expected_runtime_delivery=pins.get('runtime_delivery'))
             print(f'Debian beta kit verified for {commit}')
         elif args.verify_inputs or args.fetch_inputs:
             cache = args.debs.resolve()
