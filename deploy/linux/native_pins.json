@@ -3304,6 +3304,12 @@
     "sha256": "46986d230f363f3af7e2fd4c4f25ee3da9ae3964982812f404f24b6d654a44d9",
     "python_sha256": "91bfcab33152d5afbaf5fd6bd50fb82a90f3b0ae7adfc06edc2ecce30dbc40f8"
   },
+  "runtime_delivery": {
+    "policy": "n03-debian13-libssl-libc-zlib-v1",
+    "version": "3.14.6-3~deb13",
+    "sha256": "47c73edaaa05e8c429db44cb7d88a77f6224b1a9b1bd1aff3679a1de0dafb10f",
+    "data_tar_gz_sha256": "6510d97a1a18f7c0f18e5182627fe8bf3d56b00d2f4cd4232a7fd43d1f0adad2"
+  },
   "runtime_build": {
     "id": "cp3146-n03-20261026",
     "version": "3.14.6-1~deb13",
