@@ -240,8 +240,29 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/agent/update-result", new { sha256 = packageHash, status = "rejected", reason = "agent_update_download_failed", version = "1.0.0" }, asClient: agentClient);
         await Check("/api/v1/admin/agents/file-audit", new { agent_id = registered["agent_id"]!.ToString(), expected_revision = agentRevision, config = fileConfig,
             command = new { contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-agent-file", action = "check", policy_revision = (agentRevision+1).ToString(), collection_scope_ids = new[] { "sql-scope" } } });
-        await Check("/api/v1/agent/file-audit-report", new { contract_id = "sli.file-audit.audit-result.v1", command_id = "sql-agent-file", policy_revision = (agentRevision+1).ToString(), action = "check", observed_at_utc = DateTimeOffset.UtcNow,
-            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "unknown", required_masks = new { }, actual_masks = new { } } }, snapshots = Array.Empty<object>(), ownership_remaining = false }, 503, error: "module_disabled", asClient: agentClient);
+        var checkReport = new { contract_id = "sli.file-audit.audit-result.v1", command_id = "sql-agent-file",
+            policy_revision = (agentRevision + 1).ToString(), action = "check", observed_at_utc = DateTimeOffset.UtcNow,
+            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "unknown", required_masks = new { }, actual_masks = new { } } },
+            snapshots = Array.Empty<object>(), ownership_remaining = false };
+        var reportAck = await Check("/api/v1/agent/file-audit-report", checkReport, asClient: agentClient);
+        if (reportAck?["status"]?.GetValue<string>() != "accepted")
+            failures.Add("File Audit check did not return an accepted receipt");
+        await Check("/api/v1/agent/file-audit-report", checkReport with { command_id = "sql-unrequested-file" },
+            400, error: "file_audit_result_invalid", asClient: agentClient);
+        await using (var checkBoundary = new NpgsqlCommand("""
+            select not public.file_permissions_allowed405(@agent,@revision,'sql-scope',false)
+                and (select count(*) from sli_plugin_file_audit.audit_receipts
+                     where agent_id=@agent and command_id='sql-agent-file' and action='check'
+                         and collection_scope_id='sql-scope' and state='failed')=1
+                and not exists (select 1 from sli_plugin_file_audit.audit_receipts
+                                where agent_id=@agent and command_id='sql-unrequested-file')
+            """, admin))
+        {
+            checkBoundary.Parameters.AddWithValue("agent", Guid.Parse(registered["agent_id"]!.ToString()));
+            checkBoundary.Parameters.AddWithValue("revision", checkReport.policy_revision);
+            if (await checkBoundary.ExecuteScalarAsync(ct) is not true)
+                failures.Add("File Audit check receipt or event admission did not match the current command");
+        }
         object Heartbeat(long sequence, string before) => Packets.Make(new EcdsaPacketSigner(agentKey), registered["agent_id"]!.ToString(), sequence,
             new Sample("sli.heartbeat", agentHost, "heartbeat", agentHost, new Cursor("record_id", before), new Cursor("record_id", sequence.ToString()),
                 new JsonObject { ["contract"] = "sli.heartbeat.v1", ["status"] = "alive" }), DateTimeOffset.UtcNow).ToJson();

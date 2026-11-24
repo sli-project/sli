@@ -28,49 +28,94 @@ internal sealed class FileAuditIngestService
         if(state is null || request?["config"] is not JsonObject config
             || request?["command"] is not JsonObject command)
             throw new AgentControlException("module_disabled",503);
+        bool check = !retired && command["action"]?.ToString() == "check"
+            && command["policy_revision"]?.ToString() == revision;
         bool restore=JsonRead.TryString(state["permissions_restore_scope"],out var restoreScope)
             && command["action"]?.ToString()=="restore" && command["policy_revision"]?.ToString()==revision
             && command["collection_scope_ids"] is JsonArray restoreScopes && restoreScopes.Count==1
             && restoreScopes[0]?.ToString()==restoreScope;
-        if(!retired && !restore && !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,revision,false,ct))
+        // A read-only check report proves only the current management command.
+        if(!retired && !restore && !check && !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,revision,false,ct))
             throw new AgentControlException("module_disabled",503);
         using var lease=admit();
         if(!FileAuditResult.Valid(report,config,command)) throw new AgentControlException("file_audit_result_invalid");
         // Clear the agent's pending report so it can run restore. A retired apply publishes no evidence.
         if(retired) return new JsonObject { ["status"]="accepted" };
-        var scope=report["scopes"]!.AsArray().Single()!.AsObject();
-        string scopeId=scope["collection_scope_id"]!.GetValue<string>();
-        var root=config["roots"]![0]!["path"];
-        bool verified=scope["state"]!.GetValue<string>()=="verified"
-            && (restore || report["snapshots"]!.AsArray().Single()!["objects"]!.AsArray().OfType<JsonObject>().Any(item=>
-                JsonNode.DeepEquals(item["path"],root) && item["object_type"]?.ToString()=="directory"));
         var observation=(JsonObject)report.DeepClone();
-        var receipt=observation["scopes"]![0]!.AsObject();
-        if(!verified && receipt["state"]!.GetValue<string>()=="verified")
+        var receipts = observation["scopes"]!.AsArray().OfType<JsonObject>().ToArray();
+        var roots = config["roots"]!.AsArray().OfType<JsonObject>()
+            .ToDictionary(root => root["collection_scope_id"]!.GetValue<string>(), root => root["path"]);
+        var snapshots = report["snapshots"]!.AsArray().OfType<JsonObject>();
+        foreach (var receipt in receipts)
         {
-            receipt["state"]="partial";
-            receipt["reason_code"]="coverage_incomplete";
+            var scope = receipt["collection_scope_id"]!.GetValue<string>();
+            if (receipt["state"]!.GetValue<string>() != "verified" || restore
+                || snapshots.Any(snapshot => snapshot["collection_scope_id"]!.GetValue<string>() == scope
+                    && snapshot["objects"]!.AsArray().OfType<JsonObject>().Any(item =>
+                        JsonNode.DeepEquals(item["path"], roots[scope]) && item["object_type"]?.ToString() == "directory")))
+                continue;
+            receipt["state"] = "partial";
+            receipt["reason_code"] = "coverage_incomplete";
         }
         string digest=Packets.Digest(observation);
-        receipt["receipt_id"]=AuthAudit.Uuid5(command["command_id"]!.GetValue<string>()+digest).ToString();
-        receipt["result_sha256"]=digest;
+        foreach (var receipt in receipts)
+        {
+            var scopeSuffix = receipts.Length == 1 ? "" : ":" + receipt["collection_scope_id"]!.GetValue<string>();
+            receipt["receipt_id"] = AuthAudit.Uuid5(command["command_id"]!.GetValue<string>() + digest + scopeSuffix).ToString();
+            receipt["result_sha256"] = digest;
+        }
         await using var store=new NpgsqlCommand("select sli_plugin_file_audit.store_audit_result(@agent,@result)",db,tx);
         store.Parameters.AddWithValue("agent",identity.Id);
         store.Parameters.AddWithValue("result",NpgsqlDbType.Jsonb,observation.ToJsonString());
         await store.ExecuteNonQueryAsync(ct);
 
-        var observed=Iso8601.ParseUtc(report["observed_at_utc"]!.GetValue<string>());
-        if(state["reported_at"] is null || observed>Iso8601.ParseUtc(state["reported_at"]!.GetValue<string>()))
+        if (MergeReceipts(state, command, receipts, report["observed_at_utc"]!.GetValue<string>(), check))
         {
-            state["state"]=receipt["state"]!.DeepClone();
-            state["scopes"]=new JsonObject { [scopeId]=receipt.DeepClone() };
-            state["reported_at"]=report["observed_at_utc"]!.DeepClone();
-            state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
+            if (!check)
+                state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
             await using var write=new NpgsqlCommand("update public.sli_agents set file_audit=@state where id=@agent",db,tx);
             write.Parameters.AddWithValue("agent",identity.Id);
             write.Parameters.AddWithValue("state",NpgsqlDbType.Jsonb,state.ToJsonString());
             await write.ExecuteNonQueryAsync(ct);
         }
         return new JsonObject { ["status"]="accepted" };
+    }
+
+    private static bool MergeReceipts(JsonObject state, JsonObject command, JsonObject[] receipts, string observedAt, bool check)
+    {
+        var previousReportAt = state["reported_at"]?.GetValue<string>();
+        var observed = Iso8601.ParseUtc(observedAt);
+        bool newest = previousReportAt is null || observed > Iso8601.ParseUtc(previousReportAt);
+        if (!check && !newest)
+            return false;
+
+        var scopes = (JsonObject?)state["scopes"] ?? new JsonObject();
+        bool changed = false;
+        foreach (var receipt in receipts)
+        {
+            var scope = receipt["collection_scope_id"]!.GetValue<string>();
+            if (!newest && scopes[scope] is JsonObject current)
+            {
+                var lastSeen = current["observed_at_utc"]?.GetValue<string>() ?? previousReportAt!;
+                if (observed <= Iso8601.ParseUtc(lastSeen))
+                    continue;
+            }
+            var next = (JsonObject)receipt.DeepClone();
+            if (check)
+                next["observed_at_utc"] = observedAt;
+            scopes[scope] = next;
+            changed = true;
+        }
+        if (!changed)
+            return false;
+
+        if (state["scopes"] is null)
+            state["scopes"] = scopes;
+        var reportedStates = scopes.Select(scope => scope.Value!["state"]!.GetValue<string>()).ToHashSet();
+        state["state"] = command["collection_scope_ids"]!.AsArray().Count != scopes.Count ? "pending"
+            : new[] { "failed", "blocked", "partial" }.FirstOrDefault(reportedStates.Contains) ?? "verified";
+        if (newest)
+            state["reported_at"] = observedAt;
+        return true;
     }
 }
