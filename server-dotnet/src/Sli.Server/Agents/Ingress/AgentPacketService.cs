@@ -26,9 +26,18 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         var now=Iso8601.Truncate(clock.GetUtcNow());
         JsonObject Reject(string code,string status="rejected") => AgentReceipt.Make(envelope,status,code,null);
         if (envelope.AgentId != identity.Id.ToString("D")) return Reject("agent_identity_mismatch");
+        bool filePermissions=envelope.ModuleId==FileAuditPolicy.ModuleId &&
+            await AgentPolicyAssignments.FilePermissionsAvailableAsync(connection,transaction,ct);
+        using var fileAdmission=filePermissions ? AgentPolicyAssignments.HoldFilePermissions() : null;
         if (envelope.ModuleId!="sli.heartbeat")
         {
-            if(!await AgentPolicyAssignments.ModuleEnabledAsync(connection,transaction,envelope.ModuleId,ct)) return Reject("module_disabled");
+            bool enabled=filePermissions
+                ? await AgentPolicyAssignments.FilePermissionsAllowedAsync(connection,transaction,
+                    identity.Id,envelope.PolicyRevision,true,ct)
+                : await AgentPolicyAssignments.ModuleEnabledAsync(connection,transaction,envelope.ModuleId,ct);
+            if(!enabled) return Reject("module_disabled");
+            if(filePermissions && fileAdmission is null) return Reject("file_audit_plugin_unavailable","retry_later");
+            if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)) return Reject("agent_file_audit_packet_invalid");
             var state=await ledger.AgentStateAsync(identity.Id,ct);
             if(state.Assignments.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()==envelope.ModuleId && m["enabled"] is JsonValue flag
                 && flag.TryGetValue<bool>(out var enabled) && !enabled)) return Reject("module_disabled");

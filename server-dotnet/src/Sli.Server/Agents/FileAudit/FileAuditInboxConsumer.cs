@@ -69,7 +69,14 @@ public static class FileAuditInboxConsumer
         try { verified=AgentFileAuditValidator.Validate(envelope,body,config,host); }
         catch(ProtocolException) { throw new FileAuditPending("agent_packet_attestation_invalid"); }
         if(!PythonMetadataEquality.Equal(verified,rows)) throw new FileAuditPending("agent_packet_attestation_invalid");
-        if(!await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,envelope.ModuleId,ct)) throw new FileAuditPending("module_disabled");
+        bool filePermissions=await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct);
+        using var fileAdmission=filePermissions ? AgentPolicyAssignments.HoldFilePermissions() : null;
+        bool enabled=filePermissions
+            ? await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,agent,envelope.PolicyRevision,true,ct)
+            : await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,envelope.ModuleId,ct);
+        if(!enabled) throw new FileAuditPending("module_disabled");
+        if(filePermissions && fileAdmission is null) throw new FileAuditPending("file_audit_plugin_unavailable");
+        if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(body)) throw new FileAuditPending("agent_packet_attestation_invalid");
         // Keep the verified raw journal-clear receipt and inbox evidence without creating a file action.
         if(!config.Workstation && body["context"]?["read_error"]?.GetValue<string>()=="file_audit_journal_gap"
             && rows.Count==1 && rows[0]?["event_id"]?.GetValue<int>()==1102) return;

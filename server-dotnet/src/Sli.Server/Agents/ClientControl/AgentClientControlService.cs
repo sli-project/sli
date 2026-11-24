@@ -3,6 +3,7 @@ using Npgsql;
 using NpgsqlTypes;
 using Sli.Server.Access;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Agents.Registry;
 namespace Sli.Server.Agents.ClientControl;
 
@@ -20,13 +21,19 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
     public async Task<JsonObject> CheckInAsync(NpgsqlConnection db,NpgsqlTransaction tx,AgentIdentity identity,CancellationToken ct)
     {
         var agent=await ReadAsync(db,tx,identity.Id,ct);bool fileHook=true;
-        await Ingress.AgentPolicyAssignments.DisableUnavailableAsync(db,tx,agent,ct);
+        await AgentPolicyAssignments.DisableUnavailableAsync(db,tx,agent,ct);
         await SnapshotPublication.AdSnapshotSchedule.RefreshAsync(db,tx,agent,ct);
         // Bundled file-audit is present in this native build. An activated Python
         // generation's hook inventory awaits M5; never silently assume its hooks.
         if(agent["file_audit"]?["request"] is JsonObject request && request.Count>0 && new PluginGenerationReader().Read("sli.file-audit").Generation is not null)
             throw new InvalidOperationException("agent_plugin_generation_unavailable");
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
+        // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
+        if(agent["file_audit"]?["permissions_scope"] is not null
+            && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment
+            && (!await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
+                || !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,null,true,ct)))
+            fileAssignment["enabled"]=false;
         if (AgentEnrollmentService.CollectionProfile(configuration) == "beta" &&
             await AgentEnrollmentService.NeedsDcIdentityAsync(db, tx, identity.Id, ct))
             result["dc_identity_required"] = true;

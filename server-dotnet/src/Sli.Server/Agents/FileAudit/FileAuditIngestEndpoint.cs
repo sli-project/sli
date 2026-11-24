@@ -28,7 +28,8 @@ internal static class FileAuditIngestEndpoint
             if(peer is null || context.RequestServices.GetService<AgentTlsTrust>() is null) throw new AgentCertificateException("agent_mtls_required",401);
             var services=context.RequestServices; await using var db=await services.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(ct);await using var tx=await db.BeginTransactionAsync(ct);
             var identity=await services.GetRequiredService<AgentIdentityService>().AuthenticateAsync(db,tx,peer,false,ct);
-            var result=await services.GetRequiredService<FileAuditIngestService>().Ingest(db,tx,identity,body,ct);
+            var result=await services.GetRequiredService<FileAuditIngestService>().Ingest(db,tx,identity,body,ct,
+                ()=>services.GetRequiredService<FileAuditHookAdmission>().Enter("ingest_audit"));
             await tx.CommitAsync(ct);await DomainHttp.WriteAsync(context,result,200,ct);
         }
         catch(AgentCertificateException e) { await DomainHttp.WriteAsync(context,new { error=e.Code },e.Status,ct); }

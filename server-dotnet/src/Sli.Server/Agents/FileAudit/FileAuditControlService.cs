@@ -37,7 +37,7 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
     {
         Guid agentId=AgentControlJson.Id(id); var agent=await Lock(db,tx,agentId,ct); var state=agent["file_audit"] as JsonObject;
         if(state is null || state.Count==0) throw new AgentControlException("file_audit_not_configured",404);
-        var command=state["request"]!["command"]!.AsObject(); RequireScopes(access,principal,agentId,Source(agent),command["collection_scope_ids"]!.AsArray().Select(S));
+        var command=(state["request"] ?? state["retired_apply"])!["command"]!.AsObject(); RequireScopes(access,principal,agentId,Source(agent),command["collection_scope_ids"]!.AsArray().Select(S));
         return AgentControlJson.Element(new JsonObject { ["command"]=command.DeepClone(),["state"]=state["state"]!.DeepClone(),["scopes"]=state["scopes"]?.DeepClone() ?? new JsonObject(),["reported_at"]=state["reported_at"]?.DeepClone(),["may_own_audit"]=state["may_own_audit"]!.DeepClone() });
     }
     public async Task<JsonElement> Batch(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,CapabilityDecisionSet access,CancellationToken ct)
@@ -75,13 +75,15 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
     }
     public async Task<JsonElement> Enqueue(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,CapabilityDecisionSet access,CancellationToken ct)
     {
+        if(JsonRead.HasExactly(body,"agent_id","expected_revision","enabled") && IsBool(body["enabled"]) && !Flag(body["enabled"]))
+            return await DisablePermissions(db,tx,body,principal,access,ct);
         var keys=body.Select(p=>p.Key).ToHashSet(StringComparer.Ordinal); string[] required=["agent_id","expected_revision","config","command"];
         if(required.Any(k=>!keys.Contains(k)) || keys.Except(required.Concat(["enabled","activate_collection"])).Any() || body["config"] is not JsonObject input || body["command"] is not JsonObject cmd
             || body.ContainsKey("activate_collection") && !IsBool(body["activate_collection"]) || body.ContainsKey("enabled") && !IsBool(body["enabled"])) throw Invalid();
         bool activate=Flag(body["activate_collection"]),enabled=Flag(body["enabled"]);
         if(activate && (!enabled || !JsonRead.TryString(cmd["action"],out var requestedAction) || requestedAction!="apply") || body.ContainsKey("enabled") && !activate && (!JsonRead.TryString(input["source_kind"],out var requestedKind) || requestedKind!="workstation")) throw Invalid();
         Guid id=AgentControlJson.Id(JsonSerializer.SerializeToElement(body["agent_id"])); var agent=await Lock(db,tx,id,ct); long revision=Revision(agent,body["expected_revision"]);
-        JsonObject config; JsonArray modules; JsonObject request;
+        JsonObject config; JsonArray modules; JsonObject request; string? permissionsScope=null;
         try
         {
             var candidate=(JsonObject)input.DeepClone(); candidate["policy_revision"]=revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -96,6 +98,13 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
                 if(modules.Count>64) throw new ArgumentException();
                 try { AgentModuleAssignmentRules.ValidateChannelOwnership(modules); } catch(AgentControlException) { throw new ArgumentException(); }
             }
+            if(activate && kind=="server" && await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct))
+            {
+                var roots=config["roots"]!.AsArray();
+                if(roots.Count!=1 || cmd["collection_scope_ids"] is not JsonArray activeScopes || activeScopes.Count!=1
+                    || S(activeScopes[0])!=S(roots[0]!["collection_scope_id"])) throw new ArgumentException();
+                permissionsScope=S(activeScopes[0]);
+            }
             request=new JsonObject { ["config"]=config.DeepClone(),["command"]=cmd.DeepClone() };
             if(CanonicalJson.Length(request)>48*1024) throw new ArgumentException();
             var proposed=(JsonObject)agent.DeepClone(); proposed["file_audit"]=new JsonObject { ["request"]=request.DeepClone() };
@@ -107,10 +116,19 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         { throw new AgentControlException("file_audit_request_denied",403); }
         string action=S(cmd["action"]); if(action!="check" && !Flag(agent["collection_policy"]?["manage_windows_audit"])) throw new AgentControlException("file_audit_management_disabled",409);
         var prior=agent["file_audit"] as JsonObject ?? new JsonObject(); bool owned=Flag(prior["may_own_audit"]);
-        if(owned && !JsonNode.DeepEquals(config["roots"],prior["request"]?["config"]?["roots"])) throw new AgentControlException("file_audit_restore_required",409);
+        var priorRequest=prior["request"] ?? prior["retired_apply"];
+        if(owned && (!JsonNode.DeepEquals(config["roots"],priorRequest?["config"]?["roots"])
+            || prior["retired_apply"] is not null && action!="restore"))
+            throw new AgentControlException("file_audit_restore_required",409);
         await using(var insert=new NpgsqlCommand("select sli_plugin_file_audit.enqueue_audit(@agent,@source,@config::jsonb,@command::jsonb,@kind,@actor)",db,tx))
         { insert.Parameters.AddWithValue("agent",id);insert.Parameters.AddWithValue("source",Source(agent));insert.Parameters.AddWithValue("config",config.ToJsonString());insert.Parameters.AddWithValue("command",cmd.ToJsonString());insert.Parameters.AddWithValue("kind",principal.Type);insert.Parameters.AddWithValue("actor",principal.Id);await insert.ExecuteNonQueryAsync(ct); }
         var state=new JsonObject { ["request"]=request,["state"]="pending",["scopes"]=new JsonObject(),["may_own_audit"]=owned || action=="apply" };
+        if(permissionsScope is not null) state["permissions_scope"]=permissionsScope;
+        if(action=="restore" && owned && JsonRead.TryString(prior["permissions_scope"] ?? prior["permissions_restore_scope"],out var previousScope)
+            && cmd["collection_scope_ids"] is JsonArray restoreScopes && restoreScopes.Count==1 && S(restoreScopes[0])==previousScope)
+            state["permissions_restore_scope"]=previousScope;
+        if(action=="restore" && prior["retired_apply"] is JsonObject retired)
+            state["retired_apply"]=retired.DeepClone();
         var oldModules=AgentControlJson.Element(agent["assigned_modules"]!); var control=AgentControlJson.Element(agent["collection_policy"]!);
         await AgentPolicyStore.SnapshotAsync(db,tx,id,revision-1,oldModules,control,ct);await AgentPolicyStore.SnapshotAsync(db,tx,id,revision,AgentControlJson.Element(modules),control,ct);
         await using(var update=new NpgsqlCommand("update sli_agents set file_audit=@state::jsonb,policy_revision=@revision,assigned_modules=@modules::jsonb where id=@id",db,tx))
@@ -118,6 +136,42 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         var details=new JsonObject { ["command_id"]=S(cmd["command_id"]),["command_action"]=action,["policy_sha256"]=Packets.Digest(config),["revision"]=revision }; if(activate) details["activate_collection"]=true;
         await audit.AppendAsync(db,tx,"file_audit_command",$"{principal.Type}:{principal.Id}",id.ToString(),details,ct);
         return JsonSerializer.SerializeToElement(new { policy_revision=revision,command_id=S(cmd["command_id"]),state="pending" });
+    }
+
+    private async Task<JsonElement> DisablePermissions(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,
+        Principal principal,CapabilityDecisionSet access,CancellationToken ct)
+    {
+        Guid id=AgentControlJson.Id(JsonSerializer.SerializeToElement(body["agent_id"]));
+        var agent=await Lock(db,tx,id,ct);
+        long revision=Revision(agent,body["expected_revision"]);
+        var state=agent["file_audit"]?.DeepClone().AsObject();
+        if(state is null || !JsonRead.TryString(state["permissions_scope"],out var scope))
+            throw new AgentControlException("file_audit_not_configured",404);
+        RequireScopes(access,principal,id,Source(agent),[scope]);
+        var modules=agent["assigned_modules"]!.DeepClone().AsArray();
+        var assignment=AgentPolicyAssignments.FindCurrent(modules,"sli.file-audit")
+            ?? throw new AgentControlException("file_audit_not_configured",404);
+        assignment["enabled"]=false;
+        assignment["config"]!["policy_revision"]=revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        state["state"]="disabled";
+        if(state["request"]?["command"]?["action"]?.ToString()=="apply")
+        {
+            state["retired_apply"]=state["request"]!.DeepClone();
+            state.Remove("request");
+        }
+        var control=AgentControlJson.Element(agent["collection_policy"]!);
+        await AgentPolicyStore.SnapshotAsync(db,tx,id,revision-1,AgentControlJson.Element(agent["assigned_modules"]!),control,ct);
+        await AgentPolicyStore.SnapshotAsync(db,tx,id,revision,AgentControlJson.Element(modules),control,ct);
+        // Inbox cleanup is owned by the poller, which locks inbox rows before the agent.
+        await using var update=new NpgsqlCommand("""
+            update public.sli_agents set file_audit=@state::jsonb,policy_revision=@revision,assigned_modules=@modules::jsonb where id=@id
+            """,db,tx);
+        update.Parameters.AddWithValue("id",id);update.Parameters.AddWithValue("state",state.ToJsonString());
+        update.Parameters.AddWithValue("revision",revision);update.Parameters.AddWithValue("modules",modules.ToJsonString());
+        await update.ExecuteNonQueryAsync(ct);
+        await audit.AppendAsync(db,tx,"file_audit_command",$"{principal.Type}:{principal.Id}",id.ToString(),
+            new { revision, command_action="disable" },ct);
+        return JsonSerializer.SerializeToElement(new { policy_revision=revision,state="disabled" });
     }
 }
 
