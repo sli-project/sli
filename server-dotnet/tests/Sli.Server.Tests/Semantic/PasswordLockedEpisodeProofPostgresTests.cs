@@ -120,8 +120,8 @@ public sealed class PasswordLockedEpisodeProofPostgresTests
         }
         await Refuses(app, rule, Combined, episodes[0], "42501", "permission denied", ct);
 
-        var files = await fixture.RollbackAfterAsync(401, ct);
-        var migration = Assert.Single(files);
+        await fixture.RollbackAfterAsync(401, ct);
+        var migration = MigrationDirectory.Read(402).Single(item => item.Version == 402).Path;
         await using (var predecessor = new NpgsqlCommand("""
             select max(version)=401 and to_regprocedure('public.read_locked_password_episode402(jsonb,jsonb,text)') is null
             from public.schema_migrations

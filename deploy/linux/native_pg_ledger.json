@@ -591,6 +591,10 @@
     "config/postgres_migrations/401_dc_task_service_catalog.sql": "05f523df6f5597b53fee4f1d90b2b7262cfec26d0cfbc1d751e49fbef8a2e1ef",
     "config/postgres_migrations/402_password_locked_episode_proof.rollback.sql": "de4258a59f3986da9d3261ab483bbb149af6c783493ca7fbb7a283a5c2c48e56",
     "config/postgres_migrations/402_password_locked_episode_proof.sql": "7aa322d9155a9754b9e2c1253e0640b186a244dcfcfaceb440193d45ac074c25",
+    "config/postgres_migrations/403_password_checkpoint_proof.rollback.sql": "0160e4f999112bc3863fd8976e08ceac336f544092af6c45a361ef068240e961",
+    "config/postgres_migrations/403_password_checkpoint_proof.sql": "276746b282a11215a2755aca79a95e795b16f78d6df0faf1ba5e461c6a0a2553",
+    "config/postgres_migrations/404_password_live_recovery.rollback.sql": "359b0fa2fbd1589787d9ee5ddb81dc078b50d38bc523818690d567a1e1b661f4",
+    "config/postgres_migrations/404_password_live_recovery.sql": "21a57b83ea76eee6907b89ae4cde3ef5902697bfc58d0a377e2543cfea78b730",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
