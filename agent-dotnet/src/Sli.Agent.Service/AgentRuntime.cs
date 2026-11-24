@@ -38,6 +38,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private IWindowsAudit? _audit = audit;
     private SnapshotCapture? _snapshots;
     private FileAuditManager? _fileAudit;
+    private readonly FileAuditReportDelivery _fileAuditReport = new(clock);
     private readonly FileAuditCatalogWorker? _fileAuditCatalog = localShareReader is not null ? new(localShareReader, clock)
         : OperatingSystem.IsWindows() ? new(NativeFileAuditApi.ListLocalShares, clock) : null;
     private DateTimeOffset? _lastFileCapture;
@@ -128,6 +129,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (api is null) throw new AgentException("file_audit_native_unavailable");
                 _fileAudit = new FileAuditManager(fileDirectory,_files,api);
             }
+            if (_fileAudit is not null) _fileAuditReport.Observe(_fileAudit);
             var fileResult = _fileAudit?.Reconcile(policy,_audit,clock.GetUtcNow(),fileAuditReadDiagnostics);
             var auditReport = fileResult?.Audit ?? (_fileAudit is null ? _audit?.Reconcile(policy, clock.GetUtcNow()) : null);
             var rights = ProbeRights(policy, source, store.ReadHostId());
@@ -163,19 +165,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 await _http.PostAsync("/api/v1/agent/policy-report", policy.Report("paused", rights), cancellationToken).ConfigureAwait(false);
             if (policy.AdDc is null && auditReport is not null) await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
             if (fileResult?.Report is { } fileReport)
-            {
-                var outgoing = fileReport;
-                if (!fileAuditReadDiagnostics && fileReport["scopes"] is JsonArray scopes
-                    && scopes.OfType<JsonObject>().Any(scope => scope.ContainsKey("read_error")))
-                {
-                    // Keep the durable receipt intact while talking to a server without the optional field.
-                    outgoing = (JsonObject)fileReport.DeepClone();
-                    foreach (var scope in outgoing["scopes"]!.AsArray().OfType<JsonObject>())
-                        scope.Remove("read_error");
-                }
-                await _http.PostAsync("/api/v1/agent/file-audit-report",outgoing,cancellationToken).ConfigureAwait(false);
-                _fileAudit!.Acknowledge(fileReport);
-            }
+                _fileAuditReport.Start(fileReport, _http, fileAuditReadDiagnostics, cancellationToken);
             if (assignment["agent_update"] is JsonObject offer)
                 await _http.PostAsync("/api/v1/agent/update-result", new JsonObject
                 { ["sha256"] = offer["sha256"]?.DeepClone(), ["version"] = typeof(AgentRuntime).Assembly.GetName().Version!.ToString(3),
@@ -405,6 +395,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         try { next = NewHttp(identity); }
         catch { identity.Dispose(); throw; }
         _fileAuditCatalog?.Cancel();
+        _fileAuditReport.Cancel();
         _http?.Dispose();
         _identity?.Dispose();
         _identity = identity;
@@ -424,6 +415,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var status = new JsonObject
                 { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending };
                 if (name == "status.json" && detail is not null) status["error_detail"] = detail;
+                if (_fileAuditReport.Error is { } fileReportError) status["file_audit_report_error"] = fileReportError;
                 if (catalogDiagnostic is { } catalog)
                     status["file_audit_catalog"] = new JsonObject
                     {
@@ -443,5 +435,13 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         { ErrorDetail = detail, SnapshotFailures = snapshotFailures, FileAuditCatalog = catalogDiagnostic };
     }
 
-    public void Dispose() { _snapshots?.Dispose(); _fileAuditCatalog?.Dispose(); _http?.Dispose(); _identity?.Dispose(); _queue?.Dispose(); }
+    public void Dispose()
+    {
+        _snapshots?.Dispose();
+        _fileAuditCatalog?.Dispose();
+        _fileAuditReport.Dispose();
+        _http?.Dispose();
+        _identity?.Dispose();
+        _queue?.Dispose();
+    }
 }

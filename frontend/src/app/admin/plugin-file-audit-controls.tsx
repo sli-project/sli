@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { acceptedAgentFileAuditCommand, api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
 import { t } from "../../i18n";
@@ -11,6 +11,7 @@ const catalogKey = (agentId: string | null) => ["admin-file-audit-catalog", agen
 export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
   const client = useQueryClient();
   const [agentId, setAgentId] = useState(() => new URLSearchParams(window.location.search).get(fileAuditAgentParameter));
+  const requestedBySelection = useRef<string | null>(null);
   const catalog = useQuery<AgentFileAuditCatalog>({
     queryKey: catalogKey(agentId),
     enabled: agentId !== null && agents.some((agent) => agent.id === agentId && agent.status === "active"),
@@ -30,7 +31,17 @@ export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
     onMutate: (id) => client.cancelQueries({ queryKey: catalogKey(id) }),
     onSuccess: (data, id) => client.setQueryData(catalogKey(id), data),
   });
+  const requestCatalog = refresh.mutate;
+  useEffect(() => {
+    if (!agentId || requestedBySelection.current !== agentId || catalog.isPending || catalog.isFetching) return;
+    requestedBySelection.current = null;
+    if (!catalog.isError && (catalog.data?.state === "idle" || catalog.data?.state === "expired")) {
+      requestCatalog(agentId);
+    }
+  }, [agentId, catalog.data?.state, catalog.isError, catalog.isFetching, catalog.isPending, requestCatalog]);
+
   const selectAgent = (id: string | null) => {
+    requestedBySelection.current = id;
     const url = new URL(window.location.href);
     if (id) url.searchParams.set(fileAuditAgentParameter, id);
     else url.searchParams.delete(fileAuditAgentParameter);
@@ -65,8 +76,9 @@ export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
         denied: [catalog.error, refresh.error].some((error) => error instanceof ApiResponseError && [401, 403].includes(error.status)),
         refresh: () => {
           if (agentId) {
+            requestedBySelection.current = null;
             if (catalog.isError) void catalog.refetch();
-            else refresh.mutate(agentId);
+            else requestCatalog(agentId);
           }
         },
       }}/>

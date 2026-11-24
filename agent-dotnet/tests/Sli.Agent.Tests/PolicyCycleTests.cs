@@ -37,6 +37,7 @@ public sealed class PolicyCycleTests : IDisposable
     private Func<JsonObject>? _protectionReader;
     private Func<CancellationToken, LocalSmbCatalog>? _catalogReader;
     private Func<JsonNode, CancellationToken, Task<HttpResponseMessage>>? _catalogReport;
+    private Func<JsonNode, CancellationToken, Task<HttpResponseMessage>>? _fileAuditReport;
     private bool _catalogAdvertised;
 
     public PolicyCycleTests()
@@ -80,6 +81,8 @@ public sealed class PolicyCycleTests : IDisposable
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/api/v1/agent/file-audit-catalog-report" && _catalogReport is { } report)
                 return await report(body!, cancellationToken);
+            if (path == "/api/v1/agent/file-audit-report" && _fileAuditReport is { } fileReport)
+                return await fileReport(body!, cancellationToken);
             if (path == "/api/v1/agent/identity")
                 _catalogAdvertised = request.Headers.TryGetValues("X-SLI-File-Audit-Catalog", out var support) && support.Single() == "1";
             _requests.Add((path, body?.DeepClone()));
@@ -158,16 +161,7 @@ public sealed class PolicyCycleTests : IDisposable
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"accepted"}""") };
         };
 
-        _assignment["assigned_modules"] = new JsonArray(new JsonObject
-        {
-            ["module_id"] = AdDcModule.ModuleId, ["enabled"] = true,
-            ["config"] = new JsonObject
-            {
-                ["source_name"] = "dc.example.test", ["connect_address"] = "localhost",
-                ["channels"] = new JsonObject(DcCursor.Channels.Select(c => KeyValuePair.Create<string, JsonNode?>(c, JsonValue.Create(c == "Security"))))
-            }
-        });
-        _assignment["collection_policy"]!["rate_limit_per_minute"] = 100;
+        ConfigureSingleRecordAdCapture();
         var offer = new JsonObject
         {
             ["request_id"] = Guid.NewGuid().ToString("D"),
@@ -175,16 +169,6 @@ public sealed class PolicyCycleTests : IDisposable
         };
         _assignment["file_audit_catalog_request"] = offer;
         _assignment[FileAuditReadError.Capability] = true;
-        _source.ReadOverride = (_, progress, _) =>
-        {
-            var record = (progress.RecordId ?? 0) + 1;
-            return new SourceBatch([new EventRow($"""
-                <Event xmlns="{EventXml.Namespace}"><System><Provider Name="Microsoft-Windows-Eventlog"/><EventID>1104</EventID>
-                <TimeCreated SystemTime="{Iso8601.Format(_clock.Now)}"/><EventRecordID>{record}</EventRecordID>
-                <Channel>Security</Channel><Computer>dc.example.test</Computer></System>
-                <UserData><FileIsFull xmlns="http://manifests.microsoft.com/win/2004/08/windows/eventlog"/></UserData></Event>
-                """, $"bookmark-{record}")]);
-        };
 
         Task<CycleStatus> Cycle() => Runtime().RunCycleAsync(test.Token).WaitAsync(test.Token);
         var initial = await Cycle();
@@ -378,22 +362,152 @@ public sealed class PolicyCycleTests : IDisposable
         Assert.Null(drained.ErrorCode); Assert.Equal(0,drained.Pending); Assert.Equal(reads,source.Reads);
     }
 
+    private void ConfigureSingleRecordAdCapture()
+    {
+        _assignment["assigned_modules"] = new JsonArray(new JsonObject
+        {
+            ["module_id"] = AdDcModule.ModuleId, ["enabled"] = true,
+            ["config"] = new JsonObject
+            {
+                ["source_name"] = "dc.example.test", ["connect_address"] = "localhost",
+                ["channels"] = new JsonObject(DcCursor.Channels.Select(c => KeyValuePair.Create<string, JsonNode?>(c, JsonValue.Create(c == "Security"))))
+            }
+        });
+        _assignment["collection_policy"]!["rate_limit_per_minute"] = 100;
+        _source.ReadOverride = (_, progress, _) =>
+        {
+            var record = (progress.RecordId ?? 0) + 1;
+            return new SourceBatch([new EventRow($"""
+                <Event xmlns="{EventXml.Namespace}"><System><Provider Name="Microsoft-Windows-Eventlog"/><EventID>1104</EventID>
+                <TimeCreated SystemTime="{Iso8601.Format(_clock.Now)}"/><EventRecordID>{record}</EventRecordID>
+                <Channel>Security</Channel><Computer>dc.example.test</Computer></System>
+                <UserData><FileIsFull xmlns="http://manifests.microsoft.com/win/2004/08/windows/eventlog"/></UserData></Event>
+                """, $"bookmark-{record}")]);
+        };
+    }
+
+    private JsonNode? PendingFileAuditReport()
+    {
+        var path = Path.Combine(_options.StateDir, "file-audit", "state.json");
+        return JsonNode.Parse(File.ReadAllText(path))!["pending_report"];
+    }
+
+    private string? FileAuditReportError() =>
+        JsonNode.Parse(File.ReadAllText(Path.Combine(_options.StateDir, "status.json")))!["file_audit_report_error"]?.GetValue<string>();
+
+    private static HttpResponseMessage AcceptedFileAuditReport() =>
+        new(HttpStatusCode.OK) { Content = new StringContent("""{"status":"accepted"}""") };
+
+    [Fact]
+    public async Task FileAuditReportDelayAndRejectionDoNotBlockSignedAdCaptureAndDelivery()
+    {
+        using var test = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var started = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var retried = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        ConfigureSingleRecordAdCapture();
+        _assignment["file_audit"] = FileAuditManagerTests.Request("check");
+        _fileApi = new FileAuditManagerTests.FakeFileApi(Path.Combine(_options.StateDir, "file-audit"));
+        _fileAuditReport = async (body, ct) =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                started.SetResult(body);
+                await release.Task.WaitAsync(ct);
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            }
+            retried.SetResult(body);
+            return AcceptedFileAuditReport();
+        };
+        Task<CycleStatus> Cycle() => Runtime().RunCycleAsync(test.Token).WaitAsync(test.Token);
+
+        var initial = await Cycle();
+        Assert.Equal(1, initial.Captured);
+        var pending = await started.Task.WaitAsync(test.Token);
+        Assert.Equal(CanonicalJson.Serialize(pending), CanonicalJson.Serialize(PendingFileAuditReport()));
+
+        _clock.Now = _clock.Now.AddSeconds(120);
+        var delayed = await Cycle();
+        Assert.False(release.Task.IsCompleted);
+        Assert.True(delayed.CollectionActive);
+        Assert.Null(delayed.ErrorCode);
+        Assert.False(delayed.DeliveryFailed);
+        Assert.Equal(1, delayed.Captured);
+        Assert.Equal(1, Volatile.Read(ref attempts));
+        Assert.Single(_requests, r => r.Path == AgentHttpClient.PacketsPath);
+
+        release.SetResult(true);
+        CycleStatus rejected;
+        do
+        {
+            rejected = await Cycle();
+            if (FileAuditReportError() is null) await Task.Delay(10, test.Token);
+        } while (FileAuditReportError() is null);
+        Assert.Equal("agent_server_rejected_503", FileAuditReportError());
+        Assert.Null(rejected.ErrorCode);
+        Assert.False(rejected.DeliveryFailed);
+        Assert.Equal(0, rejected.Pending);
+        Assert.Equal(CanonicalJson.Serialize(pending), CanonicalJson.Serialize(PendingFileAuditReport()));
+
+        using var identity = AgentRuntime.CreateIdentityStore(_options).Load()!;
+        using var key = identity.Certificate.GetECDsaPublicKey()!;
+        var delivered = _requests.Where(r => r.Path == AgentHttpClient.PacketsPath).Select(r => r.Body!).ToArray();
+        Assert.Equal(new long[] { 1, 2 }, delivered.Select(p => p["payload"]!["records"]![0]!["record_id"]!.GetValue<long>()));
+        var envelopes = delivered.Select(packet => PacketVerifier.Verify(packet, key)).ToArray();
+        Assert.All(envelopes, e => Assert.Equal(AdDcModule.ModuleId, e.ModuleId));
+        Assert.Equal(envelopes[0].CursorAfter, envelopes[1].CursorBefore);
+
+        _clock.Now = _clock.Now.AddSeconds(120);
+        Assert.Null((await Cycle()).ErrorCode);
+        Assert.Equal(CanonicalJson.Serialize(pending), CanonicalJson.Serialize(await retried.Task.WaitAsync(test.Token)));
+        Assert.NotNull(PendingFileAuditReport());
+        do
+        {
+            Assert.Null((await Cycle()).ErrorCode);
+            if (PendingFileAuditReport() is not null) await Task.Delay(10, test.Token);
+        } while (PendingFileAuditReport() is not null);
+        Assert.Null(FileAuditReportError());
+        Assert.Equal(2, Volatile.Read(ref attempts));
+    }
+
     [Fact]
     public async Task FileAuditReportIsRetriedExactlyBeforeNewInventoryAfterLostResponse()
     {
-        _assignment["assigned_modules"]=new JsonArray();
-        _assignment["file_audit"]=FileAuditManagerTests.Request("check");
-        _fileApi=new FileAuditManagerTests.FakeFileApi(Path.Combine(_options.StateDir,"file-audit"));
-        _timeoutPath="/api/v1/agent/file-audit-report";
-        var failed=await Runtime().RunCycleAsync(CancellationToken.None);
-        Assert.NotNull(failed.ErrorCode);
-        var report=CanonicalJson.Serialize(_requests.Single(r => r.Path == _timeoutPath).Body);
-        _runtime!.Dispose(); _runtime=null; _requests.Clear(); _timeoutPath=null;
-        var retried=await Runtime().RunCycleAsync(CancellationToken.None);
-        Assert.Null(retried.ErrorCode);
-        Assert.Equal(report,CanonicalJson.Serialize(_requests.Single(r => r.Path.EndsWith("/file-audit-report",StringComparison.Ordinal)).Body));
-        _requests.Clear(); await Runtime().RunCycleAsync(CancellationToken.None);
-        Assert.DoesNotContain(_requests,r => r.Path.EndsWith("/file-audit-report",StringComparison.Ordinal));
+        using var test = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var started = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _assignment["assigned_modules"] = new JsonArray();
+        _assignment["file_audit"] = FileAuditManagerTests.Request("check");
+        _fileApi = new FileAuditManagerTests.FakeFileApi(Path.Combine(_options.StateDir, "file-audit"));
+        _fileAuditReport = (body, _) =>
+        {
+            started.SetResult(body);
+            throw new TaskCanceledException("synthetic lost response");
+        };
+        Task<CycleStatus> Cycle() => Runtime().RunCycleAsync(test.Token).WaitAsync(test.Token);
+
+        Assert.Null((await Cycle()).ErrorCode);
+        var original = await started.Task.WaitAsync(test.Token);
+        Assert.Equal(CanonicalJson.Serialize(original), CanonicalJson.Serialize(PendingFileAuditReport()));
+        _runtime!.Dispose();
+        _runtime = null;
+
+        var retried = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        _fileAuditReport = (body, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            retried.SetResult(body);
+            return Task.FromResult(AcceptedFileAuditReport());
+        };
+        Assert.Null((await Cycle()).ErrorCode);
+        Assert.Equal(CanonicalJson.Serialize(original), CanonicalJson.Serialize(await retried.Task.WaitAsync(test.Token)));
+        do
+        {
+            Assert.Null((await Cycle()).ErrorCode);
+            if (PendingFileAuditReport() is not null) await Task.Delay(10, test.Token);
+        } while (PendingFileAuditReport() is not null);
+        Assert.Equal(1, Volatile.Read(ref attempts));
     }
 
     [Theory]

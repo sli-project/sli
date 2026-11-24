@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { api, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
+import { api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
 import { t } from "../../i18n";
 import requests from "../../test-fixtures/file_audit_server_ui_requests.json";
 import { PluginSources } from "./plugin-sources";
@@ -74,7 +74,7 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   let catalog: AgentFileAuditCatalog = { state: "idle", items: [], saved_selection: null, saved_command: null };
   vi.spyOn(api, "agentFileAuditCatalog").mockImplementation(async () => catalog);
   const refresh = vi.spyOn(api, "requestAgentFileAuditCatalog").mockImplementation(async () =>
-    catalog = { ...catalog, state: "ready", items: [share] });
+    catalog = { ...catalog, state: "pending" });
   const action = vi.spyOn(api, "agentAction").mockImplementation(async (_, body) => {
     expect(body.expected_revision).toBe(target.policy_revision);
     const command = body.command as NonNullable<AgentFileAuditCatalog["saved_command"]>;
@@ -91,12 +91,13 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
-  const refreshButton = screen.getByRole("button", { name: t("agents.fileAudit.catalog.refresh") }) as HTMLButtonElement;
-  await waitFor(() => expect(refreshButton.disabled).toBe(false));
-  fireEvent.click(refreshButton);
-  expect(await screen.findByRole("option", { name: share.share_name })).toBeTruthy();
+  await waitFor(() => expect(refresh).toHaveBeenCalledExactlyOnceWith(target.id));
+  expect(screen.getByText(t("agents.fileAudit.catalog.pending"))).toBeTruthy();
+  expect(screen.queryByRole("option", { name: share.share_name })).toBeNull();
+  expect(action).not.toHaveBeenCalled();
+  catalog = { ...catalog, state: "ready", items: [share] };
+  expect(await screen.findByRole("option", { name: share.share_name }, { timeout: 5_000 })).toBeTruthy();
   expect(refresh).toHaveBeenCalledTimes(1);
-  expect(refresh.mock.calls[0][0]).toBe(target.id);
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.catalog.share")), { target: { value: share.collection_scope_id } });
   const path = screen.getByLabelText(t("agents.fileAudit.catalog.path")) as HTMLInputElement;
   expect(path.value).toBe(share.path);
@@ -116,6 +117,7 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   client.clear();
   mount(true, true, [target]);
   expect(await screen.findByRole("heading", { name: t("agents.fileAudit.catalog.checkResult") })).toBeTruthy();
+  expect(refresh).toHaveBeenCalledTimes(1);
   expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
   expect(await screen.findByText(t("agents.fileAudit.result.verified"))).toBeTruthy();
   const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
@@ -137,6 +139,30 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   expect(Object.fromEntries(report.searchParams)).toMatchObject({
     period: "24h", source_kind: "server", path: share.path, operation: "permissions", include_nested: "true",
   });
+}, 10_000);
+
+it.each(["ready", "denied"] as const)("keeps an existing catalog or leaves a denied catalog unread: %s", async (access) => {
+  const target = { ...agent, assigned_modules: [] };
+  const share = { share_name: "Pilot$", path: "C:\\Pilot", collection_scope_id: "pilot-scope" };
+  const catalog = vi.spyOn(api, "agentFileAuditCatalog");
+  if (access === "denied") catalog.mockRejectedValue(new ApiResponseError(403, "forbidden"));
+  else catalog.mockResolvedValue({ state: "ready", items: [share], saved_selection: null, saved_command: null });
+  const refresh = vi.spyOn(api, "requestAgentFileAuditCatalog");
+  const action = vi.spyOn(api, "agentAction");
+  mount(true, true, [target]);
+  (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
+  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
+  if (access === "denied") {
+    await screen.findByText(t("agents.fileAudit.catalog.unavailable"));
+    expect(screen.queryByRole("option", { name: share.share_name })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("agents.fileAudit.catalog.manualEntry") })).toBeNull();
+  } else {
+    expect(await screen.findByRole("option", { name: share.share_name })).toBeTruthy();
+  }
+  expect(catalog).toHaveBeenCalledExactlyOnceWith(target.id, expect.any(AbortSignal));
+  expect(refresh).not.toHaveBeenCalled();
+  expect(action).not.toHaveBeenCalled();
 });
 
 it.each(["unavailable", "incomplete", "transport"] as const)("allows a manual server check after catalog failure: %s", async (failure) => {
