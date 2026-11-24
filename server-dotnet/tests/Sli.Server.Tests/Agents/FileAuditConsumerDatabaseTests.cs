@@ -14,6 +14,7 @@ using Sli.Server.Agents.Ingress;
 using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle.Security;
+using Sli.Server.Tests.Reporting;
 using Xunit;
 using EventXml = Sli.Agent.Core.EventXml;
 
@@ -145,6 +146,7 @@ public class FileAuditConsumerDatabaseTests
             await tx.CommitAsync(ct);
         }
         Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='permissions'",ct));
+        await FileAuditReportTests.CheckNativePermissionChanges(fixture,owner,ct);
         Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is null and module_disabled_at is null",ct));
         await using(var tx=await app.BeginTransactionAsync(ct))
         {
