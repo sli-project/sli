@@ -167,4 +167,114 @@ public sealed class AccountShortReadTests(AccountShortReadTests.Database databas
         await role.RollbackAsync(ct);
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
+
+    [Fact]
+    public Task Last_workplace_preserves_scope_aliases_and_legacy_order() =>
+        VerifyWorkplaceParityAsync(database.Fixture, TestContext.Current.CancellationToken);
+
+    internal static async Task VerifyWorkplaceParityAsync(SqlPostgresFixture fixture, CancellationToken ct)
+    {
+        const long domain = 23;
+        const string dailySid = "S-1-5-21-100000001-200000002-300000003-1003";
+        const string paddedSid = "S-1-5-21-100000001-200000002-300000003-1004";
+        const string historicalSid = "S-1-5-fixture-ß";
+        await using (var seed = await fixture.Pg.OpenAsync(ct))
+        {
+            await PostCollectionPostgres.Sql(seed, """
+                insert into domains(id,forest_id,fqdn)
+                select id, (select forest_id from domains where id=1), 'workplace-'||id||'.example.test'
+                from unnest(array[23,24]) id;
+                insert into servers(id,domain_id,hostname,role) values
+                    (23,23,'dc23.example.test','domain_controller'),(24,24,'dc24.example.test','domain_controller');
+                select create_event_storage_partitions(current_date-1,current_date);
+                """, ct);
+            await using var hot = new NpgsqlCommand("""
+                insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
+                select id,statement_timestamp()-make_interval(mins=>age),4624,domain_id,actor,target,workplace,'dc.example.test',
+                    jsonb_build_object('$server_id',server_id,'$channel','Security','$provider','Microsoft-Windows-Security-Auditing') || method,
+                    outcome,fields
+                from (values
+                    (47001,23,23,60,lower($1),$2,'hot-first.example.test','{"LogonType":"10"}'::jsonb,'{}'::jsonb,'{}'::jsonb),
+                    (47002,23,23,60,$1,$2,'hot-tie.example.test','{"LogonType":11}','{}','{}'),
+                    (47003,23,23,10,$1,$2,'network.example.test','{"LogonType":"3"}','{}','{}'),
+                    (47004,23,23,9,$1,$2,'json-alias.example.test','{}','{"LogonType":"2"}','{"LogonType":"10"}'),
+                    (47005,23,23,8,$1,$2,'null-type.example.test','{"LogonType":null}','{}','{}'),
+                    (47006,23,23,7,$1,$2,'fraction.example.test','{"LogonType":2.0}','{}','{}'),
+                    (47007,23,23,6,$1,$2,'192.0.2.23','{"LogonType":"2"}','{}','{}'),
+                    (47008,23,23,5,$1,$2,null,'{"LogonType":"2"}','{}','{}'),
+                    (47009,23,23,4,null,$1,'wrong-sid-alias.example.test','{"LogonType":"2"}','{}','{}'),
+                    (47010,24,24,3,$1,$2,'other-domain.example.test','{"LogonType":"2"}','{}','{}'),
+                    (47011,23,24,3,$1,$2,'wrong-recorder.example.test','{"LogonType":"2"}','{}','{}'),
+                    (47012,23,23,15,$3||U&'\2003',$2,'padded.example.test',jsonb_build_object('LogonType',U&'\00A0' || '11' || U&'\2003'),'{}','{}'),
+                    (47013,23,23,14,$4,$2,'legacy-unicode.example.test','{"LogonType":" 2 "}','{}','{}')
+                ) v(id,domain_id,server_id,age,actor,target,workplace,method,outcome,fields)
+                """, seed);
+            foreach (string sid in new[] { Sid, Actor, paddedSid, historicalSid }) hot.Parameters.Add(new() { Value = sid });
+            await hot.ExecuteNonQueryAsync(ct);
+
+            var retained = EventReadService.ShortBoundary(null).AddDays(-2);
+            var retainedDay = DateOnly.FromDateTime(retained.UtcDateTime);
+            await AdJson.ReadAsync(seed, "select create_event_storage_partitions($1,$1)", ct, retainedDay);
+            await using var daily = new NpgsqlCommand("""
+                insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
+                select ($1::timestamptz at time zone 'UTC')::date,decode(repeat(digest_byte,32),'hex'),4624,23,$2||' ',null,
+                    workplace,'dc23.example.test',
+                    '{"$server_id":23,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing","LogonType":2}',
+                    '{}',3,$1,$1+interval '2 hours'
+                from (values ('01','daily.example.test'),('02','daily-tie.example.test')) v(digest_byte,workplace)
+                """, seed);
+            daily.Parameters.Add(new() { Value = retained });
+            daily.Parameters.Add(new() { Value = dailySid });
+            await daily.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var app = await fixture.Pg.OpenAsync(ct, "adlog_user");
+        var window = new AdPeriod(DateTimeOffset.UtcNow.AddDays(-365), DateTimeOffset.UtcNow);
+        var unfiltered = await AdAccountEvents.ReadAsync(app, [domain], [4624], window, ct);
+        string[] sids = [Sid.ToLowerInvariant(), dailySid, paddedSid, Actor];
+        var expected = new Dictionary<string, (string Computer, string Kind)>
+        {
+            [Sid.ToLowerInvariant()] = ("hot-first.example.test", "rdp"),
+            [dailySid.ToLowerInvariant()] = ("daily.example.test", "local"),
+            [paddedSid.ToLowerInvariant()] = ("padded.example.test", "local"),
+        };
+        await Compare(sids, expected);
+        expected[historicalSid.ToLowerInvariant()] = ("legacy-unicode.example.test", "local");
+        await Compare([.. sids, historicalSid], expected);
+
+        // A bare SQL IN would lose the only eligible row for paddedSid.
+        var padded = Assert.Single(unfiltered, r => r.Text("target_user_sid") == paddedSid);
+        Assert.Equal("11", padded.Text("logon_type"));
+        var naive = await AdJson.ReadAsync(app, AdAccountEvents.Source(null) + """
+            select id from account_events where event_id=any($1) and time_created_utc>=$2 and time_created_utc<$3
+                and domain_id=$4 and id=$5 and logon_type collate "C" in ('2','10','11')
+            """, ct, new[] { 4624 }, window.Start, window.End, domain, padded.Int("id"));
+        Assert.Empty(naive);
+        await fixture.AssertNoSqlErrorsAsync(ct);
+
+        async Task Compare(string[] requested, Dictionary<string, (string Computer, string Kind)> names)
+        {
+            var selected = requested.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var legacy = unfiltered.Where(r => r.Text("logon_type") is "2" or "10" or "11")
+                .Where(r => r.Text("workstation_name") is not null && r.Text("target_user_sid") is {} sid && selected.Contains(sid))
+                .OrderByDescending(r => r.Time("last_seen_utc"))
+                .GroupBy(r => r.Text("target_user_sid")!.ToLowerInvariant())
+                .ToDictionary(g => g.Key, g => g.First());
+            var actual = await AdLastWorkplace.ReadAsync(app, [domain], requested, ct);
+            Assert.Equal(names.Keys.Order(), actual.Keys.Select(k => k.Item2).Order());
+            foreach (var (sid, name) in names)
+            {
+                var reference = legacy[sid];
+                Assert.True(JsonNode.DeepEquals(actual[(domain, sid)], new JsonObject
+                {
+                    ["computer"] = reference.Text("workstation_name"),
+                    ["computer_id"] = null,
+                    ["computer_guid"] = null,
+                    ["at_utc"] = AdInventoryRows.PythonIso(reference.Time("last_seen_utc")),
+                    ["kind"] = name.Kind,
+                }));
+                Assert.Equal(name.Computer, actual[(domain, sid)].Text("computer"));
+            }
+        }
+    }
 }
