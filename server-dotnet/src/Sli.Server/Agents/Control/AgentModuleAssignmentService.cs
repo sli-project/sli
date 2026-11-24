@@ -24,7 +24,9 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
             throw new AgentControlException("invalid_agent_module_assignment");
         if (module=="sli.file-audit") throw new AgentControlException("module_disabled",503);
         Guid id=AgentControlJson.Id(AgentControlJson.Get(body,"agent_id"));
-        if (flag.GetBoolean() && !await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,module,ct))
+        bool workstation=module==WorkstationsModule.ModuleId && await WorkstationJournalAdmission.AvailableAsync(db,tx,ct);
+        if (flag.GetBoolean() && !(workstation ? await WorkstationJournalAdmission.PluginEnabledAsync(db,tx,ct)
+            : await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,module,ct)))
             throw new AgentControlException("module_disabled",503);
         bool snapshot=module is SnapshotPolicy.Ad or SnapshotPolicy.Gpo;
         JsonObject agent;
@@ -63,6 +65,7 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         }
         catch (Exception ex) when (ex is AgentException or ProtocolException or InvalidOperationException or ArgumentException or FormatException or OverflowException)
         { throw new AgentControlException("invalid_agent_module_config"); }
+        if(workstation && flag.GetBoolean()) WorkstationJournalAdmission.RestrictConfig(config);
         if (module == NpsPolicy.Accounting && flag.GetBoolean())
         {
             var policy=NpsPolicy.Parse(module,config);
@@ -81,6 +84,8 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         if (snapshot) await AgentSnapshotAssignment.PublishAsync(db,tx,id,module,config,flag.GetBoolean(),ct);
         await using (var update=new NpgsqlCommand("update sli_agents set assigned_modules=@modules::jsonb,policy_revision=@revision where id=@id",db,tx))
         { update.Parameters.AddWithValue("modules",modules.ToJsonString());update.Parameters.AddWithValue("revision",revision);update.Parameters.AddWithValue("id",id);await update.ExecuteNonQueryAsync(ct); }
+        if(workstation && !await WorkstationJournalAdmission.SetAsync(db,tx,id,flag.GetBoolean(),ct))
+            throw new AgentControlException("agent_source_not_bound",409);
         if (module=="sli.windows.ad-dc") await ReconcilePasswordDomainAsync(db,tx,id,ct);
         if (module=="sli.file-audit")
         {
@@ -93,6 +98,13 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         }
         string hash=Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(PythonJson(config))));
         var details=new JsonObject { ["module_id"]=module,["enabled"]=flag.GetBoolean(),["policy_sha256"]=hash,["revision"]=revision };
+        if(workstation && flag.GetBoolean() && await WorkstationJournalAdmission.ReadAsync(db,tx,id,null,null,ct) is { } scope)
+        {
+            details["server_id"]=scope.ServerId;
+            details["source"]=scope.Computer;
+            details["domain_id"]=scope.DomainId;
+            details["source_instance_id"]=(agent["source_host_id"] ?? agent["host_id"])?.DeepClone();
+        }
         if (!snapshot)
         {
             if (module is "sli.workstations" or NpsPolicy.Nps or NpsPolicy.Accounting) details["families"]=config["families"]!.DeepClone();

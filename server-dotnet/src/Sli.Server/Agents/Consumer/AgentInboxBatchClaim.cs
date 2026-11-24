@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Agents.Ingress;
 
 namespace Sli.Server.Agents.Consumer;
 
@@ -11,14 +12,24 @@ public sealed partial class AgentWorkstationInboxConsumer
     internal static async Task<List<Inbox>> ClaimBatchAsync(NpgsqlConnection db,NpgsqlTransaction tx,int limit,
         IEnumerable<(string Agent,string Module)> deferred,string[] skipped,StreamFairness fairness,CancellationToken ct)
     {
-        const string sql="""
+        string workstationClaim;
+        bool legacyWorkstations=false;
+        if(await WorkstationJournalAdmission.AvailableAsync(db,tx,ct))
+            workstationClaim="case when i.envelope->>'module_id'='sli.workstations' then public.workstation_journal_packet_allowed412(i.envelope) else true end";
+        else
+        {
+            workstationClaim="@workstations or i.envelope->>'module_id' is distinct from 'sli.workstations'";
+            legacyWorkstations=Environment.GetEnvironmentVariable("SLI_CORE_JOB_WORKSTATIONS_PROJECTION")=="1"
+                && await Workstations.WorkstationJobPlugin.EnabledAsync(db,ct);
+        }
+        string sql=$"""
             with candidates as materialized (
                 select packet_id,received_at,
                     row_number() over(partition by envelope->>'agent_id',envelope->>'module_id' order by received_at,packet_id)
                       + case when concat_ws(chr(31),envelope->>'agent_id',envelope->>'module_id')=any(@served) then 1 else 0 end as round
                 from sli_agent_packet_inbox i
                 where imported_at is null and module_disabled_at is null
-                  and (@workstations or envelope->>'module_id' is distinct from 'sli.workstations')
+                  and ({workstationClaim})
                   and not exists(select 1 from sli_agent_packet_quarantine q where q.packet_id=i.packet_id)
                   and not exists(select 1 from sli_agents a where a.id::text=i.envelope->>'agent_id' and a.status in ('replaced','disabled'))
                   and not (concat_ws(chr(31),envelope->>'agent_id',envelope->>'module_id',envelope->>'source_instance_id',envelope->>'channel',envelope->>'module_version',packet->'header'->>'source')=any(@skipped))
@@ -34,9 +45,7 @@ public sealed partial class AgentWorkstationInboxConsumer
         await using var command=new NpgsqlCommand(sql,db,tx);
         ClaimParameters(command,null,deferred,skipped,fairness);
         command.Parameters.AddWithValue("limit",limit);
-        bool workstations=Environment.GetEnvironmentVariable("SLI_CORE_JOB_WORKSTATIONS_PROJECTION")=="1"
-            &&await Workstations.WorkstationJobPlugin.EnabledAsync(db,ct);
-        command.Parameters.AddWithValue("workstations",workstations);
+        command.Parameters.AddWithValue("workstations",legacyWorkstations);
         var rows=new List<Inbox>();
         await using var reader=await command.ExecuteReaderAsync(ct);
         while(await reader.ReadAsync(ct))rows.Add(new(reader.GetGuid(0),reader.GetDateTime(1),

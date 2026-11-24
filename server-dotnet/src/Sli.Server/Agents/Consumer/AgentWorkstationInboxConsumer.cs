@@ -5,6 +5,7 @@ using Sli.Agent.Protocol;
 using Sli.Server.Infrastructure;
 using Sli.Server.Agents.FileAudit;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Storage.Direct;
 
 namespace Sli.Server.Agents.Consumer;
@@ -347,6 +348,11 @@ public sealed partial class AgentWorkstationInboxConsumer(IPostgresConnectionFac
         }
         if(module=="sli.file-audit") {
             await FileAuditInboxConsumer.ImportClaimedAsync(db,tx,row.PacketId,envelope,row.Packet,row.Rows,ct,direct);
+            return;
+        }
+        if(module=="sli.workstations" && await WorkstationJournalAdmission.AvailableAsync(db,tx,ct))
+        {
+            await WorkstationJournalInbox.ImportAsync(db,tx,row,direct,ct);
             return;
         }
         if(module!="sli.workstations") throw new WorkstationPendingException(module switch {
