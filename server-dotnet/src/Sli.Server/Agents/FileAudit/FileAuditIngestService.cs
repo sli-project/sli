@@ -69,19 +69,8 @@ internal sealed class FileAuditIngestService
         store.Parameters.AddWithValue("result",NpgsqlDbType.Jsonb,observation.ToJsonString());
         await store.ExecuteNonQueryAsync(ct);
 
-        var observed=Iso8601.ParseUtc(report["observed_at_utc"]!.GetValue<string>());
-        if(state["reported_at"] is null || observed>Iso8601.ParseUtc(state["reported_at"]!.GetValue<string>()))
+        if (MergeReceipts(state, command, receipts, report["observed_at_utc"]!.GetValue<string>(), check))
         {
-            var scopes = (JsonObject?)state["scopes"] ?? new JsonObject();
-            foreach (var receipt in receipts)
-                scopes[receipt["collection_scope_id"]!.GetValue<string>()] = receipt.DeepClone();
-            if (state["scopes"] is null)
-                state["scopes"] = scopes;
-            var expectedScopes = command["collection_scope_ids"]!.AsArray();
-            var reportedStates = scopes.Select(scope => scope.Value!["state"]!.GetValue<string>()).ToHashSet();
-            state["state"] = expectedScopes.Count != scopes.Count ? "pending"
-                : new[] { "failed", "blocked", "partial" }.FirstOrDefault(reportedStates.Contains) ?? "verified";
-            state["reported_at"]=report["observed_at_utc"]!.DeepClone();
             if (!check)
                 state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
             await using var write=new NpgsqlCommand("update public.sli_agents set file_audit=@state where id=@agent",db,tx);
@@ -90,5 +79,43 @@ internal sealed class FileAuditIngestService
             await write.ExecuteNonQueryAsync(ct);
         }
         return new JsonObject { ["status"]="accepted" };
+    }
+
+    private static bool MergeReceipts(JsonObject state, JsonObject command, JsonObject[] receipts, string observedAt, bool check)
+    {
+        var previousReportAt = state["reported_at"]?.GetValue<string>();
+        var observed = Iso8601.ParseUtc(observedAt);
+        bool newest = previousReportAt is null || observed > Iso8601.ParseUtc(previousReportAt);
+        if (!check && !newest)
+            return false;
+
+        var scopes = (JsonObject?)state["scopes"] ?? new JsonObject();
+        bool changed = false;
+        foreach (var receipt in receipts)
+        {
+            var scope = receipt["collection_scope_id"]!.GetValue<string>();
+            if (!newest && scopes[scope] is JsonObject current)
+            {
+                var lastSeen = current["observed_at_utc"]?.GetValue<string>() ?? previousReportAt!;
+                if (observed <= Iso8601.ParseUtc(lastSeen))
+                    continue;
+            }
+            var next = (JsonObject)receipt.DeepClone();
+            if (check)
+                next["observed_at_utc"] = observedAt;
+            scopes[scope] = next;
+            changed = true;
+        }
+        if (!changed)
+            return false;
+
+        if (state["scopes"] is null)
+            state["scopes"] = scopes;
+        var reportedStates = scopes.Select(scope => scope.Value!["state"]!.GetValue<string>()).ToHashSet();
+        state["state"] = command["collection_scope_ids"]!.AsArray().Count != scopes.Count ? "pending"
+            : new[] { "failed", "blocked", "partial" }.FirstOrDefault(reportedStates.Contains) ?? "verified";
+        if (newest)
+            state["reported_at"] = observedAt;
+        return true;
     }
 }

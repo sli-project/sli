@@ -184,14 +184,27 @@ public class FileAuditConsumerDatabaseTests
             var stale = await Assert.ThrowsAsync<AgentControlException>(() =>
                 ingest.Ingest(app, tx, identity, report, ct, () => new MemoryStream()));
             Assert.Equal("module_disabled", stale.Message);
-            for (var delivery = 0; delivery < 2; delivery++)
-                Assert.Equal("accepted", (await ingest.Ingest(app, tx, identity, failed, ct, () => new MemoryStream()))["status"]!.ToString());
+
+            var firstScope = (JsonObject)failed.DeepClone();
+            firstScope["scopes"]!.AsArray().RemoveAt(1);
+            var firstObserved = Iso8601.Format(now.AddSeconds(1));
+            firstScope["observed_at_utc"] = firstObserved;
+            Assert.Equal("accepted", (await ingest.Ingest(app, tx, identity, firstScope, ct, () => new MemoryStream()))["status"]!.ToString());
+            var secondScope = (JsonObject)failed.DeepClone();
+            secondScope["scopes"]!.AsArray().RemoveAt(0);
+            Assert.Equal("accepted", (await ingest.Ingest(app, tx, identity, secondScope, ct, () => new MemoryStream()))["status"]!.ToString());
             var status = await control.Status(app, tx, Agent.ToString(), principal, access, ct);
             Assert.Equal("failed", status.GetProperty("state").GetString());
+            Assert.Equal(firstObserved, status.GetProperty("reported_at").GetString());
             Assert.Equal(2, status.GetProperty("scopes").EnumerateObject().Count());
+
+            for (var delivery = 0; delivery < 2; delivery++)
+                Assert.Equal("accepted", (await ingest.Ingest(app, tx, identity, failed, ct, () => new MemoryStream()))["status"]!.ToString());
+            var verifiedScopes = (await control.Status(app, tx, Agent.ToString(), principal, access, ct)).GetProperty("scopes");
+            Assert.Equal(firstObserved, verifiedScopes.GetProperty("scope:files").GetProperty("observed_at_utc").GetString());
             await tx.CommitAsync(ct);
         }
-        Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='multi-scope-check'", ct));
+        Assert.Equal(4, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='multi-scope-check'", ct));
     }
 
     [Fact]
