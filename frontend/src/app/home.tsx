@@ -25,7 +25,7 @@ function EmptyRow() {
 
 function LoadError({ message, retry, fetching }: { message: string; retry: () => void; fetching: boolean }) {
   return <div>
-    <p role="alert">{message}</p>
+    <p className="sli-ds-home-load-error" role="alert">{message}</p>
     <Button disabled={fetching} onClick={retry}>{t("state.retry")}</Button>
   </div>;
 }
