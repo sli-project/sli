@@ -8625,7 +8625,7 @@
           },
           {
             "value": "unknown",
-            "label": "Неизвестно"
+            "label": "Действие не распознано"
           }
         ],
         "field_categories": [],
