@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using Sli.Server.Hosting;
+using Sli.Server.Infrastructure;
 using Sli.Server.Operations;
 using Sli.Server.Storage.Lifecycle;
 using Sli.Server.Tests.Agents;
