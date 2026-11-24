@@ -72,13 +72,31 @@ internal static class AdAccountEvents
         AdPeriod period, CancellationToken ct, IConfiguration? config)
         => ReadRowsAsync(db, [domain], [4624], period, ct, config, servers, daily: true, columns: LogonColumns);
 
+    internal static Task<List<JsonObject>> ReadWorkplaceLogonsAsync(NpgsqlConnection db, long[] domains, string[] sids,
+        AdPeriod period, CancellationToken ct, IConfiguration? config)
+        => ReadRowsAsync(db, domains, [4624], period, ct, config, servers: null, daily: true,
+            columns: "domain_id,target_user_sid,logon_type,source,last_seen_utc", workplaceSids: sids);
+
     private static async Task<List<JsonObject>> ReadRowsAsync(NpgsqlConnection db, long[]? domains, int[] codes,
-        AdPeriod period, CancellationToken ct, IConfiguration? config, long[]? servers, bool daily, string? columns)
+        AdPeriod period, CancellationToken ct, IConfiguration? config, long[]? servers, bool daily, string? columns,
+        string[]? workplaceSids = null)
     {
         var args = new List<object?> { codes,period.Start,period.End };
         string scope="";
         if(domains is not null){args.Add(domains);scope+=" and domain_id=any($"+args.Count+")";}
         if(servers is not null){args.Add(servers);scope+=" and server_id=any($"+args.Count+")";}
+        if (workplaceSids is not null)
+        {
+            // AdJson.Text trims Unicode whitespace, and SID matching uses OrdinalIgnoreCase.
+            // Filter printable ASCII exactly here and leave other values to the existing .NET checks.
+            scope += " and (btrim(logon_type) collate \"C\" in ('2','10','11') or logon_type collate \"C\" ~ '[^ -~]')";
+            if (workplaceSids.All(sid => sid.All(char.IsAscii)))
+            {
+                args.Add(workplaceSids.Select(sid => sid.ToLowerInvariant()).ToArray());
+                scope += " and (lower(btrim(target_user_sid) collate \"C\")=any($" + args.Count
+                    + ") or target_user_sid collate \"C\" ~ '[^ -~]')";
+            }
+        }
         string sql=Source(config,daily)+" select "+(columns??"*")+" from account_events where event_id=any($1) and time_created_utc>=$2 and time_created_utc<$3"+scope+" order by time_created_utc,id,summary_key";
         await using var command=new NpgsqlCommand(sql,db){CommandTimeout=0};
         foreach(var arg in args)command.Parameters.Add(new(){Value=arg??DBNull.Value});

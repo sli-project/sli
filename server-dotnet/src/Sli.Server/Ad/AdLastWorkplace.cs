@@ -12,7 +12,7 @@ internal static class AdLastWorkplace
     internal static async Task<Dictionary<(long,string),JsonObject>> ReadAsync(NpgsqlConnection db,long[] domains,string[] sids,CancellationToken ct,IConfiguration? config=null,AccessFacts? facts=null,AccessDecision? access=null,string action="view")
     {
         var result=new Dictionary<(long,string),JsonObject>();if(sids.Length==0||domains.Length==0)return result;
-        var rows=await AdAccountEvents.ReadAsync(db,domains,[4624],new(DateTimeOffset.UtcNow.AddDays(-365),DateTimeOffset.UtcNow),ct,config);
+        var rows=await AdAccountEvents.ReadWorkplaceLogonsAsync(db,domains,sids,new(DateTimeOffset.UtcNow.AddDays(-365),DateTimeOffset.UtcNow),ct,config);
         var selected=sids.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach(var row in rows.Where(r=>r.Text("logon_type") is "2" or "10" or "11").OrderByDescending(r=>r.Time("last_seen_utc"))) {
             if(row.Text("target_user_sid") is not {} sid||!selected.Contains(sid)||row.Text("workstation_name") is not {} name)continue;
