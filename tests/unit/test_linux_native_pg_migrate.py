@@ -269,6 +269,76 @@ def postgres(tmp_path):
         yield query
 
 
+def test_native_404_upgrade_installs_radius_admission_with_unchanged_schema_acl(tmp_path, postgres):
+    from deploy.linux import native_pg_migrate as subject
+    from scripts.maintenance import existing_postgres_bootstrap as bootstrap
+
+    def execute(body, *, database="sli"):
+        result = postgres(body, database=database)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    linux = ROOT / "deploy/linux"
+    migrations = bootstrap.forward_migration_inventory(ROOT / "config/postgres_migrations")
+    baseline = bootstrap.load_baseline(ROOT / "config/postgres_baseline", migrations)
+    rendered = bootstrap.render_baseline_schema(baseline, "example.test", tmp_path / "baseline.sql",
+                                                seed_report_domain=False)
+    execute("""
+        create role sli_migration login noinherit;
+        create role adlog_user login noinherit;
+        create database sli owner sli_migration;
+    """, database="postgres")
+    execute("""
+        revoke all on database sli from public;
+        grant connect on database sli to adlog_user;
+        revoke create on schema public from public;
+        grant usage on schema public to adlog_user;
+    """)
+    grants = (linux / "runtime_grants.sql").read_text(encoding="utf-8")
+    execute("\n".join(("begin;", baseline.roles_path.read_text(encoding="utf-8"),
+                       rendered.read_text(encoding="utf-8"), grants,
+                       (linux / "default_semantic_policy.sql").read_text(encoding="utf-8"), "commit;")))
+    execute("\n".join(item.path.read_text(encoding="utf-8") for item in migrations
+                      if baseline.version < item.version <= 404))
+    execute(grants)
+
+    schema_acl = "select nspowner::regrole, nspacl from pg_namespace where nspname='public';"
+    predecessor_acl = execute(schema_acl)
+    assert execute("""
+        select has_schema_privilege('adlog_storage_owner','public','create'),
+               has_schema_privilege('adlog_storage_owner','public','create with grant option'),
+               has_schema_privilege('adlog_plugin_lifecycle_owner','public','create');
+    """) == "t|f|f"
+    assert execute("select max(version) from public.schema_migrations;") == "404"
+
+    release = tmp_path / "release-406"
+    scripts = release / "config/postgres_migrations"
+    scripts.mkdir(parents=True)
+    shutil.copytree(ROOT / "config/postgres_baseline", release / "config/postgres_baseline")
+    shutil.copyfile(ROOT / "config/postgres_schema_v8.sql", release / "config/postgres_schema_v8.sql")
+    for path in (ROOT / "config/postgres_migrations").glob("*.sql"):
+        version = path.name.partition("_")[0]
+        if not version.isdigit() or int(version) <= 406:
+            shutil.copyfile(path, scripts / path.name)
+    (release / "deploy/linux").mkdir(parents=True)
+    (release / "deploy/linux/native_pg_ledger.json").write_text(json.dumps(inventory.build_manifest(release)))
+
+    upgrade = subject.upgrade_sql(release)
+    execute(upgrade)
+    assert execute(schema_acl) == predecessor_acl
+    assert execute("""
+        select proowner::regrole from pg_proc where oid in (
+            'public.radius_accounting_plugin_ready406()'::regprocedure,
+            'public.radius_accounting_source_ready406(text,text,text,text,boolean)'::regprocedure
+        ) order by proname;
+    """) == "adlog_plugin_lifecycle_owner\nadlog_storage_owner"
+    ledger = "select json_agg(m order by version) from (select version,name,sha256 from public.schema_migrations) m;"
+    assert json.loads(execute(ledger)) == inventory.expected_ledger(release)
+    execute(upgrade)
+    assert execute(schema_acl) == predecessor_acl
+    assert json.loads(execute(ledger)) == inventory.expected_ledger(release)
+
+
 def test_native_396_queue_upgrade_preserves_published_397(tmp_path, postgres, monkeypatch):
     from deploy.linux import native_install, native_pg_migrate as subject, native_upgrade
     from scripts.maintenance import existing_postgres_bootstrap as bootstrap
