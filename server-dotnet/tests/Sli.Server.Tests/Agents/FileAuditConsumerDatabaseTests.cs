@@ -78,7 +78,7 @@ public class FileAuditConsumerDatabaseTests
     {
         var ct=TestContext.Current.CancellationToken;
         await using var fixture=new SqlPostgresFixture();
-        await fixture.StartAsync(ct);
+        await fixture.StartAsync(ct,throughVersion:405);
         await using var owner=await fixture.Pg.OpenAsync(ct);
         await Register(owner,ct);
         await PostCollectionPostgres.Sql(owner,"""
