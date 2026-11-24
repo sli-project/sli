@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Semantic.Password;
@@ -8,8 +9,135 @@ using Xunit;
 
 namespace Sli.Server.Tests.Semantic;
 
-public sealed class PasswordProofBudgetPostgresTests
+public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
 {
+    [Fact]
+    public async Task Brute_advances_past_ten_thousand_continuity_witnesses_from_many_unqualified_origins()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 408);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
+        var seed = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, occurredAt: start,
+            eventKinds: [4625], nativeTargetSids: ["S-1-0-0"]);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, seed, ct);
+        await InstallTestClock(owner, ct);
+        await SetTestClock(owner, start.AddMinutes(2), ct);
+        await using var runtime = PasswordProducerRuntime.Create(
+            name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
+            _ => throw new InvalidOperationException());
+        await using var worker = await runtime.OpenAsync(ct);
+        var scope = await ConfigureScope(fixture, worker, ct);
+        var rule = new PasswordRule(scope);
+        await using (var plan = new NpgsqlCommand(
+            "select (public.password_plan388(@scope::jsonb,@rule)#>>'{live,rule_version}')::integer", worker)) {
+            plan.Parameters.AddWithValue("scope", scope.Document.ToJsonString());
+            plan.Parameters.AddWithValue("rule", rule.Id);
+            rule = new PasswordRule(scope, revision: (int)(await plan.ExecuteScalarAsync(ct))!);
+        }
+
+        const int count = 10000;
+        // Each origin receives failures about 129 seconds apart: close enough to
+        // retain the chain, too sparse to qualify for brute force in ten minutes.
+        await PasswordFirstBatchPostgresTests.SeedBacklog(owner, ct, count, spacing: 0.3, noise: true,
+            clients: 1, accountCount: 429, continuityRows: count);
+        var before = start.AddMilliseconds((count - 1) * 300);
+        await SetTestClock(owner, before.AddMinutes(2), ct);
+        async Task<PasswordProducerOutcome> Run()
+        {
+            await using var restarted = await runtime.OpenAsync(ct);
+            return await new PasswordProducer().RunAsync(restarted, rule, ct);
+        }
+        DateTimeOffset? watermark = null;
+        for (int i = 0; i < 6 && watermark != before; i++) {
+            var result = await Run();
+            Assert.False(result.Failed, result.Diagnostic?.ToJsonString());
+            watermark = PasswordJson.Time(result.Work!["watermark"]);
+        }
+        Assert.Equal(before, watermark);
+
+        async Task<string> Composition()
+        {
+            await using var query = new NpgsqlCommand("""
+                select concat_ws(':', count(*),count(*) filter (where e.value->>'sequence'='0'),
+                    sum(jsonb_array_length(e.value->'prequalification')))
+                from public.semantic_password_checkpoints c
+                cross join lateral public.password_state_episodes385(c.state_document) e(value)
+                where c.pin=@pin
+                """, owner);
+            query.Parameters.AddWithValue("pin", rule.Pin);
+            return (string)(await query.ExecuteScalarAsync(ct))!;
+        }
+        Assert.Equal("429:429:10000", await Composition());
+        var next = before.AddSeconds(1);
+        await AdmitEvents(fixture, owner, [(4625, next, 800, 201)], sequence: 102, recordId: count + 1, ct);
+        await SetTestClock(owner, next.AddMinutes(2), ct);
+        var timer = Stopwatch.StartNew();
+        var blocked = await Run();
+        output.WriteLine($"Predecessor at the continuity limit: {timer.Elapsed.TotalSeconds:F3}s");
+        Assert.True(blocked.Failed, blocked.Work?.ToJsonString());
+        Assert.Equal("Checkpoint", blocked.Diagnostic?["proof_budget"]?["phase"]?.GetValue<string>());
+        Assert.Equal(10001L, blocked.Diagnostic?["proof_budget"]?["references"]?.GetValue<long>());
+        Assert.Equal("429:429:10000", await Composition());
+
+        string migration = Path.Combine(PostCollectionPostgres.Repository(),
+            "config/postgres_migrations/409_password_checkpoint_continuity.sql");
+        string rollback = Path.ChangeExtension(migration, ".rollback.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await fixture.Pg.ApplyFileAsync(rollback, null, ct);
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await using (var acl = new NpgsqlCommand("""
+            select p.proowner='adlog_storage_owner'::regrole
+                and not has_function_privilege('adlog_semantic_worker',p.oid,'EXECUTE')
+                and not has_function_privilege('adlog_user',p.oid,'EXECUTE')
+            from pg_proc p where p.oid='public.password_continuity_native_cost409(jsonb,jsonb)'::regprocedure
+            """, owner))
+            Assert.Equal(true, await acl.ExecuteScalarAsync(ct));
+
+        timer.Restart();
+        var advanced = await Run();
+        Assert.False(advanced.Failed, advanced.Diagnostic?.ToJsonString());
+        Assert.Equal(next, PasswordJson.Time(advanced.Work!["watermark"]));
+        Assert.Equal(10000, advanced.Work["checkpoint_max_unit_refs"]!.GetValue<int>());
+        Assert.Equal("430:430:10001", await Composition());
+        output.WriteLine($"Advanced one second at capacity in {timer.Elapsed.TotalSeconds:F3}s");
+
+        // The maximum canonical ID is in the second sorted continuity unit.
+        // Remove rolling overlap from this private verifier probe so the native
+        // checksum check, rather than the global conflict check, rejects it.
+        await PostCollectionPostgres.Sql(owner, """
+            insert into public.finding_evidence_source_bindings(principal_oid,principal_name,installation_id,plugin_id,
+                source_instance_id,source_generation,collection_scope_id,storage_kind,log_source_id,agent_id)
+            select r.oid,r.rolname,b.installation_id,b.plugin_id,b.source_instance_id,b.source_generation,
+                b.collection_scope_id,b.storage_kind,b.log_source_id,b.agent_id
+            from public.finding_evidence_source_bindings b cross join pg_roles r
+            where b.principal_name='sli_semantic_login' and b.storage_kind='core_event' and r.rolname=session_user
+            """, ct);
+        await using (var bad = new NpgsqlCommand("""
+            with latest as (
+                select c.*,array['episodes',(e.ordinal-1)::text,'witnesses',(w.ordinal-1)::text,'xml_sha256'] as path
+                from public.semantic_password_checkpoints c
+                cross join lateral jsonb_array_elements(c.state_document->'episodes') with ordinality e(value,ordinal)
+                cross join lateral jsonb_array_elements(e.value->'witnesses') with ordinality w(value,ordinal)
+                where c.pin=@pin
+                order by (w.value#>>'{ref,native_id}') collate "C" desc limit 1
+            )
+            select public.password_checkpoint_native_cost403(scope_json,
+                jsonb_set(jsonb_set(state_document,path,to_jsonb(repeat('0',64))),'{window}','[]'),
+                scope_digest,pin,'{}') from latest
+            """, owner) { CommandTimeout = 0 }) {
+            bad.Parameters.AddWithValue("pin", rule.Pin);
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => bad.ExecuteScalarAsync(ct));
+            Assert.Equal("42501", denied.SqlState);
+            Assert.Equal("password_v2_retained_unavailable", denied.MessageText);
+        }
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Pg.ApplyFileAsync(rollback, null, ct));
+        Assert.Contains("password_checkpoint_continuity409_rollback_pending_state", refused.Message);
+        Assert.Equal("430:430:10001", await Composition());
+    }
+
     [Fact]
     public async Task Both_live_pins_resume_a_checkpoint_near_the_proof_limit_after_upgrade()
     {

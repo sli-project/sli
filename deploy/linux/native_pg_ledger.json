@@ -603,6 +603,8 @@
     "config/postgres_migrations/407_bound_source_discovery.sql": "71e08c5f2e73771899311e81191a33db103f94c4eaa24bf2cc8c7163229feca8",
     "config/postgres_migrations/408_index_finding_evidence_copy.rollback.sql": "1aeb017a949daf7b702000c99e44efe11e0b47ee2978e7eef2b233d47a71a68a",
     "config/postgres_migrations/408_index_finding_evidence_copy.sql": "65857bf375d1be8bacabf812959cc104cd07779b1837619e0d8b5d7957ed4393",
+    "config/postgres_migrations/409_password_checkpoint_continuity.rollback.sql": "636e43e79c2cc3d474afff83eedeca39d939400c00a1498ea862eec784bcb74e",
+    "config/postgres_migrations/409_password_checkpoint_continuity.sql": "4c6ed947260220b861e12ba5b4f260f88de128908ce11d740026f95e275eda5a",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
