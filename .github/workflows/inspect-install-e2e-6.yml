@@ -44,7 +44,8 @@ jobs:
             install -m 0640 /dev/null "/etc/sli/secrets/$name"
             printf 'synthetic\n' > "/etc/sli/secrets/$name"
           done
-          cat > /var/tmp/sli-credential-check.py <<'PY'
+          install -d -m 0755 /usr/local/libexec
+          cat > /usr/local/libexec/sli-credential-check.py <<'PY'
           import errno
           import os
           import sys
@@ -75,7 +76,7 @@ jobs:
               for name in postgres_password migration_password runtime_password; do
                 printf 'LoadCredential=%s:/etc/sli/secrets/%s\n' "$name" "$name"
               done
-              printf 'ExecStart=/usr/bin/python3 -B /var/tmp/sli-credential-check.py %s\n' "$unit"
+              printf 'ExecStart=/usr/bin/python3 -B /usr/local/libexec/sli-credential-check.py %s\n' "$unit"
               printf '%s\n' 'NoNewPrivileges=yes' 'PrivateTmp=yes' 'InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock'
             } > "/run/systemd/system/$unit"
           done
