@@ -33,12 +33,12 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
     public Task Two_day_noise_backlog_6000_catches_up_in_one_cycle()=>RunBacklog(6000);
 
     [Fact]
-    public Task Dense_noise_catches_up_without_pooling_unrelated_chain_proofs()=>RunBacklog(13000,TimeSpan.FromHours(2),clients:2);
+    public Task Dense_noise_catches_up_without_pooling_unrelated_chain_proofs()=>RunBacklog(13000,TimeSpan.FromHours(2),clients:2,requireFullHistory:true);
 
     [Fact]
     public Task Stand_noise_71_ips_with_392_failures_per_ten_minutes_catches_up()=>RunBacklog(1000,TimeSpan.FromMinutes(30),clients:71,standNoise:true);
 
-    private async Task RunBacklog(int total,TimeSpan? horizon=null,int clients=40,bool standNoise=false)
+    private async Task RunBacklog(int total,TimeSpan? horizon=null,int clients=40,bool standNoise=false,bool requireFullHistory=false)
     {
         var ct=TestContext.Current.CancellationToken;
         await using var fixture=new SqlPostgresFixture();await fixture.StartAsync(ct);
@@ -69,7 +69,15 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
             bind.Parameters.AddWithValue("agent",ShortEventAdmissionPostgresTests.Agent);
             Assert.Equal("configured",JsonNode.Parse((string)(await bind.ExecuteScalarAsync(ct))!)!["status"]!.GetValue<string>());
         }
-        var poller=new PasswordProducerPoller(runtime,new PasswordProducer(),new DetectionProducer(new(),new()));
+        PollClock? pollClock = requireFullHistory ? new() : null;
+        var poller = new PasswordProducerPoller(runtime,new PasswordProducer(),new DetectionProducer(new(),new()))
+            { Clock = pollClock ?? TimeProvider.System };
+        Task<IReadOnlyList<PasswordProducerOutcome>> Poll() {
+            // Keep this proof workload independent of runner speed during each poll.
+            // PostgreSQL still reads and commits against its actual transaction time.
+            if (pollClock is not null) pollClock.At = DateTimeOffset.UtcNow;
+            return poller.RunSourceAsync(scope,ct);
+        }
         async Task<bool> SourceLock(bool acquire) {
             await using var command=new NpgsqlCommand("select public.password_producer_source382(@s::jsonb,@a)",worker){CommandTimeout=0};
             command.Parameters.AddWithValue("s",scope.Document.ToJsonString());command.Parameters.AddWithValue("a",acquire);
@@ -77,7 +85,7 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
         }
         Assert.True(await SourceLock(true));
         var target=DateTimeOffset.UtcNow.AddSeconds(-120);var watch=Stopwatch.StartNew();
-        var queued=poller.RunSourceAsync(scope,ct);
+        var queued=Poll();
         try {
             while(!queued.IsCompleted) {
                 await using var waiting=new NpgsqlCommand("select exists(select 1 from pg_locks where not granted and @pid=any(pg_blocking_pids(pid)))",owner);
@@ -88,12 +96,41 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
             Assert.False(queued.IsCompleted,"The second password producer must queue behind its source owner");
         }
         finally {Assert.True(await SourceLock(false));}
+        async Task<(DateTimeOffset? LiveWatermark,string? Catchup)> ReadProgress() {
+            await using var command=new NpgsqlCommand("""
+                select (select case when count(c.watermark)=2 then min(c.watermark) end
+                    from password_pass_state393 p join semantic_password_checkpoints c
+                        on c.scope_digest=p.scope_digest and c.pin=p.live_pin),
+                    public.password_catchup_status388()::text
+                """,owner);
+            await using var reader=await command.ExecuteReaderAsync(ct);
+            Assert.True(await reader.ReadAsync(ct));
+            return (reader.IsDBNull(0)?null:reader.GetFieldValue<DateTimeOffset>(0),
+                reader.IsDBNull(1)?null:reader.GetString(1));
+        }
         var results=(await queued).ToList();int cycles=1;
-        while(results.Any(r=>r.Work?["watermark"] is {} watermark&&PasswordJson.Time(watermark)<target)) {
-            var next=await poller.RunSourceAsync(scope,ct);cycles++;
+        async Task<IReadOnlyList<PasswordProducerOutcome>> CollectNextPoll() {
+            var next=await Poll();cycles++;
             Assert.All(next,r=>Assert.False(r.Failed,r.Diagnostic?.ToJsonString()));
             results.AddRange(next);
-            if(next.All(r=>r.Work==null||PasswordJson.Time(r.Work["watermark"])>=target))break;
+            return next;
+        }
+        if(requireFullHistory) {
+            // A live-only poll can reach the target while a history pass remains pending.
+            // Advance until both lanes are complete and fail with the durable state if they stall.
+            var progress=await ReadProgress();
+            const int maxCycles=24;
+            while(progress.LiveWatermark is null || progress.LiveWatermark<target || progress.Catchup is not null) {
+                Assert.True(cycles<maxCycles,$"Catch-up incomplete after {cycles} polls. Live watermark {progress.LiveWatermark:O}; history {progress.Catchup}");
+                var next=await CollectNextPoll();
+                progress=await ReadProgress();
+                output.WriteLine($"cycle={cycles}; batches={next.Count}; oldest live watermark={progress.LiveWatermark:O}; history={progress.Catchup ?? "complete"}");
+            }
+        } else {
+            while(results.Any(r=>r.Work?["watermark"] is {} watermark&&PasswordJson.Time(watermark)<target)) {
+                var next=await CollectNextPoll();
+                if(next.All(r=>r.Work==null||PasswordJson.Time(r.Work["watermark"])>=target))break;
+            }
         }
         watch.Stop();
         output.WriteLine($"events={total}; cycles={cycles}; batches={results.Count}; seconds={watch.Elapsed.TotalSeconds:F3}; events/s={total/watch.Elapsed.TotalSeconds:F1}");
@@ -116,7 +153,7 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
             Assert.True((long)(await signals.ExecuteScalarAsync(ct))!>0);
         if(horizon.HasValue)await using(var signals=new NpgsqlCommand("select count(*) from semantic_qw_signals where document_json->>'rule_id'='qw.password-spray'",owner))
             Assert.True((long)(await signals.ExecuteScalarAsync(ct))!>0);
-        if(clients==2) {
+        if(requireFullHistory) {
             await using var budget=new NpgsqlCommand("""
                 select sum(reserved_ref_occurrences),max(reserved_ref_occurrences),max(reserved_xml_bytes),
                     sum(reserved_ref_occurrences-last_sequence+1)
@@ -136,9 +173,15 @@ public sealed class PasswordClockCatchUpPostgresTests(ITestOutputHelper output)
             Assert.Equal((long)total,await covered.ExecuteScalarAsync(ct));
         }
         // A second cycle has no new finalizable events and terminates without replaying jobs.
-        var idle=await poller.RunSourceAsync(scope,ct);Assert.All(idle,r=>Assert.False(r.Failed,r.Diagnostic?.ToJsonString()));Assert.Equal(0,idle.Sum(r=>r.Jobs));
+        var idle=await Poll();Assert.All(idle,r=>Assert.False(r.Failed,r.Diagnostic?.ToJsonString()));Assert.Equal(0,idle.Sum(r=>r.Jobs));
         await using(var count=new NpgsqlCommand("select count(*) from event_hot",owner))Assert.Equal((long)total,await count.ExecuteScalarAsync(ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    private sealed class PollClock : TimeProvider
+    {
+        public DateTimeOffset At { get; set; }
+        public override DateTimeOffset GetUtcNow() => At;
     }
 
     [Fact]
