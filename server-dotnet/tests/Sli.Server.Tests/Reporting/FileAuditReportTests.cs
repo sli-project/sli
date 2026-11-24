@@ -1,12 +1,15 @@
 using Microsoft.Extensions.DependencyInjection;
 using Sli.Server.Access;
 using Sli.Server.Reporting.V2;
+using Npgsql;
 using Xunit;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sli.Server.Semantic;
+using Sli.Server.Infrastructure;
 using Sli.Server.Storage.Lifecycle;
+using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Storage;
 
 namespace Sli.Server.Tests.Reporting;
@@ -56,6 +59,69 @@ public sealed class FileAuditReportTests
         Assert.Equal("file_audit_history_unavailable",body["coverage"]!["reason"]!.ToString()); Assert.Equal(0,db.Commits);
     }
     internal static readonly string[] Tabs = ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"];
+    private sealed class PostgresConnections(SqlPostgresFixture fixture) : IPostgresConnectionFactory
+    {
+        public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
+    }
+
+    internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner, CancellationToken ct)
+    {
+        const string legacyId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        await PostCollectionPostgres.Sql(owner, """
+            insert into sli_plugin_file_audit.actions(action_id,contract_version,agent_id,source_instance_id,collection_scope_id,
+                observed_at,subject_sid,path,operation,outcome,projection_version)
+            select repeat('b',64),1,(f.method#>>'{$origin,agent_id}')::uuid,f.method#>>'{$origin,source_instance_id}',
+                f.method#>>'{$origin,collection_scope_id}',f.time_created_utc-interval '1 second',f.actor,
+                'C:\Files\legacy.txt','permissions','success',1
+            from event_cold_facts f where f.event_kind=4670;
+
+            insert into sli_plugin_file_audit.policy_revisions(agent_id,source_instance_id,revision,authored_at,actor_kind,actor_id,policy,policy_sha256)
+            select p.agent_id,p.source_instance_id,100,now(),p.actor_kind,p.actor_id,updated.policy,
+                encode(sha256(convert_to(updated.policy::text,'UTF8')),'hex')
+            from sli_plugin_file_audit.policy_revisions p
+            cross join lateral (select jsonb_set(p.policy,'{roots}',p.policy->'roots' ||
+                jsonb_build_array(jsonb_set(p.policy#>'{roots,0}','{collection_scope_id}','"scope:other"'))) as policy) updated
+            where p.revision=2;
+            """,ct);
+        await using var time = new NpgsqlCommand("select time_created_utc from event_cold_facts where event_kind=4670", owner);
+        var stamp = (DateTime)(await time.ExecuteScalarAsync(ct))!;
+        var window = $"period=custom&from={stamp.AddDays(-1):yyyy-MM-dd}T00:00:00Z&to={stamp.AddDays(1):yyyy-MM-dd}T00:00:00Z";
+        var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
+        foreach (string tab in new[] { "permission-changes", "actions" })
+        {
+            var key = "file-audit." + tab;
+            var definition = new ReportDefinitionRegistry().Get(key);
+            var query = $"/api/v2/reports/{key}/data?{window}&operation=permissions&limit=1";
+            const string allowed = """{"mode":"restricted","clauses":[{"collection_scope_ids":["scope:files"]}]}""";
+            await using var host = await ReportFixture.Start(Facts(tab, scope: allowed), definition, nativeReader: reader);
+            using var first = await host.Client.GetAsync(query, ct);
+            Assert.Equal(HttpStatusCode.OK,first.StatusCode);
+            var page = await ReportFixture.Body(first);
+            Assert.Equal(2, page["filtered_count"]!.GetValue<int>());
+            var row = Assert.Single(page["items"]!.AsArray());
+            Assert.NotEqual(legacyId, row!["id"]!.ToString());
+            Assert.Equal("permissions",row["operation"]!.ToString());
+            Assert.Equal("success",row["outcome"]!.ToString());
+            Assert.Equal("scope:files", row["collection_scope_id"]!.ToString());
+            Assert.Equal(4670,row["evidence"]![0]!["event_id"]!.GetValue<int>());
+            string cursor = page["next_cursor"]!.GetValue<string>();
+            using var next = await host.Client.GetAsync(query + "&cursor=" + Uri.EscapeDataString(cursor), ct);
+            Assert.Equal(HttpStatusCode.OK,next.StatusCode);
+            var last = await ReportFixture.Body(next);
+            Assert.Equal(legacyId,Assert.Single(last["items"]!.AsArray())!["id"]!.ToString());
+            Assert.False(last["has_more"]!.GetValue<bool>());
+        }
+        const string other = """{"mode":"restricted","clauses":[{"collection_scope_ids":["scope:other"]}]}""";
+        var permissions = new ReportDefinitionRegistry().Get("file-audit.permission-changes");
+        await using var denied = await ReportFixture.Start(Facts("permission-changes", scope: other), permissions,nativeReader:reader);
+        using var response = await denied.Client.GetAsync("/api/v2/reports/file-audit.permission-changes/data?" + window,ct);
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+        var result = await ReportFixture.Body(response);
+        Assert.Equal(0,result["filtered_count"]!.GetValue<int>());
+        Assert.Empty(result["items"]!.AsArray());
+        Assert.DoesNotContain("scope:files",result.ToJsonString());
+    }
+
     public static IEnumerable<object[]> Routes() => Tabs.SelectMany(t => new[] { "data", "export.csv", "rows/row-1/detail" }.Select(a => new object[] { t, a }));
     internal static JsonObject Root(string source = "synthetic") => new() { ["agent_id"] = "11111111-1111-1111-1111-111111111111", ["source_instance_id"] = source, ["collection_scope_id"] = "root", ["source_name"] = "server.example.test", ["share_name"] = "share", ["path"] = @"C:\share" };
     internal static AccessFacts Facts(string tab, bool allowed = true, bool export = true, string scope = "{\"kind\":\"all\"}")

@@ -11,7 +11,7 @@ using Sli.Server.Storage.Lifecycle;
 namespace Sli.Server.Reporting.V2;
 
 // Admission, rows, counts and episode metadata share a read-only repeatable-read snapshot.
-public sealed class FileAuditReportReader : IReportV2Reader
+public sealed partial class FileAuditReportReader : IReportV2Reader
 {
     readonly ISemanticDatabase database;
     readonly Func<FileAuditHistory?> history;
@@ -61,10 +61,15 @@ public sealed class FileAuditReportReader : IReportV2Reader
             else
             {
                 var options = after?.Copy() ?? new JsonObject(); options["show_service"] = context.Params.Text("show_service", "false") == "true";
-                data = (await session.QueryAsync("select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data", ct,
+                string? operation = context.Params["operation"]?.GetValue<string>();
+                bool nativePermissions = tab == "permission-changes" && operation is null or "permissions"
+                    || tab == "actions" && operation == "permissions";
+                var sql = nativePermissions ? PermissionChangesSql
+                    : "select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data";
+                data = (await session.QueryAsync(sql, ct,
                     readRoots, tab, DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime,
                     DateTimeOffset.Parse(context.Params["period"]!["to_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime,
-                    context.Params["path"]?.GetValue<string>(), context.Params.Text("include_nested", "true") == "true", context.Params["employee"]?.GetValue<string>(), context.Params["operation"]?.GetValue<string>(), options, context.Paging.Limit))[0]!["data"]!.AsObject();
+                    context.Params["path"]?.GetValue<string>(), context.Params.Text("include_nested", "true") == "true", context.Params["employee"]?.GetValue<string>(), operation, options, context.Paging.Limit))[0]!["data"]!.AsObject();
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
             }
             await RestoreEvidenceAsync(context, readRoots, Array(data["items"]), ct);
