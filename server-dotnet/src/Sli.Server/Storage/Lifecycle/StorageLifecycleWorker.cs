@@ -157,9 +157,8 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
         try
         {
             long bytes = await session.ReadDatabaseSizeAsync(ct);
-            files.Write(DatabaseUsageFile, new JsonObject {
-                ["database_bytes"] = bytes, ["observed_at_utc"] = LifecycleJson.Iso(Now),
-            });
+            await session.EnsureLocksAsync(ct);
+            files.Write(DatabaseUsageFile, DatabaseSizeHistory.Record(files, Now, bytes));
         }
         catch (Exception e) when (!ct.IsCancellationRequested
             && e is (NpgsqlException or TimeoutException or IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException))

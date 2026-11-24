@@ -179,6 +179,36 @@ def test_one_telegram_receipt_cannot_pass_two_attempts_for_same_finding(run):
     assert rows[4] == (False, "Главная, группировка, тексты, время или Telegram не подтверждены для сценариев 1.")
 
 
+def test_storage_uses_legacy_snapshot_until_the_native_history_has_a_sample(run):
+    observations, responses, get = run
+    response = responses["/api/storage/lifecycle"]
+    response["postgres_size_history"] = {"latest_snapshot": None, "samples": []}
+
+    assert acceptance.run_checks(get, observations, 1, AGENT)[6][0]
+
+    response["latest_snapshot"]["captured_at"] = stamp(NOW - timedelta(days=3))
+    assert not acceptance.run_checks(get, observations, 1, AGENT)[6][0]
+
+
+def test_storage_uses_native_size_history_and_keeps_the_external_window(run):
+    observations, responses, get = run
+    storage = observations["storage"]
+    storage.pop("samples")
+    response = responses["/api/storage/lifecycle"]
+    response["latest_snapshot"] = None
+    samples = [{"captured_at": stamp(NOW - timedelta(days=day)), "database_bytes": 1000 + day}
+               for day in range(8, -1, -1)]
+    response["postgres_size_history"] = {"latest_snapshot": samples[-1], "samples": samples}
+
+    passed, details = acceptance.run_checks(get, observations, 1, AGENT)[6]
+    assert passed
+    assert (NOW - timedelta(days=7)).date().isoformat() in details
+    assert (NOW - timedelta(days=8)).date().isoformat() not in details
+
+    storage.pop("retention_elapsed_at")
+    assert not acceptance.run_checks(get, observations, 1, AGENT)[6][0]
+
+
 def test_storage_checks_subsequent_growth_even_when_final_size_is_lower(run):
     observations, responses, get = run
     for sample, size in zip(observations["storage"]["samples"], [1020, 200, 300, 400, 600, 800, 900]):
