@@ -45,7 +45,7 @@ function ReportV2RoutePage() {
   const { reportKey } = reportV2.useParams();
   const search: Record<string, unknown> = reportV2.useSearch();
   if (reportKey === "events.journal") {
-    return <ReportWorkspacePage key={JSON.stringify([reportKey, search.q])} reportKey={reportKey} journalSearch={stringifyShellSearch(search)}/>;
+    return <ReportWorkspacePage key={reportKey} reportKey={reportKey} journalSearch={stringifyShellSearch(search)}/>;
   }
   return <ReportWorkspacePage key={reportKey} reportKey={reportKey}/>;
 }

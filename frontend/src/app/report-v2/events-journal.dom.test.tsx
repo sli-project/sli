@@ -64,6 +64,48 @@ function journal({
   return requests;
 }
 
+it("loads the new route period within the same journal domain and search text", async () => {
+  const dataRequests: URLSearchParams[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    if (!url.pathname.endsWith("/data")) return Response.json(definition);
+    const params = url.searchParams;
+    const main = !params.has("before");
+    if (main) dataRequests.push(params);
+    const otherPeriod = params.get("period") === "24h";
+    return Response.json({
+      contract_id: "sli.report-result.v2", report_key: "events.journal", state: "ok",
+      items: main ? [event(otherPeriod ? 8 : 7, otherPeriod ? "Second period result" : "First period result")] : [],
+      next_cursor: null, has_more: false, filtered_count: 1, metrics: [], series: {}, filter_options: {},
+      coverage: { completeness: "not_proven" }, limitations: [], window: windowBounds,
+    });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const route = (search: string) => <QueryClientProvider client={client}>
+    <ReportRenderer reportKey="events.journal" initialSearch={search}/>
+  </QueryClientProvider>;
+  const first = "?domain=7&period=2h&q=synthetic";
+  const second = "?domain=7&period=24h&q=synthetic";
+  const view = render(route(first));
+  fireEvent.click(await screen.findByText("First period result"));
+  const detail = await screen.findByRole("dialog", { name: "First period result" });
+
+  const equivalent = "?q=synthetic&period=2h&domain=7";
+  window.history.replaceState(null, "", "/app/report/events.journal" + equivalent);
+  view.rerender(route(equivalent));
+  expect(screen.getByRole("dialog", { name: "First period result" })).toBe(detail);
+  expect(dataRequests).toHaveLength(1);
+
+  window.history.pushState(null, "", "/app/report/events.journal" + second);
+  view.rerender(route(second));
+  expect(screen.queryByText("First period result")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await screen.findByText("Second period result");
+  expect(dataRequests.map((params) => [params.get("domain"), params.get("period"), params.get("q")]))
+    .toEqual([["7", "2h", "synthetic"], ["7", "24h", "synthetic"]]);
+  expect(new URLSearchParams(window.location.search).get("period")).toBe("24h");
+});
+
 it.each(["ok", "partial", "stale", "processing"] as const)("shows journal facts and server counts without explanatory blocks (%s)", async (state) => {
   const requests = journal({ state });
   await screen.findByText("Logon succeeded");
