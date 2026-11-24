@@ -91,6 +91,7 @@ internal static class JournalPage
             end
             """ : "null::text";
         // Apply the grant and all common filters before counting or deriving any group.
+        // Only the LogonType fallback needs to retain fields after that point.
         string statement = $"""
             with short_events as ({source}),
             scoped as (
@@ -103,7 +104,14 @@ internal static class JournalPage
                 {where}
             ),
             candidates as materialized (
-                select * from scoped {(options.Result.Length > 0 ? "where journal_result=" + sql.Parameter(options.Result) : "")}
+                select scoped.id,scoped.time_created_utc,scoped.event_id,scoped.domain_id,
+                       scoped.actor,scoped.target,scoped.source,scoped.computer,scoped.method,scoped.outcome,
+                       jsonb_build_object('LogonType',scoped.fields->'LogonType') as fields,
+                       scoped.server_id,scoped.channel,scoped.provider_name,scoped.day,scoped.event_count,
+                       scoped.first_seen_utc,scoped.last_seen_utc,scoped.summary_key,
+                       scoped.subject_user_name,scoped.target_user_name,scoped.ip_address,scoped.workstation_name,
+                       scoped.logon_id,scoped.journal_computer,scoped.journal_category,scoped.journal_result
+                from scoped {(options.Result.Length > 0 ? "where journal_result=" + sql.Parameter(options.Result) : "")}
             )
             """;
         string categoryWhere = Views.ContainsKey(options.View) ? "where journal_category=" + sql.Parameter(options.View) : "";
