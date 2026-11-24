@@ -20,16 +20,16 @@ public static partial class VpnReports
         using var stream=typeof(VpnReports).Assembly.GetManifestResourceStream("Sli.Server.Access.Administration.server.ru.json")!;
         using var document=JsonDocument.Parse(stream);return document.RootElement.GetProperty("reports.state."+state).GetString()!;
     }
-    public static async Task<JsonObject> Read(IVpnReadSession db,VpnAccess access,string report,IQueryCollection query,string action,CancellationToken ct)
+    public static async Task<JsonObject> Read(IVpnReadSession db,VpnAccess access,string report,IQueryCollection query,string action,CancellationToken ct,bool accountingOnly=false)
     {
         if(!access.Assigned(action) || action=="export" && !access.Capabilities.Decide("reports.export").Allowed) return Result(report,"denied");
-        Validate(query,report);
+        Validate(query,report,accountingOnly);
         if(report=="vpn.accounts") return await VpnAccounts.Read(db,access,query,action,ct);
         string Get(string key,string fallback="")=>query[key].FirstOrDefault() is {Length:>0} value?value:fallback;
         string domain=Get("domain",Get("domain_id"));
         if(domain=="")
         {
-            var available=await DomainOptions(db,access,ct);if((await DefaultDomain(db,access,available,ct)).Id is {} chosen) domain=chosen.ToString(CultureInfo.InvariantCulture);
+            var available=await DomainOptions(db,access,ct,accountingOnly);if((await DefaultDomain(db,access,available,ct)).Id is {} chosen) domain=chosen.ToString(CultureInfo.InvariantCulture);
         }
         if(!long.TryParse(domain,out long id)||id<=0) throw new VpnInputException("report_parameter_required:domain");
         if(Get("scope")=="all") throw new VpnInputException("report_parameter_required:domain");
@@ -39,6 +39,8 @@ public static partial class VpnReports
         int limit=ParseInt(Get("limit","100"),"report_limit_invalid"),offset=ParseInt(Get("cursor","0"),"report_cursor_invalid");
         if(limit is <1 or >200) throw new VpnInputException("report_limit_invalid");if(offset<0) throw new VpnInputException("report_cursor_invalid");
         var (from,to)=Period(query,timezone);var q=new VpnQuery(id,action,timezone,from,to,limit,offset,"");
+        if (accountingOnly && !access.AccountingReport(id))
+            throw new VpnPermissionException("report_access_denied");
         JsonObject raw;
         if(tab=="session_overlap") return await VpnOverlap.Read(db,access,q,query,ct);
         if(tab.StartsWith("policy_denials",StringComparison.Ordinal)) return await VpnPolicyDenials.Read(db,access,q,query,ct);
@@ -52,8 +54,19 @@ public static partial class VpnReports
                 _=>await VpnAuthorizations.Read(db,access,q,false,ct,tab=="failed")
             },ct);
         }
-        raw=await Safe(()=>VpnConnections.Read(db,access,q,query,ct,includeFailedAuthorizations:false),ct);
-        return Compose(report,q,tab,raw,source,await DomainOptions(db,access,ct));
+        raw = await Safe(() => VpnConnections.Read(db, access, q, query, ct, includeFailedAuthorizations: false,
+            includeEntitlements: !accountingOnly), ct);
+        var result = Compose(report, q, tab, raw, source, await DomainOptions(db, access, ct, accountingOnly));
+        if (accountingOnly)
+        {
+            var branches = result["branches"]!.AsObject();
+            foreach (var key in new[] { "nps", "windows", "windows_heatmap" }) branches.Remove(key);
+            var collections = result["collections"]!.AsObject();
+            collections.Remove("entitlements");
+            collections.Remove("failed");
+            result["coverage"]!["accounting_scope"] = "domain_history";
+        }
+        return result;
     }
     internal static JsonObject Compose(string report,VpnQuery q,string tab,JsonObject raw,JsonObject? source,List<JsonObject> domainOptions)
     {
@@ -140,15 +153,15 @@ public static partial class VpnReports
         for(int d=1;d<=7;d++) for(int h=0;h<24;h++) rows.Add(VpnJson.Obj(new {hour=h.ToString("D2"),weekday=days[d-1],failures=cells.Where(r=>r.Number("isodow")==d && r.Number("hour")==h).Sum(r=>r.Number("failures"))}));
         return VpnJson.Obj(new {state="available",items=rows});
     }
-    public static async Task<List<JsonObject>> DomainOptions(IVpnReadSession db,VpnAccess access,CancellationToken ct)
+    public static async Task<List<JsonObject>> DomainOptions(IVpnReadSession db,VpnAccess access,CancellationToken ct,bool accountingOnly=false)
     {
         if(!access.Assigned()) return [];
         try
         {
-            var accounting=await VpnSessions.Sources(db,access,false,ct);var registered=accounting["items"]!.AsArray().Select(r=>r!.Number("source_domain_id")).ToHashSet();
+            var registered = accountingOnly ? new HashSet<long>() : (await VpnSessions.Sources(db,access,false,ct))["items"]!.AsArray().Select(r=>r!.Number("source_domain_id")).ToHashSet();
             var domains=await db.ReadAsync("select id,fqdn from domains order by id limit 10001",[],ct);
             if(domains.Count>10000) throw new VpnInputException("vpn_session_source_discovery_scan_limit");
-            return domains.Where(r=>registered.Contains(r.Number("id"))||access.Windows(r.Number("id"))).Take(256).Select(r=>VpnJson.Obj(new {value=r.Text("id"),label=r.Text("fqdn")})).ToList();
+            return domains.Where(r=>accountingOnly ? access.AccountingReport(r.Number("id")) : registered.Contains(r.Number("id"))||access.Windows(r.Number("id"))).Take(256).Select(r=>VpnJson.Obj(new {value=r.Text("id"),label=r.Text("fqdn")})).ToList();
         }
         catch(Npgsql.PostgresException e) when(e.SqlState is "42501" or "42P01" or "42703") {return [];}
         catch(Npgsql.NpgsqlException e) when(e is not Npgsql.PostgresException || e.SqlState?.StartsWith("08",StringComparison.Ordinal)==true) {return [];}
@@ -182,9 +195,11 @@ public static partial class VpnReports
         int days=period switch {"24h"=>1,"7d"=>7,"30d"=>30,"90d"=>90,"366d"=>366,_=>throw new VpnInputException("report_period_invalid")};
         var end=now??DateTimeOffset.UtcNow;return(end.AddDays(-days),end);
     }
-    static void Validate(IQueryCollection query,string report)
+    static void Validate(IQueryCollection query,string report,bool accountingOnly=false)
     {
         var allowed=new HashSet<string>(report=="vpn.accounts"?["cursor","limit","sort","direction","tz","tab","q","activity"]:["cursor","limit","sort","direction","tz","tab","q","domain","domain_id","scope","period","from","to","department","status","overlap_account","overlap_min_seconds","overlap_complete","policy","nas","reason","method","min_decisions","min_growth"],StringComparer.Ordinal);
+        if (accountingOnly)
+            allowed.ExceptWith(["overlap_account", "overlap_min_seconds", "overlap_complete", "policy", "nas", "reason", "method", "min_decisions", "min_growth"]);
         foreach(var (key,value) in query) {if(!allowed.Contains(key)) throw new VpnInputException("report_parameter_unknown:"+key);if(value.Count>1) throw new VpnInputException("report_parameter_duplicate:"+key);if(value.ToString().Length>4096) throw new VpnInputException("report_parameter_too_long:"+key);}
         string tab=query["tab"].ToString();string[] tabs=["employees","daily","departments","entitlements","failed","authorizations","windows","windows_heatmap","session_overlap","policy_denials","policy_denials_growth","policy_denials_events"];
         if(tab!="" && report=="vpn.connections" && !tabs.Contains(tab)) throw new VpnInputException("report_tab_invalid");

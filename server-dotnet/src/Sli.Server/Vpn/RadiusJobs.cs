@@ -12,10 +12,13 @@ public sealed class RadiusJobs : ICoreJobPlugin
         foreach(string handler in new[]{"radius-acquisition","radius-session-observation"})
             catalog.Add("sli.remote-access",handler,new(StageAsync,PublishAsync),ScheduleAsync);
     }
-    internal static async Task<List<JsonObject>> Rows(NpgsqlConnection db,string sql,CancellationToken ct,params object?[] values)
+    internal static Task<List<JsonObject>> Rows(NpgsqlConnection db,string sql,CancellationToken ct,params object?[] values)
+        => Rows(db,null,sql,ct,values);
+
+    internal static async Task<List<JsonObject>> Rows(NpgsqlConnection db,NpgsqlTransaction? tx,string sql,CancellationToken ct,params object?[] values)
     {
         SqlArguments.Validate(values);
-        await using var cmd=new NpgsqlCommand(sql,db);
+        await using var cmd=new NpgsqlCommand(sql,db,tx);
         foreach(var value in values) cmd.Parameters.Add(PostgresVpnStore.Parameter(value));
         var result=new List<JsonObject>();await using var reader=await cmd.ExecuteReaderAsync(ct);
         while(await reader.ReadAsync(ct))

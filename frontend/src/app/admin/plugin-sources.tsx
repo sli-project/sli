@@ -7,16 +7,17 @@ import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../App";
 import { setupSourceName } from "./setup-source-labels";
 import { agentHostName } from "./agent-actions";
+import { PluginFileAuditControls } from "./plugin-file-audit-controls";
 
 const packs: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-context", "sli.windows.ad-dc"], "sli.gpo": ["sli.windows.ad-context"],
   "sli.workstations": ["sli.windows.workstations"], "sli.file-audit": ["sli.windows.file-audit"],
-  "sli.remote-access": ["sli.windows.vpn-radius"], "sli.sigma": [],
+  "sli.sigma": [],
 };
 const modules: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot"], "sli.gpo": ["sli.gpo-snapshot"],
   "sli.workstations": ["sli.workstations"], "sli.file-audit": ["sli.file-audit"],
-  "sli.remote-access": ["sli.windows.vpn-radius"], "sli.sigma": [],
+  "sli.sigma": [],
 };
 
 export function PluginReadState({ loading, error, retry }: { loading: boolean; error: Error | null; retry: () => void }) {
@@ -30,21 +31,22 @@ const lastImport = (agent: AgentCollectionHealth["items"][number], pluginId: str
   .map((channel) => channel.last_import_at).filter((stamp): stamp is string => !!stamp && Number.isFinite(Date.parse(stamp)))
   .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
 
-export function PluginSources({ pluginId, connection }: { pluginId: string; connection: boolean }) {
+export function PluginSources({ pluginId, connection, canEdit }: { pluginId: string; connection: boolean; canEdit: boolean }) {
   const status = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus });
-  const agents = useQuery({ queryKey: ["agents"], queryFn: () => api.agents(), enabled: pluginId === "sli.file-audit" });
+  const agents = useQuery({ queryKey: ["admin-agents"], queryFn: () => api.agents(), enabled: pluginId === "sli.file-audit" && canEdit });
   return <>
     {connection ? <><p>{t(({
       "sli.ad": "pluginPage.needAd", "sli.gpo": "pluginPage.needAd", "sli.file-audit": "pluginPage.needFiles",
-      "sli.remote-access": "pluginPage.needVpn", "sli.workstations": "pluginPage.needAgents", "sli.sigma": "pluginPage.needSigma",
+      "sli.workstations": "pluginPage.needAgents", "sli.sigma": "pluginPage.needSigma",
     } as Record<string, MessageKey>)[pluginId])}</p><a href="/app/agents">{t("pluginPage.computers")}</a>
       {pluginId === "sli.ad" || pluginId === "sli.gpo" ? <p><a href="/app/setup#setup-domains">{t("pluginPage.manageDomains")}</a></p> : null}
     </> : null}
     <PluginReadState loading={status.isLoading} error={status.error} retry={() => void status.refetch()}/>
     {status.data ? <SourceObjects pluginId={pluginId} data={status.data}/> : null}
-    {pluginId === "sli.file-audit" ? <>
+    {pluginId === "sli.file-audit" && canEdit ? <>
       <PluginReadState loading={agents.isLoading} error={agents.error} retry={() => void agents.refetch()}/>
-      {agents.data ? <><h2>{t("pluginPage.serversFolders")}</h2>{agents.data.items.filter((agent) => agent.assigned_modules.some((module) => typeof module === "string" ? module === "sli.file-audit" : module.module_id === "sli.file-audit")).map((agent) => {
+      {connection && agents.data && !agents.isError ? <PluginFileAuditControls agents={agents.data.items}/> : null}
+      {agents.data && !agents.isError ? <><h2>{t("pluginPage.serversFolders")}</h2>{agents.data.items.filter((agent) => agent.assigned_modules.some((module) => typeof module === "string" ? module === "sli.file-audit" : module.module_id === "sli.file-audit")).map((agent) => {
         const module = agent.assigned_modules.find((item) => typeof item !== "string" && item.module_id === "sli.file-audit");
         const roots: unknown[] = module && typeof module !== "string" && Array.isArray(module.config.roots) ? module.config.roots : [];
         return <details key={agent.id} className="sli-ds-filters__additional"><summary>{agentHostName(agent)}</summary>
@@ -90,7 +92,7 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
       {data.domain_controllers.some((controller) => !controller.domain) ? <><h2>{t("pluginPage.unknownDomain")}</h2><ul>{data.domain_controllers.filter((controller) => !controller.domain).map((controller) => <li key={controller.hostname}>{controller.hostname} · {t("pluginPage.coverageUnavailable")}</li>)}</ul></> : null}
     </> : <>
       {agents.length ? <ul>{agents.map(agentRow)}</ul> : null}
-      {!agents.length && !sources.some((source) => source.instances?.length) ? <p>{t(pluginId === "sli.remote-access" ? "pluginPage.noVpn" : pluginId === "sli.sigma" ? "pluginPage.sigmaSources" : "pluginPage.noSources")}</p> : null}
+      {!agents.length && !sources.some((source) => source.instances?.length) ? <p>{t(pluginId === "sli.sigma" ? "pluginPage.sigmaSources" : "pluginPage.noSources")}</p> : null}
     </>}
     {sources.map((source) => <details key={source.pack_id} open className="sli-ds-filters__additional"><summary>{setupSourceName(source)}</summary>
       {!source.enabled ? <p>{t("plugins.disabled")}</p> : null}

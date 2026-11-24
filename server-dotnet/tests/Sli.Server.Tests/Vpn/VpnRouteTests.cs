@@ -35,9 +35,11 @@ public sealed class VpnRouteTests
     {public ValueTask<AuthenticationResult> AuthenticateAsync(HttpContext context,CancellationToken ct)=>ValueTask.FromResult(allowed?AuthenticationResult.Success(new("session",1,role)):AuthenticationResult.Denied(401,"authentication_required"));}
     internal sealed class Store : IVpnStore,IVpnReadSession
     {
-        public int Opens;public bool Installed=true,Enabled=true,MissingSession;public readonly List<(string Sql,object?[] Values)> Calls=[];
+        public int Opens;public bool AccountingReady;public bool Installed=true,Enabled=true,MissingSession;public readonly List<(string Sql,object?[] Values)> Calls=[];
         public Task<IVpnReadSession> OpenAsync(CancellationToken ct) {Opens++;return Task.FromResult<IVpnReadSession>(this);}
         public ValueTask DisposeAsync()=>ValueTask.CompletedTask;
+        public bool AccountingConfigured => AccountingReady;
+        public async Task<IVpnReadSession?> OpenAccountingAsync(CancellationToken ct) => AccountingReady ? await OpenAsync(ct) : null;
         public Task<List<JsonObject>> ReadAsync(string sql,object?[] values,CancellationToken ct)
         {
             Calls.Add((sql,values));List<JsonObject> result;
@@ -143,6 +145,51 @@ public sealed class VpnRouteTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable,response.StatusCode);
         Assert.Contains("module_disabled",await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)); Assert.Equal(0,store.Opens); Assert.Empty(store.Calls);
     }
+    [Fact]
+    public async Task Native_connections_use_accounting_projection_without_event_queries()
+    {
+        var store = new Store { AccountingReady = true };
+        using var host = await Host(store);
+        const string path = "/api/v2/reports/vpn.connections/data?domain=1&period=custom&from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z";
+        using var response = await host.GetTestClient().GetAsync(path, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = JsonNode.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("Synthetic User", payload!["items"]![0]!["display_name"]!.ToString());
+        Assert.Contains(store.Calls, call => call.Sql == VpnSql.ConnectionSessions);
+        Assert.DoesNotContain(store.Calls, call => call.Sql == VpnSql.Entitlements);
+        Assert.Null(payload["collections"]!["entitlements"]);
+        Assert.Equal("domain_history", payload["coverage"]!["accounting_scope"]!.ToString());
+        Assert.Equal(new[] { "accounting" }, payload["branches"]!.AsObject().Select(branch => branch.Key));
+        Assert.DoesNotContain(store.Calls, call => call.Sql.StartsWith("module_disabled:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Native_connections_publish_only_implemented_tabs()
+    {
+        var store = new Store { AccountingReady = true };
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        const string path = "/api/v2/reports/vpn.connections";
+        using var declaration = await client.GetAsync(path, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, declaration.StatusCode);
+        var payload = JsonNode.Parse(await declaration.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(new[] { "employees", "daily", "departments" },
+            payload!["views"]!.AsArray().Select(view => view!["key"]!.ToString()));
+        Assert.Equal(new[] { "domain", "period", "q", "department", "status" },
+            payload["params"]!.AsArray().Select(parameter => parameter!["key"]!.ToString()));
+        int opened = store.Opens;
+        using var inactive = await client.GetAsync(path + "/data?tab=authorizations", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, inactive.StatusCode);
+        Assert.Equal(opened, store.Opens);
+        const string window = "&period=custom&from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z";
+        using var filter = await client.GetAsync(path + "/data?domain=1&department=Other" + window, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, filter.StatusCode);
+        var filtered = JsonNode.Parse(await filter.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(filtered!["items"]!.AsArray());
+        using var retired = await client.GetAsync(path + "/data?domain=1&policy=Legacy" + window, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, retired.StatusCode);
+    }
+
     [Theory] [InlineData("vpn.accounts")] [InlineData("vpn.connections")]
     public async Task V2_routes_are_disabled_after_access_checks(string report)
     {

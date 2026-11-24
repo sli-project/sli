@@ -42,6 +42,12 @@ public sealed class VpnAccess(AccessFacts facts)
         return new(directory?"directory_membership":branch,decision.Allowed?"available":"not_authorized",decision.Reason,directory?"ad.accounts.vpn":"vpn.sessions",capability);
     }
     public JsonObject Branches(long domain,string action="view")=>VpnJson.Obj(new {directory=Branch("directory",domain,action),sessions=Branch("sessions",domain,action),session_evidence=Branch("session_evidence",domain,action)});
+    // The Accounting result combines identity, HR, technical and security fields with
+    // aggregates. Require one report grant covering the complete domain projection.
+    public bool AccountingReport(long domain) => Branch("sessions", domain).Allowed &&
+        Grants("view").Any(grant => GrantAllows(grant, domain, "view") &&
+            new[] { "identity_basic", "technical", "security", "privilege", "hr" }.All(grant.FieldCategories.Contains));
+
     public bool Windows(long domain)=>Report(domain).Allowed && Capability("events.view",domain).Allowed;
     public bool Assigned(string action="view")=>reports.Reports.Any(r=>r.ReportKey=="vpn.audit" && r.Allowed && r.Grants.Any(g=>g.AllowedActions.Contains(action)));
     public bool LegacyExecutable=>!Grants("view").Any(g=>g.Scope.TryGetProperty("mode",out _));

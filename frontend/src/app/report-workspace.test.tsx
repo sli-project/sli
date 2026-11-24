@@ -45,35 +45,20 @@ beforeEach(() => { vi.spyOn(window, "scrollTo").mockImplementation(() => undefin
 afterEach(() => { cleanup(); vi.restoreAllMocks(); state.grants = []; state.status = "получены"; state.catalogFails = false; });
 
 describe("registry report workspaces", () => {
-  it("keeps a domain_id deep link when switching workspace reports", async () => {
-    state.grants = ["vpn.audit"];
-    const router = await renderWorkspace("vpn.connections", "?domain_id=8");
-    await screen.findByTestId("report");
-    fireEvent.click(screen.getByRole("tab", { name: "VPN-доступ учётных записей" }));
-    await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("vpn.accounts"));
-    expect(String((router.state.location.search as Record<string, unknown>).domain_id)).toBe("8");
-    expect(new URLSearchParams(router.state.location.searchStr).get("domain_id")).toBe("8");
-  });
-  it("switches between VPN connections and rights using their existing report keys", async () => {
+  it("opens VPN connections with its existing report filters and without an unavailable accounts tab", async () => {
     state.grants = ["vpn.audit"];
     const router = await renderWorkspace("vpn.connections", "?domain=7&tab=daily");
     expect((await screen.findByTestId("report")).textContent).toBe("vpn.connections");
-    fireEvent.click(screen.getByRole("tab", { name: "VPN-доступ учётных записей" }));
-    await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("vpn.accounts"));
-    const search = router.state.location.search as Record<string, unknown>;
-    expect(String(search.domain)).toBe("7");
     expect(new URLSearchParams(router.state.location.searchStr).get("domain")).toBe("7");
-    expect(search.nav_view).toBe("accounts");
-    expect(search.tab).toBeUndefined();
-    expect(screen.getByRole("tab", { name: "VPN-доступ учётных записей" }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("tab", { name: "VPN-подключения" }));
-    await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("vpn.connections"));
+    expect(new URLSearchParams(router.state.location.searchStr).get("tab")).toBe("daily");
+    expect(screen.queryByRole("tab", { name: "VPN-доступ учётных записей" })).toBeNull();
   });
 
-  it("opens old VPN rights deep links inside the workspace independently of internal report tabs", async () => {
+  it("does not mount the unavailable accounts report from a saved VPN workspace URL", async () => {
     state.grants = ["vpn.audit"];
     await renderWorkspace("vpn.connections", "?nav_view=accounts&tab=details&q=synthetic");
-    expect((await screen.findByTestId("report")).textContent).toBe("vpn.accounts");
+    expect((await screen.findByRole("alert")).getAttribute("data-state")).toBe("denied");
+    expect(screen.queryByTestId("report")).toBeNull();
   });
 
   it("switches between computers and logons", async () => {
@@ -102,8 +87,8 @@ describe("registry report workspaces", () => {
 
   it("keeps granted historical report views reachable when the plugin is hidden from navigation", async () => {
     state.grants = ["vpn.audit"];
-    await renderWorkspace("vpn.connections", "?nav_view=accounts", true);
-    expect((await screen.findByTestId("report")).textContent).toBe("vpn.accounts");
+    await renderWorkspace("vpn.connections", "?nav_view=connections", true);
+    expect((await screen.findByTestId("report")).textContent).toBe("vpn.connections");
   });
 
   it.each(["access", "catalog"])("shows unavailable when %s fails", async (failure) => {

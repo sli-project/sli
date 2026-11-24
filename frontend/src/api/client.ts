@@ -114,6 +114,13 @@ export type AgentItem = {
   rights_probe: { pending?: { request_id: string; requested_at: string }; last_result?: { status: "allowed" | "denied" | "unavailable"; policy_revision: number; reported_at: string } };
 };
 
+export type RadiusPluginSource = {
+  source_instance_id: string;
+  source_state: string;
+};
+
+export type RadiusPluginSources = { status: string; sources: RadiusPluginSource[] };
+
 export type PluginState = {
   plugin_id: string; package_version: string; installed: boolean; configured: boolean;
   enabled: boolean; receiving_data: boolean; component_runtime: string; queue_state: string;
@@ -2454,6 +2461,7 @@ export const api = {
   semanticControls: () => request<SemanticControls>("/api/v1/platform-settings/semantic-control"),
   updateSemanticControl: (change: SemanticControlChange) => requestMutation<{ status: string }>("/api/v1/platform-settings/semantic-control", "POST", change),
   plugins: () => request<{ items: PluginState[]; can_manage: boolean }>("/api/v1/plugins"),
+  radiusPluginSources: () => request<{ item: { observed: RadiusPluginSources } }>("/api/v1/operations/plugins/sli.remote-access"),
   pluginSettings: (id: string) => request<PluginSettings>(`/api/plugins/${encodeURIComponent(id)}/settings`),
   savePluginSetting: (id: string, key: string, value: unknown) => requestMutation<{ plugin_id: string; key: string; value: unknown }>(`/api/plugins/${encodeURIComponent(id)}/settings`, "PUT", { key, value }),
   setPluginEnabled: (item: PluginState, enabled: boolean) => requestMutation<{ item: PluginState }>(`/api/v1/plugins/${encodeURIComponent(item.plugin_id)}`, "POST", { enabled, expected_revision: item.revision }),

@@ -31,7 +31,7 @@ public static class VpnConnections
         if(to-from>TimeSpan.FromDays(366)) throw new VpnInputException("vpn_connections_period_too_wide");
         return(from.Value,to.Value);
     }
-    public static async Task<JsonObject> Read(IVpnReadSession db,VpnAccess access,VpnQuery q,IQueryCollection query,CancellationToken ct,bool includeFailedAuthorizations=true)
+    public static async Task<JsonObject> Read(IVpnReadSession db,VpnAccess access,VpnQuery q,IQueryCollection query,CancellationToken ct,bool includeFailedAuthorizations=true,bool includeEntitlements=true)
     {
         var payload=VpnJson.Obj(new {contract_id="sli.vpn-connections-report.v1",report_key="vpn.connections",source_domain_id=q.Domain,state="not_authorized",branches=access.Branches(q.Domain),employees=Array.Empty<object>()});
         if(!access.Branch("directory",q.Domain).Allowed || !access.Branch("sessions",q.Domain).Allowed) return payload;
@@ -42,7 +42,7 @@ public static class VpnConnections
         if(coverage is null) { payload["state"]="not_collected";payload["unavailable_reason"]="no_accounting_data";return payload; }
         var rows=await db.ReadAsync(VpnSql.ConnectionSessions,[q.Domain,q.To,q.From,q.From,20001],ct);
         if(rows.Count>20000) throw new VpnInputException("vpn_connections_session_bound_exceeded");
-        var entitlements=await db.ReadAsync(VpnSql.Entitlements,[q.Domain,5001],ct);if(entitlements.Count>5000) throw new VpnInputException("vpn_connections_entitlement_bound_exceeded");
+        List<JsonObject> entitlements = includeEntitlements ? await db.ReadAsync(VpnSql.Entitlements,[q.Domain,5001],ct) : [];if(entitlements.Count>5000) throw new VpnInputException("vpn_connections_entitlement_bound_exceeded");
         List<JsonObject> failed=[];string failedState="not_collected";
         if(includeFailedAuthorizations)
         {

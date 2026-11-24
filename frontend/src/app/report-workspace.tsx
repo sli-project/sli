@@ -29,6 +29,7 @@ export function ReportWorkspacePage({ reportKey, journalSearch }: { reportKey: s
   const requested = new URLSearchParams(new URL(location.href, "http://localhost").search).get("nav_view");
   const active = requested ? views.find((view) => view.id === requested) : views[0];
   if (!active || !entry) return <StateView state="denied"/>;
+  if (reportKey === "vpn.connections") return <PluginReportPage reportKey={active.report_key}/>;
   const select = (id: string) => {
     // A different report has its own filters and internal tabs. Keep the domain scope.
     const current = location.search as Record<string, unknown>;

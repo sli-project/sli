@@ -1,5 +1,5 @@
 // Event SQL has been retired. Disabled operation names retain the frozen model contracts;
-// PostgresVpnStore and HTTP routes reject the module before opening storage.
+// HTTP routes admit only the native Accounting report and its supported data branches.
 namespace Sli.Server.Vpn;
 internal static class VpnSql
 {

@@ -146,7 +146,7 @@
     {
       "key": "vpn.connections",
       "title": "VPN-подключения",
-      "description": "Кто и сколько был подключён по VPN: сессии RADIUS Accounting, подтверждённое время, доступы по данным AD и неудачные авторизации.",
+      "description": "История VPN-подключений по данным RADIUS Accounting в выбранном домене.",
       "section": "reports/remote-access",
       "section_title": "Удалённый доступ",
       "owner_id": "sli.remote-access",
