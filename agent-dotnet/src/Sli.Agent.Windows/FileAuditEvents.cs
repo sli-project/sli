@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
+using Sli.Agent.Protocol.Compatibility;
 
 namespace Sli.Agent.Windows;
 
@@ -75,6 +77,38 @@ internal static class FileAuditEvents
     }
     private static ulong? Number(string? text) => text is not null && ulong.TryParse(text.StartsWith("0x",StringComparison.OrdinalIgnoreCase) ? text[2..] : text,
         text.StartsWith("0x",StringComparison.OrdinalIgnoreCase) ? NumberStyles.HexNumber : NumberStyles.Integer,CultureInfo.InvariantCulture,out var n) ? n : null;
+
+    public static JsonObject? PermissionsAction(JsonObject row, Dictionary<string,string> data, JsonObject[] scopes, string? path)
+    {
+        const ulong auditSuccess = 0x20000000000000;
+        const ulong auditFailure = 0x10000000000000;
+        var flags = Number(row["keywords"]?.GetValue<string>()) ?? 0;
+        if (row["event_id"]?.GetValue<int>() != 4670 || scopes.Length != 1 || path is null
+            || (flags & (auditSuccess | auditFailure)) != auditSuccess
+            || data.GetValueOrDefault("ObjectType") != "File" || data.GetValueOrDefault("ObjectServer") != "Security"
+            || string.IsNullOrEmpty(data.GetValueOrDefault("ObjectName"))) return null;
+        string root = UnicodeLower.Lower(scopes[0]["path"]!.GetValue<string>());
+        string candidate = UnicodeLower.Lower(path);
+        if (candidate != root && !candidate.StartsWith(root.TrimEnd('\\')+"\\",StringComparison.Ordinal)) return null;
+
+        var sid = data.GetValueOrDefault("SubjectUserSid", "");
+        var oldDescriptor = data.GetValueOrDefault("OldSd", "");
+        var newDescriptor = data.GetValueOrDefault("NewSd", "");
+        if (sid.Length > 184 || !Regex.IsMatch(sid,"\\AS-1-(?:[0-9]+-)*[0-9]+\\z")
+            || string.IsNullOrWhiteSpace(oldDescriptor) || string.IsNullOrWhiteSpace(newDescriptor)
+            || oldDescriptor is "-" || newDescriptor is "-" || oldDescriptor == newDescriptor
+            || !Iso8601.TryParseUtc(row["time_created"]?.GetValue<string>(), out var at)) return null;
+        var time = Iso8601.Format(at);
+        var minute = Iso8601.Format(new DateTimeOffset(at.UtcTicks - at.UtcTicks % TimeSpan.TicksPerMinute, TimeSpan.Zero));
+        return new JsonObject {
+            ["contract"]=FileAuditPolicy.ActionContract, ["record_id"]=row["record_id"]!.DeepClone(),
+            ["event_id"]=4670, ["computer_name"]=row["computer_name"]!.DeepClone(), ["channel"]="Security",
+            ["provider_name"]=FileAuditPolicy.Provider, ["collection_scope_id"]=scopes[0]["collection_scope_id"]!.DeepClone(),
+            ["path"]=path, ["old_path"]=null, ["operation"]="permissions", ["subject_user_sid"]=sid, ["client_ip"]=null,
+            ["minute_utc"]=minute, ["time_created"]=time, ["first_seen_utc"]=time, ["last_seen_utc"]=time,
+            ["count"]=1, ["outcome"]="success"
+        };
+    }
 
     public static string Mask(string raw, bool scoped)
     {

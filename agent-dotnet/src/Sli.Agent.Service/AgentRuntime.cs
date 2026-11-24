@@ -250,7 +250,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                             accountCheck ??= new FileAuditAccounts().IsUser;
                         }
                         if (fileSource is null || pathCheck is null) throw new AgentException("file_audit_native_unavailable");
-                        var module=new FileAuditModule(sourceHostId,filePolicy,fileSource,pathCheck,accountCheck);
+                        var module=new FileAuditModule(sourceHostId,filePolicy,fileSource,pathCheck,accountCheck,permissionsOnly:!filePolicy.Workstation);
                         var budget=Math.Min(16,policy.Control.BatchSize)-_queue.Pending().Count(p => p.Envelope.ModuleId == FileAuditModule.ModuleId);
                         var deadline=Stopwatch.StartNew();
                         var savedLimit=_queue.MaxBytes; _queue.MaxBytes=Math.Min(savedLimit,filePolicy.Number("spool_bytes"));
