@@ -133,7 +133,12 @@ public sealed class AgentRuntimeTests : IDisposable
     {
         // Allow only counters and diagnostics at both levels of the status model.
         var keys = typeof(CycleStatus).GetProperties().Select(property => property.Name).Order().ToArray();
-        Assert.Equal(new[] { "Captured", "CollectionActive", "DeliveryFailed", "ErrorCode", "ErrorDetail", "Pending", "SnapshotFailures" }, keys);
+        Assert.Equal(new[] { "Captured", "CollectionActive", "DeliveryFailed", "ErrorCode", "ErrorDetail",
+            "FileAuditCatalog", "Pending", "SnapshotFailures" }, keys);
+        Assert.Equal(typeof(FileAuditCatalogDiagnostic),
+            typeof(CycleStatus).GetProperty(nameof(CycleStatus.FileAuditCatalog))!.PropertyType);
+        var catalogKeys = typeof(FileAuditCatalogDiagnostic).GetProperties().Select(property => property.Name).Order().ToArray();
+        Assert.Equal(new[] { "EnumerationError", "HttpStatus", "NativeStatus", "ReportError" }, catalogKeys);
         Assert.Equal(typeof(IReadOnlyDictionary<string, SnapshotFailure>),
             typeof(CycleStatus).GetProperty(nameof(CycleStatus.SnapshotFailures))!.PropertyType);
         var snapshotKeys = typeof(SnapshotFailure).GetProperties().Select(property => property.Name).Order().ToArray();
