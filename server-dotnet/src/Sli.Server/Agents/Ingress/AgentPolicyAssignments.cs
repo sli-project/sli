@@ -60,10 +60,13 @@ public static class AgentPolicyAssignments
     // A bounded marker pass also runs when disabled modules are excluded from import claims.
     public static async Task<int> MarkDisabledAsync(NpgsqlConnection db,NpgsqlTransaction tx,int limit,CancellationToken ct)
     {
+        // Accounting has a separate consumer that rechecks the live plugin and
+        // assignment. A pause must not terminally hide already accepted bytes.
         await using var command=new NpgsqlCommand("""
             with disabled as (
               select i.packet_id from sli_agent_packet_inbox i
               where i.imported_at is null and i.module_disabled_at is null
+                and i.envelope->>'module_id' is distinct from 'sli.radius-accounting'
                 and (not public.agent_module_enabled_v380(i.envelope->>'module_id')
                   or exists(select 1 from sli_agents a cross join lateral jsonb_array_elements(a.assigned_modules) m
                     where a.id::text=i.envelope->>'agent_id' and m->>'module_id'=i.envelope->>'module_id'
