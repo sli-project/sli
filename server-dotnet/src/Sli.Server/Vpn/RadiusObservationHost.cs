@@ -229,7 +229,20 @@ public static class RadiusObservationHost
         }
         finally {
             await using var tx = await admin.BeginTransactionAsync(CancellationToken.None); await Acl(CancellationToken.None);
-            if (Convert.ToInt64(await RadiusJobs.Scalar(admin, "select count(*) from pg_stat_activity where usename=$1 and pid<>pg_backend_pid()", CancellationToken.None, role)) != 0) throw new InvalidOperationException("ephemeral_role_still_active");
+            // The unpooled client can finish closing before PostgreSQL removes its backend.
+            var started = Stopwatch.GetTimestamp();
+            while (true)
+            {
+                await RadiusJobs.Scalar(admin, "select pg_catalog.pg_stat_clear_snapshot()", CancellationToken.None);
+                if (await RadiusJobs.Scalar(admin, """
+                    select exists(select 1 from pg_catalog.pg_stat_activity
+                        where usename=$1 and pid<>pg_backend_pid())
+                    """, CancellationToken.None, role) is false)
+                    break;
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(1))
+                    throw new InvalidOperationException("ephemeral_role_still_active");
+                await Task.Delay(TimeSpan.FromMilliseconds(25));
+            }
             await RadiusJobs.Execute(admin, $"revoke adlog_radius_session_consumer from {id}; revoke connect on database {database} from {id}; drop role {id}", CancellationToken.None);
             await tx.CommitAsync(CancellationToken.None);
         }
