@@ -28,7 +28,7 @@ import { PlatformSettingsPage } from "./app/admin/platform-settings";
 import { AdAccountsPage } from "./app/admin/ad-accounts";
 import { NotificationsPage } from "./app/admin/notifications";
 import { createAdminPlaceholderRoutes } from "./app/admin/navigation-pages";
-import { PluginsPage } from "./app/admin/plugins";
+import { PluginsRoute } from "./app/admin/plugins";
 import { SetupPage } from "./app/admin/setup";
 import { InvestigationCasePage } from "./app/case-page";
 import { EntityCardPage, objectRouteRedirect } from "./app/entity-card";
@@ -98,7 +98,7 @@ const settings = createRoute({ getParentRoute: () => rootRoute, path: "/settings
 const platformSettings = createRoute({ getParentRoute: () => rootRoute, path: "/platform-settings", component: PlatformSettingsPage });
 const adAccounts = createRoute({ getParentRoute: () => rootRoute, path: "/ad-accounts", component: AdAccountsPage });
 const notifications = createRoute({ getParentRoute: () => rootRoute, path: "/notifications", component: NotificationsPage });
-const plugins = createRoute({ getParentRoute: () => rootRoute, path: "/plugins", component: PluginsPage });
+const plugins = createRoute({ getParentRoute: () => rootRoute, path: "/plugins", component: PluginsRoute });
 const setup = createRoute({ getParentRoute: () => rootRoute, path: "/setup", component: SetupPage });
 const agents = createRoute({ getParentRoute: () => rootRoute, path: "/agents", component: AgentsPage });
 const admin = createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage });

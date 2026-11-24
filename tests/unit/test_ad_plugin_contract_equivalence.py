@@ -267,6 +267,14 @@ def test_ad_contracts_equal_pre_registration_baseline(monkeypatch):
                 {"from": "/report/notifications.deliveries", "to": "/notifications", "view": "journal"},
                 *navigation_payload["redirects"],
             ]
+            # The beta offers Accounting connections. Pin the two VPN aliases
+            # affected by the unavailable accounts screen independently of the candidate.
+            navigation_payload["redirects"].remove({
+                "from": "/report/vpn.accounts", "to": "/report/vpn.connections", "view": "accounts",
+            })
+            vpn_report = next(redirect for redirect in navigation_payload["redirects"] if redirect["from"] == "/vpn-report")
+            assert vpn_report == {"from": "/vpn-report", "to": "/report/vpn.connections", "view": "accounts"}
+            vpn_report["view"] = "connections"
         assert candidate == expected
     finally:
         plugins.registered_plugins.cache_clear()

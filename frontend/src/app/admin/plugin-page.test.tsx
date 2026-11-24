@@ -18,12 +18,13 @@ let settings: PluginSettings;
 let requests: Array<{ path: string; method: string; body?: { key: string; value: unknown } }>;
 let rejectKey = "";
 let denySettings = false;
+let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
 const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: true,
   component_runtime: "running", revision: 7, last_data_at_utc: null });
 
 beforeEach(() => {
-  settings = original(); requests = []; rejectKey = ""; denySettings = false;
+  settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = [];
   access.subject.coarse_role = "admin"; access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
@@ -41,6 +42,7 @@ beforeEach(() => {
     }
     if (path === "/api/v1/plugins") return json({ items: ["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"].map(plugin), can_manage: true });
     if (path === "/api/v1/plugins/sli.ad") return json({ item: { ...plugin("sli.ad"), enabled: false } });
+    if (path === "/api/v1/operations/plugins/sli.remote-access") return json({ item: { observed: { status: "ok", sources: radiusSources } } });
     if (path === "/api/v1/setup/status") return json({ sources: [], domains: [
       { fqdn: "one.example.invalid", observed_at_utc: "2026-10-29T01:00:00Z" }, { fqdn: "two.example.invalid", observed_at_utc: null },
     ], domain_controllers: [{ hostname: "DC-01", domain: "one.example.invalid", enabled: true }, { hostname: "DC-02", domain: "two.example.invalid", enabled: true }] });
@@ -70,7 +72,21 @@ it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-
   expect(await screen.findByRole("switch", { name: "Включён" })).toBeTruthy();
   expect(screen.queryByText("В разработке")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
-  expect(await screen.findByRole("link", { name: "Компьютеры и агенты" })).toHaveProperty("pathname", "/app/agents");
+  if (id === "sli.remote-access") expect(await screen.findByText("Журнал NPS Accounting не подключён.")).toBeTruthy();
+  else expect(await screen.findByRole("link", { name: "Компьютеры и агенты" })).toHaveProperty("pathname", "/app/agents");
+});
+
+it("shows each registered Accounting source once with its distinct subscription states", async () => {
+  radiusSources = [
+    { source_instance_id: "lab-nps", source_state: "manual_enabled" },
+    { source_instance_id: "lab-nps", source_state: "subscription_disabled" },
+    { source_instance_id: "lab-nps", source_state: "subscription_disabled" },
+  ];
+  mount("sli.remote-access");
+  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  const row = await screen.findByRole("row", { name: /lab-nps/ });
+  expect(within(row).getByText("Сбор разрешён · Подписка отключена")).toBeTruthy();
+  expect(screen.queryByText("Журнал NPS Accounting не подключён.")).toBeNull();
 });
 
 it("renders actual AD schema labels, help, defaults and collapsed advanced settings", async () => {

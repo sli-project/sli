@@ -147,7 +147,7 @@ def test_navigation_never_widens_existing_grants():
     (["ad.computers.v6"], "computers-report", ["computers"]),
     (["ad.computer-logons"], "computers-report", ["logons"]),
     (["ad.computers.v6", "ad.computer-logons"], "computers-report", ["computers", "logons"]),
-    (["vpn.audit"], "vpn-connections", ["connections", "accounts"]),
+    (["vpn.audit"], "vpn-connections", ["connections"]),
     (["vpn.connections"], "vpn-connections", ["connections"]),
 ])
 def test_merged_entries_keep_independent_view_grants(grants, entry_id, view_ids):
@@ -163,11 +163,12 @@ def test_merged_entries_keep_independent_view_grants(grants, entry_id, view_ids)
 def test_registry_redirects_keep_old_report_keys_and_access_contracts():
     config, owners = nav.load_registry()
     redirects = {item["from"]: item for item in config["redirects"]}
-    for key, target, view in [
-        ("ad.computer-logons", "ad.computers.v6", "logons"),
-        ("vpn.accounts", "vpn.connections", "accounts"),
-    ]:
-        assert redirects[f"/report/{key}"] == {"from": f"/report/{key}", "to": f"/report/{target}", "view": view}
+    assert redirects["/report/ad.computer-logons"] == {
+        "from": "/report/ad.computer-logons", "to": "/report/ad.computers.v6", "view": "logons",
+    }
+    assert redirects["/vpn-report"] == {"from": "/vpn-report", "to": "/report/vpn.connections", "view": "connections"}
+    assert "/report/vpn.accounts" not in redirects
+    for key in ["ad.computer-logons", "vpn.accounts", "vpn.connections"]:
         assert owners[key]["access_key"] == registry.get_report(key).access.report_key
     assert redirects["/objects"]["to"] == redirects["/entities"]["to"] == config["global_search"]["path"]
 

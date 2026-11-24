@@ -95,11 +95,10 @@ export function AgentFileAuditControls({ agents, busy, change, accepted }: { age
         ...originalConfig, source_kind: sourceKind, roots, service_account_exclusions: [...new Set(excluded)] } });
   };
   if (!agents.some((agent) => agent.status === "active")) return null;
-  return <details><summary>{t("agents.fileAudit.title")}</summary>
-    <p>{t("agents.fileAudit.hint")}</p>
-    <fieldset disabled={busy}>
+  return <details className="sli-ds-filters__additional"><summary>{t("agents.fileAudit.title")}</summary>
+    <fieldset disabled={busy} className="sli-ds-filters">
       <legend>{t("agents.fileAudit.select")}</legend>
-      <label>{t("agents.fileAudit.sourceKind")}<select value={sourceKind} onChange={(event) => {
+      <label className="sli-ds-field">{t("agents.fileAudit.sourceKind")}<select value={sourceKind} onChange={(event) => {
         setSelected([]); setSourceKind(event.target.value as "workstation" | "server");
       }}><option value="workstation">{t("agents.fileAudit.workstation")}</option><option value="server">{t("agents.fileAudit.server")}</option></select></label>
       {eligible.map((agent) => <div key={agent.id}><label><input id={`file-audit-agent-${agent.id}`} aria-describedby={`file-audit-identity-${agent.id}`} type={sourceKind === "server" ? "radio" : "checkbox"} name="file-audit-agent" value={agent.id} checked={selected.includes(agent.id)} onChange={() => choose(agent)}/>{t("agents.fileAudit.agent", { host: agentHostName(agent) })}</label>
@@ -109,16 +108,20 @@ export function AgentFileAuditControls({ agents, busy, change, accepted }: { age
       {!compatible ? <p role="alert">{t("agents.fileAudit.incompatible")}</p> : null}
       {chosen.length > 0 && !mayWrite ? <p>{t("agents.fileAudit.managementHint")}</p> : null}
       <label><input type="checkbox" checked={enabled} disabled={!mayCollect} onChange={(event) => { dismissResult(); setEnabled(event.target.checked); }}/>{t("agents.fileAudit.enabled")}</label>
-      <label>{t("agents.fileAudit.paths")}<textarea value={paths} onChange={(event) => { dismissResult(); setPaths(event.target.value); }}/></label>
-      {sourceKind === "server" ? <>
-        <label>{t("agents.fileAudit.shares")}<textarea value={shares} onChange={(event) => { dismissResult(); setShares(event.target.value); }}/></label>
-        <label>{t("agents.fileAudit.scopes")}<textarea value={scopes} onChange={(event) => { dismissResult(); setScopes(event.target.value); }}/></label>
-      </> : null}
+      <div className="sli-ds-filters__fields" data-layout="grid" data-align="start">
+        <label className="sli-ds-field">{t("agents.fileAudit.paths")}<textarea value={paths} onChange={(event) => { dismissResult(); setPaths(event.target.value); }}/></label>
+        {sourceKind === "server" ? <>
+          <label className="sli-ds-field">{t("agents.fileAudit.shares")}<textarea value={shares} onChange={(event) => { dismissResult(); setShares(event.target.value); }}/></label>
+          <label className="sli-ds-field">{t("agents.fileAudit.scopes")}<textarea value={scopes} onChange={(event) => { dismissResult(); setScopes(event.target.value); }}/></label>
+        </> : null}
+      </div>
       <label><input type="checkbox" checked={important} onChange={(event) => { dismissResult(); setImportant(event.target.checked); setImportantChanged(true); }}/>{t("agents.fileAudit.important")}</label>
-      <label>{t("agents.fileAudit.exclusions")}<textarea value={exclusions} onChange={(event) => { dismissResult(); setExclusions(event.target.value); }}/></label>
-      <button className="sli-ds-button" type="button" disabled={!mayCollect} onClick={() => submit("check")}>{t("agents.fileAudit.check")}</button>
-      <button className="sli-ds-button" type="button" disabled={!mayWrite || !mayCollect || !enabled} onClick={() => submit("apply")}>{t("agents.fileAudit.apply")}</button>
-      <button className="sli-ds-button" type="button" disabled={!mayWrite || !compatible || !original.length} onClick={() => submit("restore")}>{t("agents.fileAudit.restore")}</button>
+      <label className="sli-ds-field">{t("agents.fileAudit.exclusions")}<textarea value={exclusions} onChange={(event) => { dismissResult(); setExclusions(event.target.value); }}/></label>
+      <div className="sli-ds-filters__actions">
+        <button className="sli-ds-button" type="button" disabled={!mayCollect} onClick={() => submit("check")}>{t("agents.fileAudit.check")}</button>
+        <button className="sli-ds-button" type="button" disabled={!mayWrite || !mayCollect || !enabled} onClick={() => submit("apply")}>{t("agents.fileAudit.apply")}</button>
+        <button className="sli-ds-button" type="button" disabled={!mayWrite || !compatible || !original.length} onClick={() => submit("restore")}>{t("agents.fileAudit.restore")}</button>
+      </div>
     </fieldset>
     {!busy && sourceKind === "server" && primary && accepted?.agent_id === primary.id && accepted.command_id !== dismissedCommand ?
       <AgentFileAuditReadback key={`${accepted.agent_id}:${accepted.command_id}:${accepted.policy_revision}:${accepted.action}`}
@@ -130,7 +133,7 @@ export function AgentFileAuditControls({ agents, busy, change, accepted }: { age
 
 
 type ReadbackState = "loading" | "pending" | "verified" | "partial" | "denied" | "stale" | "unknown";
-function AgentFileAuditReadback({ accepted }: { accepted: AgentFileAuditCommand }) {
+export function AgentFileAuditReadback({ accepted }: { accepted: AgentFileAuditCommand }) {
   const [result, setResult] = useState<{ state: ReadbackState; receipt?: AgentFileAuditStatus }>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -144,7 +147,9 @@ function AgentFileAuditReadback({ accepted }: { accepted: AgentFileAuditCommand 
         if (receipt?.command) {
           const command = receipt.command;
           if (command.command_id !== accepted.command_id || command.policy_revision !== accepted.policy_revision
-              || command.action !== accepted.action) state = "stale";
+              || command.action !== accepted.action || !Array.isArray(command.collection_scope_ids)
+              || command.collection_scope_ids.length !== accepted.collection_scope_ids.length
+              || !accepted.collection_scope_ids.every((scope) => command.collection_scope_ids.includes(scope))) state = "stale";
           else if (receipt.state === "pending" || receipt.state === "partial") state = receipt.state;
           else if (receipt.state === "verified" && receipt.reported_at && accepted.collection_scope_ids.every(
             (scope) => receipt.scopes?.[scope]?.state === "verified")) state = "verified";

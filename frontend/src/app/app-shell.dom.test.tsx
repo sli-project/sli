@@ -44,6 +44,7 @@ import { AppShell, useTimeZone } from "./App";
 import { useDateFormatters } from "../design-system/useDateFormatters";
 import { navigationBeforeLoad, parseShellSearch, stringifyShellSearch } from "./navigation";
 import { createAdminPlaceholderRoutes } from "./admin/navigation-pages";
+import { PluginsRoute } from "./admin/plugins";
 import { localeRuntime, setLocale } from "../i18n";
 
 function TimeZoneProbe() {
@@ -59,7 +60,8 @@ async function renderShell(initialPath = "/", showTimeZone = false) {
     const { searchStr } = useLocation();
     return <><h1 data-page-heading>Журнал событий</h1><output aria-label="Journal query">{new URLSearchParams(searchStr).get("q")}</output></>;
   } });
-  const routes = [page("/"), page("/plugins"), page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
+  const plugins = createRoute({ getParentRoute: () => root, path: "/plugins", component: PluginsRoute });
+  const routes = [page("/"), plugins, page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
   const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }), parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
@@ -105,7 +107,7 @@ describe("AppShell", () => {
     expect(screen.getByLabelText("Display time zone").textContent).toBe(`${zone} · ${expected}`);
   });
 
-  it.each(["ru", "en"] as const)("shows the eight beta work destinations in order in %s", async (locale) => {
+  it.each(["ru", "en"] as const)("shows the beta work destinations in order in %s", async (locale) => {
     setLocaleQuiet(locale);
     const entries = fixture.sections.flatMap((section) => section.groups.flatMap<NavigationEntryDto>((group) => group.entries));
     state.access = { ...adminAccess,
@@ -119,14 +121,15 @@ describe("AppShell", () => {
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
       "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
+      "/report/file-audit.overview", "/report/vpn.connections",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
   });
 
   it.each([
-    "/admin/plugins/sli.workstations", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
-    "/admin/update", "/admin/activity", "/report-studio", "/plugins",
+    "/admin/plugins/sli.workstations", "/admin/plugins/sli.sigma",
+    "/admin/update", "/admin/activity", "/report-studio",
   ])("opens home for hidden %s for both scoped users and administrators", async (path) => {
     for (const grants of [userAccess, adminAccess]) {
       state.access = grants;
@@ -157,14 +160,14 @@ describe("AppShell", () => {
     expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual([path.startsWith("/admin/plugins/") ? path : "/settings"]);
   });
 
-  it.each([...placeholderPages, ["/admin/status"]])("keeps a direct visit to %s denied without admin grants", async (path) => {
+  it.each([...placeholderPages, ["/admin/status"], ["/plugins"]])("keeps a direct visit to %s denied without admin grants", async (path) => {
     await renderShell(path);
     const main = screen.getByRole("main");
     await waitFor(() => expect(main.querySelector('[data-state="denied"]')).not.toBeNull());
     expect(within(main).queryByText("В разработке")).toBeNull();
   });
 
-  it.each(["sli.ad", "sli.gpo"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
+  it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
     await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());
@@ -175,6 +178,20 @@ describe("AppShell", () => {
     expect(await screen.findByRole("tab", { name: "Подключение" })).toBeTruthy();
     expect(screen.getAllByRole("tab")).toHaveLength(5);
     expect(within(screen.getByRole("main")).queryByText("В разработке")).toBeNull();
+  });
+
+  it("opens both plugin pages from the administration menu even when their collection is off", async () => {
+    state.access = adminAccess;
+    registryState.disabled = ["sli.file-audit", "sli.remote-access"];
+    await renderShell("/admin/status");
+    const nav = screen.getByRole("navigation", { name: "Разделы" });
+    await userEvent.click(await within(nav).findByRole("link", { name: "Все плагины" }));
+    expect(await screen.findByRole("heading", { name: "Плагины" })).toBeTruthy();
+    for (const name of ["Файловый аудит", "VPN / NPS"]) {
+      await userEvent.click(within(nav).getByRole("link", { name }));
+      expect(await screen.findByRole("heading", { name })).toBeTruthy();
+      expect(within(nav).getByRole("link", { name }).getAttribute("aria-current")).toBe("page");
+    }
   });
 
   it("keeps the old setup, readiness and platform settings reachable from Status", async () => {
@@ -379,15 +396,18 @@ describe("AppShell", () => {
     expect(entry.getAttribute("href")).toBe("/admin/status");
     fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Открыть меню" : "Open menu" }));
     fireEvent.click(entry);
-    const titles = locale === "ru" ? ["База"] : ["Core"];
+    const titles = locale === "ru" ? ["База", "Плагины"] : ["Core", "Plugins"];
     for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
     expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
+      "/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access",
     ]);
     expect(within(nav).getAllByRole("link").slice(1).map((link) => link.textContent)).toEqual(locale === "ru" ? [
       "Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время",
+      "Все плагины", "Файловый аудит", "VPN / NPS",
     ] : [
       "System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time",
+      "All plugins", "File auditing", "VPN / NPS",
     ]);
     expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual(["/admin/status"]);
     expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");

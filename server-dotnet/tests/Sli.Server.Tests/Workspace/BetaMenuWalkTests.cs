@@ -12,10 +12,12 @@ using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Domains;
 using Sli.Server.Tests.Notifications;
 using Sli.Server.Tests.Storage;
+using Sli.Server.Tests.Vpn;
 using Xunit;
 
 namespace Sli.Server.Tests.Workspace;
 
+[Collection("Semantic producer environment")]
 public sealed class BetaMenuWalkTests
 {
     [Fact]
@@ -31,7 +33,7 @@ public sealed class BetaMenuWalkTests
         using var heartbeat = new Timer(_ => Console.WriteLine("menu-walk: preparing owned database / .NET host"), null, 10_000, 10_000);
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct);
-        await NewLogonPairsNativeFixture.SeedAsync(fixture.Pg, DateTimeOffset.UtcNow, 3, ct);
+        var directory = await NewLogonPairsNativeFixture.SeedAsync(fixture.Pg, DateTimeOffset.UtcNow, 3, ct);
         await using (var db = await fixture.Pg.OpenAsync(ct))
         {
             var events = await ShortEventAdmissionPostgresTests.SeedAsync(db, ct);
@@ -44,6 +46,8 @@ public sealed class BetaMenuWalkTests
                 """, ct);
         }
         string token = await fixture.SeedOwnerAsync(ct);
+        using var accounting = await VpnAccountingPostgresFixture.RegisterAsync(fixture, ct);
+        await VpnAccountingPostgresFixture.SetEnabledAsync(fixture, true, ct);
         // Real setup domain logic on an empty test filesystem. Only the
         // privileged socket transport is replaced, as in its endpoint tests.
         // No provider response is consumed and no credentials are configured.
@@ -71,6 +75,14 @@ public sealed class BetaMenuWalkTests
         using var client = host.CreateClient();
         heartbeat.Change(Timeout.Infinite, Timeout.Infinite);
         Assert.True(client.BaseAddress!.IsLoopback);
+        // Validate the same real API the browser uses, before entering the menu walk.
+        client.DefaultRequestHeaders.Add("Cookie", "adlog_session=" + token);
+        using var definition = await client.GetAsync("/api/v2/reports/vpn.connections", ct);
+        Assert.Equal(HttpStatusCode.OK, definition.StatusCode);
+        using var data = await client.GetAsync($"/api/v2/reports/vpn.connections/data?domain={directory.DomainId}&period=7d", ct);
+        Assert.Equal(HttpStatusCode.OK, data.StatusCode);
+        using var accountingResult = JsonDocument.Parse(await data.Content.ReadAsStringAsync(ct));
+        Assert.Equal("domain_history", accountingResult.RootElement.GetProperty("coverage").GetProperty("accounting_scope").GetString());
         var start = new ProcessStartInfo("node")
         {
             WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,

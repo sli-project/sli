@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
-import { Badge, FactList, PageHeader, StateView } from "../../design-system";
+import { Badge, FactList, PageHeader, Panel, StateView } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { FieldError } from "./gate";
 import { formatDateTime } from "../../shared/date-time";
-import { useTimeZone } from "../App";
+import { useEffectiveAccess, useTimeZone } from "../App";
+import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 
 const pluginLabels: Record<string, { name: MessageKey; description: MessageKey }> = {
   "sli.ad": { name: "plugins.ad", description: "plugins.description.ad" },
@@ -14,6 +15,21 @@ const pluginLabels: Record<string, { name: MessageKey; description: MessageKey }
   "sli.remote-access": { name: "plugins.remoteAccess", description: "plugins.description.remoteAccess" },
   "sli.sigma": { name: "plugins.sigma", description: "plugins.description.sigma" },
 };
+
+const pluginDetails: Record<string, string | undefined> = {
+  "sli.file-audit": "/app/admin/plugins/sli.file-audit",
+  "sli.remote-access": "/app/admin/plugins/sli.remote-access",
+};
+
+export function PluginsRoute() {
+  const access = useEffectiveAccess();
+  const request = useAccessRequest();
+  if (access?.capabilities.includes("operations.view") && !request?.error) return <PluginsPage/>;
+  return <section className="sli-ds-report">
+    <PageHeader title={t("plugins.title")}/>
+    {!access || request?.error ? <AccessRequestStateView/> : <StateView state="denied"/>}
+  </section>;
+}
 
 export function PluginsPage() {
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
@@ -45,6 +61,7 @@ function PluginCard({ item, canManage }: { item: PluginState; canManage: boolean
     : draining ? t("plugins.runtime.draining") : item.component_runtime === "stopped" ? t("plugins.runtime.stopped") : t("plugins.runtime.unknown");
   const labels = Object.prototype.hasOwnProperty.call(pluginLabels, item.plugin_id) ? pluginLabels[item.plugin_id] : undefined;
   const name = labels ? t(labels.name) : item.plugin_id;
+  const details = pluginDetails[item.plugin_id];
   const facts = item.data_receipts;
   const formatFact = (value: string | null | undefined) => formatDateTime(value, timeZone);
   const receipt = facts?.state === "unavailable" ? t("plugins.receiptUnavailable")
@@ -69,9 +86,8 @@ function PluginCard({ item, canManage }: { item: PluginState; canManage: boolean
       default: return t("plugins.changeFailed");
     }
   })();
-  return <div className="sli-ds-filters">
-    <h2 className="sli-ds-section-title">{name} <Badge tone={item.enabled ? "success" : "warning"}>{t(item.enabled ? "plugins.enabled" : "plugins.disabled")}</Badge></h2>
-    <p>{t(labels?.description ?? "plugins.description.unknown")}</p>
+  return <Panel title={<>{name} <Badge tone={item.enabled ? "success" : "warning"}>{t(item.enabled ? "plugins.enabled" : "plugins.disabled")}</Badge></>}
+    subtitle={t(labels?.description ?? "plugins.description.unknown")}>
     <FactList facts={[
       { label: t("plugins.installed"), value: yesNo(item.installed) },
       { label: t("plugins.configured"), value: yesNo(item.configured) },
@@ -89,11 +105,14 @@ function PluginCard({ item, canManage }: { item: PluginState; canManage: boolean
       ] : []),
       { label: t("plugins.runtime"), value: runtime },
     ]}/>
-    <a href="/app/operations#runtime-workers">{t("plugins.diagnostics")}</a>
-    {!item.enabled ? <p role="status">{t(draining ? "plugins.draining" : "plugins.preserved")}</p> : null}
+    {!item.enabled ? <p role="status">{t(draining ? "plugins.draining" : item.plugin_id === "sli.remote-access" ? "plugins.radiusStopped" : "plugins.preserved")}</p> : null}
     {change.error ? <FieldError error={new Error(errorMessage)}/> : null}
-    {canManage ? <div className="sli-ds-filters__actions"><button type="button" className="sli-ds-button"
+    <div className="sli-ds-filters__fields">
+      {details ? <a href={details}>{t("plugins.open", { name })}</a> : null}
+      <a href="/app/operations#runtime-workers">{t("plugins.diagnostics")}</a>
+      {canManage ? <button type="button" className="sli-ds-button"
       disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
-      onClick={() => change.mutate(!item.enabled)}>{t(change.isPending ? "plugins.saving" : item.enabled ? "plugins.disable" : "plugins.enable")}</button></div> : null}
-  </div>;
+      onClick={() => change.mutate(!item.enabled)}>{t(change.isPending ? "plugins.saving" : item.enabled ? "plugins.disable" : "plugins.enable")}</button> : null}
+    </div>
+  </Panel>;
 }

@@ -150,7 +150,7 @@ public sealed class NavigationRegistryTests
     [InlineData("ad.computers.v6", "computers-report", "computers")]
     [InlineData("ad.computer-logons", "computers-report", "logons")]
     [InlineData("ad.computers.v6,ad.computer-logons", "computers-report", "computers,logons")]
-    [InlineData("vpn.audit", "vpn-connections", "connections,accounts")]
+    [InlineData("vpn.audit", "vpn-connections", "connections")]
     [InlineData("vpn.connections", "vpn-connections", "connections")]
     public void Merged_entries_keep_independent_view_grants(string grants, string entryId, string views)
     {
