@@ -11,6 +11,29 @@ namespace Sli.Server.Tests.Operations;
 public sealed class DatabaseSizeHistoryPostgresTests
 {
     [Fact]
+    public async Task Default_storage_api_limit_keeps_more_than_seven_days_of_native_points()
+    {
+        using var state = new Sli.Server.Tests.Storage.StorageLifecycleTests.State();
+        var start = new DateTime(2026, 11, 5, 0, 0, 0, DateTimeKind.Utc);
+        for (int slot = 0; slot < 50; slot++)
+            DatabaseSizeHistory.Record(state.Files, start.AddHours(6 * slot), 1024L + slot);
+
+        using var app = await OperationsEndpointTests.Start(settings: new() { ["Sli:DataDirectory"] = state.Path });
+        using var response = await app.Client.GetAsync("/api/storage/lifecycle", TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await OperationsEndpointTests.Body(response);
+        Assert.Equal(2000L, body["latest_snapshot"]!["database_bytes"]!.GetValue<long>());
+
+        var history = body["postgres_size_history"]!.AsObject();
+        var samples = history["samples"]!.AsArray();
+        Assert.Equal(48, samples.Count);
+        var first = DateTimeOffset.Parse(samples[^1]!["captured_at"]!.GetValue<string>());
+        var last = DateTimeOffset.Parse(samples[0]!["captured_at"]!.GetValue<string>());
+        Assert.Equal(start.AddHours(12), first.UtcDateTime);
+        Assert.Equal(TimeSpan.FromHours(282), last - first);
+    }
+
+    [Fact]
     public async Task Native_worker_publishes_two_real_database_sizes_to_the_storage_api()
     {
         var ct = TestContext.Current.CancellationToken;

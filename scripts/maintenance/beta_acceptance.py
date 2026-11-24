@@ -326,9 +326,11 @@ def storage(get, entry):
     measurements = [(stamp(row["at"]), row["bytes"]) for row in objects(entry.get("samples", []))]
     lifecycle = get("/api/storage/lifecycle")
     history = lifecycle.get("postgres_size_history", lifecycle)
+    if isinstance(history, dict) and history.get("latest_snapshot") is None and history.get("samples") == []:
+        history = lifecycle
     require(lifecycle.get("backend") == "postgres" and isinstance(history, dict)
             and isinstance(history.get("latest_snapshot"), dict), "SLI не вернул последний замер PostgreSQL.")
-    if "postgres_size_history" in lifecycle:
+    if history is not lifecycle:
         for row in objects(history["samples"]):
             captured_at = stamp(row["captured_at"])
             point = (captured_at, row["database_bytes"])

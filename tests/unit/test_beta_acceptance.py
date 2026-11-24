@@ -179,6 +179,17 @@ def test_one_telegram_receipt_cannot_pass_two_attempts_for_same_finding(run):
     assert rows[4] == (False, "Главная, группировка, тексты, время или Telegram не подтверждены для сценариев 1.")
 
 
+def test_storage_uses_legacy_snapshot_until_the_native_history_has_a_sample(run):
+    observations, responses, get = run
+    response = responses["/api/storage/lifecycle"]
+    response["postgres_size_history"] = {"latest_snapshot": None, "samples": []}
+
+    assert acceptance.run_checks(get, observations, 1, AGENT)[6][0]
+
+    response["latest_snapshot"]["captured_at"] = stamp(NOW - timedelta(days=3))
+    assert not acceptance.run_checks(get, observations, 1, AGENT)[6][0]
+
+
 def test_storage_uses_native_size_history_and_keeps_the_external_window(run):
     observations, responses, get = run
     storage = observations["storage"]
