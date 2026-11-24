@@ -121,6 +121,7 @@ def configure():
     machine.directory(str(ROOT), 0o700)
     machine.write(HELPER, Path(__file__).read_text(), 0o644)
     for name, body in units().items():
+        unit = '/usr/lib/systemd/system/' + name
         if '[Service]' in body:
             budget = systemd_budget(Path(host.MOUNT))
             body = body.replace('TimeoutStartSec=12h', 'TimeoutStartSec=' + str(budget))
@@ -129,8 +130,44 @@ def configure():
                         'SLI_BACKUP_WEEKLY_RETENTION': str(weekly)}
             body = body.replace('[Service]\n', '[Service]\n' + ''.join(
                 'Environment=' + json.dumps(key + '=' + value.replace('%', '%%')) + '\n' for key, value in settings.items()))
-        machine.write('/usr/lib/systemd/system/' + name, body, 0o644)
+            body = preserve_accepted_start_timeout(machine.path(unit), body, budget)
+        machine.write(unit, body, 0o644)
     command(['systemctl', 'daemon-reload'])
+
+
+def preserve_accepted_start_timeout(path, body, budget):
+    # Type=exec startup ends at execve. The operation watchdog still budgets the
+    # work itself. Keep the initial startup limit of an unchanged, sealed unit.
+    if not path.is_file():
+        return body
+    installed = path.read_bytes()
+    if installed == body.encode():
+        return body
+    timeout = re.search(rb'(?m)^TimeoutStartSec=[1-9][0-9]{0,19}$', installed)
+    if not timeout:
+        return body
+    original = body.replace(f'TimeoutStartSec={budget}\n', timeout[0].decode('ascii') + '\n', 1)
+    if installed != original.encode():
+        return body
+
+    from deploy.linux import native_runtime as runtime
+
+    try:
+        release, _, manifest_sha256 = runtime.release()
+        receipt = runtime.document(runtime.STATE / 'installed.json')
+        if (receipt.get('release'), receipt.get('manifest_sha256')) != (str(release), manifest_sha256):
+            return body
+        recovery = runtime.RECOVERY / release.name
+        seal = runtime.document(recovery / 'recovery.json')
+        if (seal.get('release'), seal.get('manifest_sha256')) != (release.name, manifest_sha256):
+            return body
+        key = f'units/{path.name}'
+        entry = {'sha256': hashlib.sha256(installed).hexdigest(), 'size': len(installed)}
+        if seal['content_checksums'][key] == entry and runtime.trusted(recovery / key) == installed:
+            return original
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+        pass  # Leave conflict and filesystem checks to the normal host writer.
+    return body
 
 
 def systemd_budget(path):

@@ -1,14 +1,18 @@
 """Native work estimates and watchdogs; synthetic sizes, clock and services."""
+import hashlib
 import json
 import os
 import socket
+import stat
 import sys
 from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from deploy.linux import backup_policy, native_backup, native_host, operation_wait as operation
+from deploy.linux import native_runtime
 
 GIB = 1024**3
 
@@ -22,6 +26,125 @@ def test_systemd_budget_uses_work_not_disk_capacity(tmp_path, monkeypatch, rate,
     monkeypatch.setattr(native_backup, 'DATA', tmp_path)
     monkeypatch.setattr(native_backup.shutil, 'disk_usage', lambda _: pytest.fail('capacity is not work'))
     assert native_backup.systemd_budget(tmp_path) == expected
+
+
+@pytest.mark.parametrize('conflict,reason', [
+    (None, None),
+    ('unsealed-timeout', 'native_existing_configuration_conflict'),
+    ('other-field', 'native_existing_configuration_conflict'),
+    ('bad-seal', 'native_existing_configuration_conflict'),
+    ('bad-recovery-copy', 'native_existing_configuration_conflict'),
+    ('unselected-release', 'native_existing_configuration_conflict'),
+    ('no-seal', 'native_existing_configuration_conflict'),
+    ('owner', 'native_existing_configuration_permissions'),
+    ('group', 'native_existing_configuration_permissions'),
+    ('mode', 'native_existing_configuration_permissions'),
+    ('symlink', 'native_symlink_forbidden'),
+])
+def test_backup_configure_keeps_only_accepted_start_timeout(tmp_path, monkeypatch, conflict, reason):
+    machine = native_host.Host(tmp_path)
+    budget = 1864
+    attributes = {}
+    initial_write = machine.write
+    file_stat = Path.stat
+    is_symlink = Path.is_symlink
+
+    def write(name, body, mode):
+        if name == native_backup.HELPER:
+            return
+        path = machine.path(name)
+        if path.exists():
+            return initial_write(name, body, mode)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body.encode())
+        attributes[path] = dict(st_uid=0, st_gid=0, st_mode=stat.S_IFREG | mode)
+
+    def simulated_stat(path, **kwargs):
+        if path in attributes:
+            return SimpleNamespace(**attributes[path])
+        return file_stat(path, **kwargs)
+
+    def simulated_symlink(path):
+        return stat.S_ISLNK(attributes[path]['st_mode']) if path in attributes else is_symlink(path)
+
+    monkeypatch.setattr(Path, 'stat', simulated_stat)
+    monkeypatch.setattr(Path, 'is_symlink', simulated_symlink)
+    monkeypatch.setattr(native_host, 'Host', lambda: machine)
+    monkeypatch.setattr(native_host, 'grp', SimpleNamespace(getgrnam=lambda _: SimpleNamespace(gr_gid=0)))
+    monkeypatch.setattr(native_host, 'ensure_directory', lambda *args: None)
+    monkeypatch.setattr(machine, 'require_backup_mount', lambda: None)
+    monkeypatch.setattr(machine, 'backup_space_estimate', lambda root: {'capture_bytes': 1})
+    monkeypatch.setattr(machine, 'directory', lambda *args: None)
+    monkeypatch.setattr(machine, 'write', write)
+    monkeypatch.setattr(native_backup, 'systemd_budget', lambda path: budget)
+    monkeypatch.setattr(native_backup, 'capture_volume_admission', lambda *args, **kw: {'status': 'admitted'})
+    monkeypatch.setattr(native_backup, 'command', lambda argv: None)
+    monkeypatch.setattr(native_backup.shutil, 'disk_usage', lambda path: SimpleNamespace(free=GIB))
+    monkeypatch.setattr(backup_policy, 'filesystem', lambda path: 1)
+    monkeypatch.setattr(backup_policy, 'retention_settings', lambda: (7, 4))
+    monkeypatch.setattr(operation, 'stall_seconds', lambda: 1800)
+
+    state = tmp_path / 'state'
+    selected = tmp_path / 'opt/sli/releases/accepted'
+    recovery = tmp_path / 'recovery' / selected.name
+    monkeypatch.setattr(native_runtime, 'STATE', state)
+    monkeypatch.setattr(native_runtime, 'RECOVERY', recovery.parent)
+    monkeypatch.setattr(native_runtime, 'trusted', Path.read_bytes)
+    monkeypatch.setattr(native_runtime, 'release', lambda: (selected, {}, 'f' * 64))
+    native_backup.configure()
+    native_backup.configure()  # Exact existing files need no accepted receipt.
+
+    units = [machine.path('/usr/lib/systemd/system/' + name) for name in
+             ('sli-backup.service', 'sli-backup-drill.service', 'sli-backup.timer')]
+    override = tmp_path / 'etc/systemd/system/sli-backup.service.d/operator.conf'
+    override.parent.mkdir(parents=True)
+    override.write_bytes(b'[Service]\nTimeoutStartSec=90\n')
+    state.mkdir()
+    receipt = {'schema_version': 1, 'release': str(selected), 'manifest_sha256': 'f' * 64}
+    (state / 'installed.json').write_text(json.dumps(receipt))
+    (recovery / 'units').mkdir(parents=True)
+    inventory = {}
+    protected = [override, state / 'installed.json']
+    for unit in units:
+        body = unit.read_bytes()
+        saved = recovery / 'units' / unit.name
+        saved.write_bytes(body)
+        inventory[f'units/{unit.name}'] = {'sha256': hashlib.sha256(body).hexdigest(), 'size': len(body)}
+        protected.append(saved)
+    seal = recovery / 'recovery.json'
+    saved_receipt = {**receipt, 'release': selected.name, 'content_checksums': inventory}
+    if conflict == 'bad-seal':
+        inventory['units/sli-backup.service']['sha256'] = '0' * 64
+    if conflict == 'bad-recovery-copy':
+        (recovery / 'units/sli-backup.service').write_bytes(b'changed after sealing')
+    if conflict == 'unselected-release':
+        (state / 'installed.json').write_text(json.dumps({**receipt, 'release': str(tmp_path / 'different')}))
+    if conflict != 'no-seal':
+        seal.write_text(json.dumps(saved_receipt))
+        protected.append(seal)
+
+    target = units[0]
+    if conflict == 'unsealed-timeout':
+        target.write_bytes(target.read_bytes().replace(b'TimeoutStartSec=1864', b'TimeoutStartSec=1865'))
+    if conflict == 'other-field':
+        target.write_bytes(target.read_bytes().replace(b'KillMode=control-group', b'KillMode=process'))
+    if conflict == 'owner':
+        attributes[target]['st_uid'] = 1001
+    if conflict == 'group':
+        attributes[target]['st_gid'] = 1001
+    if conflict == 'mode':
+        attributes[target]['st_mode'] = stat.S_IFREG | 0o664
+    if conflict == 'symlink':
+        attributes[target]['st_mode'] = stat.S_IFLNK | 0o777
+
+    original = {path: path.read_bytes() for path in (*units, *protected)}
+    for budget in (1928, 1960):
+        if reason is None:
+            native_backup.configure()
+        else:
+            with pytest.raises(RuntimeError, match=reason):
+                native_backup.configure()
+        assert {path: path.read_bytes() for path in original} == original
 
 
 @pytest.mark.parametrize('samples', [
