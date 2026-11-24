@@ -54,9 +54,18 @@ public sealed class SnapshotIngressDatabaseTests
             Assert.Equal("agent_module_not_assigned",denied.Code);
             var plan = await SnapshotIngress.ValidateAsync(db,tx,identity,envelope,payload,assignments,ct);
             var receipt = AgentReceipt.Make(envelope,"committed",null,DateTimeOffset.UtcNow);
-            var enough = new AgentInboxLimits(1000,long.MaxValue/4,1000,long.MaxValue/4,1000,long.MaxValue/4,long.MaxValue/4);
+            long free = 0;
+            var enough = new AgentInboxLimits(1000,long.MaxValue/4,1000,long.MaxValue/4,1000,long.MaxValue/4,long.MaxValue/4)
+                { FreeDiskBytes = () => free };
+            Assert.Equal("agent_inbox_disk_bytes_limit",await SnapshotIngress.CheckQuotaAsync(db,tx,plan,receipt,enough,ct));
+            Assert.Equal("full",enough.CapacityStatus());
+            free = -1;
+            Assert.Equal("agent_inbox_disk_unavailable",await SnapshotIngress.CheckQuotaAsync(db,tx,plan,receipt,enough,ct));
+            Assert.Equal("unavailable",enough.CapacityStatus());
+            free = 20L * 1024 * 1024 * 1024;
             Assert.Null(await SnapshotIngress.CheckQuotaAsync(db,tx,plan,receipt,enough,ct));
-            Assert.Equal("agent_snapshot_agent_bytes_limit",await SnapshotIngress.CheckQuotaAsync(db,tx,plan,receipt,enough with { AgentBytes=1 },ct));
+            Assert.Equal("ok",enough.CapacityStatus());
+            Assert.Equal("agent_snapshot_agent_bytes_limit",await SnapshotIngress.CheckQuotaAsync(db,tx,plan,receipt,enough with { SnapshotAgentBytes=1 },ct));
             await tx.SaveAsync("before_receipt",ct);
             var fk = await Assert.ThrowsAsync<PostgresException>(() => SnapshotIngress.StoreAsync(db,tx,plan,ct));
             Assert.Equal("23503",fk.SqlState);
