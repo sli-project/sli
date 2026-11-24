@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -267,6 +268,176 @@ def private_postgres(tmp_path):
 def postgres(tmp_path):
     with private_postgres(tmp_path) as query:
         yield query
+
+
+def test_native_407_upgrade_uses_index_to_copy_exact_finding_evidence(tmp_path, postgres):
+    from deploy.linux import native_pg_migrate as subject
+    from scripts.maintenance import existing_postgres_bootstrap as bootstrap
+
+    def execute(body, *, database="sli"):
+        result = postgres(body, database=database)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    migrations = bootstrap.forward_migration_inventory(ROOT / "config/postgres_migrations")
+    baseline = bootstrap.load_baseline(ROOT / "config/postgres_baseline", migrations)
+    rendered = bootstrap.render_baseline_schema(baseline, "example.test", tmp_path / "baseline.sql",
+                                                seed_report_domain=False)
+    execute("""
+        create role sli_migration login noinherit;
+        create role adlog_user login noinherit;
+        create database sli owner sli_migration;
+    """, database="postgres")
+    linux = ROOT / "deploy/linux"
+    grants = (linux / "runtime_grants.sql").read_text(encoding="utf-8")
+    execute("\n".join(("begin;", baseline.roles_path.read_text(encoding="utf-8"),
+                       rendered.read_text(encoding="utf-8"), grants,
+                       (linux / "default_semantic_policy.sql").read_text(encoding="utf-8"), "commit;")))
+    execute("\n".join(item.path.read_text(encoding="utf-8") for item in migrations
+                      if baseline.version < item.version <= 407))
+    execute(grants)
+    assert execute("select max(version) from public.schema_migrations;") == "407"
+
+    execute("""
+        create role synthetic_evidence_login login noinherit;
+        grant adlog_semantic_worker to synthetic_evidence_login;
+        insert into public.sli_agents(id,host_id,key_fingerprint,registration_host_name,status,assigned_modules)
+        values ('00000000-0000-4000-8000-000000000408','00000000-0000-4000-8000-000000000408',
+            repeat('c',64),'evidence.example.test','active',
+            '[{"module_id":"sli.windows.ad-dc","enabled":true,"config":{"channels":{"Security":true}}}]');
+        select public.create_event_storage_partitions(current_date-1,current_date);
+        begin;
+        set local session_replication_role='replica';
+        insert into public.event_hot(event_id,time_created_utc,event_kind,domain_id,computer,method,outcome,fields,source_sha256)
+        select g.id,date_trunc('day',now())-
+            case when g.id=1 then interval '1 hour' else interval '0' end,
+            4625,1,'fixture',jsonb_build_object('$channel','Security','$origin',jsonb_build_object(
+                'installation_id',i.installation_id::text,'plugin_id','sli.windows.ad-dc',
+                'source_instance_id','fixture-evidence','source_generation','fixture-generation',
+                'collection_scope_id','','log_source_id',88,'agent_id','00000000-0000-4000-8000-000000000408')),
+            '{}','{}',sha256(convert_to(g.id::text,'UTF8'))
+        from generate_series(1,60001) g(id) cross join public.semantic_default_installation i;
+        insert into public.event_hot(event_id,time_created_utc,event_kind,domain_id,computer,method,outcome,fields,source_sha256)
+        select event_id,date_trunc('day',now()),event_kind,domain_id,computer,
+            jsonb_set(method,'{$origin,source_instance_id}','"fixture-other-source"'),
+            outcome,fields,decode(repeat('ef',32),'hex') from public.event_hot where event_id=1;
+        commit;
+        analyze public.event_hot;
+        insert into public.finding_evidence_source_bindings(principal_oid,principal_name,installation_id,plugin_id,
+            source_instance_id,source_generation,collection_scope_id,storage_kind,log_source_id,agent_id)
+        select r.oid,r.rolname,i.installation_id,'sli.windows.ad-dc','fixture-evidence','fixture-generation',
+            '','core_event',88,'00000000-0000-4000-8000-000000000408'
+        from pg_roles r cross join public.semantic_default_installation i where r.rolname='synthetic_evidence_login';
+        insert into public.findings(id,fingerprint,rule_code,title,severity,status,evidence_count) values
+            (40801,'synthetic-before-408','semantic.qw.password-brute-force','fixture','high','new',1),
+            (40802,'synthetic-after-408','semantic.qw.password-brute-force','fixture','high','new',1),
+            (40803,'synthetic-plan-408','semantic.qw.password-brute-force','fixture','high','new',1);
+    """)
+    definition = """select pg_get_functiondef('public.copy_finding_event337(bigint,text,text,text,text)'::regprocedure);"""
+    metadata = """
+        select proowner::regrole,proacl,prosecdef,provolatile,proconfig from pg_proc
+        where oid='public.copy_finding_event337(bigint,text,text,text,text)'::regprocedure;
+    """
+    original, permissions = execute(definition), execute(metadata)
+    assert permissions.startswith("adlog_storage_owner|")
+    assert execute("""
+        select has_function_privilege('adlog_semantic_worker',
+            'public.copy_finding_event337(bigint,text,text,text,text)','execute');
+    """) == "f"
+
+    def plan_for_copy():
+        statement = re.search(r"(?s)(insert into public\.finding_event_copies337\b.*?on conflict do nothing);",
+                              execute(definition)).group(1)
+        parameters = {"p_finding": "$1", "p_native": "$2", "p_hash": "$3", "p_role": "$4", "p_note": "$5"}
+        statement = re.sub(r"\bp_(finding|native|hash|role|note)\b",
+                           lambda match: parameters[match.group()], statement)
+        plan = execute(f"""
+            begin;
+            set local plan_cache_mode='force_generic_plan';
+            prepare evidence_copy(bigint,text,text,text,text) as {statement};
+            explain (analyze, format json) execute evidence_copy(
+                40803,'1','{digest}','semantic_scenario',null);
+            rollback;
+        """)
+        return json.loads(plan)[0]
+
+    def nodes(node):
+        yield node
+        for child in node.get("Plans", []):
+            yield from nodes(child)
+
+    def link(finding, source="fixture-evidence", event_hash=None):
+        return postgres(f"""
+            set session authorization synthetic_evidence_login;
+            set role adlog_semantic_worker;
+            select public.link_finding_evidence_ref({finding},'{installation}','sli.windows.ad-dc',
+                '{source}','fixture-generation','','core_event','1','{event_hash or digest}');
+        """, database="sli")
+
+    def copied(finding):
+        return execute(f"""
+            select count(*),count(distinct source_sha256) from public.finding_event_copies337 where finding_id={finding};
+        """)
+
+    digest = hashlib.sha256(b"1").hexdigest()
+    installation = execute("select installation_id from public.semantic_default_installation;")
+    before = plan_for_copy()
+    result = link(40801)
+    assert (result.returncode, result.stdout.strip()) == (0, "t"), result.stderr
+    assert copied(40801) == "1|1"
+
+    release = tmp_path / "release-408"
+    scripts = release / "config/postgres_migrations"
+    scripts.mkdir(parents=True)
+    shutil.copytree(ROOT / "config/postgres_baseline", release / "config/postgres_baseline")
+    shutil.copyfile(ROOT / "config/postgres_schema_v8.sql", release / "config/postgres_schema_v8.sql")
+    for path in (ROOT / "config/postgres_migrations").glob("*.sql"):
+        version = path.name.partition("_")[0]
+        if not version.isdigit() or int(version) <= 408:
+            shutil.copyfile(path, scripts / path.name)
+    (release / "deploy/linux").mkdir(parents=True)
+    (release / "deploy/linux/native_pg_ledger.json").write_text(json.dumps(inventory.build_manifest(release)))
+    upgrade = subject.upgrade_sql(release)
+    execute(upgrade)
+
+    after = plan_for_copy()
+    assert any("event_id" in n.get("Index Cond", "") for n in nodes(after["Plan"]))
+    removed_before = sum(n.get("Rows Removed by Filter", 0) for n in nodes(before["Plan"]))
+    removed_after = sum(n.get("Rows Removed by Filter", 0) for n in nodes(after["Plan"]))
+    assert removed_before >= 60000
+    assert removed_after <= 1
+    assert before["Plan"]["Tuples Inserted"] == after["Plan"]["Tuples Inserted"] == 1
+    print(f"Evidence copy before: {before['Execution Time']:.3f} ms, {removed_before} rows filtered; "
+          f"after: {after['Execution Time']:.3f} ms, {removed_after} rows filtered")
+    assert execute(metadata) == permissions
+    assert execute("select max(version) from public.schema_migrations;") == "408"
+    for source, event_hash in (("fixture-other-source", "ef" * 32), ("fixture-evidence", "ef" * 32)):
+        denied = link(40802, source, event_hash)
+        assert denied.returncode != 0 and "evidence_unavailable_or_denied" in denied.stderr
+    for added in ("t", "f"):
+        result = link(40802)
+        assert (result.returncode, result.stdout.strip()) == (0, added), result.stderr
+    assert copied(40802) == "1|1"
+    assert execute(f"""
+        select bool_or(public.copy_finding_event337(40803,n,'{digest}','semantic_scenario',null))
+        from (values (null::text),('01'),('+1'),(' 1'),('9223372036854775808'),('native-id')) v(n);
+    """) == "f"
+    assert copied(40803) == "0|0"
+    execute("insert into public.finding_evidence(finding_id,event_id,evidence_role,note) "
+            "values (40803,1,'semantic_scenario','legacy');")
+    assert copied(40803) == "2|2"
+
+    execute("delete from public.event_hot where event_id=1;")
+    archived = """select jsonb_agg(to_jsonb(c) order by finding_id,time_created_utc)::text
+        from public.finding_event_copies337 c;"""
+    retained = execute(archived)
+    rollback = scripts / "408_index_finding_evidence_copy.rollback.sql"
+    execute(rollback.read_text(encoding="utf-8"))
+    assert execute(definition) == original
+    assert execute(metadata) == permissions
+    assert execute(archived) == retained
+    execute(upgrade)
+    assert execute(archived) == retained
 
 
 def test_native_404_upgrade_installs_radius_admission_with_unchanged_schema_acl(tmp_path, postgres):
