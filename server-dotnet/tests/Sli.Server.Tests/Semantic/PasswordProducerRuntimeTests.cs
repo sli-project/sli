@@ -91,6 +91,38 @@ public class PasswordProducerRuntimeTests
         public DateTimeOffset At { get; set; } = at;
         public override DateTimeOffset GetUtcNow() => At;
     }
+
+    [Theory]
+    [InlineData(false, false, 1)]
+    [InlineData(true, false, 2)]
+    [InlineData(true, true, 2)]
+    public async Task Qualified_denial_revisits_spray_once_while_brute_advances(bool qualified, bool repeat, int sprayTurns)
+    {
+        var scope = new PasswordScope("00000000-0000-0000-0000-000000000001", "sli.windows.ad-dc", "source", "1", "");
+        var clock = new ManualClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var target = clock.At.AddSeconds(-120);
+        var calls = new List<string>();
+        int brute = 0, spray = 0;
+        var outcomes = await PasswordProducerPoller.RunBatchesAsync(scope, (rule, _) =>
+        {
+            calls.Add(rule.Kind);
+            if (rule.Kind == "brute")
+                return Task.FromResult(new PasswordProducerOutcome(Failed: false, Status: "committed",
+                    Work: new JsonObject { ["watermark"] = PasswordJson.Stamp(target.AddSeconds(++brute - 3)) }));
+            Assert.InRange(++spray, 1, 2);
+            if (spray == 1 || repeat)
+                return Task.FromResult(new PasswordProducerOutcome(Failed: false, Status: "committed", Revision: spray)
+                    { CommittedQualifiedDenial = qualified });
+            return Task.FromResult(new PasswordProducerOutcome(Failed: false, Status: "committed",
+                Work: new JsonObject { ["watermark"] = PasswordJson.Stamp(target) }));
+        }, TestContext.Current.CancellationToken, clock: clock, targetWatermark: target);
+
+        Assert.Equal(sprayTurns == 2 ? ["brute", "spray", "brute", "spray", "brute"] :
+            new[] { "brute", "spray", "brute", "brute" }, calls);
+        Assert.Null(outcomes[1].Work?["watermark"]);
+        Assert.All(outcomes, outcome => Assert.Equal("committed", outcome.Status));
+    }
+
     [Fact] public async Task Failed_brute_is_logged_before_spray_and_retried_while_catchup_yields()
     {
         var scope=PasswordScope.Read(JsonNode.Parse("""{"installation_id":"00000000-0000-4000-8000-000000000001","plugin_id":"sli.windows.ad-dc","source_instance_id":"source","source_generation":"1","collection_scope_id":""}"""));

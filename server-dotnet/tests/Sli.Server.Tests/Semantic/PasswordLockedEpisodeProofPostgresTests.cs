@@ -14,6 +14,93 @@ public sealed class PasswordLockedEpisodeProofPostgresTests
     private const string ExistingLock = "public.lock_password_publication_v2";
 
     [Fact]
+    public async Task Frozen_spray_job_completes_once_without_publication()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var start = DateTimeOffset.UtcNow.AddMinutes(-4);
+        var accounts = Enumerable.Range(1, 5).ToArray();
+        var events = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+            eventKinds: accounts.Select(_ => 4625).ToArray(),
+            nativeTimestamps: accounts.Select(i => PasswordJson.Stamp(start.AddSeconds(i))).ToArray(),
+            nativeAccounts: accounts.Select(i => $"spray-fixture-{i}").ToArray(),
+            nativeTargetSids: accounts.Select(i => $"S-1-5-21-100000001-200000002-300000003-{1000 + i}").ToArray());
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, events, ct);
+
+        await using var runtime = PasswordProducerRuntime.Create(
+            name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
+            _ => throw new InvalidOperationException());
+        await using var worker = await runtime.OpenAsync(ct);
+        await using var source = new NpgsqlCommand("""
+            select source::text from public.default_detection_sources() where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
+                and session_user='sli_semantic_login' and current_user='adlog_semantic_worker'
+            """, worker);
+        var scope = PasswordScope.Read(JsonNode.Parse(Assert.IsType<string>(await source.ExecuteScalarAsync(ct)))!["scope"]);
+        await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+        await using var bind = new NpgsqlCommand(
+            "select public.provision_password_detection_domain_v2(@agent,1,null,'example.test','session:1')->>'status'", app);
+        bind.Parameters.AddWithValue("agent", ShortEventAdmissionPostgresTests.Agent);
+        Assert.Equal("configured", await bind.ExecuteScalarAsync(ct));
+
+        var spray = new PasswordRule(scope, "spray");
+        await using var plan = new NpgsqlCommand("select (public.password_plan388(@s::jsonb,@r)#>>'{live,rule_version}')::int", worker);
+        plan.Parameters.AddWithValue("s", scope.Document.ToJsonString());
+        plan.Parameters.AddWithValue("r", spray.Id);
+        var rule = new PasswordRule(scope, "spray", Assert.IsType<int>(await plan.ExecuteScalarAsync(ct)));
+        var produced = await new PasswordProducer().RunAsync(worker, rule, ct);
+        Assert.False(produced.Failed, produced.Diagnostic?.ToJsonString());
+        Assert.Equal(1, produced.Jobs);
+
+        await using var episode = new NpgsqlCommand("select episode_key from public.semantic_password_episode_budgets where pin=@pin", owner);
+        episode.Parameters.AddWithValue("pin", rule.Pin);
+        string key = Assert.IsType<string>(await episode.ExecuteScalarAsync(ct));
+        await Freeze(owner, rule, key, ct);
+        await Refuses(worker, rule, Combined, key, "55000", "episode_frozen", ct);
+        await Refuses(app, rule, Combined, key, "42501", "permission denied", ct);
+
+        await using var durableFreeze = new NpgsqlCommand("""
+            select jsonb_build_array(to_jsonb(b),c.state_document)::text from public.semantic_password_episode_budgets b
+            join public.semantic_password_checkpoints c using(scope_digest,pin)
+            where b.episode_key=@key and b.frozen and b.barrier_unresolved
+            """, owner);
+        durableFreeze.Parameters.AddWithValue("key", key);
+        var before = Assert.IsType<string>(await durableFreeze.ExecuteScalarAsync(ct));
+        await using var queued = new NpgsqlCommand("""
+            select job_id from public.semantic_risk_evaluation_jobs
+            where evaluation_status='queued' and evaluation_mode='enabled' and attempt_count=0
+            """, owner);
+        var job = Assert.IsType<Guid>(await queued.ExecuteScalarAsync(ct));
+        var batch = await new PasswordRiskConsumer(runtime, new(MaxJobs: 1)).RunOnceAsync(ct);
+        const string terminalViolation = "violates check constraint \"semantic_risk_evaluation_terminal\"";
+        var logs = await fixture.Pg.DiagnosticsAsync(ct);
+        Assert.True(batch == new PasswordRiskBatch(1, 1, 0, 0, 0, 1),
+            $"{batch}; terminal_constraint_violation={logs.Contains(terminalViolation, StringComparison.Ordinal)}");
+        Assert.DoesNotContain(terminalViolation, logs, StringComparison.Ordinal);
+        Assert.Equal(new PasswordRiskBatch(0, 0, 0, 0, 0, 0),
+            await new PasswordRiskConsumer(runtime, new(MaxJobs: 1)).RunOnceAsync(ct));
+
+        await using var completed = new NpgsqlCommand("""
+            select (select count(*) from public.semantic_risk_evaluation_jobs)=1
+                and exists(select 1 from public.semantic_risk_evaluation_jobs
+                    where job_id=@job and evaluation_status='completed' and attempt_count=1 and completed_at is not null
+                      and lease_token is null and lease_until is null and last_error_code is null and last_error_detail is null)
+                and exists(select 1 from pg_constraint where conrelid='public.semantic_risk_evaluation_jobs'::regclass
+                    and conname='semantic_risk_evaluation_terminal' and convalidated)
+                and not exists(select 1 from public.semantic_risk_evaluation_results)
+                and not exists(select 1 from public.semantic_security_scenarios)
+                and not exists(select 1 from public.semantic_finding_publications)
+                and not exists(select 1 from public.findings)
+                and not exists(select 1 from public.finding_evidence_refs)
+            """, owner);
+        completed.Parameters.AddWithValue("job", job);
+        Assert.Equal(true, await completed.ExecuteScalarAsync(ct));
+        Assert.Equal(before, await durableFreeze.ExecuteScalarAsync(ct));
+    }
+
+    [Fact]
     public async Task Locked_proof_matches_order_hashes_authority_barriers_and_round_trip()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -12,6 +12,7 @@ namespace Sli.Server.Semantic.Password;
 
 public sealed record PasswordProducerOutcome(int Jobs=0,bool Failed=true,string Status="failed",long? Revision=null,JsonObject? Health=null,bool FailureObserved=false,JsonObject? Work=null,JsonObject? Diagnostic=null)
 {
+    internal bool CommittedQualifiedDenial { get; init; }
     internal JsonObject? RetainedProof { get; init; }
 }
 
@@ -49,7 +50,7 @@ public sealed class PasswordProducer
         catch (Exception error) {if(db.FullState!=ConnectionState.Open)throw;return new(Diagnostic:DetectionDiagnostics.Describe(error,diagnostics.Step));}
         diagnostics.Step="password_batch_begin";
         try {
-            JsonObject? completed=null;int jobs=0;JsonObject? work=null;bool enabled;
+            JsonObject? completed=null;int jobs=0;JsonObject? work=null;bool enabled,qualifiedDenial=false;
             Dictionary<long,PasswordNative>? committedCache=null;
             await using(var tx=await db.BeginTransactionAsync(ct)) {
                 var sql=new PasswordSql(db,tx,diagnostics);
@@ -59,7 +60,7 @@ public sealed class PasswordProducer
                     admission.Parameters.AddWithValue("id",PasswordSignal.PolicyId(rule));admission.Parameters.AddWithValue("definition",CanonicalJson.Serialize(PasswordSignal.PolicyDefinition(rule),ensureAscii:false));
                     object? result=await admission.ExecuteScalarAsync(ct);if(result is not bool decision)throw new PasswordFailure("password_v2_policy_unconfirmed");enabled=decision;
                 }
-                if(enabled)(completed,jobs,work,committedCache)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,partitionedCheckpoint,diagnostics,adaptive ? observation : null);
+                if(enabled)(completed,jobs,work,committedCache,qualifiedDenial)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,partitionedCheckpoint,diagnostics,adaptive ? observation : null);
                 diagnostics.Step="password_batch_commit";
                 using (observation?.Measure(PasswordProofTiming.Commit)) await tx.CommitAsync(ct);
             }
@@ -67,7 +68,8 @@ public sealed class PasswordProducer
                 retainedWindow!.Clear();
                 foreach(var (id,native) in committedCache)retainedWindow[id]=native;
             }
-            RequireOpen(db);return enabled?new(jobs,false,"committed",completed!["revision"]!.GetValue<long>(),PasswordJson.Obj(completed["health"]),Work:work):new(Failed:false,Status:"disabled");
+            RequireOpen(db);return enabled?new(jobs,false,"committed",completed!["revision"]!.GetValue<long>(),PasswordJson.Obj(completed["health"]),Work:work)
+                {CommittedQualifiedDenial=qualifiedDenial}:new(Failed:false,Status:"disabled");
         } catch(OperationCanceledException)when(ct.IsCancellationRequested){throw;}
         catch (PostgresException error) when(error.SqlState is PostgresErrorCodes.LockNotAvailable or PostgresErrorCodes.SerializationFailure) {RequireOpen(db);return new(Failed:false,Status:"busy",Diagnostic:DetectionDiagnostics.Describe(error,diagnostics.Step));}
         catch(PasswordFailure error) when(error.Message=="password_v2_window_changed393") {
@@ -86,7 +88,7 @@ public sealed class PasswordProducer
     private static void RequireOpen(NpgsqlConnection db){if(db.FullState!=ConnectionState.Open)throw new PasswordFailure("password_v2_connection_not_idle");}
     private static readonly HashSet<string> LossCodes=["too_late","coverage_gap","episode_evidence_budget_exhausted","missing_target","unclassified_failure","ambiguous_failure","conflicting_client","missing_client"];
 
-    private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache)> RunBatch(
+    private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache,bool QualifiedDenial)> RunBatch(
         PasswordSql sql,NpgsqlTransaction tx,PasswordRule rule,JsonObject attempt,CancellationToken ct,
         Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,DetectionDiagnostics diagnostics,
         PasswordProofObservation? observation)
@@ -174,7 +176,7 @@ public sealed class PasswordProducer
             };
     }
 
-    private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache)> Batch(
+    private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache,bool QualifiedDenial)> Batch(
         PasswordSql sql,PasswordRule rule,JsonObject attempt,CancellationToken ct,PasswordState state,List<JsonObject> rows,
         JsonObject metadata,Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,PasswordProofObservation? observation,
         PasswordNativeParsing? parsing)
@@ -258,7 +260,7 @@ public sealed class PasswordProducer
             try { budget.Plan(combinedWitnesses); }
             catch (PasswordFailure e) when (e.Message=="password_v2_proof_bound") {
                 var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct,observation);
-                if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null);}
+                if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null,true);}
                 if (!adaptive || rule.Kind != "spray" || !rule.NormalizedAccounts || historyWitnesses.Length == 0)
                     throw;
                 combinedLimit = e;
@@ -396,7 +398,7 @@ public sealed class PasswordProducer
             cache=retainedWindow.Where(p=>keep.Contains(p.Key)).ToDictionary();
             foreach(var (id,native) in windowBudget.Records)if(keep.Contains(id))cache[id]=native;
         }
-        work["watermark"]=PasswordJson.Stamp(final);return(completed,jobs,work,cache);
+        work["watermark"]=PasswordJson.Stamp(final);return(completed,jobs,work,cache,false);
     }
 
     private static void CheckCheckpointUnit(HashSet<PasswordWitness> witnesses) =>
