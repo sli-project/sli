@@ -30,17 +30,17 @@ public sealed class PasswordProducer
     private static async Task<PasswordProducerOutcome> RunCore(NpgsqlConnection db,PasswordRule rule,CancellationToken ct,
         Dictionary<long,PasswordNative>? retainedWindow,PasswordProofObservation? observation)
     {
-        RequireOpen(db);JsonObject attempt;bool indexedState,adaptive;var diagnostics=new DetectionDiagnostics();
+        RequireOpen(db);JsonObject attempt;bool indexedState,adaptive,partitionedCheckpoint;var diagnostics=new DetectionDiagnostics();
         try {
             await using var tx=await db.BeginTransactionAsync(ct);var sql=new PasswordSql(db,tx,diagnostics);
             var readiness = await sql.Rows("select public.password_source_ready_v314(@s::jsonb) as ready",ct,("s",rule.Scope.Document));
             if (readiness.Count != 1 || readiness[0]["ready"] is not JsonValue ready || !ready.TryGetValue<bool>(out var configured))
                 throw new PasswordFailure("password_v2_source_unconfirmed");
             if (!configured) { await tx.CommitAsync(ct); return new(Failed:false,Status:"unconfigured"); }
-            var pending=await sql.Rows("select public.password_event_clock362(@s::jsonb,@e::jsonb) as event_clock,to_regprocedure('public.password_state_episodes385(jsonb)') is not null as indexed_state,to_regprocedure('public.password_decision_limit398()') is not null as adaptive",ct,("s",rule.Scope.Document),("e",rule.Execution));
+            var pending=await sql.Rows("select public.password_event_clock362(@s::jsonb,@e::jsonb) as event_clock,to_regprocedure('public.password_state_episodes385(jsonb)') is not null as indexed_state,to_regprocedure('public.password_decision_limit398()') is not null as adaptive,to_regprocedure('public.password_checkpoint_native_cost403(jsonb,jsonb,bytea,text,text[])') is not null as partitioned_checkpoint",ct,("s",rule.Scope.Document),("e",rule.Execution));
             if(pending[0]["event_clock"] is null) { await tx.CommitAsync(ct); return new(Failed:false,Status:"committed"); }
             indexedState=pending[0]["indexed_state"]!.GetValue<bool>();
-            adaptive=pending[0]["adaptive"]!.GetValue<bool>();
+            adaptive=pending[0]["adaptive"]!.GetValue<bool>();partitionedCheckpoint=pending[0]["partitioned_checkpoint"]!.GetValue<bool>();
             attempt=PasswordJson.Obj(await sql.Call("begin_password_attempt",ct,rule.Scope.Document,rule.Execution));
             if(attempt["token"]!.GetValue<long>()<=0||attempt["state_revision"]!.GetValue<long>()<0)throw new PasswordFailure("password_v2_attempt_invalid");PasswordJson.Time(attempt["attempted_at"]);
             diagnostics.Step="password_attempt_commit";await tx.CommitAsync(ct);
@@ -59,7 +59,7 @@ public sealed class PasswordProducer
                     admission.Parameters.AddWithValue("id",PasswordSignal.PolicyId(rule));admission.Parameters.AddWithValue("definition",CanonicalJson.Serialize(PasswordSignal.PolicyDefinition(rule),ensureAscii:false));
                     object? result=await admission.ExecuteScalarAsync(ct);if(result is not bool decision)throw new PasswordFailure("password_v2_policy_unconfirmed");enabled=decision;
                 }
-                if(enabled)(completed,jobs,work,committedCache)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,diagnostics,adaptive ? observation : null);
+                if(enabled)(completed,jobs,work,committedCache)=await RunBatch(sql,tx,rule,attempt,ct,retainedWindow,indexedState,adaptive,partitionedCheckpoint,diagnostics,adaptive ? observation : null);
                 diagnostics.Step="password_batch_commit";
                 using (observation?.Measure(PasswordProofTiming.Commit)) await tx.CommitAsync(ct);
             }
@@ -88,7 +88,7 @@ public sealed class PasswordProducer
 
     private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache)> RunBatch(
         PasswordSql sql,NpgsqlTransaction tx,PasswordRule rule,JsonObject attempt,CancellationToken ct,
-        Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,DetectionDiagnostics diagnostics,
+        Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,DetectionDiagnostics diagnostics,
         PasswordProofObservation? observation)
     {
         long token=attempt["token"]!.GetValue<long>(),revision=attempt["state_revision"]!.GetValue<long>();
@@ -132,7 +132,7 @@ public sealed class PasswordProducer
                 if(rejectedClock.HasValue&&attemptedClock>=rejectedClock)
                     throw new PasswordFailure("password_v2_window_changed393");
                 if(adaptive)CheckReaderBudget(metadata);
-                var result=await Batch(sql,rule,attempt,ct,state,rows,metadata,retainedWindow,indexedState,adaptive,observation,parsing);
+                var result=await Batch(sql,rule,attempt,ct,state,rows,metadata,retainedWindow,indexedState,adaptive,partitionedCheckpoint,observation,parsing);
                 if(adaptive)await tx.ReleaseAsync(savepoint,ct);
                 if(lastBudget!=null){
                     result.Work["proof_backoffs"]=retries;
@@ -176,7 +176,7 @@ public sealed class PasswordProducer
 
     private static async Task<(JsonObject Completed,int Jobs,JsonObject Work,Dictionary<long,PasswordNative>? Cache)> Batch(
         PasswordSql sql,PasswordRule rule,JsonObject attempt,CancellationToken ct,PasswordState state,List<JsonObject> rows,
-        JsonObject metadata,Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,PasswordProofObservation? observation,
+        JsonObject metadata,Dictionary<long,PasswordNative>? retainedWindow,bool indexedState,bool adaptive,bool partitionedCheckpoint,PasswordProofObservation? observation,
         PasswordNativeParsing? parsing)
     {
         long token=attempt["token"]!.GetValue<long>(),revision=attempt["state_revision"]!.GetValue<long>();var scope=rule.Scope.Document;var execution=rule.Execution;
@@ -341,12 +341,25 @@ public sealed class PasswordProducer
                 // the predecessor barrier before that union is computed.
                 var successorEntities=reservations.Where(r=>barriers.TryGetValue(r.Emission.Entity,out var barrier)
                     &&r.Emission.EpisodeKey!=PasswordJson.Text(barrier["episode_key"])).Select(r=>r.Emission.Entity).ToHashSet();
-                var witnesses=combined.Window.Select(m=>m.Witness)
-                    .Concat(combined.Episodes.Concat(combined.ClosedAdmissions)
-                        .SelectMany(e=>e.Prequalification.Append(e.Seed).Append(e.Last)))
-                    .Concat(barriers.Where(b=>!successorEntities.Contains(b.Key)).Select(b=>PasswordWitness.Read(b.Value["tracking_endpoint"])))
-                    .Distinct().ToArray();
-                PasswordProofBudget.Check(PasswordProofPhase.Checkpoint,witnesses.Length,witnesses.Sum(w=>(long)w.XmlBytes));
+                var continuity = combined.Episodes.Concat(combined.ClosedAdmissions)
+                    .SelectMany(e => e.Prequalification.Append(e.Seed).Append(e.Last))
+                    .Concat(barriers.Where(b => !successorEntities.Contains(b.Key))
+                        .Select(b => PasswordWitness.Read(b.Value["tracking_endpoint"]))).ToHashSet();
+                var rolling = combined.Window.Select(m => m.Witness).ToHashSet();
+                if (partitionedCheckpoint) {
+                    // The SQL finalizer independently reconstructs the same two
+                    // units and proves each witness against native storage.
+                    rolling.ExceptWith(continuity);
+                    if (continuity.Concat(rolling).DistinctBy(w => w.NativeId).Count() != continuity.Count + rolling.Count)
+                        throw new PasswordFailure("password_v2_native_content_conflict");
+                    CheckCheckpointUnit(continuity);
+                    CheckCheckpointUnit(rolling);
+                    work["checkpoint_proof_refs"] = continuity.Count + rolling.Count;
+                    work["checkpoint_max_unit_refs"] = Math.Max(continuity.Count, rolling.Count);
+                } else {
+                    continuity.UnionWith(rolling);
+                    CheckCheckpointUnit(continuity);
+                }
             }
         }
         // Plan every entity before staging any reservation: a qualified denial
@@ -386,6 +399,8 @@ public sealed class PasswordProducer
         work["watermark"]=PasswordJson.Stamp(final);return(completed,jobs,work,cache);
     }
 
+    private static void CheckCheckpointUnit(HashSet<PasswordWitness> witnesses) =>
+        PasswordProofBudget.Check(PasswordProofPhase.Checkpoint, witnesses.Count, witnesses.Sum(w => (long)w.XmlBytes));
     internal static JsonObject ValidateWindow(JsonObject metadata,DateTimeOffset attempted,bool eventClock=false)
     {
         string[] keys=["version","read_from","read_to","finalizable_through","candidate_count","truncated","native_checked_count","native_checks_complete","unverifiable_count","oversized_count","error_code"];

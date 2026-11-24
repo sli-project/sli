@@ -129,16 +129,33 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
             liveStatus[rule.Kind]=outcome;
             return outcome;
         }
-        bool CanCatchUp(PasswordRule rule)=>liveStatus.TryGetValue(rule.Kind,out var outcome)
-            && !outcome.Failed && outcome.Status=="committed";
-        var results=(await RunBatchesAsync(live[0].Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120),clock:clock)).ToList();
-        foreach(var rule in catchup) {
-            if(!CanCatchUp(rule))continue;
-            // Recheck both live rules before every history slice, including
-            // the second rule after a potentially expensive first history COMMIT.
-            var current=await RunBatchesAsync(rule.Scope,RunLive,ct,rules:live,targetAge:TimeSpan.FromSeconds(120),clock:clock);
-            results.AddRange(current);
-            if(!CanCatchUp(rule))continue;
+        var timeProvider = clock ?? TimeProvider.System;
+        var results = new List<PasswordProducerOutcome>();
+        var target = timeProvider.GetUtcNow().AddSeconds(-120);
+        async Task SweepLive()
+        {
+            target = timeProvider.GetUtcNow().AddSeconds(-120);
+            results.AddRange(await RunBatchesAsync(live[0].Scope, RunLive, ct, rules: live,
+                clock: timeProvider, targetWatermark: target));
+        }
+        bool CanCatchUp(PasswordRule historyRule)
+        {
+            // The event holdback determines eligibility. Allow at most one
+            // normal poll of processing lag as the two live rules run in turn.
+            var dispatchTarget = timeProvider.GetUtcNow().AddSeconds(-120 - PasswordProducerOptions.DefaultPollSeconds);
+            var required = dispatchTarget > target ? dispatchTarget : target;
+            bool IsCurrent(PasswordRule rule) =>
+                liveStatus.TryGetValue(rule.Kind, out var outcome) && !outcome.Failed &&
+                (outcome.Status == "disabled" || outcome.Status == "committed" &&
+                    outcome.Work?["watermark"] is {} watermark && PasswordJson.Time(watermark) >= required);
+            return live.All(IsCurrent) && liveStatus[historyRule.Kind].Status == "committed";
+        }
+        await SweepLive();
+        foreach (var rule in catchup) {
+            if (!CanCatchUp(rule)) continue;
+            // Recheck both live rules before each history slice.
+            await SweepLive();
+            if (!CanCatchUp(rule)) continue;
             var result=await run(rule,ct);results.Add(result);
             SemanticWork.Progress(new JsonObject{["cursor"]=new JsonObject{["pass"]="catchup",["rule"]=rule.Kind,
                 ["watermark"]=result.Work?["watermark"]?.DeepClone()},["heartbeat"]=SemanticJson.Stamp((clock??TimeProvider.System).GetUtcNow())});
@@ -147,7 +164,7 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
     }
     internal static async Task<IReadOnlyList<PasswordProducerOutcome>> RunBatchesAsync(PasswordScope scope,
         Func<PasswordRule,CancellationToken,Task<PasswordProducerOutcome>> run,CancellationToken ct,Action<string>? write=null,
-        IReadOnlyList<PasswordRule>? rules=null,TimeSpan? targetAge=null,TimeProvider? clock=null)
+        IReadOnlyList<PasswordRule>? rules=null,TimeSpan? targetAge=null,TimeProvider? clock=null,DateTimeOffset? targetWatermark=null)
     {
         write??=Console.Error.WriteLine;
         var results=new List<PasswordProducerOutcome>();
@@ -157,7 +174,7 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
         var retries=new int[rules.Count];
         var watermarks=new DateTimeOffset?[rules.Count];
         var timeProvider=clock??TimeProvider.System;
-        var target=timeProvider.GetUtcNow()-(targetAge??TimeSpan.FromMinutes(12));
+        var target=targetWatermark??timeProvider.GetUtcNow()-(targetAge??TimeSpan.FromMinutes(12));
         // Each live sweep has a fixed target so an advancing clock cannot keep
         // history waiting. Successful batches continue while the cursor moves.
         while(pending.Any(p=>p))for(int i=0;i<rules.Count;i++) {
@@ -201,7 +218,10 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
     }
 }
 
-public sealed record PasswordProducerOptions(bool Once=false,int PollSeconds=10);
+public sealed record PasswordProducerOptions(bool Once=false,int PollSeconds=PasswordProducerOptions.DefaultPollSeconds)
+{
+    internal const int DefaultPollSeconds = 10;
+}
 
 public sealed class PasswordProducerHostedService(PasswordProducerPoller poller,PasswordProducerOptions options,IHostApplicationLifetime lifetime,ILogger<PasswordProducerHostedService> logger):BackgroundService
 {
