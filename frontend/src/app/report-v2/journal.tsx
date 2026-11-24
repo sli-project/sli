@@ -238,14 +238,17 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
   </DetailDrawer>;
 }
 
+function journalRouteValues(definition: ReportDefinitionDto, routeSearch: string) {
+  const search = new URLSearchParams(routeSearch);
+  const legacyDomain = search.get("domain_id");
+  if (legacyDomain && !search.has("domain")) search.set("domain", legacyDomain);
+  return valuesFromSearch(definition, search);
+}
+
 export function EventJournal({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
   const { timeZone } = useTimeZone();
-  const [values, setValues] = useState(() => {
-    const search = new URLSearchParams(initialSearch ?? window.location.search);
-    const legacyDomain = search.get("domain_id");
-    if (legacyDomain && !search.has("domain")) search.set("domain", legacyDomain);
-    return valuesFromSearch(definition, search);
-  });
+  const [values, setValues] = useState(() => journalRouteValues(definition, initialSearch ?? window.location.search));
+  const [routeSearch, setRouteSearch] = useState(initialSearch);
   const [size, setSize] = useState(50);
   const [page, setPage] = useState(0);
   const [refresh, setRefresh] = useState(0);
@@ -253,6 +256,20 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [wide, setWide] = useState(false);
+  if (initialSearch !== routeSearch) {
+    setRouteSearch(initialSearch);
+    if (initialSearch !== undefined) {
+      const next = journalRouteValues(definition, initialSearch);
+      // The router also sees the journal's own URL normalization.
+      if (searchFromValues(definition, next).toString() !== searchFromValues(definition, values).toString()) {
+        setValues(next);
+        setPage(0);
+        setExpanded(null);
+        setSelection(null);
+        setDismissed(false);
+      }
+    }
+  }
   useEffect(() => {
     const media = window.matchMedia?.("(min-width: 1376px)");
     if (!media) return;
@@ -265,7 +282,9 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
     const search = searchFromValues(definition, values);
     preserveNavigationView(search, window.location.search);
     const query = search.toString();
-    window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+    const next = query ? `?${query}` : "";
+    if (next !== window.location.search)
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${next}${window.location.hash}`);
   }, [definition, values]);
 
   const collapse = values.collapse !== "off";
