@@ -599,6 +599,8 @@
     "config/postgres_migrations/405_file_permissions_opt_in.sql": "d2ccac061bcf16986550bc1aa694f396ca367855823da6f65728a5a8bc29db7e",
     "config/postgres_migrations/406_native_radius_accounting_admission.rollback.sql": "fdd489fddbe0ed8ca9f116566796f31c1cc653a2f924faf14894e6c9c68f77be",
     "config/postgres_migrations/406_native_radius_accounting_admission.sql": "ad1f1d4c269bc3834ca7cc934e2195982ee0ac18df3b8525557109db6392826a",
+    "config/postgres_migrations/407_bound_source_discovery.rollback.sql": "27a56ebf4e1d392c3390cc0507e3543f90ee640fa453d945dc3e647d003024e2",
+    "config/postgres_migrations/407_bound_source_discovery.sql": "71e08c5f2e73771899311e81191a33db103f94c4eaa24bf2cc8c7163229feca8",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
