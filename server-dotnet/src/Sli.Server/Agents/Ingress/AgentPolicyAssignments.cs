@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Agent.Core;
 using Sli.Agent.Protocol;
+using Sli.Server.Agents.Radius;
 
 namespace Sli.Server.Agents.Ingress;
 
@@ -33,9 +35,32 @@ public static class AgentPolicyAssignments
 
     public static async Task<bool> ModuleEnabledAsync(NpgsqlConnection db,NpgsqlTransaction tx,string module,CancellationToken ct)
     {
+        if (module == NpsPolicy.Accounting)
+            return RadiusAccountingMode.Effective() is { } mode && await mode.RegisteredAsync(db,tx,true,ct);
         await using var command=new NpgsqlCommand("select public.agent_module_enabled_v380(@module)",db,tx);
         command.Parameters.AddWithValue("module",module);
         return await command.ExecuteScalarAsync(ct) is true;
+    }
+
+    internal static async Task<bool> AccountingSourceEnabledAsync(NpgsqlConnection db,NpgsqlTransaction tx,NpsPolicy current,NpsPolicy retained,CancellationToken ct)
+    {
+        if (RadiusAccountingMode.Effective() is not { } mode || !mode.Matches(current) || !mode.Matches(retained)) return false;
+        await using (var held = new NpgsqlCommand("select pg_advisory_xact_lock(hashtext('ad_log_reports_plugin_runtime_v76'))",db,tx))
+            await held.ExecuteNonQueryAsync(ct);
+        return await mode.RegisteredAsync(db,tx,true,ct);
+    }
+
+    internal static async Task FilterAccountingCheckInAsync(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject checkIn,CancellationToken ct)
+    {
+        var modules=checkIn["assigned_modules"]!.AsArray();
+        if (FindCurrent(modules,NpsPolicy.Accounting) is not { } item) return;
+        bool enabled=false;
+        if (RadiusAccountingMode.Effective() is { } mode && item["config"] is JsonObject config)
+        {
+            try { enabled=mode.Matches(NpsPolicy.Parse(NpsPolicy.Accounting,config)) && await mode.RegisteredAsync(db,tx,true,ct); }
+            catch (AgentException) { }
+        }
+        if (!enabled) item["enabled"]=false;
     }
 
     // Authentication owns the agent lock. Publish a new revision only when availability changed.
@@ -48,7 +73,8 @@ public static class AgentPolicyAssignments
             && await FilePermissionsAllowedAsync(db,tx,id,null,false,ct);
         await using var command=new NpgsqlCommand("""
             select coalesce(jsonb_agg(case
-              when not public.agent_module_enabled_v380(coalesce(m->>'module_id',m#>>'{}'))
+              when coalesce(m->>'module_id',m#>>'{}') is distinct from 'sli.radius-accounting'
+                and not public.agent_module_enabled_v380(coalesce(m->>'module_id',m#>>'{}'))
                 and not (@file_allowed and coalesce(m->>'module_id',m#>>'{}')='sli.file-audit') then
                 case when jsonb_typeof(m)='object' then jsonb_set(m,'{enabled}','false')
                   else jsonb_build_object('module_id',m#>>'{}','enabled',false) end

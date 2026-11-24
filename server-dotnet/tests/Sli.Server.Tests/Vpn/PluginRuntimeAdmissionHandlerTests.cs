@@ -108,6 +108,40 @@ public sealed class PluginRuntimeAdmissionHandlerTests
         check.Parameters.AddWithValue(role); Assert.Equal(true, await check.ExecuteScalarAsync(Ct));
     }
 
+    [Fact]
+    public async Task ConsumerCleanupWaitsForItsExitingSessionAndPreservesTheWorkerFailure()
+    {
+        await using var pg = new PostCollectionPostgres(canonicalSchema: true); await pg.StartAsync(Ct);
+        await using var db = new NpgsqlConnection(pg.ConnectionString); await db.OpenAsync(Ct);
+        await PostCollectionPostgres.Sql(db, "create role adlog_radius_session_consumer; revoke connect on database postgres from public", Ct);
+        var opened = new TaskCompletionSource<NpgsqlConnection>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failed = new InvalidOperationException("injected_worker_failure");
+        var cleanup = Record.ExceptionAsync(() => RadiusObservationHost.WithConsumerLogin(new Database(pg.ConnectionString), async dsn => {
+            var child = new NpgsqlConnection(dsn);
+            try { await child.OpenAsync(Ct); }
+            catch { await child.DisposeAsync(); throw; }
+            opened.SetResult(child);
+            throw failed;
+        }, Ct)).AsTask();
+        string? role;
+        await using (var child = await opened.Task.WaitAsync(TimeSpan.FromSeconds(5), Ct))
+        {
+            role = child.UserName;
+            // Hold the fixture's child connection briefly after the callback fails,
+            // as if PostgreSQL had not yet processed the child's disconnect.
+            await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromMilliseconds(200), Ct));
+        }
+        Assert.Same(failed, await cleanup);
+        Assert.NotNull(role);
+        await using var check = new NpgsqlCommand("""
+            select not exists(select 1 from pg_roles where rolname=$1)
+                and not exists(select 1 from pg_database d,aclexplode(d.datacl) a
+                    where d.datname=current_database() and a.grantee<>0 and a.privilege_type='CONNECT' and a.grantee<>d.datdba)
+            """, db);
+        check.Parameters.AddWithValue(role);
+        Assert.Equal(true, await check.ExecuteScalarAsync(Ct));
+    }
+
     private static async Task AdmissionSchema(NpgsqlConnection db)
     {
         await PostCollectionPostgres.Sql(db, """

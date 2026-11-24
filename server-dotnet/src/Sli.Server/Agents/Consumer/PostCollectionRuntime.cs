@@ -38,9 +38,7 @@ internal sealed class PostCollectionRuntime(NpgsqlConnection processLock, IPostg
         },
         async token => {
             await CheckProcessSessionAsync(token);
-            string[] keys = ["SLI_NPS_AGENT_IMPORT_ENABLED", "SLI_NPS_AGENT_WORKER_DSN", "SLI_NPS_AGENT_WORKER_DSN_FILE", "SLI_NPS_AGENT_WORKER_PASSWORD", "SLI_NPS_AGENT_WORKER_PASSWORD_FILE", "ADLOG_RADIUS_COLLECTION_ROUTES_PATH", "ADLOG_RADIUS_SOURCE_NAME", "ADLOG_RADIUS_SOURCE_INSTANCE_ID", "ADLOG_RADIUS_OWNER_CONFIRMED_IP", "ADLOG_RADIUS_ACCOUNTING_SHARE_UNC", "ADLOG_DATA_DIR", "SLI_DATA_DIR"];
-            var values = keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
-            var configuration = RadiusWorkerConfiguration.Parse(values);
+            var configuration = RadiusWorkerConfiguration.FromEnvironment();
             return configuration.Enabled ? await accounting.RunUnderProcessLockAsync(configuration.WorkerDsn!, configuration.Binding!, Math.Clamp(options.Limit, 1, 10), token) : PostCollectionBatch.Empty;
         },
         (status, phase, details, token) => HeartbeatAsync(status, phase, options.PollSeconds, details, token),

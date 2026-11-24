@@ -12,7 +12,10 @@ using Sli.Server.Agents.Control;
 namespace Sli.Server.Agents.Radius;
 
 // Supplied by the trusted server configuration, never by a packet.
-public sealed record RadiusImportBinding(string EvidenceRoot,string SourceName);
+public sealed record RadiusImportBinding(string EvidenceRoot,string SourceName)
+{
+    internal RadiusAccountingMode? AccountingMode { get; init; }
+}
 public sealed record RadiusAcquisitionReceipt(string Status,long CursorRevisionBefore,long CursorRevisionAfter,
     int EvidenceRows,int ObservationRows,int OutboxRows,int ClassCacheRows,bool RotationFromEof);
 public sealed class RadiusImportPending(string code) : Exception(code) { public string Code { get; }=code; }
@@ -115,7 +118,18 @@ public static class RadiusAccountingImporter
             if(!await r.ReadAsync(ct) || !PythonMetadataEquality.Equal(JsonNode.Parse(r.GetString(0)),envelopeJson) || r.GetString(1)!=Packets.Digest(envelopeJson) || envelope.PayloadSha256!=Packets.Digest(packet)) throw new RadiusImportPending("agent_packet_attestation_invalid");
         }
         await Sql(db,tx,"select pg_advisory_xact_lock(hashtext('ad_log_reports_plugin_runtime_v76'))",ct);
-        await using(var cmd=new NpgsqlCommand("select installed,enabled from read_plugin_states_v1() where plugin_id='sli.remote-access'",db,tx)) { await using var r=await cmd.ExecuteReaderAsync(ct);if(!await r.ReadAsync(ct) || !r.GetBoolean(0) || !r.GetBoolean(1)) throw new RadiusImportPending("agent_plugin_disabled"); }
+        if(binding.AccountingMode is { } mode)
+        {
+            if(!mode.Matches(policy) || !await mode.RegisteredAsync(db,tx,true,ct))
+                throw new RadiusImportPending("agent_source_binding_changed");
+        }
+        else
+        {
+            await using var cmd=new NpgsqlCommand("select installed,enabled from read_plugin_states_v1() where plugin_id='sli.remote-access'",db,tx);
+            await using var r=await cmd.ExecuteReaderAsync(ct);
+            if(!await r.ReadAsync(ct) || !r.GetBoolean(0) || !r.GetBoolean(1))
+                throw new RadiusImportPending("agent_plugin_disabled");
+        }
         CollectionPacket.Validate(packet);
         var header=packet["header"]!.AsObject();var bounds=header["cursor"]!.AsObject();var records=packet["records"]!.AsArray();
         if(records.Any(x=>Text(x!["format"])!="accounting_line")) throw new RadiusImportPending("agent_packet_attestation_invalid");

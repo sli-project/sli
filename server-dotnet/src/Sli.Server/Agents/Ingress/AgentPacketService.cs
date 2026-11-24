@@ -26,23 +26,31 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         var now=Iso8601.Truncate(clock.GetUtcNow());
         JsonObject Reject(string code,string status="rejected") => AgentReceipt.Make(envelope,status,code,null);
         if (envelope.AgentId != identity.Id.ToString("D")) return Reject("agent_identity_mismatch");
+        bool accounting=envelope.ModuleId==NpsPolicy.Accounting;
+        var existing=accounting ? await ledger.ExistingAsync(envelope,ct) : null;
         bool filePermissions=envelope.ModuleId==FileAuditPolicy.ModuleId &&
             await AgentPolicyAssignments.FilePermissionsAvailableAsync(connection,transaction,ct);
         using var fileAdmission=filePermissions ? AgentPolicyAssignments.HoldFilePermissions() : null;
-        if (envelope.ModuleId!="sli.heartbeat")
+        if (existing is null && envelope.ModuleId!="sli.heartbeat")
         {
             bool enabled=filePermissions
                 ? await AgentPolicyAssignments.FilePermissionsAllowedAsync(connection,transaction,
                     identity.Id,envelope.PolicyRevision,true,ct)
                 : await AgentPolicyAssignments.ModuleEnabledAsync(connection,transaction,envelope.ModuleId,ct);
-            if(!enabled) return Reject("module_disabled");
+            if(!enabled && !accounting) return Reject("module_disabled");
             if(filePermissions && fileAdmission is null) return Reject("file_audit_plugin_unavailable","retry_later");
             if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)) return Reject("agent_file_audit_packet_invalid");
             var state=await ledger.AgentStateAsync(identity.Id,ct);
-            if(state.Assignments.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()==envelope.ModuleId && m["enabled"] is JsonValue flag
+            if(accounting)
+            {
+                if(AgentPolicyAssignments.FindCurrent(state.Assignments,envelope.ModuleId) is null)
+                    return Reject("module_disabled");
+                if(!enabled) return Reject("agent_radius_accounting_paused","retry_later");
+            }
+            else if(state.Assignments.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()==envelope.ModuleId && m["enabled"] is JsonValue flag
                 && flag.TryGetValue<bool>(out var enabled) && !enabled)) return Reject("module_disabled");
         }
-        var existing=await ledger.ExistingAsync(envelope,ct);
+        if(!accounting) existing=await ledger.ExistingAsync(envelope,ct);
         if (existing is not null)
         {
             if (existing.Value.Hash != Packets.Digest(envelope.ToJson())) return Reject("agent_sequence_conflict");
@@ -180,6 +188,9 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
                 rows=envelope.ModuleId==NpsPolicy.Nps
                     ? AgentNpsValidator.Validate(envelope,payload,policy,state.SourceHost ?? identity.HostId)
                     : AgentRadiusValidator.Validate(envelope,payload,policy,state.SourceHost ?? identity.HostId);
+                if (envelope.ModuleId == NpsPolicy.Accounting &&
+                    !await AgentPolicyAssignments.AccountingSourceEnabledAsync(connection,transaction,currentPolicy,policy,ct))
+                    return Reject("agent_radius_accounting_paused","retry_later");
             }
             catch (Exception e) when (e is AgentException or ProtocolException or InvalidOperationException or ArgumentException)
             { return Reject("agent_nps_packet_invalid"); }

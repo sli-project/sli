@@ -9,7 +9,7 @@ public sealed record RadiusWorkerConfiguration(bool Enabled, string? WorkerDsn, 
     public static RadiusWorkerConfiguration FromEnvironment()
     {
         string[] keys=["SLI_NPS_AGENT_IMPORT_ENABLED","SLI_NPS_AGENT_WORKER_DSN","SLI_NPS_AGENT_WORKER_DSN_FILE","SLI_NPS_AGENT_WORKER_PASSWORD","SLI_NPS_AGENT_WORKER_PASSWORD_FILE","SLI_PLUGIN_RUNTIME_DIR","SLI_PLUGIN_LOCK_DIR","ADLOG_RADIUS_COLLECTION_ROUTES_PATH","ADLOG_RADIUS_SOURCE_NAME","ADLOG_RADIUS_SOURCE_INSTANCE_ID","ADLOG_RADIUS_OWNER_CONFIRMED_IP","ADLOG_RADIUS_ACCOUNTING_SHARE_UNC","ADLOG_DATA_DIR","SLI_DATA_DIR"];
-        return Parse(keys.Select(key=>(Key:key,Value:Environment.GetEnvironmentVariable(key))).Where(item=>item.Value is not null).ToDictionary(item=>item.Key,item=>item.Value));
+        return Parse(keys.Concat(RadiusAccountingMode.Settings).ToDictionary(key=>key,Environment.GetEnvironmentVariable));
     }
     private static string RepositoryRoot()
     {
@@ -39,9 +39,10 @@ public sealed record RadiusWorkerConfiguration(bool Enabled, string? WorkerDsn, 
             catch(Exception e) when(e is IOException or UnauthorizedAccessException or ArgumentException)
             { throw new ArgumentException("agent_nps_import_config_invalid"); }
         }
-        string enabled=Get("SLI_NPS_AGENT_IMPORT_ENABLED") ?? "0";
+        string enabled=Get(RadiusAccountingMode.EnabledSetting) ?? Get("SLI_NPS_AGENT_IMPORT_ENABLED") ?? "0";
         if(enabled=="0") return new(false,null,null);
         if(enabled!="1") throw new ArgumentException("agent_nps_import_config_invalid");
+        var accounting=RadiusAccountingMode.Load(values);
         string? dsn=Secret("SLI_NPS_AGENT_WORKER_DSN"),password=Secret("SLI_NPS_AGENT_WORKER_PASSWORD");
         if(string.IsNullOrWhiteSpace(dsn)) throw new ArgumentException("agent_nps_import_config_invalid");
         string repository=RepositoryRoot();
@@ -55,7 +56,7 @@ public sealed record RadiusWorkerConfiguration(bool Enabled, string? WorkerDsn, 
             rawRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),rawRoot.Length==1?"":rawRoot[2..]);
         string root=Path.IsPathFullyQualified(rawRoot)?rawRoot:Path.GetFullPath(rawRoot,repository);
         string source;
-        try { source=RadiusCollectionRoute.Load(Path.Combine(repository,"config"),values)["source_name"]!.GetValue<string>(); }
+        try { source=accounting?.SourceName ?? RadiusCollectionRoute.Load(Path.Combine(repository,"config"),values)["source_name"]!.GetValue<string>(); }
         catch(Exception e) when(e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
         { throw new ArgumentException("agent_nps_import_config_invalid"); }
         var builder=new NpgsqlConnectionStringBuilder();
@@ -101,7 +102,9 @@ public sealed record RadiusWorkerConfiguration(bool Enabled, string? WorkerDsn, 
             builder.Password=password;
         }
         builder.Multiplexing=false;builder.Pooling=false;
-        return new(true,builder.ConnectionString,new(root,source.Trim()));
+        if(accounting is not null && builder.Username!="sli_radius_accounting_login")
+            throw new ArgumentException("agent_radius_mode_invalid");
+        return new(true,builder.ConnectionString,new(root,source.Trim()) { AccountingMode=accounting });
     }
 }
 
@@ -109,10 +112,24 @@ public static class RadiusWorkerCommand
 {
     public static async Task<int> RunAsync(string[] args,CancellationToken cancellationToken=default)
     {
-        if(args.Length!=1 || args[0]!="--once") { Console.Error.WriteLine("agent_nps_import_config_invalid"); return 1; }
+        if(args.Length!=1 || args[0] is not ("--once" or "--check-native-accounting")) { Console.Error.WriteLine("agent_nps_import_config_invalid"); return 1; }
         try
         {
             var config=RadiusWorkerConfiguration.FromEnvironment();
+            if (args[0]=="--check-native-accounting")
+            {
+                if (config.Binding?.AccountingMode is not { } mode) return 1;
+                var target=new NpgsqlConnectionStringBuilder(config.WorkerDsn);
+                if (Environment.GetEnvironmentVariable("SLI_RADIUS_ACCOUNTING_NATIVE_TARGET")=="1" &&
+                    (target.Host!="127.0.0.1" || target.Port!=5432 || target.Database!="sli"))
+                    return 1;
+                await using var db = new NpgsqlConnection(config.WorkerDsn);
+                await db.OpenAsync(cancellationToken);
+                await using var tx = await db.BeginTransactionAsync(cancellationToken);
+                await using (var role = new NpgsqlCommand("set local role adlog_nps_agent_import_worker",db,tx))
+                    await role.ExecuteNonQueryAsync(cancellationToken);
+                return await mode.RegisteredAsync(db,tx,false,cancellationToken) ? 0 : 1;
+            }
             if(config.Enabled) await RadiusAccountingImporter.RunOnceFromDsnAsync(config.WorkerDsn!,config.Binding!,16,cancellationToken);
             return 0;
         }

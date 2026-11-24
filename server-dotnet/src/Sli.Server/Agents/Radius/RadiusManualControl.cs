@@ -96,6 +96,7 @@ public static class RadiusManualControl
         if (target is not ("disabled" or "manual_enabled")) throw new RadiusManualControlException("manual_activation_target_invalid");
         await using var tx = await db.BeginTransactionAsync(ct);
         await Execute(db, "set local role adlog_storage_owner", ct);
+        await Execute(db, "select pg_advisory_xact_lock(hashtext('ad_log_reports_plugin_runtime_v76'))", ct);
         await using (var cmd = Command(db, """
             select s.desired_activation,sub.desired_activation
             from acquisition_source_instances s

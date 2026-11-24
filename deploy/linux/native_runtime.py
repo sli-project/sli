@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -51,6 +52,8 @@ STATE = Path("/var/lib/sli/state")
 RECOVERY = Path("/var/lib/sli/recovery")
 TRANSACTIONS = Path("/var/lib/sli/transactions")
 CONFIG = Path("/etc/sli/runtime.json")
+RADIUS_ACCOUNTING = Path("/etc/sli/radius-accounting")
+RADIUS_ACCOUNTING_FILES = ("radius-agent-route", "radius-agent-dsn", "radius-agent-password")
 RUN = Path("/run/sli")
 HELPER = "/usr/lib/sli/native_runtime.py"
 DOTNET_GENERATOR = Path("/usr/lib/systemd/system-generators/sli-dotnet-api")
@@ -174,7 +177,58 @@ def dotnet_configuration():
         # Older installations keep the public origin only in the site settings.
         # Resolve it for the generated units without rewriting runtime.json.
         config["public_url"] = clickhouse.public_url(clickhouse.parse_site(trusted(site).decode("utf-8")))
+    config["radius_accounting_prepared"] = radius_accounting_prepared()
     return config
+
+
+def radius_accounting_digests():
+    result = {}
+    for name in RADIUS_ACCOUNTING_FILES:
+        path = RADIUS_ACCOUNTING / name
+        info = path.lstat()
+        require(info.st_mode & 0o777 == 0o600 and 0 < info.st_size <= 65_536,
+                "native_radius_accounting_input_invalid")
+        result[name] = hashlib.sha256(trusted(path)).hexdigest()
+    return result
+
+
+def radius_accounting_prepared():
+    path = RADIUS_ACCOUNTING / "prepared.json"
+    if not path.exists() and not path.is_symlink():
+        return False
+    try:
+        return document(path) == {"schema_version": 1, "inputs": radius_accounting_digests()}
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
+def prepare_radius_accounting():
+    inputs = radius_accounting_digests()
+    root, _, _ = release()
+    executable = Path("/opt/sli/dotnet") / root.name / "Sli.Server"
+    trusted(executable)
+    args = [str(executable), "radius-accounting-worker", "--check-native-accounting"]
+    env = {"PATH": "/usr/bin:/bin", "SLI_RADIUS_ACCOUNTING_IMPORT_ENABLED": "1",
+           "CREDENTIALS_DIRECTORY": str(RADIUS_ACCOUNTING), "ADLOG_DATA_DIR": "/var/lib/sli",
+           "SLI_NPS_AGENT_WORKER_DSN_FILE": str(RADIUS_ACCOUNTING / "radius-agent-dsn"),
+           "SLI_NPS_AGENT_WORKER_PASSWORD_FILE": str(RADIUS_ACCOUNTING / "radius-agent-password"),
+           "SLI_RADIUS_ACCOUNTING_NATIVE_TARGET": "1", "SLI_RADIUS_ACCOUNTING_CONFIG_ROOT": str(root / "config")}
+    subprocess.run(args, cwd=root, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    require(inputs == radius_accounting_digests(), "native_radius_accounting_input_changed")
+    fd, temporary = tempfile.mkstemp(dir=RADIUS_ACCOUNTING)
+    try:
+        with os.fdopen(fd, "wb") as stage:
+            stage.write(json.dumps({"schema_version": 1, "inputs": inputs}, sort_keys=True).encode())
+            stage.flush()
+            os.fsync(stage.fileno())
+        os.replace(temporary, RADIUS_ACCOUNTING / "prepared.json")
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    directory = os.open(RADIUS_ACCOUNTING, os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def selected(config):
@@ -372,6 +426,8 @@ def dotnet_unit(release, config, service="api"):
                     "ADLOG_ENABLE_POSTGRES_COLLECTION", "ADLOG_POSTGRES_RUNTIME_COLLECTION",
                     "ADLOG_NPS_EVENTLOG_ENABLED", "ADLOG_ACQUISITION_DISABLED"):
         policy += f'Environment="{setting}={int(setting == "ADLOG_ACQUISITION_DISABLED")}"\n'
+    if config.get("radius_accounting_prepared") and service in {"api", "post-collection"}:
+        policy += f'Environment="SLI_RADIUS_ACCOUNTING_CONFIG_ROOT=/opt/sli/releases/{release}/config"\n'
     if service == "api":
         policy += f'Environment="SLI_BIND={config["bind"]}"\n'
         policy += f'Environment="Sli__Release__PackageRoot=/opt/sli/releases/{release}"\n'
@@ -428,6 +484,13 @@ def application_unit(config, service, spec, apps, *, dotnet=False):
          "BindPaths=/etc/sli/secrets/notifications\n" if setup else "InaccessiblePaths=/etc/sli/secrets\n") +
         "".join(f"LoadCredential={s}:/etc/sli/secrets/{s}\n" for s in sorted(secrets)) +
         "".join(f'Environment="{k}={v}"\n' for k, v in sorted(env.items())))
+    if dotnet and config.get("radius_accounting_prepared") and service in {"api", "post-collection"}:
+        body += 'Environment="SLI_RADIUS_ACCOUNTING_IMPORT_ENABLED=1"\n'
+        files = RADIUS_ACCOUNTING_FILES if service == "post-collection" else RADIUS_ACCOUNTING_FILES[:1]
+        body += "".join(f"LoadCredential={name}:{RADIUS_ACCOUNTING / name}\n" for name in files)
+        if service == "post-collection":
+            body += ('Environment="SLI_NPS_AGENT_WORKER_DSN_FILE=%d/radius-agent-dsn"\n'
+                     'Environment="SLI_NPS_AGENT_WORKER_PASSWORD_FILE=%d/radius-agent-password"\n')
     if service == "api" and config.get("https_port", 8443) < 1024:
         body = body.replace("CapabilityBoundingSet=\n",
                             "CapabilityBoundingSet=CAP_NET_BIND_SERVICE\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n")
@@ -868,7 +931,7 @@ def stop_writers():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("configure", "launch", "control", "ready", "health", "stop-writers"))
+    parser.add_argument("command", choices=("configure", "launch", "control", "ready", "health", "stop-writers", "prepare-radius-accounting"))
     parser.add_argument("service", nargs="?")
     parser.add_argument("--profiles", nargs="+", default=["light"], choices=("light", "heavy", "long"))
     parser.add_argument("--radius-pilot", action="store_true")
@@ -884,7 +947,10 @@ def main(argv=None):
             launch(args.service, control=True)
         else:
             require(os.geteuid() == ROOT_UID, "native_root_required")
-            if args.command == "configure":
+            if args.command == "prepare-radius-accounting":
+                require(args.service is None, "native_radius_accounting_input_invalid")
+                prepare_radius_accounting()
+            elif args.command == "configure":
                 os.umask(0o022)
                 address = str(ipaddress.ip_address(args.bind))
                 require("light" in args.profiles, "native_profiles_invalid")
