@@ -68,6 +68,8 @@
 
 ### Fixed
 
+- Установщик Debian показывает точные коды отказов при проверке служб,
+  диска резервного копирования и сохранённых файлов восстановления.
 - T068: шаг контроллеров первичной настройки показывает состояние зарегистрированных агентов из того же снимка health, что источники и сбор; legacy-настройки целей отделены от состояния агента. Unknown и архивность домена не подменяются.
 - T068: the setup controller step uses registered-agent observations shared with source/collection health; legacy target settings remain separate. Unknown state and domain archive metadata are preserved.
 
