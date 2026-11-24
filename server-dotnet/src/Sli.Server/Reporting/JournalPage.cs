@@ -206,10 +206,22 @@ internal static class JournalPage
         if (query.TryGetValue("cursor", out var cursor)) sql.Interactive(Dataset, new Dictionary<string, string> { ["cursor"] = cursor }, 90);
         string after = sql.Predicates.Count > 0 ? "where " + string.Join(" and ", sql.Predicates) : "";
         bool metadata = options.Expand is null && options.Before is null;
-        string counts = metadata ? "(select jsonb_build_object('all',coalesce(sum(event_count),0)" +
-            string.Concat(Views.Keys.Select(key => $",'{key}',coalesce(sum(event_count) filter (where journal_category='{key}'),0)")) +
-            ") from candidates)" : "null::jsonb";
-        string eventCount = metadata ? $"(select coalesce(sum(event_count),0) from candidates {categoryWhere})" : "null::numeric";
+        string counts = "null::jsonb";
+        string eventCount = "null::numeric";
+        string totalsFrom = "";
+        if (metadata && security)
+        {
+            // Counts cover the admitted candidates before grouping or applying the page cursor.
+            var sums = string.Concat(Views.Keys.Select(key =>
+                $",coalesce(sum(event_count) filter (where journal_category='{key}'),0) as {key}_count"));
+            statement += $", totals as (select coalesce(sum(event_count),0) as all_count{sums} from candidates)";
+            totalsFrom = "from totals";
+            eventCount = categoryWhere.Length > 0 ? $"totals.{options.View}_count" : "totals.all_count";
+            counts = "jsonb_build_object('all',totals.all_count" +
+                string.Concat(Views.Keys.Select(key => $",'{key}',totals.{key}_count")) + ")";
+        }
+        else if (metadata)
+            eventCount = $"(select coalesce(sum(event_count),0) from candidates {categoryWhere})";
         string priority = options.Before.HasValue ? "event.journal_account_match desc," : "";
         statement += $"""
             , page as (
@@ -220,6 +232,7 @@ internal static class JournalPage
                 select (select count(*) from visible) as filtered_count,
                        {eventCount} as journal_event_count,
                        {counts} as journal_counts
+                {totalsFrom}
             )
             select meta.*,(
                 select coalesce(jsonb_agg(
