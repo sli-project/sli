@@ -1,0 +1,78 @@
+name: Inspect archived synthetic install diagnostics
+
+on:
+  push:
+    branches: [codex/install-e2e-first-start]
+    paths: [.github/workflows/inspect-install-e2e-6.yml]
+
+permissions:
+  actions: read
+
+jobs:
+  inspect:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45510515483'
+          pattern: sli-install-e2e-?-logs
+          path: archived-install-logs
+      - name: Report bounded diagnostic markers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          names = ('setup.log', 'failed-units.log', 'services.log', 'container.log', 'upgrade.log')
+          codes = re.compile(r'\b(?:native_[a-z0-9_]{3,90}|operation_(?:stalled|deadline_exceeded))\b')
+          units = re.compile(r'\b(?:sli-[a-z0-9@-]+|postgresql(?:@[a-z0-9-]+)?)\.(?:service|target|mount|socket)\b')
+          exceptions = re.compile(r'^([A-Za-z][A-Za-z0-9_]{0,55}(?:Error|Exception)):', re.MULTILINE)
+          commands = re.compile(r'\b(?:sli-native-install|sli-setup|native_setup\.py|native_install\.py|systemctl|systemd-tmpfiles|initdb|findmnt|lsblk|mount|nginx)\b')
+          known = {
+              'permission_denied': 'permission denied',
+              'operation_not_permitted': 'operation not permitted',
+              'read_only_filesystem': 'read-only file system',
+              'no_space': 'no space left on device',
+              'already_mounted': 'already mounted',
+              'missing_file': 'no such file or directory',
+              'invalid_argument': 'invalid argument',
+              'not_a_mountpoint': 'not a mountpoint',
+              'address_in_use': 'address already in use',
+              'cannot_assign_address': 'cannot assign requested address',
+              'systemd_failed_start': 'failed to start',
+              'systemd_dependency_failed': 'dependency failed',
+              'exited_with_failure': 'code=exited',
+              'journal_empty': '-- no entries --',
+              'journal_unavailable': 'no journal files were found',
+              'no_failed_units': '0 loaded units listed',
+              'generic_first_start': 'could not finish its first start',
+              'database_mount': '/var/lib/sli-db',
+              'database_target': '/srv/sli-db',
+              'fstab': '/etc/fstab',
+          }
+          for scenario in 'ABC':
+              folder = Path(f'archived-install-logs/sli-install-e2e-{scenario}-logs')
+              if not folder.is_dir():
+                  raise SystemExit(f'Scenario {scenario}: archived diagnostics missing')
+              for name in names:
+                  path = folder / name
+                  if not path.is_file() or path.is_symlink() or path.stat().st_size > 65536:
+                      print(f'{scenario} {name}: unavailable')
+                      continue
+                  rows = path.read_text(encoding='utf-8', errors='replace').splitlines()
+                  found = 0
+                  for number, line in enumerate(rows, 1):
+                      lower = line.lower()
+                      tags = sorted({
+                          *codes.findall(line), *units.findall(line), *exceptions.findall(line),
+                          *(key for key, fragment in known.items() if fragment in lower),
+                      })
+                      if tags and found < 50:
+                          print(f'{scenario} {name}:{number}: {", ".join(tags)}; operation={",".join(sorted(set(commands.findall(line))))}')
+                          found += 1
+                  print(f'{scenario} {name}: lines={len(rows)} markers={found}')
+          PY
