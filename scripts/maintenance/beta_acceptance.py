@@ -323,11 +323,18 @@ def quiet(entry, rehearsal):
 def storage(get, entry):
     require(entry, "Нужны ежедневные размеры PostgreSQL после окончания окна хранения.")
     start = stamp(entry["retention_elapsed_at"])
-    measurements = [(stamp(row["at"]), row["bytes"]) for row in objects(entry["samples"])]
+    measurements = [(stamp(row["at"]), row["bytes"]) for row in objects(entry.get("samples", []))]
     lifecycle = get("/api/storage/lifecycle")
-    require(lifecycle.get("backend") == "postgres" and isinstance(lifecycle.get("latest_snapshot"), dict),
-            "SLI не вернул последний замер PostgreSQL.")
-    latest = lifecycle["latest_snapshot"]
+    history = lifecycle.get("postgres_size_history", lifecycle)
+    require(lifecycle.get("backend") == "postgres" and isinstance(history, dict)
+            and isinstance(history.get("latest_snapshot"), dict), "SLI не вернул последний замер PostgreSQL.")
+    if "postgres_size_history" in lifecycle:
+        for row in objects(history["samples"]):
+            captured_at = stamp(row["captured_at"])
+            point = (captured_at, row["database_bytes"])
+            if captured_at >= start and point not in measurements:
+                measurements.append(point)
+    latest = history["latest_snapshot"]
     current = (stamp(latest["captured_at"]), latest["database_bytes"])
     if current not in measurements:
         measurements.append(current)
