@@ -10,6 +10,7 @@ using Sli.Server.Agents.Consumer;
 using Sli.Server.Agents.FileAudit;
 using Sli.Server.Agents.Ingress;
 using Xunit;
+using EventXml = Sli.Agent.Core.EventXml;
 
 namespace Sli.Server.Tests.Agents;
 
@@ -75,8 +76,10 @@ public class FileAuditConsumerDatabaseTests
         await Register(owner,ct,@"C:\ΑΡΧΕΙΟΣ");
         var (e,writePacket,_)=AgentFileAuditValidatorTests.ActionPacket();
         var (_,deletePacket,_)=AgentFileAuditValidatorTests.ActionPacket("delete",4660);
+        var (_,permissionsPacket,_)=AgentFileAuditValidatorTests.ActionPacket("permissions",4670);
         var write=writePacket["records"]![0]!["payload"]!;
         var delete=deletePacket["records"]![0]!["payload"]!;
+        var permissions=permissionsPacket["records"]![0]!["payload"]!;
         write["path"]=@"C:\αρχειος\пример-🚀.txt";
         delete["record_id"]=11;
         delete["path"]=@"C:\αρχειος\удалённый.txt";
@@ -84,12 +87,15 @@ public class FileAuditConsumerDatabaseTests
         delete["time_created"]="2026-09-30T01:02:03Z";
         delete["first_seen_utc"]="2026-09-30T01:02:03Z";
         delete["last_seen_utc"]="2026-09-30T01:02:58Z";
+        permissions["record_id"]=12;
+        permissions["path"]=@"C:\αρχειος\каталог";
         var now=DateTimeOffset.Parse(e.ObservedAtUtc);var clock=new Clock(now);
         var body=CollectionPacket.Make("files.example.test","Security",e.Generation,
-            new JsonObject { ["after_record_id"]=null,["last_record_id"]=11 },
-            [new PacketRecord("file_action",10,write),new PacketRecord("file_action",11,delete)],
+            new JsonObject { ["after_record_id"]=null,["last_record_id"]=12 },
+            [new PacketRecord("file_action",10,write),new PacketRecord("file_action",11,delete),
+                new PacketRecord("file_action",12,permissions)],
             "not_proven",writePacket["context"]!.AsObject(),now);
-        var after=JsonNode.Parse(e.CursorAfter.Token)!.AsObject();after["record_id"]=11;
+        var after=JsonNode.Parse(e.CursorAfter.Token)!.AsObject();after["record_id"]=12;
         using var key=ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var cert=new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256).CreateSelfSigned(now.AddDays(-1),now.AddDays(1));
         var sample=new Sample("sli.file-audit",e.SourceInstanceId,"Security",e.Generation,e.CursorBefore,new Cursor("bookmark",after.ToJsonString()),body,
@@ -124,9 +130,31 @@ public class FileAuditConsumerDatabaseTests
             Assert.False((await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct)).Scanned);
             await tx.CommitAsync(ct);
         }
-        Assert.Equal(2,await Number(owner,"select count(*) from event_hot",ct));
+        var cleared = EventXml.Parse("""
+            <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System>
+              <Provider Name="Microsoft-Windows-Eventlog"/><EventID>1102</EventID><EventRecordID>13</EventRecordID>
+              <TimeCreated SystemTime="2026-09-30T01:02:59Z"/><Channel>Security</Channel>
+            </System><EventData/></Event>
+            ""","files.example.test","localhost","Security");
+        var gapBody=CollectionPacket.Make("files.example.test","Security",e.Generation,
+            new JsonObject { ["after_record_id"]=12,["last_record_id"]=13 },
+            [new PacketRecord("event_xml",13,cleared)],"not_proven",
+            new JsonObject { ["policy_revision"]="1",["filtered_count"]=0,["lost_count"]=null,["read_error"]="file_audit_journal_gap" },now);
+        var gapAfter=(JsonObject)after.DeepClone();gapAfter["record_id"]=13;gapAfter["bookmark"]="after-clear";
+        var gap=new Sample("sli.file-audit",e.SourceInstanceId,"Security",e.Generation,sample.CursorAfter,
+            new Cursor("bookmark",gapAfter.ToJsonString()),gapBody,PolicyRevision:"1",FilteredCount:0,LostCount:null,ContinuityState:"gap");
+        var signedGap=Packets.Make(new EcdsaPacketSigner(key),Agent.ToString(),2,gap,now).ToJson();
+        await using(var tx=await app.BeginTransactionAsync(ct)) {
+            Assert.Equal("committed",(await service.ReceiveAsync(app,tx,identity,cert,signedGap,ct))["status"]!.GetValue<string>());
+            var step=await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(step.Imported,step.PendingReason);
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(1,await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null and event_rows->0->>'event_id'='1102'",ct));
+        Assert.Equal(3,await Number(owner,"select count(*) from event_hot",ct));
         Assert.Equal(2,await Number(owner,"select count(distinct (time_created_utc at time zone 'UTC')::date) from event_hot",ct));
         Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='delete'",ct));
+        Assert.Equal(1,await Number(owner,"select count(*) from event_cold_facts where fields->>'operation'='permissions'",ct));
         Assert.Equal(7,await Number(owner,"select event_count from event_cold_daily",ct));
         Assert.Equal(0,await Number(owner,"select count(*) from file_action_projection389",ct));
         Assert.Equal(0,await Number(owner,"""

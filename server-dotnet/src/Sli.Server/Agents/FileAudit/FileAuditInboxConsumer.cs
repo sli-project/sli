@@ -70,6 +70,9 @@ public static class FileAuditInboxConsumer
         catch(ProtocolException) { throw new FileAuditPending("agent_packet_attestation_invalid"); }
         if(!PythonMetadataEquality.Equal(verified,rows)) throw new FileAuditPending("agent_packet_attestation_invalid");
         if(!await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,envelope.ModuleId,ct)) throw new FileAuditPending("module_disabled");
+        // Keep the verified raw journal-clear receipt and inbox evidence without creating a file action.
+        if(!config.Workstation && body["context"]?["read_error"]?.GetValue<string>()=="file_audit_journal_gap"
+            && rows.Count==1 && rows[0]?["event_id"]?.GetValue<int>()==1102) return;
         if(body["records"]!.AsArray().Any(r=>r?["format"]?.GetValue<string>()!="file_action"))
             throw new FileAuditPending("agent_packet_attestation_invalid");
         await using var write=new NpgsqlCommand("select public.write_file_actions389(@packet,@rows)",db,tx) { CommandTimeout=0 };

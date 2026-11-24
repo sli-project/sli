@@ -9,9 +9,11 @@ namespace Sli.Agent.Windows;
 
 /// <summary>Bounded file evidence. No durable position lives outside the existing signed queue.</summary>
 public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFileAuditEventSource source,
-    Action<string,string> pathCheck, Func<string,bool>? accountCheck = null, Func<TimeSpan>? clock = null, Func<Guid>? newId = null)
+    Action<string,string> pathCheck, Func<string,bool>? accountCheck = null, Func<TimeSpan>? clock = null, Func<Guid>? newId = null,
+    bool permissionsOnly = false)
 {
     public const string ModuleId = FileAuditPolicy.ModuleId;
+    private static readonly string[] PermissionsKey = ["collection_scope_id","path","subject_user_sid","minute_utc"];
     public static bool ValidGeneration(string g, string host) => g == host || g.StartsWith(host + ":",StringComparison.Ordinal)
         && Guid.TryParseExact(g[(host.Length+1)..],"D",out var id) && id.ToString() == g[(host.Length+1)..];
     public Sample Collect(CapturedPosition? captured, DateTimeOffset now)
@@ -69,6 +71,15 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
                 || raw.Bookmark.Length is < 1 or > 3000) throw new AgentException("file_audit_range_invalid");
             previous = (long)id;
             var (allowed,scopes,path) = FileAuditEvents.Admit(row,data,policy);
+            var eventId = row["event_id"]!.GetValue<int>();
+            var journalCleared = eventId == 1102;
+            JsonObject? action = null;
+            if (allowed && permissionsOnly && !journalCleared)
+            {
+                action = FileAuditEvents.PermissionsAction(row,data,scopes,path);
+                allowed = action is not null;
+            }
+            if (allowed && permissionsOnly && journalCleared && records.Count != 0) break;
             var unavailable = false;
             try
             {
@@ -80,24 +91,46 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
             if (allowed)
             {
                 var oldError = error;
-                if (row["event_id"]!.GetValue<int>() == 1102) error = "file_audit_journal_gap";
-                var masked = FileAuditEvents.Mask(raw.Xml,scopes.Length > 0);
-                var candidate = new PacketRecord("event_xml",id,FileAuditEvents.Parse(masked,sourceName).Row);
-                if (CanonicalJson.ToBytes(Packet(records.Append(candidate).ToArray())).Length + 128 > Math.Min(policy.Number("max_bytes"),44*1024))
+                if (journalCleared) error = "file_audit_journal_gap";
+                var candidates = action is null
+                    ? records.Append(new PacketRecord("event_xml",id,FileAuditEvents.Parse(FileAuditEvents.Mask(raw.Xml,scopes.Length > 0),sourceName).Row)).ToList()
+                    : FoldPermissions(records,action,(long)id);
+                if (CanonicalJson.ToBytes(Packet(candidates)).Length + 128 > Math.Min(policy.Number("max_bytes"),44*1024))
                 {
                     if (records.Count == 0 && filtered == 0 && lost == 0) throw new AgentException("file_audit_event_size_limit");
                     error = oldError; break;
                 }
-                records.Add(candidate);
+                records = candidates;
             }
             else if (!unavailable) filtered++;
             progress["record_id"]=(long)id; progress["bookmark"]=raw.Bookmark; progress["generation"]=generation;
             progress["anchor_sha256"]=Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(raw.Xml)));
+            if (allowed && permissionsOnly && journalCleared) break;
         }
         var payload = Packet(records);
         if (CanonicalJson.ToBytes(payload).Length > Math.Min(policy.Number("max_bytes"),44*1024)) throw new AgentException("file_audit_event_size_limit");
         var after = progress["record_id"] is not null || generation != hostId || progress.ContainsKey("since_utc") ? new Cursor("bookmark",CanonicalJson.Serialize(progress)) : before;
         return new(ModuleId,hostId,"Security",generation,before,after,payload,PolicyRevision:policy.Revision,
             FilteredCount:filtered,LostCount:error is null ? lost : null,ContinuityState:error is not null || lost > 0 ? "gap" : filtered > 0 ? "filtered" : "not_proven");
+    }
+
+    private static List<PacketRecord> FoldPermissions(List<PacketRecord> records, JsonObject action, long recordId)
+    {
+        string Key(JsonNode record, string key) => record[key]!.GetValue<string>();
+        var previous = records.SingleOrDefault(record => PermissionsKey
+            .All(key => Key(record.Payload,key) == Key(action,key)));
+        if (previous is not null)
+        {
+            var old = previous.Payload;
+            var observed = Key(action,"time_created");
+            var first = Key(old,"first_seen_utc");
+            var last = Key(old,"last_seen_utc");
+            if (string.CompareOrdinal(observed,first) < 0) first = observed;
+            if (string.CompareOrdinal(observed,last) > 0) last = observed;
+            action["time_created"]=first; action["first_seen_utc"]=first; action["last_seen_utc"]=last;
+            action["count"]=old["count"]!.GetValue<int>()+1;
+        }
+        // Retain the latest record ID so ordering and the final native bookmark agree.
+        return records.Where(record => record != previous).Append(new PacketRecord("file_action",recordId,action)).ToList();
     }
 }

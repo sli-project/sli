@@ -17,6 +17,77 @@ public sealed class FileAuditTests
         var row=FirstStep()["rows"]![0]!; return new(row["xml"]!.ToString(),row["bookmark"]!.ToString());
     }
 
+    private static EventRow NativeRow(int id, int kind, string path, int second, string newDescriptor = "D:(A;;FR;;;WD)")
+    {
+        string provider = kind == 1102 ? "Microsoft-Windows-Eventlog" : FileAuditPolicy.Provider;
+        return new($$"""
+            <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+              <System><Provider Name="{{provider}}" /><EventID>{{kind}}</EventID><Keywords>0x8020000000000000</Keywords>
+                <EventRecordID>{{id}}</EventRecordID><TimeCreated SystemTime="2026-10-01T01:02:{{second:D2}}.1234567Z" /><Channel>Security</Channel></System>
+              <EventData><Data Name="ObjectServer">Security</Data><Data Name="ObjectType">File</Data>
+                <Data Name="ObjectName">{{path}}</Data><Data Name="SubjectUserSid">S-1-5-21-1-2-3-1001</Data>
+                <Data Name="OldSd">D:(A;;FA;;;WD)</Data><Data Name="NewSd">{{newDescriptor}}</Data></EventData>
+            </Event>
+            """,$"instant-{id}");
+    }
+
+    [Fact]
+    public void Server_permissions_fold_only_native_acl_changes_and_deliver_journal_clear_separately()
+    {
+        var policy = FileAuditPolicy.Parse(FileAuditManagerTests.Config());
+        var ordinaryFile = @"C:\synthetic\notes.txt";
+        var ordinaryDirectory = @"C:\synthetic\notes";
+        var first = NativeRow(1,4670,ordinaryFile,10);
+        var directory = NativeRow(2,4670,ordinaryDirectory,12);
+        var second = NativeRow(3,4670,ordinaryFile,14);
+        var ordinaryAccess = NativeRow(4,4663,ordinaryFile,15);
+        var journalClear = NativeRow(5,1102,ordinaryFile,16);
+        var seen = new List<string>();
+        FileAuditModule Module(params EventRow[] events) =>
+            new(Helpers.HostId,policy,new RowsSource(events),(path,root) => { Assert.Equal(@"C:\synthetic",root); seen.Add(path); },
+                permissionsOnly:true);
+
+        var batch = Module(first,directory,second,ordinaryAccess,journalClear).Collect(null,Helpers.Now);
+        var entries = batch.Payload["records"]!.AsArray();
+        Assert.Equal(2,entries.Count);
+        Assert.All(entries,r => Assert.Equal("file_action",r!["format"]!.GetValue<string>()));
+        Assert.Equal(ordinaryDirectory,entries[0]!["payload"]!["path"]!.GetValue<string>());
+        var folded = entries[1]!["payload"]!;
+        Assert.Equal(ordinaryFile,folded["path"]!.GetValue<string>());
+        Assert.Equal("permissions",folded["operation"]!.GetValue<string>());
+        Assert.Equal(2,folded["count"]!.GetValue<int>());
+        Assert.Equal("2026-10-01T01:02:10.123456+00:00",folded["first_seen_utc"]!.GetValue<string>());
+        Assert.Equal("2026-10-01T01:02:14.123456+00:00",folded["last_seen_utc"]!.GetValue<string>());
+        Assert.Equal(1,batch.FilteredCount);
+        var cursor = JsonNode.Parse(batch.CursorAfter.Token)!;
+        Assert.Equal(4,cursor["record_id"]!.GetValue<int>());
+        Assert.Equal("instant-4",cursor["bookmark"]!.GetValue<string>());
+        Assert.Equal(new[] {ordinaryFile,ordinaryDirectory,ordinaryFile},seen);
+        Assert.DoesNotContain("OldSd",CanonicalJson.Serialize(batch.Payload));
+
+        var gap = Module(journalClear).Collect(new(batch.Generation,batch.CursorAfter),Helpers.Now);
+        var record = Assert.Single(gap.Payload["records"]!.AsArray())!;
+        Assert.Equal("event_xml",record["format"]!.GetValue<string>());
+        Assert.Equal(1102,record["payload"]!["event_id"]!.GetValue<int>());
+        Assert.Equal("gap",gap.ContinuityState);
+        Assert.Equal(batch.CursorAfter,gap.CursorBefore);
+    }
+
+    [Fact]
+    public void Server_permissions_reject_unproven_changes_and_unavailable_paths()
+    {
+        var policy = FileAuditPolicy.Parse(FileAuditManagerTests.Config());
+        var sample = new FileAuditModule(Helpers.HostId,policy,new RowsSource([
+            NativeRow(1,4670,@"C:\synthetic\unchanged.txt",10,"D:(A;;FA;;;WD)"),
+            NativeRow(2,4670,@"C:\unrelated\notes.txt",11),
+            NativeRow(3,4670,@"C:\synthetic\unavailable.txt",12)
+        ]),(_,_) => throw new IOException(),permissionsOnly:true).Collect(null,Helpers.Now);
+        Assert.Empty(sample.Payload["records"]!.AsArray());
+        Assert.Equal(2,sample.FilteredCount);
+        Assert.Equal(1,sample.LostCount);
+        Assert.Equal("gap",sample.ContinuityState);
+    }
+
     [Fact]
     public void QueueBackpressureAndRestartRetainEvidenceUntilTheExactReceipt()
     {
