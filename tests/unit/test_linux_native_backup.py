@@ -109,6 +109,7 @@ def test_configure_admits_capture_without_optional_drill_workspace(storage, monk
 
     machine = SimpleNamespace(require_backup_mount=lambda: events.append('mount-checked'),
         backup_space_estimate=lambda root: estimate, directory=directory,
+        path=lambda path: storage / path.lstrip('/'),
         write=lambda path, body, *args: files.update({str(path): body}))
     monkeypatch.setattr(native_host, 'Host', lambda: machine)
     monkeypatch.setattr(native, 'systemd_budget', lambda path: 300)
