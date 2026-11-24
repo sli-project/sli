@@ -8,6 +8,10 @@ using Sli.Agent.Core;
 
 namespace Sli.Agent.Windows;
 
+public enum LocalSmbCatalogState { Ready, Incomplete, Unavailable }
+public sealed record LocalSmbShare(string Name, string Path);
+public sealed record LocalSmbCatalog(LocalSmbCatalogState State, IReadOnlyList<LocalSmbShare> Shares, uint? NativeStatus = null);
+
 /// <summary>Handle based local operations. No file contents, DACL writes, remote paths or executable server input.</summary>
 [SupportedOSPlatform("windows")]
 public sealed class NativeFileAuditApi : IFileAuditApi
@@ -15,14 +19,20 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     private readonly WindowsAuditApi _audit = new();
     public string AuditOwnership => _audit.Ownership();
     public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids) => _audit.Query(guids);
-    public string Preflight(JsonArray roots)
+    public string Preflight(JsonArray roots) => Preflight(roots, false);
+    public string Preflight(JsonArray roots, bool describeReadErrors)
     {
         if (!_audit.IsSystem) return "system_required";
         var owner=_audit.Ownership(); if (owner is not ("ok" or "managed_by_gpo")) return owner;
         using var privilege=new WindowsAuditApi.SecurityPrivilege();
         using (var reader=new System.Diagnostics.Eventing.Reader.EventLogReader(new System.Diagnostics.Eventing.Reader.EventLogQuery("Security",System.Diagnostics.Eventing.Reader.PathType.LogName,"*")))
         using (reader.ReadEvent(TimeSpan.FromSeconds(1))) { }
-        if (!AuditQueryGlobalSacl("File",out var acl)) return "global_sacl_unknown";
+        if (!AuditQueryGlobalSacl("File",out var acl))
+        {
+            if (describeReadErrors)
+                throw new FileAuditNativeReadException("global_sacl_unknown", unchecked((uint)Marshal.GetLastPInvokeError()));
+            return "global_sacl_unknown";
+        }
         try { if (acl != IntPtr.Zero && (ushort)Marshal.ReadInt16(acl,4) > 0) return "global_sacl_present"; }
         finally { if (acl != IntPtr.Zero) LocalFree(acl); }
         object? locator=null, service=null, rows=null;
@@ -41,7 +51,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
             }
             return "ok";
         }
-        catch (Exception e) when (e is not OperationCanceledException) { return "unknown"; }
+        catch (Exception e) when (!describeReadErrors && e is not OperationCanceledException) { return "unknown"; }
         finally { foreach (var item in new[] {rows,service,locator}) if (item is not null && Marshal.IsComObject(item)) Marshal.FinalReleaseComObject(item); }
     }
 
@@ -53,15 +63,69 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     }
     public JsonObject Share(string name,string root)
     {
-        if (NetShareGetInfo(null,name,502,out var buffer) != 0) throw new AgentException("file_audit_share_unavailable");
+        uint status = NetShareGetInfo(null,name,502,out var buffer);
         try
         {
+            if (status != 0) throw new FileAuditNativeReadException("file_audit_share_unavailable", status);
             var info=Marshal.PtrToStructure<Share502>(buffer);
             if (!FileAuditPolicy.LocalPath(info.Path).Equals(root,StringComparison.OrdinalIgnoreCase)) throw new AgentException("file_audit_share_root_mismatch");
             return new JsonObject { ["name"]=name,["path"]=root,["dacl"]=Format(info.Descriptor,4),["complete"]=true };
         }
-        finally { NetApiBufferFree(buffer); }
+        finally { if (buffer != IntPtr.Zero) NetApiBufferFree(buffer); }
     }
+    public static LocalSmbCatalog ListLocalShares(CancellationToken cancellationToken)
+    {
+        const uint moreData = 234, diskTypeMask = 0xff, maxEntries = 1024;
+        const int maxPages = 32, maxShares = 128;
+        var shares = new List<LocalSmbShare>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var size = Marshal.SizeOf<Share2>();
+        uint resume = 0;
+        for (var page = 0; page < maxPages; page++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var before = resume;
+            // NULL names the enrolled host itself. Level 2 provides the local path.
+            var status = NetShareEnum(null, 2, out var buffer, 8192, out var entries, out _, ref resume);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (status is not (0 or moreData)) return new(LocalSmbCatalogState.Unavailable, [], status);
+                if (entries > maxEntries || entries != 0 && buffer == IntPtr.Zero)
+                    return new(LocalSmbCatalogState.Incomplete, [], status == moreData ? status : null);
+
+                for (var i = 0; i < entries; i++)
+                {
+                    var info = Marshal.PtrToStructure<Share2>(IntPtr.Add(buffer, i * size));
+                    if ((info.Type & diskTypeMask) != 0) continue;
+                    var name = Marshal.PtrToStringUni(info.Name);
+                    if (name?.ToUpperInvariant() is "ADMIN$" or "IPC$" or "PRINT$" or "FAX$" or "SYSVOL" or "NETLOGON")
+                        continue;
+                    var path = Marshal.PtrToStringUni(info.Path);
+                    if (name is not { Length: >= 1 and <= 80 } || name.Trim() != name
+                        || name.Any(c => c < 32 || "\\/:*?\"<>|".Contains(c)) || path is null)
+                        return new(LocalSmbCatalogState.Incomplete, []);
+                    string local;
+                    try { local = FileAuditPolicy.LocalPath(path); }
+                    catch (AgentException) { return new(LocalSmbCatalogState.Incomplete, []); }
+                    if (name.Length == 2 && name[1] == '$' && local.Length == 3
+                        && char.ToUpperInvariant(name[0]) == char.ToUpperInvariant(local[0]))
+                        continue;
+                    if (shares.Count == maxShares || !names.Add(name))
+                        return new(LocalSmbCatalogState.Incomplete, []);
+                    shares.Add(new(name, local));
+                }
+                if (status == 0) return new(LocalSmbCatalogState.Ready, shares);
+                if (resume == 0 || resume == before) return new(LocalSmbCatalogState.Incomplete, [], status);
+            }
+            finally
+            {
+                if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+            }
+        }
+        return new(LocalSmbCatalogState.Incomplete, [], moreData);
+    }
+
     public JsonObject LocalGroups(int limit)
     {
         uint resume=0;
@@ -117,10 +181,11 @@ public sealed class NativeFileAuditApi : IFileAuditApi
                     {
                         var error=Marshal.GetLastPInvokeError(); handle.Dispose();
                         if (allowMissing && verifiedRoot && error is 2 or 3) return;
-                        throw new AgentException("file_audit_path_unavailable");
+                        throw new FileAuditNativeReadException("file_audit_path_unavailable", unchecked((uint)error));
                     }
                     Handles.Add(handle);
-                    if (!GetFileInformationByHandle(handle,out var info)) throw new AgentException("file_audit_path_unavailable");
+                    if (!GetFileInformationByHandle(handle,out var info))
+                        throw new FileAuditNativeReadException("file_audit_path_unavailable", unchecked((uint)Marshal.GetLastPInvokeError()));
                     if ((info.Attributes & 0x400) != 0) throw new AgentException("file_audit_reparse_point");
                     if (component.Equals(root,StringComparison.OrdinalIgnoreCase)) verifiedRoot=true;
                 }
@@ -137,14 +202,16 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         public NativeObject(string path,string root) { _path=FileAuditPolicy.LocalPath(path); _pin=new(path,root); }
         private static byte[] Descriptor(SafeFileHandle handle,uint parts=15)
         {
-            if (GetSecurityInfo(handle,1,parts,out _,out _,out _,out _,out var sd) != 0) throw new AgentException("file_audit_descriptor_unavailable");
+            uint status = GetSecurityInfo(handle,1,parts,out _,out _,out _,out _,out var sd);
+            if (status != 0) throw new FileAuditNativeReadException("file_audit_descriptor_unavailable", status);
             try { var size=GetSecurityDescriptorLength(sd); if (size is < 20 or > 1048576) throw new AgentException("file_audit_descriptor_invalid"); var bytes=new byte[size]; Marshal.Copy(sd,bytes,0,(int)size); return bytes; }
             finally { LocalFree(sd); }
         }
         public JsonObject Describe()
         {
             var bytes=Descriptor(Handle); var sd=new RawSecurityDescriptor(bytes,0);
-            if (!GetFileInformationByHandle(Handle,out var info)) throw new AgentException("file_audit_descriptor_unavailable");
+            if (!GetFileInformationByHandle(Handle,out var info))
+                throw new FileAuditNativeReadException("file_audit_descriptor_unavailable", unchecked((uint)Marshal.GetLastPInvokeError()));
             return new JsonObject { ["object_id"]=$"{info.Volume}:{info.IndexHigh}:{info.IndexLow}",["object_type"]=(info.Attributes&16) != 0 ? "directory" : "file",
                 ["owner_sid"]=sd.Owner!.Value,["dacl"]=Format(bytes,4),["sacl"]=Format(bytes,8),["sacl_protected"]=(sd.ControlFlags&ControlFlags.SystemAclProtected) != 0 };
         }
@@ -204,11 +271,22 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     }
     private static string Format(IntPtr sd,uint parts)
     {
-        if (!ConvertSecurityDescriptorToStringSecurityDescriptor(sd,1,parts,out var text,out _)) throw new AgentException("file_audit_descriptor_invalid");
+        if (!ConvertSecurityDescriptorToStringSecurityDescriptor(sd,1,parts,out var text,out _))
+            throw new FileAuditNativeReadException("file_audit_descriptor_invalid", unchecked((uint)Marshal.GetLastPInvokeError()));
         try { return Marshal.PtrToStringUni(text)!; } finally { LocalFree(text); }
     }
     [StructLayout(LayoutKind.Sequential)] private struct FileInfo { public uint Attributes,CreateLow,CreateHigh,AccessLow,AccessHigh,WriteLow,WriteHigh,Volume,SizeHigh,SizeLow,Links,IndexHigh,IndexLow; }
     [StructLayout(LayoutKind.Sequential)] private struct GenericMapping { public uint Read,Write,Execute,All; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Share2
+    {
+        public IntPtr Name;
+        public uint Type;
+        public IntPtr Remark;
+        public uint Permissions, MaxUses, CurrentUses;
+        public IntPtr Path, Password;
+    }
+
     [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct Share502 { [MarshalAs(UnmanagedType.LPWStr)] public string Name; public uint Type; public IntPtr Remark; public uint Permissions,MaxUses,Uses; [MarshalAs(UnmanagedType.LPWStr)] public string Path; public IntPtr Password; public uint Reserved; public IntPtr Descriptor; }
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern SafeFileHandle CreateFile(string name,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
     [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformationByHandle(SafeFileHandle handle,out FileInfo info);
@@ -221,6 +299,10 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool ConvertSecurityDescriptorToStringSecurityDescriptor(IntPtr sd,uint revision,uint parts,out IntPtr text,out uint size);
     [DllImport("advapi32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool CreatePrivateObjectSecurityEx(byte[] parent,byte[] creator,out IntPtr result,IntPtr type,[MarshalAs(UnmanagedType.U1)] bool container,uint flags,IntPtr token,ref GenericMapping mapping);
     [DllImport("advapi32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool DestroyPrivateObjectSecurity(ref IntPtr result);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint NetShareEnum(string? server, uint level, out IntPtr buffer, uint preferred,
+        out uint entries, out uint total, ref uint resume);
+
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetShareGetInfo(string? server,string name,uint level,out IntPtr buffer);
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupEnum(string? server,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupGetMembers(string? server,string group,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);

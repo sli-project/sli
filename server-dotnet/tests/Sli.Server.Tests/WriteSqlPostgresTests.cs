@@ -242,11 +242,15 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             command = new { contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-agent-file", action = "check", policy_revision = (agentRevision+1).ToString(), collection_scope_ids = new[] { "sql-scope" } } });
         var checkReport = new { contract_id = "sli.file-audit.audit-result.v1", command_id = "sql-agent-file",
             policy_revision = (agentRevision + 1).ToString(), action = "check", observed_at_utc = DateTimeOffset.UtcNow,
-            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "unknown", required_masks = new { }, actual_masks = new { } } },
+            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "native_unavailable",
+                required_masks = new { }, actual_masks = new { }, read_error = new { stage = "acl", code_kind = "win32", code = 5 } } },
             snapshots = Array.Empty<object>(), ownership_remaining = false };
         var reportAck = await Check("/api/v1/agent/file-audit-report", checkReport, asClient: agentClient);
         if (reportAck?["status"]?.GetValue<string>() != "accepted")
             failures.Add("File Audit check did not return an accepted receipt");
+        var checkReadback = await Check("/api/v1/admin/agents/file-audit?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("acl", checkReadback?["scopes"]?["sql-scope"]?["read_error"]?["stage"]?.ToString());
+        Assert.Equal(5, checkReadback?["scopes"]?["sql-scope"]?["read_error"]?["code"]?.GetValue<int>());
         await Check("/api/v1/agent/file-audit-report", checkReport with { command_id = "sql-unrequested-file" },
             400, error: "file_audit_result_invalid", asClient: agentClient);
         await using (var checkBoundary = new NpgsqlCommand("""
@@ -263,6 +267,56 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             if (await checkBoundary.ExecuteScalarAsync(ct) is not true)
                 failures.Add("File Audit check receipt or event admission did not match the current command");
         }
+        const string catalogRoute = "/api/v1/admin/agents/file-audit/catalog";
+        agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
+        await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+        var requested = await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        Assert.Equal("pending", requested?["state"]?.ToString());
+        var catalogIdentity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+        Assert.True(catalogIdentity?["file_audit_read_diagnostics"]?.GetValue<bool>() is true);
+        var catalogRequest = catalogIdentity?["file_audit_catalog_request"]?["request_id"]?.ToString();
+        Assert.True(Guid.TryParse(catalogRequest, out _));
+        agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
+        var catalogReport = new
+        {
+            request_id = catalogRequest, status = "ready",
+            shares = new[]
+            {
+                new { share_name = "Pilot$", path = @"C:\Pilot" },
+                new { share_name = "C$", path = @"C:\" },
+                new { share_name = "Synthetic", path = @"C:\sql-data" }
+            }
+        };
+        var catalogAck = await Check("/api/v1/agent/file-audit-catalog-report", catalogReport, asClient: agentClient);
+        Assert.Equal("accepted", catalogAck?["status"]?.ToString());
+        await Check("/api/v1/agent/file-audit-catalog-report", catalogReport, asClient: agentClient);
+        await Check("/api/v1/agent/file-audit-catalog-report", catalogReport with { status = "unavailable", shares = [] },
+            409, error: "file_audit_catalog_request_conflict", asClient: agentClient);
+        var catalog = await Check(catalogRoute + "?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("ready", catalog?["state"]?.ToString());
+        var items = catalog!["items"]!.AsArray();
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, row => row?["share_name"]?.ToString() == "Pilot$");
+        var retained = Assert.Single(items.Where(row => row?["share_name"]?.ToString() == "Synthetic"));
+        Assert.Equal("sql-scope", retained?["collection_scope_id"]?.ToString());
+        Assert.Equal("sql-agent-file", catalog["saved_command"]?["command_id"]?.ToString());
+        Assert.Equal("check", catalog["saved_command"]?["action"]?.ToString());
+        var reportShare = JsonNode.Parse(catalog["saved_report_share_key"]!.GetValue<string>())!.AsArray();
+        Assert.Equal(new[] { registered["agent_id"]!.ToString(), agentHost, "sql-scope" },
+            reportShare.Select(value => value!.GetValue<string>()).ToArray());
+        await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
+        var nextIdentity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+        agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
+        string? nextRequest = nextIdentity?["file_audit_catalog_request"]?["request_id"]?.ToString();
+        Assert.True(Guid.TryParse(nextRequest, out _));
+        await Check("/api/v1/agent/file-audit-catalog-report",
+            new { request_id = nextRequest, status = "incomplete", native_status = 234, shares = Array.Empty<object>() },
+            asClient: agentClient);
+        var incomplete = await Check(catalogRoute + "?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("incomplete", incomplete?["state"]?.ToString());
+        Assert.Equal(234, incomplete?["native_status"]?.GetValue<int>());
+        Assert.Empty(incomplete!["items"]!.AsArray());
         object Heartbeat(long sequence, string before) => Packets.Make(new EcdsaPacketSigner(agentKey), registered["agent_id"]!.ToString(), sequence,
             new Sample("sli.heartbeat", agentHost, "heartbeat", agentHost, new Cursor("record_id", before), new Cursor("record_id", sequence.ToString()),
                 new JsonObject { ["contract"] = "sli.heartbeat.v1", ["status"] = "alive" }), DateTimeOffset.UtcNow).ToJson();
@@ -391,6 +445,31 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             state.Parameters.AddWithValue("current", currentId);
             if (await state.ExecuteScalarAsync(ct) is not 2L) failures.Add("DC registration statuses were not exchanged");
         }
+        long restoredRevision;
+        await using (var currentPolicy = new NpgsqlCommand("select policy_revision from sli_agents where id=@agent", admin))
+        {
+            currentPolicy.Parameters.AddWithValue("agent", replacedId);
+            restoredRevision = (long)(await currentPolicy.ExecuteScalarAsync(ct))!;
+        }
+        var management = await Check("/api/v1/admin/agents/policy", new
+        {
+            agent_id = replacedId, expected_revision = restoredRevision,
+            collection_policy = new { manage_windows_audit = true }
+        });
+        long managementRevision = management!["policy_revision"]!.GetValue<long>();
+        await Check("/api/v1/admin/agents/file-audit", new
+        {
+            agent_id = replacedId, expected_revision = managementRevision, config = fileConfig,
+            command = new
+            {
+                contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-agent-file-apply",
+                action = "apply", policy_revision = (managementRevision + 1).ToString(),
+                collection_scope_ids = new[] { "sql-scope" }
+            }
+        });
+        var applyCatalog = await Check(catalogRoute + "?agent_id=" + replacedId, new { }, method: "GET");
+        Assert.Equal("sql-agent-file-apply", applyCatalog?["saved_command"]?["command_id"]?.ToString());
+        Assert.Equal("apply", applyCatalog?["saved_command"]?["action"]?.ToString());
         // Finish writes with the original owner session before testing first login.
         await Check("/api/auth/logout", new { });
         client.DefaultRequestHeaders.Remove("Cookie");

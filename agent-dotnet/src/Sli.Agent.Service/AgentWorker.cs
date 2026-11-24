@@ -14,6 +14,7 @@ public sealed class AgentWorker(AgentRuntime runtime, ILogger<AgentWorker> logge
         var failures = 0;
         (string? Code, string? Detail) previous = default;
         IReadOnlyDictionary<string, SnapshotFailure>? previousSnapshots = null;
+        FileAuditCatalogDiagnostic? previousCatalog = null;
         while (!stoppingToken.IsCancellationRequested)
         {
             CycleStatus status;
@@ -31,6 +32,10 @@ public sealed class AgentWorker(AgentRuntime runtime, ILogger<AgentWorker> logge
                 }
             }
             previousSnapshots = status.SnapshotFailures;
+            if (status.FileAuditCatalog is { } catalog && catalog != previousCatalog)
+                logger.LogWarning("File Audit catalog: enumeration {EnumerationError}, Win32 {NativeStatus}, report {ReportError}, HTTP {HttpStatus}",
+                    catalog.EnumerationError, catalog.NativeStatus, catalog.ReportError, catalog.HttpStatus);
+            previousCatalog = status.FileAuditCatalog;
             if (!snapshotErrorLoggedSeparately)
             {
                 if (status.ErrorDetail is not null)

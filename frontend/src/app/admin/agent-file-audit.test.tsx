@@ -198,3 +198,37 @@ it("distinguishes unnamed agents through linked technical details without using 
   expect(inputs[0].checked).toBe(false);
   expect(change).not.toHaveBeenCalled();
 });
+
+it("keeps a new server draft after check advances its revision and clears it for another agent", () => {
+  const change = vi.fn();
+  const view = render(<AgentFileAuditControls agents={[first, second]} busy={false} change={change}/>);
+  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
+  const draft = [
+    [t("agents.fileAudit.paths"), "C:/Synthetic"],
+    [t("agents.fileAudit.shares"), "Synthetic"],
+    [t("agents.fileAudit.scopes"), "server:synthetic"],
+    [t("agents.fileAudit.exclusions"), "S-1-5-21-1-2-3-1003"],
+  ];
+  for (const [label, value] of draft) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.enabled")));
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.important")));
+  fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.check") }));
+  expect(change).toHaveBeenCalledWith("file-audit", expect.objectContaining({
+    expected_revision: 2, command: expect.objectContaining({ action: "check" }),
+  }));
+
+  view.rerender(<AgentFileAuditControls agents={[{ ...first, policy_revision: 3 }, second]} busy={false} change={change}/>);
+  for (const [label, value] of draft) expect(screen.getByLabelText<HTMLTextAreaElement>(label).value).toBe(value);
+  expect(screen.getByLabelText<HTMLInputElement>(t("agents.fileAudit.enabled")).checked).toBe(true);
+  expect(screen.getByLabelText<HTMLInputElement>(t("agents.fileAudit.important")).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.apply") }));
+  expect(change).toHaveBeenLastCalledWith("file-audit", expect.objectContaining({
+    expected_revision: 3, command: expect.objectContaining({ action: "apply", policy_revision: "4" }),
+  }));
+
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: second.host_name! })));
+  for (const [label] of draft) expect(screen.getByLabelText<HTMLTextAreaElement>(label).value).toBe("");
+  expect(screen.getByLabelText<HTMLInputElement>(t("agents.fileAudit.enabled")).checked).toBe(false);
+  expect(screen.getByLabelText<HTMLInputElement>(t("agents.fileAudit.important")).checked).toBe(false);
+});

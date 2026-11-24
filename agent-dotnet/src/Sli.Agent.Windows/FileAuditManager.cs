@@ -19,6 +19,7 @@ public interface IFileAuditApi
 {
     string AuditOwnership => "unknown";
     string Preflight(JsonArray roots);
+    string Preflight(JsonArray roots, bool describeReadErrors) => Preflight(roots);
     Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids);
     IFileAuditObject Open(string path, string root);
     JsonObject Share(string name, string root);
@@ -86,7 +87,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var state = Load();
         if (JsonNode.DeepEquals(state["pending_report"],report)) { state["pending_report"]=null; Save(state); }
     }
-    public FileAuditReconcileResult Reconcile(AgentPolicy policy, IWindowsAudit? audit, DateTimeOffset now)
+    public FileAuditReconcileResult Reconcile(AgentPolicy policy, IWindowsAudit? audit, DateTimeOffset now, bool readDiagnostics = false)
     {
         var state = Load(); // Invalid ownership must also block shared policy writes.
         var parsed = policy.FileAuditRequest is null ? null : FileAuditPolicy.ParseRequest(policy.FileAuditRequest);
@@ -108,9 +109,12 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var selectedConfig = FileAuditPolicy.Parse((JsonObject)config.Value.DeepClone()); selectedConfig.Value["roots"]=selected.DeepClone();
         var required = selectedConfig.RequiredMasks();
         var writable = false; var reason = "ok";
+        bool describeReads = readDiagnostics && action == "check" && !config.Workstation && selected.Count == 1;
+        FileAuditReadError? readError = null;
         try
         {
-            reason = api.Preflight(selected);
+            reason = api.Preflight(selected, describeReads);
+            if (describeReads && reason is ("unknown" or "global_sacl_unknown")) readError = new("audit_policy");
             writable = action != "check" && policy.Control.ManageWindowsAudit && policy.Control.State == "active" && reason == "ok";
             if (writable)
             {
@@ -145,13 +149,20 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                 }
             }
         }
-        catch (Exception e) when (e is not OperationCanceledException) { reason="native_unavailable"; writable=false; }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            reason="native_unavailable"; writable=false;
+            if (describeReads) readError = FileAuditNativeReadException.Describe("audit_policy", e);
+        }
         var auditReport = Shared(writable && action == "apply");
         var report = new JsonObject { ["contract_id"]="sli.file-audit.audit-result.v1",["command_id"]=key,["policy_revision"]=cmd["policy_revision"]!.DeepClone(),
             ["action"]=action,["observed_at_utc"]=Iso8601.Format(now),["scopes"]=new JsonArray(),["snapshots"]=new JsonArray(),["ownership_remaining"]=true };
+        var stage = "audit_policy";
         try
         {
+            if (readError is not null) throw new AgentException("file_audit_check_read_failed");
             var actual = api.QueryMasks(required.Keys.Union(OwnedMasks().Keys).ToArray());
+            stage = "inventory";
             var policyOk = OwnedMasks().All(x => (actual.GetValueOrDefault(x.Key) & x.Value) == x.Value);
             if (auditReport?["windows_audit"]?["management_state"]?.ToString() is "unknown" or "blocked"
                 && !(api.AuditOwnership == "managed_by_gpo" && reason == "ok" && policyOk)) { writable=false; if (reason == "ok") reason="policy_blocked"; }
@@ -159,7 +170,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             {
                 var scopeId = Text(root,"collection_scope_id");
                 if (state["walks"]![scopeId]?["done"]?.GetValue<bool>() == true) continue;
-                var (scope,snapshot) = Inventory(state,root,config,cmd,now,writable && action == "apply" && policyOk);
+                var (scope,snapshot) = Inventory(state,root,config,cmd,now,writable && action == "apply" && policyOk,
+                    describeReads ? value => stage = value : null);
                 if (action == "check" && reason != "ok" || action != "check" && !writable)
                 {
                     scope["state"]="blocked"; scope["reason_code"]=reason == "ok" ? "management_disabled" : reason;
@@ -178,6 +190,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             report["scopes"]=new JsonArray(cmd["collection_scope_ids"]!.AsArray().Select(id => (JsonNode?)new JsonObject
             { ["collection_scope_id"]=id!.DeepClone(),["state"]="failed",["reason_code"]="native_unavailable",["required_masks"]=new JsonObject(),["actual_masks"]=new JsonObject() }).ToArray());
             report["snapshots"]=new JsonArray();
+            if (describeReads)
+                report["scopes"]![0]!["read_error"] = (readError ?? FileAuditNativeReadException.Describe(stage, e)).ToJson();
         }
         report["ownership_remaining"]=state["objects"]!.AsObject().Count > 0 || state["masks"]!.AsObject().Count > 0;
         state["pending_report"]=report.DeepClone();
@@ -191,14 +205,18 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
     }
     private JsonObject InventoryShare(JsonObject root) => Text(root,"share_name") == "" ? new JsonObject { ["name"]="",["path"]=root["path"]!.DeepClone(),["dacl"]="",["complete"]=true } : api.Share(Text(root,"share_name"),Text(root,"path"));
     private static string ObjectKey(JsonObject objects,string path) => objects.Select(x => x.Key).FirstOrDefault(k => k.Equals(path,StringComparison.OrdinalIgnoreCase)) ?? path;
-    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply)
+    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply,Action<string>? setReadStage)
     {
         var timer = System.Diagnostics.Stopwatch.StartNew(); TimeSpan Clock() => clock?.Invoke() ?? timer.Elapsed;
         var deadline = Clock() + TimeSpan.FromSeconds(config.Number("wall_seconds"));
         var scopeId = Text(root,"collection_scope_id"); var rootPath = Text(root,"path"); var walks = state["walks"]!.AsObject();
         if (walks[scopeId] is null) walks[scopeId]=new JsonObject { ["stack"]=new JsonArray(new JsonArray(rootPath,0)),["page"]=0,["done"]=false,["gaps"]=0,["started"]=Iso8601.Format(now),["sacl_missing"]=0 };
         var walk = walks[scopeId]!.AsObject(); var stack = walk["stack"]!.AsArray(); var rows = new JsonArray(); var seen=0; var gaps=0;
-        var share = InventoryShare(root); var groups = api.LocalGroups(config.Number("inventory_objects"));
+        setReadStage?.Invoke("share");
+        var share = InventoryShare(root);
+        setReadStage?.Invoke("local_groups");
+        var groups = api.LocalGroups(config.Number("inventory_objects"));
+        setReadStage?.Invoke("inventory");
         if (!share["complete"]!.GetValue<bool>() || !groups["complete"]!.GetValue<bool>()) gaps++;
         var objects = state["objects"]!.AsObject();
         while (stack.Count > 0)
@@ -209,7 +227,10 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             try
             {
                 if (!FileAuditPolicy.InRoot(path,rootPath)) throw new AgentException("file_audit_scope_escape");
-                using var obj = api.Open(path,rootPath); var row = obj.Describe();
+                setReadStage?.Invoke("directory");
+                using var obj = api.Open(path,rootPath);
+                setReadStage?.Invoke("acl");
+                var row = obj.Describe();
                 var protectedChild = path != rootPath && row["sacl_protected"]!.GetValue<bool>();
                 var eligible = path == rootPath || root["sacl"]![Text(row,"object_type") == "directory" ? "inherit_directories" : "inherit_files"]!.GetValue<bool>();
                 var aces = FileAuditPolicy.DesiredAces(root); var plan = eligible && !protectedChild ? obj.Plan(aces) : Text(row,"sacl");
@@ -243,6 +264,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                 if (CanonicalJson.ToBytes(new JsonArray(rows.Select(r => r!.DeepClone()).Append(candidate.DeepClone()).ToArray())).Length > Math.Min(config.Number("max_bytes"),48*1024-16384))
                 { if (rows.Count > 0) stack.Add(new JsonArray(path,depth)); else gaps++; break; }
                 rows.Add(candidate); if (walk["sacl_missing"] is not null) walk["sacl_missing"]=walk["sacl_missing"]!.GetValue<int>() + (missing ? 1 : 0);
+                setReadStage?.Invoke("directory");
                 if (Text(row,"object_type") == "directory" && !protectedChild && !conflict)
                     foreach (var name in obj.Children())
                     {
@@ -253,10 +275,16 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
+                if (setReadStage is not null && depth == 0)
+                {
+                    stack.Add(new JsonArray(path, depth));
+                    throw;
+                }
                 if (objects[objectKey]?["phase"]?.ToString() == "pending") { stack.Add(new JsonArray(path,depth)); break; }
                 gaps++;
             }
         }
+        setReadStage?.Invoke("inventory");
         walk["done"]=stack.Count == 0; walk["gaps"]=walk["gaps"]!.GetValue<int>()+gaps;
         var snapshot = new JsonObject { ["contract_id"]="sli.file-audit.inventory.v1",["collection_scope_id"]=scopeId,["policy_revision"]=cmd["policy_revision"]!.DeepClone(),
             ["observed_at_utc"]=Iso8601.Format(now),["scan_id"]=Uuid5(Text(cmd,"command_id")+scopeId+Text(walk,"started")),["page_number"]=walk["page"]!.DeepClone(),

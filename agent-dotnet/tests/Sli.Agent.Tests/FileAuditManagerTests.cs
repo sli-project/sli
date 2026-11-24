@@ -19,6 +19,27 @@ public sealed class FileAuditManagerTests : IDisposable
     private AgentPolicy Policy(JsonObject? request, bool manage = true) => new(1,new CollectionControl("active",60,32,120,10000000,manage,false),new JsonArray(),null,null,null) { FileAuditRequest = request };
 
     [Theory]
+    [InlineData("audit_policy")]
+    [InlineData("share")]
+    [InlineData("directory")]
+    [InlineData("acl")]
+    public void AFailedServerCheckReportsOnlyItsReadStageAndWindowsCode(string stage)
+    {
+        var api = new FakeFileApi(_dir) { FailedRead = stage };
+        var manager = new FileAuditManager(_dir, _files, api);
+        var report = manager.Reconcile(Policy(Request("check")), new FakeAudit(), Helpers.Now, readDiagnostics: true).Report!;
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("failed", scope["state"]!.ToString());
+        Assert.Equal("native_unavailable", scope["reason_code"]!.ToString());
+        Assert.Equal(stage, scope["read_error"]!["stage"]!.ToString());
+        Assert.Equal("win32", scope["read_error"]!["code_kind"]!.ToString());
+        Assert.Equal(5u, scope["read_error"]!["code"]!.GetValue<uint>());
+        Assert.Empty(report["snapshots"]!.AsArray());
+        Assert.Equal(0, api.Writes);
+        Assert.DoesNotContain("synthetic private path or ACL", report.ToJsonString());
+    }
+
+    [Theory]
     [InlineData("check")]
     [InlineData("apply")]
     [InlineData("restore")]
@@ -191,21 +212,39 @@ public sealed class FileAuditManagerTests : IDisposable
         public string[] ChildNames { get; set; } = [];
         public bool RejectChildren { get; set; }
         public string ChildSacl { get; set; } = "S:old";
+        public string? FailedRead { get; set; }
+        private void FailRead(string stage)
+        {
+            if (stage == FailedRead) throw new System.ComponentModel.Win32Exception(5, "synthetic private path or ACL");
+        }
         public string Preflight(JsonArray roots) => Owner;
-        public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids) => guids.ToDictionary(g => g,g => 3);
+        public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids)
+        {
+            FailRead("audit_policy");
+            return guids.ToDictionary(g => g,g => 3);
+        }
         public IFileAuditObject Open(string path,string root)
         {
+            FailRead("directory");
             if (path == root) return Object;
             if (RejectChildren) throw new AgentException("file_audit_reparse_point");
             var child=new FakeObject(this); child.Row["object_type"]="file"; child.Row["sacl"]=ChildSacl; child.Row["dacl"]=Object.Row["dacl"]!.DeepClone();
             return child;
         }
-        public JsonObject Share(string name,string root) => new() { ["name"]=name,["path"]=root,["dacl"]="D:(A;;FA;;;SY)",["complete"]=true };
+        public JsonObject Share(string name,string root)
+        {
+            FailRead("share");
+            return new() { ["name"]=name,["path"]=root,["dacl"]="D:(A;;FA;;;SY)",["complete"]=true };
+        }
         public JsonObject LocalGroups(int limit) => new() { ["complete"]=true,["groups"]=new JsonArray() };
         public sealed class FakeObject(FakeFileApi api) : IFileAuditObject
         {
             public JsonObject Row { get; } = new() { ["object_id"]="1:2:3",["object_type"]="directory",["owner_sid"]="S-1-5-18",["dacl"]="D:(A;;FA;;;SY)",["sacl"]="S:old",["sacl_protected"]=false };
-            public JsonObject Describe() => (JsonObject)Row.DeepClone();
+            public JsonObject Describe()
+            {
+                api.FailRead("acl");
+                return (JsonObject)Row.DeepClone();
+            }
             public string Plan(JsonArray aces) => Row["sacl"]!.ToString() == "S:foreign" ? "S:foreign-plus" : "S:exact-inheritance";
             public string ExpectedSacl(string value) => value == "S:old" ? value : "S:exact-inheritance";
             public void SetSacl(string value)

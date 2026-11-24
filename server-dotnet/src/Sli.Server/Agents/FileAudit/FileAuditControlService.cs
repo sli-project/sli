@@ -123,10 +123,23 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         await using(var insert=new NpgsqlCommand("select sli_plugin_file_audit.enqueue_audit(@agent,@source,@config::jsonb,@command::jsonb,@kind,@actor)",db,tx))
         { insert.Parameters.AddWithValue("agent",id);insert.Parameters.AddWithValue("source",Source(agent));insert.Parameters.AddWithValue("config",config.ToJsonString());insert.Parameters.AddWithValue("command",cmd.ToJsonString());insert.Parameters.AddWithValue("kind",principal.Type);insert.Parameters.AddWithValue("actor",principal.Id);await insert.ExecuteNonQueryAsync(ct); }
         var state=new JsonObject { ["request"]=request,["state"]="pending",["scopes"]=new JsonObject(),["may_own_audit"]=owned || action=="apply" };
-        if(permissionsScope is not null) state["permissions_scope"]=permissionsScope;
-        if(action=="restore" && owned && JsonRead.TryString(prior["permissions_scope"] ?? prior["permissions_restore_scope"],out var previousScope)
+        if (permissionsScope is not null)
+        {
+            state["permissions_scope"] = permissionsScope;
+            state["permissions_restore_origin"] = CommandReference(cmd);
+        }
+        if (action is "check" or "restore" && owned
+            && JsonRead.TryString(prior["permissions_scope"] ?? prior["permissions_restore_scope"],out var previousScope)
             && cmd["collection_scope_ids"] is JsonArray restoreScopes && restoreScopes.Count==1 && S(restoreScopes[0])==previousScope)
-            state["permissions_restore_scope"]=previousScope;
+        {
+            state["permissions_restore_scope"] = previousScope;
+            var origin = prior["permissions_restore_origin"]?.DeepClone();
+            if (origin is null && prior["permissions_scope"] is not null
+                && priorRequest?["command"] is JsonObject priorApply && priorApply["action"]?.ToString() == "apply")
+                origin = CommandReference(priorApply);
+            if (origin is not null)
+                state["permissions_restore_origin"] = origin;
+        }
         if(action=="restore" && prior["retired_apply"] is JsonObject retired)
             state["retired_apply"]=retired.DeepClone();
         var oldModules=AgentControlJson.Element(agent["assigned_modules"]!); var control=AgentControlJson.Element(agent["collection_policy"]!);
@@ -137,6 +150,12 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         await audit.AppendAsync(db,tx,"file_audit_command",$"{principal.Type}:{principal.Id}",id.ToString(),details,ct);
         return JsonSerializer.SerializeToElement(new { policy_revision=revision,command_id=S(cmd["command_id"]),state="pending" });
     }
+
+    private static JsonObject CommandReference(JsonObject command) => new()
+    {
+        ["command_id"] = command["command_id"]!.DeepClone(),
+        ["policy_revision"] = command["policy_revision"]!.DeepClone()
+    };
 
     private async Task<JsonElement> DisablePermissions(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,
         Principal principal,CapabilityDecisionSet access,CancellationToken ct)

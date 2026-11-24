@@ -119,3 +119,60 @@ it("does not present an older verified command as verification of an edited inva
   expect(change).not.toHaveBeenCalled();
   expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
 });
+
+it("stops automatic polling after a local wait timeout and can still verify on refresh", async () => {
+  vi.useFakeTimers();
+  const status = vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt("pending"), scopes: {}, reported_at: null });
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  await act(async () => { await Promise.resolve(); });
+  expect(screen.getByText(t("agents.fileAudit.result.pending"))).toBeTruthy();
+  expect(screen.getByText(t("agents.fileAudit.result.noScopeReceipt"))).toBeTruthy();
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+  expect(screen.getByText(t("agents.fileAudit.result.delayed"))).toBeTruthy();
+  const callCount = status.mock.calls.length;
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(status).toHaveBeenCalledTimes(callCount);
+
+  status.mockResolvedValueOnce(receipt());
+  fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.result.refresh") }));
+  await act(async () => { await Promise.resolve(); });
+  expect(screen.getByText(t("agents.fileAudit.result.verified"))).toBeTruthy();
+});
+
+it("identifies an unavailable status endpoint without inferring command failure", async () => {
+  vi.spyOn(api, "agentFileAuditStatus").mockRejectedValue(new ApiResponseError(503));
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  expect(await screen.findByText(t("agents.fileAudit.result.unavailable"))).toBeTruthy();
+  expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
+});
+
+it.each([["failed", "native_unavailable"], ["blocked", "managed_by_gpo"]])("shows an exact %s receipt and its scope reason", async (state, reason_code) => {
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt(state), scopes: {
+    [body.command.collection_scope_ids[0]]: { state, reason_code },
+  } });
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  expect(await screen.findByText(t(`agents.fileAudit.result.${state}` as MessageKey))).toBeTruthy();
+  expect(screen.getByText(reason_code).closest("details")).toBe(screen.getByText(t("agents.fileAudit.title")).closest("details"));
+});
+
+it("keeps an unmatched scope failure unknown", async () => {
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt("failed"), scopes: {
+    unrelated: { state: "failed", reason_code: "native_unavailable" },
+  } });
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  expect(await screen.findByText(t("agents.fileAudit.result.unknown"))).toBeTruthy();
+  expect(screen.queryByText("native_unavailable")).toBeNull();
+});
+
+it("shows the ACL read step and numeric code from the matching failed check", async () => {
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt("failed"), scopes: {
+    [body.command.collection_scope_ids[0]]: {
+      state: "failed", reason_code: "native_unavailable", read_error: { stage: "acl", code_kind: "win32", code: 5 },
+    },
+  } });
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  expect(await screen.findByText(t("agents.fileAudit.readError.acl"))).toBeTruthy();
+  expect(screen.getByText(t("agents.fileAudit.readError.code", { code: 5 }))).toBeTruthy();
+  expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
+});

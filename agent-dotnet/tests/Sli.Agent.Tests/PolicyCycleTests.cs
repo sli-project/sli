@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
@@ -34,6 +35,9 @@ public sealed class PolicyCycleTests : IDisposable
     private INpsEventSource? _npsSource;
     private IRadiusTailSource? _radiusSource;
     private Func<JsonObject>? _protectionReader;
+    private Func<CancellationToken, LocalSmbCatalog>? _catalogReader;
+    private Func<JsonNode, CancellationToken, Task<HttpResponseMessage>>? _catalogReport;
+    private bool _catalogAdvertised;
 
     public PolicyCycleTests()
     {
@@ -52,23 +56,32 @@ public sealed class PolicyCycleTests : IDisposable
     private sealed class Source : IEventLogSource
     {
         public int Reads { get; private set; }
-        public SourceBatch Read(string channel, ChannelProgress progress, int limit) { Reads++; return new([]); }
+        public Func<string, ChannelProgress, int, SourceBatch>? ReadOverride { get; set; }
+        public SourceBatch Read(string channel, ChannelProgress progress, int limit)
+        {
+            Reads++;
+            return ReadOverride?.Invoke(channel, progress, limit) ?? new SourceBatch([]);
+        }
     }
     private sealed class Audit : IWindowsAudit
     {
         public JsonObject Reconcile(AgentPolicy policy, DateTimeOffset now) => new() { ["windows_audit"] = new JsonObject() };
     }
-    private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken);
     }
     private AgentRuntime Runtime() => _runtime ??= new(Options.Create(_options), _clock, identity =>
     {
         if (identity is not null && _failNextSession) { _failNextSession = false; throw new AgentException("agent_config_invalid"); }
-        return new AgentHttpClient(new HttpClient(new Handler(async request =>
+        return new AgentHttpClient(new HttpClient(new Handler(async (request, cancellationToken) =>
         {
             var body = request.Content is null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync());
             var path = request.RequestUri!.AbsolutePath;
+            if (path == "/api/v1/agent/file-audit-catalog-report" && _catalogReport is { } report)
+                return await report(body!, cancellationToken);
+            if (path == "/api/v1/agent/identity")
+                _catalogAdvertised = request.Headers.TryGetValues("X-SLI-File-Audit-Catalog", out var support) && support.Single() == "1";
             _requests.Add((path, body?.DeepClone()));
             if (path == _timeoutPath) throw new TaskCanceledException("synthetic private details");
             JsonObject result;
@@ -97,7 +110,7 @@ public sealed class PolicyCycleTests : IDisposable
             }
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(result.ToJsonString(), Encoding.UTF8, "application/json") };
         })) { BaseAddress = new Uri(_options.ServerUrl) });
-    }, _source, new Audit(), _snapshotReader, _fileSource, _fileApi, (_,_) => { }, _ => true, _npsSource, _radiusSource, _protectionReader);
+    }, _source, new Audit(), _snapshotReader, _fileSource, _fileApi, (_,_) => { }, _ => true, _npsSource, _radiusSource, _protectionReader, _catalogReader);
 
     [Fact]
     public async Task DcAuditResultReachesConsoleBeforeEventDeliveryTimeout()
@@ -113,6 +126,117 @@ public sealed class PolicyCycleTests : IDisposable
         var audit = _requests.FindIndex(r => r.Path == "/api/v1/agent/windows-audit-report");
         var delivery = _requests.FindIndex(r => r.Path == _timeoutPath);
         Assert.True(audit >= 0 && delivery > audit);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CatalogDelayAndRejectionDoNotBlockSignedAdCaptureAndDelivery(bool nativeUnavailable)
+    {
+        using var test = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var first = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        var reads = 0;
+        _catalogReader = _ =>
+        {
+            Interlocked.Increment(ref reads);
+            return nativeUnavailable
+                ? new(LocalSmbCatalogState.Unavailable, [], 5)
+                : new(LocalSmbCatalogState.Ready, [new("Pilot$", @"C:\Pilot")]);
+        };
+        _catalogReport = async (body, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                first.SetResult(body);
+                await release.Task.WaitAsync(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            }
+            second.SetResult(body);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"accepted"}""") };
+        };
+
+        _assignment["assigned_modules"] = new JsonArray(new JsonObject
+        {
+            ["module_id"] = AdDcModule.ModuleId, ["enabled"] = true,
+            ["config"] = new JsonObject
+            {
+                ["source_name"] = "dc.example.test", ["connect_address"] = "localhost",
+                ["channels"] = new JsonObject(DcCursor.Channels.Select(c => KeyValuePair.Create<string, JsonNode?>(c, JsonValue.Create(c == "Security"))))
+            }
+        });
+        _assignment["collection_policy"]!["rate_limit_per_minute"] = 100;
+        var offer = new JsonObject
+        {
+            ["request_id"] = Guid.NewGuid().ToString("D"),
+            ["expires_at"] = Iso8601.Format(_clock.Now.AddMinutes(5))
+        };
+        _assignment["file_audit_catalog_request"] = offer;
+        _assignment[FileAuditReadError.Capability] = true;
+        _source.ReadOverride = (_, progress, _) =>
+        {
+            var record = (progress.RecordId ?? 0) + 1;
+            return new SourceBatch([new EventRow($"""
+                <Event xmlns="{EventXml.Namespace}"><System><Provider Name="Microsoft-Windows-Eventlog"/><EventID>1104</EventID>
+                <TimeCreated SystemTime="{Iso8601.Format(_clock.Now)}"/><EventRecordID>{record}</EventRecordID>
+                <Channel>Security</Channel><Computer>dc.example.test</Computer></System>
+                <UserData><FileIsFull xmlns="http://manifests.microsoft.com/win/2004/08/windows/eventlog"/></UserData></Event>
+                """, $"bookmark-{record}")]);
+        };
+
+        Task<CycleStatus> Cycle() => Runtime().RunCycleAsync(test.Token).WaitAsync(test.Token);
+        var initial = await Cycle();
+        Assert.Equal(1, initial.Captured);
+        var firstBody = await first.Task.WaitAsync(test.Token);
+        Assert.True(_catalogAdvertised);
+        Assert.Equal(offer["request_id"]?.ToString(), firstBody["request_id"]?.ToString());
+        Assert.Equal(nativeUnavailable ? "unavailable" : "ready", firstBody["status"]?.ToString());
+        Assert.Equal(nativeUnavailable ? 0 : 1, firstBody["shares"]!.AsArray().Count);
+        Assert.Equal(nativeUnavailable ? (uint?)5 : null, firstBody["native_status"]?.GetValue<uint>());
+
+        _clock.Now = _clock.Now.AddSeconds(120);
+        var delayed = await Cycle();
+        Assert.False(release.Task.IsCompleted);
+        Assert.Equal(1, delayed.Captured);
+        Assert.True(delayed.CollectionActive);
+        Assert.False(delayed.DeliveryFailed);
+        Assert.Null(delayed.ErrorCode);
+        Assert.Equal(2, _requests.Count(x => x.Path == "/api/v1/agent/policy-report"));
+        var sent = Assert.Single(_requests, x => x.Path == AgentHttpClient.PacketsPath);
+        Assert.Equal(1L, sent.Body!["payload"]!["records"]![0]!["record_id"]!.GetValue<long>());
+
+        release.SetResult(true);
+        CycleStatus rejected;
+        do
+        {
+            rejected = await Cycle();
+            if (rejected.FileAuditCatalog?.HttpStatus != 503)
+                await Task.Delay(10, test.Token);
+        } while (rejected.FileAuditCatalog?.HttpStatus != 503);
+        Assert.False(rejected.DeliveryFailed);
+        Assert.Null(rejected.ErrorCode);
+        var diagnostic = Assert.IsType<FileAuditCatalogDiagnostic>(rejected.FileAuditCatalog);
+        Assert.Equal("agent_server_rejected_503", diagnostic.ReportError);
+        Assert.Equal(nativeUnavailable ? "file_audit_catalog_enumeration_failed" : null, diagnostic.EnumerationError);
+        Assert.Equal(nativeUnavailable ? (uint?)5 : null, diagnostic.NativeStatus);
+        Assert.Equal(0, rejected.Pending);
+
+        using var identity = AgentRuntime.CreateIdentityStore(_options).Load()!;
+        using var key = identity.Certificate.GetECDsaPublicKey()!;
+        var delivered = _requests.Where(x => x.Path == AgentHttpClient.PacketsPath).Select(x => x.Body!).ToArray();
+        Assert.Equal(new long[] { 1, 2 }, delivered.Select(packet => packet["payload"]!["records"]![0]!["record_id"]!.GetValue<long>()));
+        var previous = Packets.Verify(delivered[0], key);
+        var next = Packets.Verify(delivered[1], key);
+        Assert.Equal(AdDcModule.ModuleId, next.ModuleId);
+        Assert.Equal(previous.CursorAfter, next.CursorBefore);
+
+        _clock.Now = _clock.Now.AddSeconds(120);
+        Assert.Null((await Cycle()).ErrorCode);
+        var retried = await second.Task.WaitAsync(test.Token);
+        Assert.Equal(CanonicalJson.Serialize(firstBody), CanonicalJson.Serialize(retried));
+        Assert.Equal(1, Volatile.Read(ref reads));
     }
 
     [Fact]

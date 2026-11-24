@@ -65,9 +65,24 @@ export type AgentFileAuditCommand = {
   agent_id: string; command_id: string; policy_revision: string; action: "check" | "apply" | "restore";
   collection_scope_ids: string[];
 };
+export type AgentFileAuditReadError = {
+  stage: "audit_policy" | "share" | "directory" | "acl" | "local_groups" | "inventory";
+  code_kind?: "win32" | "hresult";
+  code?: number;
+};
 export type AgentFileAuditStatus = {
   command: Omit<AgentFileAuditCommand, "agent_id">; state: string; reported_at?: string | null;
-  scopes: Record<string, { state: string; reason_code: string }>; may_own_audit: boolean;
+  scopes: Record<string, { state: string; reason_code: string; read_error?: AgentFileAuditReadError }>; may_own_audit: boolean;
+};
+
+export type AgentFileAuditShare = { share_name: string; path: string; collection_scope_id: string };
+export type AgentFileAuditCatalog = {
+  state: "unsupported" | "idle" | "pending" | "ready" | "expired" | "incomplete" | "unavailable";
+  items: AgentFileAuditShare[];
+  native_status?: number | null;
+  saved_selection: AgentFileAuditShare | null;
+  saved_report_share_key?: string | null;
+  saved_command: (Omit<AgentFileAuditCommand, "agent_id" | "action"> & { action: "check" | "apply" }) | null;
 };
 
 /** Bind a successful enqueue response to the exact singleton request, never a policy ACK. */
@@ -2307,6 +2322,10 @@ export const api = {
   agentSequenceRecovery: (agentId: string) => request<{ gaps: AgentSequenceGap[]; truncated: boolean; recovery_preview: AgentSequenceRecoveryPreview }>(`/api/v1/admin/agents/sequence-recovery?agent_id=${encodeURIComponent(agentId)}`),
   acceptAgentSequenceGap: (agentId: string, observationIds: string[], previewToken: string) => requestMutation<{ status: "authorized"; agent_id: string; observation_ids: string[]; preview_token: string }>("/api/v1/admin/agents/sequence-recovery", "POST", { agent_id: agentId, observation_ids: observationIds, preview_token: previewToken, confirm_loss: true }),
   agentFileAuditStatus: (agentId: string) => request<AgentFileAuditStatus>(`/api/v1/admin/agents/file-audit?agent_id=${encodeURIComponent(agentId)}`),
+  agentFileAuditCatalog: (agentId: string, signal?: AbortSignal) =>
+    request<AgentFileAuditCatalog>(`/api/v1/admin/agents/file-audit/catalog?agent_id=${encodeURIComponent(agentId)}`, signal),
+  requestAgentFileAuditCatalog: (agentId: string) =>
+    requestMutation<AgentFileAuditCatalog>("/api/v1/admin/agents/file-audit/catalog", "POST", { agent_id: agentId }),
   agentAction: async (kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove" | "restore" | "file-audit", body: Record<string, unknown>) => {
     const result = await requestMutation<{ status?: string; password_detection_domain?: { status?: string } }>(`/api/v1/admin/agents/${kind}`, "POST", body);
     if (kind === "modules" && Object.prototype.hasOwnProperty.call(body, "password_detection_domain")

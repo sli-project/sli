@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
@@ -23,9 +24,17 @@ internal sealed class FileAuditIngestService
         read.Parameters.AddWithValue("agent",identity.Id);
         var stored=await read.ExecuteScalarAsync(ct) as string;
         var state=stored is null ? null : JsonNode.Parse(stored) as JsonObject;
-        bool retired=state?["retired_apply"]?["command"]?["policy_revision"]?.ToString()==revision;
-        var request=state?[retired ? "retired_apply" : "request"];
-        if(state is null || request?["config"] is not JsonObject config
+        if (state is null)
+            throw new AgentControlException("module_disabled",503);
+        bool retired=state["retired_apply"]?["command"]?["policy_revision"]?.ToString()==revision;
+        var request=state[retired ? "retired_apply" : "request"];
+        if (!retired && await ReadSupersededPermissionsRequestAsync(db, tx, identity.Id, state, request, report, revision, ct)
+            is { } superseded)
+        {
+            request = superseded;
+            retired = true;
+        }
+        if(request?["config"] is not JsonObject config
             || request?["command"] is not JsonObject command)
             throw new AgentControlException("module_disabled",503);
         bool check = !retired && command["action"]?.ToString() == "check"
@@ -39,7 +48,7 @@ internal sealed class FileAuditIngestService
             throw new AgentControlException("module_disabled",503);
         using var lease=admit();
         if(!FileAuditResult.Valid(report,config,command)) throw new AgentControlException("file_audit_result_invalid");
-        // Clear the agent's pending report so it can run restore. A retired apply publishes no evidence.
+        // Let the agent clear its pending report without changing the current command or its evidence.
         if(retired) return new JsonObject { ["status"]="accepted" };
         var observation=(JsonObject)report.DeepClone();
         var receipts = observation["scopes"]!.AsArray().OfType<JsonObject>().ToArray();
@@ -73,12 +82,51 @@ internal sealed class FileAuditIngestService
         {
             if (!check)
                 state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
+            if (restore && state["state"]?.ToString() == "verified" && state["may_own_audit"]?.GetValue<bool>() == false)
+                state.Remove("permissions_restore_origin");
             await using var write=new NpgsqlCommand("update public.sli_agents set file_audit=@state where id=@agent",db,tx);
             write.Parameters.AddWithValue("agent",identity.Id);
             write.Parameters.AddWithValue("state",NpgsqlDbType.Jsonb,state.ToJsonString());
             await write.ExecuteNonQueryAsync(ct);
         }
         return new JsonObject { ["status"]="accepted" };
+    }
+
+    private static async Task<JsonObject?> ReadSupersededPermissionsRequestAsync(NpgsqlConnection db, NpgsqlTransaction tx,
+        Guid agent, JsonObject state, JsonNode? current, JsonObject report, string revision, CancellationToken ct)
+    {
+        if (current?["command"] is not JsonObject command
+            || command["action"]?.ToString() is not ("check" or "restore")
+            || state["may_own_audit"]?.GetValue<bool>() != true
+            || !JsonRead.TryString(state["permissions_restore_scope"], out var scope)
+            || state["permissions_restore_origin"] is not JsonObject origin
+            || !long.TryParse(origin["policy_revision"]?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var originalRevision)
+            || !long.TryParse(command["policy_revision"]?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var currentRevision)
+            || !long.TryParse(revision, NumberStyles.None, CultureInfo.InvariantCulture, out var receivedRevision)
+            || receivedRevision < originalRevision || receivedRevision >= currentRevision)
+            return null;
+
+        // Only the original apply and checks issued under it can precede this restore.
+        var allowedScopes = new JsonArray(scope);
+        bool originalApply = receivedRevision == originalRevision;
+        string action = originalApply ? "apply" : "check";
+        if (!JsonNode.DeepEquals(command["collection_scope_ids"], allowedScopes)
+            || !JsonRead.TryString(report["command_id"], out var id) || report["action"]?.ToString() != action
+            || originalApply && origin["command_id"]?.ToString() != id)
+            throw new AgentControlException("file_audit_result_invalid");
+
+        await using var read = new NpgsqlCommand("select sli_plugin_file_audit.audit_request(@agent,@command)::text", db, tx);
+        read.Parameters.AddWithValue("agent", agent);
+        read.Parameters.AddWithValue("command", id);
+        var value = await read.ExecuteScalarAsync(ct) as string;
+        var retained = value is null ? null : JsonNode.Parse(value) as JsonObject;
+        if (retained?["command"]?["action"]?.ToString() != action
+            || retained["command"]?["policy_revision"]?.ToString() != revision
+            || !JsonNode.DeepEquals(retained["command"]?["collection_scope_ids"], allowedScopes)
+            || !JsonNode.DeepEquals(retained["config"]?["roots"], current["config"]?["roots"])
+            || (retained["config"]?["source_kind"]?.ToString() ?? "server") != "server")
+            throw new AgentControlException("file_audit_result_invalid");
+        return retained;
     }
 
     private static bool MergeReceipts(JsonObject state, JsonObject command, JsonObject[] receipts, string observedAt, bool check)

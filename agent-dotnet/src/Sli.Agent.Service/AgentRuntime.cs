@@ -14,6 +14,7 @@ public sealed record CycleStatus(string? ErrorCode, bool CollectionActive, int C
 {
     public string? ErrorDetail { get; init; }
     public IReadOnlyDictionary<string, SnapshotFailure>? SnapshotFailures { get; init; }
+    public FileAuditCatalogDiagnostic? FileAuditCatalog { get; init; }
 }
 
 /// <summary>Revisioned check-in fails closed. Drain acknowledges paused only after durable delivery.</summary>
@@ -21,7 +22,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     Func<AgentIdentity?, AgentHttpClient>? transportFactory = null, IEventLogSource? eventSource = null, IWindowsAudit? audit = null,
     IDirectorySnapshotReader? snapshotReader = null, IFileAuditEventSource? fileEventSource = null, IFileAuditApi? fileAuditApi = null,
     Action<string,string>? filePathCheck = null, Func<string,bool>? fileAccountCheck = null,
-    INpsEventSource? npsEventSource = null, IRadiusTailSource? radiusSource = null, Func<JsonObject>? protectionReader = null) : IDisposable
+    INpsEventSource? npsEventSource = null, IRadiusTailSource? radiusSource = null, Func<JsonObject>? protectionReader = null,
+    Func<CancellationToken, LocalSmbCatalog>? localShareReader = null) : IDisposable
 {
     private readonly AgentOptions _options = options.Value;
     private readonly IDurableFiles _files = CreateFiles();
@@ -36,6 +38,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private IWindowsAudit? _audit = audit;
     private SnapshotCapture? _snapshots;
     private FileAuditManager? _fileAudit;
+    private readonly FileAuditCatalogWorker? _fileAuditCatalog = localShareReader is not null ? new(localShareReader, clock)
+        : OperatingSystem.IsWindows() ? new(NativeFileAuditApi.ListLocalShares, clock) : null;
     private DateTimeOffset? _lastFileCapture;
     private string? _lastFilePolicy;
     private readonly Dictionary<string, (DateTimeOffset At, string Policy)> _lastNpsCapture = new();
@@ -101,9 +105,12 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 transportError = exception as TransportException;
                 error = transportError is not null || IssuedCertificate.IsValidationError(exception.Code) ? exception.Code : "agent_renewal_pending";
             }
-            var assignment = await _http!.GetAsync("/api/v1/agent/identity", cancellationToken).ConfigureAwait(false);
+            var assignment = await _http!.GetIdentityAsync(_fileAuditCatalog is not null, cancellationToken).ConfigureAwait(false);
             if (assignment["agent_removal"] is not null) throw new AgentException("agent_removal_requires_admin");
             var policy = AgentPolicy.Parse(assignment, _identity.AgentId, _catalog);
+            bool fileAuditReadDiagnostics = assignment[FileAuditReadError.Capability] is JsonValue fileAuditFeature
+                && fileAuditFeature.TryGetValue<bool>(out var supported) && supported;
+            _fileAuditCatalog?.Tick(assignment["file_audit_catalog_request"], _http!, fileAuditReadDiagnostics, cancellationToken);
             var sourceHostId = policy.Handoff?.SourceHostId ?? store.ReadHostId();
             CapturedPosition? Position(string module) => _queue.Captured(module) ?? policy.Handoff?.Position(module);
             IntervalSeconds = policy.Control.IntervalSeconds;
@@ -121,7 +128,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (api is null) throw new AgentException("file_audit_native_unavailable");
                 _fileAudit = new FileAuditManager(fileDirectory,_files,api);
             }
-            var fileResult = _fileAudit?.Reconcile(policy,_audit,clock.GetUtcNow());
+            var fileResult = _fileAudit?.Reconcile(policy,_audit,clock.GetUtcNow(),fileAuditReadDiagnostics);
             var auditReport = fileResult?.Audit ?? (_fileAudit is null ? _audit?.Reconcile(policy, clock.GetUtcNow()) : null);
             var rights = ProbeRights(policy, source, store.ReadHostId());
             if (state != "drain")
@@ -157,7 +164,16 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             if (policy.AdDc is null && auditReport is not null) await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
             if (fileResult?.Report is { } fileReport)
             {
-                await _http.PostAsync("/api/v1/agent/file-audit-report",fileReport,cancellationToken).ConfigureAwait(false);
+                var outgoing = fileReport;
+                if (!fileAuditReadDiagnostics && fileReport["scopes"] is JsonArray scopes
+                    && scopes.OfType<JsonObject>().Any(scope => scope.ContainsKey("read_error")))
+                {
+                    // Keep the durable receipt intact while talking to a server without the optional field.
+                    outgoing = (JsonObject)fileReport.DeepClone();
+                    foreach (var scope in outgoing["scopes"]!.AsArray().OfType<JsonObject>())
+                        scope.Remove("read_error");
+                }
+                await _http.PostAsync("/api/v1/agent/file-audit-report",outgoing,cancellationToken).ConfigureAwait(false);
                 _fileAudit!.Acknowledge(fileReport);
             }
             if (assignment["agent_update"] is JsonObject offer)
@@ -388,6 +404,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         AgentHttpClient next;
         try { next = NewHttp(identity); }
         catch { identity.Dispose(); throw; }
+        _fileAuditCatalog?.Cancel();
         _http?.Dispose();
         _identity?.Dispose();
         _identity = identity;
@@ -399,6 +416,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         var pending = _queue?.Pending().Count ?? 0;
         var observed = Iso8601.Format(clock.GetUtcNow());
         var snapshotFailures = _snapshots?.Failures.ToDictionary();
+        var catalogDiagnostic = _fileAuditCatalog?.Diagnostic;
         foreach (var name in new[] { "last-cycle.json", "status.json" })
         {
             try
@@ -406,6 +424,12 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var status = new JsonObject
                 { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending };
                 if (name == "status.json" && detail is not null) status["error_detail"] = detail;
+                if (catalogDiagnostic is { } catalog)
+                    status["file_audit_catalog"] = new JsonObject
+                    {
+                        ["enumeration_error"] = catalog.EnumerationError, ["native_status"] = catalog.NativeStatus,
+                        ["report_error"] = catalog.ReportError, ["http_status"] = catalog.HttpStatus
+                    };
                 if (name == "status.json" && snapshotFailures is { Count: > 0 })
                     status["snapshot_errors"] = new JsonObject(snapshotFailures.Select(item => KeyValuePair.Create(item.Key,
                         (JsonNode?)new JsonObject { ["error_code"] = item.Value.Code, ["error_detail"] = item.Value.Detail })));
@@ -415,8 +439,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             { error ??= "agent_cycle_status_write_failed"; failed = true; }
         }
         if (error is not null || failed) ContinueImmediately = false;
-        return new(error, active, captured, pending, failed) { ErrorDetail = detail, SnapshotFailures = snapshotFailures };
+        return new(error, active, captured, pending, failed)
+        { ErrorDetail = detail, SnapshotFailures = snapshotFailures, FileAuditCatalog = catalogDiagnostic };
     }
 
-    public void Dispose() { _snapshots?.Dispose(); _http?.Dispose(); _identity?.Dispose(); _queue?.Dispose(); }
+    public void Dispose() { _snapshots?.Dispose(); _fileAuditCatalog?.Dispose(); _http?.Dispose(); _identity?.Dispose(); _queue?.Dispose(); }
 }
