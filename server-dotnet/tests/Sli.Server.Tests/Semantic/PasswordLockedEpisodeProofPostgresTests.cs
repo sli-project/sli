@@ -237,7 +237,7 @@ public sealed class PasswordLockedEpisodeProofPostgresTests
         Assert.Contains(message, error.MessageText);
     }
 
-    private static async Task Freeze(NpgsqlConnection owner, PasswordRule rule, string key, CancellationToken ct)
+    internal static async Task Freeze(NpgsqlConnection owner, PasswordRule rule, string key, CancellationToken ct)
     {
         // Owner-only fixture for a complete historical frozen barrier.
         await using var tx = await owner.BeginTransactionAsync(ct);

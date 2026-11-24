@@ -607,6 +607,8 @@
     "config/postgres_migrations/409_password_checkpoint_continuity.sql": "4c6ed947260220b861e12ba5b4f260f88de128908ce11d740026f95e275eda5a",
     "config/postgres_migrations/410_password_origin_prefix.rollback.sql": "c9addc5a19f6a40783b9f58bbc8409bc355bdee225df498c37cbae0b870ed304",
     "config/postgres_migrations/410_password_origin_prefix.sql": "717e60c2166b56d15508d2e6edc2dfa909e70d39ef2b1e8f6d57e019aef3c947",
+    "config/postgres_migrations/411_password_successor_coverage.rollback.sql": "3664fe480c198d45ac7d860349987cd376e27f5ef9f2b61dc911aaacd7170450",
+    "config/postgres_migrations/411_password_successor_coverage.sql": "313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
