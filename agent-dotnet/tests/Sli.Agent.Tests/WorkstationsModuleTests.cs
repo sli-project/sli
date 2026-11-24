@@ -13,6 +13,54 @@ public sealed class WorkstationsModuleTests
         public SourceBatch Read(string channel, ChannelProgress progress, int limit) => new(rows.Take(limit).ToList());
     }
 
+    private sealed class RecordingSource : IEventLogSource
+    {
+        public List<string> Channels { get; } = [];
+
+        public SourceBatch Read(string channel, ChannelProgress progress, int limit)
+        {
+            Channels.Add(channel);
+            return new SourceBatch([]);
+        }
+    }
+
+    [Fact]
+    public void CollectionSkipsChannelsExcludedByTheWorkstationPolicy()
+    {
+        var policy = WorkstationPolicy.Parse(new JsonObject
+        {
+            ["allow_event_ids"] = new JsonArray(1102, 4624, 4625, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045),
+            ["families"] = new JsonObject { ["processes"] = false, ["usb"] = false },
+        });
+        var source = new RecordingSource();
+        var module = new WorkstationsModule(Helpers.HostId, policy, source);
+        CapturedPosition? position = null;
+        for (var i = 0; i < 4; i++)
+        {
+            var sample = module.Collect(position, Helpers.Now).Sample!;
+            position = new CapturedPosition(sample.Generation, sample.CursorAfter);
+        }
+
+        Assert.Equal(["Security", "System", "Microsoft-Windows-Windows Defender/Operational", "Security"], source.Channels);
+    }
+
+    [Fact]
+    public void ProtectionSnapshotSurvivesWhenItsEventsAreFilteredOut()
+    {
+        var policy = WorkstationPolicy.Parse(new JsonObject
+        {
+            ["allow_event_ids"] = new JsonArray(4624),
+            ["families"] = new JsonObject { ["processes"] = false, ["usb"] = false },
+        });
+        var source = new RecordingSource();
+        var module = new WorkstationsModule(Helpers.HostId, policy, source);
+        var security = module.Collect(null, Helpers.Now).Sample!;
+        var protection = module.Collect(new CapturedPosition(security.Generation, security.CursorAfter), Helpers.Now).Sample!;
+
+        Assert.Equal(["Security", "Microsoft-Windows-Windows Defender/Operational"], source.Channels);
+        Assert.NotNull(protection.Payload["context"]?["workstations"]?["protection_state"]);
+    }
+
     private static EventRow Native(int id, long recordId, string channel, string provider, params (string, string)[] fields)
     {
         System.Xml.Linq.XNamespace ns = EventXml.Namespace;

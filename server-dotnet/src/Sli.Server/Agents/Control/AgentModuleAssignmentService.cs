@@ -41,6 +41,10 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         if (body.TryGetProperty("expected_revision",out var e) && (e.ValueKind!=JsonValueKind.Number || !e.TryGetInt64(out expected)))
             throw new AgentControlException("agent_policy_revision_conflict",409);
         long revision=AgentModuleAssignmentRules.NextRevision(current,expected);
+        var oldModules=agent["assigned_modules"]!.AsArray(); var modules=new JsonArray();
+        foreach (var item in oldModules)
+            if (!(item is JsonValue value && value.TryGetValue<string>(out var text) && text==module)
+                && !(item is JsonObject obj && obj["module_id"] is JsonValue key && key.TryGetValue<string>(out var name) && name==module)) modules.Add(item?.DeepClone());
         JsonObject config;
         string? plugin=module switch { "sli.file-audit"=>"sli.file-audit", NpsPolicy.Nps or NpsPolicy.Accounting=>"sli.remote-access", "sli.windows.ad-dc" or "sli.windows.ad-dc-history"=>"sli.ad", _=>null };
         using (var guard=plugin is null ? null : AgentAssignmentPluginAdmission.Enter(plugin,Environment.GetEnvironmentVariable("SLI_PLUGIN_RUNTIME_DIR"),Environment.GetEnvironmentVariable("SLI_PLUGIN_LOCK_DIR")))
@@ -49,7 +53,8 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
             var input=ReadConfig(settings,revision);
             config=module switch {
                 SnapshotPolicy.Ad or SnapshotPolicy.Gpo => SnapshotIngressPolicy.Parse(module,input).Config,
-                "sli.workstations" => AgentModuleAssignmentRules.NormalizeWorkstation(input),
+                "sli.workstations" => AgentModuleAssignmentRules.NormalizeWorkstation(input,
+                    useCollectionBaseline: flag.GetBoolean() && oldModules.Count == modules.Count),
                 "sli.windows.ad-dc" or "sli.windows.ad-dc-history" => AgentModuleAssignmentRules.NormalizeAd(input,module=="sli.windows.ad-dc-history"),
                 "sli.file-audit" => AgentFileAuditPolicy.Parse(input).Value,
                 NpsPolicy.Nps or NpsPolicy.Accounting => AgentModuleAssignmentRules.NormalizeNps(module,input).Value,
@@ -65,10 +70,6 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
                 throw new AgentControlException("agent_source_not_bound",409);
         }
         if (snapshot) await AgentSnapshotAssignment.ValidateAsync(db,tx,id,module,config,flag.GetBoolean(),ct);
-        var oldModules=agent["assigned_modules"]!.AsArray(); var modules=new JsonArray();
-        foreach (var item in oldModules)
-            if (!(item is JsonValue value && value.TryGetValue<string>(out var text) && text==module)
-                && !(item is JsonObject obj && obj["module_id"] is JsonValue key && key.TryGetValue<string>(out var name) && name==module)) modules.Add(item?.DeepClone());
         modules.Add(new JsonObject { ["module_id"]=module,["enabled"]=flag.GetBoolean(),["config"]=config.DeepClone() });
         if (modules.Count>64) throw new AgentControlException("agent_module_limit");
         var check=CheckIn(agent,modules,revision);
