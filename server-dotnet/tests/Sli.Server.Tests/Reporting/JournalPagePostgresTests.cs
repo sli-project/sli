@@ -53,8 +53,10 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
                 select n,statement_timestamp()-interval '90 minutes'+n*interval '1 second',
                     case when n <= 4966 then 4625 when n=4967 then 4728 when n=4968 then 1102 else 4624 end,
                     1,'EXAMPLE\synthetic-'||(n%2),null,'192.0.2.10','dc01.example.test',
-                    '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing","LogonType":"3"}',
-                    '{"Status":"0xc000006d"}','{}'
+                    '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing"}',
+                    '{"Status":"0xc000006d"}',
+                    case when n=4966 then '{"LogonType":"9"}'::jsonb
+                         when n=5000 then '{"LogonType":null}'::jsonb else '{}'::jsonb end
                 from generate_series(1,5000) n;
                 """, ct);
 
@@ -86,6 +88,10 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         Assert.Equal(1L, first["journal_counts"]!["groups"]!.GetValue<long>());
         Assert.Equal(1L, first["journal_counts"]!["audit"]!.GetValue<long>());
         Assert.Equal(25, first["items"]!.AsArray().Count);
+        Assert.All(first["items"]!.AsArray().Take(2), row => {
+            Assert.True(row!.AsObject().ContainsKey("logon_type"));
+            Assert.Null(row["logon_type"]);
+        });
 
         var second = await Read(options, cursor: first["next_cursor"]!.GetValue<string>());
         Assert.Equal(10, second["items"]!.AsArray().Count);
@@ -93,6 +99,7 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         Assert.Equal(4966L, group["event_count"]!.GetValue<long>());
         Assert.Null(group["actor"]);
         Assert.Equal("192.0.2.10", group["ip_address"]!.GetValue<string>());
+        Assert.Equal("9", group["logon_type"]!.GetValue<string>());
         Assert.NotEqual(group["first_seen_utc"]!.ToString(), group["last_seen_utc"]!.ToString());
 
         var repeats = await Read(options with { Expand = group["id"]!.GetValue<long>() });
