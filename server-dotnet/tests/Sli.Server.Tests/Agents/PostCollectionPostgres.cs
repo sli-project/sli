@@ -55,6 +55,44 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
         await File.AppendAllTextAsync(Path.Combine(root, "data", "postgresql.conf"), $"\nmax_connections={maxConnections}\nsuperuser_reserved_connections=3\n", ct);
         using var listener = new TcpListener(IPAddress.Parse(host), fixedPort ?? 0); listener.Start(); int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
         dsn = new NpgsqlConnectionStringBuilder { Host = host, Port = port, Database = "postgres", Username = login, Pooling = false, Timeout = 3, CommandTimeout = 15, SslMode = SslMode.Disable }.ConnectionString;
+        await StartPostmasterAsync(port, ct);
+        // The postmaster can accept sockets before a backend has completed
+        // startup on a busy runner. Bound fixture setup separately from app I/O.
+        var setup = new NpgsqlConnectionStringBuilder(dsn) { Timeout = 10 };
+        if (database is not ("postgres" or "sli")) throw new ArgumentException(nameof(database));
+        if (templateData is not null) {
+            // Database copying and checkpoints depend on the runner's disk.
+            // Keep the application command timeout on the test connections.
+            var settings = new NpgsqlConnectionStringBuilder(setup.ConnectionString) { Database = "template1", CommandTimeout = 0 };
+            await using var maintenance = new NpgsqlConnection(settings.ConnectionString);
+            await maintenance.OpenAsync(ct);
+            await Sql(maintenance, $"create database {database} template {TemplateDatabase}", ct);
+            await Sql(maintenance, $"drop database {TemplateDatabase}", ct);
+            if (database == "sli") await Sql(maintenance, "create database postgres", ct);
+        } else if (database == "sli") {
+            await using var initial = new NpgsqlConnection(setup.ConnectionString); await initial.OpenAsync(ct);
+            await Sql(initial, "create database sli", ct);
+        }
+        setup.Database = database;
+        dsn = new NpgsqlConnectionStringBuilder(dsn) { Database = database }.ConnectionString;
+        await using var db = new NpgsqlConnection(setup.ConnectionString); await db.OpenAsync(ct);
+        string own = templateData is null
+            ? "create table sli_p04_test_owner(id uuid primary key); insert into sli_p04_test_owner values(@id)"
+            : "update sli_p04_test_owner set id=@id";
+        await using var seed = new NpgsqlCommand(own, db);
+        seed.Parameters.AddWithValue("id", identity); await seed.ExecuteNonQueryAsync(ct);
+        if (!canonicalSchema) await SchemaAsync(db, ct);
+    }
+
+    internal async Task RestartExistingAsync(CancellationToken ct)
+    {
+        int port = new NpgsqlConnectionStringBuilder(dsn).Port;
+        await StopAsync("fast", ct);
+        await StartPostmasterAsync(port, ct);
+    }
+
+    private async Task StartPostmasterAsync(int port, CancellationToken ct)
+    {
         if (OperatingSystem.IsWindows()) {
             // pg_ctl cannot create a second restricted token inside the managed Windows sandbox.
             // Start our own child with the existing restricted token; no elevation or server bypass flags.
@@ -84,32 +122,6 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
             await ProcessAsync("pg_ctl", ct, "-D", Path.Combine(root, "data"), "-l", Path.Combine(root, "postgres.log"), "-o", $"-h {host} -p {port} -k . -c timezone=UTC -c logging_collector=on -c log_directory=log -c log_filename=p04.log", "-t", "10", "-w", "start");
             started = true;
         }
-        // The postmaster can accept sockets before a backend has completed
-        // startup on a busy runner. Bound fixture setup separately from app I/O.
-        var setup = new NpgsqlConnectionStringBuilder(dsn) { Timeout = 10 };
-        if (database is not ("postgres" or "sli")) throw new ArgumentException(nameof(database));
-        if (templateData is not null) {
-            // Database copying and checkpoints depend on the runner's disk.
-            // Keep the application command timeout on the test connections.
-            var settings = new NpgsqlConnectionStringBuilder(setup.ConnectionString) { Database = "template1", CommandTimeout = 0 };
-            await using var maintenance = new NpgsqlConnection(settings.ConnectionString);
-            await maintenance.OpenAsync(ct);
-            await Sql(maintenance, $"create database {database} template {TemplateDatabase}", ct);
-            await Sql(maintenance, $"drop database {TemplateDatabase}", ct);
-            if (database == "sli") await Sql(maintenance, "create database postgres", ct);
-        } else if (database == "sli") {
-            await using var initial = new NpgsqlConnection(setup.ConnectionString); await initial.OpenAsync(ct);
-            await Sql(initial, "create database sli", ct);
-        }
-        setup.Database = database;
-        dsn = new NpgsqlConnectionStringBuilder(dsn) { Database = database }.ConnectionString;
-        await using var db = new NpgsqlConnection(setup.ConnectionString); await db.OpenAsync(ct);
-        string own = templateData is null
-            ? "create table sli_p04_test_owner(id uuid primary key); insert into sli_p04_test_owner values(@id)"
-            : "update sli_p04_test_owner set id=@id";
-        await using var seed = new NpgsqlCommand(own, db);
-        seed.Parameters.AddWithValue("id", identity); await seed.ExecuteNonQueryAsync(ct);
-        if (!canonicalSchema) await SchemaAsync(db, ct);
     }
 
     private static void CopyTemplateData(string source, string destination, CancellationToken ct)
