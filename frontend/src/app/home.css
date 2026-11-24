@@ -5,6 +5,7 @@
   align-items: start;
 }
 
+.sli-ds-home-load-error { overflow-wrap: anywhere; }
 .sli-ds-home [data-home-block="problems"] { grid-area: problems; }
 .sli-ds-home [data-home-block="controllers"] { grid-area: controllers; }
 .sli-ds-home [data-home-block="changes"] { grid-area: changes; }
