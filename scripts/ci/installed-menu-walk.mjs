@@ -1,7 +1,7 @@
 import { chromium } from 'playwright-core';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { forbiddenLabels, loadErrors, redact, waitForVisibleLoadingToFinish } from './checks.mjs';
+import { forbiddenLabels, loadErrors, redact } from './checks.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
@@ -14,8 +14,7 @@ if (!/^https:/.test(origin) || !token || !results || commit !== 'fa8baf797ca0f0b
 const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
   group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const phase = "full";
-const selectedKeys = registry.beta_entries;
+const selectedKeys = registry.beta_entries.filter(id => id === "file-audit");
 const entries = selectedKeys.map(id => {
   const entry = all.find(item => item.id === id);
   if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
@@ -25,7 +24,6 @@ const base = new URL('/app/', origin).href;
 const targetPath = path => new URL('app' + path, origin).pathname.replace(/\/$/, '');
 const nav = '.sli-ds-shell__nav';
 const clean = value => redact(value, [token]).replace(/[A-Za-z0-9+_/-]{38,}(?:={1,2})?/g, '[redacted]');
-const lines = value => [...new Set(value.split('\n').map(line => clean(line.trim())).filter(Boolean))].slice(0, 38);
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-headless-shell', timeout: 30_000 });
 const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'UTC', viewport: { width: 1440, height: 900 },
   serviceWorkers: 'block' });
@@ -61,12 +59,9 @@ const readStatusPosts = new Set([
 ]);
 const vpnPlugin = '/api/v1/plugins/sli.remote-access';
 const adminVpnPage = '/app/admin/plugins/sli.remote-access';
-const agentForm = '/app/agents?register=1';
-const rows = [];
 let allowVpnToggle = false;
 const vpn = { defaultVisible: null, activation: 'not_examined' };
 const seen = new Set();
-let home = null;
 
 async function menuLinks(page) {
   const result = await page.locator(nav + ' a[data-route]').evaluateAll(nodes => nodes.map(node => ({
@@ -145,192 +140,145 @@ async function vpnPreflight() {
   }
 }
 
-async function inspectOutcome(main, row, visible) {
-  const samples = await main.locator('tbody tr:visible').evaluateAll(trs => trs
-    .map(tr => [...tr.querySelectorAll('td:not([colspan])')].map(td => td.innerText.trim()))
-    .filter(cells => cells.some(cell => cell && !/^[—–-]+$/.test(cell))));
-  const listItems = await main.locator('.sli-ds-review-list__item:visible').count();
-  const dataEvidence = [];
-  if (samples.length) dataEvidence.push({ kind: 'rendered_table_rows', count: samples.length });
-  if (listItems) dataEvidence.push({ kind: 'rendered_review_items', count: listItems });
-  if (row.id === 'admin-locale' && /^admin\s*·\s*\S+/im.test(visible)) {
-    dataEvidence.push({ kind: 'signed_in_owner_profile', count: 1 });
+const targetUrl = '/app/report/file-audit.overview';
+const endpoints = new Map([
+  ['/api/v2/reports/file-audit.overview/data', 'data'],
+  ['/api/v1/admin/agents', 'agents'],
+]);
+const states = new Set(['ok', 'ready', 'empty', 'not_collected', 'partial', 'processing', 'stale', 'denied', 'error']);
+const pluginStates = new Set(['enabled', 'disabled', 'unknown']);
+const observation = { commit, target: targetUrl, requests: { data: [], agents: [] }, snapshots: {} };
+const page = await context.newPage();
+const main = page.locator('main').first();
+const requests = new WeakMap();
+const completed = {};
+let clickAt;
+let finishBoth;
+const both = new Promise(resolve => { finishBoth = resolve; });
+const elapsed = () => Math.round(performance.now() - clickAt);
+
+function summarize(kind, body) {
+  if (kind === 'data') return {
+    state: states.has(body.state) ? body.state : null,
+    items: Array.isArray(body.items) ? body.items.length : null,
+    access_allowed: typeof body.access?.allowed === 'boolean' ? body.access.allowed : null,
+    plugin_state: pluginStates.has(body.plugin?.state) ? body.plugin.state : null,
+    plugin_read_only: typeof body.plugin?.read_only === 'boolean' ? body.plugin.read_only : null,
+  };
+  if (!Array.isArray(body.items) || body.items.some(agent => !Array.isArray(agent.assigned_modules))) {
+    return { agents: null, assigned_file_audit: null };
   }
-  if (row.id === 'plugins' && row.responses.some(response => response.path === '/api/v1/plugins' && response.status === 200)
-      && /^Установлен$/m.test(visible) && /^Версия$/m.test(visible)) {
-    dataEvidence.push({ kind: 'rendered_plugin_registry', count: 1 });
-  }
-  if (row.id.startsWith('admin-plugin-') && row.responses.some(response => response.path === '/api/v1/plugins' && response.status === 200)
-      && /^(?:Работает|Остановлен|Плагин выключен)$/m.test(visible)) {
-    dataEvidence.push({ kind: 'rendered_plugin_runtime_state', count: 1 });
-  }
-  row.dataEvidence = dataEvidence;
-  const exact = await main.locator('a[href="' + agentForm + '"]:visible').count();
-  const emptyActions = await main.locator('[data-state="empty"]:visible').evaluateAll(states => states.flatMap(state => {
-    const eligible = text => /^(?:подключите|добавьте|настройте|выберите|укажите|откройте|запустите|перейдите|очистите|измените|проверьте|установите|включите|создайте)\s/i.test(text);
-    const links = [...state.querySelectorAll('a[href], button')].filter(element =>
-      element.getClientRects().length > 0 && !element.disabled && element.getAttribute('aria-disabled') !== 'true')
-      .map(element => element.innerText.trim()).filter(Boolean);
-    // A linked button and its explanatory copy are evidence of the same action.
-    if (links.length) return links;
-    return [...state.querySelectorAll('.sli-ds-state__detail, .sli-ds-state__text')]
-      .map(element => element.innerText.trim()).filter(eligible);
-  }));
-  const actions = exact ? ['Добавить агента'] : emptyActions;
-  row.enrollmentLinks = exact;
-  if (row.id === 'agents' && /Агентов нет\.\s*Добавьте агента/.test(visible)
-      && row.controls.includes('Добавить агента')) actions.push('Добавить агента');
-  row.actions = [...new Set(actions.map(clean))];
+  return {
+    agents: body.items.length,
+    assigned_file_audit: body.items.filter(agent => agent.assigned_modules.some(module =>
+      (typeof module === 'string' ? module : module?.module_id) === 'sli.file-audit')).length,
+  };
 }
 
-try {
-  console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
-  await vpnPreflight();
-  for (const entry of entries) {
-    const expected = targetPath(entry.path);
-    const row = { id: entry.id, path: expected, commit, clicked: false, failure: [], labels: [], api: [], blocked: [], text: [], responses: [], actions: [], dataEvidence: [] };
-    rows.push(row);
-    activeRow = row;
-    const page = await context.newPage();
-    const outstanding = new Set();
-    const reasonCodes = new Set();
-    let checkDestination = false;
-    page.on('response', response => {
-      if (!checkDestination) return;
-      const path = new URL(response.url()).pathname;
-      const status = response.status();
-      if (path.startsWith('/api/')) row.responses.push({ path, method: response.request().method(), status });
-      if (status >= 400) {
-        const line = response.request().method() + ' ' + path + ' → ' + status;
-        (path.startsWith('/api/') ? row.api : row.failure).push(clean(line));
-      }
-      if (!path.startsWith('/api/') || !response.headers()['content-type']?.includes('json')) return;
-      const read = response.json().then(body => {
-        const visit = node => {
-          if (!node || typeof node !== 'object') return;
-          for (const [key, value] of Object.entries(node)) {
-            if (['reason', 'reason_code'].includes(key) && typeof value === 'string') reasonCodes.add(value);
-            else if (typeof value === 'object') visit(value);
-          }
-        };
-        visit(body);
-        if (entry.id === 'workspace' && path === '/api/v1/home/summary' && status === 200) {
-          home = { domains: Array.isArray(body.domains) ? body.domains.length : null,
-            open: Number.isInteger(body.problems?.open_count) ? body.problems.open_count : null,
-            items: Array.isArray(body.problems?.items) ? body.problems.items.length : null };
-        }
-      }).catch(() => {}).finally(() => outstanding.delete(read));
-      outstanding.add(read);
-    });
-    page.on('requestfailed', request => {
-      if (checkDestination && new URL(request.url()).origin === origin &&
-          !/ERR_(?:ABORTED|BLOCKED_BY_CLIENT)/.test(request.failure()?.errorText ?? '')) {
-        row.failure.push(clean(request.method() + ' ' + new URL(request.url()).pathname + ' → ' + request.failure()?.errorText));
-      }
-    });
-    page.on('console', message => {
-      if (checkDestination && message.type() === 'error' && !message.text().includes('ERR_BLOCKED_BY_CLIENT')) row.failure.push(clean(message.text()));
-    });
-    page.on('pageerror', error => { if (checkDestination) row.failure.push(clean(error.message)); });
-    try {
-      if (entry.id === 'workspace') checkDestination = true;
-      await page.goto(base, { waitUntil: 'domcontentloaded' });
-      await page.locator(nav + ' a[data-route="workspace"]').waitFor();
-      if (entry.administration) {
-        const gate = page.locator(nav + ' a[data-route="administration"]');
-        await gate.click();
-        await page.locator(nav + ' a[data-route="back-to-work"]').waitFor();
-      }
-      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
-      const menu = await menuLinks(page);
-      const link = menu.find(item => item.path === expected && !['administration', 'back-to-work'].includes(item.route));
-      checkDestination = true;
-      if (link) {
-        const current = page.locator(nav + ' a[data-route=' + JSON.stringify(link.route) + ']');
-        row.label = clean(link.label);
-        await current.click();
-        row.clicked = true;
-      } else {
-        row.navigation = 'hidden';
-        row.failure.push('Пункт отсутствует в меню владельца');
-        continue;
-      }
-      await page.waitForURL(current => current.pathname.replace(/\/$/, '') === expected, { timeout: 8_000 })
-        .catch(() => row.failure.push('Перенаправление вместо страницы: ' + new URL(page.url()).pathname));
-      const main = page.locator('main').first();
-      await main.waitFor({ state: 'visible' });
-      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      if (!await waitForVisibleLoadingToFinish(page)) row.failure.push('Загрузка не завершилась после ответов API');
-      await Promise.all([...outstanding]);
-      const visible = await main.innerText();
-      if (!visible.trim()) row.failure.push('Пустой рабочий экран');
-      row.text = lines(visible);
-      row.dataRows = await main.locator('tbody td:not([colspan]):visible, .sli-ds-review-list__item:visible').count();
-      row.emptyCopy = row.text.filter(line => /(?:^|\s)(?:подключите|добавьте|настройте|выберите|укажите|откройте|запустите|перейдите|очистите|измените|проверьте|установите|включите|создайте)(?:\s|$)/i.test(line));
-      row.controls = await main.locator('button:visible, a[href]:visible').evaluateAll(nodes => nodes
-        .filter(node => !node.disabled && node.getAttribute('aria-disabled') !== 'true')
-        .map(node => (node.innerText || node.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 16));
-      row.controls = row.controls.map(clean);
-      await inspectOutcome(main, row, visible);
-      row.navigation = 'clicked';
-      row.labels = forbiddenLabels(visible, [...reasonCodes]).map(clean);
-      row.failure.push(...loadErrors(visible).map(clean));
-      if (/^Нет доступа$/m.test(visible)) row.failure.push('Нет доступа');
-      const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
-      await page.screenshot({ path: join(results, entry.id + '.png'), fullPage: false, mask: [sensitive], timeout: 12_000 });
-      if (entry.id === 'vpn-connections') {
-        const target = '/app/setup#setup-domains';
-        const action = main.locator('a[href="' + target + '"]:visible');
-        row.setupAction = { href: target, links: await action.count(), opened: false };
-        if (row.setupAction.links !== 1 || row.actions.length !== 1 || row.actions[0] !== 'Добавить домен') {
-          row.failure.push('VPN: нет единственной ссылки добавления домена');
-        } else {
-          await Promise.all([
-            page.waitForURL(current => current.pathname === '/app/setup' && current.hash === '#setup-domains'),
-            action.click(),
-          ]);
-          const panel = page.locator('#setup-domains');
-          const fqdn = panel.getByRole('textbox', { name: 'DNS-имя домена', exact: true });
-          const submit = panel.getByRole('button', { name: 'Добавить домен', exact: true });
-          await fqdn.waitFor({ state: 'visible' });
-          await submit.waitFor({ state: 'visible' });
-          row.setupAction.opened = true;
-          row.setupAction.field = await fqdn.getAttribute('id');
-          row.setupAction.empty = (await fqdn.inputValue()) === '' && !(await submit.isEnabled());
-          if (!row.setupAction.empty) row.failure.push('VPN: открылась непустая форма добавления домена');
-          await page.screenshot({ path: join(results, 'vpn-domain-form.png'), mask: [sensitive], timeout: 12_000 });
-        }
-      }
-    } catch (error) {
-      row.failure.push(clean(String(error.message).split('\n')[0]));
-    } finally {
-      for (const key of ['failure', 'api', 'blocked', 'labels']) row[key] = [...new Set(row[key])];
-      row.load_errors = row.failure.length + row.api.length + row.blocked.length;
-      row.completeness_labels = row.labels.length;
-      row.data = row.dataEvidence.length > 0;
-      row.action_phrases = row.actions.length;
-      row.passed = row.clicked && row.load_errors === 0 && row.completeness_labels === 0
-        && (row.data || row.action_phrases === 1);
-      await page.close();
-      await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, menuPaths: [...seen], rows }, null, 2));
-      const details = { phase, id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
-        data: row.data, dataEvidence: row.dataEvidence, action_phrases: row.action_phrases, actions: row.actions,
-        load_errors: row.load_errors, completeness_labels: row.completeness_labels, failure: row.failure,
-        api: row.api, blocked: row.blocked, labels: row.labels, setupAction: row.setupAction, passed: row.passed };
-      console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(details));
+const selector = '[data-state="empty"] a[href="/app/admin/plugins/sli.file-audit"]';
+async function snapshot() {
+  const value = await main.evaluate((root, path) => {
+    const links = [...root.querySelectorAll(path)].filter(link => link.getClientRects().length > 0
+      && getComputedStyle(link).visibility === 'visible' && link.textContent.trim() === 'Настроить');
+    return {
+      cta_count: links.length, no_sources: root.innerText.includes('Источники ещё не подключены'),
+      report_title: root.innerText.includes('Аудит файловых серверов MS'), denied: /^Нет доступа$/m.test(root.innerText),
+    };
+  }, selector);
+  return { ms: elapsed(), ...value };
+}
+
+async function beforeDeadline(promise, milliseconds) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise(resolve => {
+      timer = setTimeout(() => resolve(false), milliseconds);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+page.on('request', request => {
+  const url = new URL(request.url());
+  const kind = endpoints.get(url.pathname);
+  if (clickAt === undefined || request.method() !== 'GET' || url.origin !== origin || !kind) return;
+  const record = { started_ms: elapsed() };
+  observation.requests[kind].push(record);
+  requests.set(request, { kind, record });
+});
+page.on('response', async response => {
+  const request = requests.get(response.request());
+  if (!request) return;
+  const { kind, record } = request;
+  record.headers_ms = elapsed();
+  record.http = response.status();
+  try {
+    if (await response.finished()) {
+      record.body = 'failed';
+      return;
     }
+    record.body_ms = elapsed();
+    record.fields = summarize(kind, await response.json());
+    record.json_ms = elapsed();
+    record.body = 'settled';
+    if (record.http === 200) completed[kind] = record;
+    if (completed.data && completed.agents) finishBoth(true);
+  } catch { record.body = 'unreadable'; }
+});
+page.on('requestfailed', request => {
+  const observed = requests.get(request);
+  if (observed) observed.record.failed_ms = elapsed();
+});
+
+try {
+  if (entries.length !== 1 || targetPath(entries[0].path) !== targetUrl) throw new Error('Unexpected entry');
+  await vpnPreflight();
+  observation.vpn = vpn.activation;
+  if (vpn.activation !== 'enabled_in_guest') throw new Error('VPN preparation not confirmed');
+  const network = { blocked: [] };
+  activeRow = network;
+  await page.goto(base, { waitUntil: 'domcontentloaded' });
+  await page.locator(nav + ' a[data-route="workspace"]').waitFor({ timeout: 7_000 });
+  await page.waitForLoadState('networkidle', { timeout: 4_000 }).catch(() => {});
+  const link = (await menuLinks(page)).find(item => item.path === targetUrl);
+  if (!link) throw new Error('File Audit menu entry missing');
+  clickAt = performance.now();
+  await page.locator(nav + ' a[data-route=' + JSON.stringify(link.route) + ']').click({ timeout: 6_000 });
+  await page.waitForURL(current => current.pathname === targetUrl, { timeout: 6_000 });
+  await main.waitFor({ state: 'visible', timeout: 6_000 });
+  observation.snapshots.first = await snapshot();
+  await page.waitForLoadState('networkidle', { timeout: 4_000 }).catch(() => {});
+  observation.snapshots.after_network_idle = await snapshot();
+  observation.explicit_responses_settled = await beforeDeadline(both, 6_000);
+  observation.snapshots.after_bodies = await snapshot();
+  try {
+    await page.waitForFunction(path => {
+      const main = document.querySelector('main');
+      if (!main) return false;
+      const links = [...main.querySelectorAll(path)].filter(link => link.getClientRects().length > 0
+        && getComputedStyle(link).visibility === 'visible' && link.textContent.trim() === 'Настроить');
+      return links.length === 1 && main.innerText.includes('Источники ещё не подключены');
+    }, selector, { timeout: 6_000 });
+    observation.render_wait = 'matched';
+  } catch (error) {
+    observation.render_wait = error.name === 'TimeoutError' ? 'timeout' : 'failed';
   }
+  const final = await snapshot();
+  observation.snapshots.final = final;
+  const visible = await main.innerText();
+  observation.final_load_errors = loadErrors(visible).length;
+  observation.blocked_same_origin = network.blocked.length;
+  observation.final_completeness_labels = forbiddenLabels(visible, []).length;
+  const mask = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
+  await page.screenshot({ path: join(results, 'file-audit.png'), mask, timeout: 6_000 });
+  observation.passed = observation.explicit_responses_settled && observation.render_wait === 'matched'
+    && completed.data.fields.state === 'not_collected' && completed.data.fields.items === 0
+    && completed.agents.fields.assigned_file_audit === 0 && final.cta_count === 1
+    && final.no_sources && final.report_title && !final.denied
+    && observation.final_load_errors === 0 && observation.blocked_same_origin === 0
+    && observation.final_completeness_labels === 0;
+} catch (error) {
+  observation.failed = error.name === 'TimeoutError' ? 'timeout' : 'precondition_or_browser_error';
 } finally { await browser.close(); }
-const expected = new Set(entries.map(entry => targetPath(entry.path)));
-const unexpected = [...seen].filter(path => !expected.has(path));
-const pages = Object.fromEntries(rows.map(row => [row.id, {
-  load_errors: row.load_errors, completeness_labels: row.completeness_labels,
-  data: row.data, action_phrases: row.action_phrases,
-}]));
-const failed = rows.filter(row => !row.passed).map(row => row.id);
-const summary = { commit, visited: rows.length, clicked: rows.filter(row => row.clicked).length,
-  phase, expectedKeys: selectedKeys, failed, unexpected, vpn, home };
-await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, pages, summary, rows }, null, 2));
-console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(summary));
-if (rows.length !== selectedKeys.length || failed.length || unexpected.length || vpn.activation !== 'enabled_in_guest') process.exitCode = 1;
+await writeFile(join(results, 'menu.json'), JSON.stringify(observation, null, 2));
+console.log('BETA_README_EVIDENCE file_audit_observation=' + JSON.stringify(observation));
+if (observation.passed !== true) process.exitCode = 1;

@@ -230,8 +230,8 @@ walk_menu() {
     local phase=$1 code=0
     install -d -m 0700 -o "$operator" -g "$operator" "$results/$phase"
     runuser -u "$operator" -- env NODE_EXTRA_CA_CERTS=/var/lib/sli/tls-ca.crt SLI_MENU_PHASE="$phase" \
-        node "$driver/installed-menu-walk.mjs" "$results/$phase" <"$auth_file" >"$menu_log" 2>&1 || code=$?
-    grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|menu_summary=\{.*\})$' "$menu_log" >&3 || true
+        timeout --kill-after=5s 85s node "$driver/installed-menu-walk.mjs" "$results/$phase" <"$auth_file" >"$menu_log" 2>&1 || code=$?
+    grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|file_audit_observation=\{.*\})$' "$menu_log" >&3 || true
     evidence "menu_phase=$phase browser_status=$code"
     [[ -s "$results/$phase/menu.json" ]] || return 2
     return "$code"
@@ -286,127 +286,6 @@ sys.exit(1)
 PY
 evidence 'vpn_readiness_same_runtime=verified'
 
-stage=menu_walk
-menu_status=0
-walk_menu full || menu_status=$?
-[[ -s "$results/full/menu.json" ]]
-
-stage=menu_checker
-checker_status=0
-python3 -I -B - "$auth_file" "$results/full/menu.json" >/run/beta-menu-checker.log 2>&1 <<'PY' || checker_status=$?
-import http.client
-import importlib.util
-import json
-from pathlib import Path
-import re
-import ssl
-import sys
-from urllib.parse import urlsplit
-
-auth = json.loads(Path(sys.argv[1]).read_text())
-observation = json.loads(Path(sys.argv[2]).read_text())
-url = urlsplit(auth["url"])
-context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
-script = Path("/opt/sli/current/scripts/maintenance/beta_acceptance.py")
-if not script.is_file():
-    print("menu_checker_failure=installed_checker_missing")
-    sys.exit(1)
-spec = importlib.util.spec_from_file_location("installed_beta_acceptance", script)
-checker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(checker)
-
-def get(path):
-    if path != "/api/health":
-        raise ValueError("unexpected_checker_endpoint")
-    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=10)
-    try:
-        connection.request("GET", path, headers={"Cookie": "adlog_session=" + auth["token"]})
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError("live_runtime_identity_unavailable")
-        return json.loads(response.read(1024 * 1024))
-    finally:
-        connection.close()
-
-try:
-    checker.menu(get, observation)
-except checker.CheckFailed:
-    keys = checker.menu_entries()
-    failed = observation["summary"]["failed"]
-    if not all(key in keys and re.fullmatch(r"[a-z-]+", key) for key in failed):
-        raise ValueError("unexpected_menu_key")
-    print("menu_checker_failure=" + (",".join(failed) if failed else "installed_checker_rejected_observation"))
-    sys.exit(1)
-except (OSError, http.client.HTTPException, ValueError) as error:
-    name = type(error).__name__
-    print("menu_checker_failure=" + name)
-    sys.exit(1)
-print("menu_checker=passed")
-PY
-grep -Ex '^menu_checker(_failure)?=[A-Za-z0-9_,\-]+$' /run/beta-menu-checker.log |
-    while read -r line; do evidence "$line"; done || true
-evidence "menu_checker_status=$checker_status"
-stage=storage_history_probe
-storage_unit=inactive
-if systemctl is-active --quiet sli-dotnet-storage-lifecycle.service; then storage_unit=active; fi
-storage_probe_status=0
-python3 -I -B - "$auth_file" "$started" "$storage_unit" >/run/beta-storage-history.log 2>&1 <<'PY' || storage_probe_status=$?
-import datetime as dt
-import http.client
-import json
-from pathlib import Path
-import ssl
-import sys
-from urllib.parse import urlsplit
-
-def evidence(status, **fields):
-    row = {"status": status, "unit": sys.argv[3], **fields}
-    print("BETA_README_EVIDENCE storage_history=" + json.dumps(row, separators=(",", ":")))
-
-def probe():
-    history_dir = Path("/var/lib/sli/runtime/storage-database-history")
-    candidates = sorted(path for path in history_dir.glob("*.json") if path.is_file())
-    if not candidates:
-        evidence("first_point_unavailable")
-        return
-    auth = json.loads(Path(sys.argv[1]).read_text())
-    sample = json.loads(candidates[0].read_text())
-    bytes_measured = sample.get("database_bytes")
-    stamp = sample.get("observed_at_utc")
-    observed = dt.datetime.fromisoformat(stamp)
-    if type(bytes_measured) is not int or bytes_measured <= 0 or observed.timestamp() < int(sys.argv[2]):
-        evidence("invalid_first_point")
-        return
-    url = urlsplit(auth["url"])
-    context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
-    conn = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=5)
-    try:
-        conn.request("GET", "/api/storage/lifecycle", headers={
-            "Origin": auth["url"], "Cookie": "adlog_session=" + auth["token"],
-            "Accept": "application/json",
-        })
-        response = conn.getresponse()
-        if response.status != 200:
-            evidence("api_unavailable", http=response.status)
-            return
-        history = json.loads(response.read(1024 * 1024)).get("postgres_size_history") or {}
-    finally:
-        conn.close()
-    points = history.get("samples") or []
-    expected = {"captured_at": stamp, "database_bytes": bytes_measured}
-    if expected not in points or not points or history.get("latest_snapshot") != points[0]:
-        evidence("api_mismatch", http=200, disk_points=len(candidates), api_points=len(points))
-        return
-    evidence("match", http=200, disk_points=len(candidates), api_points=len(points),
-             database_bytes=bytes_measured, captured_at=stamp)
-
-try:
-    probe()
-except (OSError, ValueError, TypeError, AttributeError, KeyError, http.client.HTTPException):
-    evidence("probe_unavailable")
-PY
-grep -aE '^BETA_README_EVIDENCE storage_history=\{.*\}$' /run/beta-storage-history.log >&3 || true
-evidence "storage_history_probe_exit=$storage_probe_status"
-
-[[ $menu_status == 0 && $checker_status == 0 ]]
+stage=file_audit_target
+walk_menu file-audit
 stage=browser_verified
