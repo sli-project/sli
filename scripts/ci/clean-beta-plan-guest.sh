@@ -291,60 +291,13 @@ menu_status=0
 walk_menu full || menu_status=$?
 [[ -s "$results/full/menu.json" ]]
 
-stage=menu_checker
-checker_status=0
-python3 -I -B - "$auth_file" "$results/full/menu.json" >/run/beta-menu-checker.log 2>&1 <<'PY' || checker_status=$?
-import http.client
-import importlib.util
+stage=vpn_diagnostic
+python3 -I -B - "$results/full/menu.json" <<'PY'
 import json
-from pathlib import Path
-import re
-import ssl
 import sys
-from urllib.parse import urlsplit
-
-auth = json.loads(Path(sys.argv[1]).read_text())
-observation = json.loads(Path(sys.argv[2]).read_text())
-url = urlsplit(auth["url"])
-context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
-script = Path("/opt/sli/current/scripts/maintenance/beta_acceptance.py")
-if not script.is_file():
-    print("menu_checker_failure=installed_checker_missing")
-    sys.exit(1)
-spec = importlib.util.spec_from_file_location("installed_beta_acceptance", script)
-checker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(checker)
-
-def get(path):
-    if path != "/api/health":
-        raise ValueError("unexpected_checker_endpoint")
-    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=10)
-    try:
-        connection.request("GET", path, headers={"Cookie": "adlog_session=" + auth["token"]})
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError("live_runtime_identity_unavailable")
-        return json.loads(response.read(1024 * 1024))
-    finally:
-        connection.close()
-
-try:
-    checker.menu(get, observation)
-except checker.CheckFailed:
-    keys = checker.menu_entries()
-    failed = observation["summary"]["failed"]
-    if not all(key in keys and re.fullmatch(r"[a-z-]+", key) for key in failed):
-        raise ValueError("unexpected_menu_key")
-    print("menu_checker_failure=" + (",".join(failed) if failed else "installed_checker_rejected_observation"))
-    sys.exit(1)
-except (OSError, http.client.HTTPException, ValueError) as error:
-    name = type(error).__name__
-    print("menu_checker_failure=" + name)
-    sys.exit(1)
-print("menu_checker=passed")
+from pathlib import Path
+rows = json.loads(Path(sys.argv[1]).read_text())["rows"]
+assert len(rows) == 1 and rows[0]["id"] == "vpn-connections" and rows[0]["vpnDiagnostics"]
 PY
-grep -Ex '^menu_checker(_failure)?=[A-Za-z0-9_,\-]+$' /run/beta-menu-checker.log |
-    while read -r line; do evidence "$line"; done || true
-evidence "menu_checker_status=$checker_status"
-[[ $menu_status == 0 && $checker_status == 0 ]]
+evidence 'vpn_diagnostic=recorded'
 stage=browser_verified

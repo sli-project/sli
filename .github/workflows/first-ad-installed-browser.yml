@@ -1,4 +1,4 @@
-name: Installed beta menu and native Accounting acceptance
+name: Inspect the installed VPN setup decision
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -63,7 +63,7 @@ jobs:
           run-id: '45542573750'
           name: sli-debian-beta-kit-812533c4b118a43510de75bdac257ade326aae96
           path: ${{ runner.temp }}/beta-candidate
-      - name: Walk the installed beta menu and open the VPN domain form
+      - name: Inspect only the installed VPN decision
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
@@ -73,7 +73,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-beta-menu-native-accounting-evidence
+          name: installed-vpn-setup-decision-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
