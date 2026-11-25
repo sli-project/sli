@@ -15,12 +15,42 @@ fingerprint=$(gpg --homedir "$key_home" --batch --no-options --with-colons --lis
 [[ "$fingerprint" =~ ^[A-F0-9]{40}$ ]]
 gpg --homedir "$key_home" --batch --no-options --export-secret-keys "$fingerprint" >"$work/apt-signing.key"
 [[ -s "$work/apt-signing.key" ]]
+# The qualified kit replaces the original build input with a rewrapped
+# runtime. Adapt only the test index pin to the delivery proven by the kit.
+(
+    cd "$tools"
+    python3 -B - "$new_kit" "$work/apt-delivery-pins.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+from deploy.linux.build_beta_kit import N03_RUNTIME_DELIVERY, input_pins, sha256, verify_runtime_delivery
+
+kit, output = map(Path, sys.argv[1:])
+pins = json.loads(Path("deploy/linux/native_pins.json").read_text())
+manifest = json.loads((kit / "manifest.json").read_text())
+assert pins["runtime_delivery"] == manifest["runtime_delivery"] == N03_RUNTIME_DELIVERY
+verify_runtime_delivery(manifest)
+_, prior_name, prior_packages = input_pins(pins)
+delivery = manifest["runtime_delivery"]
+pins["runtime_build"]["version"] = delivery["version"]
+pins["runtime_artifact"].update(version=delivery["version"], sha256=delivery["sha256"])
+_, actual_name, actual_packages = input_pins(pins)
+assert actual_name != prior_name
+assert sha256(kit / actual_name) == actual_packages[actual_name] == delivery["sha256"]
+assert {k:v for k,v in prior_packages.items() if k != prior_name} == {
+    k:v for k,v in actual_packages.items() if k != actual_name
+}
+output.write_text(json.dumps(pins, sort_keys=True) + "\n")
+print("P1_EVIDENCE apt_delivery_pin=" + json.dumps(dict(package=actual_name, sha256=delivery["sha256"])))
+PY
+)
 printf 'P1_EVIDENCE apt_index_command=%s\n' \
-    'python3 -B -m deploy.linux.build_apt_repo --debs VERIFIED_411_KIT --pins CANDIDATE_NATIVE_PINS --output LOCAL_REPO --signing-key TEMPORARY_TEST_KEY'
+    'python3 -B -m deploy.linux.build_apt_repo --debs VERIFIED_411_KIT --pins VERIFIED_DELIVERY_PINS --output LOCAL_REPO --signing-key TEMPORARY_TEST_KEY'
 (
     cd "$tools"
     python3 -B -m deploy.linux.build_apt_repo --debs "$new_kit" \
-        --pins deploy/linux/native_pins.json --output "$repo_root/repo" \
+        --pins "$work/apt-delivery-pins.json" --output "$repo_root/repo" \
         --signing-key "$work/apt-signing.key"
 ) >"$work/index.log" 2>&1 || {
     grep -E '^APT repository build failed:' "$work/index.log" |
