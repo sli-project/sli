@@ -12,7 +12,7 @@ read -r commit tar_hash <"$input/candidate.pin"
 grep -qxF 'ID=debian' /etc/os-release
 grep -qxE 'VERSION_ID="?13"?' /etc/os-release
 printf '%s  %s\n' "$tar_hash" "$input/candidate.tar.gz" | sha256sum --check --strict
-release="beta1-${commit:0:12]"
+release="beta1-${commit:0:12}"
 candidate=$(mktemp -d /var/tmp/sigma-kit.XXXXXXXX)
 tar -xzf "$input/candidate.tar.gz" -C "$candidate"
 printf 'P1_EVIDENCE sigma_stage=stock_install git=%s tar_sha256=%s\n' "$commit" "$tar_hash"
@@ -52,10 +52,10 @@ printf 'P1_EVIDENCE sigma_readiness=ready\n'
 
 sql=(runuser -u postgres -- /usr/lib/postgresql/18/bin/psql -XqAtw \
     -h /var/run/postgresql -p 5432 -d sli -v ON_ERROR_STOP=1)
-ledger=$("${sql[@]]" -c "select string_agg(version || '/' || name, ',' order by version) from public.schema_migrations where version>=412")
+ledger=$("${sql[@]}" -c "select string_agg(version || '/' || name, ',' order by version) from public.schema_migrations where version>=412")
 [[ "$ledger" == '412/sigma_history_test,413/workstation_journal_admission' ]]
 printf 'P1_EVIDENCE sigma_ledger=%s\n' "$ledger"
-[[ $("${sql[@]]" -c 'select count(*) from public.sli_agents') == 0 ]]
+[[ $("${sql[@]}" -c 'select count(*) from public.sli_agents') == 0 ]]
 
 fixture=$(mktemp -d /var/tmp/sigma-proof.XXXXXXXX)
 chown postgres:postgres "$fixture"
@@ -90,7 +90,7 @@ tests = list(ET.parse(sys.argv[1]).getroot().iter("test"))
 assert len(tests) == 1 and tests[0].get("result") == "Pass"
 assert tests[0].get("method") == "SeedRetainedEventFixture"
 PY
-readback=$("${sql[@]]" -c "
+readback=$("${sql[@]}" -c "
   select count(*) filter (where event_id between 900010 and 900032)::text || '/' ||
     count(*) filter (where event_id=900040)::text
   from public.event_hot where source_sha256 is not null")
@@ -98,7 +98,7 @@ readback=$("${sql[@]]" -c "
 printf 'P1_EVIDENCE sigma_retained allowed=9 denied=1\n'
 
 snapshot() {
-    "${sql[@]]" -c "select jsonb_build_object('matches',(select count(*) from public.semantic_detection_matches),'findings',(select count(*) from public.findings))"
+    "${sql[@]}" -c "select jsonb_build_object('matches',(select count(*) from public.semantic_detection_matches),'findings',(select count(*) from public.findings))"
 }
 before=$(snapshot)
 binary="/opt/sli/dotnet/$release/Sli.Server"
