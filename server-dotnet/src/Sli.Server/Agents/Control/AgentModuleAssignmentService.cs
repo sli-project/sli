@@ -53,10 +53,23 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         try
         {
             var input=ReadConfig(settings,revision);
+            bool useWorkstationBaseline = flag.GetBoolean() && oldModules.Count == modules.Count;
+            if (workstation && flag.GetBoolean() && input.Count == 1)
+            {
+                var previous = oldModules.OfType<JsonObject>()
+                    .FirstOrDefault(item => item["module_id"]?.ToString() == module)?["config"] as JsonObject;
+                if (previous is not null && previous.Any(entry => entry.Key != "policy_revision"))
+                {
+                    var nextRevision = input["policy_revision"]!.DeepClone();
+                    input = previous.DeepClone().AsObject();
+                    input["policy_revision"] = nextRevision;
+                }
+                else useWorkstationBaseline = true;
+            }
             config=module switch {
                 SnapshotPolicy.Ad or SnapshotPolicy.Gpo => SnapshotIngressPolicy.Parse(module,input).Config,
                 "sli.workstations" => AgentModuleAssignmentRules.NormalizeWorkstation(input,
-                    useCollectionBaseline: flag.GetBoolean() && oldModules.Count == modules.Count),
+                    useCollectionBaseline: useWorkstationBaseline),
                 "sli.windows.ad-dc" or "sli.windows.ad-dc-history" => AgentModuleAssignmentRules.NormalizeAd(input,module=="sli.windows.ad-dc-history"),
                 "sli.file-audit" => AgentFileAuditPolicy.Parse(input).Value,
                 NpsPolicy.Nps or NpsPolicy.Accounting => AgentModuleAssignmentRules.NormalizeNps(module,input).Value,
@@ -65,7 +78,9 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         }
         catch (Exception ex) when (ex is AgentException or ProtocolException or InvalidOperationException or ArgumentException or FormatException or OverflowException)
         { throw new AgentControlException("invalid_agent_module_config"); }
-        if(workstation && flag.GetBoolean()) WorkstationJournalAdmission.RestrictConfig(config);
+        if (workstation && flag.GetBoolean() && !WorkstationJournalAdmission.SupportsConfig(config))
+            throw new AgentControlException("workstation_journal_profile_unsupported")
+                { AllowedEventIds = WorkstationJournalAdmission.EventIds };
         if (module == NpsPolicy.Accounting && flag.GetBoolean())
         {
             var policy=NpsPolicy.Parse(module,config);

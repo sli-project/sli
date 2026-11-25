@@ -418,6 +418,22 @@ it("preserves module changes and their revision from the card", async () => {
     module_id: "sli.workstations", enabled: false, config: { policy_revision: "2" }, expected_revision: 2 }));
 });
 
+it("shows the allowed workstation event IDs and keeps the saved module setting visible after refusal", async () => {
+  state.list.mockResolvedValue({ items: [{
+    ...agent, assigned_modules: [{ module_id: "sli.workstations", enabled: false,
+      config: { policy_revision: "2", allow_event_ids: [4624, 4688], families: { processes: true } } }]
+  }] });
+  state.action.mockRejectedValueOnce(new ApiResponseError(400, "workstation_journal_profile_unsupported", undefined,
+    { allowed_event_ids: [1102, 4624, 4625, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045] }));
+  mount(); const drawer = await openCard();
+  const checkbox = within(drawer).getByRole("checkbox", { name: t("agents.moduleWorkstations") });
+  fireEvent.click(checkbox);
+  const alert = await within(drawer).findByRole("alert");
+  expect(alert.textContent).toContain(t("agents.invalidPolicy"));
+  expect(alert.textContent).toContain(t("agents.allowIds") + ": 1102, 4624, 4625");
+  expect(checkbox).toHaveProperty("checked", false);
+});
+
 it("keeps manual registration secrets out of caches and clears them when closing the panel", async () => {
   const secret = "synthetic-one-time-token";
   state.token.mockResolvedValue({ id: "synthetic", host_id: agent.host_id, token: secret, expires_at: "2030-01-01T00:00:00Z" });

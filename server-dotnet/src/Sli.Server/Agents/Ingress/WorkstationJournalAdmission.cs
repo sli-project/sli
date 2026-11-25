@@ -43,14 +43,9 @@ internal static class WorkstationJournalAdmission
             : null;
     }
 
-    internal static void RestrictConfig(JsonObject config)
-    {
-        var requested = config["allow_event_ids"] as JsonArray;
-        config["allow_event_ids"] = new JsonArray(EventIds.Where(id => requested is null || requested.Any(value => value!.GetValue<int>() == id))
-            .Select(id => (JsonNode?)JsonValue.Create(id)).ToArray());
-        config["families"]!["processes"] = false;
-        config["families"]!["usb"] = false;
-    }
+    internal static bool SupportsConfig(JsonObject config) =>
+        config["allow_event_ids"] is JsonArray requested
+        && requested.All(value => value is JsonValue item && item.TryGetValue<int>(out int id) && EventIds.Contains(id));
 
     internal static bool MatchesRows(WorkstationJournalScope scope, JsonArray rows) => rows.All(row =>
         row?["event_id"] is JsonValue kind && kind.TryGetValue<int>(out int id) && EventIds.Contains(id)

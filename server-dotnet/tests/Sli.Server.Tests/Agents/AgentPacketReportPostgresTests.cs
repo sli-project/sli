@@ -557,18 +557,83 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
 
         await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await app.OpenAsync(ct);
-        async Task<JsonElement> SetRole(bool enabled, int revision)
+        async Task<HttpResponseMessage> AssignRole(Guid target, bool enabled, int revision, JsonObject? settings)
         {
-            await using var tx = await app.BeginTransactionAsync(ct);
-            var request = JsonSerializer.SerializeToElement(new { agent_id=agent, module_id=WorkstationsModule.ModuleId, enabled, config=new {}, expected_revision=revision });
-            var result = await new AgentModuleAssignmentService(new AgentControlAudit()).AssignAsync(app, tx, request, "session:1", ct);
-            await tx.CommitAsync(ct);
-            return result;
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/agents/modules");
+            request.Headers.Add("Origin", "https://localhost");
+            request.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                agent_id = target, module_id = WorkstationsModule.ModuleId, enabled,
+                config = settings ?? new JsonObject(), expected_revision = revision
+            }), Encoding.UTF8, "application/json");
+            return await analyst.SendAsync(request, ct);
         }
+
+        async Task<JsonObject> SetRole(bool enabled, int revision, JsonObject? settings = null)
+        {
+            using var response = await AssignRole(agent, enabled, revision, settings);
+            return await ReadAsync(response, ct);
+        }
+
         var enabled = await SetRole(true, 1);
-        Assert.Equal(2, enabled.GetProperty("policy_revision").GetInt32());
-        var config = JsonNode.Parse(enabled.GetProperty("assigned_modules")[0].GetProperty("config").GetRawText())!.AsObject();
+        Assert.Equal(2L, enabled["policy_revision"]!.GetValue<long>());
+        var initial = enabled["assigned_modules"]![0]!["config"]!.AsObject();
+        Assert.True(JsonNode.DeepEquals(expected.Value["allow_event_ids"], initial["allow_event_ids"]));
+        Assert.False(initial["families"]!["processes"]!.GetValue<bool>());
+        Assert.False(initial["families"]!["usb"]!.GetValue<bool>());
+
+        var explicitConfig = new JsonObject
+        {
+            ["allow_event_ids"] = new JsonArray(7045, 4624, 5001),
+            ["families"] = new JsonObject { ["processes"] = false, ["usb"] = false }
+        };
+        var updated = await SetRole(true, 2, explicitConfig);
+        Assert.Equal(3L, updated["policy_revision"]!.GetValue<long>());
+        var config = updated["assigned_modules"]![0]!["config"]!.AsObject();
+        Assert.True(JsonNode.DeepEquals(explicitConfig["allow_event_ids"], config["allow_event_ids"]));
         var policy = WorkstationPolicy.Parse(config);
+
+        var legacyAgent = Guid.NewGuid();
+        var legacyPolicy = new JsonObject
+        {
+            ["policy_revision"] = "1", ["allow_event_ids"] = new JsonArray(4624, 4688),
+            ["families"] = new JsonObject { ["processes"] = true, ["usb"] = false }
+        };
+        // Seed the assignment shape accepted before the journal profile was enforced.
+        await using (var seedLegacy = new NpgsqlCommand("""
+            insert into servers(domain_id,hostname,fqdn,role)
+                select id,'ws-policy-legacy.example.test','ws-policy-legacy.example.test','workstation'
+                from domains where fqdn='example.test';
+            insert into sli_agents(id,host_id,key_fingerprint,registration_host_name,policy_revision,assigned_modules)
+                values(@agent,@host,@key,'ws-policy-legacy.example.test',1,
+                       jsonb_build_array(jsonb_build_object('module_id','sli.workstations','enabled',true,'config',@config::jsonb)));
+            """, owner))
+        {
+            seedLegacy.Parameters.AddWithValue("agent", legacyAgent);
+            seedLegacy.Parameters.AddWithValue("host", Guid.NewGuid());
+            seedLegacy.Parameters.AddWithValue("key", Convert.ToHexStringLower(SHA256.HashData(legacyAgent.ToByteArray())));
+            seedLegacy.Parameters.AddWithValue("config", legacyPolicy.ToJsonString());
+            await seedLegacy.ExecuteNonQueryAsync(ct);
+        }
+        foreach (var requested in new JsonObject?[] { legacyPolicy, null })
+        {
+            using var response = await AssignRole(legacyAgent, true, 1, requested);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var error = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct))!;
+            Assert.Equal("workstation_journal_profile_unsupported", error["error"]?.GetValue<string>());
+            Assert.Equal(WorkstationJournalAdmission.EventIds, error["allowed_event_ids"]!.AsArray().Select(id => id!.GetValue<int>()));
+        }
+        await using (var unmodified = new NpgsqlCommand("""
+            select policy_revision=1 and assigned_modules->0->'config'=@config::jsonb
+                and not exists(select 1 from workstation_journal_grants412 where agent_id=@agent)
+                and not exists(select 1 from sli_agent_audit where target=@agent::text and action='module_assign')
+            from sli_agents where id=@agent
+            """, owner))
+        {
+            unmodified.Parameters.AddWithValue("agent", legacyAgent);
+            unmodified.Parameters.AddWithValue("config", legacyPolicy.ToJsonString());
+            Assert.Equal(true, await unmodified.ExecuteScalarAsync(ct));
+        }
         await using (var tx = await app.BeginTransactionAsync(ct))
         {
             JsonObject agentState;
@@ -640,7 +705,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         var pending = Packets.Make(signer, agent.ToString("D"), 4, final, now);
         var pendingReceipt = await PostAsync(station, pending, ct);
         Assert.True(pendingReceipt["status"]?.ToString()=="committed", pendingReceipt.ToJsonString());
-        await SetRole(false, 2);
+        await SetRole(false, 3, policy.Value);
         Assert.True(Receipt.IsModuleDisabled(logon.Envelope, await PostAsync(station, logon, ct)));
         await RunWorker();
 
@@ -660,7 +725,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         verify.Parameters.AddWithValue("pending", Guid.Parse(pending.Envelope.PacketId));
         await using var counts = await verify.ExecuteReaderAsync(ct);
         Assert.True(await counts.ReadAsync(ct));
-        Assert.Equal(new long[] { 3, 2, 1, 4, 1, 0, 2 }, Enumerable.Range(0, counts.FieldCount).Select(counts.GetInt64));
+        Assert.Equal(new long[] { 3, 2, 1, 4, 1, 0, 3 }, Enumerable.Range(0, counts.FieldCount).Select(counts.GetInt64));
     }
 
     private sealed class WorkstationFixtureLog(string expected, int record, string xml) : IEventLogSource
