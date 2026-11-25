@@ -69,7 +69,14 @@ if find /etc/apt/sources.list.d -maxdepth 1 \( -name '*.list' -o -name '*.source
     fail 'unexpected APT source in the disposable guest'
 fi
 install -D -m 0644 "$repo_root/repo/sli-archive-keyring.gpg" /etc/apt/keyrings/sli-archive.gpg
-gpgv --keyring /etc/apt/keyrings/sli-archive.gpg "$repo_root/repo/dists/trixie/InRelease" >"$work/verify.log" 2>&1
+source_fingerprint=$(gpg --homedir "$key_home" --batch --no-options --with-colons \
+    --show-keys /etc/apt/keyrings/sli-archive.gpg | awk -F: '$1=="fpr" && !seen++ {print $10}')
+[[ "$source_fingerprint" == "$fingerprint" ]]
+gpg --homedir "$key_home" --batch --no-options --verify "$repo_root/repo/dists/trixie/InRelease" \
+    >"$work/verify.log" 2>&1 || {
+    grep -E '^gpg:' "$work/verify.log" | sed 's/^/P1_EVIDENCE apt_signature_diagnostic=/' || true
+    exit 1
+}
 cat >/etc/apt/sources.list.d/sli.sources <<REPO
 Types: deb
 URIs: file://$repo_root/repo
