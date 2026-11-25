@@ -20,21 +20,31 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     public string AuditOwnership => _audit.Ownership();
     public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids) => _audit.Query(guids);
     public string Preflight(JsonArray roots) => Preflight(roots, false);
-    public string Preflight(JsonArray roots, bool describeReadErrors)
+    public string Preflight(JsonArray roots, bool describeReadErrors) => Preflight(roots, describeReadErrors, readOnlyCheck: false);
+    public string CheckPreflight(JsonArray roots, bool describeReadErrors) => Preflight(roots, describeReadErrors, readOnlyCheck: true);
+
+    private string Preflight(JsonArray roots, bool describeReadErrors, bool readOnlyCheck)
     {
         if (!_audit.IsSystem) return "system_required";
         var owner=_audit.Ownership(); if (owner is not ("ok" or "managed_by_gpo")) return owner;
         using var privilege=new WindowsAuditApi.SecurityPrivilege();
         using (var reader=new System.Diagnostics.Eventing.Reader.EventLogReader(new System.Diagnostics.Eventing.Reader.EventLogQuery("Security",System.Diagnostics.Eventing.Reader.PathType.LogName,"*")))
         using (reader.ReadEvent(TimeSpan.FromSeconds(1))) { }
-        if (!AuditQueryGlobalSacl("File",out var acl))
+        bool globalSaclRead = AuditQueryGlobalSacl("File", out var acl);
+        uint globalSaclStatus = globalSaclRead ? 0u : unchecked((uint)Marshal.GetLastPInvokeError());
+        string? globalSaclBlock;
+        try
         {
-            if (describeReadErrors)
-                throw new FileAuditNativeReadException("global_sacl_unknown", unchecked((uint)Marshal.GetLastPInvokeError()));
-            return "global_sacl_unknown";
+            int aceCount = globalSaclRead && acl != IntPtr.Zero ? (ushort)Marshal.ReadInt16(acl, 4) : 0;
+            globalSaclBlock = GlobalFileSaclPreflight.BlockReason(globalSaclRead, aceCount, globalSaclStatus, readOnlyCheck);
         }
-        try { if (acl != IntPtr.Zero && (ushort)Marshal.ReadInt16(acl,4) > 0) return "global_sacl_present"; }
-        finally { if (acl != IntPtr.Zero) LocalFree(acl); }
+        finally { if (globalSaclRead && acl != IntPtr.Zero) LocalFree(acl); }
+        if (globalSaclBlock is not null)
+        {
+            if (describeReadErrors && globalSaclBlock == "global_sacl_unknown")
+                throw new FileAuditNativeReadException(globalSaclBlock, globalSaclStatus);
+            return globalSaclBlock;
+        }
         object? locator=null, service=null, rows=null;
         try
         {
@@ -307,4 +317,19 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupEnum(string? server,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupGetMembers(string? server,string group,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);
     [DllImport("netapi32.dll")] private static extern uint NetApiBufferFree(IntPtr buffer);
+}
+
+internal static class GlobalFileSaclPreflight
+{
+    private const uint ErrorFileNotFound = 2;
+
+    internal static string? BlockReason(bool readSucceeded, int aceCount, uint status, bool readOnlyCheck)
+    {
+        if (readSucceeded)
+            return aceCount > 0 ? "global_sacl_present" : null;
+
+        // On a clean host, an absent global File SACL can yield ERROR_FILE_NOT_FOUND.
+        // An inventory-only check may continue to the remaining policy checks.
+        return readOnlyCheck && status == ErrorFileNotFound ? null : "global_sacl_unknown";
+    }
 }

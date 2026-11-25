@@ -40,6 +40,39 @@ public sealed class FileAuditManagerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false, 0, 2, true, null)]
+    [InlineData(false, 0, 2, false, "global_sacl_unknown")]
+    [InlineData(true, 0, 0, true, null)]
+    [InlineData(true, 0, 0, false, null)]
+    [InlineData(true, 1, 0, true, "global_sacl_present")]
+    [InlineData(true, 1, 0, false, "global_sacl_present")]
+    [InlineData(false, 0, 5, true, "global_sacl_unknown")]
+    [InlineData(false, 0, 87, true, "global_sacl_unknown")]
+    [InlineData(false, 0, 0, true, "global_sacl_unknown")]
+    public void GlobalFileSaclReadKeepsInventoryAndPolicyChangesSeparate(
+        bool readSucceeded, int aceCount, int status, bool readOnlyCheck, string? reason)
+    {
+        Assert.Equal(reason, GlobalFileSaclPreflight.BlockReason(readSucceeded, aceCount, (uint)status, readOnlyCheck));
+    }
+
+    [Theory]
+    [InlineData("check", "global_sacl_present", "global_sacl_present", 1)]
+    [InlineData("check", "managed_by_gpo", "managed_by_gpo", 1)]
+    [InlineData("apply", "global_sacl_unknown", "global_sacl_unknown", 0)]
+    [InlineData("restore", "global_sacl_unknown", "global_sacl_unknown", 0)]
+    public void OnlyChecksUseTheReadOnlyPreflightAndPolicyCanStillBlock(string action, string owner, string reason, int checkCalls)
+    {
+        var api = new FakeFileApi(_dir) { Owner = owner };
+        var manager = new FileAuditManager(_dir, _files, api);
+        var report = manager.Reconcile(Policy(Request(action)), new FakeAudit(), Helpers.Now, readDiagnostics: true).Report!;
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("blocked", scope["state"]!.ToString());
+        Assert.Equal(reason, scope["reason_code"]!.ToString());
+        Assert.Equal(checkCalls, api.CheckPreflightCalls);
+        Assert.Equal(0, api.Writes);
+    }
+
+    [Theory]
     [InlineData("check")]
     [InlineData("apply")]
     [InlineData("restore")]
@@ -218,6 +251,12 @@ public sealed class FileAuditManagerTests : IDisposable
             if (stage == FailedRead) throw new System.ComponentModel.Win32Exception(5, "synthetic private path or ACL");
         }
         public string Preflight(JsonArray roots) => Owner;
+        public int CheckPreflightCalls { get; private set; }
+        public string CheckPreflight(JsonArray roots, bool describeReadErrors)
+        {
+            CheckPreflightCalls++;
+            return Preflight(roots);
+        }
         public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids)
         {
             FailRead("audit_policy");

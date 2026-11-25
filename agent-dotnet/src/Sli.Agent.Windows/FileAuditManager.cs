@@ -20,6 +20,7 @@ public interface IFileAuditApi
     string AuditOwnership => "unknown";
     string Preflight(JsonArray roots);
     string Preflight(JsonArray roots, bool describeReadErrors) => Preflight(roots);
+    string CheckPreflight(JsonArray roots, bool describeReadErrors) => Preflight(roots, describeReadErrors);
     Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids);
     IFileAuditObject Open(string path, string root);
     JsonObject Share(string name, string root);
@@ -113,7 +114,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         FileAuditReadError? readError = null;
         try
         {
-            reason = api.Preflight(selected, describeReads);
+            reason = action == "check" ? api.CheckPreflight(selected, describeReads) : api.Preflight(selected, describeReads);
             if (describeReads && reason is ("unknown" or "global_sacl_unknown")) readError = new("audit_policy");
             writable = action != "check" && policy.Control.ManageWindowsAudit && policy.Control.State == "active" && reason == "ok";
             if (writable)
