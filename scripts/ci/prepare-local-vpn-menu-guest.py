@@ -8,7 +8,7 @@ import secrets
 import subprocess
 import sys
 
-TARGET = "4bc007843aab81272eb56387de1723182bad9c13"
+TARGET = "812533c4b118a43510de75bdac257ade326aae96"
 ROUTE = json.loads(r'''{"schema_version":1,"contract_id":"sli.radius-collection-routes.v1","source_name":"nps.example.test","connect_address":"nps.example.test","source_instance_id":"radius-instance","runtime_enabled":false,"autostart_enabled":false,"event_log_route":{"pack_id":"sli.windows.vpn-radius","channel":"Security","provider_name":"Microsoft-Windows-Security-Auditing","event_ids":[6272,6273],"transport":"windows_event_log_rpc","collection_entrypoint":"scripts/run_dc_log_pilot.py","primary_adapter":"windows-eventlog-pywin32","fallback_adapter":"windows-eventlog-powershell"},"accounting_route":{"transport":"dedicated_read_only_smb_share","share_unc":"\\\\nps.example.test\\Accounting","administrative_shares_forbidden":["c$","admin$","ipc$"],"default_windows_logfiles_path_forbidden":true,"timezone_descriptor":{"source":"static_accepted_evidence","timezone_id":"N. Central Asia Standard Time","utc_offset_minutes":420,"remote_registry_allowed":false,"drift_check_required_before_activation":false,"drift_check_accepted":false,"owner_assumption_active":true,"owner_assumption_recorded_on":"2026-08-02"}},"owner_confirmed_ip":"192.0.2.12"}''')
 SOURCE = "radius-instance"
 SUBSCRIPTION = "vpn-radius-session-observations-nps-v1"

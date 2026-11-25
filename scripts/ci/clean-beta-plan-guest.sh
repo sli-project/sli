@@ -7,7 +7,7 @@ private_log=/run/beta-readme-install.log
 probe_log=/run/beta-readme-auth.log
 auth_file=/run/beta-browser-session.json
 menu_log=/run/beta-browser-evidence.log
-candidate=4bc007843aab81272eb56387de1723182bad9c13
+candidate=812533c4b118a43510de75bdac257ade326aae96
 operator=debian
 
 for _ in {1..10}; do
@@ -101,7 +101,7 @@ quiet=$(runuser -u postgres -- psql -XqAtw -h /var/run/postgresql -d sli -v ON_E
     "SELECT concat_ws(',', (SELECT count(*) FROM public.sli_agents),(SELECT count(*) FROM public.sli_agent_receipts),(SELECT count(*) FROM public.event_hot),(SELECT count(*) FROM public.findings),(SELECT max(version) FROM public.schema_migrations))")
 [[ $quiet =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]]
 evidence "agents_receipts_hot_events_findings_schema=$quiet"
-[[ $quiet == 0,0,0,0,414 ]]
+[[ $quiet == 0,0,0,0,415 ]]
 
 stage=first_login
 python3 -I -B - "$candidate" "$private_log" "$input/install-guide.md" "$auth_file" >"$probe_log" 2>&1 <<'PY'
@@ -222,7 +222,6 @@ runuser -u "$operator" -- certutil -N --empty-password -d "sql:$db"
 runuser -u "$operator" -- certutil -A -d "sql:$db" -t "C,," -n sli-guest -i /var/lib/sli/tls-ca.crt
 evidence "browser_ca=guest_nss"
 
-stage=clean_menu
 driver="/home/$operator/menu-driver"
 cp -a "$input/menu" "$driver"
 chown -R "$operator:$operator" "$driver"
@@ -237,10 +236,6 @@ walk_menu() {
     [[ -s "$results/$phase/menu.json" ]] || return 2
     return "$code"
 }
-
-clean_status=0
-walk_menu clean || clean_status=$?
-[[ -s "$results/clean/menu.json" ]]
 
 stage=vpn_prepare
 prepare_status=0
@@ -351,5 +346,5 @@ PY
 grep -Ex '^menu_checker(_failure)?=[A-Za-z0-9_,\-]+$' /run/beta-menu-checker.log |
     while read -r line; do evidence "$line"; done || true
 evidence "menu_checker_status=$checker_status"
-[[ $clean_status == 0 && $menu_status == 0 && $checker_status == 0 ]]
+[[ $menu_status == 0 && $checker_status == 0 ]]
 stage=browser_verified

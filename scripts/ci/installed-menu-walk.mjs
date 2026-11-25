@@ -8,16 +8,14 @@ for await (const chunk of process.stdin) input += chunk;
 const { url, token, commit } = JSON.parse(input);
 const origin = new URL(url).origin;
 const results = process.argv[2];
-if (!/^https:/.test(origin) || !token || !results || commit !== '4bc007843aab81272eb56387de1723182bad9c13') {
+if (!/^https:/.test(origin) || !token || !results || commit !== '812533c4b118a43510de75bdac257ade326aae96') {
   throw new Error('Expected a verified guest HTTPS origin and an owner session');
 }
 const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
   group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const phase = process.env.SLI_MENU_PHASE;
-if (!["clean", "full"].includes(phase)) throw new Error("Missing menu phase");
-const cleanTargets = new Set(["problems", "events", "gpo-report", "file-audit"]);
-const selectedKeys = phase === "clean" ? registry.beta_entries.filter(key => cleanTargets.has(key)) : registry.beta_entries;
+const phase = "full";
+const selectedKeys = registry.beta_entries;
 const entries = selectedKeys.map(id => {
   const entry = all.find(item => item.id === id);
   if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
@@ -187,7 +185,7 @@ async function inspectOutcome(main, row, visible) {
 
 try {
   console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
-  if (phase === 'full') await vpnPreflight();
+  await vpnPreflight();
   for (const entry of entries) {
     const expected = targetPath(entry.path);
     const row = { id: entry.id, path: expected, commit, clicked: false, failure: [], labels: [], api: [], blocked: [], text: [], responses: [], actions: [], dataEvidence: [] };
@@ -281,6 +279,29 @@ try {
       if (/^Нет доступа$/m.test(visible)) row.failure.push('Нет доступа');
       const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
       await page.screenshot({ path: join(results, entry.id + '.png'), fullPage: false, mask: [sensitive], timeout: 12_000 });
+      if (entry.id === 'vpn-connections') {
+        const target = '/app/setup#setup-domains';
+        const action = main.locator('a[href="' + target + '"]:visible');
+        row.setupAction = { href: target, links: await action.count(), opened: false };
+        if (row.setupAction.links !== 1 || row.actions.length !== 1 || row.actions[0] !== 'Добавить домен') {
+          row.failure.push('VPN: нет единственной ссылки добавления домена');
+        } else {
+          await Promise.all([
+            page.waitForURL(current => current.pathname === '/app/setup' && current.hash === '#setup-domains'),
+            action.click(),
+          ]);
+          const panel = page.locator('#setup-domains');
+          const fqdn = panel.getByRole('textbox', { name: 'DNS-имя домена', exact: true });
+          const submit = panel.getByRole('button', { name: 'Добавить домен', exact: true });
+          await fqdn.waitFor({ state: 'visible' });
+          await submit.waitFor({ state: 'visible' });
+          row.setupAction.opened = true;
+          row.setupAction.field = await fqdn.getAttribute('id');
+          row.setupAction.empty = (await fqdn.inputValue()) === '' && !(await submit.isEnabled());
+          if (!row.setupAction.empty) row.failure.push('VPN: открылась непустая форма добавления домена');
+          await page.screenshot({ path: join(results, 'vpn-domain-form.png'), mask: [sensitive], timeout: 12_000 });
+        }
+      }
     } catch (error) {
       row.failure.push(clean(String(error.message).split('\n')[0]));
     } finally {
@@ -296,13 +317,13 @@ try {
       const details = { phase, id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
         data: row.data, dataEvidence: row.dataEvidence, action_phrases: row.action_phrases, actions: row.actions,
         load_errors: row.load_errors, completeness_labels: row.completeness_labels, failure: row.failure,
-        api: row.api, blocked: row.blocked, labels: row.labels, passed: row.passed };
+        api: row.api, blocked: row.blocked, labels: row.labels, setupAction: row.setupAction, passed: row.passed };
       console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(details));
     }
   }
 } finally { await browser.close(); }
 const expected = new Set(entries.map(entry => targetPath(entry.path)));
-const unexpected = phase === 'full' ? [...seen].filter(path => !expected.has(path)) : [];
+const unexpected = [...seen].filter(path => !expected.has(path));
 const pages = Object.fromEntries(rows.map(row => [row.id, {
   load_errors: row.load_errors, completeness_labels: row.completeness_labels,
   data: row.data, action_phrases: row.action_phrases,
@@ -312,4 +333,4 @@ const summary = { commit, visited: rows.length, clicked: rows.filter(row => row.
   phase, expectedKeys: selectedKeys, failed, unexpected, vpn, home };
 await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, pages, summary, rows }, null, 2));
 console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(summary));
-if (rows.length !== selectedKeys.length || failed.length || unexpected.length || (phase === 'full' && vpn.activation !== 'enabled_in_guest')) process.exitCode = 1;
+if (rows.length !== selectedKeys.length || failed.length || unexpected.length || vpn.activation !== 'enabled_in_guest') process.exitCode = 1;

@@ -38,8 +38,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          KIT_COMMIT: 4bc007843aab81272eb56387de1723182bad9c13
-          BUILD_RUN: '45539628253'
+          KIT_COMMIT: 812533c4b118a43510de75bdac257ade326aae96
+          BUILD_RUN: '45542573750'
         run: |
           set -euo pipefail
           for poll in {1..90}; do
@@ -60,10 +60,10 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           github-token: ${{ github.token }}
-          run-id: '45539628253'
-          name: sli-debian-beta-kit-4bc007843aab81272eb56387de1723182bad9c13
+          run-id: '45542573750'
+          name: sli-debian-beta-kit-812533c4b118a43510de75bdac257ade326aae96
           path: ${{ runner.temp }}/beta-candidate
-      - name: Walk clean screens and the complete menu after native Accounting preparation
+      - name: Walk the installed beta menu and open the VPN domain form
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
