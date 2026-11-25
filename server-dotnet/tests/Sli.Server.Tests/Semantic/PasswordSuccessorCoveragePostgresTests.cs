@@ -15,7 +15,7 @@ public sealed class PasswordSuccessorCoveragePostgresTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct);
+        await fixture.StartAsync(ct, throughVersion: 416);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
         await PostCollectionPostgres.Sql(owner, """
@@ -105,7 +105,7 @@ public sealed class PasswordSuccessorCoveragePostgresTests
             plan.Parameters.AddWithValue("s", scope.Document.ToJsonString());
             rule = new PasswordRule(scope, "spray", Assert.IsType<int>(await plan.ExecuteScalarAsync(ct)));
         }
-        async Task<PasswordProducerOutcome> Run(DateTimeOffset through, bool small = false)
+        async Task<PasswordProducerOutcome> Run(DateTimeOffset through, bool small = false, bool expectFailure = false)
         {
             await Clock(through);
             await using var worker = await runtime.OpenAsync(ct);
@@ -116,13 +116,13 @@ public sealed class PasswordSuccessorCoveragePostgresTests
                 await limit.ExecuteScalarAsync(ct);
             }
             var outcome = await new PasswordProducer().RunAsync(worker, rule, ct);
-            Assert.False(outcome.Failed, outcome.Diagnostic?.ToJsonString());
+            if (!expectFailure) Assert.False(outcome.Failed, outcome.Diagnostic?.ToJsonString());
             return outcome;
         }
-        async Task<(PasswordState State, JsonObject Ledger)> Saved()
+        async Task<(PasswordState State, JsonObject Ledger, long Revision)> Saved()
         {
             await using var command = new NpgsqlCommand("""
-                select c.state_document::text,to_jsonb(b)::text
+                select c.state_document::text,to_jsonb(b)::text,c.state_revision
                 from public.semantic_password_checkpoints c
                 join public.semantic_password_episode_budgets b using(scope_digest,pin)
                 where c.pin=@pin and b.predecessor_episode_key is null
@@ -131,7 +131,7 @@ public sealed class PasswordSuccessorCoveragePostgresTests
             await using var rows = await command.ExecuteReaderAsync(ct);
             Assert.True(await rows.ReadAsync(ct));
             var saved = (PasswordState.Read(JsonNode.Parse(rows.GetString(0))),
-                JsonNode.Parse(rows.GetString(1))!.AsObject());
+                JsonNode.Parse(rows.GetString(1))!.AsObject(), rows.GetInt64(2));
             Assert.False(await rows.ReadAsync(ct));
             return saved;
         }
@@ -151,6 +151,17 @@ public sealed class PasswordSuccessorCoveragePostgresTests
             command.Parameters.AddWithValue("last", lastRecord);
             command.Parameters.AddWithValue("key", key);
             command.Parameters.AddWithValue("pin", rule.Pin);
+            return Assert.IsType<string>(await command.ExecuteScalarAsync(ct));
+        }
+        async Task<string> FinalizerContract(bool definition)
+        {
+            await using var command = new NpgsqlCommand("""
+                select jsonb_build_array(oid,proowner,proacl,prosecdef,provolatile,proconfig,
+                    case when @definition then pg_get_functiondef(oid) end)::text
+                from pg_proc
+                where oid='public.complete_password_producer_batch_v2(jsonb,jsonb,bigint,bigint,text,jsonb)'::regprocedure
+                """, owner);
+            command.Parameters.AddWithValue("definition", definition);
             return Assert.IsType<string>(await command.ExecuteScalarAsync(ct));
         }
 
@@ -178,7 +189,41 @@ public sealed class PasswordSuccessorCoveragePostgresTests
 
         var earlier = start.AddSeconds(925);
         await Admit([earlier], 2);
-        // A direct request still cannot move a frozen tracker backwards.
+        var blocked = await Run(deniedAt, small: true, expectFailure: true);
+        Assert.True(blocked.Failed);
+        Assert.Equal("complete_password_producer_batch_v2", blocked.Diagnostic!["step"]!.GetValue<string>());
+        Assert.Equal("22023", blocked.Diagnostic["sql_state"]!.GetValue<string>());
+        Assert.Equal("tracking_invalid", blocked.Diagnostic["finalizer_check"]!.GetValue<string>());
+        var unchanged = await Saved();
+        Assert.Equal(frozen.Revision, unchanged.Revision);
+        Assert.True(JsonNode.DeepEquals(frozen.State.Document, unchanged.State.Document));
+        Assert.True(JsonNode.DeepEquals(frozen.Ledger, unchanged.Ledger));
+
+        string migration = Path.Combine(PostCollectionPostgres.Repository(),
+            "config/postgres_migrations/417_password_frozen_frontier_progress.sql");
+        string rollback = Path.ChangeExtension(migration, ".rollback.sql");
+        string original = await FinalizerContract(definition: true);
+        string contract = await FinalizerContract(definition: false);
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(contract, await FinalizerContract(definition: false));
+        await using (var registered = new NpgsqlCommand(
+            "select name from public.schema_migrations where version=417", owner))
+            Assert.Equal("password_frozen_frontier_progress", await registered.ExecuteScalarAsync(ct));
+        await fixture.Pg.ApplyFileAsync(rollback, null, ct);
+        Assert.Equal(original, await FinalizerContract(definition: true));
+        await using (var registered = new NpgsqlCommand(
+            "select name from public.schema_migrations where version=417", owner))
+            Assert.Null(await registered.ExecuteScalarAsync(ct));
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(contract, await FinalizerContract(definition: false));
+        var upgraded = await Saved();
+        Assert.Equal(frozen.Revision, upgraded.Revision);
+        Assert.True(JsonNode.DeepEquals(frozen.State.Document, upgraded.State.Document));
+        Assert.True(JsonNode.DeepEquals(frozen.Ledger, upgraded.Ledger));
+        Assert.Equal(evidence, await Evidence(key, lastRecord));
+
+        // The upgraded finalizer preserves the barrier; a direct request still
+        // cannot move its tracker backwards.
         await using (var worker = await runtime.OpenAsync(ct))
         await using (var tx = await worker.BeginTransactionAsync(ct)) {
             var sql = new PasswordSql(worker, tx);
