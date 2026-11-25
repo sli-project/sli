@@ -138,8 +138,10 @@ public sealed class PasswordSourceDiscoveryPostgresTests(ITestOutputHelper outpu
                     select coalesce(jsonb_agg(source order by source),'[]'::jsonb)::text from public.t109_detection_sources()
                     """, worker);
                 sources = (string)(await command.ExecuteScalarAsync(ct))!;
+                elapsed.Stop();
+                // Publish this backend's counters before the owner reads them.
+                await PostCollectionPostgres.Sql(worker, "select pg_catalog.pg_stat_force_next_flush()", ct);
             }
-            elapsed.Stop();
             await using var bindings = new NpgsqlCommand("""
                 select jsonb_agg(to_jsonb(b) order by to_jsonb(b))::text
                 from public.finding_evidence_source_bindings b where b.principal_name='sli_semantic_login'
