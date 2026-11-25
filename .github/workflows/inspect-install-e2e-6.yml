@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [B]
+        scenario: [B, C]
     env:
       SCENARIO: ${{ matrix.scenario }}
       BASE_COMMIT: 0f6093b3a9afcecb28fcdd47c7ed50522e50a156
@@ -74,7 +74,7 @@ jobs:
           set -euo pipefail
           code=0
           log="$RUNNER_TEMP/scenario-private.log"
-          docker exec sli-install-e2e bash /install-e2e.sh "$SCENARIO" >"$log" 2>&1 || code=$?
+          docker exec sli-install-e2e bash -x /install-e2e.sh "$SCENARIO" >"$log" 2>&1 || code=$?
           printf 'Scenario %s exit=%s\n' "$SCENARIO" "$code"
           grep -E '^(SLI ready on beta1-[a-f0-9]+ [a-zA-Z0-9.+~:-]+|PostgreSQL migration [0-9]+ applied|Upgrade preserved two synthetic PostgreSQL receipts \(SHA-256 verified\))$' "$log" || true
           if [[ $code -ne 0 ]]; then
@@ -83,6 +83,45 @@ jobs:
             docker exec sli-install-e2e journalctl -b -t sli-setup -o cat --no-pager |
               grep -oE '\bnative_[a-z0-9_]+\b' | sort -u || true
             grep -E '^SLI could not finish its first start\.' "$log" || true
+            python3 - "$log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace').splitlines()
+          phases = re.compile(r'^\+\s+(install_kit|check_installation|seed_upgrade_receipts|receipt_snapshot|check_migration|postgres_query|fail)\b')
+          tokens = re.compile(r'\b(?:native_[a-z0-9_]{3,100}|sli[-a-z0-9@_.]+\.(?:service|target|mount|timer|path))\b')
+          for number, line in enumerate(lines, 1):
+              m = phases.match(line)
+              if m:
+                  labels = re.findall(r'/kits/(base|candidate)/', line)
+                  print(f'phase trace at {number}: {m[1]} {" ".join(labels)}'.rstrip())
+              elif line.startswith('+ python3 -I /kits/candidate/sli-debian-beta-kit/remove-beta-kit --purge-data'):
+                  print(f'phase trace at {number}: remove-beta-kit')
+              elif not line.startswith('+'):
+                  found = set(tokens.findall(line))
+                  for needle, tag in (
+                      ('Failed systemd units:', 'failed_units'),
+                      ('SLI removal failed:', 'remove_failed'),
+                      ('Unexpected mount in SLI data directory', 'unexpected_mount'),
+                      ('is still running:', 'unit_still_running'),
+                      ('still has processes:', 'unit_processes'),
+                      ('SLI database volume does not match', 'volume_mismatch'),
+                      ('SLI database directory is unavailable', 'database_directory_unavailable'),
+                      ('Unsafe SLI data directory:', 'unsafe_purge_directory'),
+                      ('E: ', 'apt_error'),
+                      ('psql:', 'psql_error'),
+                      ('Permission denied', 'permission_denied'),
+                      ('not enough', 'insufficient_resources'),
+                      ('Read-only file system', 'read_only_filesystem'),
+                  ):
+                      if needle in line:
+                          found.add(tag)
+                  if found:
+                      print(f'failure markers at {number}: {", ".join(sorted(found))}')
+          PY
+            docker exec sli-install-e2e systemctl list-units --failed --plain --no-legend --no-pager |
+              awk '$1 ~ /^[A-Za-z0-9_.@-]+\.(service|target|mount|socket|path|timer)$/ && $3 == "failed" { print "Failed unit: " $1 }' || true
           fi
           exit "$code"
       - name: Remove the discarded machine and volume
