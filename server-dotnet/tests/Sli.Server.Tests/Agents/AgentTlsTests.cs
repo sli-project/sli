@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Security;
+using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using System.Text;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
@@ -12,6 +14,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.Control;
@@ -207,6 +211,145 @@ public sealed class AgentTlsTests
     }
 
     [Fact]
+    public async Task File_audit_catalog_accepts_the_registered_https_peer_and_projects_its_saved_scope()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        var ownerToken = await fixture.SeedOwnerAsync(ct);
+        using var certificates = new WriteSqlPostgresTests.Certificates();
+        using var serverRootKey = RSA.Create(2048);
+        using var serverKey = RSA.Create(2048);
+        using var clientKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var serverRoot = Root(serverRootKey, "CN=Catalog test server root");
+        using var server = Leaf(serverRoot, serverKey, "CN=localhost", server: true);
+
+        string trust = Path.Combine(fixture.Pg.Root, "catalog-listener-root.pem");
+        string issuer = Path.Combine(fixture.Pg.Root, "catalog-listener-issuer.pem");
+        await File.WriteAllTextAsync(trust, certificates.Root.ExportCertificatePem(), ct);
+        await File.WriteAllTextAsync(issuer, certificates.Issuer.ExportCertificatePem(), ct);
+        const string mtlsSetting = "SLI_AGENT_MTLS_CA_FILE";
+        const string issuerSetting = "SLI_AGENT_CA_ISSUER_CERT_FILE";
+        string? priorTrust = Environment.GetEnvironmentVariable(mtlsSetting);
+        string? priorIssuer = Environment.GetEnvironmentVariable(issuerSetting);
+        try
+        {
+            Environment.SetEnvironmentVariable(mtlsSetting, trust);
+            Environment.SetEnvironmentVariable(issuerSetting, issuer);
+            using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Sli:AgentMtlsCaFile"] = trust,
+                    ["Sli:TrustedProxies"] = "",
+                    ["Sli:AuthRequired"] = "1",
+                    ["Sli:AllowUnauthenticated"] = "0",
+                    ["Sli:OwnerSetup"] = "0",
+                    ["Sli:ProjectRoot"] = PostCollectionPostgres.Repository(),
+                    ["Sli:Storage:ArchiveRoot"] = fixture.Pg.Root,
+                    ["Sli:Storage:HistoryReadMode"] = "primary",
+                    ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "catalog-data"),
+                    ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "catalog-logs"),
+                    ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
+                    ["urls"] = "http://127.0.0.1:0"
+                }))
+                .ConfigureLogging(logging => logging.ClearProviders())
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IHostedService>();
+                    services.AddSingleton(certificates.Ca);
+                }));
+            host.UseKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(server)));
+            host.StartServer();
+            var address = Assert.Single(host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses);
+            Assert.Equal("https", new Uri(address).Scheme);
+
+            async Task<JsonObject> Get(HttpClient client, string route)
+            {
+                using var response = await client.GetAsync(route, ct);
+                return await Read(response, HttpStatusCode.OK);
+            }
+            async Task<JsonObject> Post(HttpClient client, string route, object payload, HttpStatusCode expected = HttpStatusCode.OK)
+            {
+                using var response = await client.PostAsJsonAsync(route, payload, ct);
+                return await Read(response, expected);
+            }
+            async Task<JsonObject> Read(HttpResponseMessage response, HttpStatusCode expected)
+            {
+                string body = await response.Content.ReadAsStringAsync(ct);
+                Assert.True(response.StatusCode == expected, $"Expected {(int)expected}, got {(int)response.StatusCode} {body}");
+                return JsonNode.Parse(body)!.AsObject();
+            }
+
+            using var admin = Client(address, null, server);
+            admin.DefaultRequestHeaders.Add("Cookie", "adlog_session=" + ownerToken);
+            using var noCert = Client(address, null, server);
+            string source = Guid.NewGuid().ToString("D");
+            var csr = new CertificateRequest("CN=" + source, clientKey, HashAlgorithmName.SHA256);
+            var token = await Post(admin, "/api/v1/admin/agent-tokens", new
+            {
+                host_id = source,
+                key_fingerprint = Convert.ToHexStringLower(SHA256.HashData(clientKey.ExportSubjectPublicKeyInfo()))
+            });
+            var enrolled = await Post(noCert, "/api/v1/agent/enroll", new
+            {
+                token = token["token"]!.GetValue<string>(), csr_pem = csr.CreateSigningRequestPem(),
+                reported_hostname = "catalog.example.test"
+            });
+            string agentId = enrolled["agent_id"]!.GetValue<string>();
+            using var issued = X509Certificate2.CreateFromPem(enrolled["certificate_pem"]!.GetValue<string>());
+            using var peer = issued.CopyWithPrivateKey(clientKey);
+            using var agent = Client(address, peer, server);
+            agent.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
+            const string identityRoute = "/api/v1/agent/identity";
+            var initial = await Get(agent, identityRoute);
+            var revision = initial["policy_revision"]!.GetValue<long>();
+            const string scope = "scope:catalog-https";
+            var check = await Post(admin, "/api/v1/admin/agents/file-audit", new
+            {
+                agent_id = agentId, expected_revision = revision,
+                config = new
+                {
+                    source_name = "catalog.example.test", source_kind = "server",
+                    roots = new[] { new { collection_scope_id = scope, share_name = "Pilot$", path = @"C:\Pilot",
+                        important = false, sacl = new { trustee_sids = new[] { "S-1-1-0" }, inherit_files = true, inherit_directories = true } } }
+                },
+                command = new { contract_id = "sli.file-audit.audit-command.v1", command_id = "catalog-https-check",
+                    action = "check", policy_revision = (revision + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    collection_scope_ids = new[] { scope } }
+            });
+            Assert.Equal("pending", check["state"]!.GetValue<string>());
+
+            const string catalogRoute = "/api/v1/admin/agents/file-audit/catalog";
+            const string reportRoute = "/api/v1/agent/file-audit-catalog-report";
+            string catalogPath = catalogRoute + "?agent_id=" + agentId;
+            Assert.Equal("pending", (await Post(admin, catalogRoute, new { agent_id = agentId }))["state"]!.GetValue<string>());
+            var identity = await Get(agent, identityRoute);
+            string requestId = identity["file_audit_catalog_request"]!["request_id"]!.GetValue<string>();
+            var report = new { request_id = requestId, status = "ready", shares = new[] { new { share_name = "Pilot$", path = @"C:\Pilot" } } };
+            Assert.Equal("agent_mtls_required", (await Post(noCert, reportRoute, report, HttpStatusCode.Unauthorized))["error"]!.GetValue<string>());
+            var stillPending = await Get(admin, catalogPath);
+            Assert.Equal("pending", stillPending["state"]!.GetValue<string>());
+            Assert.Empty(stillPending["items"]!.AsArray());
+
+            Assert.Equal("accepted", (await Post(agent, reportRoute, report))["status"]!.GetValue<string>());
+            var ready = await Get(admin, catalogPath);
+            Assert.Equal("ready", ready["state"]!.GetValue<string>());
+            var share = Assert.IsType<JsonObject>(Assert.Single(ready["items"]!.AsArray()));
+            Assert.Equal("Pilot$", share["share_name"]!.GetValue<string>());
+            Assert.Equal(@"C:\Pilot", share["path"]!.GetValue<string>());
+            Assert.Equal(scope, share["collection_scope_id"]!.GetValue<string>());
+            Assert.Equal("catalog-https-check", ready["saved_command"]!["command_id"]!.GetValue<string>());
+            var key = JsonNode.Parse(ready["saved_report_share_key"]!.GetValue<string>())!.AsArray();
+            Assert.Equal(new[] { agentId, source, scope }, key.Select(item => item!.GetValue<string>()).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(mtlsSetting, priorTrust);
+            Environment.SetEnvironmentVariable(issuerSetting, priorIssuer);
+        }
+    }
+
+    [Fact]
     public async Task InventoryMatchesOnlyRegisteredFingerprintsAndClearsAfterContact()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -292,9 +435,13 @@ public sealed class AgentTlsTests
         }
     }
 
-    private static HttpClient Client(string address, X509Certificate2? cert)
+    private static HttpClient Client(string address, X509Certificate2? cert, X509Certificate2? expectedServer = null)
     {
-        var handler = new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true };
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, presented, _, _) =>
+                expectedServer is null || presented is not null && presented.RawData.AsSpan().SequenceEqual(expectedServer.RawData)
+        };
         if (cert is not null) handler.ClientCertificates.Add(cert);
         return new HttpClient(handler) { BaseAddress = new Uri(address) };
     }
