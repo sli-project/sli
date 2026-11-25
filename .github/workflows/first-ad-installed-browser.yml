@@ -1,0 +1,77 @@
+name: Installed first-agent browser acceptance
+on:
+  push:
+    branches: [codex/verify-installed-first-ad-2323cfa]
+    paths:
+      - .github/workflows/first-ad-installed-browser.yml
+      - scripts/ci/clean-beta-plan-guest.sh
+      - scripts/ci/clean-beta-plan-vm.sh
+      - scripts/ci/installed-menu-walk.mjs
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  menu:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Prepare the locked browser driver
+        run: |
+          test "$(git hash-object package-lock.json)" = c6c47c9cd1cc4f567dcf7a005e3b0053cfca7987
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --check scripts/ci/installed-menu-walk.mjs
+          bash -n scripts/ci/clean-beta-plan-vm.sh
+          bash -n scripts/ci/clean-beta-plan-guest.sh
+      - name: Find the exact completed main build
+        id: kit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIT_COMMIT: 2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+          BUILD_RUN: '45528985945'
+        run: |
+          set -euo pipefail
+          for poll in {1..90}; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")
+            jq -e --arg sha "$KIT_COMMIT" '.head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch"' <<<"$run" >/dev/null
+            if jq -e '.status=="completed"' <<<"$run" >/dev/null; then
+              break
+            fi
+            sleep 10
+          done
+          jq -e '.status=="completed" and .conclusion=="success"' <<<"$run" >/dev/null
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/artifacts?per_page=100" |
+             jq -ce --arg sha "$KIT_COMMIT" \
+               '[.artifacts[] | select(.name==("sli-debian-beta-kit-"+$sha) and .expired==false)] |
+                select(length==1) | .[0] | select(.digest | test("^sha256:[a-f0-9]{64}$"))')
+          printf 'id=%s\ndigest=%s\n' "$(jq -r .id <<<"$artifact")" "$(jq -r .digest <<<"$artifact")" >>"$GITHUB_OUTPUT"
+          jq '{id,name,digest}' <<<"$artifact"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45528985945'
+          name: sli-debian-beta-kit-2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+          path: ${{ runner.temp }}/beta-candidate
+      - name: Verify first enrollment and scoped denials on installed Debian
+        shell: bash
+        env:
+          BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
+          BETA_SOURCE_DIGEST: ${{ steps.kit.outputs.digest }}
+        run: bash scripts/ci/clean-beta-plan-vm.sh "$RUNNER_TEMP/beta-candidate"
+      - name: Keep sanitized browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installed-first-ad-browser-evidence
+          path: ${{ runner.temp }}/beta-clean-readme-evidence/
+          if-no-files-found: error
+          retention-days: 7
