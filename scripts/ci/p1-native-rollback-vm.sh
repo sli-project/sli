@@ -89,6 +89,10 @@ classifiers = {
     "permission": r"(?:Permission denied|Operation not permitted)",
     "file_not_found": r"No such file or directory",
     "capacity": r"No space left on device",
+    "fixture_guard": r"^ERROR:\s+expected the exact 410 ledger on local PostgreSQL 18 and no collected data",
+    "postgres_relation_missing": r"^ERROR:\s+relation .* does not exist",
+    "postgres_syntax": r"^ERROR:\s+syntax error",
+    "postgres_privilege": r"^ERROR:\s+permission denied",
     "python_assertion": r"^AssertionError(?::|$)",
     "python_runtime": r"^(?:RuntimeError|OSError|FileNotFoundError|PermissionError)(?::|$)",
 }
@@ -202,6 +206,71 @@ APT
     mountpoint -q /var/backups/sli
     [[ "$backup_root" -ef /var/backups/sli ]]
     printf 'P1_EVIDENCE predecessor_install=completed\n'
+    stage=baseline_observation
+    psql_local=(runuser -u postgres -- /usr/lib/postgresql/18/bin/psql -XqAtw \
+        -h /var/run/postgresql -p 5432 -d sli -v ON_ERROR_STOP=1)
+    baseline=$("${psql_local[@]}" <<'SQL'
+BEGIN READ ONLY;
+SET LOCAL statement_timeout='10s';
+SELECT jsonb_build_object('entries',count(*),'schema',max(version),
+    'local_socket',inet_server_addr() IS NULL,
+    'postgres_major',current_setting('server_version_num')::integer/10000,
+    'ledger_sha256',encode(sha256(convert_to(string_agg(
+        jsonb_build_array(version,name,to_jsonb(m)->>'sha256')::text,E'\n' ORDER BY version),'UTF8')),'hex'))
+FROM public.schema_migrations m;
+COMMIT;
+SQL
+)
+    printf 'P1_EVIDENCE baseline=%s\n' "$baseline"
+    for relation in sli_agents sli_agent_receipts sli_agent_packet_inbox events_v2_core event_hot event_cold_facts findings; do
+        present=$("${psql_local[@]}" -c "SELECT to_regclass('public.$relation') IS NOT NULL")
+        if [[ $present == t ]]; then
+            records=$("${psql_local[@]}" -c "SELECT count(*) FROM public.$relation")
+            [[ $records =~ ^[0-9]+$ ]]
+            printf 'P1_EVIDENCE baseline_relation=%s count=%s\n' "$relation" "$records"
+        else
+            printf 'P1_EVIDENCE baseline_relation=%s present=no\n' "$relation"
+        fi
+    done
+    readiness_url=$(python3 -I -B - <<'PY'
+import ipaddress
+import json
+from pathlib import Path
+from urllib.parse import urlsplit
+
+target = json.loads(Path("/etc/sli/runtime.json").read_text())["health_url"]
+parts = urlsplit(target)
+assert parts.scheme == "https" and ipaddress.ip_address(parts.hostname).is_loopback
+assert parts.path == "/api/health/ready" and not parts.query and not parts.fragment
+print(target)
+PY
+)
+    curl -q --proto '=https' --noproxy '*' --fail --silent --show-error --max-time 15 \
+        --cacert /var/lib/sli/tls-ca.crt "$readiness_url" |
+        python3 -I -B -c 'import json, sys; assert json.load(sys.stdin)["ready"] is True'
+    printf 'P1_EVIDENCE baseline_readiness=ready\n'
+    stage=fixture_guard_read_only
+    scenario="$input/p1-native-410-411-rollback.sh"
+    expected=$(sed -nE 's/^old_ledger=([0-9a-f]{64})$/\1/p' "$scenario")
+    [[ $expected =~ ^[0-9a-f]{64}$ ]]
+    body=$(awk '/^fixture_guard=/ {payload=1;next} payload && $0=="SQL" {exit} payload {print}' "$scenario")
+    [[ $body == 'DO '* && $body == *'END $fixture$;' ]]
+    if guard_output=$(
+        {
+            printf '%s\n' 'BEGIN READ ONLY;' 'SET LOCAL statement_timeout = '\''10s'\'';'
+            printf "SET LOCAL sli.acceptance_old_ledger = '%s';\n" "$expected"
+            printf '%s\n' "$body" 'ROLLBACK;'
+        } | "${psql_local[@]}" -v VERBOSITY=sqlstate 2>&1
+    ); then
+        printf 'P1_EVIDENCE fixture_guard_read_only=passed\n'
+    else
+        status=$?
+        state=$(printf '%s\n' "$guard_output" |
+            sed -nE 's/^(ERROR|FATAL):[[:space:]]+([0-9A-Z]{5})([[:space:]].*)?$/\2/p' | head -n 1)
+        printf 'P1_EVIDENCE fixture_guard_read_only=failed psql_exit=%s sqlstate=%s\n' \
+            "$status" "${state:-unavailable}"
+        exit "$status"
+    fi
     install -o root -g root -m 0600 /proc/sys/kernel/random/boot_id /run/sli-p1-acceptance.boot-id
 
     stage=upgrade_and_rollback
