@@ -93,8 +93,9 @@ systemctl is-active --quiet sli-dotnet-api.service
 stage=clean_database
 quiet=$(runuser -u postgres -- psql -XqAtw -h /var/run/postgresql -d sli -v ON_ERROR_STOP=1 -c \
     "SELECT concat_ws(',', (SELECT count(*) FROM public.sli_agents),(SELECT count(*) FROM public.sli_agent_receipts),(SELECT count(*) FROM public.event_hot),(SELECT count(*) FROM public.findings),(SELECT max(version) FROM public.schema_migrations))")
-[[ $quiet == 0,0,0,0,413 ]]
+[[ $quiet =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]]
 evidence "agents_receipts_hot_events_findings_schema=$quiet"
+[[ $quiet == 0,0,0,0,414 ]]
 
 stage=first_login
 python3 -I -B - "$candidate" "$private_log" "$input/install-guide.md" "$auth_file" >"$probe_log" 2>&1 <<'PY'
