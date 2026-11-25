@@ -1,0 +1,41 @@
+name: Request the exact File Audit check MSI
+on:
+  push:
+    branches: ['codex/file-audit-debian-kit-23e9547d']
+    paths: ['.github/workflows/file-audit-check-msi-request.yml']
+permissions: {}
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_MAIN: 0d50f8a4613c32cd65b52564c6fc81548a555c52
+    steps:
+      - name: Check artifacts and dispatch the standard main MSI once
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = sli-project/sli
+          repo="repos/$GITHUB_REPOSITORY"
+          workflow="$repo/actions/workflows/agent-msi.yml"
+          exact_name="sli-agent-dotnet-msi-$EXPECTED_MAIN"
+          available=$(gh api "$repo/actions/artifacts?name=$exact_name" \
+            --jq '.artifacts[] | select(.expired == false) | .id')
+          if [[ -n "$available" ]]; then
+            printf 'Exact MSI artifact already exists: %s\n' "$available"
+            exit 0
+          fi
+          existing=$(gh api "$workflow/runs?head_sha=$EXPECTED_MAIN&event=workflow_dispatch" \
+            --jq '.workflow_runs[] | select(.conclusion == "success" or .status != "completed") | .id')
+          if [[ -n "$existing" ]]; then
+            printf 'Exact main MSI run already exists: %s\n' "$existing"
+            exit 0
+          fi
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          main=$(gh api "$repo/git/ref/heads/main" --jq .object.sha)
+          printf 'Verified main immediately before dispatch: %s\n' "$main"
+          test "$main" = "$EXPECTED_MAIN"
+          printf '{"ref":"main"}\n' | gh api --method POST "$workflow/dispatches" --input -
