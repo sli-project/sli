@@ -9,7 +9,9 @@ export function useFirstAdSource(search: URLSearchParams, enabled: boolean) {
   const canCheck = enabled && access?.platform_owner === true && !access.preview
     && !search.has("domain") && !search.has("domain_id");
   const status = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, enabled: canCheck, retry: false });
-  if (!canCheck || !status.isSuccess || status.isFetching) return false;
+  if (!canCheck) return false;
+  if (status.isFetching) return undefined;
+  if (!status.isSuccess) return false;
 
   const setup = status.data;
   const agents = setup.agent_collection;
@@ -21,7 +23,7 @@ export function useFirstAdSource(search: URLSearchParams, enabled: boolean) {
 }
 
 export function FirstAdSource() {
-  return <StateView state="empty" titleMessage={t("systemStatus.step.agent")} actions={
+  return <StateView state="empty" titleMessage={{ code: "systemStatus.step.agent", params: {} }} detail={
     <a className="sli-ds-button" href="/app/agents?register=1">{t("agents.addComputer")}</a>
   }/>;
 }

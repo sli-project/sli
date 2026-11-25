@@ -244,11 +244,11 @@ export function HomePage() {
   </section>;
   return <section className="sli-ds-report sli-ds-home">
     <PageHeader title={t("home.title")} actions={actions}/>
-    {accessStatus === "загружается" || summary.isLoading ? <StateView state="loading" compact skeleton="table"/> : null}
+    {accessStatus === "загружается" || summary.isLoading || firstAdSource === undefined ? <StateView state="loading" compact skeleton="table"/> : null}
     {accessStatus === "отказ" ? <p role="alert">{t("home.loadFailed")}</p> : null}
     {accessStatus === "получены" && <>
       {summary.isError ? <LoadError message={t("home.loadFailed")} fetching={summary.isFetching} retry={retry}/> : null}
-      {data ? <HomeComposition data={data} zone={actualZone} fetching={summary.isFetching} retry={retry}/> : null}
+      {data && firstAdSource !== undefined ? <HomeComposition data={data} zone={actualZone} fetching={summary.isFetching} retry={retry}/> : null}
     </>}
   </section>;
 }

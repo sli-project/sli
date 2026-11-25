@@ -42,7 +42,7 @@ function definition(key: string): ReportDefinitionDto {
     key, section: "investigation", title: "Synthetic report", description: "Scope test",
     archetype: "investigation-evidence", params: [{ key: "domain", label: "Domain", kind: "domain" }],
     columns: [], views: [{ kind: "table", key: "table" }], row_key: "id", detail: "fields",
-    export: false, limits: { default: 50, max: 100 },
+    export: false, limits: { default: 50, max: 100 }, presets: [], row_links: [], filter_options: {},
   };
 }
 
@@ -75,6 +75,7 @@ it.each(["security.events.chains", "ad.infrastructure", "ad.users.v2", "ad.compu
     const action = await screen.findByRole("link", { name: t("agents.addComputer") });
     expect(action.getAttribute("href")).toBe("/app/agents?register=1");
     expect(screen.queryByRole("link", { name: t("reports.access.own_rights") })).toBeNull();
+    expect(api.reportV2Data).not.toHaveBeenCalled();
   },
 );
 

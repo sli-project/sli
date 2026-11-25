@@ -107,8 +107,9 @@ const FIRST_AD_REPORTS = new Set(["security.events.chains", "ad.infrastructure",
 export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
   const firstAdSource = useFirstAdSource(new URLSearchParams(initialSearch ?? window.location.search),
-    FIRST_AD_REPORTS.has(reportKey) && definition.isSuccess);
-  if (definition.isLoading) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
+    FIRST_AD_REPORTS.has(reportKey) && definition.isSuccess
+      && definition.data.default_domain_state !== "available" && !definition.data.filter_options?.domain?.length);
+  if (definition.isLoading || firstAdSource === undefined) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
   if (definition.error || !definition.data) {
     const { state, detail } = errorState(definition.error);
     if (state === "denied") return <ReportDenied reportKey={reportKey} reason={detail} page/>;
