@@ -405,9 +405,7 @@ try:
 except (OSError, ValueError, TypeError, AttributeError, KeyError, http.client.HTTPException):
     evidence("probe_unavailable")
 PY
-grep -aE '^BETA_README_EVIDENCE storage_history=\{.*\}
-stage=browser_verified
- /run/beta-storage-history.log >&3 || true
+grep -aE '^BETA_README_EVIDENCE storage_history=\{.*\}$' /run/beta-storage-history.log >&3 || true
 evidence "storage_history_probe_exit=$storage_probe_status"
 
 [[ $menu_status == 0 && $checker_status == 0 ]]
