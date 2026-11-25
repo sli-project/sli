@@ -45,11 +45,13 @@ output.write_text(json.dumps(pins, sort_keys=True) + "\n")
 print("P1_EVIDENCE apt_delivery_pin=" + json.dumps(dict(package=actual_name, sha256=delivery["sha256"])))
 PY
 )
+printf 'P1_EVIDENCE apt_local_size_cap=pages_limit=100000000 local_limit=104269128\n'
 printf 'P1_EVIDENCE apt_index_command=%s\n' \
-    'python3 -B -m deploy.linux.build_apt_repo --debs VERIFIED_411_KIT --pins VERIFIED_DELIVERY_PINS --output LOCAL_REPO --signing-key TEMPORARY_TEST_KEY'
+    'build_apt_repo.main() with local MAX_FILE_SIZE=104269128 --debs VERIFIED_411_KIT --pins VERIFIED_DELIVERY_PINS --output LOCAL_REPO --signing-key TEMPORARY_TEST_KEY'
 (
     cd "$tools"
-    python3 -B -m deploy.linux.build_apt_repo --debs "$new_kit" \
+    python3 -B -c 'from deploy.linux import build_apt_repo as builder; builder.MAX_FILE_SIZE = 104269128; builder.main()' \
+        --debs "$new_kit" \
         --pins "$work/apt-delivery-pins.json" --output "$repo_root/repo" \
         --signing-key "$work/apt-signing.key"
 ) >"$work/index.log" 2>&1 || {
