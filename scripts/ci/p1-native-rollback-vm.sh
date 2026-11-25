@@ -23,7 +23,7 @@ if [[ $1 == guest ]]; then
         trap - EXIT
         set +e
         if [[ -f $scenario_log ]]; then
-            grep -E '^(Ready: beta1-[0-9a-f]{12}|\{"phase": "(upgraded|rolled-back)",.*\})$' "$scenario_log" |
+            grep -E '^(Ready: beta1-[0-9a-f]{12}|P1_STEP [a-z_]+|\{"phase": "(upgraded|rolled-back)",.*\})$' "$scenario_log" |
                 sed 's/^/P1_EVIDENCE /'
         fi
         if (( code != 0 )); then
@@ -107,8 +107,19 @@ for path in outputs:
             print(f"P1_EVIDENCE private_log={label} error_class={key}")
     for package in sorted(set(re.findall(r"^dpkg: error processing package ([a-z0-9.+-]+)(?=[ (:])", data, re.M))):
         print(f"P1_EVIDENCE private_log={label} failed_package={package}")
+    for code in sorted(set(re.findall(r"\breason_code=([a-z_][a-z0-9_]{1,99})(?=[) \r\n]|$)", data))):
+        print(f"P1_EVIDENCE private_log={label} reason_code={code}")
     for code in sorted(set(re.findall(r"^(native_[a-z_]{1,100})(?=[: \r\n]|$)", data, re.M))):
         print(f"P1_EVIDENCE private_log={label} code={code}")
+
+for path in Path("/var/tmp").glob("sli-p1-acceptance.*/upgrade.trace"):
+    trace = path.read_text(errors="replace")
+    if re.search(r"^\+ sudo .*native_upgrade\.py .*check-package-space", trace, re.M):
+        print("P1_EVIDENCE candidate_check_package_space_invoked=yes")
+    if re.search(r"^\+ sudo env .*apt-get .* install ", trace, re.M):
+        print("P1_EVIDENCE candidate_apt_install_invoked=yes")
+    if re.search(r"^\+ sudo /usr/sbin/sli-setup ", trace, re.M):
+        print("P1_EVIDENCE candidate_setup_invoked=yes")
 
 journal = subprocess.run(["journalctl", "-b", "-q", "-t", "sli-setup", "+", "-u", "sli-bootstrap-pg.service",
                           "+", "-u", "sli-postgresql.service", "-n", "120", "-o", "json"],

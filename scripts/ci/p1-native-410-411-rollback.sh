@@ -189,6 +189,7 @@ old_kit="$work/predecessor/sli-debian-beta-kit"
 new_kit="$work/candidate/sli-debian-beta-kit"
 
 installed_ready "$old_commit" "$old_kit"
+printf 'P1_STEP seed_receipts\n'
 # The fixture tests persistence. It generates no Windows or AD traffic.
 {
     printf '%s\n' 'BEGIN;'
@@ -243,6 +244,7 @@ assert (base["entries"], base["version"], base["prefix_sha256"]) == (377, 410, s
 assert base["receipts"] == 2 and base["agents"] == 1 and not base["new_pins"]
 PY
 
+printf 'P1_STEP baseline_receipts_verified\n'
 # Only transactions created in this test are acceptable as evidence.
 transactions=/var/lib/sli/transactions
 if [[ -d $transactions ]]; then
@@ -250,7 +252,13 @@ if [[ -d $transactions ]]; then
 else
     : > "$work/old-transactions"
 fi
-(cd "$new_kit" && /bin/bash ./install-beta-kit --non-interactive) > "$work/upgrade.log" 2>&1
+printf 'P1_STEP candidate_install_entered\n'
+(
+    cd "$new_kit"
+    exec 9>"$work/upgrade.trace"
+    BASH_XTRACEFD=9 /bin/bash -x ./install-beta-kit --non-interactive
+) >"$work/upgrade.log" 2>&1
+printf 'P1_STEP candidate_install_completed\n'
 installed_ready "$new_commit" "$new_kit"
 snapshot > "$work/upgraded.json"
 
@@ -333,7 +341,9 @@ print(json.dumps(proof))
 PY
 }
 verify_transition upgraded
+printf 'P1_STEP native_rollback_entered\n'
 /usr/sbin/sli-rollback "$old_kit" > "$work/rollback.log" 2>&1
+printf 'P1_STEP native_rollback_completed\n'
 installed_ready "$old_commit" "$old_kit"
 snapshot > "$work/rolled-back.json"
 verify_transition rolled-back
