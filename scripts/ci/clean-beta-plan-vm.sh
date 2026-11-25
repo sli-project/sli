@@ -52,6 +52,9 @@ cat cloud-image.sha512 >>"$evidence/pins.txt"
 
 cp "$kit/sli-debian-beta-kit.tar.gz" "$kit/SHA256SUMS" input/
 cp "$GITHUB_WORKSPACE/scripts/ci/clean-beta-plan-guest.sh" input/
+guide="$GITHUB_WORKSPACE/docs/ru/install.md"
+[[ $(git hash-object "$guide") == b03944dbf3ece0e94d35572e0c1f4136c707f28c ]]
+cp "$guide" input/install-guide.md
 input_bytes=$(du -sb input | cut -f1)
 truncate -s "$(( input_bytes + 512 * 1024 * 1024 ))" input.ext4
 mkfs.ext4 -q -F -m 0 -L BETAINPUT -d input input.ext4

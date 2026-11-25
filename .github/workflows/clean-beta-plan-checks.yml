@@ -3,7 +3,10 @@ name: Clean Debian README acceptance
 on:
   push:
     branches: [codex/beta-clean-readme-acceptance]
-    paths: [.github/workflows/clean-beta-plan-checks.yml]
+    paths:
+      - .github/workflows/clean-beta-plan-checks.yml
+      - scripts/ci/clean-beta-plan-guest.sh
+      - scripts/ci/clean-beta-plan-vm.sh
 
 permissions:
   actions: read

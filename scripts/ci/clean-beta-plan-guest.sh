@@ -95,8 +95,7 @@ quiet=$(runuser -u postgres -- psql -XqAtw -h /var/run/postgresql -d sli -v ON_E
 evidence "agents_receipts_hot_events_findings_schema=$quiet"
 
 stage=first_login
-python3 -I -B - "$candidate" "$private_log" >"$probe_log" 2>&1 <<'PY'
-import ast
+python3 -I -B - "$candidate" "$private_log" "$input/install-guide.md" >"$probe_log" 2>&1 <<'PY'
 import hashlib
 import http.client
 import json
@@ -104,26 +103,35 @@ import re
 import secrets
 import ssl
 import sys
+import time
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import urlsplit
-
-candidate, install_log = sys.argv[1:]
-manifest = json.loads(Path("/opt/sli/current/native-package.json").read_text())
-assert manifest["git_commit"] == candidate
-url = urlsplit(json.loads(Path("/etc/sli/runtime.json").read_text())["health_url"])
-assert url.scheme == "https" and url.hostname
-origin = "https://" + url.netloc
-ca = Path("/var/lib/sli/tls-ca.crt")
-observed = hashlib.sha256(ssl.PEM_cert_to_DER_cert(ca.read_text())).hexdigest().upper()
-fingerprints = re.findall(r"CA SHA-256 fingerprint:\s*((?:[0-9A-F]{2}:){31}[0-9A-F]{2})", Path(install_log).read_text())
-assert [item.replace(":", "") for item in fingerprints] == [observed]
-context = ssl.create_default_context(cafile=str(ca))
 
 def mark(phase, status=None):
     print(f"BETA_README_EVIDENCE probe_phase={phase}", flush=True)
     if status is not None:
         print(f"BETA_README_EVIDENCE probe_status={status}", flush=True)
+
+candidate, install_log, guide = sys.argv[1:]
+mark("installed_provenance")
+release_root = Path("/opt/sli/current")
+manifest = json.loads((release_root / "native-package.json").read_text())
+inventory = json.loads((release_root / "native-runtime.json").read_text())
+assert manifest["release"] == "beta1-" + candidate[:12]
+assert inventory["provenance"]["source_commit"] == candidate
+print(f"BETA_README_EVIDENCE installed_release={manifest['release']} installed_commit={candidate}", flush=True)
+
+mark("runtime_https")
+url = urlsplit(json.loads(Path("/etc/sli/runtime.json").read_text())["health_url"])
+assert url.scheme == "https" and url.hostname
+origin = "https://" + url.netloc
+mark("documented_ca_fingerprint")
+ca = Path("/var/lib/sli/tls-ca.crt")
+observed = hashlib.sha256(ssl.PEM_cert_to_DER_cert(ca.read_text())).hexdigest().upper()
+fingerprints = re.findall(r"CA SHA-256 fingerprint:\s*((?:[0-9A-F]{2}:){31}[0-9A-F]{2})", Path(install_log).read_text())
+assert {item.replace(":", "") for item in fingerprints} == {observed}
+context = ssl.create_default_context(cafile=str(ca))
 
 cookie = None
 
@@ -152,30 +160,33 @@ def call(path, name, *, method="GET", payload=None, update_session=False):
         connection.close()
 
 status, _, _, ready = call(url.path, "readiness")
-assert status == 200 and json.loads(ready)["ready"] is True
+assert status == 200 and json.loads(ready)["ready"] is True and json.loads(ready)["code"] == "ready"
 status, _, _, live = call(url.path.rsplit("/", 1)[0] + "/live", "runtime_identity")
 assert status == 200 and json.loads(live)["runtime_identity"]["git_commit"] == candidate
 
-setup = Path("/opt/sli/current/deploy/linux/native_setup.py")
-tree = ast.parse(setup.read_text())
-initial, = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "INITIAL_ADMIN_PASSWORD" for target in node.targets)]
+mark("documented_initial_credentials")
+initial, = re.findall(r"На чистой установке войдите с логином и паролем `([^`\r\n]+)`", Path(guide).read_text())
+started_login = time.monotonic()
 status, _, _, login = call("/api/auth/login", "initial_login", method="POST",
-                           payload={"username": "admin", "password": initial}, update_session=True)
+                           payload={"username": initial, "password": initial}, update_session=True)
 assert status == 200 and json.loads(login)["password_change_required"] is True
 status, location, _, _ = call("/app", "app_before_change")
 assert status in {301, 302, 303, 307, 308} and urlsplit(location).path == "/login/change-password"
+status, _, mime, _ = call(location, "change_password_screen")
+assert status == 200 and mime.startswith("text/html")
+restricted_cookie = cookie
 password = secrets.token_urlsafe(30)
 status, _, _, changed = call("/api/auth/change-initial-password", "change_initial_password", method="POST",
                              payload={"password": password, "repeat": password}, update_session=True)
-assert status == 200 and json.loads(changed)["authenticated"] is True
+assert status == 200 and json.loads(changed)["authenticated"] is True and cookie != restricted_cookie
 status, _, mime, _ = call("/app", "app_after_change")
 assert status == 200 and mime.startswith("text/html")
 status, _, _, me = call("/api/auth/me", "authenticated_identity")
 assert status == 200 and json.loads(me)["authenticated"] is True
-print("BETA_README_EVIDENCE first_login=passed ca_fingerprint_match=yes runtime_dotnet=yes", flush=True)
+login_milliseconds = round((time.monotonic() - started_login) * 1000)
+print(f"BETA_README_EVIDENCE first_login=passed ca_fingerprint_match=yes runtime_dotnet=yes login_milliseconds={login_milliseconds}", flush=True)
 
-status, _, _, home = call("/api/v1/home/summary?period=24h&tz=UTC", "home_baseline")
+status, _, _, home = call("/api/v1/home/summary?contract=v4&period=24h&tz=UTC", "home_baseline")
 if status == 200:
     summary = json.loads(home)
     problems = summary.get("problems")
