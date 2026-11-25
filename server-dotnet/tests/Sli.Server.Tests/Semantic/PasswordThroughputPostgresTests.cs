@@ -27,7 +27,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             await fixture.StartAsync(ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         if (compareCanonical)
-            await VerifyDecoderMigrationAsync(owner, ct);
+            await InstallDecoderProbeAsync(owner, ct);
         if (measurePhases)
             await InstallPhaseMeasurementAsync(owner, ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
@@ -308,6 +308,9 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             Assert.All(outcomes, outcome => Assert.True(outcome.Status == "committed", outcome.Diagnostic?.ToJsonString() ?? outcome.Status));
             Assert.Equal(target, PasswordJson.Time(outcomes[^1].Work!["watermark"]));
 
+            if (slice == 0 && Environment.GetEnvironmentVariable("SLI_TEST_P1_COMPARE_CANONICAL") == "1")
+                await VerifyDecoderMigrationAsync(owner, traced, spray, output, ct);
+
             if ((slice + 1) % 8 == 0)
                 output.WriteLine($"p1_411_spray_warmup slice={slice + 1} elapsed_ms={watch.Elapsed.TotalMilliseconds:F0}");
             if (!measured)
@@ -427,19 +430,6 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                 output.WriteLine("p1_read_ab " + metrics.ToJsonString());
             }
 
-            var guardResults = new JsonArray(
-                await RejectionAsync(admin, rule, "received_at_utc", JsonValue.Create(new string('x',513))!, ct),
-                await RejectionAsync(admin, rule, "evidence_total", JsonValue.Create(1.25)!, ct),
-                await RejectionAsync(admin, rule, "evidence_total",
-                    JsonNode.Parse(new string('[',18)+"1"+new string(']',18))!, ct),
-                await RejectionAsync(admin, rule, "password_context.emission_id", JsonValue.Create(new string('0',64))!, ct));
-            Assert.Equal("22023:password_v2_state_invalid", guardResults[0]!.GetValue<string>());
-            Assert.Equal("22023:password_v2_state_invalid", guardResults[1]!.GetValue<string>());
-            Assert.Equal("54000:password_v2_state_bound", guardResults[2]!.GetValue<string>());
-            Assert.Equal("22023:password_v2_emission_hash_conflict", guardResults[3]!.GetValue<string>());
-            var byteLimitResults = await ByteLimitCasesAsync(admin, rule, ct);
-
-
             await using var snapshot = new NpgsqlCommand("""
                 select jsonb_build_object(
                   'checkpoint_sha',(select encode(sha256(convert_to(coalesce(string_agg(
@@ -466,8 +456,6 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             snapshot.Parameters.AddWithValue("older", olderJobs);
             var stable = JsonNode.Parse(Assert.IsType<string>(await snapshot.ExecuteScalarAsync(ct)))!.AsObject();
             Assert.Equal(outcome.Jobs, stable["new_jobs"]!.GetValue<int>());
-            stable["guard_results"] = guardResults;
-            stable["byte_limit_results"] = byteLimitResults;
             return stable.ToJsonString();
         }
 
@@ -482,32 +470,91 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
         }
     }
 
-    private static async Task VerifyDecoderMigrationAsync(NpgsqlConnection owner, CancellationToken ct)
+    private static Task InstallDecoderProbeAsync(NpgsqlConnection owner, CancellationToken ct) =>
+        PostCollectionPostgres.Sql(owner, """
+            set role adlog_storage_owner;
+            create function public.p1_test_decode415(scope jsonb,execution jsonb,documents jsonb)
+            returns jsonb language plpgsql stable security definer set search_path=pg_catalog,pg_temp as $probe$
+            begin
+                if session_user<>'sli_semantic_login' then
+                    raise exception 'p1_test_semantic_login_required' using errcode='42501';
+                end if;
+                return public.password_v2_decode(scope,execution,documents);
+            end
+            $probe$;
+            revoke all on function public.p1_test_decode415(jsonb,jsonb,jsonb) from public;
+            grant execute on function public.p1_test_decode415(jsonb,jsonb,jsonb) to adlog_semantic_worker;
+            reset role;
+            """, ct);
+
+    private static async Task VerifyDecoderMigrationAsync(
+        NpgsqlConnection owner, NpgsqlConnection worker, PasswordRule rule, ITestOutputHelper output,
+        CancellationToken ct)
     {
-        async Task<string> Definition()
+        async Task<JsonNode> Definition()
         {
             await using var definition = new NpgsqlCommand("""
                 select jsonb_build_array(pg_get_functiondef(oid),proowner,proacl)::text
                 from pg_proc where oid='public.password_v2_decode(jsonb,jsonb,jsonb)'::regprocedure
                 """, owner);
-            return Assert.IsType<string>(await definition.ExecuteScalarAsync(ct));
+            return JsonNode.Parse(Assert.IsType<string>(await definition.ExecuteScalarAsync(ct)))!;
+        }
+
+        async Task<JsonObject> GuardResults()
+        {
+            await using var valid = new NpgsqlCommand("""
+                select public.p1_test_decode415(@scope::jsonb,@rule::jsonb,jsonb_build_array(document_json))
+                    #>>'{signal_ids,0}'=signal_id
+                from public.semantic_qw_signals
+                where document_json#>>'{password_context,pin}'=@pin
+                  and document_json#>>'{password_context,portion_total}'='1'
+                order by signal_id limit 1
+                """, worker);
+            valid.Parameters.AddWithValue("scope", rule.Scope.Document.ToJsonString());
+            valid.Parameters.AddWithValue("rule", rule.Execution.ToJsonString());
+            valid.Parameters.AddWithValue("pin", rule.Pin);
+            Assert.Equal(true, await valid.ExecuteScalarAsync(ct));
+
+            var guards = new JsonArray(
+                await RejectionAsync(worker, rule, "received_at_utc", JsonValue.Create(new string('x',513))!, ct),
+                await RejectionAsync(worker, rule, "evidence_total", JsonValue.Create(1.25)!, ct),
+                await RejectionAsync(worker, rule, "evidence_total",
+                    JsonNode.Parse(new string('[',18)+"1"+new string(']',18))!, ct),
+                await RejectionAsync(worker, rule, "password_context.emission_id", JsonValue.Create(new string('0',64))!, ct));
+            Assert.Equal("22023:password_v2_state_invalid", guards[0]!.GetValue<string>());
+            Assert.Equal("22023:password_v2_state_invalid", guards[1]!.GetValue<string>());
+            Assert.Equal("54000:password_v2_state_bound", guards[2]!.GetValue<string>());
+            Assert.Equal("22023:password_v2_emission_hash_conflict", guards[3]!.GetValue<string>());
+            return new JsonObject
+            {
+                ["valid_signed_id"] = true,
+                ["guards"] = guards,
+                ["byte_limits"] = await ByteLimitCasesAsync(owner, worker, rule, ct)
+            };
         }
 
         var original = await Definition();
+        var before = await GuardResults();
         var migrations = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations");
         await PostCollectionPostgres.Sql(owner, await File.ReadAllTextAsync(
             Path.Combine(migrations, "415_password_portion_canonical.sql"), ct), ct);
-        Assert.NotEqual(original, await Definition());
+        var installed = await Definition();
+        Assert.NotEqual(original[0]!.GetValue<string>(), installed[0]!.GetValue<string>());
+        Assert.True(JsonNode.DeepEquals(original[1], installed[1]));
+        Assert.True(JsonNode.DeepEquals(original[2], installed[2]));
+        var after = await GuardResults();
+        Assert.True(JsonNode.DeepEquals(before, after), $"{before}\n{after}");
         await PostCollectionPostgres.Sql(owner, await File.ReadAllTextAsync(
             Path.Combine(migrations, "415_password_portion_canonical.rollback.sql"), ct), ct);
-        Assert.Equal(original, await Definition());
+        Assert.True(JsonNode.DeepEquals(original, await Definition()));
+        output.WriteLine("p1_decoder_guard_preflight " + before.ToJsonString());
     }
 
     private static async Task<string> RejectionAsync(
         NpgsqlConnection db, PasswordRule rule, string key, JsonNode value, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand("""
-            select public.password_v2_decode(@scope::jsonb,@rule::jsonb,
+            select public.p1_test_decode415(@scope::jsonb,@rule::jsonb,
                 jsonb_build_array(case when @tamper_emission then
                     jsonb_set(jsonb_set(document_json,@path,@value::jsonb,true),
                         '{password_context,root_id}',@value::jsonb,true)
@@ -528,7 +575,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
     }
 
     private static async Task<JsonArray> ByteLimitCasesAsync(
-        NpgsqlConnection db, PasswordRule rule, CancellationToken ct)
+        NpgsqlConnection db, NpgsqlConnection worker, PasswordRule rule, CancellationToken ct)
     {
         var results = new JsonArray();
         foreach (int bytes in new[] { 524287, 524288, 524289 })
@@ -572,8 +619,8 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             }
 
             await using var decode = new NpgsqlCommand("""
-                select public.password_v2_decode(@scope::jsonb,@rule::jsonb,jsonb_build_array(@document::jsonb))
-                """, db);
+                select public.p1_test_decode415(@scope::jsonb,@rule::jsonb,jsonb_build_array(@document::jsonb))
+                """, worker);
             decode.Parameters.AddWithValue("scope", rule.Scope.Document.ToJsonString());
             decode.Parameters.AddWithValue("rule", rule.Execution.ToJsonString());
             decode.Parameters.AddWithValue("document", document);
