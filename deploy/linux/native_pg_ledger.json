@@ -611,6 +611,8 @@
     "config/postgres_migrations/411_password_successor_coverage.sql": "313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279",
     "config/postgres_migrations/412_sigma_history_test.rollback.sql": "6661b0298abf379c65a36254b41550907486c158048a20e0e0158b594af9bd5a",
     "config/postgres_migrations/412_sigma_history_test.sql": "c6cce426f28c51a2fa9787523d8967d127a9a7b0c796e8f2db1d861ebc52755f",
+    "config/postgres_migrations/413_workstation_journal_admission.rollback.sql": "a95901de4cf41982bc7cea963077580979d2835435f89720ff8804f5a2fbab27",
+    "config/postgres_migrations/413_workstation_journal_admission.sql": "0d86c71b7d4e599af4458224562b106f03840a04cb8b469eb10145681f958c5b",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

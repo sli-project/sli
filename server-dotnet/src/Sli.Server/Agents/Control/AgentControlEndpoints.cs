@@ -97,9 +97,12 @@ public static class AgentControlEndpoints
         }
         catch (AgentControlException error)
         {
-            object body = error.AllowedHosts is { } hosts
-                ? new { error = error.Message, allowed_hosts = hosts }
-                : new { error = error.Message };
+            object body = error switch
+            {
+                { AllowedHosts: { } hosts } => new { error = error.Message, allowed_hosts = hosts },
+                { AllowedEventIds: { } ids } => new { error = error.Message, allowed_event_ids = ids },
+                _ => new { error = error.Message }
+            };
             await DomainHttp.WriteAsync(context, body, error.Status, ct);
         }
         catch (AuthInputException error) { await DomainHttp.WriteAsync(context, new { error = error.Code }, error.StatusCode, ct); }

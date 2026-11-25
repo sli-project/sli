@@ -31,12 +31,20 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         bool filePermissions=envelope.ModuleId==FileAuditPolicy.ModuleId &&
             await AgentPolicyAssignments.FilePermissionsAvailableAsync(connection,transaction,ct);
         using var fileAdmission=filePermissions ? AgentPolicyAssignments.HoldFilePermissions() : null;
+        WorkstationJournalScope? workstationScope=null;
         if (existing is null && envelope.ModuleId!="sli.heartbeat")
         {
             bool enabled=filePermissions
                 ? await AgentPolicyAssignments.FilePermissionsAllowedAsync(connection,transaction,
                     identity.Id,envelope.PolicyRevision,true,ct)
                 : await AgentPolicyAssignments.ModuleEnabledAsync(connection,transaction,envelope.ModuleId,ct);
+            if (envelope.ModuleId==WorkstationsModule.ModuleId && await WorkstationJournalAdmission.AvailableAsync(connection,transaction,ct))
+            {
+                if(envelope.Channel=="workstations")
+                    workstationScope=await WorkstationJournalAdmission.ReadAsync(connection,transaction,identity.Id,
+                        envelope.SourceInstanceId,envelope.PolicyRevision,ct);
+                enabled=workstationScope is not null;
+            }
             if(!enabled && !accounting) return Reject("module_disabled");
             if(filePermissions && fileAdmission is null) return Reject("file_audit_plugin_unavailable","retry_later");
             if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)) return Reject("agent_file_audit_packet_invalid");
@@ -157,6 +165,8 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
                 var selected=WorkstationPolicy.Parse(assignment["config"] as JsonObject ?? new JsonObject());
                 workstationCurrent=current["config"] as JsonObject ?? new JsonObject();
                 rows=AgentWorkstationValidator.Validate(envelope,payload,selected,state.SourceHost ?? identity.HostId);
+                if(workstationScope is not null && !WorkstationJournalAdmission.MatchesRows(workstationScope,rows))
+                    return Reject("agent_workstations_packet_invalid");
             }
             catch (Exception e) when (e is AgentException or ProtocolException or InvalidOperationException or ArgumentException)
             { return Reject("agent_workstations_packet_invalid"); }
