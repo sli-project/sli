@@ -2,22 +2,44 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect as playwrightExpect } from '@playwright/test';
-import { waitForVisibleLoadingToFinish } from './checks.mjs';
+import { redact, waitForVisibleLoadingToFinish } from './checks.mjs';
 
 const expect = playwrightExpect.configure({ timeout: 20_000 });
 const reportPath = tab => `/api/v2/reports/file-audit.${tab}/data`;
 const permissionsTitle = 'NTFS · Назначенные права';
 
-async function readResponse(page, path, action, accepts = () => true) {
-  const [response] = await Promise.all([
-    page.waitForResponse(response => {
+async function readResponse(page, step, path, action, accepts = () => true) {
+  console.log(`menu-walk: FileServers ${step}; waiting for GET ${path}`);
+  const observed = [];
+  const observe = response => {
+    const target = new URL(response.url());
+    if (target.pathname.startsWith('/api/v2/reports/file-audit.'))
+      observed.push({ path: target.pathname, status: response.status(), limit: target.searchParams.get('limit') });
+  };
+  page.on('response', observe);
+  // Attach the response listener before acting, but report a failed UI action
+  // first. A response timeout must not hide a selector/action failure.
+  const pending = page.waitForResponse(response => {
       const target = new URL(response.url());
       return target.pathname === path && accepts(target.searchParams);
-    }, { timeout: 20_000 }),
-    action(),
-  ]);
-  assert.equal(response.status(), 200, `FileServers ${path} must load from the owned API`);
-  return { body: await response.json(), params: new URL(response.url()).searchParams };
+    }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
+  let phase = 'UI action';
+  try {
+    await action();
+    phase = 'API response';
+    const outcome = await pending;
+    if (outcome.error) throw outcome.error;
+    const response = outcome.response;
+    assert.equal(response.status(), 200, `Expected HTTP 200 from ${path}`);
+    console.log(`menu-walk: FileServers ${step}; received HTTP ${response.status()}`);
+    return { body: await response.json(), params: new URL(response.url()).searchParams };
+  } catch (cause) {
+    const error = new Error(`FileServers ${step}: ${phase} failed; expected GET ${path}: ${cause.message}`, { cause });
+    error.fileServers = { step, phase, expected_api: path, observed: observed.slice(-10) };
+    throw error;
+  } finally {
+    page.off('response', observe);
+  }
 }
 
 function assertWindow(params, fixture, scoped = true) {
@@ -59,6 +81,18 @@ export async function walkFileServers(page, { url, results, fixture }) {
   await mkdir(directory, { recursive: true });
   page.setDefaultTimeout(20_000);
   page.setDefaultNavigationTimeout(20_000);
+  try {
+    await verifyFileServers(page, { url, directory, fixture });
+  } catch (error) {
+    await writeFile(join(directory, 'failure.json'), JSON.stringify({
+      ...error.fileServers, current_path: new URL(page.url()).pathname, message: redact(error.message),
+    }, null, 2));
+    await page.screenshot({ path: join(directory, 'failure.png'), fullPage: true, timeout: 5_000 }).catch(() => {});
+    throw error;
+  }
+}
+
+async function verifyFileServers(page, { url, directory, fixture }) {
   const evidence = [];
   const screenshot = async (name, claim) => {
     await assertFullPage(page);
@@ -74,12 +108,12 @@ export async function walkFileServers(page, { url, results, fixture }) {
   }).toString();
   console.log('menu-walk: FileServers resource → saved observations → full-page ACL → comparison');
 
-  let overview = await readResponse(page, reportPath('overview'), () => page.goto(initial.href));
+  let overview = await readResponse(page, 'open resource overview', reportPath('overview'), () => page.goto(initial.href));
   assertWindow(overview.params, fixture, false);
   const rootRow = () => page.getByRole('table').getByRole('row').filter({ hasText: fixture.path });
   await expect(rootRow()).toHaveCount(1);
-  overview = await readResponse(page, reportPath('overview'),
-    () => page.getByLabel('Строк на странице', { exact: true }).selectOption('200'),
+  overview = await readResponse(page, 'select 200 resource rows', reportPath('overview'),
+    () => page.getByRole('combobox', { name: 'Строк на странице', exact: true }).selectOption('200'),
     params => params.get('limit') === '200');
   assertWindow(overview.params, fixture, false);
   const resource = overview.body.items.find(row => row.agent_id === fixture.agent_id
@@ -90,7 +124,7 @@ export async function walkFileServers(page, { url, results, fixture }) {
   const resourceUrl = page.url();
   await screenshot('01-resources.png', 'Authorized resource; seven retained 4670 observations; real API limit=200.');
 
-  const changes = await readResponse(page, reportPath('permission-changes'),
+  const changes = await readResponse(page, 'open observation count', reportPath('permission-changes'),
     () => rootRow().getByRole('link', { name: '7', exact: true }).click());
   assertWindow(changes.params, fixture);
   assert.equal(changes.params.get('limit'), '200');
@@ -119,14 +153,14 @@ export async function walkFileServers(page, { url, results, fixture }) {
   const resourceButton = rootRow().getByRole('button', { name: fixture.share_name, exact: true });
   await expect(resourceButton).toBeVisible();
   const detailPath = `/api/v2/reports/file-audit.permissions/rows/${fixture.snapshot_id}/detail`;
-  const permissions = await readResponse(page, detailPath, () => resourceButton.click());
+  const permissions = await readResponse(page, 'open resource ACL', detailPath, () => resourceButton.click());
   assertWindow(permissions.params, fixture);
   assert.equal(permissions.body.detail.object.file_id, fixture.object_id);
   assert.equal(permissions.body.detail.object.dacl.state, 'complete');
   assert.equal(permissions.body.detail.object.dacl.aces.length, 126, 'The large ACL must come from the retained API projection');
   const acl = page.getByRole('region', { name: permissionsTitle, exact: true });
   await expect(acl).toBeVisible();
-  await acl.getByLabel('Строк на странице', { exact: true }).selectOption('200');
+  await acl.getByRole('combobox', { name: 'Строк на странице', exact: true }).selectOption('200');
   const aceRows = acl.getByRole('table', { name: permissionsTitle, exact: true }).locator('tbody > tr[data-clickable]');
   await expect(aceRows).toHaveCount(126);
   await expect(acl.getByText('1–126 из 126', { exact: true })).toBeVisible();
@@ -140,15 +174,15 @@ export async function walkFileServers(page, { url, results, fixture }) {
   await expect(aceRows).toHaveCount(126);
   await screenshot('02-permissions.png', 'Full-page NTFS ACL renders all 126 retained ACE at page size 200, alongside the independent SMB ACL.');
 
-  const compared = await readResponse(page, detailPath,
+  const compared = await readResponse(page, 'compare retained snapshots', detailPath,
     () => page.getByRole('button', { name: 'Сравнение снимков', exact: true }).click(),
     params => params.get('compare_snapshot_id') === fixture.before_snapshot_id);
   assertWindow(compared.params, fixture);
   assert.equal(compared.body.detail.comparison.state, 'available');
   assert.equal(compared.body.detail.comparison.before.snapshot.id, fixture.before_snapshot_id);
   assert.equal(compared.body.detail.comparison.after.snapshot.id, fixture.snapshot_id);
-  await expect(page.getByLabel('Было', { exact: true })).toHaveValue(fixture.before_snapshot_id);
-  await expect(page.getByLabel('Стало', { exact: true })).toHaveValue(fixture.snapshot_id);
+  await expect(page.getByRole('combobox', { name: 'Было', exact: true })).toHaveValue(fixture.before_snapshot_id);
+  await expect(page.getByRole('combobox', { name: 'Стало', exact: true })).toHaveValue(fixture.snapshot_id);
   const comparison = page.getByRole('region', { name: 'Сравнение снимков', exact: true });
   await expect(comparison).toBeVisible();
   const difference = comparison.getByRole('table').locator('tbody > tr[data-clickable]').first();
@@ -168,5 +202,5 @@ export async function walkFileServers(page, { url, results, fixture }) {
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);
   assertResourceReturn(page.url(), resourceUrl);
-  await expect(page.getByLabel('Строк на странице', { exact: true })).toHaveValue('200');
+  await expect(page.getByRole('combobox', { name: 'Строк на странице', exact: true })).toHaveValue('200');
 }

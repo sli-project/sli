@@ -178,7 +178,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
           : <button type="button" className="sli-ds-button" disabled={data.isFetching} onClick={() => { reset(); const next = new Date(Math.floor(Date.now() / 60_000) * 60_000); setAnchor(next); if (next.getTime() === anchor.getTime()) void data.refetch(); }}>{t("file-audit.workspace.refresh")}</button>}
           {exportHref && !visibleSelection ? <a className="sli-ds-button" href={exportHref} download title={exportLimit ? t("file-audit.workspace.export_limit", { count: exportLimit }) : undefined}>{t("reports.renderer.export_csv")}</a> : null}
           {!visibleSelection && fileAuditReturnHref(entrySearch.get("return_to")) ? <a className="sli-ds-button" href={fileAuditReturnHref(entrySearch.get("return_to"))!}>{t("file-audit.workspace.back")}</a> : null}</>}
-        filters={definition && !visibleSelection ? <FilterBar align="start" layout="inline" fields={fileAuditFields(definition, result?.filter_options)}
+        filters={definition && !visibleSelection ? <FilterBar align="start" layout="grid" fields={fileAuditFields(definition, result?.filter_options)}
           primaryKeys={tab === "overview" ? ["period", "source_instance_id", "share", "path"] : ["period", "source_instance_id", "share", "path", "employee", "operation", "record_unit"]}
           values={filterValues} defaults={defaultFilters} onApply={apply}/> : null}
         tabs={<TabList label={t("file-audit.title")} variant="underline"/>}

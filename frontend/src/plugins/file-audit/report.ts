@@ -2,7 +2,7 @@ import type { ReportDefinitionDto, ReportOption } from "../../api/report-v2-type
 import { periodBounds, type FilterField, type FilterValues, type PeriodValue } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { apiParams, paramOptions, valuesReady } from "../../app/report-v2/state";
-import { localDateTimeToUtc } from "../../shared/date-time";
+import { localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
 
 export const FILE_AUDIT_TABS = ["overview", "actions", "mass-operations", "permission-changes",
   "access-denials", "out-of-hours", "permissions", "audit-state"] as const;
@@ -84,11 +84,7 @@ export function fileAuditFilterValues(values: FilterValues, timeZone: string): F
     const instant = new Date(value);
     if (!Number.isFinite(instant.getTime())) return value;
     try {
-      const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-        timeZone: timeZone === "browser" ? undefined : timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-      }).formatToParts(instant).map(part => [part.type, part.value]));
-      return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${instant.getUTCMilliseconds() ? `.${String(instant.getUTCMilliseconds()).padStart(3, "0")}` : ""}`;
+      return utcToLocalDateTimeInput(value, timeZone, "millisecond");
     } catch { return value; }
   };
   return { ...values, period: { ...period, from: local(period.from), to: local(period.to) } };

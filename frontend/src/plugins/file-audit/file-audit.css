@@ -4,6 +4,13 @@
 .sli-file-audit .sli-ds-filters { padding: var(--sli-space-2) 0; background: transparent; border: 0; border-radius: 0; gap: var(--sli-space-2); }
 .sli-file-audit .sli-ds-filters__fields { gap: var(--sli-space-2) var(--sli-space-3); }
 .sli-file-audit .sli-ds-filters__actions { justify-content: flex-start; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters > .sli-ds-filters__fields { grid-template-columns: minmax(20rem, 1.4fr) repeat(3, minmax(0, 1fr)); align-items: start; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; max-width: none; align-items: start; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field[data-wide] { grid-column: auto; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field label { white-space: normal; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field input:not([type="checkbox"]), .sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field select { width: 100%; min-width: 0; }
+.sli-file-audit .sli-ds-report > .sli-ds-filters > .sli-ds-filters__actions { margin-left: 0; justify-self: start; }
 .sli-file-audit .sli-ds-table { font-size: var(--sli-text-md); }
 .sli-file-audit .sli-ds-table__scroll { max-height: calc(100dvh - 23rem); min-height: 8rem; }
 .sli-file-audit .sli-ds-table td { padding-block: 5px; }
@@ -47,11 +54,13 @@
 .sli-file-audit__segments button[aria-pressed="true"] { background: var(--sli-accent-soft); border-color: var(--sli-accent); }
 .sli-file-audit__local-state, .sli-file-audit__limitations { margin: 0; color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 @media (max-width: 1250px) {
+  .sli-file-audit .sli-ds-report > .sli-ds-filters > .sli-ds-filters__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sli-file-audit__object-grid { grid-template-columns: minmax(0, 1fr); }
   .sli-file-audit__object-tree nav { max-height: 9rem; }
   .sli-file-audit__compare-controls label { flex-wrap: wrap; }
 }
 @media (max-width: 800px) {
+  .sli-file-audit .sli-ds-report > .sli-ds-filters > .sli-ds-filters__fields { grid-template-columns: minmax(0, 1fr); }
   .sli-file-audit__comparison-sides { grid-template-columns: minmax(0, 1fr); }
   .sli-file-audit .sli-ds-table__scroll { max-height: 65dvh; }
 }
