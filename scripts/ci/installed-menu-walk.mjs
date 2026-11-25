@@ -1,6 +1,7 @@
 import { chromium } from 'playwright-core';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { forbiddenLabels, loadErrors, redact, waitForVisibleLoadingToFinish } from './checks.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
@@ -8,10 +9,21 @@ const { url, token, commit } = JSON.parse(input);
 const origin = new URL(url).origin;
 const results = process.argv[2];
 if (!/^https:/.test(origin) || !token || !results || commit !== '4a6f14c815e07ff2a01346700d79507689d657e9') {
-  throw new Error('Expected the verified guest build and an owner session');
+  throw new Error('Expected a verified guest HTTPS origin and an owner session');
 }
-const agentForm = '/app/agents?register=1';
-const reasonCode = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(value) ? value : null;
+const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
+const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
+  group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
+const entries = registry.beta_entries.map(id => {
+  const entry = all.find(item => item.id === id);
+  if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
+  return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
+});
+const base = new URL('/app/', origin).href;
+const targetPath = path => new URL('app' + path, origin).pathname.replace(/\/$/, '');
+const nav = '.sli-ds-shell__nav';
+const clean = value => redact(value, [token]).replace(/[A-Za-z0-9+_/-]{38,}(?:={1,2})?/g, '[redacted]');
+const lines = value => [...new Set(value.split('\n').map(line => clean(line.trim())).filter(Boolean))].slice(0, 38);
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-headless-shell', timeout: 30_000 });
 const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'UTC', viewport: { width: 1440, height: 900 },
   serviceWorkers: 'block' });
@@ -19,207 +31,278 @@ context.setDefaultTimeout(12_000);
 context.setDefaultNavigationTimeout(18_000);
 await context.addInitScript(() => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', 'light'); });
 await context.addCookies([{ name: 'adlog_session', value: token, url: origin, httpOnly: true, secure: true, sameSite: 'Strict' }]);
+
+let activeRow;
 await context.route('**/*', route => {
   const request = route.request();
   const target = new URL(request.url());
   if (['data:', 'blob:'].includes(target.protocol)) return route.continue();
   if (target.origin === origin && ['GET', 'HEAD'].includes(request.method())) return route.continue();
+  if (target.origin === origin && request.method() === 'POST' && !target.search) {
+    if (readStatusPosts.has(target.pathname)
+        && (request.postData() === null || /^\{\s*\}$/.test(request.postData().trim()))) return route.continue();
+    if (allowVpnToggle && target.pathname === vpnPlugin) {
+      try {
+        const body = request.postDataJSON();
+        if (body.enabled === true && Number.isSafeInteger(body.expected_revision) && body.expected_revision > 0
+            && Object.keys(body).length === 2) return route.continue();
+      } catch {}
+    }
+  }
+  if (activeRow && target.origin === origin) activeRow.blocked.push(request.method() + ' ' + target.pathname);
   return route.abort('blockedbyclient');
 });
 
-async function api(path, { body } = {}) {
-  const headers = { Accept: 'application/json', Origin: origin };
-  headers.Cookie = 'adlog_session=' + token;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(new URL(path, origin), {
-    method: body === undefined ? 'GET' : 'POST', headers, redirect: 'error',
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { status: response.status, body: await response.json() };
+const readStatusPosts = new Set([
+  '/api/v1/notification-channels/smtp/setup/status',
+  '/api/v1/notification-channels/telegram/setup/status',
+]);
+const vpnPlugin = '/api/v1/plugins/sli.remote-access';
+const adminVpnPage = '/app/admin/plugins/sli.remote-access';
+const agentForm = '/app/agents?register=1';
+const rows = [];
+let allowVpnToggle = false;
+const vpn = { defaultVisible: null, activation: 'not_examined' };
+const seen = new Set();
+let home = null;
+
+async function menuLinks(page) {
+  const result = await page.locator(nav + ' a[data-route]').evaluateAll(nodes => nodes.map(node => ({
+    route: node.dataset.route, path: new URL(node.href).pathname.replace(/\/$/, ''), label: node.innerText.trim(),
+  })));
+  for (const link of result) {
+    if (!['administration', 'back-to-work'].includes(link.route)) seen.add(link.path);
+  }
+  return result;
 }
 
-function requireResult(condition, step) {
-  if (!condition) throw new Error(step);
-}
-
-const evidence = { commit, direct: [], tabs: [] };
-const missing = '999999';
-const reportPath = key => '/api/v2/reports/' + key + '/data';
-const uiPath = (key, search) => '/app/report/' + key + '?' + search;
-
-function scope(url) {
-  const search = new URL(url).searchParams;
-  return { domain: search.get('domain'), domain_id: search.get('domain_id'), tab: search.get('tab') };
-}
-
-function observe(page, key) {
-  const calls = [];
-  page.on('response', response => {
-    if (new URL(response.url()).pathname === reportPath(key)) {
-      calls.push({ ...scope(response.url()), status: response.status() });
+async function vpnPreflight() {
+  const page = await context.newPage();
+  const expected = '/app/report/vpn.connections';
+  try {
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.locator(nav + ' a[data-route="workspace"]').waitFor();
+    await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
+    vpn.defaultVisible = (await menuLinks(page)).some(link => link.path === expected);
+    if (vpn.defaultVisible) {
+      vpn.activation = 'already_in_menu';
+      return;
     }
-  });
-  return calls;
-}
-
-async function visit(page, key, search) {
-  const response = await page.goto(new URL(uiPath(key, search), origin).href, { waitUntil: 'domcontentloaded' });
-  requireResult(response?.status() === 200, 'report_document');
-  const main = page.locator('main').first();
-  await main.waitFor({ state: 'visible' });
-  return main;
-}
-
-async function deny(main) {
-  await main.getByRole('link', { name: 'Мой доступ', exact: true }).waitFor({ state: 'visible' });
-  return {
-    denied: (await main.innerText()).includes('Нет доступа'),
-    noEnrollment: await main.locator('a[href="' + agentForm + '"]').count() === 0,
-  };
-}
-
-async function photograph(page, name) {
-  await page.screenshot({
-    path: join(results, name + '.png'),
-    mask: [page.locator('input, textarea, pre, code, [data-secret], [data-token]')],
-    timeout: 12_000,
-  });
-}
-
-async function checkDirect(parameter) {
-  const key = 'ad.infrastructure';
-  const search = parameter + '=' + missing;
-  const result = await api(reportPath(key) + '?' + search);
-  const row = { parameter, api: result.status, reason: reasonCode(result.body.error) };
-  evidence.direct.push(row);
-  requireResult(row.api === 403 && row.reason === 'domain_scope_denied', 'direct_scope_api');
-  const page = await context.newPage();
-  const calls = observe(page, key);
-  try {
-    const [initialDefinition, main] = await Promise.all([
-      page.waitForResponse(response => new URL(response.url()).pathname === '/api/v2/reports/' + key),
-      visit(page, key, search),
-    ]);
-    const declared = initialDefinition.ok() ? await initialDefinition.json() : {};
-    const deniedViews = Array.isArray(declared.views)
-      ? declared.views.filter(view => view.access?.allowed === false).map(view => view.key)
-      : [];
-    row.declaration = { status: initialDefinition.status(), deniedViews };
-    Object.assign(row, await deny(main), scope(page.url()), { calls });
-    requireResult(row.denied && row.noEnrollment && row[parameter] === missing
-      && (calls.length > 0 || initialDefinition.status() === 403 || deniedViews.includes('controls'))
-      && calls.every(call => call[parameter] === missing && call.status === 403), 'direct_scope_browser');
-  } finally {
-    row.current = scope(page.url());
-    await photograph(page, 'owner-direct-' + parameter).catch(() => {});
-    await page.close();
-  }
-}
-
-async function checkTab(key, initialTab) {
-  const search = new URLSearchParams({ domain: missing, domain_id: missing, tab: initialTab });
-  const page = await context.newPage();
-  const calls = observe(page, key);
-  const row = { report: key, calls };
-  evidence.tabs.push(row);
-  try {
-    const main = await visit(page, key, search);
-    const before = await deny(main);
-    row.before = { ...scope(page.url()), ...before };
-    const changes = main.getByRole('tab', { name: 'Изменения', exact: true });
-    await changes.click();
-    await page.waitForURL(current => current.searchParams.get('tab') === 'changes');
-    row.after = { ...scope(page.url()), ...await deny(main) };
-    await photograph(page, key + '-tab');
-    requireResult(row.before.tab === initialTab && row.after.tab === 'changes'
-      && [row.before, row.after].every(value => value.denied && value.noEnrollment
-        && value.domain === missing && value.domain_id === missing)
-      && calls.every(call => call.domain === missing && call.domain_id === missing && call.status === 403), 'tab_scope_browser');
-  } finally {
-    await page.close();
-  }
-}
-
-async function checkSelection() {
-  const key = 'ad.computers.v6';
-  const names = ['scope-first.example.test', 'scope-second.example.test'];
-  const registration = [];
-  const row = { registration };
-  evidence.selection = row;
-  for (const fqdn of names) {
-    const response = await api('/api/v1/setup/domains', { body: { fqdn } });
-    registration.push({ status: response.status, reason: reasonCode(response.body.error) });
-    requireResult(response.status === 201, 'register_synthetic_domain');
-  }
-  const list = await api('/api/v1/domains');
-  const ids = names.map(name => list.body.items?.find(domain => domain.display_name === name)?.id);
-  requireResult(list.status === 200 && ids.every(id => Number.isSafeInteger(id) && id > 0) && ids[0] !== ids[1],
-    'verify_synthetic_domains');
-  const [first, second] = ids.map(String);
-  const page = await context.newPage();
-  const calls = observe(page, key);
-  row.calls = calls;
-  try {
-    const main = await visit(page, key, new URLSearchParams({ domain: first, domain_id: first, tab: 'computers' }));
-    const selector = main.getByRole('combobox', { name: 'Домен', exact: true });
-    await selector.waitFor({ state: 'visible' });
-    await selector.locator('option[value="' + second + '"]').waitFor({ state: 'attached' });
-    row.before = { ...scope(page.url()), selected: await selector.inputValue() };
-    row.options = await selector.locator('option').evaluateAll(options => options.map(option => option.value));
-    requireResult(row.before.domain === first && row.before.domain_id === first && row.before.selected === first
-      && row.options.includes(second), 'existing_domain_filter');
-    const [delivery] = await Promise.all([
-      page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.pathname === reportPath(key) && url.searchParams.get('domain') === second;
+    const url = new URL('/api/v1/plugins', origin);
+    const response = await context.request.get(url.href);
+    vpn.catalogStatus = response.status();
+    if (!response.ok()) {
+      vpn.activation = 'catalog_unavailable';
+      return;
+    }
+    const body = await response.json();
+    const state = body.items?.find(item => item.plugin_id === 'sli.remote-access');
+    vpn.state = state && {
+      installed: state.installed === true, configured: state.configured === true,
+      enabled: state.enabled === true, runtime: /^[a-z_]{1,24}$/.test(state.component_runtime)
+        ? state.component_runtime : null, canManage: body.can_manage === true,
+    };
+    await page.goto(new URL(adminVpnPage, origin).href, { waitUntil: 'domcontentloaded' });
+    const main = page.locator('main').first();
+    await main.waitFor({ state: 'visible' });
+    await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
+    const control = main.getByRole('switch').first();
+    vpn.switchVisible = await control.count() > 0 && await control.isVisible();
+    vpn.switchEnabled = vpn.switchVisible && await control.isEnabled();
+    const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
+    await page.screenshot({ path: join(results, 'vpn-default-control.png'), mask: [sensitive], timeout: 12_000 });
+    if (!vpn.state?.installed || !vpn.state.configured || vpn.state.enabled || !vpn.switchEnabled) {
+      vpn.activation = 'native_precondition_unavailable';
+      return;
+    }
+    allowVpnToggle = true;
+    const [toggle] = await Promise.all([
+      page.waitForResponse(item => {
+        const target = new URL(item.url());
+        return target.pathname === vpnPlugin && item.request().method() === 'POST';
       }),
-      selector.selectOption(second),
+      control.check(),
     ]);
-    await page.waitForURL(current => current.searchParams.get('domain') === second && !current.searchParams.has('domain_id'));
-    row.after = { ...scope(page.url()), selected: await selector.inputValue(), api: delivery.status() };
-    row.request = scope(delivery.url());
-    await photograph(page, 'computers-changed-domain');
-    requireResult(row.after.domain === second && row.after.selected === second && row.after.domain_id === null
-      && row.after.api === 200 && row.request.domain_id === null, 'replace_old_domain_alias');
+    vpn.toggleStatus = toggle.status();
+    if (toggle.ok()) {
+      vpn.activation = 'enabled_in_guest';
+    } else {
+      const error = await toggle.json().catch(() => ({}));
+      vpn.toggleReason = /^[a-z_]{1,80}$/.test(error.error) ? error.error : null;
+      vpn.activation = 'enable_rejected';
+    }
+  } catch (error) {
+    vpn.activation = 'probe_failed';
+    vpn.probeError = clean(String(error.message).split('\n')[0]);
   } finally {
+    allowVpnToggle = false;
     await page.close();
   }
+}
+
+async function inspectOutcome(main, row, visible) {
+  const samples = await main.locator('tbody tr:visible').evaluateAll(trs => trs
+    .map(tr => [...tr.querySelectorAll('td:not([colspan])')].map(td => td.innerText.trim()))
+    .filter(cells => cells.some(cell => cell && !/^[—–-]+$/.test(cell))));
+  const listItems = await main.locator('.sli-ds-review-list__item:visible').count();
+  const dataEvidence = [];
+  if (samples.length) dataEvidence.push({ kind: 'rendered_table_rows', count: samples.length });
+  if (listItems) dataEvidence.push({ kind: 'rendered_review_items', count: listItems });
+  if (row.id === 'admin-locale' && /^admin\s*·\s*\S+/im.test(visible)) {
+    dataEvidence.push({ kind: 'signed_in_owner_profile', count: 1 });
+  }
+  if (row.id === 'plugins' && row.responses.some(response => response.path === '/api/v1/plugins' && response.status === 200)
+      && /^Установлен$/m.test(visible) && /^Версия$/m.test(visible)) {
+    dataEvidence.push({ kind: 'rendered_plugin_registry', count: 1 });
+  }
+  if (row.id.startsWith('admin-plugin-') && row.responses.some(response => response.path === '/api/v1/plugins' && response.status === 200)
+      && /^(?:Работает|Остановлен|Плагин выключен)$/m.test(visible)) {
+    dataEvidence.push({ kind: 'rendered_plugin_runtime_state', count: 1 });
+  }
+  row.dataEvidence = dataEvidence;
+  const exact = await main.locator('a[href="' + agentForm + '"]:visible').count();
+  const emptyActions = await main.locator('[data-state="empty"]:visible').evaluateAll(states => states.flatMap(state => {
+    const eligible = text => /^(?:подключите|добавьте|настройте|выберите|укажите|откройте|запустите|перейдите|очистите|измените|проверьте|установите|включите|создайте)\s/i.test(text);
+    const links = [...state.querySelectorAll('a[href], button')].filter(element =>
+      element.getClientRects().length > 0 && !element.disabled && element.getAttribute('aria-disabled') !== 'true')
+      .map(element => element.innerText.trim()).filter(Boolean);
+    // A linked button and its explanatory copy are evidence of the same action.
+    if (links.length) return links;
+    return [...state.querySelectorAll('.sli-ds-state__detail, .sli-ds-state__text')]
+      .map(element => element.innerText.trim()).filter(eligible);
+  }));
+  const actions = exact ? ['Добавить агента'] : emptyActions;
+  row.enrollmentLinks = exact;
+  if (row.id === 'agents' && /Агентов нет\.\s*Добавьте агента/.test(visible)
+      && row.controls.includes('Добавить агента')) actions.push('Добавить агента');
+  row.actions = [...new Set(actions.map(clean))];
 }
 
 try {
   console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
-  evidence.stage = 'clean_install';
-  const domains = await api('/api/v1/domains');
-  evidence.cleanDomains = { status: domains.status, count: domains.body.items?.length };
-  requireResult(domains.status === 200 && domains.body.items?.length === 0, 'clean_install_required');
-
-  evidence.checks = [];
-  for (const [stage, perform] of [
-    ['direct_domain_id', () => checkDirect('domain_id')],
-    ['users_tab', () => checkTab('ad.users.v2', 'all')],
-    ['computers_tab', () => checkTab('ad.computers.v6', 'computers')],
-    ['select_other_domain', checkSelection],
-  ]) {
-    evidence.stage = stage;
+  await vpnPreflight();
+  for (const entry of entries) {
+    const expected = targetPath(entry.path);
+    const row = { id: entry.id, path: expected, commit, clicked: false, failure: [], labels: [], api: [], blocked: [], text: [], responses: [], actions: [], dataEvidence: [] };
+    rows.push(row);
+    activeRow = row;
+    const page = await context.newPage();
+    const outstanding = new Set();
+    const reasonCodes = new Set();
+    let checkDestination = false;
+    page.on('response', response => {
+      if (!checkDestination) return;
+      const path = new URL(response.url()).pathname;
+      const status = response.status();
+      if (path.startsWith('/api/')) row.responses.push({ path, method: response.request().method(), status });
+      if (status >= 400) {
+        const line = response.request().method() + ' ' + path + ' → ' + status;
+        (path.startsWith('/api/') ? row.api : row.failure).push(clean(line));
+      }
+      if (!path.startsWith('/api/') || !response.headers()['content-type']?.includes('json')) return;
+      const read = response.json().then(body => {
+        const visit = node => {
+          if (!node || typeof node !== 'object') return;
+          for (const [key, value] of Object.entries(node)) {
+            if (['reason', 'reason_code'].includes(key) && typeof value === 'string') reasonCodes.add(value);
+            else if (typeof value === 'object') visit(value);
+          }
+        };
+        visit(body);
+        if (entry.id === 'workspace' && path === '/api/v1/home/summary' && status === 200) {
+          home = { domains: Array.isArray(body.domains) ? body.domains.length : null,
+            open: Number.isInteger(body.problems?.open_count) ? body.problems.open_count : null,
+            items: Array.isArray(body.problems?.items) ? body.problems.items.length : null };
+        }
+      }).catch(() => {}).finally(() => outstanding.delete(read));
+      outstanding.add(read);
+    });
+    page.on('requestfailed', request => {
+      if (checkDestination && new URL(request.url()).origin === origin &&
+          !/ERR_(?:ABORTED|BLOCKED_BY_CLIENT)/.test(request.failure()?.errorText ?? '')) {
+        row.failure.push(clean(request.method() + ' ' + new URL(request.url()).pathname + ' → ' + request.failure()?.errorText));
+      }
+    });
+    page.on('console', message => {
+      if (checkDestination && message.type() === 'error' && !message.text().includes('ERR_BLOCKED_BY_CLIENT')) row.failure.push(clean(message.text()));
+    });
+    page.on('pageerror', error => { if (checkDestination) row.failure.push(clean(error.message)); });
     try {
-      await perform();
-      evidence.checks.push({ stage, passed: true });
+      if (entry.id === 'workspace') checkDestination = true;
+      await page.goto(base, { waitUntil: 'domcontentloaded' });
+      await page.locator(nav + ' a[data-route="workspace"]').waitFor();
+      if (entry.administration) {
+        const gate = page.locator(nav + ' a[data-route="administration"]');
+        await gate.click();
+        await page.locator(nav + ' a[data-route="back-to-work"]').waitFor();
+      }
+      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
+      const menu = await menuLinks(page);
+      const link = menu.find(item => item.path === expected && !['administration', 'back-to-work'].includes(item.route));
+      checkDestination = true;
+      if (link) {
+        const current = page.locator(nav + ' a[data-route=' + JSON.stringify(link.route) + ']');
+        row.label = clean(link.label);
+        await current.click();
+        row.clicked = true;
+      } else {
+        row.navigation = 'hidden';
+        row.failure.push('Пункт отсутствует в меню владельца');
+        continue;
+      }
+      await page.waitForURL(current => current.pathname.replace(/\/$/, '') === expected, { timeout: 8_000 })
+        .catch(() => row.failure.push('Перенаправление вместо страницы: ' + new URL(page.url()).pathname));
+      const main = page.locator('main').first();
+      await main.waitFor({ state: 'visible' });
+      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      if (!await waitForVisibleLoadingToFinish(page)) row.failure.push('Загрузка не завершилась после ответов API');
+      await Promise.all([...outstanding]);
+      const visible = await main.innerText();
+      if (!visible.trim()) row.failure.push('Пустой рабочий экран');
+      row.text = lines(visible);
+      row.dataRows = await main.locator('tbody td:not([colspan]):visible, .sli-ds-review-list__item:visible').count();
+      row.emptyCopy = row.text.filter(line => /(?:^|\s)(?:подключите|добавьте|настройте|выберите|укажите|откройте|запустите|перейдите|очистите|измените|проверьте|установите|включите|создайте)(?:\s|$)/i.test(line));
+      row.controls = await main.locator('button:visible, a[href]:visible').evaluateAll(nodes => nodes
+        .filter(node => !node.disabled && node.getAttribute('aria-disabled') !== 'true')
+        .map(node => (node.innerText || node.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 16));
+      row.controls = row.controls.map(clean);
+      await inspectOutcome(main, row, visible);
+      row.navigation = 'clicked';
+      row.labels = forbiddenLabels(visible, [...reasonCodes]).map(clean);
+      row.failure.push(...loadErrors(visible).map(clean));
+      if (/^Нет доступа$/m.test(visible)) row.failure.push('Нет доступа');
+      const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
+      await page.screenshot({ path: join(results, entry.id + '.png'), fullPage: false, mask: [sensitive], timeout: 12_000 });
     } catch (error) {
-      evidence.checks.push({
-        stage, passed: false,
-        error: /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error',
-        type: /^[A-Za-z]+$/.test(error.name) ? error.name : 'Error',
-      });
+      row.failure.push(clean(String(error.message).split('\n')[0]));
+    } finally {
+      for (const key of ['failure', 'api', 'blocked', 'labels']) row[key] = [...new Set(row[key])];
+      row.load_errors = row.failure.length + row.api.length + row.blocked.length;
+      row.completeness_labels = row.labels.length;
+      row.data = row.dataEvidence.length > 0;
+      row.action_phrases = row.actions.length;
+      row.passed = row.clicked && row.load_errors === 0 && row.completeness_labels === 0
+        && (row.data || row.action_phrases === 1);
+      await page.close();
+      await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, menuPaths: [...seen], rows }, null, 2));
+      const details = { id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
+        data: row.data, dataEvidence: row.dataEvidence, action_phrases: row.action_phrases, actions: row.actions,
+        load_errors: row.load_errors, completeness_labels: row.completeness_labels, failure: row.failure,
+        api: row.api, blocked: row.blocked, labels: row.labels, passed: row.passed };
+      console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(details));
     }
   }
-  evidence.stage = 'complete';
-  evidence.passed = evidence.checks.every(check => check.passed);
-} catch (error) {
-  evidence.error = /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error';
-  evidence.type = /^[A-Za-z]+$/.test(error.name) ? error.name : 'Error';
-} finally {
-  await browser.close();
-}
-await writeFile(join(results, 'menu.json'), JSON.stringify(evidence, null, 2));
-console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(evidence));
-if (!evidence.passed) process.exitCode = 1;
+} finally { await browser.close(); }
+const expected = new Set(entries.map(entry => targetPath(entry.path)));
+const unexpected = [...seen].filter(path => !expected.has(path));
+const pages = Object.fromEntries(rows.map(row => [row.id, {
+  load_errors: row.load_errors, completeness_labels: row.completeness_labels,
+  data: row.data, action_phrases: row.action_phrases,
+}]));
+const failed = rows.filter(row => !row.passed).map(row => row.id);
+const summary = { commit, visited: rows.length, clicked: rows.filter(row => row.clicked).length,
+  expectedKeys: registry.beta_entries, failed, unexpected, vpn, home };
+await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, pages, summary, rows }, null, 2));
+console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(summary));
+if (rows.length !== registry.beta_entries.length || failed.length || unexpected.length) process.exitCode = 1;

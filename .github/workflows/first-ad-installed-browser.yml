@@ -1,4 +1,4 @@
-name: Installed AD report scope acceptance
+name: Installed beta menu acceptance
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -53,6 +53,7 @@ jobs:
              jq -ce --arg sha "$KIT_COMMIT" \
                '[.artifacts[] | select(.name==("sli-debian-beta-kit-"+$sha) and .expired==false)] |
                 select(length==1) | .[0] | select(.digest | test("^sha256:[a-f0-9]{64}$"))')
+          jq -e '.id==14987120905 and .digest=="sha256:18d1bcf762a2e32e9ff60e1f45d5e668e85a3763c203061e6dde0c2ff36c27bf"' <<<"$artifact" >/dev/null
           printf 'id=%s\ndigest=%s\n' "$(jq -r .id <<<"$artifact")" "$(jq -r .digest <<<"$artifact")" >>"$GITHUB_OUTPUT"
           jq '{id,name,digest}' <<<"$artifact"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -61,7 +62,7 @@ jobs:
           run-id: '45533669685'
           name: sli-debian-beta-kit-4a6f14c815e07ff2a01346700d79507689d657e9
           path: ${{ runner.temp }}/beta-candidate
-      - name: Verify direct AD scope, tabs and domain selection on installed Debian
+      - name: Walk the complete installed beta menu
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
@@ -71,7 +72,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-ad-report-scope-evidence
+          name: installed-beta-menu-19-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
