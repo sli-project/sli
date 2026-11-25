@@ -3,10 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportColumnDto, ReportDefinitionDto } from "../../api/report-v2-types";
-import { DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, Panel, ReportLayout, Tabs, TabList, type FilterValues, type ResultState } from "../../design-system";
+import { DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, Panel, ReportLayout, StateView, Tabs, TabList, type FilterValues, type ResultState } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { useEffectiveAccess, useTimeZone } from "../../app/App";
-import { columnValue, readPath, fillTemplate, searchFromValues, valuesFromSearch } from "../../app/report-v2/state";
+import { columnValue, defaultValues, readPath, fillTemplate, searchFromValues, valuesFromSearch } from "../../app/report-v2/state";
 import { cellKind, DetailSection, ResultWindowContext, tableColumns } from "../../app/report-v2/DetailSection";
 import { CollectionView } from "../../app/report-v2/views";
 import { ReportState } from "../../app/report-v2/ReportState";
@@ -44,6 +44,8 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const access = useEffectiveAccess();
   const { timeZone } = useTimeZone();
   const search = new URLSearchParams(window.location.search);
+  const [entrySearch] = useState(() => search);
+  const defaultFilters: FilterValues = { period: { preset: "24h" }, include_nested: "true", ...defaultValues(initial) };
   const requested = search.get("tab") ?? search.get("nav_view") ?? initial.key.slice("file-audit.".length);
   const [tab, setTab] = useState<FileAuditTab>(FILE_AUDIT_TABS.find((item) => item === requested) ?? "overview");
   const [values, setValues] = useState<FilterValues>(() => ({ period: { preset: "24h" }, include_nested: "true", ...valuesFromSearch(initial, search) }));
@@ -82,6 +84,20 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   } else if (definition?.access?.allowed === false) state = "denied";
   else if (definition && !params) { state = "empty"; detail = t("file-audit.invalid_period"); }
   else if (result) state = result.access?.allowed === false ? "denied" : result.state;
+  const reportAccess = access?.reports?.find(report => report.report_key === reportKey);
+  const canConfigure = access && !access.preview && (access.platform_owner === true
+    || (access.subject.coarse_role === "admin"
+      && ["access.manage", "operations.view", "file-audit.audit.manage"].every(key => access.capabilities.includes(key))
+      && reportAccess?.allowed && reportAccess.scopes?.some(scope => scope.kind === "all" || scope.mode === "all")));
+  const explicitScope = ["domain", "domain_id", "scope", "agent_id", "source_instance_id", "collection_scope_id", "share"]
+    .some(key => entrySearch.has(key) || search.has(key));
+  const plugin = result?.plugin ?? definition?.plugin;
+  const checkSource = Boolean(canConfigure && !explicitScope && !plugin?.read_only && plugin?.state !== "disabled"
+    && tab === "overview" && pages.length === 1 && state === "not_collected" && data.isSuccess && !data.isFetching
+    && !rows.length && searchFromValues(initial, values).toString() === searchFromValues(initial, defaultFilters).toString());
+  const agents = useQuery({ queryKey: ["admin-agents"], queryFn: () => api.agents(), enabled: checkSource, retry: false });
+  const offerSetup = checkSource && agents.isSuccess && !agents.isFetching && !agents.data.items.some(agent =>
+    agent.assigned_modules.some(module => (typeof module === "string" ? module : module.module_id) === "sli.file-audit"));
   // A revoked result must not leave a previously opened row visible.
   const visibleSelection = !error && !data.isFetching && state !== "denied" && selected && rows.includes(selected) ? selected : null;
   const agentHref = visibleSelection ? auditAgentHref(access?.platform_owner === true, tab, visibleSelection.agent_id, window.location.search) : null;
@@ -103,7 +119,9 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
       filters={definition ? <FilterBar align="start" layout="grid" fields={fileAuditFields(definition, result?.filter_options)} primaryKeys={["period", "path", "employee", "share", "operation"]}
         values={values} defaults={{ period: { preset: "24h" }, include_nested: "true" }} onApply={apply}/> : null}
       tabs={<TabList label={t("file-audit.title")}/>}
-      stateView={state === "denied" ? denied : <ReportState state={state} detail={detail} details={result?.state_details}
+      stateView={offerSetup ? <StateView state="empty" titleMessage={{ code: "pluginPage.noSources", params: {} }} detail={
+        <a className="sli-ds-button" href="/app/admin/plugins/sli.file-audit">{t("pluginPage.configure")}</a>
+      }/> : state === "denied" ? denied : <ReportState state={state} detail={detail} details={result?.state_details}
         message={result?.state_message} onRetry={() => void (declaration.error ? declaration.refetch() : data.refetch())} compact={state === "partial" || state === "stale" || state === "processing"}/>}
       drawer={<DetailDrawer open={visibleSelection !== null} title={tabTitle(tab)} onClose={() => setSelected(null)}
         footer={visibleSelection && definition ? <>{agentHref ? <a href={agentHref} target="_blank" rel="noopener noreferrer" className="sli-ds-button">{t("file-audit.open_agent_new_tab")}</a> : null}{definition.row_links.map((link) => {

@@ -9,15 +9,15 @@ import { FILE_AUDIT_TABS, tabTitle } from "./report";
 import { FileAuditReport } from "./FileAuditReport";
 import { t, setLocale, localeRuntime } from "../../i18n";
 
-const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), access: {
-  platform_owner: false,
-  subject: { type: "user", id: 1 }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
+const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), agents: vi.fn(), access: {
+  platform_owner: false, preview: false,
+  subject: { type: "user", id: 1, coarse_role: "viewer" }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
   reports: ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"].map((key) => ({
-    report_key: `file-audit.${key}`, allowed: true, allowed_actions: ["view", "export"],
+    report_key: `file-audit.${key}`, allowed: true, allowed_actions: ["view", "export"], scopes: [] as Array<Record<string, unknown>>,
   })),
 } }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...await importOriginal<typeof import("../../api/client")>(),
-  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data } }));
+  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, agents: mocks.agents } }));
 vi.mock("../../app/App", () => ({ useEffectiveAccess: () => mocks.access, useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../app/report-v2/ReportDenied", () => ({ ReportDenied: () => <div role="alert">Denied</div> }));
 
@@ -52,6 +52,10 @@ beforeEach(() => {
   mocks.data.mockReset().mockImplementation(async (key: string, params: URLSearchParams) => result(key, params));
   mocks.access.capabilities = ["file-audit.view", "file-audit.export"];
   mocks.access.platform_owner = false;
+  mocks.access.preview = false;
+  mocks.access.subject.coarse_role = "viewer";
+  mocks.access.reports.forEach(report => { report.scopes = []; });
+  mocks.agents.mockReset().mockResolvedValue({ items: [] });
 });
 afterEach(() => { cleanup(); client?.clear(); vi.useRealTimers(); });
 
@@ -499,4 +503,69 @@ it.each(["ru", "en"] as const)("keeps one file-audit tab bar and legacy workspac
   expect(tab.getAttribute("aria-selected")).toBe("true");
   setLocale("ru");
   vi.restoreAllMocks();
+});
+
+function mountUnconfiguredAudit(search = "", failure?: ApiResponseError) {
+  const key = "file-audit.overview";
+  window.history.replaceState({}, "", "/app/report/" + key + search);
+  mocks.data.mockImplementation(async (report: string, params: URLSearchParams) => ({
+    ...result(report, params), state: "not_collected", items: [], filtered_count: null, has_more: false, next_cursor: null,
+  }));
+  if (failure) mocks.data.mockRejectedValue(failure);
+  mount(declaration(key));
+}
+
+it("links the owner to the existing configuration for an unconfigured File Audit overview", async () => {
+  mocks.access.platform_owner = true;
+  mountUnconfiguredAudit();
+  const action = await screen.findByRole("link", { name: t("pluginPage.configure") });
+  expect(action.getAttribute("href")).toBe("/app/admin/plugins/sli.file-audit");
+  expect(screen.getAllByRole("link", { name: t("pluginPage.configure") })).toEqual([action]);
+});
+
+it.each(["?scope=all", "?domain_id=7", "?path=synthetic", "?source_kind=server", "?share=synthetic"])(
+  "keeps the scoped or filtered File Audit overview with %s", async search => {
+    mocks.access.platform_owner = true;
+    mountUnconfiguredAudit(search);
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(mocks.data).toHaveBeenCalled();
+    expect(mocks.agents).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: t("pluginPage.configure") })).toBeNull();
+  },
+);
+
+it("keeps a File Audit report without an action when a configured agent already exists", async () => {
+  mocks.access.platform_owner = true;
+  mocks.agents.mockResolvedValue({ items: [{ assigned_modules: [{ module_id: "sli.file-audit", enabled: true }] }] });
+  mountUnconfiguredAudit();
+  await waitFor(() => expect(mocks.agents).toHaveBeenCalled());
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.queryByRole("link", { name: t("pluginPage.configure") })).toBeNull();
+});
+
+it("does not expose setup after a File Audit report denial", async () => {
+  mocks.access.platform_owner = true;
+  mountUnconfiguredAudit("", new ApiResponseError(403, "domain_scope_denied"));
+  expect(await screen.findByText("Denied")).toBeTruthy();
+  expect(mocks.agents).not.toHaveBeenCalled();
+  expect(screen.queryByRole("link", { name: t("pluginPage.configure") })).toBeNull();
+});
+
+it.each([
+  ["viewer", [], false],
+  ["admin", [{ mode: "restricted", clauses: [{ device_ids: ["synthetic"] }] }], false],
+  ["admin", [{ kind: "all" }], true],
+] as const)("checks File Audit management and report scope for %s (%j)", async (role, scopes, allowed) => {
+  mocks.access.subject.coarse_role = role;
+  if (role === "admin") mocks.access.capabilities.push("access.manage", "operations.view", "file-audit.audit.manage");
+  mocks.access.reports.find(report => report.report_key === "file-audit.overview")!.scopes = [...scopes];
+  mountUnconfiguredAudit();
+  if (allowed) {
+    expect(await screen.findByRole("link", { name: t("pluginPage.configure") })).toBeTruthy();
+  } else {
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(mocks.data).toHaveBeenCalled();
+    expect(mocks.agents).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: t("pluginPage.configure") })).toBeNull();
+  }
 });

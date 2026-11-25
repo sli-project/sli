@@ -4,7 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, ApiResponseError, type SetupStatus } from "../api/client";
-import type { ReportDefinitionDto } from "../api/report-v2-types";
+import type { ReportDefinitionDto, ReportResultDto } from "../api/report-v2-types";
+import definitions from "../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
+import { OverlayProvider } from "../design-system";
 import { t } from "../i18n";
 import * as app from "./App";
 import { HomePage } from "./home";
@@ -200,5 +202,70 @@ it("does not treat an unavailable domain read as an empty setup", async () => {
   show(<ReportRenderer reportKey="security.events.chains" initialSearch=""/>);
   expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
   expect(api.setupStatus).toHaveBeenCalled();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+});
+
+const sourceReportKeys = ["events.journal", "ad.gpo.v2", "security.problems"] as const;
+type SourceReportKey = typeof sourceReportKeys[number];
+
+function showEmptySourceReport(key: SourceReportKey, options: { search?: string; denied?: boolean } = {}) {
+  const report = definitions.find(item => item.key === key);
+  expect(report).toBeDefined();
+  vi.mocked(api.reportV2Definition).mockResolvedValue({ ...report, filter_options: {} } as unknown as ReportDefinitionDto);
+  if (!options.denied) {
+    const result: ReportResultDto = {
+      contract_id: "sli.report-result.v2", report_key: key, state: "empty", items: [],
+      has_more: false, next_cursor: null, filtered_count: 0, metrics: [], series: {},
+      coverage: {}, filter_options: {}, limitations: [], window: {},
+    };
+    vi.mocked(api.reportV2Data).mockResolvedValue(result);
+  }
+  show(<OverlayProvider><ReportRenderer reportKey={key} initialSearch={options.search ?? ""}/></OverlayProvider>);
+}
+
+function settledEmptySourceReport(key: SourceReportKey) {
+  if (key === "events.journal") return screen.findByText(t("reports.v2.events.journal.empty"));
+  if (key === "security.problems") return screen.findByText(t("problems.queue.empty"));
+  return screen.findByRole("table");
+}
+
+it.each(sourceReportKeys)("offers one enrollment action from the unfiltered %s for a first source", async key => {
+  showEmptySourceReport(key);
+  const action = await screen.findByRole("link", { name: t("agents.addComputer") });
+  expect(action.getAttribute("href")).toBe("/app/agents?register=1");
+  expect(screen.getAllByRole("link", { name: t("agents.addComputer") })).toEqual([action]);
+});
+
+it.each(sourceReportKeys)("keeps a true data denial on %s", async key => {
+  showEmptySourceReport(key, { denied: true });
+  expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+  expect(api.setupStatus).not.toHaveBeenCalled();
+});
+
+it.each(sourceReportKeys)("retains a settled empty result on %s with a configured domain", async key => {
+  vi.mocked(api.setupStatus).mockResolvedValue({
+    ...emptySetup, domains: [{ fqdn: "configured.example.test", netbios_name: null, server_count: 0 }],
+  });
+  showEmptySourceReport(key);
+  await settledEmptySourceReport(key);
+  await waitFor(() => expect(api.setupStatus).toHaveBeenCalled());
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+});
+
+it.each(sourceReportKeys.flatMap(key => ["domain_id=7", "scope=all", "q=synthetic"].map(search => [key, search] as const)))(
+  "keeps the existing empty %s with %s", async (key, search) => {
+    showEmptySourceReport(key, { search });
+    await settledEmptySourceReport(key);
+    expect(api.setupStatus).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+  },
+);
+
+it("keeps the empty journal for a viewer without enrollment rights", async () => {
+  ownerAccess(false);
+  showEmptySourceReport("events.journal");
+  await settledEmptySourceReport("events.journal");
+  expect(api.setupStatus).not.toHaveBeenCalled();
   expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
 });

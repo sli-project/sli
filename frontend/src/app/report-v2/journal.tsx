@@ -14,6 +14,7 @@ import { preserveNavigationView } from "../navigation";
 import { CopyFactsButton } from "./DetailSection";
 import { withReturnTo } from "./legacy";
 import { ReportDenied } from "./ReportDenied";
+import { FirstAdSource, isEmptyFirstAdReportResult, useFirstAdSource } from "../first-ad-source";
 import { apiParams, defaultValues, filterFields, searchFromValues, valuesFromSearch, valuesReady } from "./state";
 
 const categories = ["all", "authentication", "accounts", "groups", "audit"] as const;
@@ -249,6 +250,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const { timeZone } = useTimeZone();
   const [values, setValues] = useState(() => journalRouteValues(definition, initialSearch ?? window.location.search));
   const [routeSearch, setRouteSearch] = useState(initialSearch);
+  const [entrySearch] = useState(() => new URLSearchParams(initialSearch ?? window.location.search));
   const [size, setSize] = useState(50);
   const [page, setPage] = useState(0);
   const [refresh, setRefresh] = useState(0);
@@ -325,6 +327,11 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
     key, label: <>{journalText(`view.${key}`)}{typeof counts?.[key] === "number" ? <> <strong>{formatNumber(counts[key])}</strong></> : null}</>,
   }));
   const defaults = defaultValues(definition);
+  const currentSearch = new URLSearchParams(initialSearch ?? window.location.search);
+  const hasExplicitScope = ["domain", "domain_id", "scope"].some(key => entrySearch.has(key) || currentSearch.has(key));
+  const firstAdSource = useFirstAdSource(currentSearch, !hasExplicitScope && page === 0 && active === "all"
+    && searchFromValues(definition, values).toString() === searchFromValues(definition, defaults).toString()
+    && definition.access?.allowed !== false && data.isSuccess && !data.isFetching && isEmptyFirstAdReportResult(first));
   const filterDefinitions = filterFields(definition).filter((field) => ["q", "result"].includes(field.key)).map((field) => (
     field.key === "q" && field.kind === "text" ? { ...field, immediate: true, placeholder: journalText("search") }
       : field.key === "result" && field.kind === "select" ? { ...field, label: journalText("result"), immediate: true, hideLabel: true, options: [
@@ -360,7 +367,8 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
     </div>
     {typeof first?.journal_event_count === "number" ? <span>{journalText("event_count", { count: formatNumber(first.journal_event_count) })}</span> : null}</>;
   let content: ReactNode;
-  if (!rows.length) content = <p role="status">{journalText(first?.state === "not_collected" ? "not_loaded" : "empty")}</p>;
+  if (!rows.length) content = firstAdSource ? <FirstAdSource/>
+    : <p role="status">{journalText(first?.state === "not_collected" ? "not_loaded" : "empty")}</p>;
   else content = <DataTable compact caption={definition.title} rows={rows} rowKey={(row) => row.key} columns={columns}
     sort={{ field: "time", direction: "desc" }} selectedKey={selected?.key} onRowClick={select} total={total} footerControls={footer}
     expanded={(row) => expanded === row.key && row.id ? <RepeatRows params={fixedParams} row={row} columns={columns} onSelect={select}/> : null}

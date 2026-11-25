@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import type { ReportResultDto } from "../api/report-v2-types";
 import { StateView } from "../design-system";
 import { t } from "../i18n";
 import { useEffectiveAccess } from "./App";
@@ -20,6 +21,11 @@ export function useFirstAdSource(search: URLSearchParams, enabled: boolean) {
     && setup.domains.length === 0 && setup.domain_controller_source != null && setup.domain_controllers.length === 0
     && setup.report_domain?.value === "" && !setup.report_domain.configured_value
     && agents?.state === "unknown" && !agents.diagnostics && agents.items.length === 0 && !agents.replaced_agents?.length;
+}
+
+export function isEmptyFirstAdReportResult(result: ReportResultDto | undefined) {
+  return result !== undefined && result.access?.allowed !== false && result.items.length === 0
+    && (result.state === "ok" || result.state === "empty" || result.state === "not_collected");
 }
 
 export function FirstAdSource() {
