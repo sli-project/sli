@@ -96,10 +96,19 @@ async function checkDirect(parameter) {
   const page = await context.newPage();
   const calls = observe(page, key);
   try {
-    const main = await visit(page, key, search);
+    const [initialDefinition, main] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/v2/reports/' + key),
+      visit(page, key, search),
+    ]);
+    const declared = initialDefinition.ok() ? await initialDefinition.json() : {};
+    const deniedViews = Array.isArray(declared.views)
+      ? declared.views.filter(view => view.access?.allowed === false).map(view => view.key)
+      : [];
+    row.declaration = { status: initialDefinition.status(), deniedViews };
     Object.assign(row, await deny(main), scope(page.url()), { calls });
     requireResult(row.denied && row.noEnrollment && row[parameter] === missing
-      && calls.some(call => call[parameter] === missing && call.status === 403), 'direct_scope_browser');
+      && (calls.length > 0 || initialDefinition.status() === 403 || deniedViews.includes('controls'))
+      && calls.every(call => call[parameter] === missing && call.status === 403), 'direct_scope_browser');
   } finally {
     row.current = scope(page.url());
     await photograph(page, 'owner-direct-' + parameter).catch(() => {});
@@ -124,7 +133,8 @@ async function checkTab(key, initialTab) {
     await photograph(page, key + '-tab');
     requireResult(row.before.tab === initialTab && row.after.tab === 'changes'
       && [row.before, row.after].every(value => value.denied && value.noEnrollment
-        && value.domain === missing && value.domain_id === missing), 'tab_scope_browser');
+        && value.domain === missing && value.domain_id === missing)
+      && calls.every(call => call.domain === missing && call.domain_id === missing && call.status === 403), 'tab_scope_browser');
   } finally {
     await page.close();
   }
@@ -183,18 +193,27 @@ try {
   evidence.cleanDomains = { status: domains.status, count: domains.body.items?.length };
   requireResult(domains.status === 200 && domains.body.items?.length === 0, 'clean_install_required');
 
-  evidence.stage = 'direct_domain';
-  await checkDirect('domain');
-  evidence.stage = 'direct_domain_id';
-  await checkDirect('domain_id');
-  evidence.stage = 'users_tab';
-  await checkTab('ad.users.v2', 'all');
-  evidence.stage = 'computers_tab';
-  await checkTab('ad.computers.v6', 'computers');
-  evidence.stage = 'select_other_domain';
-  await checkSelection();
+  evidence.checks = [];
+  for (const [stage, perform] of [
+    ['direct_domain_id', () => checkDirect('domain_id')],
+    ['users_tab', () => checkTab('ad.users.v2', 'all')],
+    ['computers_tab', () => checkTab('ad.computers.v6', 'computers')],
+    ['select_other_domain', checkSelection],
+  ]) {
+    evidence.stage = stage;
+    try {
+      await perform();
+      evidence.checks.push({ stage, passed: true });
+    } catch (error) {
+      evidence.checks.push({
+        stage, passed: false,
+        error: /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error',
+        type: /^[A-Za-z]+$/.test(error.name) ? error.name : 'Error',
+      });
+    }
+  }
   evidence.stage = 'complete';
-  evidence.passed = true;
+  evidence.passed = evidence.checks.every(check => check.passed);
 } catch (error) {
   evidence.error = /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error';
   evidence.type = /^[A-Za-z]+$/.test(error.name) ? error.name : 'Error';
