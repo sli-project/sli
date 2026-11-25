@@ -61,14 +61,16 @@ describe("registry report workspaces", () => {
     expect(screen.queryByTestId("report")).toBeNull();
   });
 
-  it("switches between computers and logons", async () => {
+  it("keeps a domain_id deep link when switching from computers to logons", async () => {
     state.grants = ["ad.computers.v6", "ad.computer-logons"];
-    await renderWorkspace("ad.computers.v6");
+    const router = await renderWorkspace("ad.computers.v6", "?domain_id=8");
     expect((await screen.findByTestId("report")).textContent).toBe("ad.computers.v6");
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByRole("tab", { name: "Компьютеры" })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Входы на компьютеры" }));
     await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("ad.computer-logons"));
+    expect(String((router.state.location.search as Record<string, unknown>).domain_id)).toBe("8");
+    expect(new URLSearchParams(router.state.location.searchStr).get("domain_id")).toBe("8");
   });
 
   it("gives a logons-only reader a working computers entry without mounting the computer report", async () => {
