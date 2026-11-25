@@ -17,7 +17,9 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
+using Sli.Server.Agents.Consumer;
 using Sli.Server.Auth.Lifecycle.Security;
+using Sli.Server.Infrastructure;
 using Sli.Server.Tests.Semantic;
 using Xunit;
 
@@ -39,6 +41,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct, throughVersion: 414);
         using var environment = new SemanticProducerPostgresTests.Admission(mode: null);
+        environment.Set("ADLOG_POSTGRES_IMPORT_QUEUE_LOCK", Path.Combine(fixture.Pg.Root, "post-collection.lock"));
         environment.Set("SLI_PLUGIN_RUNTIME_DIR", null);
         environment.Set("SLI_PLUGIN_LOCK_DIR", null);
         var token = await fixture.SeedOwnerAsync(ct);
@@ -93,8 +96,23 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         admin.DefaultRequestHeaders.Add("Cookie", "adlog_session=" + token);
         using var agent = Client(peer);
 
-        var (envelope, filePacket, policy) = AgentFileAuditValidatorTests.ActionPacket("permissions", 4670);
+        var (envelope, filePacket, filePolicy) = AgentFileAuditValidatorTests.ActionPacket("permissions", 4670);
+        string sourceName = AdDcImportPerformanceTests.Source;
+        var config = (JsonObject)filePolicy.Value.DeepClone();
+        config["source_name"] = sourceName;
+        var policy = FileAuditPolicy.Parse(config);
+        filePacket["header"]!["source"] = sourceName;
+        var fileEvent = filePacket["records"]![0]!["payload"]!.AsObject();
+        fileEvent["computer_name"] = sourceName;
         var now = Iso8601.Truncate(DateTimeOffset.UtcNow);
+        var minute = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, TimeSpan.Zero);
+        fileEvent["minute_utc"] = Iso8601.Format(minute);
+        fileEvent["time_created"] = Iso8601.Format(now);
+        fileEvent["first_seen_utc"] = Iso8601.Format(now);
+        fileEvent["last_seen_utc"] = Iso8601.Format(now);
+        await using var runtime = new DirectAdDcRuntime(NpgsqlDataSource.Create(fixture.Dsn("sli_storage_login")),
+            Path.Combine(PostCollectionPostgres.Repository(), "config", "event_catalog.json"));
+        var consumer = new AgentWorkstationInboxConsumer(host.Services.GetRequiredService<IPostgresConnectionFactory>(), runtime);
         var signer = new EcdsaPacketSigner(key);
         string statusPath = Control + "?agent_id=" + agentId;
 
@@ -149,16 +167,19 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
             Assert.Equal("accepted", (await Read(response, HttpStatusCode.OK, ct))["status"]!.ToString());
         }
 
-        async Task AssertSavedCommand(JsonObject command)
+        async Task<(string ShareKey, string RootPath)> AssertSavedCommand(JsonObject command)
         {
             using var response = await admin.GetAsync(Control + "/catalog?agent_id=" + agentId, ct);
             var catalog = await Read(response, HttpStatusCode.OK, ct);
             var saved = Assert.IsType<JsonObject>(catalog["saved_command"]);
             foreach (string field in new[] { "command_id", "action", "policy_revision", "collection_scope_ids" })
                 Assert.True(JsonNode.DeepEquals(command[field], saved[field]), $"Catalog returned a different {field}");
-            Assert.Equal(Scope, catalog["saved_selection"]!["collection_scope_id"]!.GetValue<string>());
-            Assert.Equal(@"C:\Files", catalog["saved_selection"]!["path"]!.GetValue<string>());
-            var reportKey = JsonNode.Parse(catalog["saved_report_share_key"]!.GetValue<string>())!.AsArray();
+            var selection = Assert.IsType<JsonObject>(catalog["saved_selection"]);
+            Assert.Equal(Scope, selection["collection_scope_id"]!.GetValue<string>());
+            string rootPath = selection["path"]!.GetValue<string>();
+            Assert.Equal(@"C:\Files", rootPath);
+            string shareKey = catalog["saved_report_share_key"]!.GetValue<string>();
+            var reportKey = JsonNode.Parse(shareKey)!.AsArray();
             Assert.Equal(new[] { agentId.ToString("D"), hostId.ToString("D"), Scope },
                 reportKey.Select(value => value!.GetValue<string>()).ToArray());
 
@@ -166,6 +187,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
             var status = await Read(receipt, HttpStatusCode.OK, ct);
             Assert.Equal(command["command_id"]!.GetValue<string>(), status["command"]!["command_id"]!.GetValue<string>());
             Assert.Equal("verified", status["state"]!.GetValue<string>());
+            return (shareKey, rootPath);
         }
 
         var initial = await agent.GetFromJsonAsync<JsonObject>(AgentIdentity, ct);
@@ -176,7 +198,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         Assert.Equal("module_disabled", (await SendPacket(SignedFile(applyRevision, Scope)))["error_code"]!.ToString());
         var appliedReport = Report(policy, applied, now);
         await Confirm(appliedReport);
-        await AssertSavedCommand(applied);
+        var (shareKey, rootPath) = await AssertSavedCommand(applied);
         // Continue from a native apply written before the server stored its origin separately.
         await using (var legacyApply = new NpgsqlCommand("""
             update public.sli_agents set file_audit=file_audit-'permissions_restore_origin' where id=@agent
@@ -187,6 +209,26 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         }
         var otherScope = await SendPacket(SignedFile(applyRevision, "scope:other"));
         var fileReceipt = await SendPacket(SignedFile(applyRevision, Scope));
+        Assert.Equal("agent_file_audit_packet_invalid", otherScope["error_code"]!.ToString());
+        Assert.True(fileReceipt["status"]!.ToString() == "committed", fileReceipt.ToJsonString());
+        var fileImport = await consumer.RunOnceAsync(1, ct);
+        Assert.True(fileImport.Imported == 1, string.Join(", ", fileImport.PendingReasons));
+
+        string window = $"period=custom&from={Iso8601.Format(now.AddMinutes(-1))}&to={Iso8601.Format(now.AddMinutes(1))}";
+        string filter = $"source_kind=server&share={Uri.EscapeDataString(shareKey)}&path={Uri.EscapeDataString(rootPath)}&include_nested=true&operation=permissions";
+        using (var response = await admin.GetAsync($"/api/v2/reports/file-audit.permission-changes/data?{window}&{filter}", ct))
+        {
+            var report = await Read(response, HttpStatusCode.OK, ct);
+            var row = Assert.IsType<JsonObject>(Assert.Single(report["items"]!.AsArray()));
+            Assert.Equal(agentId.ToString("D"), row["agent_id"]!.ToString());
+            Assert.Equal(hostId.ToString("D"), row["source_instance_id"]!.ToString());
+            Assert.Equal(Scope, row["collection_scope_id"]!.ToString());
+            Assert.Equal(fileEvent["path"]!.ToString(), row["path"]!.ToString());
+            Assert.Equal(now, DateTimeOffset.Parse(row["observed_at"]!.GetValue<string>(), CultureInfo.InvariantCulture));
+            var evidence = Assert.IsType<JsonObject>(Assert.Single(row["evidence"]!.AsArray()));
+            Assert.Equal(4670, evidence["event_id"]!.GetValue<int>());
+            Assert.Equal(fileEvent["record_id"]!.ToString(), evidence["record_id"]!.ToString());
+        }
 
         var recheck = await Queue("check", "synthetic-recheck", long.Parse(applyRevision, CultureInfo.InvariantCulture));
         var beforeRestore = await agent.GetFromJsonAsync<JsonObject>(AgentIdentity, ct);
@@ -201,8 +243,6 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         await Confirm(restoreReport);
         await Confirm(restoreReport);
         Assert.Equal("accepted", (await Read(checkedReport, HttpStatusCode.OK, ct))["status"]!.ToString());
-        Assert.Equal("agent_file_audit_packet_invalid", otherScope["error_code"]!.ToString());
-        Assert.True(fileReceipt["status"]!.ToString() == "committed", fileReceipt.ToJsonString());
         var restored = await admin.GetFromJsonAsync<JsonObject>(statusPath, ct);
         Assert.Equal("synthetic-restore", restored!["command"]!["command_id"]!.ToString());
         Assert.Equal("verified", restored["state"]!.ToString());
@@ -234,9 +274,11 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         Assert.Equal("synthetic-next-restore", pending!["command"]!["command_id"]!.ToString());
         Assert.Equal("pending", pending["state"]!.ToString());
         Assert.True(pending["may_own_audit"]!.GetValue<bool>());
-        var ad = AgentPacketReportPostgresTests.CaptureSample(now, AdDcImportPerformanceTests.Source, hostId);
+        var ad = AgentPacketReportPostgresTests.CaptureSample(now, sourceName, hostId);
         var adReceipt = await SendPacket(Packets.Make(signer, agentId.ToString(), 1, ad, now).ToJson());
         Assert.True(adReceipt["status"]!.ToString() == "committed", adReceipt.ToJsonString());
+        var adImport = await consumer.RunOnceAsync(1, ct);
+        Assert.True(adImport.Imported == 1, string.Join(", ", adImport.PendingReasons));
         await Confirm(Report(policy, nextRestore, now.AddSeconds(5)));
 
         var final = await agent.GetFromJsonAsync<JsonObject>(AgentIdentity, ct);
@@ -244,12 +286,15 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
             item => item?["module_id"]?.ToString() == "sli.windows.ad-dc")));
         await using var receipt = new NpgsqlCommand("""
             select (select count(*) from public.sli_agent_receipts where packet_id=@packet)=1
+                and exists(select 1 from public.sli_agent_packet_inbox
+                    where packet_id=@ad_packet and envelope->>'module_id'='sli.windows.ad-dc' and imported_at is not null)
                 and (select count(*) from sli_plugin_file_audit.audit_receipts where agent_id=@agent
                      and command_id in ('synthetic-apply','synthetic-recheck','synthetic-restore','synthetic-next-restore'))=4
                 and not exists (select 1 from sli_plugin_file_audit.audit_receipts where agent_id=@agent
                                 and command_id in ('synthetic-pending-apply','synthetic-pending-check'))
             """, owner);
         receipt.Parameters.AddWithValue("packet", Guid.Parse(fileReceipt["packet_id"]!.ToString()));
+        receipt.Parameters.AddWithValue("ad_packet", Guid.Parse(adReceipt["packet_id"]!.ToString()));
         receipt.Parameters.AddWithValue("agent", agentId);
         Assert.Equal(true, await receipt.ExecuteScalarAsync(ct));
     }
