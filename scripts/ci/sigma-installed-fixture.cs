@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
+using Sli.Server.Semantic;
 using Sli.Server.Storage.Direct;
 using Sli.Server.Tests.Storage;
 using Xunit;
@@ -100,6 +101,7 @@ public sealed class InstalledSigmaGuestFixture
             string yaml = $$"""
                 title: Synthetic installed Sigma TEST {{kind}}
                 id: 00000000-0000-4000-8000-00000000{{kind}}
+                author: SLI installation test
                 logsource:
                     product: windows
                     service: {{service}}
@@ -109,6 +111,7 @@ public sealed class InstalledSigmaGuestFixture
                         {{field}}|contains: sigma-qa-only
                     condition: selection
                 """;
+            Assert.Equal(service, SigmaRule.Compile(yaml).LogSource);
             await File.WriteAllTextAsync(Path.Combine(root, kind + ".yml"), yaml, ct);
         }
 
