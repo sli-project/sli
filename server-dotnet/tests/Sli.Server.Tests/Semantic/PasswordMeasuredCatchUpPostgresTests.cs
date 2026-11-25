@@ -50,6 +50,13 @@ public sealed partial class PasswordConcurrentImportWindowPostgresTests
         await using var importer = new NpgsqlConnection(fixture.Dsn("sli_storage_login"));
         await importer.OpenAsync(ct);
 
+        // Source discovery materializes the worker's core evidence binding.
+        await using var source = new NpgsqlCommand("""
+            select source::text from public.default_detection_sources()
+            where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
+            """, worker);
+        var scope = PasswordScope.Read(JsonNode.Parse(Assert.IsType<string>(await source.ExecuteScalarAsync(ct)))!["scope"]);
+
         await using (var app = new NpgsqlConnection(fixture.Dsn("adlog_user")))
         {
             await app.OpenAsync(ct);
@@ -60,11 +67,6 @@ public sealed partial class PasswordConcurrentImportWindowPostgresTests
             Assert.Equal("configured", await bind.ExecuteScalarAsync(ct));
         }
 
-        await using var source = new NpgsqlCommand("""
-            select source::text from public.default_detection_sources()
-            where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
-            """, worker);
-        var scope = PasswordScope.Read(JsonNode.Parse(Assert.IsType<string>(await source.ExecuteScalarAsync(ct)))!["scope"]);
         async Task<PasswordRule> Plan(string kind)
         {
             await using var plan = new NpgsqlCommand("""
