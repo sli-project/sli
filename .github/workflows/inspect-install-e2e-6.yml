@@ -28,12 +28,13 @@ jobs:
 
           docker run --detach --name sli-credential-fixture --hostname sli-e2e \
             --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock --shm-size=1g \
-            sli-credential-fixture /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init
+            sli-credential-fixture /bin/sh -ec 'mount --make-shared /run; exec /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init'
           until docker exec sli-credential-fixture systemctl show --property=Version --value; do
             [[ $(docker inspect --format '{{.State.Running}}' sli-credential-fixture) == true ]]
             sleep 1
           done
           docker exec sli-credential-fixture systemctl is-system-running --wait
+          docker exec sli-credential-fixture awk '$5 == "/run" && $7 ~ /^shared:/ { print "container_run_propagation=shared"; ok=1 } END { exit !ok }' /proc/1/mountinfo
 
           docker exec -i sli-credential-fixture bash -s <<'FIXTURE'
           set -euo pipefail
@@ -62,8 +63,16 @@ jobs:
                   print(f'{name}: {errno.errorcode.get(error.errno, "unknown")}')
                   status = 1
               else:
+                  metadata = os.fstat(fd)
+                  mode = metadata.st_mode & 0o777
+                  private = metadata.st_uid == os.geteuid() and mode in (0o400, 0o600)
+                  delivered = metadata.st_uid == 0 and metadata.st_gid == 0 and mode == 0o440 and os.statvfs(directory).f_flag & os.ST_RDONLY
                   os.close(fd)
-                  print(f'{name}: open-ok')
+                  if private or delivered:
+                      print(f'{name}: open-ok')
+                  else:
+                      print(f'{name}: invalid-delivery-mode')
+                      status = 1
           sys.exit(status)
           PY
           for variant in with-pre without-pre; do
@@ -88,7 +97,18 @@ jobs:
             printf '%s: start_exit=%s\n' "$unit" "$code"
             systemctl show "$unit" --property=Result,ExecMainStatus
             journalctl -u "$unit" -o cat --no-pager |
-              grep -E '^(credential_env_expected|credential_directory_present)=(True|False)$|^(postgres_password|migration_password|runtime_password): (open-ok|[A-Z0-9_]+)$' || true
+              grep -E '^(credential_env_expected|credential_directory_present)=(True|False)$|^(postgres_password|migration_password|runtime_password): (open-ok|invalid-delivery-mode|[A-Z0-9_]+)
+          done
+          FIXTURE
+      - name: Remove the synthetic container
+        if: always()
+        shell: bash
+        run: |
+          if docker inspect sli-credential-fixture >/dev/null 2>&1; then
+            docker rm --force sli-credential-fixture
+          fi
+ || true
+            test "$code" -eq 0
           done
           FIXTURE
       - name: Remove the synthetic container
