@@ -80,6 +80,12 @@ public sealed class WorkstationGroupEnrollmentAssignmentPostgresTests
             agent = Guid.Parse(issued["agent_id"]!.GetValue<string>());
             using var certificate = X509Certificate2.CreateFromPem(issued["certificate_pem"]!.GetValue<string>());
             await identity.AuthenticateAsync(db, tx, certificate, false, ct);
+            // The consumed approval remains authoritative after normal key rotation.
+            using var renewedKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            await enrollment.RenewAsync(db, tx, certificate, new JsonObject
+            {
+                ["csr_pem"] = new CertificateRequest($"CN={host}", renewedKey, HashAlgorithmName.SHA256).CreateSigningRequestPem(),
+            }, ct);
             Assert.Equal(0L, await AgentGroupStore.Scalar(db, tx,
                 "select count(*) from public.servers where domain_id=@domain and role='workstation'", ct, ("domain", domain)));
             Assert.Equal(1L, await AgentGroupStore.Scalar(db, tx, """
@@ -92,12 +98,45 @@ public sealed class WorkstationGroupEnrollmentAssignmentPostgresTests
             await tx.CommitAsync(ct);
         }
 
+        var request = JsonSerializer.SerializeToElement(new
+        {
+            agent_id = agent, module_id = WorkstationsModule.ModuleId, enabled = true, config = new JsonObject(),
+        });
+        // Reuse the same isolated cluster; each rejected mutation rolls back completely.
+        foreach (string mutation in new[]
+        {
+            "update public.sli_agents set registration_host_name='another-workstation' where id=@agent",
+            "update public.sli_agent_group_requests set status='cancelled' where computer_entity_id=@computer",
+            "update public.ad_context_entity_versions set attributes_json=jsonb_set(attributes_json,'{attributes,enabled}','false') where entity_id=@computer and source_section='directory_accounts' and valid_to_utc is null",
+            "update public.ad_context_entity_versions set attributes_json=jsonb_set(attributes_json,'{attributes,operating_system}','\"Windows Server 2025\"') where entity_id=@computer and source_section='directory_accounts' and valid_to_utc is null",
+            "update public.ad_context_entity_versions set attributes_json=jsonb_set(attributes_json,'{attributes,user_account_control}','8192') where entity_id=@computer and source_section='directory_accounts' and valid_to_utc is null",
+            "update public.ad_context_entity_versions set last_observed_at_utc=clock_timestamp()-interval '25 hours' where entity_id=@computer and source_section='directory_accounts' and valid_to_utc is null",
+            """
+            with other_domain as (
+                insert into public.domains(forest_id,fqdn) select min(id),'other.invalid' from public.forests returning id
+            )
+            insert into public.servers(domain_id,hostname,fqdn,role)
+            select id,'ws-group-fixture','ws-group-fixture.other.invalid','workstation' from other_domain
+            """,
+        })
+        {
+            await using var owner = await fixture.Pg.OpenAsync(ct);
+            await using var tx = await owner.BeginTransactionAsync(ct);
+            await AgentGroupStore.Execute(owner, tx, mutation, ct, ("agent", agent), ("computer", computer));
+            await AgentGroupStore.Execute(owner, tx, "set local role adlog_user", ct);
+            var before = await AgentGroupStore.Scalar(owner, tx, "select policy_revision from sli_agents where id=@agent", ct, ("agent", agent));
+            var rejected = await Assert.ThrowsAsync<AgentControlException>(() =>
+                new AgentModuleAssignmentService(audit).AssignAsync(owner, tx, request, Actor, ct));
+            Assert.Equal("agent_source_not_bound", rejected.Message);
+            Assert.Equal(before, await AgentGroupStore.Scalar(owner, tx, "select policy_revision from sli_agents where id=@agent", ct, ("agent", agent)));
+            Assert.Equal(0L, await AgentGroupStore.Scalar(owner, tx,
+                "select count(*) from public.servers where domain_id=@domain and role='workstation'", ct, ("domain", domain)));
+            Assert.Null(await WorkstationJournalAdmission.ReadAsync(owner, tx, agent, null, null, ct));
+            await tx.RollbackAsync(ct);
+        }
+
         await using (var tx = await db.BeginTransactionAsync(ct))
         {
-            var request = JsonSerializer.SerializeToElement(new
-            {
-                agent_id = agent, module_id = WorkstationsModule.ModuleId, enabled = true, config = new JsonObject(),
-            });
             var assigned = await new AgentModuleAssignmentService(audit).AssignAsync(db, tx, request, Actor, ct);
             string revision = assigned.GetProperty("policy_revision").GetInt64().ToString(CultureInfo.InvariantCulture);
             var scope = Assert.IsType<WorkstationJournalScope>(await WorkstationJournalAdmission.ReadAsync(db, tx, agent, host.ToString("D"), revision, ct));
@@ -105,6 +144,8 @@ public sealed class WorkstationGroupEnrollmentAssignmentPostgresTests
             Assert.Equal(Fqdn, scope.Computer);
             Assert.Equal(WorkstationJournalAdmission.EventIds,
                 scope.Config["allow_event_ids"]!.AsArray().Select(value => value!.GetValue<int>()));
+            Assert.Equal(1L, await AgentGroupStore.Scalar(db, tx,
+                "select count(*) from public.servers where domain_id=@domain and role='workstation'", ct, ("domain", domain)));
             await tx.CommitAsync(ct);
         }
     }

@@ -86,6 +86,8 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         if (workstation && flag.GetBoolean() && !WorkstationJournalAdmission.SupportsConfig(config))
             throw new AgentControlException("workstation_journal_profile_unsupported")
                 { AllowedEventIds = WorkstationJournalAdmission.EventIds };
+        if (workstation && flag.GetBoolean() && !await WorkstationGroupSource.PrepareAsync(db, tx, id, ct))
+            throw new AgentControlException("agent_source_not_bound", 409);
         if (module == NpsPolicy.Accounting && flag.GetBoolean())
         {
             var policy=NpsPolicy.Parse(module,config);
