@@ -275,7 +275,7 @@ export const ru = {
   "systemStatus.passwordDetection.behind": "Обработка отстаёт",
   "systemStatus.passwordDetection.historyPending": "Есть необработанные исторические события",
   "systemStatus.passwordDetection.recovered": "Обработка возобновилась",
-  "systemStatus.passwordDetection.current": "События обработаны",
+  "systemStatus.passwordDetection.current": "Работает",
   "systemStatus.passwordDetection.quiet": "Нет новых событий",
   "systemStatus.passwordDetection.unknown": "Проверьте источник событий",
   "systemStatus.passwordDetection.unavailable": "Не удалось загрузить состояние парольных правил",
