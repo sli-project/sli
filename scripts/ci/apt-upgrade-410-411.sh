@@ -68,12 +68,18 @@ mv -- /etc/apt/sources.list "$work/debian-sources.list"
 if find /etc/apt/sources.list.d -maxdepth 1 \( -name '*.list' -o -name '*.sources' \) -print -quit | grep -q .; then
     fail 'unexpected APT source in the disposable guest'
 fi
-(
-    cd "$tools"
-    python3 -B -m deploy.linux.native_apt bootstrap \
-        --key "$repo_root/repo/sli-archive-keyring.gpg" --fingerprint "$fingerprint" \
-        --uri "file://$repo_root/repo" --component main
-)
+install -D -m 0644 "$repo_root/repo/sli-archive-keyring.gpg" /etc/apt/keyrings/sli-archive.gpg
+gpgv --keyring /etc/apt/keyrings/sli-archive.gpg "$repo_root/repo/dists/trixie/InRelease" >"$work/verify.log" 2>&1
+cat >/etc/apt/sources.list.d/sli.sources <<REPO
+Types: deb
+URIs: file://$repo_root/repo
+Suites: trixie
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/sli-archive.gpg
+REPO
+chmod 0644 /etc/apt/sources.list.d/sli.sources
+printf 'P1_EVIDENCE apt_source=file://%s/repo trixie main Signed-By=/etc/apt/keyrings/sli-archive.gpg\n' "$repo_root"
 index_digest=$(sha256sum "$repo_root/repo/dists/trixie/InRelease" | cut -d' ' -f1)
 printf 'P1_EVIDENCE apt_index=local_signed fingerprint=%s inrelease_sha256=%s\n' "$fingerprint" "$index_digest"
 
@@ -95,7 +101,7 @@ if apt update >"$work/apt-update.log" 2>&1; then
 else
     code=$?
     printf 'P1_EVIDENCE apt_update_exit=%s\n' "$code"
-    grep -E '^(Err:|W:|E:)' "$work/apt-update.log" | tail -n 12 | sed 's/^/P1_EVIDENCE apt_diagnostic=/' || true
+    grep -E '^(Err:|W:|E:|Warning:|Error:|  )' "$work/apt-update.log" | tail -n 12 | sed 's/^/P1_EVIDENCE apt_diagnostic=/' || true
     exit "$code"
 fi
 policy=$(apt-cache policy sli)
