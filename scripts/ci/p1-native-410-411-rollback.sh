@@ -151,9 +151,9 @@ printf 'Evidence directory in the guest: %s\n' "$work"
 trap 'code=$?; if (( code != 0 )); then printf "Acceptance failed. Evidence kept in %s\n" "$work" >&2; fi' EXIT
 
 extract_kit() {
-    local archive=$1 hash=$2 commit=$3 label=$4
+    local archive=$1 hash=$2 commit=$3 directory=$4
     printf '%s  %s\n' "$hash" "$archive" | sha256sum --check --strict
-    python3 -I -B - "$archive" "$work/$label" "$commit" <<'PY'
+    python3 -I -B - "$archive" "$directory" "$commit" <<'PY'
 import json
 import re
 import sys
@@ -181,12 +181,25 @@ assert manifest["target"] == "debian-13-amd64"
 checksums = (kit_dir / "SHA256SUMS").read_text().splitlines()
 assert all(re.fullmatch(r"[a-f0-9]{64}  [A-Za-z0-9][A-Za-z0-9.+_~-]*", row) for row in checksums)
 PY
-    (cd "$work/$label/sli-debian-beta-kit" && sha256sum --check --strict --quiet SHA256SUMS)
+    (cd "$directory/sli-debian-beta-kit" && sha256sum --check --strict --quiet SHA256SUMS)
 }
-extract_kit "$old_archive" "$old_hash" "$old_commit" predecessor
-extract_kit "$new_archive" "$new_hash" "$new_commit" candidate
-old_kit="$work/predecessor/sli-debian-beta-kit"
+trusted_kit_root=$(mktemp -d /root/sli-p1-rollback-kit.XXXXXXXX)
+extract_kit "$old_archive" "$old_hash" "$old_commit" "$trusted_kit_root/predecessor"
+extract_kit "$new_archive" "$new_hash" "$new_commit" "$work/candidate"
+old_kit="$trusted_kit_root/predecessor/sli-debian-beta-kit"
 new_kit="$work/candidate/sli-debian-beta-kit"
+python3 -I -B - "$old_kit" <<'PY'
+from pathlib import Path
+import runpy
+import sys
+
+stock = runpy.run_path("/usr/lib/sli/native_install.py", run_name="sli_trusted_kit_probe")
+packages = sorted(Path(sys.argv[1]).glob("*.deb"))
+assert packages
+for package in packages:
+    stock["trusted_path"](package)
+print("P1_STEP previous_package_paths_verified")
+PY
 
 installed_ready "$old_commit" "$old_kit"
 printf 'P1_STEP seed_receipts\n'
