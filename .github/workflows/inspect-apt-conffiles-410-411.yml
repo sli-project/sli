@@ -1,0 +1,135 @@
+name: Inspect APT 410 to 411 conffiles
+
+on:
+  push:
+    branches: ['test/apt-upgrade-410-to-411-debian']
+    paths: ['.github/workflows/inspect-apt-conffiles-410-411.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      BASE_RUN: '45480994082'
+      BASE_ARTIFACT: '14960504617'
+      BASE_ZIP_SHA256: 'be00dc59ab7a1cf841bfb44015f02b48e673aa327d9e5167d6e7b00332620a73'
+      BASE_COMMIT: '0f6093b3a9afcecb28fcdd47c7ed50522e50a156'
+      CANDIDATE_RUN: '45510515483'
+      CANDIDATE_ARTIFACT: '14976746044'
+      CANDIDATE_ZIP_SHA256: '55e03f5f6f1dddfd385cc16ac72cce55b6402abd44ff47a9d91c1b94ef2bc8fc'
+      CANDIDATE_COMMIT: '1c25b9f1661ac2412bfc584f3fcbffda1ea95229'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 1c25b9f1661ac2412bfc584f3fcbffda1ea95229
+          persist-credentials: false
+      - name: Download and verify both original artifact ZIPs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/p1-rollback-evidence"
+          mkdir -p "$evidence"
+          download() {
+            local label=$1 run=$2 artifact=$3 commit=$4 digest=$5
+            local kit="$RUNNER_TEMP/p1-kits/$label" zip
+            mkdir -p "$kit"
+            zip="$kit/artifact.zip"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" |
+              jq -e --argjson id "$artifact" --arg name "sli-debian-beta-kit-$commit" \
+                --arg digest "sha256:$digest" \
+                'any(.artifacts[]; .id == $id and .name == $name and .digest == $digest and .expired == false)' \
+                >/dev/null
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+              --retry 2 --max-time 180 -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" -o "$zip"
+            printf '%s  %s\n' "$digest" "$zip" | sha256sum --check --strict
+            unzip -p "$zip" sli-debian-beta-kit.tar.gz >"$kit/sli-debian-beta-kit.tar.gz"
+            unzip -p "$zip" SHA256SUMS >"$kit/SHA256SUMS"
+            (cd "$kit"; sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS)
+            rm -- "$zip"
+            printf '%s run=%s artifact=%s git=%s zip_sha256=%s\n' \
+              "$label" "$run" "$artifact" "$commit" "$digest" | tee -a "$evidence/artifacts.txt"
+          }
+          download predecessor "$BASE_RUN" "$BASE_ARTIFACT" "$BASE_COMMIT" "$BASE_ZIP_SHA256"
+          download candidate "$CANDIDATE_RUN" "$CANDIDATE_ARTIFACT" "$CANDIDATE_COMMIT" "$CANDIDATE_ZIP_SHA256"
+      - name: Inspect control metadata from the exact packages in the verified APT plan
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY' | tee "$RUNNER_TEMP/p1-rollback-evidence/conffiles.json"
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tarfile
+          import tempfile
+
+          from deploy.linux.build_beta_kit import verify_offline_kit
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          expected = {
+              "predecessor": ("BASE_COMMIT", "38115eee4fe10dbf5a422d13ccbb644ff5c0837cb371cb397579c0fb56b0338e"),
+              "candidate": ("CANDIDATE_COMMIT", "b3d5b8eb293bebee5142ffd9717620bf3491361bc445dc96bbc35171178177bd"),
+          }
+          common = {"sli", "sli-host", "sli-server-dotnet", "sli-rollback-hold"}
+          report = {"apt_job_id": 138927816341, "kits": {}}
+          with tempfile.TemporaryDirectory(prefix="apt-conffiles-", dir=temp) as scratch:
+              for label, (commit_env, digest) in expected.items():
+                  commit = os.environ[commit_env]
+                  archive = temp / "p1-kits" / label / "sli-debian-beta-kit.tar.gz"
+                  with archive.open("rb") as stream:
+                      assert hashlib.file_digest(stream, "sha256").hexdigest() == digest
+                  verify_offline_kit(archive, commit)
+                  directory = Path(scratch) / label
+                  directory.mkdir()
+                  release = f"sli-release-beta1-{commit[:12]}"
+                  with tarfile.open(archive, "r:gz") as tf:
+                      manifest = json.load(tf.extractfile("sli-debian-beta-kit/manifest.json"))
+                      packages = sorted((row for row in manifest["packages"]
+                                         if row["package"] in common | {release}), key=lambda row: row["package"])
+                      assert {row["package"] for row in packages} == common | {release}
+                      assert len(packages) == 5
+                      scanned = []
+                      for row in packages:
+                          name, version = row["package"], row["version"]
+                          deb = directory / row["filename"]
+                          with tf.extractfile(f"sli-debian-beta-kit/{deb.name}") as source:
+                              with deb.open("wb") as destination:
+                                  import shutil
+                                  shutil.copyfileobj(source, destination)
+                          meta = directory / name
+                          subprocess.run(["dpkg-deb", "--control", deb, meta], check=True)
+                          field = subprocess.check_output(["dpkg-deb", "--field", deb, "Package", "Version"], text=True)
+                          assert f"Package: {name}" in field and f"Version: {version}" in field
+                          path = meta / "conffiles"
+                          conffiles = path.read_text().splitlines() if path.is_file() else []
+                          hints = {}
+                          for script in ("preinst", "postinst", "prerm", "postrm", "config"):
+                              hook = meta / script
+                              if hook.is_file():
+                                  matches = [i for i,line in enumerate(hook.read_text().splitlines(), 1)
+                                             if re.search(r"dpkg/info/|\.conffiles\b|dpkg-maintscript-helper", line)]
+                                  if matches:
+                                      hints[script] = matches
+                          scanned.append(dict(package=name, version=version, conffiles=conffiles, maintainer_hints=hints))
+                          deb.unlink()
+                  report["kits"][label] = dict(commit=commit, kit_sha256=digest, packages=scanned)
+          print(json.dumps(report, sort_keys=True))
+          assert all(not package["conffiles"] and not package["maintainer_hints"]
+                     for kit in report["kits"].values() for package in kit["packages"])
+          PY
+      - name: Save control-metadata evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apt-410-411-conffiles
+          path: ${{ runner.temp }}/p1-rollback-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
