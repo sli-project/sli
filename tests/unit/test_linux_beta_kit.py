@@ -403,7 +403,8 @@ def test_kit_installer_matches_the_packaged_source(tmp_path):
 
 @pytest.mark.skipif(os.name != 'posix' or not shutil.which('bash'), reason='Linux shell tools required')
 @pytest.mark.parametrize('scenario', ['valid', 'newer_vendor', 'apt_failure', 'unlisted', 'tampered', 'invalid_name', 'duplicate',
-                                      'fresh_native', 'upgrade_space_ok', 'upgrade_space_shortfall'])
+                                      'fresh_native', 'upgrade_space_ok', 'upgrade_space_shortfall',
+                                      'upgrade_setup_failure', 'upgrade_purge_failure'])
 def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     source = kit.ROOT / 'deploy/linux/install-beta-kit'
     assert source.is_file(), 'The Debian beta kit needs a standalone install helper'
@@ -411,7 +412,7 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     extracted.mkdir()
     script = extracted / source.name
     script.write_text(source.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
-    native = scenario in {'fresh_native', 'upgrade_space_ok', 'upgrade_space_shortfall'}
+    native = scenario == 'fresh_native' or scenario.startswith('upgrade_')
     deb = extracted / ('sli_1.0-1~deb13_amd64.deb' if native else 'sli-example_1.0~deb13_amd64.deb')
     deb.write_bytes(b'synthetic package')
     manifest = extracted / 'manifest.json'
@@ -439,7 +440,7 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
     bin_dir.mkdir()
     apt_calls = tmp_path / 'apt-calls'
     running = tmp_path / 'old-service-running'
-    if scenario.startswith('upgrade_space_'):
+    if scenario.startswith('upgrade_'):
         running.touch()
     sudo = bin_dir / 'sudo'
     sudo.write_text("""#!/usr/bin/env bash
@@ -453,6 +454,10 @@ if [[ " $* " == *' check-package-space '* ]]; then
 elif [[ " $* " == *' install '* ]]; then
     rm -f -- "$RUNNING"
     if [[ $SCENARIO == apt_failure ]]; then exit 1; fi
+elif [[ $1 == /usr/sbin/sli-setup && $SCENARIO == upgrade_setup_failure ]]; then
+    exit 1
+elif [[ " $* " == *' purge-old-release-packages '* && $SCENARIO == upgrade_purge_failure ]]; then
+    exit 1
 fi
 """, encoding='utf-8', newline='\n')
     systemctl = bin_dir / 'systemctl'
@@ -472,7 +477,7 @@ esac
 ''', encoding='utf-8', newline='\n')
     query = bin_dir / 'dpkg-query'
     query.write_text("""#!/usr/bin/env bash
-if [[ $3 == sli-host && $SCENARIO == upgrade_space_* ]]; then echo installed
+if [[ $3 == sli-host && $SCENARIO == upgrade_* ]]; then echo installed
 elif [[ $3 == tzdata ]]; then echo 'installed 2026e'
 else exit 1
 fi
@@ -493,13 +498,18 @@ fi
         calls = apt_calls.read_text(encoding='utf-8').splitlines()
         assert len(calls) == 1
         assert calls[0].endswith(' check-package-space 1.0-1~deb13')
-    elif scenario in {'valid', 'newer_vendor', 'fresh_native', 'upgrade_space_ok'}:
-        assert run.returncode == 0, run.stderr
+    elif scenario in {'valid', 'newer_vendor', 'fresh_native', 'upgrade_space_ok',
+                      'upgrade_setup_failure', 'upgrade_purge_failure'}:
+        assert run.returncode == (1 if scenario == 'upgrade_setup_failure' else 0), run.stderr
         if scenario == 'newer_vendor':
             assert 'Keeping tzdata 2026e' in run.stdout
+        if scenario == 'upgrade_purge_failure':
+            assert len(run.stderr.splitlines()) == 1 and 'native_upgrade_release_purge_warning' in run.stderr
         calls = apt_calls.read_text(encoding='utf-8').splitlines()
-        if scenario == 'upgrade_space_ok':
+        if scenario.startswith('upgrade_'):
             assert calls.pop(0).endswith(' check-package-space 1.0-1~deb13')
+        if scenario in {'upgrade_space_ok', 'upgrade_purge_failure'}:
+            assert calls.pop() == '/usr/sbin/sli-native-upgrade purge-old-release-packages 1.0-1~deb13'
         expected_packages = './' + deb.name + (' ./' + host.name if native else '')
         assert calls == [
             'apt-get update', 'env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes '

@@ -77,20 +77,83 @@ def test_restore_returns_files_settings_and_original_agent_trust(tmp_path, monke
     assert issuing_ca(restored).verify_client(registered).public_bytes(serialization.Encoding.DER) == registered
 
 
-def test_rollback_preserves_current_data_before_replaying_the_accepted_checkpoint(tmp_path, monkeypatch):
+@pytest.mark.parametrize('purge', ['success', 'failure', 'unverified', 'missing_rollback'])
+def test_upgrade_package_cleanup_keeps_the_rollback_target(tmp_path, monkeypatch, capsys, purge):
     commands = []
     timer = SimpleNamespace(state='disabled')
-    source = SimpleNamespace(path=tmp_path / 'source', value={'previous': 'beta-old',
-                             'previous_version': '1.0-1~deb13', 'checkpoint': 'backup'})
+    releases = ['beta1-' + digit * 12 for digit in 'abcde']
+    old, current = releases[-2:]
+    obsolete = {'sli-release-' + name for name in releases[:3]}
+    kept = {'sli-release-' + name for name in (old, current)}
+    unrelated = {'sli', 'sli-host', 'sli-release-other', 'sli-release-' + releases[0] + '-extra'}
+    installed = obsolete | kept | unrelated
+    if purge == 'missing_rollback':
+        installed.remove('sli-release-' + old)
+    transactions = tmp_path / 'transactions'
+    source = transactions / ('a' * 32)
+    source.mkdir(parents=True)
+    verified = purge != 'unverified'
+    version = '2.0-1~deb13'
+    (source / 'journal.json').write_text(json.dumps({
+        'schema_version': 1, 'transaction': source.name, 'status': 'committed', 'step': 'after',
+        'created_at_utc': '2026-11-26T00:00:00+00:00', 'target_version': version,
+        'accepted_release': current, 'previous': old, 'previous_version': '1.0-1~deb13',
+        'checkpoint': 'backup', 'services_restored': verified,
+    }), encoding='utf-8')
+    (source / 'result.json').write_text(json.dumps({'status': 'committed', 'terminal': True}), encoding='utf-8')
     journal = SimpleNamespace(path=tmp_path / 'rollback', value={'status': 'recovering'}, write=lambda: None)
     monkeypatch.setattr(restore, 'setup_lock', nullcontext)
+    monkeypatch.setattr('deploy.linux.native_setup.setup_lock', nullcontext)
     monkeypatch.setattr(restore.host, 'Host', lambda: SimpleNamespace(require_backup_mount=lambda: None))
     monkeypatch.setattr(restore.upgrade, 'operation_lock', lambda _: nullcontext())
+    monkeypatch.setattr(restore.upgrade, 'TRANSACTIONS', transactions)
+    monkeypatch.setattr(restore.install, 'trusted', Path.read_bytes)
+    monkeypatch.setattr(restore.upgrade.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(restore.upgrade.os, 'umask', lambda _: None)
     monkeypatch.setattr(restore, 'pending', lambda _: None)
     monkeypatch.setattr(restore.runtime, 'no_transaction', lambda: None)
-    monkeypatch.setattr(restore.runtime, 'release', lambda: (Path('/opt/sli/releases/beta-new'),))
-    monkeypatch.setattr(restore, 'previous_update', lambda release: source if release == 'beta-new' else None)
-    monkeypatch.setattr(restore.install, 'inventory', lambda release: (tmp_path / release, {}, 'digest'))
+    monkeypatch.setattr(restore.runtime, 'release', lambda: (tmp_path / current, {}, 'digest'))
+    monkeypatch.setattr(restore.upgrade, 'package_metadata', lambda _: {'version': version})
+
+    def inventory(release):
+        assert 'sli-release-' + release in installed
+        return tmp_path / release, {}, 'digest'
+
+    def package_manager(argv, **kwargs):
+        if Path(argv[0]).name == 'dpkg-query':
+            return SimpleNamespace(stdout=''.join(f'{name}\tinstalled\n' for name in sorted(installed))
+                                   + f'sli-release-beta1-{"f" * 12}\tconfig-files\n')
+        assert Path(argv[0]).name == 'dpkg' and argv[1] == '--purge'
+        assert set(argv[2:]) == obsolete
+        commands.append('purge')
+        if purge == 'failure' and commands == ['purge']:
+            raise restore.upgrade.subprocess.CalledProcessError(1, argv)
+        installed.difference_update(argv[2:])
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(restore.install, 'inventory', inventory)
+    monkeypatch.setattr(restore.upgrade.subprocess, 'run', package_manager)
+    assert restore.upgrade.main(['purge-old-release-packages', version]) == 0
+    warning = capsys.readouterr().err
+    if purge == 'failure':
+        assert commands == ['purge']
+        assert installed == obsolete | kept | unrelated
+        assert len(warning.splitlines()) == 1 and 'exit status 1' in warning
+        assert all(name in warning for name in obsolete)
+        assert restore.upgrade.finished_transaction(restore.upgrade.Journal(source))
+        assert restore.upgrade.main(['purge-old-release-packages', version]) == 0
+        assert commands == ['purge', 'purge']
+        assert installed == kept | unrelated
+        assert not capsys.readouterr().err
+        return
+    if purge in {'unverified', 'missing_rollback'}:
+        assert commands == []
+        assert obsolete <= installed
+        return
+    assert commands == ['purge']
+    assert installed == kept | unrelated
+    assert not warning
+
     monkeypatch.setattr(restore.upgrade, 'verify_recovery', lambda _: ('recovery', None))
     monkeypatch.setattr(restore.upgrade, 'checkpoint_receipt', lambda _: commands.append('verify'))
     monkeypatch.setattr(restore.upgrade, 'checkpoint_root', lambda _: tmp_path)
@@ -120,6 +183,7 @@ def test_rollback_preserves_current_data_before_replaying_the_accepted_checkpoin
 
     restore.rollback()
 
-    assert commands == ['verify', 'download', 'fence', 'preserve', 'source', 'beta-old', 'downgrade', 'disable-backup', 'start']
-    assert journal.value['accepted_release'] == 'beta-old'
+    assert commands == ['purge', 'verify', 'download', 'fence', 'preserve', source.name, old,
+                        'downgrade', 'disable-backup', 'start']
+    assert journal.value['accepted_release'] == old
     assert journal.value['backup_schedule'] == timer.state == 'disabled'

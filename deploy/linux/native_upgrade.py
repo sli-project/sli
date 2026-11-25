@@ -918,6 +918,48 @@ def package_transaction(version):
     return journal
 
 
+def purge_old_release_packages(version):
+    """Prune immutable payloads after the kit's APT transaction has exited."""
+    packages = []
+    try:
+        from deploy.linux import native_backup as native, native_runtime as runtime
+        from deploy.linux.native_restore import previous_update
+        from deploy.linux.native_setup import setup_lock
+
+        with setup_lock(), operation_lock(native.ROOT):
+            journal = latest_package_transaction(version)
+            if journal is None or journal.value['status'] != 'committed' or not finished_transaction(journal):
+                return
+            runtime.no_transaction()
+            current = runtime.release()[0]
+            if current.name != journal.value['accepted_release'] or package_metadata(current)['version'] != version:
+                return
+            source = previous_update(current.name)
+            if source.path != journal.path:
+                return
+            keep = {'sli-release-' + release for release in (current.name, source.value['previous'])}
+            rows = subprocess.run(['/usr/bin/dpkg-query', '-W', '-f=${Package}\t${db:Status-Status}\n'],
+                                  capture_output=True, text=True, check=True).stdout
+            states = dict(line.split('\t', 1) for line in rows.splitlines())
+            installed = {name for name, status in states.items() if status == 'installed'}
+            require(len(keep) == 2 and keep <= installed, 'native_upgrade_retained_package_missing')
+            packages = sorted(name for name in installed - keep if re.fullmatch(r'sli-release-beta1-[0-9a-f]{12}', name))
+            if packages:
+                # dpkg refuses broken reverse dependencies without selecting extra packages.
+                subprocess.run(['/usr/bin/dpkg', '--purge', *packages], capture_output=True, check=True)
+    except Exception as error:  # noqa: BLE001 - cleanup must not change the verified upgrade result
+        if isinstance(error, subprocess.CalledProcessError):
+            reason = f'{Path(error.cmd[0]).name} exit status {error.returncode}'
+        elif isinstance(error, OSError):
+            reason = f'{type(error).__name__} (errno={error.errno})'
+        elif error.args == ('native_upgrade_retained_package_missing',):
+            reason = 'current or rollback release package is missing'
+        else:
+            reason = failure_code(error)
+        print(f'native_upgrade_release_purge_warning: {", ".join(packages) or "(no package list)"}: {reason}',
+              file=sys.stderr)
+
+
 def check_package_space(version):
     from deploy.linux import native_preinstall, native_runtime as runtime
 
@@ -1737,18 +1779,23 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('launch', 'prepare', 'dispatch', 'check-package-space',
                                          'prepare-package', 'check-package',
-                                         'configure-package', 'reconcile', 'resume-package', 'reuse-existing', 'check-reuse', 'rollback'))
+                                         'configure-package', 'reconcile', 'resume-package', 'reuse-existing',
+                                         'check-reuse', 'rollback', 'purge-old-release-packages'))
     parser.add_argument('arguments', nargs='+')
     parser.add_argument('--target-version')
     parser.add_argument('--previous-version')
     parser.add_argument('--reuse-existing', action='store_true')
     args = parser.parse_args(argv)
+    purge = args.action == 'purge-old-release-packages' or (
+        args.action == 'launch' and args.arguments[0] == 'purge-old-release-packages')
     try:
         require(os.geteuid() == 0, 'native_root_required')
         os.umask(0o022)
         if args.action == 'launch':
-            if args.arguments[0] in {'reconcile', 'resume-package', 'rollback'}:
+            if args.arguments[0] in {'reconcile', 'resume-package', 'rollback', 'purge-old-release-packages'}:
                 launch(None, None, action=args.arguments[0], arguments=args.arguments[1:])
+                if purge:
+                    return 0
             else:
                 launch(*args.arguments)
         elif args.action == 'dispatch':
@@ -1758,6 +1805,9 @@ def main(argv=None):
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
             if args.action == 'check-package-space':
                 check_package_space(*args.arguments)
+                return 0
+            if purge:
+                purge_old_release_packages(*args.arguments)
                 return 0
             if args.action == 'rollback':
                 from deploy.linux.native_restore import rollback
@@ -1788,6 +1838,10 @@ def main(argv=None):
              'resume-package': resume_package, 'reuse-existing': reuse_existing}[args.action](*args.arguments, **options)
     except Exception as error:  # noqa: BLE001 - allowlisted diagnostics only; no private exception text
         code = failure_code(error)
+        if purge:
+            print(f'native_upgrade_release_purge_warning: Could not start package cleanup (reason_code={code})',
+                  file=sys.stderr)
+            return 0
         if args.action == 'check-package-space':
             message = FAILURE_MESSAGES.get(code, 'Could not check checkpoint space before APT / Не удалось проверить место до запуска APT.')
             print(f'{message} (reason_code={code})', file=sys.stderr)
