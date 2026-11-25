@@ -83,8 +83,10 @@ internal static class Program
         command.ArgumentList.Add("/type:File");
         command.ArgumentList.Add("/view");
         using var process = Process.Start(command)!;
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
+        using var stdout = new MemoryStream();
+        using var stderr = new MemoryStream();
+        var readStdout = process.StandardOutput.BaseStream.CopyToAsync(stdout);
+        var readStderr = process.StandardError.BaseStream.CopyToAsync(stderr);
         if (!process.WaitForExit(15000))
         {
             process.Kill();
@@ -92,15 +94,38 @@ internal static class Program
             return;
         }
         result["auditpol_exit"] = process.ExitCode;
-        var lines = (stdout.GetAwaiter().GetResult() + "\n" + stderr.GetAwaiter().GetResult())
+        Task.WhenAll(readStdout, readStderr).GetAwaiter().GetResult();
+        result["auditpol_stdout_bytes"] = stdout.Length;
+        var lines = (Decode(stdout.ToArray()) + "\n" + Decode(stderr.ToArray()))
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim()).Where(line => line.Length > 0).ToArray();
-        const string safe = @"^(?:No(?:\s|$)|There (?:is|are) no\b|The (?:global|policy|file) |Global |Resource |File system |Error\b|The system |Audit(?:ing)? |SACL\b)";
-        var generic = lines.Where(line => Regex.IsMatch(line, safe, RegexOptions.IgnoreCase)
-            && Regex.IsMatch(line, @"^[A-Za-z][A-Za-z0-9 .,:'()-]{0,180}$")).Take(12).ToArray();
-        result["auditpol_description"] = new JsonArray(generic.Select(line => (JsonNode?)JsonValue.Create(line)).ToArray());
+            .Select(line => line.Trim().TrimStart('\ufeff')).Where(line => line.Length > 0).ToArray();
         result["auditpol_nonempty_line_count"] = lines.Length;
-        result["auditpol_non_generic_line_count"] = lines.Length - generic.Length;
+        var descriptionWords = new HashSet<string>((
+            "access auditing audit auditpol a all any are as at be being been has have no not none there they this " +
+            "control configured configure defined definition enabled failure exists exist entries entry empty error file " +
+            "files filesystem for found global is list mask masks missing name object of on or output policy permission " +
+            "permissions present registry resource resourcesacl read result sacl security system set settings specified " +
+            "status success supported the to type undeclared unconfigured user value view was were with without warning " +
+            "available cannot does information specified returned current noaccess exists descriptor").Split(' '),
+            StringComparer.OrdinalIgnoreCase);
+        var publicLines = lines.Take(2).Select(line =>
+        {
+            string text = Regex.Replace(line, @"[\u0000-\u001f\u007f]", " ").Trim();
+            if (text.Length > 180 || !Regex.IsMatch(text, @"^[A-Za-z][A-Za-z .,:'()-]*$")
+                || Regex.Matches(text, "[A-Za-z]+").Any(word => !descriptionWords.Contains(word.Value)))
+                return (JsonNode?)JsonValue.Create("[non-generic audit output omitted]");
+            return JsonValue.Create(text);
+        }).ToArray();
+        result["auditpol_description"] = new JsonArray(publicLines);
+    }
+
+    private static string Decode(byte[] data)
+    {
+        bool littleEndianBom = data.Length >= 2 && data[0] == 0xff && data[1] == 0xfe;
+        int pairs = data.Length / 2;
+        int oddZeros = Enumerable.Range(0, pairs).Count(i => data[i * 2 + 1] == 0);
+        return (littleEndianBom || pairs > 2 && oddZeros > pairs / 2
+            ? System.Text.Encoding.Unicode : System.Text.Encoding.UTF8).GetString(data);
     }
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
