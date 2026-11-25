@@ -54,6 +54,11 @@
 
 ### Changed
 
+- Карточка исходного события показывает явный возврат к исходному отчёту.
+  Дополнительные связанные факты и оценки загружаются по кнопке.
+- Exact-event cards expose a visible return to the source report. Related facts
+  and assessments load on request.
+
 - Первичная настройка проверяет сбор по агентам и точным назначениям источников,
   а не по старой блокировке серверного сборщика; ошибки и история остаются различимыми.
 - First-run setup checks agent collection and exact source assignments instead of

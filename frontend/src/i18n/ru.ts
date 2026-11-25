@@ -3814,6 +3814,7 @@ export const ru = {
   "events.card.recordUnavailable": "Исходная запись события {id} от {time} недоступна в архиве.",
   "events.card.tabsAria": "Разделы карточки события",
   "events.card.semanticTitle": "Связанные факты и оценки",
+  "events.card.semanticLoad": "Показать связанные факты и оценки",
   "events.card.semanticDenied": "Нет доступа к связанным фактам и оценкам.",
   "events.card.semanticError": "Не загрузились связанные факты и оценки.",
   "events.card.semanticActionKind": "Действие",

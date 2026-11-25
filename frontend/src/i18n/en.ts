@@ -3818,6 +3818,7 @@ export const en: Record<MessageKey, string> = {
   "events.card.recordUnavailable": "The original record for event {id} at {time} is unavailable in the archive.",
   "events.card.tabsAria": "Event card sections",
   "events.card.semanticTitle": "Related facts and assessments",
+  "events.card.semanticLoad": "Show related facts and assessments",
   "events.card.semanticDenied": "Access to related facts and assessments was denied.",
   "events.card.semanticError": "Could not load related facts and assessments.",
   "events.card.semanticActionKind": "Action",

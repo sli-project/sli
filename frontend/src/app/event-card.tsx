@@ -108,6 +108,12 @@ function CardTabs({ active, onChange }: { active: CardView; onChange: (view: Car
 }
 
 function EventSemanticLookup({ eventDbId }: { eventDbId: number }) {
+  const [requested, setRequested] = useState(false);
+  if (!requested) return <button type="button" className="sli-ds-button" onClick={() => setRequested(true)}>{t("events.card.semanticLoad")}</button>;
+  return <EventSemanticLookupResult eventDbId={eventDbId}/>;
+}
+
+function EventSemanticLookupResult({ eventDbId }: { eventDbId: number }) {
   const location = useLocation();
   const request = useMemo(() => eventSemanticLookupRequest(eventDbId, location.href), [eventDbId, location.href]);
   const parameters = useMemo(() => new URLSearchParams(request.parameters ?? ""), [request.parameters]);
@@ -228,7 +234,8 @@ export function EventCardPage() {
   const routeSearch = new URL(location.href, "http://localhost").search;
   const returnValues = new URLSearchParams(routeSearch).getAll("return_to");
   const rawReturnTo = returnValues.length === 1 ? returnValues[0] : "";
-  const returnTo = safeInvestigationReturnTo(rawReturnTo, "/app/events");
+  const contextualReturnTo = safeInvestigationReturnTo(rawReturnTo, "");
+  const returnTo = contextualReturnTo || "/app/events";
   const event = useQuery({ queryKey: ["event", eventId], queryFn: () => api.event(eventId) });
   const relations = useQuery({ queryKey: ["event-relations", eventId], queryFn: () => api.eventRelations(Number(eventId)), enabled: Boolean(event.data?.item?.event_db_id) });
   const entities = useQuery({ queryKey: ["event-entities", eventId], queryFn: () => api.eventEntities(Number(eventId)), enabled: Boolean(event.data?.item?.event_db_id) });
@@ -272,7 +279,10 @@ export function EventCardPage() {
         <WindowsLevelBadge value={item.level}/>
         <span className="sli-ds-chip" title={`${item.server || EMPTY_VALUE} · Record ${item.event_record_id ?? EMPTY_VALUE}`}>DB {item.event_db_id}</span>
       </>}
-      actions={<Link className="sli-ds-button" data-variant="primary" to="/investigations" search={investigationSearchParams}>{t("events.card.actionOpenContext")}</Link>}
+      actions={<>
+        {contextualReturnTo ? <a className="sli-ds-button" href={contextualReturnTo}>{t("investigations.case.return_to_source_report")}</a> : null}
+        <Link className="sli-ds-button" data-variant="primary" to="/investigations" search={investigationSearchParams}>{t("events.card.actionOpenContext")}</Link>
+      </>}
     />
     <CardTabs active={view} onChange={setView}/>
     {sourceFailure ? <p role="status">{t(sourceFailure, { id: item.event_id, time: format(item.time_created_utc) })}</p> : null}
@@ -286,7 +296,7 @@ export function EventCardPage() {
         </Section>
         <RelationsSection query={relations} search={routeSearch} format={format}/>
         <EntitiesSection eventDbId={item.event_db_id} query={entities}/>
-        <EventSemanticLookup eventDbId={item.event_db_id}/>
+        <EventSemanticLookup key={`${eventId}:${routeSearch}`} eventDbId={item.event_db_id}/>
       </> : <RawSections item={item} timeZone={timeZone}/>}
     </div>
   </section>;

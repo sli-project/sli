@@ -53,6 +53,11 @@ const profileChannel: Record<number, string> = {
   7036: "System", 7040: "System", 7045: "System",
 };
 
+function eventTitle(row: StationEvent): string {
+  return row.code && Object.hasOwn(profileChannel, row.code) && row.channel === profileChannel[Number(row.code)]
+    ? t(`workstations.workspace.event_${row.code}` as MessageKey) : row.title ?? t("workstations.workspace.unknown_event");
+}
+
 function CollectionDetails({ station }: { station: Station }) {
   const { formatDateTime: format } = useDateFormatters();
   const events = station.profile.event_ids.map(code => ({ code, channel: profileChannel[code] ?? "—" }));
@@ -94,7 +99,7 @@ function EventFacts({ row, station, detail, search, timeZone }: { row: StationEv
   const crossesBoundary = row.group && period && (row.first && Date.parse(row.first) < Date.parse(period.from) || row.last && Date.parse(row.last) >= Date.parse(period.to));
   return <section className="sli-workstations__event" aria-label={t("workstations.workspace.event_facts")}>
     <div className="sli-workstations__event-heading"><div><p className="sli-workstations__eyebrow">{t(row.group ? "workstations.workspace.saved_group" : "workstations.workspace.saved_event")}</p>
-      <h2>{row.title ?? t("workstations.workspace.unknown_event")}</h2></div>
+      <h2 title={row.title ?? undefined}>{eventTitle(row)}</h2></div>
       {row.findingId ? <FindingLink row={row} station={station} back={back}/> : null}
     </div>
     <FactList facts={[
@@ -177,9 +182,9 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   const columns: TableColumn<StationEvent>[] = [
     { key: "interval", label: t("workstations.workspace.interval"), render: event => <EventInterval row={event} timeZone={timeZone}/>, minWidth: "12rem" },
     { key: "operation", label: t("workstations.workspace.operation"), minWidth: "15rem", render: event => <span className="sli-workstations__cell">
-      <a className="sli-ds-table__link" href={localHref(patchedSearch(search, { event: event.key }))} onClick={click => {
+      <a className="sli-ds-table__link" title={event.title ?? undefined} href={localHref(patchedSearch(search, { event: event.key }))} onClick={click => {
         click.stopPropagation(); if (click.ctrlKey || click.metaKey || click.shiftKey || click.altKey) return; click.preventDefault(); select(event);
-      }}>{event.title ?? t("workstations.workspace.unknown_event")}</a><small>{event.code ?? "—"} · {t(event.group ? "workstations.workspace.saved_group" : "workstations.workspace.saved_event")}</small></span> },
+      }}>{eventTitle(event)}</a><small>{event.code ?? "—"} · {t(event.group ? "workstations.workspace.saved_group" : "workstations.workspace.saved_event")}</small></span> },
     { key: "account", label: t("workstations.workspace.account"), value: event => event.account ?? "—", hiddenByDefault: false },
     { key: "initiator", label: t("workstations.workspace.initiator"), value: event => event.initiator ?? "—", hiddenByDefault: !rows.some(event => event.initiator) },
     { key: "address", label: t("workstations.workspace.address"), value: event => event.address ?? "—", hiddenByDefault: !rows.some(event => event.address) },

@@ -93,8 +93,9 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   fireEvent.click(screen.getByRole("link", { name: "WS-WORKSPACE-001" }));
   await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
   expect(screen.queryByRole("dialog")).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "Synthetic grouped sign-ins" }));
+  fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.event_4624") }));
   const facts = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
+  expect(within(facts).getByRole("heading", { name: t("workstations.workspace.event_4624") }).getAttribute("title")).toBe("Synthetic grouped sign-ins");
   expect(within(facts).getByText("39")).toBeTruthy();
   expect(within(facts).getByText(t("workstations.workspace.saved_group"))).toBeTruthy();
   expect(within(facts).getByText(t("workstations.workspace.group_boundary"))).toBeTruthy();
@@ -102,7 +103,7 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   const groupLink = new URL(within(facts).getByRole("link", { name: t("workstations.workspace.group_journal") }).getAttribute("href")!, window.location.origin);
   expect(groupLink.searchParams.get("source_instance_id")).toBe(source); expect(groupLink.searchParams.get("expand")).toBe("101");
   fireEvent.click(screen.getByRole("button", { name: t("workstations.workspace.back_events") }));
-  fireEvent.click(await screen.findByRole("link", { name: "Synthetic audit cleared" }));
+  fireEvent.click(await screen.findByRole("link", { name: t("workstations.workspace.event_1102") }));
   const evidence = new URL(screen.getByRole("link", { name: t("workstations.workspace.original") }).getAttribute("href")!, window.location.origin);
   expect(evidence.pathname).toBe("/app/events/102");
   expect(evidence.searchParams.get("return_to")).toBe(window.location.pathname + window.location.search);

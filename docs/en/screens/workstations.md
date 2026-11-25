@@ -15,6 +15,8 @@ remains a compatible entry point that preserves the query context.
 4. Inspect a stored record or open the related journal. Navigation preserves
    the workstation source and period. Journal, problem and exact-evidence access
    are checked independently of access to the workstation list.
+   The exact-event card provides a visible return to the source report. Request
+   related facts and assessments separately when needed.
 
 ## Interpretation
 
