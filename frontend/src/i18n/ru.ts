@@ -7033,6 +7033,8 @@ export const ru = {
   "agents.fileAudit.result.failed": "Агент сообщил об ошибке в области аудита.",
   "agents.fileAudit.result.verified": "Агент подтвердил выполнение",
   "agents.fileAudit.result.partial": "Выполнено не полностью — проверьте подробности",
+  "agents.fileAudit.result.checkCoverageIncomplete": "Агент не смог проверить всю область аудита шары {share}. Уточните на сервере, какие папки и локальные группы доступны агенту, затем нажмите «Сохранить и проверить» для этой шары.",
+  "agents.fileAudit.result.applyGlobalSaclUnknown": "Новая настройка аудита шары {share} не применена. Агент не смог подтвердить состояние глобальной политики аудита файлов. Попросите администратора Windows проверить её перед повторным применением.",
   "agents.fileAudit.result.denied": "Доступ закрыт — обратитесь к владельцу",
   "agents.fileAudit.result.stale": "Другая команда — результат этой проверки больше не актуален",
   "agents.fileAudit.result.unknown": "Не удалось проверить результат — обновите результат",

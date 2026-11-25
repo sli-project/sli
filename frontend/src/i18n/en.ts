@@ -7037,6 +7037,8 @@ export const en: Record<MessageKey, string> = {
   "agents.fileAudit.result.failed": "The agent reported a failure for a scope.",
   "agents.fileAudit.result.verified": "Agent confirmed completion",
   "agents.fileAudit.result.partial": "Partially completed — check details",
+  "agents.fileAudit.result.checkCoverageIncomplete": "The agent could not check the whole audit scope for {share}. Confirm which folders and local groups the agent can read, then select Save and check for this share.",
+  "agents.fileAudit.result.applyGlobalSaclUnknown": "The new audit settings for {share} were not applied. The agent could not confirm the state of the global file audit policy. Ask a Windows administrator to check it before applying again.",
   "agents.fileAudit.result.denied": "Access denied — contact the owner",
   "agents.fileAudit.result.stale": "Another command replaced this check — its result is outdated",
   "agents.fileAudit.result.unknown": "Could not check the result — refresh the result",
