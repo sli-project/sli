@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Security;
-using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text;
 using System.Collections.Concurrent;
@@ -270,7 +270,8 @@ public sealed class AgentTlsTests
             }
             async Task<JsonObject> Post(HttpClient client, string route, object payload, HttpStatusCode expected = HttpStatusCode.OK)
             {
-                using var response = await client.PostAsJsonAsync(route, payload, ct);
+                using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                using var response = await client.PostAsync(route, content, ct);
                 return await Read(response, expected);
             }
             async Task<JsonObject> Read(HttpResponseMessage response, HttpStatusCode expected)
