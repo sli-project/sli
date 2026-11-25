@@ -7,7 +7,7 @@ private_log=/run/beta-readme-install.log
 probe_log=/run/beta-readme-auth.log
 auth_file=/run/beta-browser-session.json
 menu_log=/run/beta-browser-evidence.log
-candidate=2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+candidate=4a6f14c815e07ff2a01346700d79507689d657e9
 operator=debian
 
 for _ in {1..10}; do

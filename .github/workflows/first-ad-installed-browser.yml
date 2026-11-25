@@ -1,4 +1,4 @@
-name: Installed restricted AD viewer scope
+name: Installed AD report scope acceptance
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -36,8 +36,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          KIT_COMMIT: 2323cfa48cf8c8d3e66705b1b09a7e20e140309f
-          BUILD_RUN: '45528985945'
+          KIT_COMMIT: 4a6f14c815e07ff2a01346700d79507689d657e9
+          BUILD_RUN: '45533669685'
         run: |
           set -euo pipefail
           for poll in {1..90}; do
@@ -58,10 +58,10 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           github-token: ${{ github.token }}
-          run-id: '45528985945'
-          name: sli-debian-beta-kit-2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+          run-id: '45533669685'
+          name: sli-debian-beta-kit-4a6f14c815e07ff2a01346700d79507689d657e9
           path: ${{ runner.temp }}/beta-candidate
-      - name: Verify the restricted viewer report scope on installed Debian
+      - name: Verify direct AD scope, tabs and domain selection on installed Debian
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
@@ -71,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-ad-viewer-scope-evidence
+          name: installed-ad-report-scope-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
