@@ -294,7 +294,7 @@ public sealed class PasswordProducer
             catch (PasswordFailure e) when (e.Message=="password_v2_proof_bound") {
                 var denied=await QualifiedDenial(sql,rule,attempt,state,entityIncoming,budget,final,ct,observation,batchVersion);
                 if(denied!=null){budget.CompletionCalls++;return(denied,0,budget.Work,null,true);}
-                if (!adaptive || rule.Kind != "spray" || !rule.NormalizedAccounts || historyWitnesses.Length == 0)
+                if (!adaptive || !rule.NormalizedAccounts || historyWitnesses.Length == 0)
                     throw;
                 combinedLimit = e;
                 observation?.EnterSplit();
