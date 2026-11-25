@@ -1,5 +1,6 @@
 import gzip
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -12,7 +13,7 @@ import pytest
 import yaml
 
 from deploy.linux import build_apt_repo as apt_repo
-from deploy.linux import native_restore
+from deploy.linux import build_beta_kit, n03_runtime_control, native_restore
 
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / '.github/workflows'
@@ -79,8 +80,9 @@ def debian_tools(monkeypatch):
     return False
 
 
-def make_kit(debs, version, debian_tools):
+def make_kit(debs, version, debian_tools, *, runtime=('sli-runtime-fixture', '1.0-1')):
     debs.mkdir()
+    runtime_package, runtime_version = runtime
     revision = version.split('-')[1][0]
     packages = {
         'sli': ('amd64', version, f'sli-host (= {version}), sli-rollback-hold (= {version}), '
@@ -88,8 +90,8 @@ def make_kit(debs, version, debian_tools):
         'sli-host': ('amd64', version, 'postgresql-common'),
         'sli-rollback-hold': ('amd64', version, f'sli-server-dotnet (= {version}), sli-release-beta-{revision}'),
         'sli-server-dotnet': ('amd64', version, ''),
-        f'sli-release-beta-{revision}': ('amd64', version, 'sli-runtime-fixture (= 1.0-1)'),
-        'sli-runtime-fixture': ('amd64', '1.0-1', 'libfixture (= 1.0-1)'),
+        f'sli-release-beta-{revision}': ('amd64', version, f'{runtime_package} (= {runtime_version})'),
+        runtime_package: ('amd64', runtime_version, 'libfixture (= 1.0-1)'),
         'postgresql-18': ('amd64', '18.1-1', 'postgresql-common'),
         'postgresql-client-18': ('amd64', '18.1-1', 'postgresql-common'),
         'postgresql-common': ('all', '1.0-1', ''),
@@ -242,6 +244,101 @@ def test_signed_pool_retains_the_previous_rollback_version(tmp_path, signing_key
     with pytest.raises(ValueError, match='Pages file limit'):
         apt_repo.build(debs, rejected, signing_key, pins)
     assert not rejected.exists()
+
+
+
+def test_repository_file_limit_accepts_100_mib_and_rejects_one_more_byte(tmp_path, monkeypatch):
+    limit = 104_857_600
+    assert apt_repo.MAX_SITE_SIZE == 1_000_000_000
+    package = tmp_path / 'sli_1.0-1_amd64.deb'
+    monkeypatch.setattr(apt_repo, 'package_control', lambda _: 'Package: sli\nVersion: 1.0-1\nArchitecture: amd64')
+    with package.open('wb') as stream:
+        stream.truncate(limit)
+
+    accepted = tmp_path / 'accepted'
+    accepted.mkdir()
+    packages = {package.name: package}
+    apt_repo.write_packages(packages, {}, accepted)
+    assert (accepted / 'pool' / package.name).stat().st_size == limit
+
+    with package.open('r+b') as stream:
+        stream.truncate(limit + 1)
+    rejected = tmp_path / 'rejected'
+    rejected.mkdir()
+    with pytest.raises(ValueError, match='exceeds the Pages file limit of 104857600 bytes'):
+        apt_repo.write_packages(packages, {}, rejected)
+    assert not (rejected / 'pool' / package.name).exists()
+
+
+def test_repository_pins_select_only_the_qualified_delivery_runtime():
+    pin_path = WORKFLOWS.parents[1] / 'deploy/linux/native_pins.json'
+    pins = json.loads(pin_path.read_text(encoding='utf-8'))
+    _, original_runtime, original_pins = build_beta_kit.input_pins(pins)
+    delivery = build_beta_kit.N03_RUNTIME_DELIVERY
+    delivered_runtime = f"{n03_runtime_control.PACKAGE}_{delivery['version']}_amd64.deb"
+
+    assert apt_repo.repository_pins(pins) == {
+        **{name: digest for name, digest in original_pins.items() if name != original_runtime},
+        delivered_runtime: delivery['sha256'],
+    }
+    pins['runtime_delivery'] = {**delivery, 'version': delivery['version'] + '+wrong'}
+    with pytest.raises(ValueError, match='Unexpected runtime compatibility input or pin'):
+        apt_repo.repository_pins(pins)
+    del pins['runtime_delivery']
+    assert apt_repo.repository_pins(pins) == original_pins
+
+
+def test_cli_signs_only_the_exact_pinned_delivery_runtime(tmp_path, signing_key, debian_tools, monkeypatch):
+    debs = tmp_path / 'debs'
+    package = n03_runtime_control.PACKAGE
+    runtime_id = package.removeprefix('sli-runtime-')
+    delivery = dict(build_beta_kit.N03_RUNTIME_DELIVERY)
+    filename = f"{package}_{delivery['version']}_amd64.deb"
+    external = make_kit(debs, '1.0-1~deb13', debian_tools, runtime=(package, delivery['version']))
+    delivery['sha256'] = external.pop(filename)
+    monkeypatch.setattr(apt_repo, 'N03_RUNTIME_DELIVERY', delivery)
+    original_version = n03_runtime_control.ORIGINAL_VERSION
+    dependencies = [
+        {'name': name.split('_', 1)[0], 'filename': name, 'sha256': digest}
+        for name, digest in sorted(external.items())
+    ]
+    pins = {
+        'runtime_build': {'id': runtime_id, 'version': original_version, 'debian_artifacts': [], 'debian_runtime': []},
+        'runtime_artifact': {'runtime_id': runtime_id, 'version': original_version,
+                             'sha256': n03_runtime_control.ORIGINAL_SHA256},
+        'runtime_delivery': delivery,
+        'packages': dependencies,
+        'roots': [dep['name'] for dep in dependencies],
+        'dependency_edges': [],
+    }
+    pin_path = tmp_path / 'pins.json'
+    pin_path.write_text(json.dumps(pins), encoding='utf-8')
+    output = tmp_path / 'repo'
+    monkeypatch.setattr(sys, 'argv', ['build_apt_repo', '--debs', str(debs), '--output', str(output),
+                                    '--signing-key', str(signing_key), '--pins', str(pin_path)])
+    apt_repo.main()
+
+    runtime = next(row for row in read_index(output) if row['Package'] == package)
+    assert (runtime['Version'], runtime['SHA256'], Path(runtime['Filename']).name) == (
+        delivery['version'], delivery['sha256'], filename
+    )
+    verify_signatures(output / 'dists/trixie/Release', output / apt_repo.KEYRING)
+
+    expected_pins = apt_repo.repository_pins(pins)
+    runtime_deb = debs / filename
+    alias = runtime_deb.with_name(runtime_deb.stem + '-other.deb')
+    runtime_deb.rename(alias)
+    with pytest.raises(ValueError, match='Unexpected package in the beta kit'):
+        apt_repo.build(debs, tmp_path / 'wrong-name', signing_key, expected_pins)
+    alias.rename(runtime_deb)
+    original = runtime_deb.read_bytes()
+    runtime_deb.write_bytes(original + b'changed')
+    with pytest.raises(ValueError, match='Pinned package SHA-256 mismatch'):
+        apt_repo.build(debs, tmp_path / 'wrong-runtime-sha', signing_key, expected_pins)
+    runtime_deb.write_bytes(original)
+    (debs / 'libfixture_1.0-1_amd64.deb').write_bytes(b'changed')
+    with pytest.raises(ValueError, match='Pinned package SHA-256 mismatch'):
+        apt_repo.build(debs, tmp_path / 'wrong-dependency-sha', signing_key, expected_pins)
 
 
 @pytest.mark.parametrize('key_argument', [False, True])

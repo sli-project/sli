@@ -14,10 +14,11 @@ from datetime import UTC, datetime
 from email.utils import format_datetime
 from pathlib import Path
 
-from deploy.linux.build_beta_kit import input_pins, sha256
+from deploy.linux import n03_runtime_control
+from deploy.linux.build_beta_kit import N03_RUNTIME_DELIVERY, input_pins, sha256
 
 
-MAX_FILE_SIZE = 100_000_000
+MAX_FILE_SIZE = 100 * 1024**2
 MAX_SITE_SIZE = 1_000_000_000
 KEYRING = 'sli-archive-keyring.gpg'
 INDEX_PATH = 'main/binary-amd64/Packages'
@@ -226,6 +227,25 @@ def build(debs, output, key, pinned, *, previous_url=None, initialize=False):
         site.rename(output)
 
 
+def repository_pins(pins):
+    _, input_runtime, pinned = input_pins(pins)
+    if 'runtime_delivery' not in pins:
+        return pinned
+
+    delivery = pins['runtime_delivery']
+    package = n03_runtime_control.PACKAGE
+    original = f'{package}_{n03_runtime_control.ORIGINAL_VERSION}_amd64.deb'
+    if (delivery != N03_RUNTIME_DELIVERY or input_runtime != original
+            or pinned[original] != n03_runtime_control.ORIGINAL_SHA256):
+        raise ValueError('Unexpected runtime compatibility input or pin')
+
+    # The kit replaces the original runtime input with the qualified delivery.
+    delivered = f"{package}_{delivery['version']}_amd64.deb"
+    del pinned[original]
+    pinned[delivered] = delivery['sha256']
+    return pinned
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--debs', type=Path, required=True, help='directory of input .deb packages')
@@ -236,7 +256,7 @@ def main():
     parser.add_argument('--initialize', action='store_true', help='allow the first publication when no Release exists')
     args = parser.parse_args()
     try:
-        _, _, pinned = input_pins(json.loads(args.pins.read_text(encoding='utf-8')))
+        pinned = repository_pins(json.loads(args.pins.read_text(encoding='utf-8')))
         build(args.debs, args.output, args.signing_key, pinned, previous_url=args.previous_url,
               initialize=args.initialize)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
