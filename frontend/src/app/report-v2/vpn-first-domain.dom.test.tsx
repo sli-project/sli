@@ -113,6 +113,14 @@ describe("VPN first domain", () => {
     expect(api.setupStatus).not.toHaveBeenCalled();
   });
 
+  it.each(["denied", "unavailable"] as const)("preserves the report when domain discovery is %s", async state => {
+    vi.mocked(api.reportV2Definition).mockResolvedValue({ ...declaration, default_domain_state: state });
+    openReport();
+    expect(await required()).toBeTruthy();
+    expect(action()).toBeNull();
+    expect(api.setupStatus).not.toHaveBeenCalled();
+  });
+
   it("preserves the backend denial", async () => {
     vi.mocked(api.reportV2Definition).mockRejectedValue(new ApiResponseError(403, "report_access_denied"));
     openReport();
