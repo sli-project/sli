@@ -1,0 +1,103 @@
+name: Installed APT upgrade 410 to 411 proof
+
+on:
+  push:
+    branches: ['test/apt-upgrade-410-to-411-debian']
+    paths:
+      - '.github/workflows/installed-apt-upgrade-410-411.yml'
+      - 'scripts/ci/apt-upgrade-410-411.sh'
+      - 'scripts/ci/apt-upgrade-prepare.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  apt-upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    env:
+      BASE_RUN: '45480994082'
+      BASE_ARTIFACT: '14960504617'
+      BASE_ZIP_SHA256: 'be00dc59ab7a1cf841bfb44015f02b48e673aa327d9e5167d6e7b00332620a73'
+      BASE_COMMIT: '0f6093b3a9afcecb28fcdd47c7ed50522e50a156'
+      CANDIDATE_RUN: '45510515483'
+      CANDIDATE_ARTIFACT: '14976746044'
+      CANDIDATE_ZIP_SHA256: '55e03f5f6f1dddfd385cc16ac72cce55b6402abd44ff47a9d91c1b94ef2bc8fc'
+      CANDIDATE_COMMIT: '1c25b9f1661ac2412bfc584f3fcbffda1ea95229'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 8
+      - name: Prepare the exact QEMU and installed fixture helpers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HARNESS_COMMIT: 1c9498a16fe6f27f32596991c3bb4d0448c6e650
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = sli-project/sli
+          test "$(git diff --name-only "$CANDIDATE_COMMIT" HEAD -- deploy config server scripts/maintenance)" = ""
+          bash -n scripts/ci/apt-upgrade-410-411.sh
+          work="$RUNNER_TEMP/apt-proof"
+          mkdir -p "$work" "$RUNNER_TEMP/apt-tools/deploy" "$RUNNER_TEMP/apt-tools/scripts"
+          mkdir -p "$RUNNER_TEMP/apt-tools/server/sli"
+          get_pin() {
+            local name=$1 hash=$2
+            gh api "repos/$GITHUB_REPOSITORY/contents/scripts/ci/$name?ref=$HARNESS_COMMIT" \
+              --jq .content | base64 -d >"$work/$name.pin"
+            test "$(git hash-object "$work/$name.pin")" = "$hash"
+          }
+          get_pin p1-native-rollback-vm.sh 5e7818aad9a7e21335c50a199cfa89b471254ad0
+          get_pin p1-native-410-411-rollback.sh dc5fe4a513d524ebd21c814d465c274c27ff808a
+          python3 -B scripts/ci/apt-upgrade-prepare.py \
+            "$work/p1-native-rollback-vm.sh.pin" "$work/p1-native-410-411-rollback.sh.pin" "$work"
+          bash -n "$work/vm.sh"
+          bash -n "$work/p1-native-410-411-rollback.sh"
+          cp -R deploy/linux "$RUNNER_TEMP/apt-tools/deploy/"
+          cp -R scripts/maintenance "$RUNNER_TEMP/apt-tools/scripts/"
+          cp server/__init__.py "$RUNNER_TEMP/apt-tools/server/"
+          cp server/sli/__init__.py server/sli/release_package.py "$RUNNER_TEMP/apt-tools/server/sli/"
+      - name: Download and verify both original artifact ZIPs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/p1-rollback-evidence"
+          mkdir -p "$evidence"
+          download() {
+            local label=$1 run=$2 artifact=$3 commit=$4 digest=$5
+            local kit="$RUNNER_TEMP/p1-kits/$label" zip
+            mkdir -p "$kit"
+            zip="$kit/artifact.zip"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" |
+              jq -e --argjson id "$artifact" --arg name "sli-debian-beta-kit-$commit" \
+                --arg digest "sha256:$digest" \
+                'any(.artifacts[]; .id == $id and .name == $name and .digest == $digest and .expired == false)' \
+                >/dev/null
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+              --retry 2 --max-time 180 -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" -o "$zip"
+            printf '%s  %s\n' "$digest" "$zip" | sha256sum --check --strict
+            unzip -p "$zip" sli-debian-beta-kit.tar.gz >"$kit/sli-debian-beta-kit.tar.gz"
+            unzip -p "$zip" SHA256SUMS >"$kit/SHA256SUMS"
+            (cd "$kit"; sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS)
+            rm -- "$zip"
+            printf '%s run=%s artifact=%s git=%s zip_sha256=%s\n' \
+              "$label" "$run" "$artifact" "$commit" "$digest" | tee -a "$evidence/artifacts.txt"
+          }
+          download predecessor "$BASE_RUN" "$BASE_ARTIFACT" "$BASE_COMMIT" "$BASE_ZIP_SHA256"
+          download candidate "$CANDIDATE_RUN" "$CANDIDATE_ARTIFACT" "$CANDIDATE_COMMIT" "$CANDIDATE_ZIP_SHA256"
+      - name: Exercise stock APT upgrade in a disposable Debian guest
+        run: |
+          bash "$RUNNER_TEMP/apt-proof/vm.sh" runner \
+            "$RUNNER_TEMP/p1-kits/predecessor" "$RUNNER_TEMP/p1-kits/candidate" "$CANDIDATE_COMMIT"
+      - name: Preserve only aggregate synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installed-apt-upgrade-410-411
+          path: ${{ runner.temp }}/p1-rollback-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
