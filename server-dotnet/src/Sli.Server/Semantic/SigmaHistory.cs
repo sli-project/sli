@@ -13,11 +13,12 @@ internal sealed record SigmaHistoryPartition(JsonObject Scope, string StorageKin
         if (StorageKind is not ("core_event" or "core_history" or "workstation_observation" or "workstation_history" or "file_audit") || Start >= End || End > new DateTimeOffset(Start.UtcDateTime.Date.AddDays(1), TimeSpan.Zero) || Snapshot.Length is < 1 or > 256 || HighWatermark < 0 || new[] { "installation_id", "source_instance_id", "source_generation" }.Any(k => string.IsNullOrWhiteSpace(Scope.Text(k)))) throw new InvalidDataException("sigma_history_partition_invalid");
     }
 }
-internal sealed record SigmaHistoryRecord(long Position, JsonObject Reference, JsonObject Scope, DateTimeOffset Occurred, SigmaEvent? Event, string[] QualityReasons, int EncodedBytes);
+internal sealed record SigmaHistoryRecord(long Position, JsonObject Reference, JsonObject Scope, DateTimeOffset Occurred, SigmaEvent? Event, string[] QualityReasons, int EncodedBytes, int? NativeKind = null, bool Rejected = false);
 internal interface ISigmaHistoryReader
 {
     // Store adapters enforce snapshot, scope and byte limits. An executing
     // read has no deadline; the caller yields between records at its checkpoint.
+    bool Applies(SigmaRule rule, SigmaHistoryRecord record) => true;
     Task<SigmaHistoryRecord?> ReadOneAsync(SigmaHistoryPartition partition, long after, int maxBytes, TimeSpan timeout, CancellationToken ct);
 }
 internal sealed record SigmaHistoryBudget(int Rows = 1000, int Bytes = 16777216, int EventBytes = 1048576, int Evaluations = 25000, int Seconds = 30, int CpuSeconds = 10, int JobRows = 100000, int Samples = 100);
@@ -44,7 +45,7 @@ internal static class SigmaHistory
         var seen = state["seen"]!.AsArray().Select(x => x!.GetValue<string>()).ToHashSet();
         var counts = state["counts"]!.AsArray().ToDictionary(x => (x.Text("partition_key")!, x.Text("rule_id")!), x => x!.DeepClone().AsObject());
         async Task<bool> Commit(JsonObject candidate) { if (!Access()) return false; await save(candidate.DeepClone().AsObject(), ct); state = candidate; return true; }
-        JsonObject Count(string part, string rule) => counts.TryGetValue((part, rule), out var row) ? row.DeepClone().AsObject() : new JsonObject { ["partition_key"] = part, ["rule_id"] = rule, ["scanned"] = 0, ["evaluable"] = 0, ["matched"] = 0, ["suppressed"] = 0, ["unknown"] = 0, ["skipped"] = 0, ["reasons"] = new JsonArray(), ["unknown_fields"] = new JsonArray(), ["first_occurred_at"] = null, ["last_occurred_at"] = null };
+        JsonObject Count(string part, string rule) => counts.TryGetValue((part, rule), out var row) ? row.DeepClone().AsObject() : new JsonObject { ["partition_key"] = part, ["rule_id"] = rule, ["scanned"] = 0, ["evaluable"] = 0, ["matched"] = 0, ["suppressed"] = 0, ["unknown"] = 0, ["skipped"] = 0, ["rejected"] = 0, ["reasons"] = new JsonArray(), ["unknown_fields"] = new JsonArray(), ["first_occurred_at"] = null, ["last_occurred_at"] = null };
         try
         {
             while (state.Number("partition_index") < partitions.Length)
@@ -72,11 +73,13 @@ internal static class SigmaHistory
                 foreach (var rule in rules)
                 {
                     evaluations++; string status; string[] reasons; string replay = "";
-                    if (record.Event is null || record.QualityReasons.Length > 0) { status = "not_evaluable"; reasons = record.QualityReasons.Length > 0 ? record.QualityReasons : ["payload_unavailable"]; }
+                    if (!reader.Applies(rule, record)) { status = "skipped"; reasons = []; }
+                    else if (record.Rejected) { status = "rejected"; reasons = record.QualityReasons; }
+                    else if (record.Event is null || record.QualityReasons.Length > 0) { status = "not_evaluable"; reasons = record.QualityReasons.Length > 0 ? record.QualityReasons : ["payload_unavailable"]; }
                     else if (rule.LogSource == "process_creation" ? record.Event.Channel != "Security" || record.Event.Id != 4688 : !string.Equals(record.Event.Channel, rule.LogSource, StringComparison.OrdinalIgnoreCase)) { status = "skipped"; reasons = []; }
                     else { var matched = rule.Evaluate(record.Event.Fields, record.Event.Unavailable); status = matched.Status; reasons = matched.Reasons; replay = matched.ReplaySha; }
                     var count = Count(part.Key, rule.Id); count["scanned"] = count.Number("scanned") + 1;
-                    string category = status is "matched" or "not_matched" ? "evaluable" : status == "skipped" ? "skipped" : "unknown"; count[category] = count.Number(category) + 1; if (status == "matched") count["matched"] = count.Number("matched") + 1;
+                    string category = status switch { "matched" or "not_matched" => "evaluable", "skipped" => "skipped", "rejected" => "rejected", _ => "unknown" }; count[category] = count.Number(category) + 1; if (status == "matched") count["matched"] = count.Number("matched") + 1;
                     string stamp = SemanticJson.Stamp(record.Occurred); if (count.Text("first_occurred_at") is null || SigmaProjection.At(count, "first_occurred_at") > record.Occurred) count["first_occurred_at"] = stamp; if (count.Text("last_occurred_at") is null || SigmaProjection.At(count, "last_occurred_at") < record.Occurred) count["last_occurred_at"] = stamp;
                     counts[(part.Key, rule.Id)] = count;
                     var reasonCounts = count["reasons"]!.AsArray().ToDictionary(x => x![0]!.GetValue<string>(), x => x![1]!.GetValue<long>());

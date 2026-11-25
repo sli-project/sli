@@ -20,16 +20,19 @@ public sealed class ShortEventAdmissionPostgresTests
 
     internal static async Task RegisterDcAsync(NpgsqlConnection db, Guid agent, Guid host, long server,
         long domain, string hostName, string channel, CancellationToken ct, string? additionalChannel = null,
-        bool history = false)
+        bool history = false, bool completePolicy = false)
     {
         await using var registry = new NpgsqlCommand("""
             insert into servers(id,domain_id,hostname,role,is_active) values(@server,@domain,@name,'domain_controller',true);
             insert into sli_agents(id,host_id,key_fingerprint,registration_host_name,assigned_modules)
                 values(@agent,@host,repeat('c',64),@name,jsonb_build_array(jsonb_build_object('module_id','sli.windows.ad-dc','enabled',true,
                 'config',jsonb_build_object('source_name',@name,'connect_address',@name,'policy_revision','1',
-                'channels',jsonb_build_object(@channel,true) || jsonb_build_object(@additional,true),
+                'channels',(case when @complete then jsonb_build_object('Directory Service',false) else '{}'::jsonb end)
+                    || jsonb_build_object(@channel,true) || jsonb_build_object(@additional,true),
                 'channel_generations',jsonb_build_object(@channel,@host::text) ||
-                    jsonb_build_object(@additional,@host::text)))) ||
+                    jsonb_build_object(@additional,@host::text))
+                    || case when @complete then jsonb_build_object('batch_size',128,'initial_read_hours',0,'allow_event_ids',null)
+                            else '{}'::jsonb end)) ||
                     case when @history then jsonb_build_array(jsonb_build_object('module_id','sli.windows.ad-dc-history',
                         'enabled',true,'config','{}'::jsonb)) else '[]'::jsonb end);
             insert into sli_agent_module_bindings(agent_id,module_id,source_instance_id,source_name,channel,module_version,policy_revision)
@@ -39,7 +42,7 @@ public sealed class ShortEventAdmissionPostgresTests
         registry.Parameters.AddWithValue("server",server); registry.Parameters.AddWithValue("domain",domain);
         registry.Parameters.AddWithValue("name",hostName); registry.Parameters.AddWithValue("channel",channel);
         registry.Parameters.AddWithValue("additional",additionalChannel ?? channel);
-        registry.Parameters.AddWithValue("history",history);
+        registry.Parameters.AddWithValue("history",history); registry.Parameters.AddWithValue("complete",completePolicy);
         await registry.ExecuteNonQueryAsync(ct);
     }
 
@@ -51,7 +54,7 @@ public sealed class ShortEventAdmissionPostgresTests
         string[]? nativeTimestamps = null, string[]? nativeAccounts = null, string[]? nativeAddresses = null,
         Guid? packetId = null, int sequence = 1, int firstRecordId = 1, string hostName = "dc.example.test",
         IReadOnlyDictionary<string, string>? nativeFields = null, string? eventChannel = null,
-        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null, bool history = false, string[]? nativeWorkstations = null)
+        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null, bool history = false, string[]? nativeWorkstations = null, int? nativeVersion = null)
     {
         var agent = registered?.Agent ?? Agent; var host = registered?.Host ?? hostId ?? Agent;
         var packet = packetId ?? Packet;
@@ -60,6 +63,7 @@ public sealed class ShortEventAdmissionPostgresTests
         int[] kinds = eventKinds ?? (powershell ? [4104] : [1102,4624,4625]);
         var natives = new JsonArray();
         string stamp = nativeTimestamp ?? (occurredAt?.UtcDateTime ?? DateTime.UtcNow.AddMinutes(-3)).ToString("yyyy-MM-ddTHH:mm:ss.ffffffZ",System.Globalization.CultureInfo.InvariantCulture);
+        string version = nativeVersion is null ? "" : new XElement("Version", nativeVersion.Value).ToString(SaveOptions.DisableFormatting);
         foreach (int kind in kinds) {
             if(nativeTimestamps is not null) stamp=nativeTimestamps[natives.Count];
             string provider = powershell ? "Microsoft-Windows-PowerShell" : channel=="System" ? "Service Control Manager"
@@ -83,7 +87,7 @@ public sealed class ShortEventAdmissionPostgresTests
             string payload = kind == 1104
                 ? "<UserData><FileIsFull xmlns='http://manifests.microsoft.com/win/2004/08/windows/eventlog'/></UserData>"
                 : $"<EventData>{fields}</EventData>";
-            string xml = $"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='{provider}'/><EventID>{kind}</EventID><EventRecordID>{natives.Count+firstRecordId}</EventRecordID><TimeCreated SystemTime='{stamp}'/><Channel>{channel}</Channel><Computer>{hostName}</Computer></System>{payload}</Event>";
+            string xml = $"<Event xmlns='{EventXml.Namespace}'><System><Provider Name='{provider}'/><EventID>{kind}</EventID>{version}<EventRecordID>{natives.Count+firstRecordId}</EventRecordID><TimeCreated SystemTime='{stamp}'/><Channel>{channel}</Channel><Computer>{hostName}</Computer></System>{payload}</Event>";
             natives.Add(EventXml.Parse(xml,hostName,hostName,channel));
         }
         string module = history ? "sli.windows.ad-dc-history" : "sli.windows.ad-dc";
