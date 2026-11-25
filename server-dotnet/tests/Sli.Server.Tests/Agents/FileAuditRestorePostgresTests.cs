@@ -37,7 +37,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 410);
+        await fixture.StartAsync(ct, throughVersion: 414);
         using var environment = new SemanticProducerPostgresTests.Admission(mode: null);
         environment.Set("SLI_PLUGIN_RUNTIME_DIR", null);
         environment.Set("SLI_PLUGIN_LOCK_DIR", null);
@@ -149,6 +149,25 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
             Assert.Equal("accepted", (await Read(response, HttpStatusCode.OK, ct))["status"]!.ToString());
         }
 
+        async Task AssertSavedCommand(JsonObject command)
+        {
+            using var response = await admin.GetAsync(Control + "/catalog?agent_id=" + agentId, ct);
+            var catalog = await Read(response, HttpStatusCode.OK, ct);
+            var saved = Assert.IsType<JsonObject>(catalog["saved_command"]);
+            foreach (string field in new[] { "command_id", "action", "policy_revision", "collection_scope_ids" })
+                Assert.True(JsonNode.DeepEquals(command[field], saved[field]), $"Catalog returned a different {field}");
+            Assert.Equal(Scope, catalog["saved_selection"]!["collection_scope_id"]!.GetValue<string>());
+            Assert.Equal(@"C:\Files", catalog["saved_selection"]!["path"]!.GetValue<string>());
+            var reportKey = JsonNode.Parse(catalog["saved_report_share_key"]!.GetValue<string>())!.AsArray();
+            Assert.Equal(new[] { agentId.ToString("D"), hostId.ToString("D"), Scope },
+                reportKey.Select(value => value!.GetValue<string>()).ToArray());
+
+            using var receipt = await admin.GetAsync(statusPath, ct);
+            var status = await Read(receipt, HttpStatusCode.OK, ct);
+            Assert.Equal(command["command_id"]!.GetValue<string>(), status["command"]!["command_id"]!.GetValue<string>());
+            Assert.Equal("verified", status["state"]!.GetValue<string>());
+        }
+
         var initial = await agent.GetFromJsonAsync<JsonObject>(AgentIdentity, ct);
         var adAssignment = initial!["assigned_modules"]!.AsArray().Single(
             item => item?["module_id"]?.ToString() == "sli.windows.ad-dc")!.DeepClone();
@@ -157,6 +176,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         Assert.Equal("module_disabled", (await SendPacket(SignedFile(applyRevision, Scope)))["error_code"]!.ToString());
         var appliedReport = Report(policy, applied, now);
         await Confirm(appliedReport);
+        await AssertSavedCommand(applied);
         // Continue from a native apply written before the server stored its origin separately.
         await using (var legacyApply = new NpgsqlCommand("""
             update public.sli_agents set file_audit=file_audit-'permissions_restore_origin' where id=@agent
@@ -174,6 +194,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         var recheckReport = Report(policy, recheck, now.AddSeconds(1));
         using var checkedReport = await Post(agent, AgentReport, recheckReport, ct);
         output.WriteLine($"Repeat check report HTTP {(int)checkedReport.StatusCode}");
+        await AssertSavedCommand(recheck);
 
         var restore = await Queue("restore", "synthetic-restore", beforeRestore!["policy_revision"]!.GetValue<long>());
         var restoreReport = Report(policy, restore, now.AddSeconds(2));

@@ -445,31 +445,6 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             state.Parameters.AddWithValue("current", currentId);
             if (await state.ExecuteScalarAsync(ct) is not 2L) failures.Add("DC registration statuses were not exchanged");
         }
-        long restoredRevision;
-        await using (var currentPolicy = new NpgsqlCommand("select policy_revision from sli_agents where id=@agent", admin))
-        {
-            currentPolicy.Parameters.AddWithValue("agent", replacedId);
-            restoredRevision = (long)(await currentPolicy.ExecuteScalarAsync(ct))!;
-        }
-        var management = await Check("/api/v1/admin/agents/policy", new
-        {
-            agent_id = replacedId, expected_revision = restoredRevision,
-            collection_policy = new { manage_windows_audit = true }
-        });
-        long managementRevision = management!["policy_revision"]!.GetValue<long>();
-        await Check("/api/v1/admin/agents/file-audit", new
-        {
-            agent_id = replacedId, expected_revision = managementRevision, config = fileConfig,
-            command = new
-            {
-                contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-agent-file-apply",
-                action = "apply", policy_revision = (managementRevision + 1).ToString(),
-                collection_scope_ids = new[] { "sql-scope" }
-            }
-        });
-        var applyCatalog = await Check(catalogRoute + "?agent_id=" + replacedId, new { }, method: "GET");
-        Assert.Equal("sql-agent-file-apply", applyCatalog?["saved_command"]?["command_id"]?.ToString());
-        Assert.Equal("apply", applyCatalog?["saved_command"]?["action"]?.ToString());
         // Finish writes with the original owner session before testing first login.
         await Check("/api/auth/logout", new { });
         client.DefaultRequestHeaders.Remove("Cookie");
