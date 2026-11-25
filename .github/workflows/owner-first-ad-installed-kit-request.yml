@@ -1,0 +1,37 @@
+name: Request installed owner first-AD acceptance kit
+on:
+  push:
+    branches: ['codex/beta-clean-readme-acceptance']
+    paths: ['.github/workflows/owner-first-ad-installed-kit-request.yml']
+permissions: {}
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KIT_COMMIT: 2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+    steps:
+      - name: Request the standard main build with artifact upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = sli-project/sli
+          workflow="repos/$GITHUB_REPOSITORY/actions/workflows/beta-kit.yml"
+          artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=sli-debian-beta-kit-$KIT_COMMIT" \
+            --jq '.artifacts[] | select(.expired == false) | .id')
+          if [[ -n "$artifacts" ]]; then
+            printf 'Existing kit artifact: %s\n' "$artifacts"
+            exit 0
+          fi
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          existing=$(gh api "$workflow/runs?head_sha=$KIT_COMMIT&event=workflow_dispatch" \
+            --jq '.workflow_runs[] | select(.conclusion == "success" or .status != "completed") | .id')
+          if [[ -n "$existing" ]]; then
+            printf 'Existing standard build: %s\n' "$existing"
+            exit 0
+          fi
+          jq -n --arg commit "$KIT_COMMIT" \
+            '{ref:"main", inputs:{commit:$commit, upload_artifact:true, release:false}}' |
+            gh api --method POST "$workflow/dispatches" --input -
