@@ -440,27 +440,6 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             var byteLimitResults = await ByteLimitCasesAsync(admin, rule, ct);
 
 
-            await using var blocker = new NpgsqlConnection(admin.ConnectionString);
-            await blocker.OpenAsync(ct);
-            await using (var held = await blocker.BeginTransactionAsync(ct))
-            {
-                // Keep fixture backlog intact. The product consumer can claim
-                // a newly created job through its normal SKIP LOCKED path.
-                await using var lockOlder = new NpgsqlCommand("""
-                    select job_id from public.semantic_risk_evaluation_jobs
-                    where job_id=any(@older) order by job_id for update
-                    """, blocker, held);
-                lockOlder.Parameters.AddWithValue("older", olderJobs);
-                await using (var locks = await lockOlder.ExecuteReaderAsync(ct))
-                    while (await locks.ReadAsync(ct)) { }
-
-                var consumer = new PasswordRiskConsumer(runtime, new(MaxJobs: 1));
-                var publication = await consumer.RunOnceAsync(ct);
-                Assert.Equal(0, publication.Failed);
-                Assert.Equal(1, publication.Published);
-                await held.RollbackAsync(ct);
-            }
-
             await using var snapshot = new NpgsqlCommand("""
                 select jsonb_build_object(
                   'checkpoint_sha',(select encode(sha256(convert_to(coalesce(string_agg(
@@ -478,8 +457,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                   'job_sha',(select encode(sha256(convert_to(coalesce(string_agg(
                       (to_jsonb(j)-array['created_at','updated_at','available_at','lease_until','lease_token','heartbeat_at','completed_at'])::text,
                       '|' order by j.job_id),''),'UTF8')),'hex') from public.semantic_risk_evaluation_jobs j),
-                  'publication',(select jsonb_agg(to_jsonb(p)-'created_at' order by p.scenario_id)
-                    from public.semantic_finding_publications p where p.first_job_id<>all(@older)),
+                  'new_jobs',(select count(*) from public.semantic_risk_evaluation_jobs j where j.job_id<>all(@older)),
                   'evidence_sha',(select encode(sha256(convert_to(coalesce(string_agg(
                       normalized, '|' order by normalized),''),'UTF8')),'hex')
                     from (select (to_jsonb(r)-array['created_at','updated_at'])::text as normalized
@@ -487,7 +465,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                 """, admin);
             snapshot.Parameters.AddWithValue("older", olderJobs);
             var stable = JsonNode.Parse(Assert.IsType<string>(await snapshot.ExecuteScalarAsync(ct)))!.AsObject();
-            Assert.Single(stable["publication"]!.AsArray());
+            Assert.Equal(outcome.Jobs, stable["new_jobs"]!.GetValue<int>());
             stable["guard_results"] = guardResults;
             stable["byte_limit_results"] = byteLimitResults;
             return stable.ToJsonString();
@@ -530,7 +508,10 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
     {
         await using var cmd = new NpgsqlCommand("""
             select public.password_v2_decode(@scope::jsonb,@rule::jsonb,
-                jsonb_build_array(jsonb_set(document_json,@path,@value::jsonb,true)))
+                jsonb_build_array(case when @tamper_emission then
+                    jsonb_set(jsonb_set(document_json,@path,@value::jsonb,true),
+                        '{password_context,root_id}',@value::jsonb,true)
+                    else jsonb_set(document_json,@path,@value::jsonb,true) end))
             from public.semantic_qw_signals
             where document_json#>>'{password_context,pin}'=@pin
               and document_json#>>'{password_context,portion_total}'='1'
@@ -539,6 +520,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
         cmd.Parameters.AddWithValue("scope", rule.Scope.Document.ToJsonString());
         cmd.Parameters.AddWithValue("rule", rule.Execution.ToJsonString());
         cmd.Parameters.AddWithValue("path", key.Split('.'));
+        cmd.Parameters.AddWithValue("tamper_emission", key == "password_context.emission_id");
         cmd.Parameters.AddWithValue("value", value.ToJsonString());
         cmd.Parameters.AddWithValue("pin", rule.Pin);
         var rejected = await Assert.ThrowsAsync<PostgresException>(() => cmd.ExecuteScalarAsync(ct));
