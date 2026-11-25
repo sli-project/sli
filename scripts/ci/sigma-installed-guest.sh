@@ -77,7 +77,7 @@ from pathlib import Path
 
 log = Path(sys.argv[1]).read_text(errors="replace")
 for line in log.splitlines():
-    if any(marker in line for marker in ("Failed Sli.Server.Tests.Semantic.InstalledSigmaGuestFixture", "PostgresException", "NpgsqlException", "Assertion", "Assert.", "framework", "No test matches", "Total:")):
+    if any(marker.lower() in line.lower() for marker in ("InstalledSigmaGuestFixture", "exception", "Assert.", "[FAIL]", "framework", "No test matches", "Total:", "expected:", "actual:", "detail:")):
         print("P1_EVIDENCE sigma_fixture_detail=" + re.sub(r"[^a-zA-Z0-9_. :(),/='\[\]<>-]", "?", line)[:220])
 PY
     exit 1

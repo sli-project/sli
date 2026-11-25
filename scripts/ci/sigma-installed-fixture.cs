@@ -21,8 +21,13 @@ public sealed class InstalledSigmaGuestFixture
         await using var owner = new NpgsqlConnection(
             "Host=/var/run/postgresql;Port=5432;Database=sli;Username=postgres;Pooling=false");
         await owner.OpenAsync(ct);
-        await using var domainQuery = new NpgsqlCommand("select min(id) from public.domains", owner);
-        long domain = Convert.ToInt64(await domainQuery.ExecuteScalarAsync(ct));
+        // The stock native installer starts without a configured report domain.
+        await using var domainQuery = new NpgsqlCommand("""
+            with forest as (insert into public.forests(name) values('sigma-proof.example.test') returning id)
+            insert into public.domains(forest_id,fqdn)
+            select id,'sigma-proof.example.test' from forest returning id
+            """, owner);
+        long domain = Assert.IsType<long>(await domainQuery.ExecuteScalarAsync(ct));
         Assert.True(domain > 0);
         await using var installationQuery = new NpgsqlCommand(
             "select installation_id::text from public.semantic_default_installation", owner);
