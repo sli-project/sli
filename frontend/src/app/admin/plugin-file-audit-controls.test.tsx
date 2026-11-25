@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
 import { t } from "../../i18n";
 import requests from "../../test-fixtures/file_audit_server_ui_requests.json";
+import { AgentFileAuditControls } from "./agent-file-audit";
 import { PluginSources } from "./plugin-sources";
 
 vi.mock("../App", () => ({ useTimeZone: () => ({ timeZone: "UTC" }) }));
@@ -141,6 +142,76 @@ it("restores an authorized SMB selection on remount and distinguishes check from
     period: "24h", source_kind: "server", path: share.path, operation: "permissions", include_nested: "true",
   });
 }, 10_000);
+
+it.each([
+  { action: "check", state: "partial", reason: "coverage_incomplete", explanation: "checkCoverageIncomplete", permissionDenied: false },
+  { action: "apply", state: "blocked", reason: "global_sacl_unknown", explanation: "applyGlobalSaclUnknown", permissionDenied: true },
+] as const)("explains the saved $action result only while its receipt matches", async ({
+  action: requestedAction, state, reason, explanation, permissionDenied,
+}) => {
+  const share = { share_name: "Pilot$", path: "C:\\Pilot", collection_scope_id: "pilot-scope" };
+  const target = { ...agent, assigned_modules: [] };
+  const command = {
+    command_id: "saved-command", action: requestedAction, policy_revision: String(target.policy_revision),
+    collection_scope_ids: [share.collection_scope_id],
+  };
+  const url = new URL(window.location.href);
+  url.searchParams.set("file_audit_agent", target.id);
+  window.history.replaceState(window.history.state, "", url);
+  vi.spyOn(api, "agentFileAuditCatalog").mockResolvedValue({
+    state: "ready", items: [share], saved_selection: share, saved_command: command,
+    saved_report_share_key: JSON.stringify([target.id, "bound-source", share.collection_scope_id]),
+  });
+  const receipt = {
+    command, state, reported_at: "2026-10-25T00:00:00Z", may_own_audit: false,
+    scopes: { [share.collection_scope_id]: { state, reason_code: reason } },
+  };
+  const status = vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue(receipt);
+  const mutate = vi.spyOn(api, "agentAction");
+  const message = t(`agents.fileAudit.result.${explanation}`, { share: share.share_name });
+  const view = mount(true, true, [target]);
+  expect(await screen.findByText(message)).toBeTruthy();
+
+  view.unmount();
+  client.clear();
+  mount(true, true, [target]);
+  expect(await screen.findByText(message)).toBeTruthy();
+  expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
+  expect((screen.getByLabelText(t("agents.fileAudit.catalog.path")) as HTMLInputElement).value).toBe(share.path);
+  const technicalDetails = screen.getByText(reason).closest("details");
+  expect(technicalDetails?.querySelector("summary")?.textContent).toBe(t("agents.technicalDetails"));
+  expect(technicalDetails?.open).toBe(false);
+  expect(screen.queryByRole("link", { name: t("file-audit.tabs.permission-changes") })).toBeNull();
+
+  if (permissionDenied) status.mockRejectedValueOnce(new ApiResponseError(403));
+  else status.mockResolvedValueOnce({ ...receipt, command: { ...command, command_id: "different-command" } });
+  fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.result.refresh") }));
+  expect(await screen.findByText(t(permissionDenied ? "agents.fileAudit.result.denied" : "agents.fileAudit.result.stale"))).toBeTruthy();
+  expect(screen.queryByText(message)).toBeNull();
+  expect(screen.queryByText(reason)).toBeNull();
+  expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
+  expect(mutate).not.toHaveBeenCalled();
+});
+
+it("keeps a manual share's explanation tied to the receipt scope", async () => {
+  const command: AgentFileAuditCommand = {
+    ...request.command, action: "check", agent_id: agent.id, collection_scope_ids: ["different-scope"],
+  };
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({
+    command, state: "partial", reported_at: "2026-10-25T00:00:00Z", may_own_audit: false,
+    scopes: { "different-scope": { state: "partial", reason_code: "coverage_incomplete" } },
+  });
+  client = new QueryClient();
+  render(<AgentFileAuditControls agents={[agent]} busy={false} change={vi.fn()} accepted={command}/>);
+  screen.getByText(t("agents.fileAudit.title")).closest("details")!.open = true;
+  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: agent.host_name! })));
+
+  const root = request.config.roots[0];
+  expect((screen.getByLabelText(t("agents.fileAudit.shares")) as HTMLTextAreaElement).value).toBe(root.share_name);
+  expect(await screen.findByText(t("agents.fileAudit.result.partial"))).toBeTruthy();
+  expect(screen.queryByText(t("agents.fileAudit.result.checkCoverageIncomplete", { share: root.share_name }))).toBeNull();
+});
 
 it.each(["ready", "denied"] as const)("keeps an existing catalog or leaves a denied catalog unread: %s", async (access) => {
   const target = { ...agent, assigned_modules: [] };

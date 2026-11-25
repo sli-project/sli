@@ -59,6 +59,8 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
   const paths = useCatalog ? selectedShare?.path ?? "" : draft.paths ?? (original.length ? original.map((root) => root.path).join("\n") : saved?.path ?? "");
   const shares = useCatalog ? selectedShare?.share_name ?? "" : draft.shares ?? (original.length ? original.map((root) => root.share_name).join("\n") : saved?.share_name ?? "");
   const scopes = useCatalog ? selectedShare?.collection_scope_id ?? "" : draft.scopes ?? (original.length ? original.map((root) => root.collection_scope_id).join("\n") : saved?.collection_scope_id ?? "");
+  const shareNames = lines(shares);
+  const formScopeIds = lines(scopes);
   const savedCommand = catalog?.result?.saved_command;
   const restored = primary && saved && savedCommand && (savedCommand.action === "check" || savedCommand.action === "apply")
     && savedCommand.collection_scope_ids.length === 1 && savedCommand.collection_scope_ids[0] === saved.collection_scope_id
@@ -191,7 +193,9 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
     {!busy && sourceKind === "server" && current && current.command_id !== dismissedCommand ? <>
       {serverCatalog && current.action !== "restore" ? <h3>{t(`agents.fileAudit.catalog.${current.action}Result`)}</h3> : null}
       <AgentFileAuditReadback key={`${current.agent_id}:${current.command_id}:${current.policy_revision}:${current.action}`}
-        accepted={current} permissionReportHref={permissionReportHref}/>
+        accepted={current} permissionReportHref={permissionReportHref}
+        shareName={shareNames.length === 1 && formScopeIds.length === 1 && current.collection_scope_ids.length === 1
+          && current.collection_scope_ids[0] === formScopeIds[0] ? shareNames[0] : undefined}/>
     </> : null}
     {error ? <p role="alert">{t(error)}</p> : null}
   </details>;
@@ -200,7 +204,9 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
 
 
 type ReadbackState = "loading" | "pending" | "delayed" | "unavailable" | "verified" | "partial" | "blocked" | "failed" | "denied" | "stale" | "unknown";
-export function AgentFileAuditReadback({ accepted, permissionReportHref }: { accepted: AgentFileAuditCommand; permissionReportHref?: string }) {
+export function AgentFileAuditReadback({ accepted, permissionReportHref, shareName }: {
+  accepted: AgentFileAuditCommand; permissionReportHref?: string; shareName?: string;
+}) {
   const [result, setResult] = useState<{ state: ReadbackState; receipt?: AgentFileAuditStatus }>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -251,11 +257,18 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref }: { acc
     };
   }, [accepted.agent_id, accepted.command_id, accepted.policy_revision, accepted.action, attempt]);
   const terminalFailure = result.state === "failed" || result.state === "blocked";
+  const scopeReceipt = accepted.collection_scope_ids.length === 1
+    ? result.receipt?.scopes?.[accepted.collection_scope_ids[0]] : undefined;
+  const reason = shareName && result.receipt?.reported_at && scopeReceipt?.state === result.state ? scopeReceipt.reason_code : undefined;
+  const explanation = accepted.action === "check" && result.state === "partial" && reason === "coverage_incomplete"
+    ? "agents.fileAudit.result.checkCoverageIncomplete"
+    : accepted.action === "apply" && result.state === "blocked" && reason === "global_sacl_unknown"
+      ? "agents.fileAudit.result.applyGlobalSaclUnknown" : undefined;
   return <div>
-    <p role="status">{t(`agents.fileAudit.result.${result.state}`)}</p>
+    <p role="status">{explanation && shareName ? t(explanation, { share: shareName }) : t(`agents.fileAudit.result.${result.state}`)}</p>
     {result.state === "verified" && permissionReportHref
       ? <p><a href={permissionReportHref}>{t("file-audit.tabs.permission-changes")}</a></p> : null}
-    {terminalFailure ? <dl>{accepted.collection_scope_ids.map((scope) => {
+    {terminalFailure && !explanation ? <dl>{accepted.collection_scope_ids.map((scope) => {
       const row = result.receipt?.scopes?.[scope];
       if (row?.state !== result.state) return null;
       const detail = row.read_error;
@@ -278,7 +291,7 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref }: { acc
       <dt>{t("file-audit.receipt.action")}</dt><dd>{t(`agents.fileAudit.${accepted.action}`)}</dd>
       {result.receipt?.reported_at ? <><dt>{t("agents.fileAudit.result.receivedAt")}</dt><dd>{result.receipt.reported_at}</dd></> : null}
     </dl>
-      {result.receipt && !terminalFailure ? <dl>{accepted.collection_scope_ids.map((scope) => <div key={scope}>
+      {result.receipt && (!terminalFailure || explanation) ? <dl>{accepted.collection_scope_ids.map((scope) => <div key={scope}>
         <dt>{scope}</dt><dd>{result.receipt?.scopes?.[scope]?.reason_code ?? t("agents.fileAudit.result.noScopeReceipt")}</dd>
       </div>)}</dl> : null}
     </details>
