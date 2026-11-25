@@ -24,7 +24,7 @@ public interface IFileAuditApi
     Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids);
     IFileAuditObject Open(string path, string root);
     JsonObject Share(string name, string root);
-    JsonObject LocalGroups(int limit);
+    JsonObject LocalGroups(int limit, bool allowUnresolvedSid = false);
 }
 public sealed record FileAuditReconcileResult(JsonObject? Audit, JsonObject? Report);
 
@@ -216,7 +216,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         setReadStage?.Invoke("share");
         var share = InventoryShare(root);
         setReadStage?.Invoke("local_groups");
-        var groups = api.LocalGroups(config.Number("inventory_objects"));
+        var groups = api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: Text(cmd, "action") == "check");
         setReadStage?.Invoke("inventory");
         if (!share["complete"]!.GetValue<bool>() || !groups["complete"]!.GetValue<bool>()) gaps++;
         var objects = state["objects"]!.AsObject();

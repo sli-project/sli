@@ -21,6 +21,7 @@ public sealed class FileAuditManagerTests : IDisposable
     [Theory]
     [InlineData("audit_policy")]
     [InlineData("share")]
+    [InlineData("local_groups")]
     [InlineData("directory")]
     [InlineData("acl")]
     public void AFailedServerCheckReportsOnlyItsReadStageAndWindowsCode(string stage)
@@ -37,6 +38,69 @@ public sealed class FileAuditManagerTests : IDisposable
         Assert.Empty(report["snapshots"]!.AsArray());
         Assert.Equal(0, api.Writes);
         Assert.DoesNotContain("synthetic private path or ACL", report.ToJsonString());
+    }
+
+    [Fact]
+    public void IncompleteLocalGroupResolutionAllowsOnlyReadOnlyInventory()
+    {
+        var api = new FakeFileApi(_dir) { UnresolvedGroupSid = true };
+        var manager = new FileAuditManager(_dir, _files, api);
+        var check = manager.Reconcile(Policy(Request("check")), new FakeAudit(), Helpers.Now).Report!;
+        var scope = Assert.Single(check["scopes"]!.AsArray())!;
+        Assert.Equal("coverage_incomplete", scope["reason_code"]!.ToString());
+        var snapshot = Assert.Single(check["snapshots"]!.AsArray())!;
+        Assert.False(snapshot["local_groups"]!["complete"]!.GetValue<bool>());
+        Assert.NotEmpty(snapshot["objects"]!.AsArray());
+
+        manager.Acknowledge(check);
+        var apply = manager.Reconcile(Policy(Request("apply", "apply")), new FakeAudit(), Helpers.Now).Report!;
+        Assert.Equal("native_unavailable", Assert.Single(apply["scopes"]!.AsArray())!["reason_code"]!.ToString());
+        Assert.Empty(apply["snapshots"]!.AsArray());
+        Assert.Equal(0, api.Writes);
+    }
+
+    [Theory]
+    [InlineData("S-1-5-32-544", null, "S-1-5-32-544")]
+    [InlineData(null, "S-1-5-21-1-2-3-1001", "S-1-5-21-1-2-3-1001")]
+    [InlineData("S-1-5-32-544", "S-1-5-21-1-2-3-1001", null)]
+    [InlineData(null, "S-1-5-21-4-5-6-1001", null)]
+    [InlineData(null, null, null)]
+    public void GroupSidMustBeUniqueAndFromAnAuthoritativeLocalDomain(
+        string? builtin, string? account, string? expected)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var resolved = NativeFileAuditApi.SelectLocalGroupSid(
+            builtin is null ? null : new(builtin), new("S-1-5-32"),
+            account is null ? null : new(account), new("S-1-5-21-1-2-3"));
+        Assert.Equal(expected, resolved?.Value);
+    }
+
+    [Fact]
+    public void NativeGroupReadsKeepNetApiStatusAndAcceptPartialPages()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        NativeFileAuditApi.EnsureLocalGroupRead(0);
+        NativeFileAuditApi.EnsureLocalGroupRead(234);
+        try
+        {
+            NativeFileAuditApi.EnsureLocalGroupRead(5);
+            Assert.Fail("NetAPI access denied should be reported as a native read failure.");
+        }
+        catch (FileAuditNativeReadException error)
+        {
+            Assert.Equal(5u, error.NativeStatus);
+        }
+    }
+
+    [Fact]
+    public void NativeLocalGroupInventoryResolvesTheBuiltinAdministratorsAlias()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var groups = new NativeFileAuditApi().LocalGroups(100);
+        Assert.Contains(groups["groups"]!.AsArray(), group => group!["group_sid"]!.ToString() == "S-1-5-32-544");
     }
 
     [Theory]
@@ -246,6 +310,7 @@ public sealed class FileAuditManagerTests : IDisposable
         public bool RejectChildren { get; set; }
         public string ChildSacl { get; set; } = "S:old";
         public string? FailedRead { get; set; }
+        public bool UnresolvedGroupSid { get; set; }
         private void FailRead(string stage)
         {
             if (stage == FailedRead) throw new System.ComponentModel.Win32Exception(5, "synthetic private path or ACL");
@@ -275,7 +340,12 @@ public sealed class FileAuditManagerTests : IDisposable
             FailRead("share");
             return new() { ["name"]=name,["path"]=root,["dacl"]="D:(A;;FA;;;SY)",["complete"]=true };
         }
-        public JsonObject LocalGroups(int limit) => new() { ["complete"]=true,["groups"]=new JsonArray() };
+        public JsonObject LocalGroups(int limit, bool allowUnresolvedSid = false)
+        {
+            if (FailedRead == "local_groups") throw new FileAuditNativeReadException("file_audit_groups_unavailable", 5);
+            if (UnresolvedGroupSid && !allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
+            return new() { ["complete"] = !UnresolvedGroupSid, ["groups"] = new JsonArray() };
+        }
         public sealed class FakeObject(FakeFileApi api) : IFileAuditObject
         {
             public JsonObject Row { get; } = new() { ["object_id"]="1:2:3",["object_type"]="directory",["owner_sid"]="S-1-5-18",["dacl"]="D:(A;;FA;;;SY)",["sacl"]="S:old",["sacl_protected"]=false };

@@ -136,37 +136,126 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         return new(LocalSmbCatalogState.Incomplete, [], moreData);
     }
 
-    public JsonObject LocalGroups(int limit)
+    public JsonObject LocalGroups(int limit, bool allowUnresolvedSid = false)
     {
-        uint resume=0;
-        var status=NetLocalGroupEnum(null,0,out var buffer,4096,out var count,out _,ref resume);
-        if (status is not (0 or 234)) throw new AgentException("file_audit_groups_unavailable");
-        var groups=new JsonArray(); var complete=resume == 0; var seen=0;
+        var bound = Math.Min(limit, 100);
+        var groups = new JsonArray();
+        bool complete;
+        var seen = 0;
+        nuint resume = 0;
+        var status = NetLocalGroupEnum(null, 0, out var buffer, 4096, out var count, out _, ref resume);
         try
         {
-            for (var i=0; i<count; i++)
+            EnsureLocalGroupRead(status);
+            complete = status == 0 && resume == 0;
+            if (count == 0) return new() { ["complete"] = complete, ["groups"] = groups };
+
+            var builtinSid = new SecurityIdentifier(WellKnownSidType.BuiltinDomainSid, null);
+            var builtinAdmin = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var builtinAccount = (NTAccount)builtinAdmin.Translate(typeof(NTAccount));
+            var builtinAuthority = builtinAccount.Value.Split('\\')[0];
+            var (accountAuthority, accountDomainSid) = LocalAccountDomain();
+
+            for (var i = 0; i < count; i++)
             {
-                if (seen >= Math.Min(limit,100)) { complete=false; break; }
-                var name=Marshal.PtrToStringUni(Marshal.ReadIntPtr(buffer,i*IntPtr.Size))!;
-                var sid=((SecurityIdentifier)new NTAccount(Environment.MachineName,name).Translate(typeof(SecurityIdentifier))).Value;
-                uint memberResume=0;
-                var result=NetLocalGroupGetMembers(null,name,0,out var members,4096,out var memberCount,out _,ref memberResume);
-                if (result is not (0 or 234)) throw new AgentException("file_audit_groups_unavailable");
-                var ids=new JsonArray();
+                if (seen >= bound) { complete = false; break; }
+                seen++;
+                var name = Marshal.PtrToStringUni(Marshal.ReadIntPtr(buffer, i * IntPtr.Size));
+                var sid = string.IsNullOrEmpty(name) ? null : SelectLocalGroupSid(
+                    ResolveGroupSid(builtinAuthority, name), builtinSid,
+                    ResolveGroupSid(accountAuthority, name), accountDomainSid);
+                if (name is null || sid is null)
+                {
+                    if (!allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
+                    complete = false;
+                    continue;
+                }
+
+                nuint memberResume = 0;
+                var memberStatus = NetLocalGroupGetMembers(null, name, 0, out var members, 4096,
+                    out var memberCount, out _, ref memberResume);
+                var ids = new JsonArray();
                 try
                 {
-                    for (var j=0; j<memberCount; j++)
+                    EnsureLocalGroupRead(memberStatus);
+                    complete &= memberStatus == 0 && memberResume == 0;
+                    for (var j = 0; j < memberCount; j++)
                     {
-                        if (seen >= Math.Min(limit,100)) { complete=false; break; }
-                        ids.Add(new SecurityIdentifier(Marshal.ReadIntPtr(members,j*IntPtr.Size)).Value); seen++;
+                        if (seen >= bound) { complete = false; break; }
+                        ids.Add(new SecurityIdentifier(Marshal.ReadIntPtr(members, j * IntPtr.Size)).Value);
+                        seen++;
                     }
                 }
-                finally { NetApiBufferFree(members); }
-                seen++; complete &= memberResume == 0; groups.Add(new JsonObject { ["group_sid"]=sid,["member_sids"]=ids });
+                finally
+                {
+                    if (members != IntPtr.Zero) NetApiBufferFree(members);
+                }
+                groups.Add(new JsonObject { ["group_sid"] = sid.Value, ["member_sids"] = ids });
             }
         }
-        finally { NetApiBufferFree(buffer); }
-        return new JsonObject { ["complete"]=complete,["groups"]=groups };
+        finally
+        {
+            if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+        }
+        return new() { ["complete"] = complete, ["groups"] = groups };
+    }
+
+    internal static void EnsureLocalGroupRead(uint status)
+    {
+        const uint ErrorMoreData = 234;
+        if (status is not (0 or ErrorMoreData))
+            throw new FileAuditNativeReadException("file_audit_groups_unavailable", status);
+    }
+
+    private static SecurityIdentifier? ResolveGroupSid(string authority, string name)
+    {
+        try
+        {
+            return (SecurityIdentifier)new NTAccount(authority, name).Translate(typeof(SecurityIdentifier));
+        }
+        catch (IdentityNotMappedException)
+        {
+            return null;
+        }
+    }
+
+    internal static SecurityIdentifier? SelectLocalGroupSid(
+        SecurityIdentifier? builtin, SecurityIdentifier builtinDomain,
+        SecurityIdentifier? account, SecurityIdentifier accountDomain)
+    {
+        if (builtin?.IsEqualDomainSid(builtinDomain) != true) builtin = null;
+        if (account?.IsEqualDomainSid(accountDomain) != true) account = null;
+        if (builtin is not null && account is not null && !builtin.Equals(account)) return null;
+        return builtin ?? account;
+    }
+
+    // Ask the local SAM for its actual account domain. On a DC this is the AD domain,
+    // and using the computer name would miss its domain-local aliases.
+    private static (string Name, SecurityIdentifier Sid) LocalAccountDomain()
+    {
+        const uint PolicyViewLocalInformation = 1;
+        const int PolicyAccountDomainInformation = 5;
+        var attributes = new LsaObjectAttributes();
+        var status = LsaOpenPolicy(IntPtr.Zero, ref attributes, PolicyViewLocalInformation, out var policy);
+        if (status != 0)
+            throw new FileAuditNativeReadException("file_audit_groups_unavailable", LsaNtStatusToWinError(status));
+        try
+        {
+            status = LsaQueryInformationPolicy(policy, PolicyAccountDomainInformation, out var buffer);
+            if (status != 0)
+                throw new FileAuditNativeReadException("file_audit_groups_unavailable", LsaNtStatusToWinError(status));
+            try
+            {
+                if (buffer == IntPtr.Zero) throw new AgentException("file_audit_group_domain_unavailable");
+                var info = Marshal.PtrToStructure<LsaAccountDomainInfo>(buffer);
+                var name = Marshal.PtrToStringUni(info.Name.Buffer, info.Name.Length / sizeof(char));
+                if (string.IsNullOrEmpty(name) || info.Sid == IntPtr.Zero)
+                    throw new AgentException("file_audit_group_domain_unavailable");
+                return (name, new SecurityIdentifier(info.Sid));
+            }
+            finally { LsaFreeMemory(buffer); }
+        }
+        finally { LsaClose(policy); }
     }
 
     private sealed class PinnedPath : IDisposable
@@ -314,9 +403,48 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         out uint entries, out uint total, ref uint resume);
 
     [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetShareGetInfo(string? server,string name,uint level,out IntPtr buffer);
-    [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupEnum(string? server,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);
-    [DllImport("netapi32.dll",CharSet=CharSet.Unicode)] private static extern uint NetLocalGroupGetMembers(string? server,string group,uint level,out IntPtr buffer,uint preferred,out int read,out int total,ref uint resume);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint NetLocalGroupEnum(string? server, uint level, out IntPtr buffer, uint preferred,
+        out uint read, out uint total, ref nuint resume);
+    [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint NetLocalGroupGetMembers(string? server, string group, uint level, out IntPtr buffer,
+        uint preferred, out uint read, out uint total, ref nuint resume);
     [DllImport("netapi32.dll")] private static extern uint NetApiBufferFree(IntPtr buffer);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LsaObjectAttributes
+    {
+        public uint Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LsaUnicodeString
+    {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LsaAccountDomainInfo
+    {
+        public LsaUnicodeString Name;
+        public IntPtr Sid;
+    }
+
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern uint LsaOpenPolicy(IntPtr system, ref LsaObjectAttributes attributes, uint access, out IntPtr handle);
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern uint LsaQueryInformationPolicy(IntPtr policy, int infoClass, out IntPtr buffer);
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern uint LsaNtStatusToWinError(uint status);
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern uint LsaFreeMemory(IntPtr buffer);
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern uint LsaClose(IntPtr policy);
 }
 
 internal static class GlobalFileSaclPreflight
