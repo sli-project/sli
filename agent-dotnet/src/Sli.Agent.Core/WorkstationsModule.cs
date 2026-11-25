@@ -8,6 +8,7 @@ namespace Sli.Agent.Core;
 
 public sealed record WorkstationPolicy(JsonObject Value, int BatchSize, int RateWindowSeconds)
 {
+    internal const int DefenderChannelIndex = 2;
     public static readonly string[] Channels = ["Security", "System", "Microsoft-Windows-Windows Defender/Operational",
         "Microsoft-Windows-TaskScheduler/Operational", "Microsoft-Windows-DriverFrameworks-UserMode/Operational", "Microsoft-Windows-Kernel-PnP/Configuration", "Microsoft-Windows-PowerShell/Operational"];
     public static readonly string[] Providers = ["Microsoft-Windows-Security-Auditing", "Service Control Manager", "Microsoft-Windows-Windows Defender",
@@ -21,7 +22,22 @@ public sealed record WorkstationPolicy(JsonObject Value, int BatchSize, int Rate
     };
 
     public bool FamilyEnabled(string name) => Value["families"]?[name]?.GetValue<bool>() ?? true;
-    public bool ChannelEnabled(int index) => FamilyEvents.Any(family => FamilyEnabled(family.Key) && family.Value.Intersect(ChannelEvents[index]).Any());
+
+    public bool ChannelEnabled(int index)
+    {
+        // The Defender packet carries the current protection state as well as log events.
+        if (index == DefenderChannelIndex && FamilyEnabled("protection")) return true;
+        return FamilyEvents.Any(family => family.Value.Any(id => ChannelEvents[index].Contains(id) && EventEnabled(id, family.Key)));
+    }
+
+    internal bool EventEnabled(int id, string family) => FamilyEnabled(family)
+        && MatchesEventFilter(Value, id)
+        && MatchesEventFilter(Value["family_filters"]?[family], id);
+
+    private static bool MatchesEventFilter(JsonNode? filter, int id) =>
+        (filter?["allow_event_ids"] is not JsonArray allow || allow.Any(item => item!.GetValue<int>() == id))
+        && (filter?["deny_event_ids"] is not JsonArray deny || !deny.Any(item => item!.GetValue<int>() == id));
+
     public string Revision => Value["policy_revision"]?.GetValue<string>() ?? "1";
 
     public static WorkstationPolicy Parse(JsonObject value)
@@ -199,7 +215,7 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
             ["rate_window_seconds"] = policy.RateWindowSeconds, ["channel_reset"] = reset, ["read_error"] = error,
         };
         if (batch.BookmarkRecovered) context["bookmark_recovered"] = true;
-        if (index == 2 && policy.FamilyEnabled("protection"))
+        if (index == WorkstationPolicy.DefenderChannelIndex && policy.FamilyEnabled("protection"))
         {
             if (_protectionSnapshot is null || _protectionSnapshot.Value.At != now)
                 _protectionSnapshot = (now, ProtectionSnapshot.Validate((protectionReader ?? ProtectionSnapshot.Unavailable)()));
@@ -228,16 +244,14 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
             if (!names.Contains(service.Trim())) return false;
         }
         var family = WorkstationPolicy.FamilyEvents.First(item => item.Value.Contains((int)id)).Key;
-        if (!policy.FamilyEnabled(family)) return false;
-        foreach (var filters in new[] { policy.Value, policy.Value["family_filters"]?[family] as JsonObject ?? new JsonObject() })
+        if (!policy.EventEnabled((int)id, family)) return false;
+        if (id == 4688)
         {
-            if (filters["allow_event_ids"] is JsonArray allow && !allow.Any(n => n!.GetValue<int>() == id)
-                || filters["deny_event_ids"] is JsonArray deny && deny.Any(n => n!.GetValue<int>() == id)) return false;
-            if (id == 4688)
+            var path = (data.GetValueOrDefault("NewProcessName") ?? "").Replace('\\', '/').ToLowerInvariant();
+            foreach (var filters in new[] { policy.Value, policy.Value["family_filters"]?[family] })
             {
-                var path = (data.GetValueOrDefault("NewProcessName") ?? "").Replace('\\', '/').ToLowerInvariant();
-                if (filters["allow_process_paths"] is JsonArray paths && paths.Count > 0 && !paths.Any(p => Glob(path, p!.GetValue<string>()))
-                    || filters["deny_process_paths"] is JsonArray excluded && excluded.Any(p => Glob(path, p!.GetValue<string>()))) return false;
+                if (filters?["allow_process_paths"] is JsonArray paths && paths.Count > 0 && !paths.Any(p => Glob(path, p!.GetValue<string>()))
+                    || filters?["deny_process_paths"] is JsonArray excluded && excluded.Any(p => Glob(path, p!.GetValue<string>()))) return false;
             }
         }
         return id != 4732 && id != 4733 || data.GetValueOrDefault("TargetSid") == "S-1-5-32-544";

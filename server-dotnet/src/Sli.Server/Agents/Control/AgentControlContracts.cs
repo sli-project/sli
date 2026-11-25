@@ -7,6 +7,7 @@ public sealed class AgentControlException(string code, int status = 400, string[
 {
     public int Status { get; } = status;
     public string[]? AllowedHosts { get; } = allowedHosts;
+    public int[]? AllowedEventIds { get; init; }
 }
 
 public interface IAgentControlAudit

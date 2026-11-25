@@ -3912,6 +3912,30 @@
       ]
     },
     {
+      "event_id": 5001,
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "provider": "Microsoft-Windows-Windows Defender",
+      "kind": "Protection disabled",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 5010,
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "provider": "Microsoft-Windows-Windows Defender",
+      "kind": "Protection disabled",
+      "layer": "fact",
+      "fields": []
+    },
+    {
+      "event_id": 5012,
+      "channel": "Microsoft-Windows-Windows Defender/Operational",
+      "provider": "Microsoft-Windows-Windows Defender",
+      "kind": "Protection disabled",
+      "layer": "fact",
+      "fields": []
+    },
+    {
       "event_id": 5136,
       "channel": "Security",
       "provider": "Microsoft-Windows-Security-Auditing",

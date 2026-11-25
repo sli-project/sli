@@ -213,6 +213,7 @@ public sealed partial class OperationsService
             if (S(measured["quality"]) != "measured_24h") { if (status == "ok") status = "pending"; reasons.Add("24-hour measured growth window is not complete yet"); }
             return new() { ["status"] = status, ["backend"] = "postgres", ["generated_at_utc"] = Generated, ["schema"] = new JsonObject { ["status"] = "ok", ["table"] = "storage_lifecycle_snapshots", ["migration_version"] = 7 }, ["thresholds"] = thresholds,
                 ["latest_snapshot"] = Copy(current), ["snapshot_count"] = rows.Count, ["measured_growth"] = measured, ["fallback_estimate"] = estimate, ["forecast"] = forecast, ["backup_restore_rehearsal"] = backup ?? new JsonObject { ["status"] = "not_run" },
+                ["postgres_size_history"] = DatabaseSizeHistory.Read(files.DataRoot, limit),
                 ["capacity_profile"] = profile, ["capacity_recommendation"] = recommendation, ["runtime_capacity_evidence"] = capacityEvidence,
                 ["bloat_observation"] = new JsonObject { ["status"] = bloat.Count > 0 ? "warn" : "ok", ["warnings"] = bloat, ["automatic_vacuum"] = false, ["automatic_reindex"] = false, ["automatic_drop"] = false }, ["reasons"] = reasons,
                 ["safety"] = new JsonObject { ["measurement_read_only"] = true, ["raw_archive_first"] = true, ["vacuum_automatic"] = false, ["reindex_automatic"] = false, ["drop_production_objects"] = false } };

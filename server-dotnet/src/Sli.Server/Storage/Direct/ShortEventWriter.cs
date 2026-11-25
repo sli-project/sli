@@ -11,23 +11,7 @@ internal static class ShortEventWriter
         IReadOnlyList<ShortEventRow> rows, CancellationToken ct, bool genericEventLog = false)
     {
         if (rows.Count == 0) return;
-        if (rows.Any(r => r.Layer is not ("fact" or "summary")))
-            throw new InvalidDataException("short_event_layer_invalid");
-        var payload = new JsonArray();
-        foreach (var row in rows.DistinctBy(r => (r.Time, r.EventId))) {
-            var method = JsonNode.Parse(row.Method)!.AsObject();
-            method.Remove("$packet_id"); method.Remove("$packet_ordinal");
-            if (row.PacketId is { } packet) {
-                method["$packet_id"] = packet.ToString(); method["$packet_ordinal"] = row.PacketOrdinal;
-            }
-            payload.Add(new JsonObject {
-                ["event_id"] = row.EventId, ["time_created_utc"] = row.Time, ["event_kind"] = row.Kind,
-                ["domain_id"] = row.DomainId, ["actor"] = row.Actor, ["target"] = row.Target,
-                ["source"] = row.Source, ["computer"] = row.Computer,
-                ["method"] = method, ["outcome"] = JsonNode.Parse(row.Outcome),
-                ["fields"] = JsonSerializer.SerializeToNode(row.Fields), ["layer"] = row.Layer
-            });
-        }
+        var payload = Encode(rows);
         string sql = genericEventLog ? "select * from public.write_generic_short_events388(@rows)"
             : "select * from public.write_short_events349(@rows)";
         string encoded = payload.ToJsonString();
@@ -59,5 +43,27 @@ internal static class ShortEventWriter
             if (await overlap.ExecuteScalarAsync(ct) is true && await WriteOnceAsync()) return;
         }
         throw new InvalidOperationException("short_event_attestation_failed");
+    }
+
+    internal static JsonArray Encode(IReadOnlyList<ShortEventRow> rows)
+    {
+        if (rows.Any(r => r.Layer is not ("fact" or "summary")))
+            throw new InvalidDataException("short_event_layer_invalid");
+        var payload = new JsonArray();
+        foreach (var row in rows.DistinctBy(r => (r.Time, r.EventId))) {
+            var method = JsonNode.Parse(row.Method)!.AsObject();
+            method.Remove("$packet_id"); method.Remove("$packet_ordinal");
+            if (row.PacketId is { } packet) {
+                method["$packet_id"] = packet.ToString(); method["$packet_ordinal"] = row.PacketOrdinal;
+            }
+            payload.Add(new JsonObject {
+                ["event_id"] = row.EventId, ["time_created_utc"] = row.Time, ["event_kind"] = row.Kind,
+                ["domain_id"] = row.DomainId, ["actor"] = row.Actor, ["target"] = row.Target,
+                ["source"] = row.Source, ["computer"] = row.Computer,
+                ["method"] = method, ["outcome"] = JsonNode.Parse(row.Outcome),
+                ["fields"] = JsonSerializer.SerializeToNode(row.Fields), ["layer"] = row.Layer
+            });
+        }
+        return payload;
     }
 }

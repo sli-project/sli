@@ -1,7 +1,7 @@
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, PASSWORD_DETECTION_DOMAIN_UNAVAILABLE, type AgentItem, type AgentEnrollmentToken } from "../../api/client";
+import { api, ApiResponseError, PASSWORD_DETECTION_DOMAIN_UNAVAILABLE, type AgentItem, type AgentEnrollmentToken } from "../../api/client";
 import { DataTable, DetailDrawer, FactList, PageHeader, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
@@ -137,6 +137,13 @@ function AgentsContent() {
       void client.invalidateQueries({ queryKey: ["admin-agents"] });
     } });
   const changePolicy = (kind: "modules" | "policy", body: Record<string, unknown>) => action.mutate({ kind, body });
+  const actionError = action.error;
+  const actionErrorMessage = actionError instanceof Error ? actionError.message : "";
+  const workstationProfileError = actionError instanceof ApiResponseError && actionError.code === "workstation_journal_profile_unsupported";
+  const allowedIds = workstationProfileError ? actionError.payload?.allowed_event_ids : undefined;
+  const allowedIdsText = Array.isArray(allowedIds) ? allowedIds.filter(Number.isSafeInteger).join(", ") : "";
+  const actionErrorKey = workstationProfileError ? "agents.invalidPolicy"
+    : actionErrorMessage === PASSWORD_DETECTION_DOMAIN_UNAVAILABLE ? "agents.passwordDomain.unavailable" : "agents.actionError";
   const date = (value?: string | null) => formatDateTime(value, timeZone);
   const items = computers((inventory.data?.items ?? []).filter((agent) => agent.status !== "replaced"));
   const oldAgents = (inventory.data?.items ?? []).filter((agent) => agent.status === "replaced" && !agent.removal).map((agent) => ({ ...agent, name: agentHostName(agent) }));
@@ -216,7 +223,10 @@ function AgentsContent() {
         <AgentRemovalStatus removal={selected.removal}/>
         {selected.rights_probe.pending ? <p role="status">{t("agents.probePending")}</p> : null}
         {selected.rights_probe.last_result ? <p>{t(selected.rights_probe.last_result.status === "allowed" ? "agents.probeAllowed" : selected.rights_probe.last_result.status === "denied" ? "agents.probeDenied" : "agents.probeUnavailable")} · {date(selected.rights_probe.last_result.reported_at)}</p> : null}
-        {action.isError ? <p role="alert">{t(action.error instanceof Error && action.error.message === PASSWORD_DETECTION_DOMAIN_UNAVAILABLE ? "agents.passwordDomain.unavailable" : "agents.actionError")}</p> : null}
+        {action.isError ? <p role="alert">
+          {t(actionErrorKey)}
+          {allowedIdsText ? <> {t("agents.allowIds")}: {allowedIdsText}.</> : null}
+        </p> : null}
       </section>
       <FactList facts={[{ label: t("agents.host"), value: selected.host_id }, { label: t("agents.agentId"), value: selected.id }]}/>
     </DetailDrawer> : null}

@@ -71,10 +71,14 @@ public static class AgentPolicyAssignments
         bool fileAllowed=modules.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()=="sli.file-audit")
             && await FilePermissionsAvailableAsync(db,tx,ct)
             && await FilePermissionsAllowedAsync(db,tx,id,null,false,ct);
+        bool workstationAllowed=FindCurrent(modules,WorkstationsModule.ModuleId) is not null
+            && await WorkstationJournalAdmission.AvailableAsync(db,tx,ct)
+            && await WorkstationJournalAdmission.ReadAsync(db,tx,id,null,null,ct) is not null;
         await using var command=new NpgsqlCommand("""
             select coalesce(jsonb_agg(case
               when coalesce(m->>'module_id',m#>>'{}') is distinct from 'sli.radius-accounting'
                 and not public.agent_module_enabled_v380(coalesce(m->>'module_id',m#>>'{}'))
+                and not (@workstation_allowed and coalesce(m->>'module_id',m#>>'{}')='sli.workstations')
                 and not (@file_allowed and coalesce(m->>'module_id',m#>>'{}')='sli.file-audit') then
                 case when jsonb_typeof(m)='object' then jsonb_set(m,'{enabled}','false')
                   else jsonb_build_object('module_id',m#>>'{}','enabled',false) end
@@ -83,6 +87,7 @@ public static class AgentPolicyAssignments
             """,db,tx);
         command.Parameters.AddWithValue("modules",modules.ToJsonString());
         command.Parameters.AddWithValue("file_allowed",fileAllowed);
+        command.Parameters.AddWithValue("workstation_allowed",workstationAllowed);
         var available=JsonNode.Parse((string)(await command.ExecuteScalarAsync(ct))!)!.AsArray();
         if(JsonNode.DeepEquals(modules,available)) return;
         long current=agent["policy_revision"]!.GetValue<long>();
@@ -106,6 +111,9 @@ public static class AgentPolicyAssignments
         update.Parameters.AddWithValue("modules",available.ToJsonString()); update.Parameters.AddWithValue("revision",revision);
         update.Parameters.AddWithValue("id",id);
         await update.ExecuteNonQueryAsync(ct);
+        if(changed.Any(m=>m["module_id"]?.ToString()==WorkstationsModule.ModuleId)
+           && await WorkstationJournalAdmission.AvailableAsync(db,tx,ct))
+            await WorkstationJournalAdmission.SetAsync(db,tx,id,false,ct);
         if(changed.Any(m=>m["module_id"]?.ToString()==AgentAdDcValidator.Live))
             await Control.AgentModuleAssignmentService.ReconcilePasswordDomainAsync(db,tx,id,ct);
         agent["assigned_modules"]=available; agent["policy_revision"]=revision;
@@ -124,6 +132,8 @@ public static class AgentPolicyAssignments
                 else public.agent_module_enabled_v380(i.envelope->>'module_id') end
               """
             : "public.agent_module_enabled_v380(i.envelope->>'module_id')";
+        if(await WorkstationJournalAdmission.AvailableAsync(db,tx,ct))
+            gate=$"case when i.envelope->>'module_id'='sli.workstations' then public.workstation_journal_packet_allowed412(i.envelope) else ({gate}) end";
         await using var command=new NpgsqlCommand($"""
             with disabled as (
               select i.packet_id from sli_agent_packet_inbox i

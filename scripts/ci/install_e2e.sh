@@ -60,6 +60,39 @@ check_migration() {
     printf 'PostgreSQL migration %s applied\n' "$actual"
 }
 
+seed_upgrade_receipts() {
+    local fixture_sql
+    fixture_sql=$(cat <<'SQL'
+DO $fixture$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.sli_agents)
+       OR EXISTS (SELECT 1 FROM public.sli_agent_receipts)
+    THEN RAISE EXCEPTION 'expected a fresh synthetic installation';
+    END IF;
+END $fixture$;
+INSERT INTO public.sli_agents(id,host_id,key_fingerprint,registration_host_name)
+VALUES ('00000000-0000-4000-8000-000000000041','00000000-0000-4000-8000-000000000042',
+        repeat('a',64),'sli-install-e2e-fixture.invalid');
+INSERT INTO public.sli_agent_receipts
+    (agent_id,module_id,sequence,packet_id,envelope_sha256,envelope,receipt,received_at)
+SELECT '00000000-0000-4000-8000-000000000041','sli.windows.ad-dc',n,
+       ('00000000-0000-4000-8000-00000000005' || n)::uuid,
+       encode(sha256(convert_to(envelope::text,'UTF8')),'hex'),
+       envelope,'{"status":"committed"}',clock_timestamp()-interval '1 day'
+FROM generate_series(1,2) AS series(n)
+CROSS JOIN LATERAL (SELECT jsonb_build_object('fixture','install-e2e', 'sequence',n) AS envelope) p;
+SQL
+    )
+    postgres_query "$fixture_sql" >/dev/null
+}
+
+receipt_snapshot() {
+    postgres_query "SELECT count(*)::text || ':' ||
+        coalesce(encode(sha256(convert_to(jsonb_agg(to_jsonb(r) ORDER BY module_id, sequence)::text,'UTF8')),'hex'),'')
+        FROM public.sli_agent_receipts r
+        WHERE agent_id = '00000000-0000-4000-8000-000000000041'"
+}
+
 case ${1:-} in
     A)
         install_kit "$candidate"
@@ -69,9 +102,14 @@ case ${1:-} in
     B)
         install_kit "$base"
         check_installation "$base"
+        seed_upgrade_receipts
+        before=$(receipt_snapshot)
+        [[ $before =~ ^2:[a-f0-9]{64}$ ]] || fail 'Expected two synthetic agent receipts before upgrade'
         install_kit "$candidate"
         check_installation "$candidate"
         check_migration
+        [[ $(receipt_snapshot) == "$before" ]] || fail 'Synthetic PostgreSQL receipts changed during upgrade'
+        printf '%s\n' 'Upgrade preserved two synthetic PostgreSQL receipts (SHA-256 verified)'
         ;;
     C)
         install_kit "$candidate"

@@ -21,11 +21,16 @@ public static class AgentModuleAssignmentRules
             .All(key => JsonNode.DeepEquals(current[key], next[key]));
     // Source sli_agent.workstations._policy normalizes filter defaults as well
     // as validating them; the runtime parser alone intentionally keeps input.
-    public static JsonObject NormalizeWorkstation(JsonObject input)
+    public static JsonObject NormalizeWorkstation(JsonObject input, bool useCollectionBaseline = false)
     {
         foreach (var key in new[] { "deny_event_ids", "allow_process_paths", "deny_process_paths" })
             if (input.ContainsKey(key) && input[key] is not JsonArray) throw new AgentException("agent_workstations_config_invalid");
         var shadow=(JsonObject)input.DeepClone();
+        if (useCollectionBaseline && input.Count == 1 && input.ContainsKey("policy_revision"))
+        {
+            shadow["allow_event_ids"] = new JsonArray(1102, 4624, 4625, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045);
+            shadow["families"] = new JsonObject { ["processes"] = false, ["usb"] = false };
+        }
         void Bound(JsonNode? node,int maximum,Action<string> replace)
         {
             if (node is not JsonValue v || !v.TryGetValue<string>(out var text) || AgentControlJson.Strip(text).Length==0
