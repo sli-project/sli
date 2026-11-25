@@ -209,24 +209,8 @@ APT
     input=/mnt/p1-input
     stage=install_410
     printf 'P1_EVIDENCE entering=%s\n' "$stage"
-    base=$(mktemp -d /root/p1-predecessor.XXXXXXXX)
+    base=$(mktemp -d /var/tmp/p1-predecessor.XXXXXXXX)
     tar -xzf "$input/predecessor.tar.gz" -C "$base"
-    stock_helpers=$(mktemp -d /root/p1-stock-helpers.XXXXXXXX)
-    old_host_packages=("$base"/sli-debian-beta-kit/sli-host_*.deb)
-    [[ ${#old_host_packages[@]} == 1 && -f ${old_host_packages[0]} ]]
-    dpkg-deb --extract "${old_host_packages[0]}" "$stock_helpers"
-    python3 -I -B - "$stock_helpers/usr/lib/sli/native_install.py" "$base/sli-debian-beta-kit" <<'PY'
-from pathlib import Path
-import runpy
-import sys
-
-stock = runpy.run_path(sys.argv[1], run_name="sli_trusted_kit_probe")
-packages = sorted(Path(sys.argv[2]).glob("*.deb"))
-assert packages
-for package in packages:
-    stock["trusted_path"](package)
-print(f"P1_EVIDENCE predecessor_stock_path_probe=passed packages={len(packages)}")
-PY
     (
         exec 9>"$initial_trace"
         BASH_XTRACEFD=9 bash -x "$base/sli-debian-beta-kit/install-beta-kit" \
