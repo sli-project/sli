@@ -13,7 +13,7 @@ export type FilterField =
   | { key: string; label: string; kind: "checkbox"; onValue: string; offValue: string }
   | { key: string; label: string; kind: "multiselect"; options: FilterOption[] }
   | { key: string; label: string; kind: "search-multiselect"; options: SearchOption[] }
-  | { key: string; label: string; kind: "period"; presets?: PeriodValue["preset"][]; precision?: "date" | "datetime-local" };
+  | { key: string; label: string; kind: "period"; presets?: PeriodValue["preset"][]; precision?: "date" | "datetime-local"; step?: number | "any" };
 
 export type FilterValue = string | string[] | PeriodValue | undefined;
 export type FilterValues = Record<string, FilterValue>;
@@ -66,7 +66,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     const id = `${formId}-${field.key}`;
     if (field.kind === "period") {
       return <PeriodPicker key={field.key} label={field.label} presets={field.presets}
-        precision={field.precision}
+        precision={field.precision} step={field.step}
         value={(draft[field.key] as PeriodValue | undefined) ?? { preset: "30d" }}
         onChange={(value) => {
           set(field.key, value);

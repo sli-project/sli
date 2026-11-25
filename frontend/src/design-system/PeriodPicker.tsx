@@ -45,12 +45,13 @@ function openPicker(input: HTMLInputElement) {
   try { input.showPicker?.(); } catch { /* not user-activated or unsupported: plain input still works */ }
 }
 
-export function PeriodPicker({ value, onChange, label = t("period.label"), presets = ["24h", "7d", "30d", "90d", "custom"], precision = "date" }: {
+export function PeriodPicker({ value, onChange, label = t("period.label"), presets = ["24h", "7d", "30d", "90d", "custom"], precision = "date", step }: {
   value: PeriodValue | undefined;
   onChange: (value: PeriodValue) => void;
   label?: string;
   presets?: PeriodPreset[];
   precision?: "date" | "datetime-local";
+  step?: number | "any";
 }) {
   const id = useId();
   const invalid = value?.preset === "custom" && value.from && value.to && value.from > value.to;
@@ -62,9 +63,9 @@ export function PeriodPicker({ value, onChange, label = t("period.label"), prese
     </div>
     {value?.preset === "custom" ? <div className="sli-ds-period__custom">
       <label htmlFor={`${id}-from`}>{t("period.from")}</label>
-      <input id={`${id}-from`} type={precision} required={precision === "datetime-local"} value={value.from ?? ""} max={value.to} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, from: event.target.value })}/>
+      <input id={`${id}-from`} type={precision} step={step} required={precision === "datetime-local"} value={value.from ?? ""} max={value.to} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, from: event.target.value })}/>
       <label htmlFor={`${id}-to`}>{t("period.to")}</label>
-      <input id={`${id}-to`} type={precision} required={precision === "datetime-local"} value={value.to ?? ""} min={value.from} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, to: event.target.value })}/>
+      <input id={`${id}-to`} type={precision} step={step} required={precision === "datetime-local"} value={value.to ?? ""} min={value.from} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, to: event.target.value })}/>
       {invalid ? <span role="alert" className="sli-ds-field__error">{t("period.invalid")}</span> : null}
     </div> : null}
   </fieldset>;

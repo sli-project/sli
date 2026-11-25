@@ -2116,7 +2116,16 @@
         "label": "Collapse repeats",
         "kind": "choice",
         "hidden": true,
-        "options": [{"value": "on", "label": "On"}, {"value": "off", "label": "Off"}]
+        "options": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ]
       },
       {
         "key": "expand",
@@ -2141,13 +2150,35 @@
         "label": "Search field",
         "kind": "choice",
         "hidden": true,
-        "options": [{"value": "account", "label": "Account"}, {"value": "computer", "label": "Computer"}, {"value": "address", "label": "Address"}]
+        "options": [
+          {
+            "value": "account",
+            "label": "Account"
+          },
+          {
+            "value": "computer",
+            "label": "Computer"
+          },
+          {
+            "value": "address",
+            "label": "Address"
+          }
+        ]
       },
       {
         "key": "result",
         "label": "Result",
         "kind": "choice",
-        "options": [{"value": "success", "label": "Success"}, {"value": "failure", "label": "Failure"}]
+        "options": [
+          {
+            "value": "success",
+            "label": "Success"
+          },
+          {
+            "value": "failure",
+            "label": "Failure"
+          }
+        ]
       },
       {
         "key": "server",
@@ -4298,11 +4329,26 @@
         "label": "Change type",
         "kind": "choice",
         "options": [
-          { "value": "all", "label": "All changes" },
-          { "value": "accounts", "label": "Accounts" },
-          { "value": "groups", "label": "Groups" },
-          { "value": "passwords", "label": "Passwords" },
-          { "value": "audit", "label": "Audit" }
+          {
+            "value": "all",
+            "label": "All changes"
+          },
+          {
+            "value": "accounts",
+            "label": "Accounts"
+          },
+          {
+            "value": "groups",
+            "label": "Groups"
+          },
+          {
+            "value": "passwords",
+            "label": "Passwords"
+          },
+          {
+            "value": "audit",
+            "label": "Audit"
+          }
         ],
         "hidden": true,
         "field_categories": []
@@ -4312,8 +4358,14 @@
         "label": "Collapse repeats",
         "kind": "choice",
         "options": [
-          { "value": "collapsed", "label": "Collapsed" },
-          { "value": "individual", "label": "Individual" }
+          {
+            "value": "collapsed",
+            "label": "Collapsed"
+          },
+          {
+            "value": "individual",
+            "label": "Individual"
+          }
         ],
         "hidden": true,
         "field_categories": []
@@ -4323,8 +4375,14 @@
         "label": "Change order",
         "kind": "choice",
         "options": [
-          { "value": "desc", "label": "Newest first" },
-          { "value": "asc", "label": "Oldest first" }
+          {
+            "value": "desc",
+            "label": "Newest first"
+          },
+          {
+            "value": "asc",
+            "label": "Oldest first"
+          }
         ],
         "hidden": true,
         "field_categories": []
@@ -4923,11 +4981,26 @@
         "kind": "choice",
         "hidden": true,
         "options": [
-          { "value": "all", "label": "Все" },
-          { "value": "open", "label": "Открытые" },
-          { "value": "active", "label": "В работе" },
-          { "value": "deferred", "label": "Отложенные" },
-          { "value": "resolved", "label": "Решённые" }
+          {
+            "value": "all",
+            "label": "Все"
+          },
+          {
+            "value": "open",
+            "label": "Открытые"
+          },
+          {
+            "value": "active",
+            "label": "В работе"
+          },
+          {
+            "value": "deferred",
+            "label": "Отложенные"
+          },
+          {
+            "value": "resolved",
+            "label": "Решённые"
+          }
         ],
         "field_categories": []
       },
@@ -4937,14 +5010,21 @@
         "kind": "text",
         "hidden": true,
         "max_length": 300,
-        "field_categories": ["identity_basic"]
+        "field_categories": [
+          "identity_basic"
+        ]
       },
       {
         "key": "fold",
         "label": "Свернуть повторы",
         "kind": "choice",
         "hidden": true,
-        "options": [{ "value": "false", "label": "Нет" }],
+        "options": [
+          {
+            "value": "false",
+            "label": "Нет"
+          }
+        ],
         "field_categories": []
       },
       {
@@ -5500,11 +5580,22 @@
       "problem_cohort": [
         "identity_basic"
       ],
-      "queue_participant": ["identity_basic"],
-      "queue_group": ["identity_basic"],
-      "queue_attack.accounts": ["identity_basic"],
-      "queue_attack.account_count": ["identity_basic"],
-      "queue_attack.addresses": ["identity_basic", "technical"],
+      "queue_participant": [
+        "identity_basic"
+      ],
+      "queue_group": [
+        "identity_basic"
+      ],
+      "queue_attack.accounts": [
+        "identity_basic"
+      ],
+      "queue_attack.account_count": [
+        "identity_basic"
+      ],
+      "queue_attack.addresses": [
+        "identity_basic",
+        "technical"
+      ],
       "entities": [
         "identity_basic"
       ],
@@ -8648,6 +8739,39 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "saved_event_group",
+            "label": "Сохранённые группы 4670"
+          },
+          {
+            "value": "normalized_action",
+            "label": "Нормализованные действия"
+          }
+        ],
+        "field_categories": [],
+        "max_length": 32
       }
     ],
     "columns": [
@@ -8689,6 +8813,69 @@
         "label": "Время",
         "kind": "datetime",
         "path": "observed_at",
+        "field_categories": []
+      },
+      {
+        "key": "source_name",
+        "label": "Сервер",
+        "kind": "text",
+        "path": "source_name",
+        "field_categories": []
+      },
+      {
+        "key": "share_name",
+        "label": "Ресурс",
+        "kind": "text",
+        "path": "share_name",
+        "field_categories": []
+      },
+      {
+        "key": "permission_changes",
+        "label": "Сохранённые события 4670",
+        "kind": "number",
+        "path": "permission_changes",
+        "field_categories": []
+      },
+      {
+        "key": "permission_change_groups",
+        "label": "Сохранённые группы 4670",
+        "kind": "number",
+        "path": "permission_change_groups",
+        "field_categories": []
+      },
+      {
+        "key": "permission_change_count_min",
+        "label": "Событий в окне: минимум",
+        "kind": "number",
+        "path": "permission_change_count_min",
+        "field_categories": []
+      },
+      {
+        "key": "permission_change_count_max",
+        "label": "Событий в окне: максимум",
+        "kind": "number",
+        "path": "permission_change_count_max",
+        "field_categories": []
+      },
+      {
+        "key": "permission_change_boundary_groups",
+        "label": "Группы на границе окна",
+        "kind": "number",
+        "path": "permission_change_boundary_groups",
+        "field_categories": []
+      },
+      {
+        "key": "first_permission_change",
+        "label": "Первое наблюдение группы",
+        "kind": "datetime",
+        "path": "first_permission_change",
+        "field_categories": []
+      },
+      {
+        "key": "last_permission_change",
+        "label": "Последнее наблюдение группы",
+        "kind": "datetime",
+        "path": "last_permission_change",
         "field_categories": []
       }
     ],
@@ -8795,7 +8982,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.overview",
@@ -8859,7 +9046,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Summarize each configured root independently; event counts do not prove coverage.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Keep unconfirmed roots and unavailable audit state unknown instead of zero activity.",
       "acceptance_lanes": {
         "product_user": "The overview product answers: Which configured file-audit roots have confirmed observations and audit coverage?",
@@ -9029,6 +9216,39 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "saved_event_group",
+            "label": "Сохранённые группы 4670"
+          },
+          {
+            "value": "normalized_action",
+            "label": "Нормализованные действия"
+          }
+        ],
+        "field_categories": [],
+        "max_length": 32
       }
     ],
     "columns": [
@@ -9077,6 +9297,55 @@
           "access_check": "Проверка доступа",
           "unknown": "Неизвестно"
         },
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "text",
+        "path": "record_unit",
+        "field_categories": []
+      },
+      {
+        "key": "count",
+        "label": "Событий в сохранённой группе",
+        "kind": "number",
+        "path": "count",
+        "field_categories": []
+      },
+      {
+        "key": "first_seen_utc",
+        "label": "Первое наблюдение группы",
+        "kind": "datetime",
+        "path": "first_seen_utc",
+        "field_categories": []
+      },
+      {
+        "key": "last_seen_utc",
+        "label": "Последнее наблюдение группы",
+        "kind": "datetime",
+        "path": "last_seen_utc",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_boundary",
+        "label": "Граница периода",
+        "kind": "text",
+        "path": "aggregate.boundary",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_count_min",
+        "label": "Событий в окне: минимум",
+        "kind": "number",
+        "path": "aggregate.count_min",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_count_max",
+        "label": "Событий в окне: максимум",
+        "kind": "number",
+        "path": "aggregate.count_max",
         "field_categories": []
       }
     ],
@@ -9167,7 +9436,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.actions",
@@ -9231,7 +9500,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Use native event, access mask, outcome and correlation state; reads do not prove copying.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Incomplete or ambiguous correlation retains native observations without asserting a completed action.",
       "acceptance_lanes": {
         "product_user": "The actions product answers: Which file actions are supported by retained native observations in the selected window?",
@@ -9401,6 +9670,22 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
       }
     ],
     "columns": [
@@ -9553,7 +9838,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.mass-operations",
@@ -9617,7 +9902,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Apply the agent policy revision's mass-operation count/window and explicit service-account exclusions.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Missing policy, identity or window coverage prevents a confirmed mass-operation interpretation.",
       "acceptance_lanes": {
         "product_user": "The mass-operations product answers: Which observed file-operation groups meet the configured count and time thresholds?",
@@ -9787,6 +10072,39 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "saved_event_group",
+            "label": "Сохранённые группы 4670"
+          },
+          {
+            "value": "normalized_action",
+            "label": "Нормализованные действия"
+          }
+        ],
+        "field_categories": [],
+        "max_length": 32
       }
     ],
     "columns": [
@@ -9841,6 +10159,55 @@
           "partial": "Неполное",
           "ambiguous": "Неоднозначно"
         },
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "text",
+        "path": "record_unit",
+        "field_categories": []
+      },
+      {
+        "key": "count",
+        "label": "Событий в сохранённой группе",
+        "kind": "number",
+        "path": "count",
+        "field_categories": []
+      },
+      {
+        "key": "first_seen_utc",
+        "label": "Первое наблюдение группы",
+        "kind": "datetime",
+        "path": "first_seen_utc",
+        "field_categories": []
+      },
+      {
+        "key": "last_seen_utc",
+        "label": "Последнее наблюдение группы",
+        "kind": "datetime",
+        "path": "last_seen_utc",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_boundary",
+        "label": "Граница периода",
+        "kind": "text",
+        "path": "aggregate.boundary",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_count_min",
+        "label": "Событий в окне: минимум",
+        "kind": "number",
+        "path": "aggregate.count_min",
+        "field_categories": []
+      },
+      {
+        "key": "aggregate_count_max",
+        "label": "Событий в окне: максимум",
+        "kind": "number",
+        "path": "aggregate.count_max",
         "field_categories": []
       }
     ],
@@ -9931,7 +10298,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.permission-changes",
@@ -9995,7 +10362,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Separate native permission-change events from retained before/after ACL comparisons.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Missing prior ACL leaves the change comparison unknown rather than an invented before state.",
       "acceptance_lanes": {
         "product_user": "The permission-changes product answers: Which file permission changes have native event or retained ACL comparison evidence?",
@@ -10165,6 +10532,22 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
       }
     ],
     "columns": [
@@ -10303,7 +10686,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.access-denials",
@@ -10367,7 +10750,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Use recorded failure outcome and access mask; absence of success is not an access denial.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Unknown outcome or incomplete audit coverage cannot confirm denied access.",
       "acceptance_lanes": {
         "product_user": "The access-denials product answers: Which file-access failures are supported by native failure observations?",
@@ -10537,6 +10920,22 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
       }
     ],
     "columns": [
@@ -10675,7 +11074,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.out-of-hours",
@@ -10739,7 +11138,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Interpret source UTC timestamps only against an explicitly configured schedule and timezone.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Missing schedule or timezone leaves out-of-hours classification not evaluated.",
       "acceptance_lanes": {
         "product_user": "The out-of-hours product answers: Which observed file actions fall outside the configured working hours?",
@@ -10909,6 +11308,53 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
+      },
+      {
+        "key": "view",
+        "label": "Представление прав",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "objects",
+            "label": "Наблюдённые объекты"
+          },
+          {
+            "value": "findings",
+            "label": "Результаты проверок"
+          }
+        ],
+        "field_categories": [],
+        "max_length": 32
+      },
+      {
+        "key": "snapshot_id",
+        "label": "Снимок",
+        "kind": "text",
+        "max_length": 36,
+        "field_categories": []
+      },
+      {
+        "key": "compare_snapshot_id",
+        "label": "Сравнить со снимком",
+        "kind": "text",
+        "max_length": 36,
+        "field_categories": []
       }
     ],
     "columns": [
@@ -10951,6 +11397,62 @@
         "label": "NTFS",
         "kind": "code",
         "path": "details.ntfs_mask",
+        "field_categories": []
+      },
+      {
+        "key": "source_name",
+        "label": "Сервер",
+        "kind": "text",
+        "path": "source_name",
+        "field_categories": []
+      },
+      {
+        "key": "share_name",
+        "label": "Ресурс",
+        "kind": "text",
+        "path": "share_name",
+        "field_categories": []
+      },
+      {
+        "key": "object_type",
+        "label": "Тип объекта",
+        "kind": "text",
+        "path": "object_type",
+        "field_categories": []
+      },
+      {
+        "key": "owner_sid",
+        "label": "Владелец (SID)",
+        "kind": "text",
+        "path": "owner_sid",
+        "field_categories": []
+      },
+      {
+        "key": "snapshot_id",
+        "label": "Идентификатор снимка",
+        "kind": "text",
+        "path": "snapshot_id",
+        "field_categories": []
+      },
+      {
+        "key": "observed_at",
+        "label": "Время снимка",
+        "kind": "datetime",
+        "path": "observed_at",
+        "field_categories": []
+      },
+      {
+        "key": "completeness",
+        "label": "Полнота страницы снимка",
+        "kind": "text",
+        "path": "completeness",
+        "field_categories": []
+      },
+      {
+        "key": "record_unit",
+        "label": "Единица записи",
+        "kind": "text",
+        "path": "record_unit",
         "field_categories": []
       }
     ],
@@ -11005,10 +11507,24 @@
           }
         ],
         "access_rule": null
+      },
+      {
+        "kind": "table",
+        "key": "objects",
+        "source": "objects",
+        "columns": [],
+        "access_rule": null
+      },
+      {
+        "kind": "table",
+        "key": "snapshots",
+        "source": "snapshots",
+        "columns": [],
+        "access_rule": null
       }
     ],
     "detail": {
-      "kind": "inline",
+      "kind": "sub",
       "title": "Сохранённые свидетельства",
       "key": "id",
       "inline": "evidence",
@@ -11079,13 +11595,13 @@
       ],
       "row_links": [],
       "access_rule": null,
-      "default_limit": 50,
-      "query_available": false
+      "default_limit": 200,
+      "query_available": true
     },
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.permissions",
@@ -11149,7 +11665,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Describe observed ACL and inheritance within configured roots; do not infer unobserved effective rights.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "Unreadable ACL, missing membership or incomplete inventory remains unknown.",
       "acceptance_lanes": {
         "product_user": "The permissions product answers: Which file ACL permissions are supported by the latest retained inventory?",
@@ -11319,6 +11835,22 @@
         "default": "false",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "source_instance_id",
+        "field_categories": []
+      },
+      {
+        "key": "device_id",
+        "label": "Агент",
+        "kind": "text",
+        "max_length": 256,
+        "options_from": "device_id",
+        "field_categories": []
       }
     ],
     "columns": [
@@ -11486,7 +12018,7 @@
     "export": true,
     "limits": {
       "default": 50,
-      "max": 100
+      "max": 200
     },
     "access_rule": {
       "access_key": "file-audit.audit-state",
@@ -11550,7 +12082,7 @@
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Separate observed subcategory/SACL state, requested policy revision and confirmed application.",
-      "result_limits": "Pages of 50 to 100 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
+      "result_limits": "Pages of 25 to 200 rows, up to 31 days and 1000 authorized roots; CSV up to 10000 rows. Native identity remains visible when enrichment is absent.",
       "fallback": "An unacknowledged request never becomes applied; missing readback keeps audit state unknown.",
       "acceptance_lanes": {
         "product_user": "The audit-state product answers: Which configured roots have confirmed audit policy and SACL state?",

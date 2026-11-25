@@ -2,10 +2,11 @@ import { chromium } from '@playwright/test';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { forbiddenLabels, loadErrors, markdown, redact, waitForVisibleLoadingToFinish } from './checks.mjs';
+import { walkFileServers } from './file-servers.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
-const { url, token, results } = JSON.parse(input);
+const { url, token, results, file_servers: fileServers } = JSON.parse(input);
 if (!new URL(url).hostname.match(/^(127\.0\.0\.1|localhost|\[::1\])$/)) throw new Error('Owned loopback host required');
 const registry = JSON.parse(await readFile(new URL('../../../config/navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group => group.entries));
@@ -90,6 +91,7 @@ try {
       // A phrase may be split across child nodes. Keep those matches visible too.
       for (const label of forbiddenLabels(visibleText, [...reasons])) if (!row.labels.some(item => item.label === clean(label))) row.labels.push({ label: clean(label), where: 'body' });
       await page.screenshot({ path: join(results, `${entry.id}.png`), fullPage: true });
+      if (entry.id === 'file-audit') await walkFileServers(page, { url, results, fixture: fileServers });
     } catch (error) { row.failures.push(clean(error.message)); }
     finally {
       clearInterval(heartbeat);

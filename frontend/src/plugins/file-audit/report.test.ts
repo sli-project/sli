@@ -36,6 +36,15 @@ it("pins preset windows to the applied instant for cursor pages and export", () 
   expect(first.get("from")).toBe(next.get("from"));
 });
 
+it("requests each supported page size and refuses a size beyond the declaration limit", () => {
+  const current = { ...definition, limits: { default: 50, max: 200 } };
+  for (const limit of [25, 50, 100, 200]) {
+    const params = fileAuditParams(current, { period: { preset: "24h" } }, "UTC", null, new Date("2026-10-10T12:00:00Z"), limit)!;
+    expect(params.get("limit")).toBe(String(limit));
+  }
+  expect(fileAuditParams(definition, { period: { preset: "24h" } }, "UTC", null, new Date(), 200)?.get("limit")).toBe("100");
+});
+
 it("declares a single share field, nested paths and four date-time presets", () => {
   const fields = fileAuditFields(definition);
   expect(fields.map((field) => field.key)).toEqual(["period", "source_kind", "path", "employee", "share", "operation"]);

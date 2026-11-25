@@ -17,6 +17,16 @@
 
 ### Added
 
+- Файловые серверы: таблица назначенных ресурсов, сохранённые наблюдения 4670,
+  полноэкранный просмотр SMB/NTFS ACL и сравнение совместимых снимков. Фильтры,
+  период и контекст возврата сохраняются; доступны страницы по 25/50/100/200 строк.
+  Число наблюдений в агрегате отделено от числа строк и файлов; неполные или
+  отсутствующие ACL не интерпретируются как удалённые права.
+- File servers: resource overview, retained 4670 observations, full-page SMB/NTFS
+  permissions and compatible snapshot comparison, with preserved filters and
+  25/50/100/200-row pages. Missing evidence stays distinct from an empty ACL;
+  opening reports does not change audit policy or start filesystem scans.
+
 - Вкладка Sigma: выбор доступного scope без ручного SHA, точный допуск версии
   и отдельные TEST/runtime-счётчики. Ограниченный reader названия/назначения
   привязан к точной ревизии и scope; автоматический допуск не добавлен.
