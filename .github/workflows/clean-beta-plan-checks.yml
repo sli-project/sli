@@ -1,4 +1,4 @@
-name: Clean Debian README acceptance
+name: Installed Debian beta menu walk
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - .github/workflows/clean-beta-plan-checks.yml
       - scripts/ci/clean-beta-plan-guest.sh
       - scripts/ci/clean-beta-plan-vm.sh
+      - scripts/ci/installed-menu-walk.mjs
 
 permissions:
   actions: read
@@ -21,6 +22,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Prepare the locked browser driver
+        run: |
+          test "$(git hash-object package-lock.json)" = c6c47c9cd1cc4f567dcf7a005e3b0053cfca7987
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --check scripts/ci/installed-menu-walk.mjs
+          bash -n scripts/ci/clean-beta-plan-vm.sh
+          bash -n scripts/ci/clean-beta-plan-guest.sh
       - name: Confirm the saved beta artifact identity
         shell: bash
         env:
@@ -37,14 +48,14 @@ jobs:
           run-id: '45510515483'
           name: sli-debian-beta-kit-1c25b9f1661ac2412bfc584f3fcbffda1ea95229
           path: ${{ runner.temp }}/beta-candidate
-      - name: Use the README inside a clean 4 core, 8 GiB, 40 GiB Debian guest
+      - name: Walk the installed menu inside the clean Debian guest
         shell: bash
         run: bash scripts/ci/clean-beta-plan-vm.sh "$RUNNER_TEMP/beta-candidate"
       - name: Keep only the allowlisted acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: clean-beta-readme-evidence
+          name: installed-beta-menu-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7

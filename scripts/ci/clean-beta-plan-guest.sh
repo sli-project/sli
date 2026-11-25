@@ -5,6 +5,8 @@ stage=provision
 input=/mnt/beta-input
 private_log=/run/beta-readme-install.log
 probe_log=/run/beta-readme-auth.log
+auth_file=/run/beta-browser-session.json
+menu_log=/run/beta-browser-evidence.log
 candidate=1c25b9f1661ac2412bfc584f3fcbffda1ea95229
 operator=debian
 
@@ -95,7 +97,7 @@ quiet=$(runuser -u postgres -- psql -XqAtw -h /var/run/postgresql -d sli -v ON_E
 evidence "agents_receipts_hot_events_findings_schema=$quiet"
 
 stage=first_login
-python3 -I -B - "$candidate" "$private_log" "$input/install-guide.md" >"$probe_log" 2>&1 <<'PY'
+python3 -I -B - "$candidate" "$private_log" "$input/install-guide.md" "$auth_file" >"$probe_log" 2>&1 <<'PY'
 import hashlib
 import http.client
 import json
@@ -113,7 +115,7 @@ def mark(phase, status=None):
     if status is not None:
         print(f"BETA_README_EVIDENCE probe_status={status}", flush=True)
 
-candidate, install_log, guide = sys.argv[1:]
+candidate, install_log, guide, auth_file = sys.argv[1:]
 mark("installed_provenance")
 release_root = Path("/opt/sli/current")
 manifest = json.loads((release_root / "native-package.json").read_text())
@@ -134,9 +136,10 @@ assert {item.replace(":", "") for item in fingerprints} == {observed}
 context = ssl.create_default_context(cafile=str(ca))
 
 cookie = None
+cookie_value = None
 
 def call(path, name, *, method="GET", payload=None, update_session=False):
-    global cookie
+    global cookie, cookie_value
     headers = {"Origin": origin, "Accept": "application/json, text/html"}
     if cookie:
         headers["Cookie"] = cookie
@@ -155,6 +158,7 @@ def call(path, name, *, method="GET", payload=None, update_session=False):
             selected = value["adlog_session"]
             assert selected.value and selected["secure"] and selected["httponly"]
             cookie = "adlog_session=" + selected.coded_value
+            cookie_value = selected.value
         return response.status, response.getheader("Location") or "", response.getheader("Content-Type") or "", response.read(8 * 1024 * 1024)
     finally:
         connection.close()
@@ -183,6 +187,7 @@ status, _, mime, _ = call("/app", "app_after_change")
 assert status == 200 and mime.startswith("text/html")
 status, _, _, me = call("/api/auth/me", "authenticated_identity")
 assert status == 200 and json.loads(me)["authenticated"] is True
+Path(auth_file).write_text(json.dumps({"url": origin, "token": cookie_value, "commit": candidate}))
 login_milliseconds = round((time.monotonic() - started_login) * 1000)
 print(f"BETA_README_EVIDENCE first_login=passed ca_fingerprint_match=yes runtime_dotnet=yes login_milliseconds={login_milliseconds}", flush=True)
 
@@ -199,4 +204,29 @@ else:
     print("BETA_README_EVIDENCE home_open_problems=unavailable", flush=True)
 PY
 grep -E '^BETA_README_EVIDENCE [A-Za-z0-9_= -]+$' "$probe_log" >&3
-stage=verified
+
+stage=browser_dependencies
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    nodejs chromium-headless-shell libnss3-tools fonts-dejavu-core >/run/beta-browser-apt.log 2>&1
+db="/home/$operator/.pki/nssdb"
+results="/home/$operator/menu-evidence"
+install -d -m 0700 -o "$operator" -g "$operator" "/home/$operator/.pki" "$db" "$results"
+runuser -u "$operator" -- certutil -N --empty-password -d "sql:$db"
+runuser -u "$operator" -- certutil -A -d "sql:$db" -t "C,," -n sli-guest -i /var/lib/sli/tls-ca.crt
+evidence "browser_ca=guest_nss"
+
+stage=menu_walk
+driver="/home/$operator/menu-driver"
+cp -a "$input/menu" "$driver"
+chown -R "$operator:$operator" "$driver"
+set +e
+runuser -u "$operator" -- node "$driver/installed-menu-walk.mjs" "$results" <"$auth_file" >"$menu_log" 2>&1
+menu_status=$?
+set -e
+unlink "$auth_file"
+grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|menu_summary=\{.*\})$' "$menu_log" >&3 || true
+[[ $menu_status == 0 && -s "$results/menu.json" ]]
+[[ -c /dev/virtio-ports/beta.readme.menu ]]
+tar -czf /run/beta-menu-screens.tar.gz -C "$results" .
+cat /run/beta-menu-screens.tar.gz >/dev/virtio-ports/beta.readme.menu
+stage=browser_verified

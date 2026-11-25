@@ -55,6 +55,13 @@ cp "$GITHUB_WORKSPACE/scripts/ci/clean-beta-plan-guest.sh" input/
 guide="$GITHUB_WORKSPACE/docs/ru/install.md"
 [[ $(git hash-object "$guide") == b03944dbf3ece0e94d35572e0c1f4136c707f28c ]]
 cp "$guide" input/install-guide.md
+checks="$GITHUB_WORKSPACE/frontend/tests/menu-walk/checks.mjs"
+registry="$GITHUB_WORKSPACE/config/navigation_v3.json"
+[[ $(git hash-object "$checks") == 6e6bb968e97615de12319165cb583f0c2f9ba679 ]]
+[[ $(git hash-object "$registry") == 0ed2280e50535e48621874e7f2d9d32cc4bdf24e ]]
+mkdir -p input/menu/node_modules
+cp "$checks" "$registry" "$GITHUB_WORKSPACE/scripts/ci/installed-menu-walk.mjs" input/menu/
+cp -a "$GITHUB_WORKSPACE/node_modules/playwright-core" input/menu/node_modules/
 input_bytes=$(du -sb input | cut -f1)
 truncate -s "$(( input_bytes + 512 * 1024 * 1024 ))" input.ext4
 mkfs.ext4 -q -F -m 0 -L BETAINPUT -d input input.ext4
@@ -158,6 +165,8 @@ timeout --signal=TERM --kill-after=20s 50m qemu-system-x86_64 \
     "${accelerator[@]}" -m 8192 -smp 4 -display none -monitor none -serial file:guest-console.log \
     -device virtio-serial-pci -chardev file,id=proof,path=guest-evidence.log \
     -device virtserialport,chardev=proof,name=beta.readme.evidence \
+    -chardev file,id=menu,path=menu-screens.tar.gz \
+    -device virtserialport,chardev=menu,name=beta.readme.menu \
     -drive if=none,id=os,format=qcow2,file=root.qcow2 -device virtio-blk-pci,drive=os,bootindex=1 \
     -drive file=seed.img,if=virtio,format=raw,readonly=on \
     -drive file=input.ext4,if=virtio,format=raw,readonly=on \
@@ -170,4 +179,9 @@ cat guest-console.log guest-evidence.log | tr -d '\r' |
     grep -a '^BETA_README_EVIDENCE ' >"$evidence/guest.log" || true
 cat "$evidence/guest.log"
 printf 'qemu_exit=%s\n' "$qemu_status" | tee -a "$evidence/pins.txt"
-[[ $qemu_status == 0 ]] && grep -Fxq 'BETA_README_EVIDENCE status=0 stage=verified' "$evidence/guest.log"
+if [[ -s menu-screens.tar.gz ]]; then
+    gzip -t menu-screens.tar.gz
+    cp menu-screens.tar.gz "$evidence/"
+fi
+[[ $qemu_status == 0 && -s "$evidence/menu-screens.tar.gz" ]]
+grep -Fxq 'BETA_README_EVIDENCE status=0 stage=browser_verified' "$evidence/guest.log"
