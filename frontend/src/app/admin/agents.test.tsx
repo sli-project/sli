@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiResponseError, type AgentItem } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
@@ -275,8 +276,8 @@ it("opens the domain form for the linked domain controller", async () => {
   const card = within(await screen.findByRole("dialog", { name: agent.host_name! }));
   const domain = card.getByRole("textbox", { name: t("agents.passwordDomain.fqdn") });
   expect(domain.closest("details")).toHaveProperty("open", true);
-  fireEvent.change(domain, { target: { value: "example.test" } });
-  expect(card.getByRole("button", { name: t("agents.passwordDomain.save") })).toHaveProperty("disabled", false);
+  await userEvent.setup().type(domain, "example.test");
+  await waitFor(() => expect(card.getByRole("button", { name: t("agents.passwordDomain.save") })).toHaveProperty("disabled", false));
 });
 
 it("offers registration in the add panel and hides file audit", async () => {

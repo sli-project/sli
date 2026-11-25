@@ -91,8 +91,9 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
-  await waitFor(() => expect(refresh).toHaveBeenCalledExactlyOnceWith(target.id));
-  expect(screen.getByText(t("agents.fileAudit.catalog.pending"))).toBeTruthy();
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+  expect(refresh.mock.calls[0][0]).toBe(target.id);
+  expect(await screen.findByText(t("agents.fileAudit.catalog.pending"))).toBeTruthy();
   expect(screen.queryByRole("option", { name: share.share_name })).toBeNull();
   expect(action).not.toHaveBeenCalled();
   catalog = { ...catalog, state: "ready", items: [share] };
