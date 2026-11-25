@@ -9,10 +9,11 @@ import ssl
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
@@ -22,7 +23,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
-from sli_agent.ad_dc import ADDCModule
 from sli_agent.envelope import make_packet
 from sli_agent.snapshot_stream import SnapshotStream
 
@@ -83,12 +83,11 @@ def sql(statement):
     ).strip()
 
 
-def packet(opener, key, agent, sequence, sample, now):
-    value = make_packet(key, agent_id=agent, sequence=sequence, sample=sample, now=now)
+def send_packet(opener, value):
     envelope = value["envelope"]
     receipt = request(opener, "/api/v1/agent/packets", value)
     if receipt.get("status") != "committed":
-        evidence("packet_rejected", {"module": sample.module_id, "sequence": sequence,
+        evidence("packet_rejected", {"module": envelope["module_id"], "sequence": envelope["sequence"],
             "status": code(receipt.get("status")), "reason": code(receipt.get("error_code"))})
         raise SystemExit(1)
     assert receipt["packet_id"] == envelope["packet_id"]
@@ -147,7 +146,6 @@ def main(root):
 
     evidence("stage", "signed_snapshot")
     fixture = Path(sys.argv[1])
-    scenarios = json.loads((fixture / "ad-dc-scenarios.json").read_text())
     now = datetime.now(timezone.utc)
     stamp = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     families = json.loads((fixture / "ad-publication-source-vector.json").read_text().replace(
@@ -167,7 +165,8 @@ def main(root):
         chunk = stream.next_sample(position)
         if chunk is None:
             break
-        receipts.append(packet(agent_client, key, agent, sequence, chunk, now))
+        snapshot_packet = make_packet(key, agent_id=agent, sequence=sequence, sample=chunk, now=now)
+        receipts.append(send_packet(agent_client, snapshot_packet))
         position = {"cursor_after": chunk.cursor_after}
     else:
         raise AssertionError("snapshot_fixture_exceeded_chunk_bound")
@@ -175,18 +174,18 @@ def main(root):
     evidence("snapshot_receipts", {"packets": len(receipts), "families": sorted(bundle)})
 
     evidence("stage", "signed_event")
-    scenario = next(row for row in scenarios if row["name"] == "security-initial-window-all")
-    row = next(entry for entry in scenario["steps"][0]["reader"]["rows"] if "<EventID>4624</EventID>" in entry["xml"])
-    xml = row["xml"].replace("2026-10-07T00:00:00.1234567Z",
-                            (now - timedelta(seconds=2)).isoformat().replace("+00:00", "Z"))
-    xml = xml.replace("dc1.example.test", DC).replace("fixture-account", "object-1")
-    xml = xml.replace("</EventData>", f"<Data Name='TargetUserSid'>{SID}-100001</Data>"
-                      "<Data Name='LogonType'>3</Data><Data Name='IpAddress'>192.0.2.42</Data></EventData>")
-    module = ADDCModule(host, assignments["sli.windows.ad-dc"],
-                       reader=lambda channel, cursor, limit: [(xml, row["bookmark"])])
-    event_sample = module.collect(now=now, channel="Security")
-    assert event_sample and len(event_sample.payload["records"]) == 1, "benign_4624_fixture_filtered"
-    event = packet(agent_client, key, agent, 1, event_sample, now)
+    command = [
+        str(fixture / "quiet-dotnet/dotnet"), str(fixture / "quiet-ad-dc/QuietAdDc.dll"),
+        "packet", str(fixture / "ad-dc-scenarios.json"), str(fixture / "registered-ad-dc.json"),
+        str(root / "agent.key"),
+    ]
+    captured = subprocess.run(command, input=json.dumps({
+        "host": host, "agent": agent, "now": now.isoformat(), "config": assignments["sli.windows.ad-dc"],
+    }), text=True, check=True, stdout=subprocess.PIPE, timeout=30)
+    value = json.loads(captured.stdout)
+    assert value["envelope"]["record_count"] == 1
+    evidence("dotnet_registered_capture", {"event_id": 4624, "records": 1, "same_assignment_as_preflight": True})
+    event = send_packet(agent_client, value)
     evidence("event_receipt", {"event_id": 4624, "committed": 1})
 
     evidence("stage", "installed_background_import")
@@ -241,4 +240,9 @@ def main(root):
 if __name__ == "__main__":
     os.umask(0o077)
     with TemporaryDirectory(prefix="quiet-ad-") as staging:
-        main(Path(staging))
+        try:
+            main(Path(staging))
+        except Exception as error:
+            frame = traceback.extract_tb(error.__traceback__)[-1]
+            evidence("fixture_error", {"kind": type(error).__name__, "line": frame.lineno})
+            raise

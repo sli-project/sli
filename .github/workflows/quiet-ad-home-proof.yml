@@ -7,6 +7,7 @@ on:
       - '.github/workflows/quiet-ad-home-proof.yml'
       - 'scripts/ci/quiet-ad-home-guest.sh'
       - 'scripts/ci/quiet-ad-home.py'
+      - 'scripts/ci/QuietAdDc.*'
 
 permissions:
   contents: read
@@ -35,6 +36,25 @@ jobs:
           test "$GITHUB_REPOSITORY" = sli-project/sli
           test "$(git diff --name-only "$KIT_COMMIT" HEAD -- server-dotnet config deploy sli_agent sli_collect server agent-dotnet)" = ""
           python3 -m py_compile scripts/ci/quiet-ad-home.py
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: server-dotnet/global.json
+      - name: Preflight the exact beta AD DC assignment in .NET
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/p1-rollback-evidence"
+          cd server-dotnet
+          dotnet build ../scripts/ci/QuietAdDc.csproj -c Release --disable-build-servers -o "$RUNNER_TEMP/quiet-ad-dc"
+          dotnet "$RUNNER_TEMP/quiet-ad-dc/QuietAdDc.dll" preflight \
+            ../agent-dotnet/tests/vectors/ad-dc-scenarios.json "$RUNNER_TEMP/registered-ad-dc.json" 2>&1 \
+            | tee "$RUNNER_TEMP/p1-rollback-evidence/dotnet-preflight.txt"
+          runtime="$RUNNER_TEMP/quiet-dotnet"
+          mkdir -p "$runtime/shared"
+          fsroot=$(dirname "$(readlink -f "$(command -v dotnet)")")
+          cp "$fsroot/dotnet" "$runtime/"
+          cp -a "$fsroot/host" "$fsroot/shared/Microsoft.NETCore.App" "$fsroot/shared/Microsoft.AspNetCore.App" "$runtime/"
+          mv "$runtime/Microsoft.NETCore.App" "$runtime/Microsoft.AspNetCore.App" "$runtime/shared/"
       - name: Retrieve the exact Debian TAR from the standard build
         shell: bash
         env:
@@ -124,6 +144,8 @@ jobs:
                   'cp "$GITHUB_WORKSPACE/scripts/ci/quiet-ad-home.py" input/\n'
                   'cp "$GITHUB_WORKSPACE/server-dotnet/tests/Sli.Server.Tests/Agents/ad-publication-source-vector.json" input/\n'
                   'cp "$GITHUB_WORKSPACE/agent-dotnet/tests/vectors/ad-dc-scenarios.json" input/\n'
+                  'cp "$RUNNER_TEMP/registered-ad-dc.json" input/\n'
+                  'cp -R "$RUNNER_TEMP/quiet-ad-dc" "$RUNNER_TEMP/quiet-dotnet" input/\n'
                   'mkdir input/quiet-source\n'
                   'cp -R "$GITHUB_WORKSPACE"/{sli_agent,sli_collect,server,config} input/quiet-source/',
           }
