@@ -101,7 +101,7 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
     update({ station: row.station_id, selected_station: row.station_id, station_tab: "events", station_return: back, ...resetEvents });
   };
   const columns: TableColumn<Station>[] = [
-    { key: "station", label: t("workstations.overview.station"), minWidth: "13rem", render: row => <span className="sli-workstations__station-cell"><CollectionIndicator station={row}/><a className="sli-ds-table__link"
+    { key: "station", label: t("workstations.overview.station"), width: "32%", minWidth: "20rem", render: row => <span className="sli-workstations__station-cell"><CollectionIndicator station={row}/><a className="sli-ds-table__link" title={row.host_name ?? row.display_name ?? undefined}
       href={localHref(patchedSearch(activeSearch, { station: row.station_id, selected_station: row.station_id, station_tab: "events",
         station_return: localHref(patchedSearch(activeSearch, { ...closeStation, selected_station: row.station_id })), ...resetEvents }))}
       onClick={event => { event.stopPropagation(); if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(row); }}><StationName station={row}/></a></span> },
@@ -142,7 +142,7 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
       : state === "partial" || state === "stale" || state === "processing" ? <></>
       : state === "empty" || state === "not_collected" ? <p className="sli-workstations__local-state" role="status">{t(params ? "workstations.workspace.fleet_empty" : "workstations.workspace.invalid_period")}</p>
       : <StateView state={state} onRetry={() => activeSearch.get("cursor") ? update({ cursor: null }) : void query.refetch()}/> }>
-    {result && !invalid ? <div ref={list}><DataTable caption={t("workstations.overview.stations")} columns={columns} rows={rows}
+    {result && !invalid ? <div ref={list} className="sli-workstations__fleet"><DataTable caption={t("workstations.overview.stations")} columns={columns} rows={rows}
       rowKey={row => row.station_id} compact density="compact" onRowClick={open} selectedKey={activeSearch.get("selected_station")}
       total={result.filtered_count} pageSize={{ value: size, options: sizes, onChange: selectSize }}
       emptyContent={<p>{t("workstations.workspace.fleet_empty")}</p>}

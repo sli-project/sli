@@ -18,6 +18,11 @@
 .sli-workstations__cell small { color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 .sli-workstations__status { display: inline-flex; align-items: center; gap: var(--sli-space-2); }
 .sli-workstations__station-cell { display: flex; align-items: center; gap: var(--sli-space-2); }
+.sli-workstations__fleet .sli-ds-table table { min-width: 64rem; }
+.sli-workstations__fleet .sli-ds-table[data-density="compact"]:not([data-wrap]) td { padding-block: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sli-workstations__fleet .sli-workstations__station-cell > a { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sli-workstations__fleet .sli-workstations__cell { display: inline; white-space: nowrap; }
+.sli-workstations__fleet .sli-workstations__cell > small { margin-inline-start: var(--sli-space-2); }
 .sli-workstations__dot { width: 7px; height: 7px; flex: 0 0 7px; background: var(--sli-text-muted); border-radius: 50%; }
 .sli-workstations__dot[data-state="enabled"] { background: var(--sli-accent); }
 .sli-workstations__finding { display: grid; gap: 2px; justify-items: start; white-space: nowrap; }

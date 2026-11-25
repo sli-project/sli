@@ -71,10 +71,13 @@ internal static class NativeWorkstationsReportFixture
         var security = Method("Security", "Microsoft-Windows-Security-Auditing", Source.ToString("D"));
         var service = Method("System", "Service Control Manager", Source.ToString("D"));
         var other = Method("System", "Service Control Manager", "41800000-0000-4000-8000-000000999999");
+        // Seed retained individual facts. Direct event_hot inserts deliberately
+        // lose caller-supplied origins in the admission trigger; the existing
+        // signed-packet integration test covers the actual hot ingestion path.
         await Execute("""
             select create_event_storage_partitions((@now-interval '1 day')::date,@now::date);
             select create_event_storage_partitions(@first::date,@first::date);
-            insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
+            insert into event_cold_facts(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
                 values(@event,@now-interval '5 minutes',7045,@domain,'EXAMPLE\\operator',null,null,@host,@service,'{}',
                     '{"ServiceName":"Workspace service","ImagePath":"C:\\Program Files\\Workspace\\service.exe"}'),
                     (@event+1,@now-interval '10 minutes',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{"Status":"0xc000006d"}','{}'),

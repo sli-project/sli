@@ -13312,9 +13312,9 @@
       "exclusions": "No online state, current Defender or process state, USB activity, copying, work-duration or compliance conclusions are inferred.",
       "sources": [
         "Canonical: current agent registry, authoritative workstation journal binding and server metadata.",
-        "Events: the shared canonical journal reader, including native retained daily groups and permitted published finding links."
+        "Canonical: the shared event journal reader, including native retained daily groups and permitted published finding links."
       ],
-      "freshness_expectation": "Agent last_seen and server metadata timestamps are observations. They do not establish online availability or collection completeness.",
+      "freshness_expectation": "Agent last_seen records a contact; server updated_at records an inventory update. Neither establishes online availability or collection completeness.",
       "rights": "workstations.overview atomic field grant and workstation read capability, including scoped denies.",
       "field_classes": [
         "identity_basic",

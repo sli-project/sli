@@ -249,7 +249,8 @@ public sealed class ReadSqlPostgresTests(ITestOutputHelper output)
         foreach (string key in reportKeys)
         {
             string reportPath = "/api/v2/reports/" + key;
-            bool retired = WorkstationReportContract.Keys.Contains(key) || key is "vpn.accounts" or "vpn.connections";
+            bool retired = WorkstationReportContract.Keys.Contains(key) && key != "workstations.overview"
+                || key is "vpn.accounts" or "vpn.connections";
             using var declarationResponse = await client.GetAsync(reportPath, ct);
             JsonObject declaration;
             if (retired)
@@ -295,7 +296,16 @@ public sealed class ReadSqlPostgresTests(ITestOutputHelper output)
             string dataText = data.ToJsonString();
             Assert.Equal("sli.report-result.v2", data["contract_id"]?.ToString());
             Assert.False(data["state"]?.ToString() == "error" && data["state_details"]?["reason"]?.ToString() == "report_reader_unavailable", key + ": " + dataText);
-            if (key.StartsWith("workstations.", StringComparison.Ordinal))
+            if (key == "workstations.overview")
+            {
+                Assert.Equal("ok", data["state"]?.ToString());
+                Assert.Equal(2, data["items"]!.AsArray().Count);
+                Assert.All(data["items"]!.AsArray(), item => {
+                    Assert.Equal("disabled", item!["collection_state"]?.ToString());
+                    Assert.False(item["journal_available"]!.GetValue<bool>());
+                });
+            }
+            else if (key.StartsWith("workstations.", StringComparison.Ordinal))
             {
                 Assert.True(data["state"]?.ToString() == "partial", key + ": " + dataText);
                 Assert.True(Assert.IsType<JsonArray>(data["items"]).Count > 0, key + ": " + dataText);
@@ -407,7 +417,7 @@ public sealed class ReadSqlPostgresTests(ITestOutputHelper output)
             bool detail = action.EndsWith("/detail", StringComparison.Ordinal);
             if (key is "vpn.accounts" or "vpn.connections")
                 return action is "" or "data" or "export.csv" || detail;
-            if (WorkstationReportContract.Keys.Contains(key))
+            if (WorkstationReportContract.Keys.Contains(key) && key != "workstations.overview")
                 return action is "" or "data" || (detail && key is not ("workstations.logons" or "workstations.protection"));
         }
 
