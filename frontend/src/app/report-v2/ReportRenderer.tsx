@@ -7,7 +7,7 @@ import { formatClockWithOffset, isValidTimeZone, localDateTimeToUtc } from "../.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
-  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, TabList, Tabs,
+  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, StateView, TabList, Tabs,
   type FilterValues, type PeriodPreset, type PeriodValue, type ResultState, type SortState,
 } from "../../design-system";
 import type { PageHeaderControls } from "../../design-system/PageHeader";
@@ -18,7 +18,7 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { canResolveProblem, queueStatus, ResolveProblem, statusLabel } from "../problem-lifecycle";
 import {
-  AD_DOMAIN_REPORTS, apiParams, applyPreset, columnValue, defaultValues, fillTemplate, filterFields, isPresetActive,
+  AD_DOMAIN_REPORTS, apiParams, applyPreset, columnValue, defaultValues, fillTemplate, filterFields, isPresetActive, paramOptions,
   primaryFilterKeys, searchFromValues, valuesFromSearch, valuesReady, visiblePresets, vpnViewBranchKey,
 } from "./state";
 import { withReturnTo } from "./legacy";
@@ -104,9 +104,24 @@ function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: ()
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
 export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
-  const firstAdSource = useFirstAdSource(new URLSearchParams(initialSearch ?? window.location.search),
-    AD_DOMAIN_REPORTS.has(reportKey) && definition.isSuccess
-      && definition.data.default_domain_state !== "available" && !definition.data.filter_options?.domain?.length);
+  const search = new URLSearchParams(initialSearch ?? window.location.search);
+  const access = useEffectiveAccess();
+  const vpn = reportKey === "vpn.connections" && definition.isSuccess ? definition.data : undefined;
+  const vpnDefaults = vpn && searchFromValues(vpn, defaultValues(vpn));
+  const vpnNeedsFirstDomain = vpn && access?.capabilities.includes("access.manage") && vpn.access?.allowed === true
+    && vpn.views[0]?.access?.allowed !== false && vpn.plugin?.plugin_id === "sli.remote-access"
+    && vpn.plugin.state === "enabled" && vpn.plugin.read_only === false
+    && vpn.default_domain_state === "unknown" && vpn.default_domain_id == null
+    && !paramOptions(vpn, "domain").length
+    && !["domain", "domain_id", "scope"].some(key => search.has(key))
+    && [...search].every(([key, value]) => {
+      if (key === "nav_view") return value === "connections";
+      if (key === "tab") return value === vpn.views[0]?.key;
+      return vpnDefaults?.get(key) === value;
+    });
+  const firstAdSource = useFirstAdSource(search, Boolean(vpnNeedsFirstDomain)
+    || (AD_DOMAIN_REPORTS.has(reportKey) && definition.isSuccess
+      && definition.data.default_domain_state !== "available" && !definition.data.filter_options?.domain?.length));
   if (definition.isLoading || firstAdSource === undefined) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
   if (definition.error || !definition.data) {
     const { state, detail } = errorState(definition.error);
@@ -118,7 +133,10 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     const title = reportMetadataText(reportKey, "title", t("reports.renderer.default_title"));
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
-  if (firstAdSource) return <ReportLayout title={definition.data.title} state="empty" stateView={<FirstAdSource/>}/>;
+  if (firstAdSource) return <ReportLayout title={definition.data.title} state="empty" stateView={vpnNeedsFirstDomain
+    ? <StateView state="empty" titleMessage={{ code: "pluginPage.noDomains", params: {} }} detail={
+      <a className="sli-ds-button" href="/app/setup#setup-domains">{t("setup.domain.add")}</a>
+    }/> : <FirstAdSource/>}/>;
   if (reportKey === "events.journal") {
     const query = new URLSearchParams(initialSearch ?? window.location.search);
     const finding = Number(query.get("finding"));
