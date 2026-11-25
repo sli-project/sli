@@ -23,7 +23,7 @@ if [[ $1 == guest ]]; then
         trap - EXIT
         set +e
         if [[ -f $scenario_log ]]; then
-            grep -E '^(Ready: beta1-[0-9a-f]{12}|P1_STEP [a-z_]+|\{"phase": "(upgraded|rolled-back)",.*\})$' "$scenario_log" |
+            grep -E '^(Ready: beta1-[0-9a-f]{12}|P1_STEP [a-z_]+|P1_DATA baseline_receipts=\{[A-Za-z0-9_":, -]+\}|\{"phase": "(upgraded|rolled-back)",.*\})$' "$scenario_log" |
                 sed 's/^/P1_EVIDENCE /'
         fi
         if (( code != 0 )); then
@@ -94,6 +94,7 @@ classifiers = {
     "postgres_syntax": r"^ERROR:\s+syntax error",
     "postgres_privilege": r"^ERROR:\s+permission denied",
     "python_assertion": r"^AssertionError(?::|$)",
+    "python_type": r"^TypeError(?::|$)",
     "python_runtime": r"^(?:RuntimeError|OSError|FileNotFoundError|PermissionError)(?::|$)",
 }
 for path in outputs:
@@ -107,6 +108,8 @@ for path in outputs:
             print(f"P1_EVIDENCE private_log={label} error_class={key}")
     for package in sorted(set(re.findall(r"^dpkg: error processing package ([a-z0-9.+-]+)(?=[ (:])", data, re.M))):
         print(f"P1_EVIDENCE private_log={label} failed_package={package}")
+    for sqlstate in sorted(set(re.findall(r"^(?:ERROR|FATAL):\s+([0-9A-Z]{5})(?=[ \r\n]|$)", data, re.M))):
+        print(f"P1_EVIDENCE private_log={label} sqlstate={sqlstate}")
     for code in sorted(set(re.findall(r"\breason_code=([a-z_][a-z0-9_]{1,99})(?=[) \r\n]|$)", data))):
         print(f"P1_EVIDENCE private_log={label} reason_code={code}")
     for code in sorted(set(re.findall(r"^(native_[a-z_]{1,100})(?=[: \r\n]|$)", data, re.M))):
@@ -285,6 +288,34 @@ PY
     fi
     install -o root -g root -m 0600 /proc/sys/kernel/random/boot_id /run/sli-p1-acceptance.boot-id
 
+    stage=snapshot_type_probe
+    shape=$("${psql_local[@]}" <<'SQL'
+BEGIN READ ONLY;
+SET LOCAL statement_timeout='5s';
+WITH receipts AS (
+    SELECT count(*) AS receipts FROM (VALUES (1),(2)) AS items(x)
+), pins AS (
+    SELECT 410 AS version
+)
+SELECT jsonb_build_object(
+    'scalar',jsonb_typeof(to_jsonb(receipts)),
+    'row',jsonb_typeof(to_jsonb(receipts.*)),
+    'old_combination',jsonb_typeof(to_jsonb(pins.*)||to_jsonb(receipts)),
+    'fixed_combination',jsonb_typeof(to_jsonb(pins.*)||to_jsonb(receipts.*)),
+    'receipt_count',(to_jsonb(receipts.*)->>'receipts')::integer)
+FROM pins CROSS JOIN receipts;
+COMMIT;
+SQL
+)
+    printf 'P1_EVIDENCE snapshot_row_probe=%s\n' "$shape"
+    printf '%s\n' "$shape" | python3 -I -B -c '
+import json
+import sys
+assert json.load(sys.stdin) == {
+    "scalar": "number", "row": "object", "old_combination": "array",
+    "fixed_combination": "object", "receipt_count": 2,
+}
+'
     stage=upgrade_and_rollback
     printf 'P1_EVIDENCE entering=%s\n' "$stage"
     read -r commit checksum <"$input/candidate.pin"

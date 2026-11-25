@@ -58,7 +58,7 @@ new_archive=$(realpath -e -- "$2")
     fail 'supply two distinct kit archives'
 
 pg() {
-    runuser -u postgres -- psql -XqAt -w -v ON_ERROR_STOP=1 -h /var/run/postgresql -p 5432 -d sli "$@"
+    runuser -u postgres -- psql -XqAt -w -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -h /var/run/postgresql -p 5432 -d sli "$@"
 }
 
 # The same SQL guard runs first in a read-only transaction and again before
@@ -210,6 +210,7 @@ CROSS JOIN LATERAL (SELECT jsonb_build_object('fixture','p1-411', 'sequence',n) 
 COMMIT;
 SQL
 } | pg
+printf 'P1_STEP receipt_insert_committed\n'
 
 snapshot() {
     pg <<'SQL'
@@ -223,23 +224,29 @@ WITH pins AS (
            coalesce(jsonb_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256') ORDER BY version)
                FILTER (WHERE version>410),'[]'::jsonb) AS new_pins
     FROM public.schema_migrations m
-), receipts AS (
+), receipt_summary AS (
     SELECT count(*) AS receipts,
            encode(sha256(convert_to(string_agg(to_jsonb(r)::text,E'\n' ORDER BY agent_id,module_id,sequence),
                'UTF8')),'hex') AS receipts_sha256
     FROM public.sli_agent_receipts r
 )
-SELECT to_jsonb(pins)||to_jsonb(receipts)
+SELECT to_jsonb(pins.*)||to_jsonb(receipt_summary.*)
        ||jsonb_build_object('agents',(SELECT count(*) FROM public.sli_agents))
-FROM pins CROSS JOIN receipts;
+FROM pins CROSS JOIN receipt_summary;
 COMMIT;
 SQL
 }
 snapshot > "$work/before.json"
+printf 'P1_STEP baseline_snapshot_written\n'
 python3 -I -B - "$work/before.json" "$old_ledger" <<'PY'
-import json, sys
+import json, re, sys
 from pathlib import Path
 base = json.loads(Path(sys.argv[1]).read_text())
+assert type(base) is dict
+assert re.fullmatch(r"[a-f0-9]{64}", base["receipts_sha256"])
+print("P1_DATA baseline_receipts=" + json.dumps({
+    key: base[key] for key in ("entries", "version", "prefix_sha256", "agents", "receipts", "receipts_sha256")
+}))
 assert (base["entries"], base["version"], base["prefix_sha256"]) == (377, 410, sys.argv[2])
 assert base["receipts"] == 2 and base["agents"] == 1 and not base["new_pins"]
 PY
