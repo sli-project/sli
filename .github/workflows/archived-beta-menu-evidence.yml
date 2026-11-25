@@ -1,4 +1,4 @@
-name: Read saved installed menu observations
+name: Read the saved File Audit menu observations
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -8,34 +8,124 @@ permissions:
 jobs:
   read:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Verify archive identity
+      - name: Verify the two immutable evidence archives
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14986584830" |
-            jq -e '.workflow_run.id==45536677048 and .digest=="sha256:24e5dbcc9f8f1401b3c4e17ecc390ed7c17a5746c1cdcd22f25db938f12bd90d" and .expired==false' >/dev/null
+          set -euo pipefail
+          check_artifact() {
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$1" |
+              jq -e --arg digest "$3" --argjson run "$2" \
+                '.workflow_run.id==$run and .digest==$digest and .expired==false' >/dev/null
+          }
+          check_artifact 14992663749 45550092780 sha256:960835ac27e01a06a64f7479b917e5cf8eea3dc736af73d01ad47bbfebdd2bdd
+          check_artifact 14989629606 45542721888 sha256:060eb23b12c88685618663fa3364118cf7bf2f0ce40f571b5cdef0e621f96352
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           github-token: ${{ github.token }}
-          run-id: '45536677048'
-          name: installed-beta-menu-19-evidence
-          path: archived
-      - name: Read four saved page observations
+          run-id: '45550092780'
+          name: installed-beta-menu-native-accounting-evidence
+          path: archived/exact
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45542721888'
+          name: installed-beta-menu-native-accounting-evidence
+          path: archived/reference
+      - name: Print only allow-listed File Audit observations
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t reports < <(find archived -type f -name menu.json)
-          if [[ ${#reports[@]} == 0 ]]; then
-            mapfile -t packages < <(find archived -type f -name '*.tar.gz')
-            test "${#packages[@]}" = 1
-            mapfile -t members < <(tar -tzf "${packages[0]}" | awk '/^(\.\/)?menu\.json$/')
-            test "${#members[@]}" = 1
-            tar -xOzf "${packages[0]}" "${members[0]}" > saved-menu.json
-            reports=(saved-menu.json)
-          fi
-          test "${#reports[@]}" = 1
-          jq -e '.commit=="4a6f14c815e07ff2a01346700d79507689d657e9" and (.rows | length)==19' "${reports[0]}" >/dev/null
-          jq -c '.rows[] | select(.id=="problems" or .id=="events" or .id=="gpo-report" or .id=="file-audit")
-            | {id, text, controls, emptyCopy, responses: [.responses[] | select(.path | startswith("/api/v2/reports") or startswith("/api/v1/report") or startswith("/api/v1/file-audit"))]}' "${reports[0]}"
+          python3 -I -B - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import shutil
+          import struct
+          import subprocess
+          import tarfile
+          import tempfile
+
+          labels = {
+              "report_title": "Аудит файловых серверов MS",
+              "configure": "Настроить",
+              "no_sources": "Источники ещё не подключены",
+              "not_collected": "Данные не собраны",
+              "no_data": "Нет данных",
+              "loading": "Загрузка",
+              "denied": "Нет доступа",
+              "check_operations": "Проверьте настройки и состояние сбора",
+          }
+          paths = {
+              "/api/v1/admin/agents": "agents",
+              "/api/v2/reports/file-audit.overview": "definition",
+              "/api/v2/reports/file-audit.overview/data": "data",
+              "/api/v1/access/effective": "effective_access",
+          }
+
+          def read_member(archive, name, limit):
+              matches = [item for item in archive if item.name.removeprefix("./") == name]
+              assert len(matches) == 1 and matches[0].isfile() and matches[0].size <= limit
+              return archive.extractfile(matches[0]).read(limit + 1)
+
+          def screenshot_observations(png):
+              assert png.startswith(bytes.fromhex("89504e470d0a1a0a")) and png[12:16] == b"IHDR"
+              width, height = struct.unpack(">II", png[16:24])
+              result = {"width": width, "height": height,
+                        "sha256": hashlib.sha256(png).hexdigest(), "ocr": "unavailable"}
+              executable = shutil.which("tesseract")
+              if not executable:
+                  return result
+              try:
+                  languages = subprocess.run([executable, "--list-langs"], check=True, capture_output=True,
+                                             text=True, timeout=5).stdout.splitlines()
+                  if "rus" not in languages:
+                      return result
+                  with tempfile.TemporaryDirectory() as directory:
+                      path = Path(directory) / "file-audit.png"
+                      path.write_bytes(png)
+                      ocr = subprocess.run([executable, str(path), "stdout", "-l", "rus", "--psm", "11"],
+                                           check=True, capture_output=True, text=True, timeout=15).stdout
+                  result["ocr"] = {key: value.casefold() in ocr.casefold() for key, value in labels.items()}
+              except (OSError, subprocess.SubprocessError):
+                  pass
+              return result
+
+          for variant, commit in [
+              ("exact", "fa8baf797ca0f0bcd62574aebf551e3aef1e6638"),
+              ("reference", "812533c4b118a43510de75bdac257ade326aae96"),
+          ]:
+              package = Path("archived", variant, "menu-screens.tar.gz")
+              with tarfile.open(package, "r:gz") as archive:
+                  menu = json.loads(read_member(archive, "full/menu.json", 2_000_000))
+                  png = read_member(archive, "full/file-audit.png", 4_000_000)
+              assert menu["commit"] == commit and len(menu["rows"]) == 19
+              matching = [row for row in menu["rows"] if row["id"] == "file-audit"]
+              assert len(matching) == 1
+              row = matching[0]
+              assert row["commit"] == commit and row["clicked"] is True
+              visible = [item.strip() for item in row["text"] if isinstance(item, str)]
+              actions = row["actions"]
+              controls = row["controls"]
+              responses = [
+                  {"endpoint": paths[resp["path"]], "method": resp["method"], "status": resp["status"]}
+                  for resp in row["responses"]
+                  if resp.get("path") in paths and resp.get("method") in ("GET", "HEAD")
+                  and type(resp.get("status")) is int and 100 <= resp["status"] <= 599
+              ]
+              result = {
+                  "variant": variant, "commit": commit,
+                  "clicked": row["clicked"], "passed": row["passed"],
+                  "data_rows": row["dataRows"], "action_count": len(actions),
+                  "configure_action": labels["configure"] in actions,
+                  "configure_control": labels["configure"] in controls,
+                  "dom": {key: any(value in line for line in visible) for key, value in labels.items()},
+                  "responses": responses,
+                  "error_count": len(row["failure"]) + len(row["api"]) + len(row["blocked"]),
+                  "screenshot": screenshot_observations(png),
+              }
+              print("FILE_AUDIT_ARCHIVE " + json.dumps(result, ensure_ascii=False))
+          PY
