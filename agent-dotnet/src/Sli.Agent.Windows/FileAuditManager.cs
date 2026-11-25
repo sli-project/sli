@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -112,11 +113,23 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var writable = false; var reason = "ok";
         bool describeReads = readDiagnostics && action == "check" && !config.Workstation && selected.Count == 1;
         FileAuditReadError? readError = null;
+        JsonObject? applyLocalGroups = null;
+        Exception? applyLocalGroupError = null;
         try
         {
             reason = action == "check" ? api.CheckPreflight(selected, describeReads) : api.Preflight(selected, describeReads);
             if (describeReads && reason is ("unknown" or "global_sacl_unknown")) readError = new("audit_policy");
             writable = action != "check" && policy.Control.ManageWindowsAudit && policy.Control.State == "active" && reason == "ok";
+            if (writable && action == "apply")
+            {
+                // Shared can write audit masks even before receiving the file-audit apply flag.
+                try { applyLocalGroups = api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: false); }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    applyLocalGroupError = e;
+                    writable = false;
+                }
+            }
             if (writable)
             {
                 // A shared ownership conflict must block restores too, before touching any file SACL.
@@ -155,12 +168,13 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             reason="native_unavailable"; writable=false;
             if (describeReads) readError = FileAuditNativeReadException.Describe("audit_policy", e);
         }
-        var auditReport = Shared(writable && action == "apply");
+        var auditReport = applyLocalGroupError is null ? Shared(writable && action == "apply") : null;
         var report = new JsonObject { ["contract_id"]="sli.file-audit.audit-result.v1",["command_id"]=key,["policy_revision"]=cmd["policy_revision"]!.DeepClone(),
             ["action"]=action,["observed_at_utc"]=Iso8601.Format(now),["scopes"]=new JsonArray(),["snapshots"]=new JsonArray(),["ownership_remaining"]=true };
         var stage = "audit_policy";
         try
         {
+            if (applyLocalGroupError is not null) ExceptionDispatchInfo.Throw(applyLocalGroupError);
             if (readError is not null) throw new AgentException("file_audit_check_read_failed");
             var actual = api.QueryMasks(required.Keys.Union(OwnedMasks().Keys).ToArray());
             stage = "inventory";
@@ -172,7 +186,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                 var scopeId = Text(root,"collection_scope_id");
                 if (state["walks"]![scopeId]?["done"]?.GetValue<bool>() == true) continue;
                 var (scope,snapshot) = Inventory(state,root,config,cmd,now,writable && action == "apply" && policyOk,
-                    describeReads ? value => stage = value : null);
+                    describeReads ? value => stage = value : null, applyLocalGroups);
                 if (action == "check" && reason != "ok" || action != "check" && !writable)
                 {
                     scope["state"]="blocked"; scope["reason_code"]=reason == "ok" ? "management_disabled" : reason;
@@ -206,7 +220,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
     }
     private JsonObject InventoryShare(JsonObject root) => Text(root,"share_name") == "" ? new JsonObject { ["name"]="",["path"]=root["path"]!.DeepClone(),["dacl"]="",["complete"]=true } : api.Share(Text(root,"share_name"),Text(root,"path"));
     private static string ObjectKey(JsonObject objects,string path) => objects.Select(x => x.Key).FirstOrDefault(k => k.Equals(path,StringComparison.OrdinalIgnoreCase)) ?? path;
-    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply,Action<string>? setReadStage)
+    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply,Action<string>? setReadStage,JsonObject? cachedLocalGroups)
     {
         var timer = System.Diagnostics.Stopwatch.StartNew(); TimeSpan Clock() => clock?.Invoke() ?? timer.Elapsed;
         var deadline = Clock() + TimeSpan.FromSeconds(config.Number("wall_seconds"));
@@ -216,7 +230,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         setReadStage?.Invoke("share");
         var share = InventoryShare(root);
         setReadStage?.Invoke("local_groups");
-        var groups = api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: Text(cmd, "action") == "check");
+        var groups = cachedLocalGroups ?? api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: Text(cmd, "action") == "check");
         setReadStage?.Invoke("inventory");
         if (!share["complete"]!.GetValue<bool>() || !groups["complete"]!.GetValue<bool>()) gaps++;
         var objects = state["objects"]!.AsObject();

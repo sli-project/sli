@@ -60,6 +60,69 @@ public sealed class FileAuditManagerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LocalGroupReadFailureLeavesApplyOwnershipAndNativePolicyUntouched(bool unresolvedSid)
+    {
+        var fileApi = new FakeFileApi(_dir)
+        {
+            UnresolvedGroupSid = unresolvedSid,
+            FailedRead = unresolvedSid ? null : "local_groups"
+        };
+        var audit = AuditForFilePolicy(out var windowsApi);
+        var manager = new FileAuditManager(_dir, _files, fileApi);
+
+        var result = manager.Reconcile(Policy(Request()), audit, Helpers.Now, readDiagnostics: true);
+
+        var report = result.Report!;
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("failed", scope["state"]!.ToString());
+        Assert.Equal("native_unavailable", scope["reason_code"]!.ToString());
+        Assert.Null(scope["read_error"]);
+        Assert.Empty(report["snapshots"]!.AsArray());
+        Assert.False(report["ownership_remaining"]!.GetValue<bool>());
+        Assert.Null(result.Audit);
+        Assert.Equal(1, fileApi.LocalGroupReads);
+        Assert.Equal(0, windowsApi.Reads);
+        Assert.Equal(0, windowsApi.Writes);
+        Assert.Equal(0, fileApi.Writes);
+
+        var state = JsonNode.Parse(File.ReadAllBytes(Path.Combine(_dir, "state.json")))!;
+        Assert.Null(state["active"]);
+        Assert.Empty(state["masks"]!.AsObject());
+        Assert.Empty(state["objects"]!.AsObject());
+        Assert.True(JsonNode.DeepEquals(report, state["pending_report"]));
+    }
+
+    [Fact]
+    public void ApplyReusesTheStrictGroupReadAndKeepsIncompletePageSemantics()
+    {
+        var fileApi = new FakeFileApi(_dir) { IncompleteGroupPage = true };
+        var audit = AuditForFilePolicy(out var windowsApi);
+        var manager = new FileAuditManager(_dir, _files, fileApi);
+
+        var report = manager.Reconcile(Policy(Request()), audit, Helpers.Now).Report!;
+
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("partial", scope["state"]!.ToString());
+        Assert.Equal("coverage_incomplete", scope["reason_code"]!.ToString());
+        var snapshot = Assert.Single(report["snapshots"]!.AsArray())!;
+        Assert.False(snapshot["local_groups"]!["complete"]!.GetValue<bool>());
+        Assert.True(report["ownership_remaining"]!.GetValue<bool>());
+        Assert.Equal(1, fileApi.LocalGroupReads);
+        Assert.Equal(1, windowsApi.Writes);
+        Assert.Equal(1, fileApi.Writes);
+    }
+
+    private WindowsAuditManager AuditForFilePolicy(out WindowsAuditTests.Api windowsApi)
+    {
+        windowsApi = new WindowsAuditTests.Api();
+        foreach (var guid in FileAuditPolicy.Parse(Config()).RequiredMasks().Keys)
+            windowsApi.Values.TryAdd(guid, 0);
+        return new WindowsAuditManager(Path.Combine(_dir, "windows-audit"), _files, windowsApi);
+    }
+
+    [Theory]
     [InlineData("S-1-5-32-544", null, "S-1-5-32-544")]
     [InlineData(null, "S-1-5-21-1-2-3-1001", "S-1-5-21-1-2-3-1001")]
     [InlineData("S-1-5-32-544", "S-1-5-21-1-2-3-1001", null)]
@@ -311,6 +374,8 @@ public sealed class FileAuditManagerTests : IDisposable
         public string ChildSacl { get; set; } = "S:old";
         public string? FailedRead { get; set; }
         public bool UnresolvedGroupSid { get; set; }
+        public bool IncompleteGroupPage { get; set; }
+        public int LocalGroupReads { get; private set; }
         private void FailRead(string stage)
         {
             if (stage == FailedRead) throw new System.ComponentModel.Win32Exception(5, "synthetic private path or ACL");
@@ -342,9 +407,10 @@ public sealed class FileAuditManagerTests : IDisposable
         }
         public JsonObject LocalGroups(int limit, bool allowUnresolvedSid = false)
         {
+            LocalGroupReads++;
             if (FailedRead == "local_groups") throw new FileAuditNativeReadException("file_audit_groups_unavailable", 5);
             if (UnresolvedGroupSid && !allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
-            return new() { ["complete"] = !UnresolvedGroupSid, ["groups"] = new JsonArray() };
+            return new() { ["complete"] = !UnresolvedGroupSid && !IncompleteGroupPage, ["groups"] = new JsonArray() };
         }
         public sealed class FakeObject(FakeFileApi api) : IFileAuditObject
         {
