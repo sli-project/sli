@@ -96,7 +96,8 @@ internal static class Program
         };
         var policy = new AgentPolicy(1, new CollectionControl("active", 60, 32, 120, 10000000, false, false),
             new JsonArray(), null, null, null) { FileAuditRequest = request };
-        var manager = new FileAuditManager(Path.Combine(Path.GetDirectoryName(root)!, "probe-state"), new PhysicalDurableFiles(), api);
+        var stateDirectory = Path.Combine(Path.GetDirectoryName(root)!, "probe-state");
+        var manager = new FileAuditManager(stateDirectory, new PhysicalDurableFiles(), api);
         var config = FileAuditPolicy.Parse(request["config"]!.AsObject());
         var maskKeys = config.RequiredMasks().Keys.ToArray();
         result["stage"] = "audit_masks";
@@ -114,32 +115,87 @@ internal static class Program
         result["read_error"] = check["read_error"]?.DeepClone();
         result["command_action"] = report["action"]?.DeepClone();
         result["ownership_remaining"] = report["ownership_remaining"]?.DeepClone();
+        var snapshots = report["snapshots"]!.AsArray();
+        var snapshot = snapshots.Count == 1 ? snapshots[0] as JsonObject : null;
+        var rows = snapshot?["objects"] as JsonArray;
+        JsonObject? FindRow(string path) => rows?.OfType<JsonObject>()
+            .SingleOrDefault(row => string.Equals(row["path"]?.GetValue<string>(), path, StringComparison.OrdinalIgnoreCase));
+        var rootRow = FindRow(root);
+        var markerRow = FindRow(marker);
+        bool SameMetadata(JsonObject row, JsonObject actual) =>
+            new[] { "object_id", "object_type", "owner_sid", "dacl", "sacl", "sacl_protected" }
+                .All(key => row.ContainsKey(key) && JsonNode.DeepEquals(row[key], actual[key]));
+        bool rootRead = rootRow?["object_type"]?.GetValue<string>() == "directory" && SameMetadata(rootRow, beforeRootAcl);
+        bool markerRead = markerRow?["object_type"]?.GetValue<string>() == "file" && SameMetadata(markerRow, beforeMarkerAcl);
+        result["inventory_root_metadata_matches"] = rootRead;
+        result["inventory_file_metadata_matches"] = markerRead;
+        result["inventory_object_count"] = JsonValue.Create(rows?.Count);
+        result["inventory_coverage"] = snapshot?["completeness"]?.DeepClone();
+        result["inventory_unread_count"] = snapshot?["unread_objects"]?.DeepClone();
+        result["inventory_has_more"] = snapshot?["has_more"]?.DeepClone();
+        result["inventory_sacl_missing_count"] = JsonValue.Create(rows?.OfType<JsonObject>()
+            .Count(row => row["sacl_missing"]?.GetValue<bool>() == true));
+        result["required_masks_missing_count"] = config.RequiredMasks()
+            .Count(mask => (beforeMasks.GetValueOrDefault(mask.Key) & mask.Value) != mask.Value);
+        var inventoryShare = snapshot?["share"] as JsonObject;
+        bool shareMatches = inventoryShare?["complete"]?.GetValue<bool>() == true
+            && string.Equals(inventoryShare["name"]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(inventoryShare["path"]?.GetValue<string>(), root, StringComparison.OrdinalIgnoreCase)
+            && JsonNode.DeepEquals(beforeShare["dacl"], inventoryShare["dacl"]);
+        result["inventory_share_matches"] = shareMatches;
+
+        var localGroups = snapshot?["local_groups"] as JsonObject;
+        var groupRows = localGroups?["groups"] as JsonArray;
+        var adminGroup = groupRows?.OfType<JsonObject>()
+            .SingleOrDefault(group => group["group_sid"]?.GetValue<string>() == "S-1-5-32-544");
+        var memberSids = adminGroup?["member_sids"] as JsonArray;
+        bool groupComplete = localGroups?["complete"]?.GetValue<bool>() == true;
+        bool adminRead = memberSids is not null
+            && memberSids.All(member => member is not null && new SecurityIdentifier(member.GetValue<string>()).BinaryLength > 0);
+        result["inventory_local_groups_complete"] = groupComplete;
+        result["inventory_local_group_count"] = JsonValue.Create(groupRows?.Count);
+        result["inventory_builtin_administrators_read"] = adminRead;
+        result["inventory_builtin_administrators_member_count"] = JsonValue.Create(memberSids?.Count);
+
         var afterRootAcl = ReadAcl(root);
         var afterMarkerAcl = ReadAcl(marker);
         bool SameAcl(JsonObject before, JsonObject after) =>
-            JsonNode.DeepEquals(before["dacl"], after["dacl"]) && JsonNode.DeepEquals(before["sacl"], after["sacl"]);
+            JsonNode.DeepEquals(before["dacl"], after["dacl"]) && JsonNode.DeepEquals(before["sacl"], after["sacl"])
+            && JsonNode.DeepEquals(before["sacl_protected"], after["sacl_protected"]);
         bool unchanged = SameAcl(beforeRootAcl, afterRootAcl) && SameAcl(beforeMarkerAcl, afterMarkerAcl)
             && JsonNode.DeepEquals(beforeShare["dacl"], api.Share(name, root)["dacl"]);
         result["acls_unchanged"] = unchanged;
+        bool metadataUnchanged = SameMetadata(beforeRootAcl, afterRootAcl) && SameMetadata(beforeMarkerAcl, afterMarkerAcl);
+        result["owners_and_object_ids_unchanged"] = metadataUnchanged;
         var afterMasks = api.QueryMasks(maskKeys);
         bool masksUnchanged = beforeMasks.Count == afterMasks.Count
             && beforeMasks.All(item => afterMasks.TryGetValue(item.Key, out var value) && item.Value == value);
         result["audit_masks_unchanged"] = masksUnchanged;
         var after = GlobalFileSaclSnapshot();
         result["global_file_sacl_after"] = after;
-        bool listed = report["snapshots"]!.AsArray().Any(snapshot =>
-            snapshot!["collection_scope_id"]!.ToString() == scopeId
-            && snapshot["share"]!["name"]!.ToString() == name && snapshot["share"]!["path"]!.ToString() == root
-            && snapshot["completeness"]!.ToString() == "complete"
-            && snapshot["objects"]!.AsArray().Any(row => row!["path"]!.ToString().Equals(root, StringComparison.OrdinalIgnoreCase))
-            && snapshot["objects"]!.AsArray().Any(row => row!["path"]!.ToString().Equals(marker, StringComparison.OrdinalIgnoreCase)));
+        var state = JsonNode.Parse(File.ReadAllText(Path.Combine(stateDirectory, "state.json")))!;
+        bool noOwnership = state["active"] is null && state["objects"] is JsonObject { Count: 0 }
+            && state["masks"] is JsonObject { Count: 0 } && report["ownership_remaining"]?.GetValue<bool>() == false;
+        result["check_ownership_empty"] = noOwnership;
+        bool listed = snapshot?["collection_scope_id"]?.GetValue<string>() == scopeId
+            && snapshot?["completeness"]?.GetValue<string>() == "complete"
+            && snapshot["has_more"]?.GetValue<bool>() == false && snapshot["unread_objects"]?.GetValue<int>() == 0
+            && rows?.Count == 2 && rootRead && markerRead && shareMatches && groupComplete && adminRead;
         result["check_inventory_complete"] = listed;
         string? status = check["state"]?.ToString();
         string? reason = check["reason_code"]?.ToString();
-        bool expected = status == "verified" && reason == "ok" || status == "partial" && reason is ("sacl_missing" or "policy_missing");
-        return unchanged && masksUnchanged && IsAbsent(after) && listed && expected
+        var saclsMissing = result["inventory_sacl_missing_count"]?.GetValue<int>() ?? -1;
+        var masksMissing = result["required_masks_missing_count"]!.GetValue<int>();
+        bool expected = (status, reason) switch
+        {
+            ("verified", "ok") => saclsMissing == 0 && masksMissing == 0,
+            ("partial", "sacl_missing") => saclsMissing > 0,
+            ("partial", "policy_missing") => saclsMissing == 0 && masksMissing > 0,
+            _ => false
+        };
+        return unchanged && metadataUnchanged && masksUnchanged && noOwnership && IsAbsent(after) && listed && expected
             && check["read_error"] is null && result["share_read"]!.GetValue<bool>()
-            && report["action"]?.ToString() == "check" && report["ownership_remaining"]!.GetValue<bool>() == false ? 0 : 1;
+            && report["action"]?.ToString() == "check" ? 0 : 1;
     }
 
     private static JsonObject GlobalFileSaclSnapshot()

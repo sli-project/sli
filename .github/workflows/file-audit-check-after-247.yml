@@ -1,4 +1,4 @@
-name: Verify installed File Audit check after #247
+name: Verify installed File Audit check after #250
 on:
   push:
     branches: ['codex/file-audit-debian-kit-23e9547d']
@@ -14,8 +14,8 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 20
     env:
-      KIT_COMMIT: 0d50f8a4613c32cd65b52564c6fc81548a555c52
-      MSI_ARTIFACT_ID: '14988805697'
+      KIT_COMMIT: b9129ce4c6717c57b99eaa14d7fb5f291706c8f8
+      MSI_ARTIFACT_ID: '14990235153'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -25,9 +25,9 @@ jobs:
           global-json-file: agent-dotnet/global.json
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: sli-agent-dotnet-msi-0d50f8a4613c32cd65b52564c6fc81548a555c52
+          name: sli-agent-dotnet-msi-b9129ce4c6717c57b99eaa14d7fb5f291706c8f8
           path: ${{ runner.temp }}/sli-msi-proof-input
-          run-id: '45538305957'
+          run-id: '45541558483'
           github-token: ${{ github.token }}
       - name: Verify baseline, inventory and unchanged ACLs under LocalSystem
         shell: pwsh
@@ -37,7 +37,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: file-audit-check-after-247-0d50f8a4
+          name: file-audit-check-after-250-b9129ce4
           path: ${{ runner.temp }}/sli-msi-proof-evidence/
           if-no-files-found: ignore
           retention-days: 7
