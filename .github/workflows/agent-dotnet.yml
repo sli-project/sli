@@ -14,6 +14,7 @@ on:
       - "server/sli/agents/**"
       - "server/sli/plugins/ad/agent_policy.py"
       - "config/event_catalog.json"
+      - "config/event_storage_meanings.json"
       - "config/source_packs/dc.json"
   push:
     branches: [main]
@@ -27,6 +28,7 @@ on:
       - "server/sli/agents/**"
       - "server/sli/plugins/ad/agent_policy.py"
       - "config/event_catalog.json"
+      - "config/event_storage_meanings.json"
       - "config/source_packs/dc.json"
   workflow_dispatch:
 
