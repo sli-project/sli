@@ -185,7 +185,7 @@ if phase == "before":
     jar.save(ignore_discard=True)
 
 window = json.loads((root / "window.json").read_text())
-params = urllib.parse.urlencode(dict(period="custom", baseline_days=30, domain_id=window["domain_id"],
+params = urllib.parse.urlencode(dict(period="custom", baseline_days=30,
                                     **{"from":window["from"], "to":window["to"]}))
 data = request("/api/v2/reports/ad.new-logon-pairs/data?" + params)
 if data.get("state") != "partial" or len(data.get("items",[])) != 1:
