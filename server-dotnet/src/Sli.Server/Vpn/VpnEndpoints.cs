@@ -83,31 +83,38 @@ public static class VpnEndpoints
 
         var registry = context.RequestServices.GetService<IReportDefinitionRegistry>() ?? new ReportDefinitionRegistry();
         var projection = new ReportAccess(registry.Get(reportKey)!, new ReportEligibility().Compose(facts, access.Capabilities));
-        await using var db = await store.OpenAccountingAsync(ct);
-        if (db is null) throw new ReportRequestException("module_disabled", 503);
         JsonObject payload;
+        await using (var db = await store.OpenAccountingAsync(ct))
+        {
+            if (db is null) throw new ReportRequestException("module_disabled", 503);
+            if (definition)
+            {
+                payload = projection.Declaration();
+                payload["views"] = new JsonArray(payload["views"]!.AsArray().OfType<JsonObject>()
+                    .Where(view => AccountingTabs.Contains(view.Text("key")))
+                    .Select(view => (JsonNode)view.DeepClone()).ToArray());
+                var domains = await VpnReports.DomainOptions(db, access, ct, accountingOnly: true);
+                var (domain, state) = await VpnReports.DefaultDomain(db, access, domains, ct);
+                payload["default_domain_id"] = domain;
+                payload["default_domain_state"] = state;
+                payload["params"] = new JsonArray(payload["params"]!.AsArray().OfType<JsonObject>()
+                    .Where(parameter => AccountingFilters.Contains(parameter.Text("key")))
+                    .Select(parameter => (JsonNode)parameter.DeepClone()).ToArray());
+                payload["filter_options"] = VpnJson.Obj(new { domain = domains });
+                payload["accounting_scope"] = "domain_history";
+            }
+            else
+            {
+                payload = projection.Project(await VpnReports.Read(db, access, reportKey, context.Request.Query,
+                    "view", ct, accountingOnly: true));
+            }
+        }
+
         if (definition)
         {
-            payload = projection.Declaration();
-            payload["views"] = new JsonArray(payload["views"]!.AsArray().OfType<JsonObject>()
-                .Where(view => AccountingTabs.Contains(view.Text("key")))
-                .Select(view => (JsonNode)view.DeepClone()).ToArray());
-            var domains = await VpnReports.DomainOptions(db, access, ct, accountingOnly: true);
-            var (domain, state) = await VpnReports.DefaultDomain(db, access, domains, ct);
-            payload["default_domain_id"] = domain;
-            payload["default_domain_state"] = state;
-            payload["params"] = new JsonArray(payload["params"]!.AsArray().OfType<JsonObject>()
-                .Where(parameter => AccountingFilters.Contains(parameter.Text("key")))
-                .Select(parameter => (JsonNode)parameter.DeepClone()).ToArray());
-            payload["filter_options"] = VpnJson.Obj(new { domain = domains });
-            payload["accounting_scope"] = "domain_history";
+            // Metadata uses the same connection pool; return the Accounting snapshot first.
             var metadata = context.RequestServices.GetRequiredService<IReportV2Metadata>();
             ReportV2Metadata.Annotate(payload, await metadata.PluginAsync(reportKey, ct));
-        }
-        else
-        {
-            payload = projection.Project(await VpnReports.Read(db, access, reportKey, context.Request.Query,
-                "view", ct, accountingOnly: true));
         }
         await DomainHttp.WriteAsync(context,
             ReportPresentation.Apply(payload, DomainHttp.SelectEnglish(context.Request.Headers.AcceptLanguage.ToString())), 200, ct);

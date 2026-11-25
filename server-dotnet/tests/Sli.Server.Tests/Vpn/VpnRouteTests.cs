@@ -36,9 +36,18 @@ public sealed class VpnRouteTests
     {public ValueTask<AuthenticationResult> AuthenticateAsync(HttpContext context,CancellationToken ct)=>ValueTask.FromResult(allowed?AuthenticationResult.Success(new("session",1,role)):AuthenticationResult.Denied(401,"authentication_required"));}
     internal sealed class Store : IVpnStore,IVpnReadSession
     {
-        public int Opens;public bool AccountingReady;public bool Installed=true,Enabled=true,MissingSession;public readonly List<(string Sql,object?[] Values)> Calls=[];
-        public Task<IVpnReadSession> OpenAsync(CancellationToken ct) {Opens++;return Task.FromResult<IVpnReadSession>(this);}
-        public ValueTask DisposeAsync()=>ValueTask.CompletedTask;
+        public int Opens, ActiveSessions;public bool AccountingReady;public bool Installed=true,Enabled=true,MissingSession;public readonly List<(string Sql,object?[] Values)> Calls=[];
+        public Task<IVpnReadSession> OpenAsync(CancellationToken ct)
+        {
+            Opens++;
+            ActiveSessions++;
+            return Task.FromResult<IVpnReadSession>(this);
+        }
+        public ValueTask DisposeAsync()
+        {
+            ActiveSessions--;
+            return ValueTask.CompletedTask;
+        }
         public bool AccountingConfigured => AccountingReady;
         public async Task<IVpnReadSession?> OpenAccountingAsync(CancellationToken ct) => AccountingReady ? await OpenAsync(ct) : null;
         public Task<List<JsonObject>> ReadAsync(string sql,object?[] values,CancellationToken ct)
@@ -79,7 +88,9 @@ public sealed class VpnRouteTests
         public Task<JsonObject?> PluginAsync(string reportKey, CancellationToken ct)
         {
             Assert.Equal("vpn.connections", reportKey);
-            return Task.FromResult<JsonObject?>(store is Store { Installed: true, Enabled: true }
+            if (store is not Store state) return Task.FromResult<JsonObject?>(null);
+            Assert.Equal(0, state.ActiveSessions);
+            return Task.FromResult<JsonObject?>(state.Installed && state.Enabled
                 ? Json(new { plugin_id = "sli.remote-access", state = "enabled", read_only = false })
                 : null);
         }
@@ -172,6 +183,7 @@ public sealed class VpnRouteTests
         Assert.Equal("Synthetic User", payload!["items"]![0]!["display_name"]!.ToString());
         Assert.Contains(store.Calls, call => call.Sql == VpnSql.ConnectionSessions);
         Assert.DoesNotContain(store.Calls, call => call.Sql == VpnSql.Entitlements);
+        Assert.Null(payload["plugin"]);
         Assert.Null(payload["collections"]!["entitlements"]);
         Assert.Equal("domain_history", payload["coverage"]!["accounting_scope"]!.ToString());
         Assert.Equal(new[] { "accounting" }, payload["branches"]!.AsObject().Select(branch => branch.Key));
