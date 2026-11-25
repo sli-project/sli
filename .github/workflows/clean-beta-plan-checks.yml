@@ -1,0 +1,47 @@
+name: Clean Debian README acceptance
+
+on:
+  push:
+    branches: [codex/beta-clean-readme-acceptance]
+    paths: [.github/workflows/clean-beta-plan-checks.yml]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  readme:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Confirm the saved beta artifact identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45510515483/artifacts?per_page=100" |
+            jq -e 'any(.artifacts[]; .id == 14976746044
+              and .name == "sli-debian-beta-kit-1c25b9f1661ac2412bfc584f3fcbffda1ea95229"
+              and .digest == "sha256:55e03f5f6f1dddfd385cc16ac72cce55b6402abd44ff47a9d91c1b94ef2bc8fc"
+              and .expired == false)'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45510515483'
+          name: sli-debian-beta-kit-1c25b9f1661ac2412bfc584f3fcbffda1ea95229
+          path: ${{ runner.temp }}/beta-candidate
+      - name: Use the README inside a clean 4 core, 8 GiB, 40 GiB Debian guest
+        shell: bash
+        run: bash scripts/ci/clean-beta-plan-vm.sh "$RUNNER_TEMP/beta-candidate"
+      - name: Keep only the allowlisted acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clean-beta-readme-evidence
+          path: ${{ runner.temp }}/beta-clean-readme-evidence/
+          if-no-files-found: error
+          retention-days: 7
