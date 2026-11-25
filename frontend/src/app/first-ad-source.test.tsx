@@ -1,0 +1,116 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { api, ApiResponseError, type SetupStatus } from "../api/client";
+import type { ReportDefinitionDto } from "../api/report-v2-types";
+import { t } from "../i18n";
+import * as app from "./App";
+import { HomePage } from "./home";
+import { ReportRenderer } from "./report-v2/ReportRenderer";
+
+vi.mock("@tanstack/react-router", async importOriginal => ({
+  ...await importOriginal<typeof import("@tanstack/react-router")>(),
+  useLocation: () => ({ searchStr: "" }),
+  useNavigate: () => vi.fn(),
+}));
+
+const checkedAt = "2026-11-25T01:00:00Z";
+const emptySetup: SetupStatus = {
+  api_version: "v1", generated_at_utc: checkedAt, read_only: true,
+  steps: [{ id: "domains", title: "Domains", state: "todo", summary: "No domains" }],
+  report_domain: { key: "reports.domain_fqdn", source: "not_configured", value: "" },
+  domains: [], domain_controllers: [], domain_controller_source: "none", sources: [],
+  agent_collection: { state: "unknown", checked_at_utc: checkedAt, active_agents: 0, current_agents: 0, items: [] },
+  collection: null,
+};
+
+function ownerAccess(owner: boolean) {
+  vi.spyOn(app, "useEffectiveAccess").mockReturnValue({
+    platform_owner: owner, preview: false, capabilities: ["workspace.view"],
+  } as ReturnType<typeof app.useEffectiveAccess>);
+}
+
+function show(page: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>{page}</QueryClientProvider>);
+}
+
+function definition(key: string): ReportDefinitionDto {
+  return {
+    key, section: "investigation", title: "Synthetic report", description: "Scope test",
+    archetype: "investigation-evidence", params: [{ key: "domain", label: "Domain", kind: "domain" }],
+    columns: [], views: [{ kind: "table", key: "table" }], row_key: "id", detail: "fields",
+    export: false, limits: { default: 50, max: 100 },
+  };
+}
+
+beforeEach(() => {
+  ownerAccess(true);
+  vi.spyOn(app, "useAccessStatus").mockReturnValue("получены");
+  vi.spyOn(api, "setupStatus").mockResolvedValue(emptySetup);
+  vi.spyOn(api, "homePeriod").mockResolvedValue({
+    domains: [], domain_id: null, from: checkedAt, to: checkedAt, updated_at: checkedAt,
+    problems: null, controllers: null, activity: null, changes: null,
+  });
+  vi.spyOn(api, "reportV2Definition").mockImplementation(async key => definition(key));
+  vi.spyOn(api, "reportV2Data").mockRejectedValue(new ApiResponseError(403, "domain_scope_denied"));
+  vi.spyOn(api, "v4Reports").mockResolvedValue({
+    api_version: "v4", state: "available", allowed_count: 0, total_count: 0, items: [], explain_contract: "",
+  });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it("offers the owner a single path to add the first agent on the empty Home page", async () => {
+  show(<HomePage/>);
+  const action = await screen.findByRole("link", { name: t("agents.addComputer") });
+  expect(action.getAttribute("href")).toBe("/app/agents?register=1");
+  expect(screen.getAllByRole("link")).toEqual([action]);
+});
+
+it.each(["security.events.chains", "ad.infrastructure", "ad.users.v2", "ad.computers.v6"])(
+  "offers first enrollment to the owner on %s when the setup is empty", async reportKey => {
+    show(<ReportRenderer reportKey={reportKey} initialSearch=""/>);
+    const action = await screen.findByRole("link", { name: t("agents.addComputer") });
+    expect(action.getAttribute("href")).toBe("/app/agents?register=1");
+    expect(screen.queryByRole("link", { name: t("reports.access.own_rights") })).toBeNull();
+  },
+);
+
+it("keeps an actual report denial when a limited user has no accessible domain", async () => {
+  ownerAccess(false);
+  show(<ReportRenderer reportKey="security.events.chains" initialSearch=""/>);
+  expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+  expect(api.setupStatus).not.toHaveBeenCalled();
+});
+
+it.each(["domain=22", "domain_id=22"])("preserves the denial when the owner requests %s", async search => {
+  show(<ReportRenderer reportKey="security.events.chains" initialSearch={search}/>);
+  expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+  expect(api.setupStatus).not.toHaveBeenCalled();
+  expect(vi.mocked(api.reportV2Data).mock.calls.some(([, params]) =>
+    (params.get("domain") ?? params.get("domain_id")) === "22")).toBe(true);
+});
+
+it("does not show enrollment when the global setup has a registered domain", async () => {
+  vi.mocked(api.setupStatus).mockResolvedValue({
+    ...emptySetup, domains: [{ fqdn: "existing.example.test", netbios_name: null, server_count: 0 }],
+  });
+  show(<ReportRenderer reportKey="security.events.chains" initialSearch=""/>);
+  expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+  expect(api.setupStatus).toHaveBeenCalled();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+});
+
+it("does not treat an unavailable domain read as an empty setup", async () => {
+  vi.mocked(api.setupStatus).mockResolvedValue({
+    ...emptySetup, steps: [{ ...emptySetup.steps[0], state: "unavailable" }],
+  });
+  show(<ReportRenderer reportKey="security.events.chains" initialSearch=""/>);
+  expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+  expect(api.setupStatus).toHaveBeenCalled();
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+});

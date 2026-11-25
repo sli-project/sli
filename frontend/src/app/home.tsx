@@ -8,6 +8,7 @@ import { getLocale, plural, t, type MessageKey } from "../i18n";
 import { browserTimeZone, formatDateTime } from "../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../shared/format";
 import { useAccessStatus, useEffectiveAccess, useTimeZone } from "./App";
+import { FirstAdSource, useFirstAdSource } from "./first-ad-source";
 import "./home.css";
 
 
@@ -213,6 +214,7 @@ export function HomePage() {
     queryFn: () => api.homePeriod(params), staleTime: 30_000, retry: false, enabled: accessStatus === "получены",
   });
   const data = summary.data;
+  const firstAdSource = useFirstAdSource(search, summary.isSuccess && data?.domains.length === 0);
   const retry = () => void summary.refetch();
   const togglePrevious = () => {
     if (previous) setPrevious(null);
@@ -236,6 +238,10 @@ export function HomePage() {
     {data ? <span data-home-updated>{t("home.updated", { time: clock(data.updated_at, actualZone) })}</span> : null}
     <Button disabled={accessStatus !== "получены" || summary.isFetching} onClick={retry}>{t("home.refresh")}</Button>
   </>;
+  if (firstAdSource) return <section className="sli-ds-report sli-ds-home">
+    <PageHeader title={t("home.title")}/>
+    <FirstAdSource/>
+  </section>;
   return <section className="sli-ds-report sli-ds-home">
     <PageHeader title={t("home.title")} actions={actions}/>
     {accessStatus === "загружается" || summary.isLoading ? <StateView state="loading" compact skeleton="table"/> : null}
