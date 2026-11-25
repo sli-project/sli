@@ -9,6 +9,7 @@ namespace Sli.Agent.Tests;
 
 public sealed class EventValueCollectionTests
 {
+    private const string DefenderChannel = "Microsoft-Windows-Windows Defender/Operational";
     private static readonly EventCatalog Catalog = EventCatalog.Load();
     private static JsonArray Table => JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "event_storage_meanings.json")))!["events"]!.AsArray();
 
@@ -16,8 +17,24 @@ public sealed class EventValueCollectionTests
     {
         var cases = new TheoryData<string, string, int, bool, string>();
         foreach (var row in Table)
-            cases.Add(row!["channel"]!.GetValue<string>(), row["provider"]!.GetValue<string>(), row["event_id"]!.GetValue<int>(),
+        {
+            string channel = row!["channel"]!.GetValue<string>();
+            if (channel == DefenderChannel) continue;
+            cases.Add(channel, row["provider"]!.GetValue<string>(), row["event_id"]!.GetValue<int>(),
                 row["layer"]!.GetValue<string>() != "not_collected", row["replication_rights"]?[0]?.GetValue<string>() ?? "");
+        }
+        return cases;
+    }
+
+    public static TheoryData<string, int, bool> DefenderEvents()
+    {
+        var cases = new TheoryData<string, int, bool>();
+        foreach (var row in Table)
+        {
+            if (row!["channel"]!.GetValue<string>() != DefenderChannel) continue;
+            cases.Add(row["provider"]!.GetValue<string>(), row["event_id"]!.GetValue<int>(),
+                row["layer"]!.GetValue<string>() != "not_collected");
+        }
         return cases;
     }
 
@@ -29,6 +46,23 @@ public sealed class EventValueCollectionTests
         Assert.Equal(collect ? 1 : 0, sample.Payload["records"]!.AsArray().Count);
         Assert.Equal(collect ? 0 : 1, sample.FilteredCount);
         Assert.Equal(1, DcCursor.Parse(sample.CursorAfter).Progress[channel].RecordId);
+    }
+
+    [Theory]
+    [MemberData(nameof(DefenderEvents))]
+    public void DefenderEventsUseWorkstationsAndAreUnavailableToAdDc(string provider, int id, bool collect)
+    {
+        var source = CreateSource(DefenderChannel, provider, id, "", "Properties");
+        var module = new WorkstationsModule(Helpers.HostId, WorkstationPolicy.Parse(new()), source);
+        var sample = module.Collect(null, Helpers.Now, DefenderChannel).Sample!;
+        Assert.Equal(collect ? 1 : 0, sample.Payload["records"]!.AsArray().Count);
+        Assert.Equal(collect ? 0 : 1, sample.FilteredCount);
+        var progress = JsonNode.Parse(sample.CursorAfter.Token)!["channels"]![DefenderChannel]!;
+        Assert.Equal(1L, progress["record_id"]!.GetValue<long>());
+        Assert.Equal("fixture-bookmark", progress["bookmark"]!.GetValue<string>());
+
+        var denied = Assert.Throws<AgentException>(() => Collect(DefenderChannel, provider, id));
+        Assert.Equal("agent_ad_dc_channel_invalid", denied.Code);
     }
 
     [Theory]
@@ -84,13 +118,16 @@ public sealed class EventValueCollectionTests
     internal static Sample Collect(string channel, string provider, int id, string value = "", string field = "Properties", JsonArray? allow = null)
     {
         var config = AdDcConfig.Parse(new JsonObject { ["source_name"] = "dc.example.test", ["connect_address"] = "dc.example.test", ["allow_event_ids"] = allow }, Catalog);
-        var source = new ScriptedSource { Script = new JsonObject { ["mode"] = "rows", ["rows"] = new JsonArray(new JsonObject {
+        var source = CreateSource(channel, provider, id, value, field);
+        return new AdDcModule(Helpers.HostId, config, source, Catalog).Collect(null, Helpers.Now, channel).Sample!;
+    }
+
+    private static ScriptedSource CreateSource(string channel, string provider, int id, string value, string field)
+        => new() { Script = new JsonObject { ["mode"] = "rows", ["rows"] = new JsonArray(new JsonObject {
             ["xml"] = $"""
                 <Event xmlns="{EventXml.Namespace}"><System><Provider Name="{provider}"/><EventID>{id}</EventID>
                 <EventRecordID>1</EventRecordID><Channel>{channel}</Channel><Computer>dc.example.test</Computer>
                 <TimeCreated SystemTime="2026-10-07T11:00:00Z"/></System>
                 <EventData><Data Name="{field}">{SecurityElement.Escape(value)}</Data></EventData></Event>
                 """, ["bookmark"] = "fixture-bookmark" }) } };
-        return new AdDcModule(Helpers.HostId, config, source, Catalog).Collect(null, Helpers.Now, channel).Sample!;
-    }
 }
