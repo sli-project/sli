@@ -7,7 +7,7 @@ private_log=/run/beta-readme-install.log
 probe_log=/run/beta-readme-auth.log
 auth_file=/run/beta-browser-session.json
 menu_log=/run/beta-browser-evidence.log
-candidate=fa8baf797ca0f0bcd62574aebf551e3aef1e6638
+candidate=6a454ca4abc8c6960eb5823748afd4848f3faddf
 operator=debian
 
 for _ in {1..10}; do
@@ -198,17 +198,6 @@ Path(auth_file).write_text(json.dumps({"url": origin, "token": cookie_value, "co
 login_milliseconds = round((time.monotonic() - started_login) * 1000)
 print(f"BETA_README_EVIDENCE first_login=passed ca_fingerprint_match=yes runtime_dotnet=yes login_milliseconds={login_milliseconds}", flush=True)
 
-status, _, _, home = call("/api/v1/home/summary?contract=v4&period=24h&tz=UTC", "home_baseline")
-if status == 200:
-    summary = json.loads(home)
-    problems = summary.get("problems")
-    count = problems.get("open_count") if isinstance(problems, dict) else None
-    if type(count) is int and count >= 0:
-        print(f"BETA_README_EVIDENCE home_open_problems={count}", flush=True)
-    else:
-        print("BETA_README_EVIDENCE home_open_problems=unavailable", flush=True)
-else:
-    print("BETA_README_EVIDENCE home_open_problems=unavailable", flush=True)
 PY
 grep -E '^BETA_README_EVIDENCE [A-Za-z0-9_= -]+$' "$probe_log" >&3
 
@@ -226,66 +215,140 @@ driver="/home/$operator/menu-driver"
 cp -a "$input/menu" "$driver"
 chown -R "$operator:$operator" "$driver"
 
-walk_menu() {
-    local phase=$1 code=0
-    install -d -m 0700 -o "$operator" -g "$operator" "$results/$phase"
-    runuser -u "$operator" -- env NODE_EXTRA_CA_CERTS=/var/lib/sli/tls-ca.crt SLI_MENU_PHASE="$phase" \
-        timeout --kill-after=5s 85s node "$driver/installed-menu-walk.mjs" "$results/$phase" <"$auth_file" >"$menu_log" 2>&1 || code=$?
-    grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|file_audit_observation=\{.*\})$' "$menu_log" >&3 || true
-    evidence "menu_phase=$phase browser_status=$code"
-    [[ -s "$results/$phase/menu.json" ]] || return 2
-    return "$code"
-}
-
-stage=vpn_prepare
-prepare_status=0
-python3 -I -B "$input/prepare-local-vpn-menu-guest.py" >/run/beta-vpn-prepare.log 2>&1 || prepare_status=$?
-grep -Ex '^vpn_fixture_[a-z0-9_]+=[A-Za-z0-9_]+$' /run/beta-vpn-prepare.log |
-    while read -r line; do evidence "$line"; done || true
-evidence "vpn_prepare_status=$prepare_status"
-[[ $prepare_status == 0 ]]
-
-stage=vpn_systemd
-systemctl daemon-reload
-for unit in sli-dotnet-api.service sli-dotnet-post-collection.service; do
-    systemctl cat "$unit" | grep -F 'LoadCredential=radius-agent-route:/etc/sli/radius-accounting/radius-agent-route' >/dev/null
-done
-systemctl cat sli-dotnet-post-collection.service |
-    grep -F 'LoadCredential=radius-agent-dsn:/etc/sli/radius-accounting/radius-agent-dsn' >/dev/null
-systemctl restart sli-dotnet-api.service sli-dotnet-post-collection.service
-systemctl is-active --quiet sli-dotnet-api.service sli-dotnet-post-collection.service
-evidence 'vpn_native_units_credentials=verified'
-
-stage=vpn_readiness
-python3 -I -B - "$candidate" <<'PY'
+stage=msi_t10_probe
+probe_status=0
+python3 -I -B - "$candidate" "$results" >/run/beta-msi-t10.log 2>&1 <<'PY' || probe_status=$?
+import hashlib
 import http.client
 import json
+import os
 from pathlib import Path
 import ssl
+import subprocess
 import sys
-import time
 from urllib.parse import urlsplit
 
-url = urlsplit(json.loads(Path("/etc/sli/runtime.json").read_text())["health_url"])
-context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
-for _ in range(30):
-    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=3)
+commit, result_dir = sys.argv[1:]
+expected_msi = "f85c9b0df4faf37bd979b357925f780113ee0283dbc8690499c7039951fe2791"
+expected_version = "26.0.166"
+base_jobs = ("api", "post-collection", "semantic", "entity-state", "storage-lifecycle",
+             "ad-snapshot-manifest-coordinator", "notification-delivery", "notification-setup")
+excluded = ("what-where-when", "remote-access", "report-producer")
+profiles = ("light", "heavy", "long")
+legacy = [f"sli-{name}.service" for name in (*base_jobs, "what-where-when", "remote-access")]
+legacy += [f"sli-executor@{profile}.service" for profile in profiles]
+report = {"commit": commit}
+
+def unit_state(unit):
+    picked = "LoadState,ActiveState,SubState,MainPID,ExecStart,Result"
+    cmd = ["systemctl", "show", "--property=" + picked, unit]
+    raw = subprocess.run(cmd, capture_output=True, text=True, timeout=4).stdout
+    fields = dict(part.split("=", 1) for part in raw.splitlines() if "=" in part)
+    result = {key: fields.get(key) for key in ("LoadState", "ActiveState", "SubState", "Result")}
+    pid = int(fields.get("MainPID") or 0)
+    result["MainPID"] = pid
+    expected = f"/opt/sli/dotnet/beta1-{commit[:12]}/Sli.Server"
+    result["dotnet_exec_start"] = "path=" + expected in fields.get("ExecStart", "")
+    if pid > 0:
+        try: result["dotnet_process"] = os.readlink(f"/proc/{pid}/exe") == expected
+        except FileNotFoundError: result["dotnet_process"] = False
+    return result
+
+def python_writers():
+    matches = []
+    names = set(base_jobs) | set(excluded) | {"executor", *("executor-" + p for p in profiles)}
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            if not Path(os.readlink(process / "exe")).name.startswith("python"):
+                continue
+            args = (process / "cmdline").read_bytes().decode("utf-8", errors="replace").strip("\0").split("\0")
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        for index, arg in enumerate(args[:-1]):
+            if arg == "deploy.linux.entrypoint" and args[index + 1] in names:
+                matches.append(args[index + 1])
+            if arg.endswith("/native_runtime.py") and args[index + 1] == "launch" and index + 2 < len(args):
+                if args[index + 2] in names:
+                    matches.append(args[index + 2])
+    return sorted(matches)
+
+def record_units(config):
+    chosen = config.get("profiles")
+    assert isinstance(chosen, list) and set(chosen) <= set(profiles)
+    selected = (*base_jobs, *[f"executor-{profile}" for profile in profiles if profile in chosen])
+    dotnet = {name: unit_state(f"sli-dotnet-{name}.service") for name in selected}
+    old = {unit: unit_state(unit) for unit in legacy}
+    outside = {name: unit_state(f"sli-dotnet-{name}.service") for name in excluded}
+    writers = python_writers()
+    old_stopped = all(row["ActiveState"] == "inactive" and row["MainPID"] == 0 for row in old.values())
+    outside_stopped = all(row["ActiveState"] == "inactive" and row["MainPID"] == 0 for row in outside.values())
+    active = [name for name, row in dotnet.items() if row["ActiveState"] == "active"
+              and row["dotnet_exec_start"] and row.get("dotnet_process")]
+    healthy_setup = ("notification-setup" in active
+                     or dotnet["notification-setup"]["Result"] == "success"
+                     and dotnet["notification-setup"]["dotnet_exec_start"]
+                     and dotnet["notification-setup"]["ActiveState"] in ("active", "inactive"))
+    passed = set(selected) - {"notification-setup"} <= set(active) and healthy_setup \
+        and old_stopped and outside_stopped and not writers
+    return {"passed": passed, "active_dotnet": active, "dotnet": dotnet,
+            "legacy": old, "excluded_dotnet": outside, "legacy_python_writers": writers}
+
+def probe_msi(config):
+    url = urlsplit(config["health_url"])
+    assert url.scheme == "https" and url.hostname
+    ca = Path("/var/lib/sli/tls-ca.crt")
+    context = ssl.create_default_context(cafile=str(ca))
+    context.hostname_checks_common_name = False
+    installed = Path("/opt/sli/current/agent/SliAgent.msi")
+    with installed.open("rb") as file:
+        server = hashlib.file_digest(file, "sha256").hexdigest()
+    sidecar = json.loads(installed.with_suffix(".msi.json").read_text())
+    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=12)
     try:
-        connection.request("GET", "/api/health")
+        connection.connect()
+        san_verified = bool(connection.sock.getpeercert().get("subjectAltName"))
+        connection.request("GET", "/api/v1/agent/installer/SliAgent.msi")
         response = connection.getresponse()
-        if response.status == 200:
-            body = json.loads(response.read(1024 * 1024))
-            if body.get("status") == "ok" and body.get("runtime_identity", {}).get("git_commit") == sys.argv[1]:
-                sys.exit(0)
-    except (OSError, http.client.HTTPException, ValueError):
-        pass
+        status = response.status
+        assert status == 200
+        header = response.getheader("X-SLI-Package-SHA256")
+        version = response.getheader("X-SLI-Package-Version")
+        digest = hashlib.sha256()
+        size = 0
+        while data := response.read(1 << 20):
+            size += len(data)
+            assert size <= 100_000_000
+            digest.update(data)
+        downloaded = digest.hexdigest()
     finally:
         connection.close()
-    time.sleep(2)
-sys.exit(1)
-PY
-evidence 'vpn_readiness_same_runtime=verified'
+    manifest = sidecar.get("sha256")
+    passed = san_verified and header == downloaded == manifest == server == expected_msi \
+        and version == sidecar.get("product_version") == expected_version and size > 0
+    return {"passed": passed, "http": status, "san_verified": san_verified, "version": version,
+            "sha256_header": header, "sha256_download": downloaded, "sha256_server": server,
+            "sha256_manifest": manifest, "bytes": size}
 
-stage=file_audit_target
-walk_menu file-audit
-stage=browser_verified
+config = json.loads(Path("/etc/sli/runtime.json").read_text())
+for key, probe in (("msi", probe_msi), ("t10", record_units)):
+    try:
+        report[key] = probe(config)
+    except (OSError, ValueError, AssertionError, subprocess.SubprocessError, http.client.HTTPException) as error:
+        report[key] = {"passed": False, "error": type(error).__name__}
+Path(result_dir, "msi-t10.json").write_text(json.dumps(report, sort_keys=True))
+print("BETA_README_EVIDENCE msi_t10=" + json.dumps(report, separators=(",", ":")))
+sys.exit(0 if report["msi"]["passed"] and report["t10"]["passed"] else 1)
+PY
+grep -aE '^BETA_README_EVIDENCE msi_t10=\{.*\}$' /run/beta-msi-t10.log >&3 || true
+
+stage=agent_command_ui
+ui_status=0
+runuser -u "$operator" -- env NODE_EXTRA_CA_CERTS=/var/lib/sli/tls-ca.crt \
+    timeout --kill-after=5s 60s node "$driver/installed-menu-walk.mjs" "$results" \
+    <"$auth_file" >"$menu_log" 2>&1 || ui_status=$?
+grep -aE '^BETA_README_EVIDENCE agent_command_ui=\{.*\}$' "$menu_log" >&3 || true
+evidence "msi_t10_exit=$probe_status agent_command_ui_exit=$ui_status"
+[[ $probe_status == 0 && $ui_status == 0 ]]
+stage=msi_t10_verified

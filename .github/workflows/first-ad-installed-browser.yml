@@ -1,4 +1,4 @@
-name: Observe File Audit render on the pinned Debian kit
+name: Verify installed MSI delivery and T10
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -7,7 +7,6 @@ on:
       - scripts/ci/clean-beta-plan-guest.sh
       - scripts/ci/clean-beta-plan-vm.sh
       - scripts/ci/installed-menu-walk.mjs
-      - scripts/ci/prepare-local-vpn-menu-guest.py
 
 permissions:
   actions: read
@@ -32,16 +31,15 @@ jobs:
           node --check scripts/ci/installed-menu-walk.mjs
           bash -n scripts/ci/clean-beta-plan-vm.sh
           bash -n scripts/ci/clean-beta-plan-guest.sh
-          python3 -B -c 'import ast; from pathlib import Path; ast.parse(Path("scripts/ci/prepare-local-vpn-menu-guest.py").read_text())'
       - name: Find the exact completed main build
         id: kit
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          KIT_COMMIT: fa8baf797ca0f0bcd62574aebf551e3aef1e6638
-          BUILD_RUN: '45548527621'
-          EXPECTED_ARTIFACT: '14992149151'
-          EXPECTED_DIGEST: 'sha256:246794c40ca8a957a5bb0f411943c2277cb3fdc6022b0b9eb7d23f4773bf704f'
+          KIT_COMMIT: 6a454ca4abc8c6960eb5823748afd4848f3faddf
+          BUILD_RUN: '45556417730'
+          EXPECTED_ARTIFACT: '14996435719'
+          EXPECTED_DIGEST: 'sha256:629d7bce2318bd3f78b4aa6d3a15e7f6c572ec2bd85a82bf9b79c57e45441811'
         run: |
           set -euo pipefail
           for poll in {1..90}; do
@@ -64,10 +62,10 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           github-token: ${{ github.token }}
-          run-id: '45548527621'
-          name: sli-debian-beta-kit-fa8baf797ca0f0bcd62574aebf551e3aef1e6638
+          run-id: '45556417730'
+          name: sli-debian-beta-kit-6a454ca4abc8c6960eb5823748afd4848f3faddf
           path: ${{ runner.temp }}/beta-candidate
-      - name: Observe only the File Audit report
+      - name: Check only exact MSI delivery, enrollment UI, and T10
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
@@ -77,7 +75,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-file-audit-render-evidence
+          name: installed-msi-enrollment-t10-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
