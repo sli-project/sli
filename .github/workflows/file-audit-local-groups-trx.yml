@@ -1,0 +1,63 @@
+name: File Audit Windows test evidence
+on:
+  push:
+    branches: [codex/file-audit-debian-kit-23e9547d]
+    paths: ['.github/workflows/file-audit-local-groups-trx.yml']
+permissions:
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read named tests from the original Windows TRX
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=45540709870
+          job_id=138958245846
+          run_head="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .head_sha)"
+          test "$run_head" = "66871ca21b97229195b252205faea01c7abd12aa"
+          label="$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id" --jq '[.run_id, .name, (.labels | index("windows-latest") != null)] | @tsv')"
+          test "$label" = "$(printf '%s\tportable\ttrue' "$run_id")"
+          out_dir="$(mktemp -d)"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name agent-dotnet-test-results --dir "$out_dir"
+          python - "$out_dir" <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+          
+          expected = {
+              "AFailedServerCheckReportsOnlyItsReadStageAndWindowsCode": 5,
+              "GroupSidMustBeUniqueAndFromAnAuthoritativeLocalDomain": 5,
+              "IncompleteLocalGroupResolutionAllowsOnlyReadOnlyInventory": 1,
+              "NativeGroupReadsKeepNetApiStatusAndAcceptPartialPages": 1,
+              "NativeLocalGroupInventoryResolvesTheBuiltinAdministratorsAlias": 1,
+          }
+          class_name = "Sli.Agent.Tests.FileAuditManagerTests"
+          counts = Counter()
+          class_count = 0
+          for path in Path(sys.argv[1]).rglob("*.trx"):
+              root = ET.parse(path).getroot()
+              definitions = {}
+              for test in root.findall(".//{*}UnitTest"):
+                  method = test.find("{*}TestMethod")
+                  if method is not None and method.attrib["className"].split(",", 1)[0] == class_name:
+                      definitions[test.attrib["id"]] = method.attrib["name"]
+              for result in root.findall(".//{*}UnitTestResult"):
+                  method = definitions.get(result.attrib.get("testId"))
+                  if method is None:
+                      continue
+                  class_count += 1
+                  if result.attrib["outcome"] != "Passed":
+                      raise SystemExit(f"{class_name}.{method} outcome was {result.attrib['outcome']}")
+                  counts[method] += 1
+          
+          for method, count in expected.items():
+              if counts[method] != count:
+                  raise SystemExit(f"{class_name}.{method}: expected {count} passes, found {counts[method]}")
+              print(f"{class_name}.{method}: {count} passed")
+          print(f"{class_name}: {class_count} passed in Windows portable job")
+          PY
