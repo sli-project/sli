@@ -76,26 +76,7 @@ jobs:
           log="$RUNNER_TEMP/scenario-private.log"
           docker exec sli-install-e2e bash /install-e2e.sh "$SCENARIO" >"$log" 2>&1 || code=$?
           printf 'Scenario %s exit=%s\n' "$SCENARIO" "$code"
-          grep -E '^(SLI ready on beta1-[a-f0-9]+ [a-zA-Z0-9.+~:-]+|PostgreSQL migration [0-9]+ applied|Purge and reinstall created a new PostgreSQL cluster|Upgrade preserved two synthetic PostgreSQL receipts \(SHA-256 verified\)) "$log" || true
-          if [[ $code -ne 0 ]]; then
-            docker exec sli-install-e2e systemctl show sli-postgresql.service sli-bootstrap-pg.service sli-ready.service \
-              --property=Id,LoadState,ActiveState,Result,ExecMainStatus --no-pager || true
-            docker exec sli-install-e2e journalctl -b -t sli-setup -o cat --no-pager |
-              grep -oE '\bnative_[a-z0-9_]+\b' | sort -u || true
-            grep -E '^SLI could not finish its first start\.' "$log" || true
-          fi
-          exit "$code"
-      - name: Remove the discarded machine and volume
-        if: always()
-        shell: bash
-        run: |
-          if docker inspect sli-install-e2e >/dev/null 2>&1; then
-            docker rm --force sli-install-e2e
-          fi
-          if mountpoint -q "$RUNNER_TEMP/sli-disk"; then
-            sudo umount "$RUNNER_TEMP/sli-disk"
-          fi
- "$log" || true
+          grep -E '^(SLI ready on beta1-[a-f0-9]+ [a-zA-Z0-9.+~:-]+|PostgreSQL migration [0-9]+ applied|Upgrade preserved two synthetic PostgreSQL receipts \(SHA-256 verified\))$' "$log" || true
           if [[ $code -ne 0 ]]; then
             docker exec sli-install-e2e systemctl show sli-postgresql.service sli-bootstrap-pg.service sli-ready.service \
               --property=Id,LoadState,ActiveState,Result,ExecMainStatus --no-pager || true
