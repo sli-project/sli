@@ -201,7 +201,7 @@ function AgentsContent() {
         {selected.collection_policy ? <AgentCollectionControls key={`${selected.id}:${selected.policy_revision}`} agent={selected} busy={action.isPending} change={changePolicy}/> : null}
         {modules.map((module) => typeof module === "string" ? null : <section key={module.module_id}>
           <label><input type="checkbox" checked={module.enabled} disabled={selected.status !== "active" || action.isPending || !["sli.workstations", "sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(module.module_id)}
-            onChange={() => action.mutate({ kind: "modules", body: { agent_id: selected.id, module_id: module.module_id, enabled: !module.enabled, config: module.config, expected_revision: selected.policy_revision } })}/>{agentModuleName(module.module_id)}</label>
+            onChange={() => action.mutate({ kind: "modules", body: { agent_id: selected.id, module_id: module.module_id, enabled: !module.enabled, config: module.module_id === "sli.workstations" && !module.enabled ? {} : module.config, expected_revision: selected.policy_revision } })}/>{agentModuleName(module.module_id)}</label>
           <AgentModuleControls key={`${selected.id}:${module.module_id}:${selected.policy_revision}`} agent={selected}
             module={module} busy={action.isPending} change={changePolicy} openPasswordDomain={selected.id === agentId && openPasswordDomain}/>
         </section>)}

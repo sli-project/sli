@@ -312,7 +312,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (role=="workstation")
         {
             module="sli.workstations";
-            config=JsonNode.Parse("{\"policy_revision\":\"2\",\"allow_event_ids\":null,\"deny_event_ids\":[],\"allow_process_paths\":[],\"deny_process_paths\":[],\"rate_limits\":{\"4104\":10},\"rate_window_seconds\":60,\"batch_size\":32,\"channel_generations\":{},\"protected_services\":[],\"families\":{\"logons\":true,\"processes\":true,\"usb\":true,\"local_admins\":true,\"protection\":true},\"family_filters\":{}}")!.AsObject();
+            config=DefaultWorkstationConfig();
         }
         else
         {
@@ -327,6 +327,9 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                     domain["fqdn"]!.GetValue<string>(), "2", timezone));
         return modules;
     }
+
+    internal static JsonObject DefaultWorkstationConfig() =>
+        JsonNode.Parse("{\"policy_revision\":\"2\",\"allow_event_ids\":null,\"deny_event_ids\":[],\"allow_process_paths\":[],\"deny_process_paths\":[],\"rate_limits\":{\"4104\":10},\"rate_window_seconds\":60,\"batch_size\":32,\"channel_generations\":{},\"protected_services\":[],\"families\":{\"logons\":true,\"processes\":true,\"usb\":true,\"local_admins\":true,\"protection\":true},\"family_filters\":{}}")!.AsObject();
 
     private static JsonObject DefaultSnapshotAssignment(string module, string source, string sid, string dns, string revision, string? timezone)
     {

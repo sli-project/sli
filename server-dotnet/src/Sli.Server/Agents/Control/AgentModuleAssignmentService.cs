@@ -6,6 +6,7 @@ using Npgsql;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Agents.Ingress;
+using Sli.Server.Agents.Registry;
 using PythonJsonCompatibility = Sli.Server.Compatibility.PythonJson;
 
 namespace Sli.Server.Agents.Control;
@@ -54,17 +55,21 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         {
             var input=ReadConfig(settings,revision);
             bool useWorkstationBaseline = flag.GetBoolean() && oldModules.Count == modules.Count;
-            if (workstation && flag.GetBoolean() && input.Count == 1)
+            if (module == WorkstationsModule.ModuleId && flag.GetBoolean() && input.Count == 1)
             {
                 var previous = oldModules.OfType<JsonObject>()
                     .FirstOrDefault(item => item["module_id"]?.ToString() == module)?["config"] as JsonObject;
                 if (previous is not null && previous.Any(entry => entry.Key != "policy_revision"))
                 {
-                    var nextRevision = input["policy_revision"]!.DeepClone();
-                    input = previous.DeepClone().AsObject();
-                    input["policy_revision"] = nextRevision;
+                    useWorkstationBaseline = workstation && await HasUnchangedWorkstationEnrollmentAsync(db, tx, id, previous, ct);
+                    if (!useWorkstationBaseline)
+                    {
+                        var nextRevision = input["policy_revision"]!.DeepClone();
+                        input = previous.DeepClone().AsObject();
+                        input["policy_revision"] = nextRevision;
+                    }
                 }
-                else useWorkstationBaseline = true;
+                else if (workstation) useWorkstationBaseline = true;
             }
             config=module switch {
                 SnapshotPolicy.Ad or SnapshotPolicy.Gpo => SnapshotIngressPolicy.Parse(module,input).Config,
@@ -130,6 +135,24 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         await audit.AppendAsync(db,tx,"module_assign",actor,id.ToString(),details,ct);
         return JsonSerializer.SerializeToElement(new { agent_id=id,assigned_modules=modules,policy_revision=revision });
     }
+    private static async Task<bool> HasUnchangedWorkstationEnrollmentAsync(NpgsqlConnection db, NpgsqlTransaction tx,
+        Guid agent, JsonObject previous, CancellationToken ct)
+    {
+        var initial = AgentEnrollmentService.DefaultWorkstationConfig();
+        // Check-in may advance the revision while keeping the enrollment settings.
+        initial["policy_revision"] = previous["policy_revision"]?.DeepClone();
+        if (!JsonNode.DeepEquals(previous, initial)) return false;
+
+        await using var command = new NpgsqlCommand("""
+            select actor like 'enrollment:%'
+            from sli_agent_audit
+            where target=@agent and action='module_assign' and details->>'module_id'='sli.workstations'
+            order by id desc limit 1
+            """, db, tx);
+        command.Parameters.AddWithValue("agent", agent.ToString("D"));
+        return await command.ExecuteScalarAsync(ct) is true;
+    }
+
     internal static async Task ReconcilePasswordDomainAsync(NpgsqlConnection db,NpgsqlTransaction tx,Guid agent,CancellationToken ct)
     {
         await using var query=new NpgsqlCommand("select public.reconcile_password_detection_domain371(@agent)",db,tx);
