@@ -2186,6 +2186,28 @@
         "kind": "text",
         "field_categories": [],
         "max_length": 256
+      },
+      {
+        "key": "source_instance_id",
+        "label": "Источник",
+        "kind": "text",
+        "field_categories": [],
+        "max_length": 36,
+        "hidden": true
+      },
+      {
+        "key": "source_plugin",
+        "label": "Модуль источника",
+        "kind": "choice",
+        "field_categories": [],
+        "max_length": 256,
+        "hidden": true,
+        "options": [
+          {
+            "value": "sli.workstations",
+            "label": "Рабочие станции"
+          }
+        ]
       }
     ],
     "columns": [
@@ -13070,127 +13092,157 @@
         "key": "domain",
         "label": "Домен",
         "kind": "domain",
-        "options_from": "domain",
         "field_categories": [],
-        "max_length": 256
-      },
-      {
-        "key": "search",
-        "label": "workstations.overview.search",
-        "kind": "text",
-        "field_categories": [],
-        "max_length": 256
-      },
-      {
-        "key": "ou",
-        "label": "workstations.overview.ou",
-        "kind": "choice",
-        "options_from": "ou",
-        "field_categories": [],
-        "max_length": 256
+        "max_length": 256,
+        "options_from": "domain"
       },
       {
         "key": "domain_id",
-        "label": "workstations.overview.domain",
+        "label": "Домен",
         "kind": "int",
-        "hidden": true,
+        "field_categories": [],
+        "max_length": 256,
+        "hidden": true
+      },
+      {
+        "key": "search",
+        "label": "Станция или домен",
+        "kind": "text",
         "field_categories": [],
         "max_length": 256
       },
       {
-        "key": "check_id",
-        "label": "workstations.overview.check",
+        "key": "source_instance_id",
+        "label": "Источник станции",
+        "kind": "text",
+        "field_categories": [],
+        "max_length": 36,
+        "hidden": true
+      },
+      {
+        "key": "collection",
+        "label": "Сбор",
         "kind": "choice",
+        "field_categories": [],
+        "max_length": 256,
+        "default": "all",
         "options": [
           {
-            "value": "C01",
-            "label": "C01"
+            "value": "all",
+            "label": "Все"
           },
           {
-            "value": "C02",
-            "label": "C02"
+            "value": "enabled",
+            "label": "Назначен"
           },
           {
-            "value": "C03",
-            "label": "C03"
+            "value": "disabled",
+            "label": "Отключён"
           },
           {
-            "value": "C04",
-            "label": "C04"
-          },
-          {
-            "value": "C05",
-            "label": "C05"
-          },
-          {
-            "value": "C06",
-            "label": "C06"
-          },
-          {
-            "value": "C07",
-            "label": "C07"
-          },
-          {
-            "value": "C08",
-            "label": "C08"
-          },
-          {
-            "value": "C09",
-            "label": "C09"
-          },
-          {
-            "value": "C10",
-            "label": "C10"
+            "value": "unbound",
+            "label": "Не сопоставлен"
           }
-        ],
-        "field_categories": [],
-        "max_length": 256
+        ]
       },
       {
-        "key": "finding_id",
-        "label": "Finding",
+        "key": "view",
+        "label": "События",
+        "kind": "choice",
+        "field_categories": [],
+        "max_length": 256,
+        "default": "all",
+        "hidden": true,
+        "options": [
+          {
+            "value": "all",
+            "label": "Все события"
+          },
+          {
+            "value": "authentication",
+            "label": "Входы"
+          },
+          {
+            "value": "groups",
+            "label": "Группы"
+          },
+          {
+            "value": "audit",
+            "label": "Аудит"
+          },
+          {
+            "value": "tasks",
+            "label": "Службы"
+          }
+        ]
+      },
+      {
+        "key": "event_cursor",
+        "label": "Страница событий",
         "kind": "text",
-        "hidden": true,
         "field_categories": [],
-        "max_length": 256
+        "max_length": 2048,
+        "hidden": true
       },
       {
-        "key": "evidence_index",
-        "label": "Evidence",
+        "key": "event_limit",
+        "label": "Строк событий",
         "kind": "int",
-        "hidden": true,
         "field_categories": [],
-        "max_length": 256
+        "max_length": 256,
+        "default": 50,
+        "hidden": true
       }
     ],
     "columns": [
       {
-        "key": "station_id",
-        "label": "workstations.overview.station",
+        "key": "display_name",
+        "label": "Станция",
         "kind": "text",
-        "path": "station_id",
+        "path": "display_name",
+        "field_categories": []
+      },
+      {
+        "key": "domain_name",
+        "label": "Домен",
+        "kind": "text",
+        "path": "domain_name",
+        "field_categories": []
+      },
+      {
+        "key": "operating_system",
+        "label": "ОС",
+        "kind": "text",
+        "path": "operating_system",
+        "field_categories": []
+      },
+      {
+        "key": "last_seen",
+        "label": "Последний контакт агента",
+        "kind": "datetime",
+        "path": "last_seen",
+        "field_categories": []
+      },
+      {
+        "key": "collection_state",
+        "label": "Сбор",
+        "kind": "text",
+        "path": "collection_state",
+        "field_categories": []
+      },
+      {
+        "key": "applied_policy_revision",
+        "label": "Применённая политика",
+        "kind": "number",
+        "path": "applied_policy_revision",
         "field_categories": []
       }
     ],
     "views": [
       {
         "kind": "table",
-        "key": "checks",
-        "source": "checks",
-        "columns": [],
-        "access_rule": null
-      },
-      {
-        "kind": "table",
         "key": "stations",
         "source": "items",
-        "columns": [],
-        "access_rule": null
-      },
-      {
-        "kind": "table",
-        "key": "findings",
-        "source": "findings",
         "columns": [],
         "access_rule": null
       },
@@ -13212,13 +13264,13 @@
       "columns": [],
       "row_links": [],
       "access_rule": null,
-      "default_limit": 50,
+      "default_limit": 200,
       "query_available": true
     },
     "export": false,
     "limits": {
       "default": 50,
-      "max": 50
+      "max": 200
     },
     "access_rule": {
       "report_key": "workstations.overview",
@@ -13254,15 +13306,15 @@
       "contract_id": "sli.report-intent.v1",
       "version": 1,
       "user_role": "Workstation security reviewer",
-      "question": "Which authorized workstations have observed findings, and what evidence should be reviewed?",
-      "action": "Open the scoped station and inspect its observed findings and source evidence.",
-      "scope": "Current projected inventory within the atomic overview grant and current workstation read scope.",
-      "exclusions": "No inferred work duration, file copying or security compliance; missing identity binding is unavailable.",
+      "question": "Which authorized workstation agents are registered and what admitted events were observed for a station in the selected period?",
+      "action": "Open a station, review its canonical journal and permitted published finding links, and return to the same fleet page.",
+      "scope": "Current agent registration and authoritative workstation journal binding, bounded by the atomic overview grant and workstation read capability.",
+      "exclusions": "No online state, current Defender or process state, USB activity, copying, work-duration or compliance conclusions are inferred.",
       "sources": [
-        "Canonical: workstation inventory, summary and active finding projections.",
-        "Supplemental: exact retained PostgreSQL observations and protection snapshots referenced by findings."
+        "Canonical: current agent registry, authoritative workstation journal binding and server metadata.",
+        "Events: the shared canonical journal reader, including native retained daily groups and permitted published finding links."
       ],
-      "freshness_expectation": "Projection and source timestamps describe observed freshness; evaluator completeness is unproven.",
+      "freshness_expectation": "Agent last_seen and server metadata timestamps are observations. They do not establish online availability or collection completeness.",
       "rights": "workstations.overview atomic field grant and workstation read capability, including scoped denies.",
       "field_classes": [
         "identity_basic",
@@ -13270,23 +13322,23 @@
         "security",
         "technical"
       ],
-      "coverage": "Authorized projected station identities; distinct observed findings do not establish evaluated coverage.",
-      "completeness": "Not proven: missing or zero observed findings never establish a passed check.",
-      "denominator": "Distinct authorized projected stations after search, domain and OU filters.",
-      "retention": "This view reads retained PostgreSQL evidence only; missing evidence is unavailable, with no history substitution.",
-      "provenance": "Station and finding IDs, rule revision and exact server-owned source references and hashes.",
+      "coverage": "Current authorized workstation registrations; event access is evaluated independently using events.explorer grants.",
+      "completeness": "Registry rows are counted exactly after workstation scope and filters. Journal groups and unknown values retain their existing semantics.",
+      "denominator": "Distinct authorized current logical workstation agents after search, domain, source and collection filters.",
+      "retention": "The shared journal reads canonical hot events and retained facts/daily groups. Frozen workstation history adapters are not used.",
+      "provenance": "Stable logical agent and source IDs, authoritative server binding, and existing canonical journal identities.",
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
-      "deterministic_policy": "Read projected station identities and active findings; missing evaluations remain unknown.",
-      "result_limits": "50 stations per page, 100 findings per card and 100 source references per finding; five-second reads.",
-      "fallback": "Source read errors fail visibly; missing exact retained evidence is not collected. No decisions or source collection.",
+      "deterministic_policy": "Read current registered identities; use independent event grants and published finding admission without inventing health or severity.",
+      "result_limits": "25/50/100/200-row UI pages; maximum 200 rows per request for stations and events. Station queries have a five-second database deadline.",
+      "fallback": "Missing bindings or event grants are explicit local states. A source error never becomes an empty successful fleet.",
       "acceptance_lanes": {
-        "product_user": "Open an authorized projected station, its observed findings and retained source, then return to the list.",
-        "authorization": "Atomic overview grant and current scoped read admission precede counts, pages, cards and evidence.",
-        "deterministic_interpretation": "Distinct observed findings are lower bounds; missing evaluations remain unknown.",
-        "api_view_model": "Registered report data/detail routes use bounded keyset pages and exact source references.",
-        "ui_honest_states": "Denied, partial, unknown and unavailable source states never become safe zero.",
-        "evidence_audit": "Exact PostgreSQL source hashes are checked; no mutation or audit guarantee is asserted."
+        "product_user": "Open a current station, inspect admitted events and collection facts, and return to the exact fleet context.",
+        "authorization": "Atomic workstation grants and scoped capability denies precede registry counts and pages; events and evidence keep their own grants.",
+        "deterministic_interpretation": "Native logon groups keep their count and observed interval. Missing health and protection data remain unknown.",
+        "api_view_model": "Native overview data/detail routes use bounded pages and source-bound journal queries.",
+        "ui_honest_states": "Agent contact is an observed timestamp; no online badge, invented zero or generic incomplete-data banner.",
+        "evidence_audit": "Existing exact-event authorization and published finding linkage are reused; no legacy XML or history adapter is exposed."
       },
       "qualification": {
         "status": "not_applicable",

@@ -2,7 +2,7 @@
   "contract_id": "sli.navigation.v3",
   "beta_entries": [
     "workspace", "problems", "security-events", "events",
-    "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "vpn-connections",
+    "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "workstations-overview", "vpn-connections",
     "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale",
     "plugins", "admin-plugin-file-audit", "admin-plugin-remote-access"
   ],
@@ -16,6 +16,7 @@
     { "from": "/objects", "to": "/search" },
     { "from": "/entities", "to": "/search" },
     { "from": "/report/ad.computer-logons", "to": "/report/ad.computers.v6", "view": "logons" },
+    { "from": "/workstations", "to": "/report/workstations.overview", "view": "overview" },
     { "from": "/vpn-report", "to": "/report/vpn.connections", "view": "connections" },
     { "from": "/vpn-connections", "to": "/report/vpn.connections", "view": "connections" }
   ],
@@ -252,10 +253,13 @@
             {
               "id": "workstations-overview",
               "label": "workstations.overview.nav_title",
-              "path": "/workstations",
+              "path": "/report/workstations.overview",
               "icon": "report",
               "plugin_id": "sli.workstations",
-              "reports": ["workstations.overview"]
+              "reports": ["workstations.overview"],
+              "views": [
+                { "id": "overview", "label": "workstations.overview.nav_title", "path": "/report/workstations.overview", "report_key": "workstations.overview", "reports": ["workstations.overview"] }
+              ]
             },
             {
               "id": "workstations-logons",

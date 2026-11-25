@@ -87,7 +87,7 @@ internal static class ReportFixture
         public HttpClient Client => client; public Reader Reader => reader; public FactsRepo Facts => facts; public Auth Auth => auth;
         public async ValueTask DisposeAsync() { client.Dispose(); await host.StopAsync(); host.Dispose(); }
     }
-    internal static async Task<Host> Start(AccessFacts? facts = null, ReportDefinition? definition = null, IReportCatalogProvider? catalog = null, bool withReader = true, Reader? suppliedReader = null, Metadata? metadata = null, IReportV2Reader? nativeReader = null, ILoggerProvider? logger = null)
+    internal static async Task<Host> Start(AccessFacts? facts = null, ReportDefinition? definition = null, IReportCatalogProvider? catalog = null, bool withReader = true, Reader? suppliedReader = null, Metadata? metadata = null, IReportV2Reader? nativeReader = null, ILoggerProvider? logger = null, bool workstationRoutes = false)
     {
         var repo=new FactsRepo(facts??Facts()); var reader=suppliedReader??new Reader(); var auth=new Auth {Role=repo.Value.Role};
         var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Sli:AuthRequired","true"}}).Build();
@@ -102,7 +102,7 @@ internal static class ReportFixture
             services.AddSingleton<IReportV2Metadata>(metadata??new Metadata());
             services.AddSingleton<IReportDomains>(new Domains()); services.AddScoped<ReportV2Dispatcher>();
             if(withReader) services.AddSingleton<IReportV2Reader>(nativeReader ?? reader);
-        }).Configure(app=>{app.UseRouting();app.UseEndpoints(e=>e.MapReportV2Engine());})).StartAsync(TestContext.Current.CancellationToken);
+        }).Configure(app=>{app.UseRouting();app.UseEndpoints(e=>{e.MapReportV2Engine();if(workstationRoutes) Sli.Server.Workstations.WorkstationEndpoints.MapWorkstationReports(e);});})).StartAsync(TestContext.Current.CancellationToken);
         var client=host.GetTestClient(); client.BaseAddress=new Uri("https://localhost");
         return new(host,client,reader,repo,auth);
     }

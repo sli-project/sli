@@ -703,6 +703,15 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
                 Assert.Equal(3, await requeue.ExecuteNonQueryAsync(ct));
             }
         }
+        // The operator workspace reads the same canonical signed-packet rows
+        // while the frozen projection remains exclusively locked.
+        var workspace = await GetReportAsync(analyst,
+            $"/api/v2/reports/workstations.overview/rows/{agent:D}/detail?period=custom&from={at.AddMinutes(-1).UtcDateTime:O}&to={at.AddMinutes(1).UtcDateTime:O}", ct);
+        Assert.Equal(agent.ToString("D"), workspace["detail"]!["station"]!["station_id"]!.ToString());
+        Assert.Equal(host.ToString("D"), workspace["detail"]!["station"]!["source_instance_id"]!.ToString());
+        var stationEvents = workspace["detail"]!["events"]!["items"]!.AsArray();
+        Assert.Equal(new[] { "4624", "5001", "7045" }, stationEvents.Select(item => item!["event_id"]!.ToString()).Order().ToArray());
+        Assert.Equal(3L, stationEvents.Sum(item => item!["event_count"]!.GetValue<long>()));
         await held.RollbackAsync(ct);
 
         var final = Capture(policy, 2, 4624, "Security", "Microsoft-Windows-Security-Auditing", new(third.Generation, third.CursorAfter));

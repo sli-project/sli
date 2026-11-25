@@ -103,9 +103,11 @@ function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: ()
 
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
 export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
-  const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
-  const search = new URLSearchParams(initialSearch ?? window.location.search);
   const access = useEffectiveAccess();
+  const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey,
+    ...(reportKey === "workstations.overview" ? [access?.subject.type, access?.subject.id, access?.evaluated_at_utc] : [])],
+    queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
+  const search = new URLSearchParams(initialSearch ?? window.location.search);
   const vpn = reportKey === "vpn.connections" && definition.isSuccess ? definition.data : undefined;
   const vpnDefaults = vpn && searchFromValues(vpn, defaultValues(vpn));
   const vpnNeedsFirstDomain = vpn && access?.capabilities.includes("access.manage") && vpn.access?.allowed === true
@@ -143,7 +145,7 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     if (Number.isSafeInteger(finding) && finding > 0) return <ProblemJournal definition={definition.data} finding={finding} domain={query.get("domain") ?? ""}/>;
     return <EventJournal definition={definition.data} initialSearch={initialSearch}/>;
   }
-  if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data}/>;
+  if (reportKey === "workstations.overview") return <WorkstationsReport definition={definition.data} initialSearch={initialSearch}/>;
   if (reportKey === "security.events.chains" && definition.data.params.some(({ key }) => key === "changes_view")) {
     const search = new URLSearchParams(initialSearch ?? window.location.search);
     if (search.get("category") !== "authentication" && !["4624", "4625", "4771", "4776"].includes(search.get("event_id") ?? ""))

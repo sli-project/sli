@@ -17,6 +17,16 @@
 
 ### Added
 
+- Рабочие станции: нативный обзор зарегистрированных агентов и полноширинная
+  страница событий из действующего журнала, с фильтрами, точным источником,
+  сохранением контекста возврата и страницами по 25/50/100/200 строк. Сведения
+  о сборе отделены от событий; критичность берётся из доступных опубликованных
+  проблем. Прежние неактуализируемые проекции не выдаются за текущее состояние.
+- Workstations: native registered-agent overview and a full-width workspace
+  over the current canonical journal, with source-scoped navigation, preserved
+  filters and 25/50/100/200-row pages. Collection metadata stays separate from
+  observations, and severity comes from accessible published findings.
+
 - Файловые серверы: таблица назначенных ресурсов, сохранённые наблюдения 4670,
   полноэкранный просмотр SMB/NTFS ACL и сравнение совместимых снимков. Фильтры,
   период и контекст возврата сохраняются; доступны страницы по 25/50/100/200 строк.

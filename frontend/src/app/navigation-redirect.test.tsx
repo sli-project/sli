@@ -14,6 +14,7 @@ describe("registry compatibility redirects", () => {
     ["/report/notifications.deliveries", "/notifications", "journal"],
     ["/entities", "/search", undefined],
     ["/report/ad.computer-logons", "/report/ad.computers.v6", "logons"],
+    ["/workstations", "/report/workstations.overview", "overview"],
     ["/vpn-connections", "/report/vpn.connections", "connections"],
   ])("redirects %s with its filters and fragment", async (from, to, view) => {
     const root = createRootRoute();
@@ -21,7 +22,7 @@ describe("registry compatibility redirects", () => {
       beforeLoad: ({ location }) => navigationBeforeLoad(location) });
     const router = createRouter({ routeTree: root.addChildren([
       route("/access-center"), route("/access"), route("/objects"), route("/entities"), route("/search"), route("/report/$reportKey"),
-      route("/vpn-report"), route("/vpn-connections"), route("/notifications"),
+      route("/vpn-report"), route("/vpn-connections"), route("/notifications"), route("/workstations"),
     ]), basepath: "/app", history: createMemoryHistory({
       initialEntries: [`/app${from}?domain=7&q=synthetic&tab=details&return_to=%2Fapp%2F#evidence`],
     }) });
@@ -41,11 +42,11 @@ describe("registry compatibility redirects", () => {
   it.each([
     "/report/vpn.audit", "/report/vpn.accounts", "/report/vpn.synthetic",
     "/report/security.rule-quality", "/investigations", "/investigations/42", "/cases",
-    "/report/ad.new-logon-pairs", "/workstations", "/report/workstations.logons", "/report/workstations.processes",
+    "/report/ad.new-logon-pairs", "/report/workstations.logons", "/report/workstations.processes",
     "/report/workstations.usb", "/report/workstations.protection", "/report/sigma.rules",
     "/report-studio", "/report-editor", "/report-management", "/report-builder", "/admin/update", "/admin/activity",
     "/cases/42", "/report-management/42", "/report-editor/42", "/report-builder/42", "/report-builder/",
-    "/admin/plugins/sli.workstations", "/admin/plugins/sli.sigma",
+    "/admin/plugins/sli.sigma",
     "/extensions/sli.sigma/rules", "/reports/vpn.audit",
   ])("replaces a direct visit to hidden %s with home before loading the page", async (from) => {
     const root = createRootRoute({ beforeLoad: ({ location }) => navigationBeforeLoad(location) });
@@ -67,6 +68,7 @@ describe("registry compatibility redirects", () => {
   });
 
   it.each(["/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access",
+    "/admin/plugins/sli.workstations", "/report/workstations.overview",
     "/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/report/vpn.connections",
   ])("opens plugin screens and reports directly at %s", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();

@@ -6,7 +6,12 @@ using static Sli.Server.Reporting.ReportJson;
 
 namespace Sli.Server.Reporting;
 
-internal sealed record JournalOptions(bool Collapse, long? Expand, long? Before, string View, string Result, string Pivot, long? Domain, long? Member = null);
+internal sealed record JournalOptions(bool Collapse, long? Expand, long? Before, string View, string Result, string Pivot, long? Domain, long? Member = null)
+{
+    internal long? ServerId { get; init; }
+    internal string? SourceInstanceId { get; init; }
+    internal string? SourcePlugin { get; init; }
+}
 
 internal static class JournalPage
 {
@@ -41,6 +46,19 @@ internal static class JournalPage
             !(identity && security && technical) && (options.Expand.HasValue || options.Before.HasValue))
             sql.Predicates.Add("false");
         if (options.Domain is { } domain) sql.Add("event.domain_id=", domain);
+        if (options.ServerId is { } station) sql.Add("event.server_id=", station);
+        if (options.SourceInstanceId is { } sourceInstance)
+        {
+            // A filter only narrows the already authorized grant. Keep it
+            // before groups, totals and cursors, including retained daily rows.
+            if (!technical) sql.Predicates.Add("false");
+            sql.Predicates.Add("event.method#>>'{$origin,source_instance_id}'=" + sql.Parameter(sourceInstance));
+        }
+        if (options.SourcePlugin is { } sourcePlugin)
+        {
+            if (!technical) sql.Predicates.Add("false");
+            sql.Predicates.Add("event.method#>>'{$origin,plugin_id}'=" + sql.Parameter(sourcePlugin));
+        }
         if (search.Length > 0)
         {
             string term = "lower(" + sql.Parameter(search) + ")";

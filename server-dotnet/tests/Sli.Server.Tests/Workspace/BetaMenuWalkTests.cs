@@ -15,6 +15,7 @@ using Sli.Server.Tests.Notifications;
 using Sli.Server.Tests.Reporting;
 using Sli.Server.Tests.Storage;
 using Sli.Server.Tests.Vpn;
+using Sli.Server.Tests.Workstations;
 using Xunit;
 
 namespace Sli.Server.Tests.Workspace;
@@ -37,6 +38,7 @@ public sealed class BetaMenuWalkTests
         await fixture.StartAsync(ct);
         var directory = await NewLogonPairsNativeFixture.SeedAsync(fixture.Pg, DateTimeOffset.UtcNow, 3, ct);
         JsonObject fileServers;
+        JsonObject workstations;
         await using (var db = await fixture.Pg.OpenAsync(ct))
         {
             var events = await ShortEventAdmissionPostgresTests.SeedAsync(db, ct);
@@ -48,6 +50,7 @@ public sealed class BetaMenuWalkTests
                 from generate_series(0,2) n
                 """, ct);
             fileServers = await FileServersReportFixture.SeedAsync(db, ct);
+            workstations = await NativeWorkstationsReportFixture.SeedAsync(db, ct);
         }
         string token = await fixture.SeedOwnerAsync(ct);
         using var accounting = await VpnAccountingPostgresFixture.RegisterAsync(fixture, ct);
@@ -121,7 +124,8 @@ public sealed class BetaMenuWalkTests
         {
             await browser.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new
             {
-                url = client.BaseAddress.AbsoluteUri, token, results, file_servers = fileServers
+                url = client.BaseAddress.AbsoluteUri, token, results, file_servers = fileServers,
+                workstations
             }));
             browser.StandardInput.Close();
             await browser.WaitForExitAsync(ct);

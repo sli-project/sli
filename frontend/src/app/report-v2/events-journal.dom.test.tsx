@@ -64,6 +64,28 @@ function journal({
   return requests;
 }
 
+it("keeps the workstation source and return context when changing journal filters", async () => {
+  const source = "41800000-0000-4000-8000-000000000001";
+  const returnTo = `/app/report/workstations.overview?station=41700000-0000-4000-8000-000000000001&source_instance_id=${source}&limit=200&period=30d`;
+  const query = new URLSearchParams({ domain: "7", source_instance_id: source, source_plugin: "sli.workstations", return_to: returnTo });
+  window.history.replaceState(null, "", `/app/report/events.journal?${query}`);
+  const requests = journal();
+  await screen.findByText("Logon succeeded");
+  expect(screen.getByRole("link", { name: t("investigations.case.return_to_source_report") }).getAttribute("href")).toBe(returnTo);
+  fireEvent.click(screen.getByRole("tab", { name: "Audit 0" }));
+  await screen.findByText(t("reports.v2.events.journal.empty"));
+  const dataRequests = requests.filter((url) => url.pathname.endsWith("/data"));
+  expect(dataRequests.length).toBeGreaterThanOrEqual(2);
+  for (const request of dataRequests) {
+    expect(request.searchParams.get("source_instance_id")).toBe(source);
+    expect(request.searchParams.get("source_plugin")).toBe("sli.workstations");
+    expect(request.searchParams.has("return_to")).toBe(false);
+  }
+  const normalized = new URLSearchParams(window.location.search);
+  expect(normalized.get("return_to")).toBe(returnTo);
+  expect(normalized.get("source_instance_id")).toBe(source);
+});
+
 it("loads the new route period within the same journal domain and search text", async () => {
   const dataRequests: URLSearchParams[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

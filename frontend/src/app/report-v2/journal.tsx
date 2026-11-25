@@ -11,6 +11,7 @@ import { dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone } from "
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
 import { preserveNavigationView } from "../navigation";
+import { safeInvestigationReturnTo } from "../investigation-context";
 import { CopyFactsButton } from "./DetailSection";
 import { withReturnTo } from "./legacy";
 import { ReportDenied } from "./ReportDenied";
@@ -251,6 +252,8 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const [values, setValues] = useState(() => journalRouteValues(definition, initialSearch ?? window.location.search));
   const [routeSearch, setRouteSearch] = useState(initialSearch);
   const [entrySearch] = useState(() => new URLSearchParams(initialSearch ?? window.location.search));
+  const returnValues = new URLSearchParams(initialSearch ?? window.location.search).getAll("return_to");
+  const returnTo = returnValues.length === 1 ? safeInvestigationReturnTo(returnValues[0], "") : "";
   const [size, setSize] = useState(50);
   const [page, setPage] = useState(0);
   const [refresh, setRefresh] = useState(0);
@@ -283,11 +286,12 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   useEffect(() => {
     const search = searchFromValues(definition, values);
     preserveNavigationView(search, window.location.search);
+    if (returnTo) search.set("return_to", returnTo);
     const query = search.toString();
     const next = query ? `?${query}` : "";
     if (next !== window.location.search)
       window.history.replaceState(window.history.state, "", `${window.location.pathname}${next}${window.location.hash}`);
-  }, [definition, values]);
+  }, [definition, values, returnTo]);
 
   const collapse = values.collapse !== "off";
   const requestedView = values.view;
@@ -396,8 +400,11 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
         refreshing: data.isFetching,
         onRefresh: valid ? () => { pickPage(0); setRefresh((value) => value + 1); } : undefined,
       }}
-      actions={definition.export && valid ? <a className="sli-ds-button" aria-label={t("reports.renderer.export_csv")}
-        title={t("reports.renderer.export_csv")} href={`/api/v2/reports/events.journal/export.csv?${fixedParams}`} download><Icon name="download"/></a> : null}
+      actions={<>
+        {returnTo ? <a className="sli-ds-button" href={returnTo}>{t("investigations.case.return_to_source_report")}</a> : null}
+        {definition.export && valid ? <a className="sli-ds-button" aria-label={t("reports.renderer.export_csv")}
+          title={t("reports.renderer.export_csv")} href={`/api/v2/reports/events.journal/export.csv?${fixedParams}`} download><Icon name="download"/></a> : null}
+      </>}
       filters={<FilterBar layout="inline" fields={filterDefinitions} primaryKeys={["q", "result"]} values={values}
         defaults={{ ...defaults, domain: values.domain, period: values.period }}
         onApply={(next) => change({ ...next, pivot: next.q === values.q ? values.pivot : undefined })}

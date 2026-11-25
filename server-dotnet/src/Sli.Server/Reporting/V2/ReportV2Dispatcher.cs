@@ -13,6 +13,8 @@ public sealed record ReportQueryContext(ReportDefinition Definition, AccessDecis
     public JsonObject? DomainSelection { get; init; }
     public JsonArray? Domains { get; init; }
     public string Language { get; init; } = "";
+    // Set only by the current workstation binding reader, never from a URL.
+    internal long? WorkstationServerId { get; init; }
     // Native readers must apply Scope.SqlFilter before aggregation and paging;
     // delegated readers receive the original atomic grants and enforce their legacy resource policy.
 }

@@ -1,96 +1,238 @@
+import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { selectedDomain } from "../../app/domain-navigation";
+import { withReturnTo } from "../../app/report-v2/legacy";
+import { periodBounds, type FilterValues, type PeriodValue } from "../../design-system";
+import { localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
+
+export const WORKSTATIONS_KEY = "workstations.overview";
+export const PAGE_SIZES = [25, 50, 100, 200];
+export const EVENT_VIEWS = ["all", "authentication", "groups", "audit", "tasks"] as const;
+export type EventView = typeof EVENT_VIEWS[number];
+export type Row = Record<string, unknown>;
+export const record = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
+export const sourceText = (value: unknown): string | null => typeof value === "string" && value.trim() && !["-", "—"].includes(value.trim()) ? value : null;
+const scalar = (value: unknown) => sourceText(value) ?? (typeof value === "number" && Number.isFinite(value) ? String(value) : null);
+const positiveId = (value: unknown) => typeof value === "number" && !Number.isSafeInteger(value) ? null
+  : /^[1-9]\d*$/.test(String(value)) ? String(value) : null;
+const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+const timestamp = (value: unknown) => typeof value === "string" && /(?:Z|[+-]\d\d:\d\d)$/i.test(value)
+  && Number.isFinite(Date.parse(value)) ? value : null;
 
 export type Station = {
-  station_id: string; agent_key: string | null; ad_computer_id: number | null;
-  station_type: string; metadata: Record<string, unknown>; observed_checks: number;
-  protection?: unknown; health?: unknown; last_interactive_login?: unknown; devices?: unknown;
+  station_id: string; agent_key: string; transport_agent_id: string | null; source_instance_id: string | null;
+  display_name: string | null; host_name: string | null; domain_id: string | null; domain_name: string | null;
+  server_id: string | null; operating_system: string | null; operating_system_version: string | null;
+  metadata_observed_at: string | null; agent_status: string | null; last_seen: string | null;
+  policy_revision: string | null; applied_policy_revision: string | null;
+  collection_state: "enabled" | "disabled" | "unbound";
+  profile: { event_ids: number[]; channels: string[]; state: "supported" | "unsupported" | "unbound" };
+  journal_available: boolean;
 };
-export type Selection = { station: string | null; finding: string | null; evidence: number | null };
 
-export function paging(rows: Array<Record<string, unknown>> | undefined) {
+export function stationRows(items: Row[]): Station[] {
+  return items.map(row => {
+    const profile = record(row.profile);
+    if (typeof row.station_id !== "string" || !row.station_id || typeof row.agent_key !== "string" || !row.agent_key
+      || !["enabled", "disabled", "unbound"].includes(String(row.collection_state))
+      || !["supported", "unsupported", "unbound"].includes(String(profile.state))) throw new Error("workstation_response_invalid");
+    return {
+      station_id: row.station_id, agent_key: row.agent_key, transport_agent_id: sourceText(row.transport_agent_id),
+      source_instance_id: sourceText(row.source_instance_id), display_name: sourceText(row.display_name), host_name: sourceText(row.host_name),
+      domain_id: positiveId(row.domain_id), domain_name: sourceText(row.domain_name), server_id: positiveId(row.server_id),
+      operating_system: sourceText(row.operating_system), operating_system_version: sourceText(row.operating_system_version),
+      metadata_observed_at: timestamp(row.metadata_observed_at), agent_status: sourceText(row.agent_status), last_seen: timestamp(row.last_seen),
+      policy_revision: scalar(row.policy_revision), applied_policy_revision: scalar(row.applied_policy_revision),
+      collection_state: row.collection_state as Station["collection_state"],
+      profile: { state: profile.state as Station["profile"]["state"],
+        event_ids: Array.isArray(profile.event_ids) ? profile.event_ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0 && id <= 65535) : [],
+        channels: Array.isArray(profile.channels) ? profile.channels.filter((item): item is string => typeof item === "string" && item.length > 0) : [] },
+      journal_available: row.journal_available === true,
+    };
+  });
+}
+
+export type StationEvent = {
+  key: string; id: string | null; code: string | null; title: string | null; first: string | null; last: string | null;
+  count: number | null; group: boolean; expandable: boolean; account: string | null; initiator: string | null;
+  computer: string | null; address: string | null; result: string | null; channel: string | null; logonType: string | null;
+  findingId: string | null; severity: string | null; evidenceAvailable: boolean;
+};
+
+/** Keep native saved groups intact; their representative ID is never an individual source event. */
+export function eventRows(items: Row[]): StationEvent[] {
+  return items.map(row => {
+    const id = positiveId(row.id);
+    const summary = sourceText(row.summary_key), day = sourceText(row.day);
+    const key = id ?? (summary && day ? `${day}:${summary}` : null);
+    if (!key) throw new Error("workstation_event_invalid");
+    const messages = record(row.presentation_messages);
+    const total = count(row.event_count);
+    const group = row.journal_expandable === true || total !== null && total > 1 || !id;
+    const findingId = positiveId(row.journal_finding_id);
+    return { key, id, code: scalar(row.event_id),
+      title: record(messages.title_text).code === "events.unknown_type" ? null : sourceText(row.title_text),
+      first: timestamp(row.first_seen_utc) ?? timestamp(row.time_created_utc),
+      last: timestamp(row.last_seen_utc) ?? timestamp(row.time_created_utc), count: total,
+      group, expandable: row.journal_expandable === true,
+      account: record(messages.participant).code === "events.participant_unknown" ? null : sourceText(row.participant),
+      initiator: sourceText(row.on_behalf), computer: sourceText(row.journal_computer), address: sourceText(row.ip_address),
+      result: sourceText(row.journal_result), channel: sourceText(row.channel), logonType: scalar(row.logon_type),
+      findingId, severity: findingId && ["critical", "high", "medium", "low"].includes(String(row.journal_severity)) ? String(row.journal_severity) : null,
+      evidenceAvailable: row.journal_evidence_available === true && !group && id !== null,
+    };
+  });
+}
+
+export type StationEvents = Pick<ReportResultDto, "state" | "items" | "has_more" | "next_cursor" | "filtered_count" | "window"> & {
+  journal_event_count?: number | null; coverage?: ReportResultDto["coverage"]; limitations?: ReportResultDto["limitations"];
+};
+export type StationDetailResult = ReportResultDto & { detail?: {
+  station: Row; events: StationEvents;
+  related: { journal: { allowed: boolean; params?: Record<string, unknown> }; problems: { allowed: boolean } };
+} };
+
+export function pageSize(value: unknown, maximum = 200): number {
+  const sizes = PAGE_SIZES.filter(size => size <= maximum);
+  const requested = Number(value) || 50;
+  return sizes.includes(requested) ? requested : sizes.filter(size => size <= requested).at(-1) ?? sizes[0] ?? 25;
+}
+
+export function paging(rows: Row[] | undefined) {
   const row = rows?.[0];
   return { start: typeof row?.start === "number" && Number.isSafeInteger(row.start) && row.start > 0 ? row.start : 1,
     hasPrevious: row?.has_previous === true,
     previousCursor: typeof row?.previous_cursor === "string" ? row.previous_cursor : null };
 }
 
-export function stationRows(items: Array<Record<string, unknown>>): Station[] {
-  return items.map((row) => {
-    if (typeof row.station_id !== "string" || !row.station_id || typeof row.metadata !== "object" || row.metadata === null) {
-      throw new Error("workstation_response_invalid");
-    }
-    return { ...row, station_id: row.station_id, metadata: row.metadata as Record<string, unknown>,
-      agent_key: typeof row.agent_key === "string" ? row.agent_key : null,
-      ad_computer_id: typeof row.ad_computer_id === "number" ? row.ad_computer_id : null,
-      station_type: typeof row.station_type === "string" ? row.station_type : "unknown",
-      observed_checks: typeof row.observed_checks === "number" ? row.observed_checks : 0 };
-  });
+export function initialSearch(input: string, now = new Date()): URLSearchParams {
+  const next = new URLSearchParams(input);
+  if (next.get("period") === "custom" || next.get("from") && next.get("to")) { next.set("period", "custom"); return next; }
+  const preset = ["24h", "7d", "30d"].includes(next.get("period") ?? "") ? next.get("period")! : "7d";
+  const bounds = periodBounds({ preset: preset as PeriodValue["preset"] }, now)!;
+  next.set("period", "custom"); next.set("from", bounds.from); next.set("to", bounds.to); next.set("ws_preset", preset);
+  return next;
 }
 
-export function countText(count: unknown, unknown: string): string {
-  if (!count || typeof count !== "object") return unknown;
-  const value = count as { value?: unknown; relation?: unknown };
-  if (typeof value.value !== "number" || value.relation === "unknown") return unknown;
-  return value.relation === "at_least" ? `≥ ${value.value}` : String(value.value);
+function exactUtc(value: string, timeZone: string): string | null {
+  const fractional = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\.(\d{1,3})$/.exec(value);
+  if (!fractional) return localDateTimeToUtc(value, timeZone);
+  const seconds = localDateTimeToUtc(fractional[1], timeZone);
+  return seconds ? new Date(Date.parse(seconds) + Number(fractional[2].padEnd(3, "0"))).toISOString() : null;
 }
 
-export function selection(search: URLSearchParams): Selection {
-  const station = search.get("station");
-  const finding = search.get("finding");
-  const raw = search.get("evidence");
-  return { station: station && station.length <= 256 ? station : null,
-    finding: finding && /^[a-f0-9]{64}$/.test(finding) ? finding : null,
-    evidence: raw !== null && /^\d{1,2}$/.test(raw) ? Number(raw) : null };
+export function exactWindow(search: URLSearchParams, timeZone: string): { from: string; to: string } | null {
+  if (!search.get("from") || !search.get("to")) return null;
+  try {
+    const from = exactUtc(search.get("from")!, timeZone), to = exactUtc(search.get("to")!, timeZone);
+    return from && to && from < to && Date.parse(to) - Date.parse(from) <= 90 * 86400_000 ? { from, to } : null;
+  } catch { return null; }
 }
 
-export function requestParams(search: URLSearchParams, timeZone: string): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const key of ["period", "from", "to", "search", "ou", "check_id", "cursor"]) {
-    const value = search.get(key);
-    if (value) params.set(key, value);
+export function filterValues(search: URLSearchParams, timeZone: string): FilterValues {
+  const local = (value: string | null) => {
+    if (!value) return undefined;
+    if (!/(?:Z|[+-]\d\d:\d\d)$/i.test(value)) return value;
+    try { return utcToLocalDateTimeInput(value, timeZone, "millisecond"); } catch { return value; }
+  };
+  const preset = ["24h", "7d", "30d"].includes(search.get("ws_preset") ?? "") ? search.get("ws_preset") as PeriodValue["preset"] : "custom";
+  return { search: search.get("search") ?? "", collection: search.get("collection") ?? "all", view: eventView(search),
+    period: { preset, from: local(search.get("from")), to: local(search.get("to")) } };
+}
+
+/** Unedited custom boundaries retain their exact instant, including the second occurrence in a DST fold. */
+export function appliedFilters(values: FilterValues, current: URLSearchParams, timeZone: string, now = new Date()) {
+  const period = values.period as PeriodValue | undefined;
+  const patch: Record<string, string | null> = {};
+  for (const key of ["search", "collection", "view"]) if (key in values) patch[key] = typeof values[key] === "string" ? values[key] : null;
+  if (!period) return patch;
+  patch.period = "custom";
+  if (period.preset !== "custom") {
+    const bounds = periodBounds(period, now);
+    patch.from = bounds?.from ?? null; patch.to = bounds?.to ?? null; patch.ws_preset = period.preset;
+    return patch;
   }
+  const displayed = filterValues(current, timeZone).period as PeriodValue;
+  for (const key of ["from", "to"] as const) {
+    if (period[key] === displayed[key]) patch[key] = current.get(key);
+    else { try { patch[key] = period[key] ? exactUtc(period[key]!, timeZone) ?? period[key]! : null; } catch { patch[key] = period[key] ?? null; } }
+  }
+  patch.ws_preset = null;
+  return patch;
+}
+
+export const eventView = (search: URLSearchParams): EventView => EVENT_VIEWS.find(view => view === search.get("view")) ?? "all";
+export const stationTab = (search: URLSearchParams) => search.get("station_tab") === "collection" ? "collection" : "events";
+
+/** Browser navigation fields never enter either native API route. The registry supplies the business allowlist. */
+export function requestParams(search: URLSearchParams, timeZone: string, definition: ReportDefinitionDto, detail = false): URLSearchParams | null {
+  const bounds = exactWindow(search, timeZone);
+  if (!bounds) return null;
+  const allowed = new Set(definition.params.map(param => param.key));
+  const params = new URLSearchParams({ period: "custom", from: bounds.from, to: bounds.to, tz: timeZone });
   const domain = selectedDomain(search.toString());
-  if (domain !== null) params.set("domain", domain);
-  if (!params.has("period")) params.set("period", "7d");
-  params.set("tz", timeZone);
-  params.set("limit", search.get("tab") === "checks" && search.has("check_id") ? "5" : "50");
+  if (domain && allowed.has("domain")) params.set("domain", domain);
+  for (const key of detail ? ["source_instance_id"] : ["search", "collection", "source_instance_id"]) {
+    const value = search.get(key);
+    if (allowed.has(key) && value) params.set(key, value);
+  }
+  params.set("limit", String(pageSize(search.get("limit"), definition.limits.max)));
+  if (detail) {
+    if (allowed.has("view")) params.set("view", eventView(search));
+    if (allowed.has("event_limit")) params.set("event_limit", String(pageSize(search.get("event_limit") ?? search.get("limit"), definition.limits.max)));
+    if (allowed.has("event_cursor") && search.get("event_cursor")) params.set("event_cursor", search.get("event_cursor")!);
+  } else if (search.get("cursor")) params.set("cursor", search.get("cursor")!);
   return params;
 }
 
+export function eventHistory(search: URLSearchParams): Array<string | null> {
+  try {
+    const values: unknown = JSON.parse(search.get("event_history") ?? "[]");
+    return Array.isArray(values) && values.length <= 200 && values.every(value => value === null || typeof value === "string" && value.length <= 4096) ? values : [];
+  } catch { return []; }
+}
+export function eventPage(search: URLSearchParams): number {
+  const page = Number(search.get("event_page"));
+  return Number.isSafeInteger(page) && page >= 0 ? page : 0;
+}
+export const resetEvents = { event_cursor: null, event_history: null, event_page: null, event: null };
+export const closeStation = { station: null, station_tab: null, station_return: null, event_limit: null, view: null, ...resetEvents };
 
-export function lastInteractiveLogin(value: unknown): { at: string; type: 2 | 10 | 11; name: string | null; sid: string | null } | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (typeof row.observed_at !== "string" || !/(Z|[+-]\d{2}:\d{2})$/.test(row.observed_at) || !Number.isFinite(Date.parse(row.observed_at))
-    || row.logon_type !== 2 && row.logon_type !== 10 && row.logon_type !== 11) return null;
-  const account = row.account && typeof row.account === "object" ? row.account as Record<string, unknown> : {};
-  const label = (value: unknown) => typeof value === "string" && value.trim() && value.length <= 256 ? value : null;
-  const name = label(account.name), domain = label(account.domain);
-  return { at: row.observed_at, type: row.logon_type, name: name && domain ? `${domain}\\${name}` : name, sid: label(account.sid) };
+export function patchedSearch(search: URLSearchParams, patch: Record<string, string | null>) {
+  const next = new URLSearchParams(search);
+  for (const [key, value] of Object.entries(patch)) value === null || value === "" ? next.delete(key) : next.set(key, value);
+  return next;
+}
+export const localHref = (search: URLSearchParams, path = window.location.pathname) => `${path}${search.size ? `?${search}` : ""}`;
+
+export function fleetReturnHref(search: URLSearchParams, path = window.location.pathname): string {
+  const value = search.get("station_return");
+  if (value?.startsWith("/app/")) {
+    try {
+      const url = new URL(value, "https://sli.example.invalid");
+      if (url.origin === "https://sli.example.invalid" && ["/app/workstations", "/app/report/workstations.overview"].includes(url.pathname)
+        && !url.searchParams.has("station")) return `${url.pathname}${url.search}`;
+    } catch { /* A direct link falls back to the current, bounded list context. */ }
+  }
+  return localHref(patchedSearch(search, closeStation), path);
 }
 
+export function journalHref(detail: Pick<NonNullable<StationDetailResult["detail"]>, "related"> | undefined, back: string, row?: StationEvent): string | null {
+  if (!detail?.related?.journal?.allowed || !detail.related.journal.params) return null;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(detail.related.journal.params)) if (typeof value === "string" || typeof value === "number") params.set(key, String(value));
+  if (row?.expandable && row.id) params.set("expand", row.id);
+  return withReturnTo(`/app/report/events.journal?${params}`, back);
+}
 
-export function processDetails(finding: Record<string, unknown>): { path: string | null; pid: string | null; signature: "not_received" | "unknown"; measurement?: { status: "signed" | "unsigned" | "unavailable"; at: string; hash: string | null } } | null {
-  const value = finding.process_details;
-  if (finding.check_id !== "C04" || !value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  const path = typeof row.path === "string" && row.path.trim() && new TextEncoder().encode(row.path).length <= 512 ? row.path : null;
-  const pid = typeof row.process_id === "string" && /^[1-9]\d{0,9}$/.test(row.process_id) && Number(row.process_id) <= 4294967295 ? row.process_id : null;
-  const raw = row.file_measurement;
-  const valueMeasurement = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-  const status = valueMeasurement.status;
-  const at = valueMeasurement.observed_at_utc;
-  const stable = hash(valueMeasurement.sha256_before) && valueMeasurement.sha256_before === valueMeasurement.sha256_after
-    && hash(valueMeasurement.identity_before) && valueMeasurement.identity_before === valueMeasurement.identity_after;
-  const valid = valueMeasurement.scope === "file_at_measurement" && typeof at === "string" && at.length <= 40
-    && /(?:Z|[+-]\d\d:\d\d)$/.test(at) && Number.isFinite(Date.parse(at))
-    && ((status === "signed" && stable && hash(valueMeasurement.signer_sha256) && ["embedded", "catalog"].includes(String(valueMeasurement.kind)))
-      || (status === "unsigned" && stable && valueMeasurement.kind === "none" && valueMeasurement.signer_sha256 === null)
-      || (status === "unavailable" && valueMeasurement.sha256_before === null && valueMeasurement.sha256_after === null
-        && valueMeasurement.identity_before === null && valueMeasurement.identity_after === null
-        && valueMeasurement.kind === null && valueMeasurement.signer_sha256 === null));
-  const measurement = valid ? { status: status as "signed" | "unsigned" | "unavailable", at: at as string,
-    hash: hash(valueMeasurement.sha256_before) ? valueMeasurement.sha256_before : null } : undefined;
-  return { path, pid, ...(measurement ? { measurement } : {}), signature: row.signature_status === "not_received" ? "not_received" : "unknown" };
+export function findingHref(row: StationEvent, station: Station, back: string): string | null {
+  if (!row.findingId) return null;
+  const params = new URLSearchParams({ id: row.findingId });
+  if (station.domain_id) params.set("domain", station.domain_id);
+  return withReturnTo(`/app/report/security.problems?${params}`, back);
+}
+export function evidenceHref(row: StationEvent, station: Station, back: string): string | null {
+  if (!row.evidenceAvailable || !row.id || row.group) return null;
+  const params = new URLSearchParams();
+  if (station.domain_id) params.set("domain", station.domain_id);
+  return withReturnTo(`/app/events/${row.id}${params.size ? `?${params}` : ""}`, back);
 }
