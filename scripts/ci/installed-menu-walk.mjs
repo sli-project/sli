@@ -14,11 +14,18 @@ if (!/^https:/.test(origin) || !token || !results || !/^[a-f0-9]{40}$/.test(comm
 const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
   group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const entries = registry.beta_entries.map(id => {
+const allBetaEntries = registry.beta_entries.map(id => {
   const entry = all.find(item => item.id === id);
   if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
   return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
 });
+const candidates = new Set(['workspace', 'security-events', 'ad-report', 'users-report', 'computers-report', 'vpn-connections', 'notifications']);
+const entries = allBetaEntries.filter(entry => candidates.has(entry.id));
+const readStatusPosts = new Set([
+  '/api/v1/notification-channels/smtp/setup/status',
+  '/api/v1/notification-channels/telegram/setup/status',
+]);
+const reasonCode = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(value) ? value : null;
 const base = new URL('/app/', origin).href;
 const targetPath = path => new URL('app' + path, origin).pathname.replace(/\/$/, '');
 const nav = '.sli-ds-shell__nav';
@@ -38,6 +45,8 @@ await context.route('**/*', route => {
   const target = new URL(request.url());
   if (['data:', 'blob:'].includes(target.protocol)) return route.continue();
   if (target.origin === origin && ['GET', 'HEAD'].includes(request.method())) return route.continue();
+  if (target.origin === origin && request.method() === 'POST' && !target.search && readStatusPosts.has(target.pathname)
+      && (request.postData() === null || /^\{\s*\}$/.test(request.postData().trim()))) return route.continue();
   if (activeRow && target.origin === origin) activeRow.blocked.push(request.method() + ' ' + target.pathname);
   return route.abort('blockedbyclient');
 });
@@ -45,6 +54,7 @@ await context.route('**/*', route => {
 const rows = [];
 const seen = new Set();
 let home = null;
+let domainList = null;
 
 async function menuLinks(page) {
   const result = await page.locator(nav + ' a[data-route]').evaluateAll(nodes => nodes.map(node => ({
@@ -60,7 +70,7 @@ try {
   console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
   for (const entry of entries) {
     const expected = targetPath(entry.path);
-    const row = { id: entry.id, path: expected, clicked: false, failure: [], labels: [], api: [], blocked: [], text: [] };
+    const row = { id: entry.id, path: expected, clicked: false, failure: [], labels: [], api: [], responses: [], blocked: [], text: [] };
     rows.push(row);
     activeRow = row;
     const page = await context.newPage();
@@ -71,6 +81,7 @@ try {
       if (!checkDestination) return;
       const path = new URL(response.url()).pathname;
       const status = response.status();
+      if (readStatusPosts.has(path)) row.responses.push({ path, status });
       if (status >= 400) {
         const line = response.request().method() + ' ' + path + ' → ' + status;
         (path.startsWith('/api/') ? row.api : row.failure).push(clean(line));
@@ -85,6 +96,14 @@ try {
           }
         };
         visit(body);
+        if (path === '/api/v1/domains') {
+          domainList = { status, items: Array.isArray(body.items) ? body.items.length : null };
+        }
+        if (/^\/api\/v2\/reports\/[a-z0-9.-]+(?:\/data)?$/.test(path)) {
+          row.responses.push({ path, status, state: reasonCode(body.state), reason: reasonCode(body.state_details?.reason ?? body.reason ?? body.error),
+            scope: reasonCode(body.domain_scope?.state), scopeCount: Array.isArray(body.domain_scope?.domain_ids) ? body.domain_scope.domain_ids.length : null,
+            defaultDomainState: reasonCode(body.default_domain_state), allowed: typeof body.access?.allowed === 'boolean' ? body.access.allowed : null });
+        }
         if (entry.id === 'workspace' && path === '/api/v1/home/summary' && status === 200) {
           home = { domains: Array.isArray(body.domains) ? body.domains.length : null,
             open: Number.isInteger(body.problems?.open_count) ? body.problems.open_count : null,
@@ -123,7 +142,7 @@ try {
         row.clicked = true;
       } else {
         row.failure.push('Пункт отсутствует в меню владельца');
-        await page.goto(new URL('app' + entry.path, origin), { waitUntil: 'domcontentloaded' });
+        await page.goto(new URL('app' + entry.path, origin).href, { waitUntil: 'domcontentloaded' });
       }
       await page.waitForURL(current => current.pathname.replace(/\/$/, '') === expected, { timeout: 8_000 })
         .catch(() => row.failure.push('Перенаправление вместо страницы: ' + new URL(page.url()).pathname));
@@ -132,6 +151,13 @@ try {
       await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       if (!await waitForVisibleLoadingToFinish(page)) row.failure.push('Загрузка не завершилась после ответов API');
+      if (entry.id === 'workspace' && !domainList) {
+        domainList = await page.evaluate(async () => {
+          const response = await fetch('/api/v1/domains', { credentials: 'same-origin' });
+          const body = await response.json();
+          return { status: response.status, items: Array.isArray(body.items) ? body.items.length : null };
+        });
+      }
       await Promise.all([...outstanding]);
       const visible = await main.innerText();
       if (!visible.trim()) row.failure.push('Пустой рабочий экран');
@@ -151,16 +177,16 @@ try {
     } finally {
       for (const key of ['failure', 'api', 'blocked', 'labels']) row[key] = [...new Set(row[key])];
       await page.close();
-      await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, menuPaths: [...seen], rows }, null, 2));
+      await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, domainList, menuPaths: [...seen], rows }, null, 2));
       console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(row));
     }
   }
 } finally { await browser.close(); }
-const expected = new Set(entries.map(entry => targetPath(entry.path)));
+const expected = new Set(allBetaEntries.map(entry => targetPath(entry.path)));
 const unexpected = [...seen].filter(path => !expected.has(path));
 console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify({
   commit, visited: rows.length, clicked: rows.filter(row => row.clicked).length,
   loadErrorScreens: rows.filter(row => row.failure.length || row.api.length).length,
   technicalLabelScreens: rows.filter(row => row.labels.length).length,
-  unexpected, home,
+  unexpected, home, domainList,
 }));

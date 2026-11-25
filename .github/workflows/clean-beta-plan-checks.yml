@@ -1,4 +1,4 @@
-name: Installed Debian beta menu walk
+name: Installed Debian beta menu follow-up
 
 on:
   push:
@@ -55,7 +55,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-beta-menu-evidence
+          name: installed-beta-menu-follow-up-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
