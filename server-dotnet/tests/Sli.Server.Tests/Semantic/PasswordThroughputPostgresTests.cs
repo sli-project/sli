@@ -154,18 +154,12 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                     $history_rows$        p1_rows:=p1_rows+1;
                     p1_refs:=p1_refs+coalesce(jsonb_array_length(d->'evidence_refs'),0);
                     return query select encode(sha256$history_rows$);
-                modified:=replace(modified,E'    end loop;\nend $function(DateTimeOffset at) : TimeProvider
-    {
-        internal DateTimeOffset At { get; set; } = at;
-        public override DateTimeOffset GetUtcNow() => At;
-    }
-}
-,
+                modified:=replace(modified,E'    end loop;\nend ',
                     $history_end$    end loop;
                 raise log 'p1_411_phase %',jsonb_build_object(
                     'rule',execution->>'rule_id','phase','history_read','rows',p1_rows,'refs',p1_refs,
                     'elapsed_ms',round(1000*extract(epoch from clock_timestamp()-p1_started),3))::text;
-            end $function$history_end$);
+            end $history_end$);
                 if modified=body or strpos(modified,'''history_read''')=0 or strpos(modified,'p1_rows:=p1_rows+1')=0
                     or strpos(modified,'p1_started timestamptz')=0
                     then raise exception 'p1_history_measurement_shape'; end if;
