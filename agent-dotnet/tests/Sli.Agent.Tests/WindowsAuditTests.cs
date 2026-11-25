@@ -10,7 +10,7 @@ public sealed class WindowsAuditTests : IDisposable
     private readonly string _directory = Helpers.TempDirectory();
     private readonly Api _api = new();
     public void Dispose() => Directory.Delete(_directory, true);
-    private sealed class Api : IWindowsAuditApi
+    internal sealed class Api : IWindowsAuditApi
     {
         public Dictionary<string, int> Values { get; } = WindowsAuditManager.Families.Values.SelectMany(x => x).DistinctBy(x => x.Guid).ToDictionary(x => x.Guid, _ => 0);
         public int Writes { get; private set; }
