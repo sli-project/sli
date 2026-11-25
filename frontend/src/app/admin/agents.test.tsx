@@ -433,6 +433,8 @@ it("shows the allowed workstation event IDs and keeps the saved module setting v
   expect(alert.textContent).toContain(t("agents.invalidPolicy"));
   expect(alert.textContent).toContain(t("agents.allowIds") + ": 1102, 4624, 4625");
   expect(checkbox).toHaveProperty("checked", false);
+  expect(state.action).toHaveBeenCalledWith("modules", { agent_id: agent.id,
+    module_id: "sli.workstations", enabled: true, config: {}, expected_revision: agent.policy_revision });
 });
 
 it("keeps manual registration secrets out of caches and clears them when closing the panel", async () => {
