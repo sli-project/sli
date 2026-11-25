@@ -264,10 +264,21 @@ it("keeps the resource counter's exact scope and window through retained evidenc
   const scope = new URLSearchParams({ tab: "overview", period: "24h", source_kind: "server", domain: "7", fa_anchor: "2026-10-24T11:59:37.125Z",
     path: "C:\\Synthetic\\Folder\\Nested", include_nested: "true", employee: "S-1-5-21-1-42", share });
   window.history.replaceState({}, "", `/app/report/file-audit.overview?${scope}`);
+  const metadataColumns: ReportDefinitionDto["columns"] = [
+    { key: "first_seen_utc", path: "first_seen_utc", label: "First seen", kind: "datetime" },
+    { key: "last_seen_utc", path: "last_seen_utc", label: "Last seen", kind: "datetime" },
+    { key: "aggregate_boundary", path: "aggregate.boundary", label: "Boundary", kind: "text" },
+    { key: "aggregate_count_min", path: "aggregate.count_min", label: "Minimum", kind: "number" },
+    { key: "aggregate_count_max", path: "aggregate.count_max", label: "Maximum", kind: "number" },
+    { key: "correlation_state", path: "correlation_state", label: "Correlation", kind: "text" },
+    { key: "record_unit", path: "record_unit", label: "Record unit", kind: "text" },
+  ];
   const definitionFor = (key: string): ReportDefinitionDto => ({ ...declaration(key),
     params: [...declaration(key).params, { key: "record_unit", label: "Unit", kind: "choice" }],
     columns: key.endsWith("overview") ? [...declaration(key).columns,
-      { key: "permission_changes", path: "permission_changes", label: "4670", kind: "number" }] : declaration(key).columns,
+      { key: "permission_changes", path: "permission_changes", label: "4670", kind: "number" }] : [...declaration(key).columns,
+      { key: "observed_at", path: "observed_at", label: "Observed at", kind: "datetime" },
+      { key: "count", path: "count", label: "Events in retained group", kind: "number" }, ...metadataColumns],
     detail: { kind: "inline", title: "Synthetic retained evidence", key: "id", inline: "evidence", row_links: [], columns: [
       { key: "reference", path: "reference", label: "Reference", kind: "code" },
       { key: "record_id", path: "record_id", label: "Record", kind: "number" },
@@ -281,6 +292,8 @@ it("keeps the resource counter's exact scope and window through retained evidenc
       agent_id: "fixture-agent", source_instance_id: "fixture-source", collection_scope_id: "fixture-root", permission_changes: 7 }] };
     const included = params.get("record_unit") === "saved_event_group" && params.get("from")! <= boundary && boundary < params.get("to")!;
     return { ...response, items: included ? [{ id: "boundary-group", path: "Synthetic boundary group",
+      record_unit: "saved_event_group", count: 7, first_seen_utc: boundary, last_seen_utc: "2026-10-23T11:59:41.000Z",
+      correlation_state: "not_attempted",
       aggregate: { count: 7, first_seen_utc: boundary, last_seen_utc: "2026-10-23T11:59:41.000Z", boundary: "inside", unit: "saved_event_group" },
       evidence: [{ reference: "retained-group-reference", record_id: 42 }] }] : [],
       filtered_count: included ? 1 : 0, has_more: false, next_cursor: null };
@@ -298,6 +311,19 @@ it("keeps the resource counter's exact scope and window through retained evidenc
   vi.setSystemTime(new Date("2026-10-24T12:05:00.000Z"));
   first.unmount(); client.clear(); window.history.replaceState({}, "", href);
   mount(definitionFor("file-audit.permission-changes"));
+  const table = await screen.findByRole("table", { name: tabTitle("permission-changes") });
+  expect(within(table).getAllByRole("columnheader").map(header => header.textContent)).toEqual([
+    "Object", t("file-audit.workspace.interval"), t("file-audit.workspace.count"),
+  ]);
+  expect(within(table).getByRole("cell", { name: "7" })).toBeTruthy();
+  await userEvent.click(screen.getByText(t("table.columns")));
+  const columnsControl = screen.getByRole("group", { name: t("table.columns") });
+  for (const column of metadataColumns) expect((within(columnsControl).getByRole("checkbox", { name: column.label }) as HTMLInputElement).checked).toBe(false);
+  await userEvent.click(within(columnsControl).getByRole("checkbox", { name: "First seen" }));
+  expect(within(table).getByRole("columnheader", { name: "First seen" })).toBeTruthy();
+  await userEvent.click(within(columnsControl).getByRole("checkbox", { name: "Record unit" }));
+  expect(within(table).getByRole("cell", { name: t("file-audit.workspace.saved_4670_groups") })).toBeTruthy();
+  expect(within(table).queryByText("saved_event_group")).toBeNull();
   await userEvent.click(await screen.findByText("Synthetic boundary group"));
   const details = screen.getByRole("region", { name: t("file-audit.workspace.evidence") });
   expect(within(details).getByText("retained-group-reference")).toBeTruthy();

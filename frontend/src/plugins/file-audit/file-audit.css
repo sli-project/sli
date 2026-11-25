@@ -11,6 +11,8 @@
 .sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field label { white-space: normal; }
 .sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field input:not([type="checkbox"]), .sli-file-audit .sli-ds-report > .sli-ds-filters .sli-ds-field select { width: 100%; min-width: 0; }
 .sli-file-audit .sli-ds-report > .sli-ds-filters > .sli-ds-filters__actions { margin-left: 0; justify-self: start; }
+.sli-file-audit .sli-ds-period__custom { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.sli-file-audit .sli-ds-period__custom .sli-ds-field__error { grid-column: 1 / -1; }
 .sli-file-audit .sli-ds-table { font-size: var(--sli-text-md); }
 .sli-file-audit .sli-ds-table__scroll { max-height: calc(100dvh - 23rem); min-height: 8rem; }
 .sli-file-audit .sli-ds-table td { padding-block: 5px; }

@@ -52,9 +52,10 @@ function assertWindow(params, fixture, scoped = true) {
   }
 }
 
-function assertResourceReturn(actual, original) {
-  const current = new URL(actual), expected = new URL(original);
-  assert.equal(current.pathname, expected.pathname, 'Return must restore the resource list');
+async function assertResourceReturn(page, original) {
+  const expected = new URL(original);
+  await expect(page).toHaveURL(current => current.pathname === expected.pathname);
+  const current = new URL(page.url());
   const context = params => [...params].filter(([key]) => key !== 'selected_row').sort(([left], [right]) => left.localeCompare(right));
   assert.deepEqual(context(current.searchParams), context(expected.searchParams), 'Return must retain filters, period and page size');
 }
@@ -137,9 +138,12 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(Date.parse(groups[0].aggregate.first_seen_utc), Date.parse(fixture.first_seen_utc));
   assert.equal(Date.parse(groups[0].aggregate.last_seen_utc), Date.parse(fixture.last_seen_utc));
   const actions = page.getByRole('table', { name: 'Изменения прав и шар', exact: true });
-  await expect(actions.locator('tbody > tr[data-clickable]')).toHaveCount(1);
-  await expect(actions.getByRole('cell', { name: '7', exact: true })).toBeVisible();
-  await actions.locator('tbody > tr[data-clickable]').click();
+  const actionRow = actions.locator('tbody > tr[data-clickable]');
+  await expect(actionRow).toHaveCount(1);
+  const countColumn = await actions.getByRole('columnheader', { name: 'Наблюдений', exact: true })
+    .evaluate(header => header.cellIndex);
+  await expect(actionRow.locator(':scope > td').nth(countColumn)).toHaveText('7');
+  await actionRow.click();
   await expect(page.getByText('Сохранённая группа наблюдений одного пути, субъекта, области и минуты.', { exact: true })).toBeVisible();
   await expect(page.locator('button, a').filter({ hasText: /7 исходных|семь исходных/i })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Сохранённая запись', exact: true })).toBeVisible();
@@ -149,7 +153,7 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   await expect(actions.locator('tbody > tr[data-clickable]')).toHaveCount(1);
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);
-  assertResourceReturn(page.url(), resourceUrl);
+  await assertResourceReturn(page, resourceUrl);
   const resourceButton = rootRow().getByRole('button', { name: fixture.share_name, exact: true });
   await expect(resourceButton).toBeVisible();
   const detailPath = `/api/v2/reports/file-audit.permissions/rows/${fixture.snapshot_id}/detail`;
@@ -201,6 +205,6 @@ async function verifyFileServers(page, { url, directory, fixture }) {
 
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);
-  assertResourceReturn(page.url(), resourceUrl);
+  await assertResourceReturn(page, resourceUrl);
   await expect(page.getByRole('combobox', { name: 'Строк на странице', exact: true })).toHaveValue('200');
 }

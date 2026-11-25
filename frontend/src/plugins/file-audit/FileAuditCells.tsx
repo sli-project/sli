@@ -49,6 +49,19 @@ export function fileAuditColumns(columns: ReportColumnDto[], timeZone: string, t
     !["client_ip", "process", "process_name"].includes(column.key) || rows.some(row => row[column.key] != null));
   const result = declared.map((column): TableColumn<FileAuditRow> => {
     const definition = columns.find(item => item.key === column.key)!;
+    if (["first_seen_utc", "last_seen_utc", "aggregate_boundary", "aggregate_count_min", "aggregate_count_max", "correlation_state"].includes(column.key)) {
+      return { ...column, hiddenByDefault: true, sortable: false };
+    }
+    if (column.key === "record_unit") return { ...column, sortable: false,
+      hiddenByDefault: new Set(rows.map(row => readPath(row, definition.path)).filter(value => value != null)).size <= 1,
+      value: row => {
+        const unit = readPath(row, definition.path);
+        return unit === "saved_event_group" ? t("file-audit.workspace.saved_4670_groups")
+          : unit === "normalized_action" ? t("file-audit.workspace.normalized_actions")
+          : unit === "observed_object" ? t("file-audit.workspace.retained_objects") : columnValue(definition, row);
+      } };
+    if (column.key === "count") return { ...column, label: t("file-audit.workspace.count"), sortable: false,
+      render: row => <FileAuditCount row={row}/> };
     if (["share_mask", "smb_mask", "ntfs_mask"].includes(column.key)) return { ...column,
       value: row => fileMaskLabel(readPath(row, definition.path), fileMaskLabels()) ?? columnValue(definition, row) };
     if (["completeness", "audit_state", "delivery_state"].includes(column.key)) return { ...column,
