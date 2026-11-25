@@ -1,0 +1,37 @@
+name: Request File Audit Debian acceptance kit
+on:
+  push:
+    branches: ['codex/file-audit-debian-kit-23e9547d']
+    paths: ['.github/workflows/file-audit-debian-kit-request.yml']
+permissions: {}
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KIT_COMMIT: 23e9547d1b8231e297b901335c22e7a828a4b946
+    steps:
+      - name: Request the standard main build with artifact upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = sli-project/sli
+          workflow="repos/$GITHUB_REPOSITORY/actions/workflows/beta-kit.yml"
+          artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=sli-debian-beta-kit-$KIT_COMMIT" \
+            --jq '.artifacts[] | select(.expired == false) | .id')
+          if [[ -n "$artifacts" ]]; then
+            printf 'Existing kit artifact: %s\n' "$artifacts"
+            exit 0
+          fi
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          existing=$(gh api "$workflow/runs?head_sha=$KIT_COMMIT&event=workflow_dispatch" \
+            --jq '.workflow_runs[] | select(.conclusion == "success" or .status != "completed") | .id')
+          if [[ -n "$existing" ]]; then
+            printf 'Existing standard build: %s\n' "$existing"
+            exit 0
+          fi
+          jq -n --arg commit "$KIT_COMMIT" \
+            '{ref:"main", inputs:{commit:$commit, upload_artifact:true, release:false}}' |
+            gh api --method POST "$workflow/dispatches" --input -
