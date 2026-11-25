@@ -97,9 +97,10 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
 
         // TestServer supplies the transport peer. The route still validates the
         // certificate chain, registry binding, pack signature and receipt.
-        HttpClient Client(X509Certificate2? certificate = null) => new(app.Server.CreateHandler(context => {
+        HttpClient Client(X509Certificate2? certificate = null, IPAddress? address = null) => new(app.Server.CreateHandler(context => {
             context.Features.Get<IHttpRequestFeature>()!.RawTarget = context.Request.Path + context.Request.QueryString;
             context.Connection.ClientCertificate = certificate;
+            if (address is not null) context.Connection.RemoteIpAddress = address;
         })) { BaseAddress = new Uri("https://localhost") };
         using var client = Client();
         using var agentClient = Client(peer);
@@ -198,7 +199,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         if (workstationLoad)
         {
             await ExerciseWorkstationLoadAsync(fixture, owner, connections, consumer, certificates.Ca,
-                certificate => Client(certificate), Guid.Parse(packet.Envelope.PacketId), now, output, ct);
+                (certificate, address) => Client(certificate, address), Guid.Parse(packet.Envelope.PacketId), now, output, ct);
             Assert.True(JsonNode.DeepEquals(publishedBefore, await SnapshotPublishedDcAsync(owner, hostId, ct)));
             return;
         }
@@ -219,7 +220,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
 
     private static async Task ExerciseWorkstationLoadAsync(SqlPostgresFixture fixture, NpgsqlConnection owner,
         IPostgresConnectionFactory connections, AgentWorkstationInboxConsumer consumer,
-        Sli.Server.Agents.Certificates.AgentIssuingCa ca, Func<X509Certificate2, HttpClient> client,
+        Sli.Server.Agents.Certificates.AgentIssuingCa ca, Func<X509Certificate2, IPAddress, HttpClient> client,
         Guid dcPacketId, DateTimeOffset now, ITestOutputHelper output, CancellationToken ct)
     {
         const int stationCount = 200;
@@ -264,7 +265,10 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
             string name = $"ws-load-{i + 1:D3}.example.test";
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             using var peer = ca.Issue(new CertificateRequest("CN=" + name, key, HashAlgorithmName.SHA256), agent, host);
-            using var station = client(peer);
+            // TestServer has no socket peer by default. Model each station's source
+            // address so the production per-IP admission limit stays in effect.
+            var address = new IPAddress(new byte[] { 192, 0, 2, (byte)(i + 1) });
+            using var station = client(peer, address);
             await using (var seed = new NpgsqlCommand("""
                 insert into servers(domain_id,hostname,fqdn,role)
                     select id,@name,@name,'workstation' from domains where fqdn='example.test';
