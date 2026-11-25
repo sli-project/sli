@@ -619,6 +619,8 @@
     "config/postgres_migrations/415_password_portion_canonical.sql": "cba1cc479b34fba8be9d31d718c8953d2bb8da7e3e94e9f6eec1b5c907c99b73",
     "config/postgres_migrations/416_file_servers_report_projection.rollback.sql": "372357d3382d425697fde639a8bab6228acb56086a56fe9857013cd258cf9f08",
     "config/postgres_migrations/416_file_servers_report_projection.sql": "f5ec91697b991124c6cce94cf73cf8d1d78e19d25e5b9244af32406306fef8d5",
+    "config/postgres_migrations/417_password_frozen_frontier_progress.rollback.sql": "ac6ada463d3232b308ec194193025dd13c3b29d19261dd3d168999a8b60f7b62",
+    "config/postgres_migrations/417_password_frozen_frontier_progress.sql": "e597c140155df34fa321a24afb5c3341a641d5335dbb91ad716014ac6d1759aa",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
