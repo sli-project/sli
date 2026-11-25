@@ -193,12 +193,17 @@ jobs:
 
           # The container shares the runner's kernel. Drop module loading for
           # systemd itself so its module loader skips by its capability condition.
+          # Share only the container's /run tmpfs so systemd's credential mounts
+          # propagate from its helper namespace to service namespaces.
           docker run --detach --name sli-install-e2e --hostname sli-e2e \
             --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock --shm-size=1g \
             --mount "type=bind,source=$RUNNER_TEMP/sli-disk/database,target=/var/lib/sli-db" \
             --mount "type=bind,source=$RUNNER_TEMP/sli-kits,target=/kits,readonly" \
             --mount "type=bind,source=$GITHUB_WORKSPACE/scripts/ci/install_e2e.sh,target=/install-e2e.sh,readonly" \
-            sli-install-e2e /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init
+            sli-install-e2e /bin/sh -ec '
+              mount --make-shared /run
+              exec /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init
+            '
           until docker exec sli-install-e2e systemctl show --property=Version --value; do
             [[ $(docker inspect --format '{{.State.Running}}' sli-install-e2e) == true ]]
             sleep 1

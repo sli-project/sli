@@ -1,4 +1,4 @@
-name: Isolate Debian systemd credential delivery
+name: Validate the fixed install fixture on archived kits
 
 on:
   push:
@@ -6,105 +6,87 @@ on:
     paths: [.github/workflows/inspect-install-e2e-6.yml]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  credentials:
+  install:
     if: github.repository == 'sli-project/sli'
+    name: Archived scenario ${{ matrix.scenario }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [A, B, C]
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+      BASE_COMMIT: 0f6093b3a9afcecb28fcdd47c7ed50522e50a156
+      CANDIDATE_COMMIT: 1c25b9f1661ac2412bfc584f3fcbffda1ea95229
     steps:
-      - name: Compare unit credential delivery with and without the privileged pre-start
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: matrix.scenario == 'B'
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45510515483'
+          name: sli-debian-beta-kit-${{ env.BASE_COMMIT }}
+          path: ${{ runner.temp }}/sli-kits/base
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45510515483'
+          name: sli-debian-beta-kit-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/sli-kits/candidate
+      - name: Execute the verified production unpack and boot steps
         shell: bash
         run: |
           set -euo pipefail
-          docker build -t sli-credential-fixture - <<'DOCKERFILE'
-          FROM debian:trixie@sha256:3cda3ca472ce45507a5109c6a3907093e24d9ae67d55954c9a07a45665dafba2
-          RUN apt-get update && \
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                systemd systemd-sysv dbus sudo curl ca-certificates iproute2 python3-minimal && \
-              rm -f /usr/sbin/policy-rc.d && rm -rf /var/lib/apt/lists/*
-          DOCKERFILE
-
-          docker run --detach --name sli-credential-fixture --hostname sli-e2e \
-            --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock --shm-size=1g \
-            sli-credential-fixture /bin/sh -ec 'mount --make-shared /run; exec /usr/bin/setpriv --bounding-set=-sys_module --inh-caps=-sys_module -- /sbin/init'
-          until docker exec sli-credential-fixture systemctl show --property=Version --value; do
-            [[ $(docker inspect --format '{{.State.Running}}' sli-credential-fixture) == true ]]
-            sleep 1
-          done
-          docker exec sli-credential-fixture systemctl is-system-running --wait
-          docker exec sli-credential-fixture awk '$5 == "/run" && $7 ~ /^shared:/ { print "container_run_propagation=shared"; ok=1 } END { exit !ok }' /proc/1/mountinfo
-
-          docker exec -i sli-credential-fixture bash -s <<'FIXTURE'
-          set -euo pipefail
-          groupadd --system postgres
-          useradd --system --gid postgres --no-create-home --shell /usr/sbin/nologin postgres
-          install -d -m 0750 /etc/sli/secrets
-          for name in postgres_password migration_password runtime_password; do
-            install -m 0640 /dev/null "/etc/sli/secrets/$name"
-            printf 'synthetic\n' > "/etc/sli/secrets/$name"
-          done
-          install -d -m 0755 /usr/local/libexec
-          cat > /usr/local/libexec/sli-credential-check.py <<'PY'
-          import errno
+          python3 - <<'PY'
           import os
-          import sys
           from pathlib import Path
+          from textwrap import dedent
 
-          directory = Path(os.environ.get('CREDENTIALS_DIRECTORY', '/'))
-          print(f'credential_env_expected={directory == Path("/run/credentials", sys.argv[1])}')
-          print(f'credential_directory_present={directory.is_dir()}')
-          status = 0
-          for name in ('postgres_password', 'migration_password', 'runtime_password'):
-              try:
-                  fd = os.open(directory / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-              except OSError as error:
-                  print(f'{name}: {errno.errorcode.get(error.errno, "unknown")}')
-                  status = 1
-              else:
-                  metadata = os.fstat(fd)
-                  mode = metadata.st_mode & 0o777
-                  private = metadata.st_uid == os.geteuid() and mode in (0o400, 0o600)
-                  delivered = metadata.st_uid == 0 and metadata.st_gid == 0 and mode == 0o440 and os.statvfs(directory).f_flag & os.ST_RDONLY
-                  os.close(fd)
-                  if private or delivered:
-                      print(f'{name}: open-ok')
-                  else:
-                      print(f'{name}: invalid-delivery-mode')
-                      status = 1
-          sys.exit(status)
+          source = Path('.github/workflows/install-e2e.yml').read_text().splitlines()
+          target = Path(os.environ['RUNNER_TEMP'])
+          for label, filename in (
+              ('Verify and unpack the kits', 'unpack-validated.sh'),
+              ('Boot clean Debian 13 with systemd', 'boot-validated.sh'),
+          ):
+              step = source.index(f'      - name: {label}')
+              body = source.index('        run: |', step) + 1
+              end = next(i for i in range(body, len(source)) if source[i].startswith('      - name: '))
+              (target / filename).write_text(dedent('\n'.join(source[body:end])) + '\n')
           PY
-          for variant in with-pre without-pre; do
-            unit="sli-credential-$variant.service"
-            {
-              printf '%s\n' '[Service]' 'Type=oneshot' 'User=postgres' 'Group=postgres'
-              if [[ $variant == with-pre ]]; then
-                printf '%s\n' 'ExecStartPre=+/usr/bin/true'
-              fi
-              for name in postgres_password migration_password runtime_password; do
-                printf 'LoadCredential=%s:/etc/sli/secrets/%s\n' "$name" "$name"
-              done
-              printf 'ExecStart=/usr/bin/python3 -B /usr/local/libexec/sli-credential-check.py %s\n' "$unit"
-              printf '%s\n' 'NoNewPrivileges=yes' 'PrivateTmp=yes' 'InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock'
-            } > "/run/systemd/system/$unit"
-          done
-          systemctl daemon-reload
-          for variant in with-pre without-pre; do
-            unit="sli-credential-$variant.service"
-            code=0
-            systemctl start "$unit" >/dev/null 2>&1 || code=$?
-            printf '%s: start_exit=%s\n' "$unit" "$code"
-            systemctl show "$unit" --property=Result,ExecMainStatus
-            journalctl -u "$unit" -o cat --no-pager |
-              grep -E '^(credential_env_expected|credential_directory_present)=(True|False)$|^(postgres_password|migration_password|runtime_password): (open-ok|invalid-delivery-mode|[A-Z0-9_]+)$' || true
-            test "$code" -eq 0
-          done
-          FIXTURE
-      - name: Remove the synthetic container
+          bash "$RUNNER_TEMP/unpack-validated.sh"
+          bash "$RUNNER_TEMP/boot-validated.sh"
+          docker exec sli-install-e2e findmnt -n -o TARGET,PROPAGATION /run
+      - name: Run the original scenario and retain only safe markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=0
+          log="$RUNNER_TEMP/scenario-private.log"
+          docker exec sli-install-e2e bash /install-e2e.sh "$SCENARIO" >"$log" 2>&1 || code=$?
+          printf 'Scenario %s exit=%s\n' "$SCENARIO" "$code"
+          grep -E '^(SLI ready on beta1-[a-f0-9]+ [a-zA-Z0-9.+~:-]+|PostgreSQL migration [0-9]+ applied|Purge and reinstall created a new PostgreSQL cluster)$' "$log" || true
+          if [[ $code -ne 0 ]]; then
+            docker exec sli-install-e2e systemctl show sli-postgresql.service sli-bootstrap-pg.service sli-ready.service \
+              --property=Id,LoadState,ActiveState,Result,ExecMainStatus --no-pager || true
+            docker exec sli-install-e2e journalctl -b -t sli-setup -o cat --no-pager |
+              grep -oE '\bnative_[a-z0-9_]+\b' | sort -u || true
+            grep -E '^SLI could not finish its first start\.' "$log" || true
+          fi
+          exit "$code"
+      - name: Remove the discarded machine and volume
         if: always()
         shell: bash
         run: |
-          if docker inspect sli-credential-fixture >/dev/null 2>&1; then
-            docker rm --force sli-credential-fixture
+          if docker inspect sli-install-e2e >/dev/null 2>&1; then
+            docker rm --force sli-install-e2e
+          fi
+          if mountpoint -q "$RUNNER_TEMP/sli-disk"; then
+            sudo umount "$RUNNER_TEMP/sli-disk"
           fi
