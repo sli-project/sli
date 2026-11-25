@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, ApiResponseError, type SetupStatus } from "../api/client";
@@ -28,7 +28,7 @@ const emptySetup: SetupStatus = {
 
 function ownerAccess(owner: boolean) {
   vi.spyOn(app, "useEffectiveAccess").mockReturnValue({
-    platform_owner: owner, preview: false, capabilities: ["workspace.view"],
+    platform_owner: owner, preview: false, capabilities: ["workspace.view"], reports: [],
   } as ReturnType<typeof app.useEffectiveAccess>);
 }
 
@@ -110,6 +110,69 @@ it.each(["domain", "domain_id"])("keeps a direct %s on the AD state report when 
     expect(new URLSearchParams(window.location.search).get(selector)).toBe("999999");
     expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
     expect(api.setupStatus).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    window.history.replaceState(null, "", previous);
+  }
+});
+
+it.each([
+  ["ad.users.v2", "all"],
+  ["ad.computers.v6", "computers"],
+])("retains both direct selectors when switching denied %s tabs", async (reportKey, initialTab) => {
+  const previous = window.location.pathname + window.location.search + window.location.hash;
+  window.history.replaceState(null, "", "/app/report/" + reportKey + "?domain=7&domain_id=8");
+  vi.mocked(api.reportV2Definition).mockResolvedValue({
+    ...definition(reportKey), params: [], default_domain_state: "unknown",
+    views: [
+      { kind: "table", key: initialTab, access: { allowed: false } },
+      { kind: "table", key: "changes", access: { allowed: false } },
+    ],
+  });
+  try {
+    show(<ReportRenderer reportKey={reportKey}/>);
+    expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("tab")[1]);
+    await waitFor(() => {
+      const query = new URLSearchParams(window.location.search);
+      expect(query.get("tab")).toBe("changes");
+      expect(query.get("domain")).toBe("7");
+      expect(query.get("domain_id")).toBe("8");
+    });
+    expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+  } finally {
+    cleanup();
+    window.history.replaceState(null, "", previous);
+  }
+});
+
+it("replaces the old domain alias after choosing a different domain in the computers filter", async () => {
+  const previous = window.location.pathname + window.location.search + window.location.hash;
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?domain=7&domain_id=7");
+  vi.mocked(api.reportV2Definition).mockResolvedValue({
+    ...definition("ad.computers.v6"),
+    params: [
+      { key: "domain", label: "Domain", kind: "domain", options: [{ value: "7", label: "First" }, { value: "8", label: "Second" }] },
+      { key: "domain_id", label: "Domain ID", kind: "domain", hidden: true },
+    ],
+    views: [{ kind: "table", key: "computers" }],
+  });
+  vi.mocked(api.reportV2Data).mockResolvedValue({
+    contract_id: "sli.report-result.v2", report_key: "ad.computers.v6", state: "empty", items: [],
+    has_more: false, next_cursor: null, filtered_count: 0, metrics: [], series: {},
+    coverage: {}, filter_options: {}, limitations: [], window: {},
+  });
+  try {
+    show(<ReportRenderer reportKey="ad.computers.v6"/>);
+    const selector = await screen.findByRole("combobox", { name: "Domain" });
+    fireEvent.change(selector, { target: { value: "8" } });
+    await waitFor(() => {
+      const query = new URLSearchParams(window.location.search);
+      expect(query.get("domain")).toBe("8");
+      expect(query.has("domain_id")).toBe(false);
+      expect(vi.mocked(api.reportV2Data).mock.calls.some(([, params]) =>
+        params.get("domain") === "8" && !params.has("domain_id"))).toBe(true);
+    });
   } finally {
     cleanup();
     window.history.replaceState(null, "", previous);

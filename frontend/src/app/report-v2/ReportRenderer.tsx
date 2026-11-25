@@ -222,15 +222,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     if (key === activeView) return;
     if (independentUsers || computerReport) {
       const saved = tabFilters.current[key] ?? { values: defaultValues(definition), sort: null };
-      for (const param of definition.params) {
-        if (param.kind === "domain") saved.values[param.key] = values[param.key];
-      }
-      if (independentUsers) saved.values.q = values.q;
-      saved.values.scope = values.scope;
-      const search = searchFromValues(definition, saved.values, saved.sort);
+      const next: FilterValues = { ...saved.values, domain: values.domain, domain_id: values.domain_id, scope: values.scope };
+      if (independentUsers) next.q = values.q;
+      const search = searchFromValues(definition, next, saved.sort);
       search.set("tab", key);
       window.history.pushState(window.history.state, "", `${window.location.pathname}?${search.toString()}`);
-      setValues(saved.values);
+      setValues(next);
       setSort(saved.sort);
     }
     setSelected(null);
@@ -258,6 +255,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   resetValues.scope = values.scope;
   for (const param of definition.params) {
     if (param.kind === "period" || param.kind === "domain") resetValues[param.key] = values[param.key];
+  }
+  if (independentUsers || computerReport) {
+    resetValues.domain = values.domain;
+    resetValues.domain_id = values.domain_id;
   }
   if (problemQueue) {
     resetValues.time_from = values.time_from;
@@ -625,9 +626,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         applyInline={computersScreen} leadingControls={computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
         values={values} defaults={resetValues} onApply={(next) => {
           setSelected(null);
-          if (independentUsers || computerReport && next.domain !== values.domain) {
-            const { domain_id: _legacyDomain, ...current } = next;
-            setValues({ ...current, scope: current.domain ? undefined : "all" });
+          const domainChanged = next.domain !== values.domain;
+          if (independentUsers || (computerReport && domainChanged)) {
+            const current = { ...next, domain_id: domainChanged ? undefined : next.domain_id };
+            setValues({ ...current, scope: current.domain || current.domain_id ? undefined : "all" });
           } else setValues(next);
         }}
         quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
