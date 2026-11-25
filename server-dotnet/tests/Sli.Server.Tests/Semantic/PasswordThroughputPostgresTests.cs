@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Semantic.Password;
@@ -140,6 +141,9 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
         }
         if (measurePhases)
             await WritePhaseMeasurementsAsync(fixture.Pg, ct);
+        if (measurePhases && Environment.GetEnvironmentVariable("SLI_TEST_P1_SPRAY_HISTORY_411") == "1")
+            await MeasureSprayContinuationAsync(owner, runtime, scope, SetClock, At(liveEnd).AddMinutes(12),
+                sequence, liveEnd + 1, ct, fixture, output);
     }
 
     private static Task InstallPhaseMeasurementAsync(NpgsqlConnection owner, CancellationToken ct) =>
@@ -198,6 +202,146 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             foreach (var row in byRule)
                 output.WriteLine($"p1_411_phase {row.ToJsonString()}");
         }
+    }
+
+    private static async Task MeasureSprayContinuationAsync(
+        NpgsqlConnection owner, PasswordProducerRuntime runtime, PasswordScope scope,
+        Func<DateTimeOffset, Task> setClock, DateTimeOffset start, int sequence,
+        int firstRecord, CancellationToken ct, SqlPostgresFixture fixture, ITestOutputHelper output)
+    {
+        const int slices = 47;
+        const int hotClientRows = 178;
+        const int qualifyingClients = 10;
+        const int otherQualifyingClientRows = 9;
+        const int nonQualifyingClients = 21;
+        const int qualifyingRows = hotClientRows + (qualifyingClients - 1) * otherQualifyingClientRows;
+        const int sliceRows = qualifyingRows + nonQualifyingClients;
+        const int spacingMs = 176;
+
+        await using var worker = await runtime.OpenAsync(ct);
+        var spray = new PasswordRule(scope, "spray");
+        await using (var plan = new NpgsqlCommand("""
+            select (public.password_plan388(@scope::jsonb,@rule)#>>'{live,rule_version}')::int
+            """, worker))
+        {
+            plan.Parameters.AddWithValue("scope", scope.Document.ToJsonString());
+            plan.Parameters.AddWithValue("rule", spray.Id);
+            spray = new PasswordRule(scope, "spray", Assert.IsType<int>(await plan.ExecuteScalarAsync(ct)));
+        }
+
+        var producer = new PasswordProducer();
+        var agent = ShortEventAdmissionPostgresTests.Agent;
+        var invoke = typeof(PasswordProducer).GetMethod("RunCore", BindingFlags.Static | BindingFlags.NonPublic)!;
+        for (int slice = 0; slice < slices; slice++)
+        {
+            int[] clients = Enumerable.Range(0, sliceRows).Select(i => i < hotClientRows ? 0 :
+                i < qualifyingRows ? 1 + (i - hotClientRows) / otherQualifyingClientRows :
+                qualifyingClients + i - qualifyingRows).ToArray();
+            int[] accounts = Enumerable.Range(0, sliceRows).Select(i => i < hotClientRows ? i % 30 :
+                i < qualifyingRows ? 100 + clients[i] * 10 + (i - hotClientRows) % otherQualifyingClientRows :
+                300 + clients[i]).ToArray();
+            DateTimeOffset sliceStart = start.AddMilliseconds((long)slice * sliceRows * spacingMs);
+            for (int offset = 0; offset < sliceRows; offset += 100)
+            {
+                int[] packet = Enumerable.Range(offset, Math.Min(100, sliceRows - offset)).ToArray();
+                var rows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+                    eventKinds: packet.Select(_ => 4625).ToArray(),
+                    nativeTimestamps: packet.Select(i => PasswordJson.Stamp(sliceStart.AddMilliseconds(i * spacingMs))).ToArray(),
+                    nativeAccounts: packet.Select(i => $"continuation-user-{accounts[i]}").ToArray(),
+                    nativeTargetSids: packet.Select(i => $"S-1-5-21-100000001-200000002-300000003-{20000 + accounts[i]}").ToArray(),
+                    nativeAddresses: packet.Select(i => $"198.51.100.{10 + clients[i]}").ToArray(),
+                    registered: (agent, agent, 900001, 1), packetId: Guid.NewGuid(),
+                    sequence: ++sequence, firstRecordId: firstRecord + slice * sliceRows + offset);
+                await ShortEventAdmissionPostgresTests.WriteAsync(fixture, rows, ct);
+            }
+
+            var target = sliceStart.AddMilliseconds((sliceRows - 1) * spacingMs);
+            await setClock(target.AddSeconds(120));
+            bool measured = slice == slices - 1;
+            if (measured)
+                output.WriteLine("p1_411_spray_shape_before " + await ReadSprayShapeAsync(owner, spray.Pin, ct));
+
+            var memo = new Dictionary<long, PasswordNative>();
+            var watch = Stopwatch.StartNew();
+            var profiled = new List<PasswordProofObservation>();
+            var outcomes = await PasswordProducerPoller.RunBatchesAsync(scope, async (rule, token) =>
+            {
+                if (!measured)
+                    return await producer.RunAsync(worker, rule, token, memo);
+
+                // Reuse the exact producer core and its existing phase timers.
+                // The normal reporting threshold hides successful unsplit passes.
+                var observation = new PasswordProofObservation();
+                profiled.Add(observation);
+                var core = (Task<PasswordProducerOutcome>)invoke.Invoke(null, [worker, rule, token, memo, observation])!;
+                return await core;
+            }, ct, rules: [spray], targetWatermark: target);
+            watch.Stop();
+            Assert.NotEmpty(outcomes);
+            Assert.All(outcomes, outcome => Assert.True(outcome.Status == "committed", outcome.Diagnostic?.ToJsonString() ?? outcome.Status));
+            Assert.Equal(target, PasswordJson.Time(outcomes[^1].Work!["watermark"]));
+
+            if ((slice + 1) % 8 == 0)
+                output.WriteLine($"p1_411_spray_warmup slice={slice + 1} elapsed_ms={watch.Elapsed.TotalMilliseconds:F0}");
+            if (!measured)
+                continue;
+
+            int historyReads = profiled.Sum(observation => Counter<int>(observation, "historyReads"));
+            Assert.True(historyReads > 0);
+            var phaseMilliseconds = new JsonObject();
+            foreach (var phase in new[] { PasswordProofTiming.HistoryRead, PasswordProofTiming.HistoryCheck,
+                PasswordProofTiming.NativeRead, PasswordProofTiming.NativeCheck, PasswordProofTiming.Checkpoint,
+                PasswordProofTiming.Finalizer, PasswordProofTiming.Commit })
+            {
+                phaseMilliseconds[phase.ToString()] = Math.Round(profiled.Sum(observation =>
+                    Counter<TimeSpan[]>(observation, "phaseElapsed")[(int)phase].TotalMilliseconds), 3);
+            }
+            var result = new JsonObject
+            {
+                ["warmup_rows"] = (slices - 1) * sliceRows,
+                ["last_slice_rows"] = sliceRows,
+                ["producer_passes"] = profiled.Count,
+                ["history_calls"] = historyReads,
+                ["history_portions_read"] = profiled.Sum(observation => Counter<int>(observation, "historyRows")),
+                ["native_read_calls"] = profiled.Sum(observation => Counter<int>(observation, "nativeReads")),
+                ["native_refs_verified"] = profiled.Sum(observation => Counter<long>(observation, "verifiedRefs")),
+                ["producer_elapsed_ms"] = Math.Round(watch.Elapsed.TotalMilliseconds, 3),
+                ["phase_ms"] = phaseMilliseconds
+            };
+            output.WriteLine("p1_411_spray_continuation " + result.ToJsonString());
+            output.WriteLine("p1_411_spray_shape_after " + await ReadSprayShapeAsync(owner, spray.Pin, ct));
+        }
+
+        static T Counter<T>(PasswordProofObservation observation, string name) =>
+            (T)typeof(PasswordProofObservation).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(observation)!;
+    }
+
+    private static async Task<string> ReadSprayShapeAsync(NpgsqlConnection owner, string pin, CancellationToken ct)
+    {
+        await using var shape = new NpgsqlCommand("""
+            select jsonb_build_object(
+                'state_revision',c.state_revision,
+                'window_rows',jsonb_array_length(c.state_document->'window'),
+                'active_episodes',jsonb_array_length(c.state_document->'episodes'),
+                'closed_admissions',coalesce(jsonb_array_length(c.state_document->'closed_admissions'),0),
+                'episodes_with_ledger',ledger.episodes,
+                'portions',ledger.portions,
+                'reference_occurrences',ledger.refs,
+                'max_episode_portions',ledger.max_portions,
+                'max_episode_refs',ledger.max_refs)::text
+            from public.semantic_password_checkpoints c
+            cross join lateral (
+                select count(*) as episodes,coalesce(sum(b.reserved_portions),0) as portions,
+                    coalesce(sum(b.reserved_ref_occurrences),0) as refs,max(b.reserved_portions) as max_portions,
+                    max(b.reserved_ref_occurrences) as max_refs
+                from jsonb_array_elements(c.state_document->'episodes') e(value)
+                join public.semantic_password_episode_budgets b
+                  on b.scope_digest=c.scope_digest and b.pin=c.pin and b.episode_key=e.value->>'key'
+            ) ledger
+            where c.pin=@pin
+            """, owner);
+        shape.Parameters.AddWithValue("pin", pin);
+        return Assert.IsType<string>(await shape.ExecuteScalarAsync(ct));
     }
 
     private sealed class TestClock(DateTimeOffset at) : TimeProvider
