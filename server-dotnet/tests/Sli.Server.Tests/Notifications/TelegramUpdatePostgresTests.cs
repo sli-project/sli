@@ -1,11 +1,22 @@
+using System.Net;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using System.Threading.Channels;
 using Npgsql;
 using Sli.Server.Auth;
 using Sli.Server.Infrastructure;
 using Sli.Server.Notifications;
+using Sli.Server.Problems;
+using Sli.Server.Reporting;
+using Sli.Server.Reporting.V2;
+using Sli.Server.Semantic;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Problems;
+using Sli.Server.Tests.Reporting;
 using Xunit;
 
 namespace Sli.Server.Tests.Notifications;
@@ -106,7 +117,117 @@ public sealed class TelegramUpdatePostgresTests
         await fixture.Pg.ApplyFileAsync(migration, null, Ct);
     }
 
-    private static async Task<NotificationJob> SeedAlertAsync(SqlPostgresFixture fixture, NotificationJob test, CancellationToken ct)
+    [Fact]
+    public async Task GroupedProblemTelegramPayloadOpensItsExactProblem()
+    {
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(Ct);
+        var database = new Factory(fixture);
+        await NotificationLanguages.RememberInterfaceAsync(database, 1, "ru", Ct);
+        var job = new NotificationJob(Guid.NewGuid(), Guid.NewGuid(), 1, "test_problem", Guid.NewGuid(), 1, 1,
+            Guid.NewGuid(), new DateTime(2026, 11, 21, 20, 0, 15, DateTimeKind.Utc), null, "live", 0);
+        var problem = await SeedAlertAsync(fixture, job, Ct, evidenceCount: 2);
+
+        // A delimiter lets this exercise Telegram's language lookup without a bot identifier or credential.
+        var settings = new TelegramSettings("https://sli.invalid/app", "123", ":", "");
+        Assert.Empty(TelegramSettingsReader.BotId(settings.Token));
+        await using var delivery = new NpgsqlConnection(fixture.Dsn("sli_notification_login"));
+        await delivery.OpenAsync(Ct);
+        await PostCollectionPostgres.Sql(delivery, "set role adlog_notification_worker", Ct);
+        var access = ProblemLifecycleTests.Access("security.queue", fields: ["security", "identity_basic", "technical"]);
+        string message;
+        await using (var tx = await delivery.BeginTransactionAsync(Ct))
+        {
+            message = await NotificationAlert.FormatAsync(delivery, tx, problem, settings.BaseUrl, access, settings, Ct);
+            await tx.CommitAsync(Ct);
+        }
+
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var receiver = builder.Build();
+        var captured = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+        receiver.MapPost("/capture", async (HttpContext request) =>
+        {
+            var body = (await JsonNode.ParseAsync(request.Request.Body, cancellationToken: request.RequestAborted))!.AsObject();
+            captured.SetResult(body);
+            return Results.Json(new { ok = true, result = new { message_id = 1 } });
+        });
+        await receiver.StartAsync(Ct);
+        var endpoint = new Uri(new Uri(receiver.Urls.Single()), "/capture");
+        using var redirect = new LoopbackSender(endpoint);
+        var sender = new TelegramSender(redirect, new TelegramRequestState());
+        Assert.Equal("accepted", (await sender.SendAsync(settings, message, Ct)).Code);
+        var payload = await captured.Task.WaitAsync(TimeSpan.FromSeconds(5), Ct);
+        await receiver.StopAsync(Ct);
+
+        Assert.Equal("123", payload["chat_id"]!.GetValue<string>());
+        Assert.Null(payload["parse_mode"]);
+        string text = payload["text"]!.GetValue<string>();
+        Assert.Equal(message, text);
+        string[] lines = text.Split('\n');
+        const string title = "Подбирают пароль к учётной записи";
+        Assert.EndsWith(" · " + title, lines[0]);
+        Assert.Contains("Administrator", lines[1]);
+        Assert.Contains("192.0.2.10", lines[1]);
+        Assert.Contains("Впервые: 22.11 03:00", lines[1]);
+
+        var link = new Uri(lines[^1]);
+        Assert.Equal("https://sli.invalid/app/report/security.problems?id=42", link.AbsoluteUri);
+        var parameters = QueryHelpers.ParseQuery(link.Query);
+        Assert.Equal("42", parameters["id"].ToString());
+        const string appReport = "/app/report/";
+        Assert.StartsWith(appReport, link.AbsolutePath);
+        string report = link.AbsolutePath[appReport.Length..];
+        var definition = new ReportDefinitionRegistry().Get(report)!;
+        var repository = new ProblemRepository(database, TimeProvider.System);
+        var evidence = new SecurityProblemEvidence(new SemanticDatabase(database));
+        await using var host = await ReportFixture.Start(ProblemEndpointTests.Facts(), definition,
+            nativeReader: new SecurityProblemsReader(repository, evidence));
+        host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("ru");
+        string route = "/api/v2/reports/" + report + "/data";
+        using var response = await host.Client.GetAsync(route + link.Query, Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var row = Assert.Single((await ReportFixture.Body(response))["items"]!.AsArray())!.AsObject();
+        Assert.Equal("42", row["id"]!.ToString());
+        Assert.Equal(title, row["title_text"]!.ToString());
+
+        using var wrong = await host.Client.GetAsync(route + "?id=43", Ct);
+        Assert.Equal(HttpStatusCode.OK, wrong.StatusCode);
+        Assert.Empty((await ReportFixture.Body(wrong))["items"]!.AsArray());
+
+        var protocol = new JsonObject
+        {
+            ["first_seen_utc"] = "2026-11-21T20:00:15Z",
+            ["server_timezone"] = "Asia/Bangkok",
+            ["grouped_evidence_count"] = 2,
+            ["payload"] = payload,
+            ["report_request"] = route + link.Query,
+            ["report_status"] = (int)response.StatusCode,
+            ["problem_id"] = row["id"]!.DeepClone(),
+            ["problem_title"] = row["title_text"]!.DeepClone(),
+            ["wrong_id_items"] = 0,
+        };
+        var output = Environment.GetEnvironmentVariable("SLI_P3_PROOF_JSON");
+        if (output is not null)
+            await File.WriteAllTextAsync(output, protocol.ToJsonString(new JsonSerializerOptions(JsonSerializerOptions.Default)
+                { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true }), Ct);
+    }
+
+    private sealed class LoopbackSender(Uri endpoint) : DelegatingHandler(new HttpClientHandler
+        { AllowAutoRedirect = false, UseProxy = false }), IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(this, disposeHandler: false);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Assert.Equal(new Uri("https://api.telegram.org/bot:/sendMessage"), request.RequestUri);
+            Assert.True(endpoint.IsLoopback);
+            request.RequestUri = endpoint;
+            return base.SendAsync(request, ct);
+        }
+    }
+
+    private static async Task<NotificationJob> SeedAlertAsync(SqlPostgresFixture fixture, NotificationJob test, CancellationToken ct, int evidenceCount = 1)
     {
         var problem = test with { Kind = "semantic_finding", Severity = "high" };
         await using var db = await fixture.Pg.OpenAsync(ct);
@@ -115,11 +236,12 @@ public sealed class TelegramUpdatePostgresTests
                 on conflict(key) do update set value=excluded.value;
             insert into findings(id,fingerprint,rule_code,title,status,severity,source,actor,target,evidence_count,first_seen_utc,last_seen_utc)
                 values(42,'semantic:'||repeat('a',64),'semantic.qw.password-brute-force','Synthetic finding','new','high',
-                    'semantic-production','synthetic-actor','Administrator',1,'2026-11-21T20:00:15Z','2026-11-21T20:00:15Z');
+                    'semantic-production','synthetic-actor','Administrator',@count,'2026-11-21T20:00:15Z','2026-11-21T20:00:15Z');
             insert into finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,domain_id,actor,computer,method,outcome,fields,source_sha256,evidence_role)
-                select 42,1,'2026-11-21T20:00:15Z',4625,id,'Administrator','dc01.example.test',
+                select 42,n,'2026-11-21T20:00:15Z'::timestamptz+(n-1)*interval '1 second',4625,id,'Administrator','dc01.example.test',
                     '{"$principals":{"TargetUserName":"Administrator","IpAddress":"192.0.2.10"}}',
-                    '{}','{}',sha256('synthetic event'::bytea),'primary' from domains where fqdn='example.test';
+                    '{}','{}',sha256(convert_to('synthetic event '||n,'UTF8')),'primary'
+                from domains cross join generate_series(1,@count) as copies(n) where fqdn='example.test';
             insert into semantic_security_scenarios(scenario_id,scenario_kind,result_class,identity_key,scenario_key,partition_key,
                     strict_keys_json,merge_window_seconds,title,explanation,first_seen_utc,last_seen_utc,risk_class)
                 values(@object,'qw.password-brute-force','control_gap',sha256('identity'::bytea),sha256('scenario'::bytea),
@@ -136,13 +258,14 @@ public sealed class TelegramUpdatePostgresTests
                     display_score,hard_critical,confidence,confidence_score,coverage_status,evaluation_ms)
                 values(@object,@object,'enabled','high',1,1,false,'low',1,'unknown',1);
             insert into semantic_finding_publications(scenario_id,finding_id,first_job_id,finding_fingerprint,published_evidence_count)
-                values(@object,42,@object,'semantic:'||repeat('a',64),1);
+                values(@object,42,@object,'semantic:'||repeat('a',64),@count);
             insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
                 values(@subscription,1,1,'telegram',true);
             insert into notification_outbox(id,subscription_id,subscription_revision,object_kind,object_id,recipient_user_id,
                     channel,state,lease_token,lease_until,object_severity,publication_scenario_id)
                 values(@job,@subscription,1,'semantic_finding',@object,1,'telegram','sending',@lease,now()+interval '1 minute','high',@object);
             """, db);
+        seed.Parameters.AddWithValue("count", evidenceCount);
         seed.Parameters.AddWithValue("object", problem.ObjectId);
         seed.Parameters.AddWithValue("subscription", problem.Subscription);
         seed.Parameters.AddWithValue("job", problem.Id);
