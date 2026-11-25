@@ -1,0 +1,41 @@
+name: Read saved installed menu observations
+on:
+  push:
+    branches: [codex/verify-installed-first-ad-2323cfa]
+    paths: [.github/workflows/archived-beta-menu-evidence.yml]
+permissions:
+  actions: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify archive identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14986584830" |
+            jq -e '.workflow_run.id==45536677048 and .digest=="sha256:24e5dbcc9f8f1401b3c4e17ecc390ed7c17a5746c1cdcd22f25db938f12bd90d" and .expired==false' >/dev/null
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45536677048'
+          name: installed-beta-menu-19-evidence
+          path: archived
+      - name: Read four saved page observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t reports < <(find archived -type f -name menu.json)
+          if [[ ${#reports[@]} == 0 ]]; then
+            mapfile -t packages < <(find archived -type f -name '*.tar.gz')
+            test "${#packages[@]}" = 1
+            mapfile -t members < <(tar -tzf "${packages[0]}" | awk '/^(\.\/)?menu\.json$/')
+            test "${#members[@]}" = 1
+            tar -xOzf "${packages[0]}" "${members[0]}" > saved-menu.json
+            reports=(saved-menu.json)
+          fi
+          test "${#reports[@]}" = 1
+          jq -e '.commit=="4a6f14c815e07ff2a01346700d79507689d657e9" and (.rows | length)==19' "${reports[0]}" >/dev/null
+          jq -c '.rows[] | select(.id=="problems" or .id=="events" or .id=="gpo-report" or .id=="file-audit")
+            | {id, text, controls, emptyCopy, responses: [.responses[] | select(.path | startswith("/api/v2/reports") or startswith("/api/v1/report") or startswith("/api/v1/file-audit"))]}' "${reports[0]}"
