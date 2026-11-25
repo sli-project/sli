@@ -1,0 +1,136 @@
+name: Installed File Audit HTTPS proof
+
+on:
+  push:
+    branches: ['codex/file-audit-debian-kit-23e9547d']
+    paths:
+      - '.github/workflows/file-audit-installed-https.yml'
+      - 'scripts/ci/file-audit-installed-https-guest.sh'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      KIT_COMMIT: 23e9547d1b8231e297b901335c22e7a828a4b946
+      KIT_RUN: '45532450060'
+      HARNESS_COMMIT: 1c9498a16fe6f27f32596991c3bb4d0448c6e650
+      HARNESS_BLOB: 5e7818aad9a7e21335c50a199cfa89b471254ad0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 8
+      - name: Retrieve the exact Debian TAR from the standard build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="repos/$GITHUB_REPOSITORY/actions"
+          artifact_name="sli-debian-beta-kit-$KIT_COMMIT"
+          record=
+          for attempt in $(seq 1 45); do
+            run=$(gh api "$base/runs/$KIT_RUN")
+            jq -e --arg sha "$KIT_COMMIT" \
+                '.head_sha == $sha and .head_branch == "main" and .event == "workflow_dispatch"' \
+                >/dev/null <<<"$run"
+            if jq -e '.status == "completed" and .conclusion != "success"' >/dev/null <<<"$run"; then
+              jq -c '{status, conclusion, html_url}' <<<"$run" >&2
+              exit 1
+            fi
+            metadata=$(gh api "$base/runs/$KIT_RUN/artifacts?per_page=100")
+            record=$(jq -c --arg name "$artifact_name" \
+              '.artifacts[] | select(.name == $name and .expired == false and (.digest // "" | test("^sha256:[a-f0-9]{64}$")))' <<<"$metadata")
+            [[ -z "$record" ]] || break
+            sleep 30
+          done
+          [[ -n "$record" ]]
+          artifact=$(jq -er .id <<<"$record")
+          digest=$(jq -er '.digest | sub("^sha256:";"")' <<<"$record")
+          kit="$RUNNER_TEMP/file-audit-kit"
+          evidence="$RUNNER_TEMP/p1-rollback-evidence"
+          mkdir -p "$kit" "$evidence"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --retry 2 --max-time 240 -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/$base/artifacts/$artifact/zip" -o "$kit/artifact.zip"
+          printf '%s  %s\n' "$digest" "$kit/artifact.zip" | sha256sum --check --strict
+          unzip -p "$kit/artifact.zip" sli-debian-beta-kit.tar.gz >"$kit/sli-debian-beta-kit.tar.gz"
+          unzip -p "$kit/artifact.zip" SHA256SUMS >"$kit/SHA256SUMS"
+          (cd "$kit"; sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS)
+          rm -- "$kit/artifact.zip"
+          printf 'kit_run=%s artifact=%s git=%s zip_sha256=%s\n' \
+            "$KIT_RUN" "$artifact" "$KIT_COMMIT" "$digest" | tee "$evidence/artifacts.txt"
+      - name: Reuse the pinned Debian QEMU runner
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/scripts/ci/p1-native-rollback-vm.sh?ref=$HARNESS_COMMIT" \
+            --jq .content | base64 -d >"$RUNNER_TEMP/pinned-vm.sh"
+          test "$(git hash-object "$RUNNER_TEMP/pinned-vm.sh")" = "$HARNESS_BLOB"
+          python3 - "$RUNNER_TEMP/pinned-vm.sh" "$RUNNER_TEMP/file-audit-vm.sh" <<'PY'
+          import sys
+          from pathlib import Path
+
+          source, dest = map(Path, sys.argv[1:])
+          driver = source.read_text()
+          guest_begin = "    stage=install_410\n"
+          runner_begin = '[[ $# == 4 && $1 == runner ]]\n'
+          assert driver.count(guest_begin) == driver.count(runner_begin) == 1
+          guest, tail = driver.split(guest_begin)
+          _, runner = tail.split(runner_begin)
+
+          for line in (
+              "old_dir=$2",
+              "old_commit=0f6093b3a9afcecb28fcdd47c7ed50522e50a156",
+              "old_hash=38115eee4fe10dbf5a422d13ccbb644ff5c0837cb371cb397579c0fb56b0338e",
+              'verify_archive "$old_dir" "$old_commit"',
+              "printf '%s  %s\\n' \"$old_hash\" \"$old_dir/sli-debian-beta-kit.tar.gz\" | sha256sum --check --strict",
+              'cp --reflink=auto "$old_dir/sli-debian-beta-kit.tar.gz" input/predecessor.tar.gz',
+              'cp "$GITHUB_WORKSPACE/scripts/ci/p1-native-410-411-rollback.sh" input/',
+          ):
+              assert runner.count(line + "\n") == 1
+              runner = runner.replace(line + "\n", "")
+
+          replacements = {
+              "new_dir=$3\nnew_commit=$4": "new_dir=$2\nnew_commit=$3",
+              """printf 'base=%s\\ncandidate=%s\\n' "$old_commit" "$new_commit" """:
+                  """printf 'candidate=%s\\n' "$new_commit" """,
+              """printf 'base_tar_sha256=%s\\ncandidate_tar_sha256=%s\\n' "$old_hash" "$new_hash" """:
+                  """printf 'candidate_tar_sha256=%s\\n' "$new_hash" """,
+              'cp "$GITHUB_WORKSPACE/scripts/ci/p1-native-rollback-vm.sh" input/':
+                  'cp "$0" input/p1-native-rollback-vm.sh\n'
+                  'cp "$GITHUB_WORKSPACE/scripts/ci/file-audit-installed-https-guest.sh" input/\n'
+              }
+          for before, after in replacements.items():
+              assert runner.count(before) == 1
+              runner = runner.replace(before, after)
+
+          dest.write_text(guest + """
+              stage=file_audit_installed_https
+              bash "$input/file-audit-installed-https-guest.sh" "$database_uuid" "$backup_root" "$initial_log" "$initial_trace"
+              stage=verified
+              exit 0
+          fi
+
+          [[ $# == 3 && $1 == runner ]]
+          """ + runner)
+          PY
+          bash -n "$RUNNER_TEMP/file-audit-vm.sh"
+          bash -n scripts/ci/file-audit-installed-https-guest.sh
+          bash "$RUNNER_TEMP/file-audit-vm.sh" runner "$RUNNER_TEMP/file-audit-kit" "$KIT_COMMIT"
+      - name: Attach installed HTTPS and enrollment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: file-audit-installed-https-23e9547d
+          path: ${{ runner.temp }}/p1-rollback-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
