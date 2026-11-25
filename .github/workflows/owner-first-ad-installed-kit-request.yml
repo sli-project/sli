@@ -1,4 +1,4 @@
-name: Request exact VPN menu acceptance kit
+name: Request and verify the exact beta kit
 on:
   push:
     branches: ['codex/beta-clean-readme-acceptance']
@@ -7,11 +7,12 @@ permissions: {}
 jobs:
   request:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      KIT_COMMIT: 6a454ca4abc8c6960eb5823748afd4848f3faddf
+      KIT_COMMIT: e02466bf8bd79cf22d4c37b141888c81a675d84e
     steps:
       - name: Request the standard main build with artifact upload
         shell: bash
@@ -35,3 +36,53 @@ jobs:
           jq -n --arg commit "$KIT_COMMIT" \
             '{ref:"main", inputs:{commit:$commit, upload_artifact:true, release:false}}' |
             gh api --method POST "$workflow/dispatches" --input -
+      - name: Verify the saved ZIP and archive from the exact main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow="repos/$GITHUB_REPOSITORY/actions/workflows/beta-kit.yml"
+          for poll in {1..145}; do
+            readout=$(gh api "$workflow/runs?head_sha=$KIT_COMMIT&event=workflow_dispatch" |
+              jq -c --arg commit "$KIT_COMMIT" '[.workflow_runs[] | select(.head_sha==$commit and .head_branch=="main")]')
+            if jq -e 'length > 0' <<<"$readout" >/dev/null; then
+              jq -e 'length == 1' <<<"$readout" >/dev/null
+              run=$(jq -r '.[0].id' <<<"$readout")
+              if jq -e '.[0].status == "completed"' <<<"$readout" >/dev/null; then break; fi
+            fi
+            sleep 6
+          done
+          jq -e 'length == 1 and .[0].status=="completed" and .[0].conclusion=="success"' <<<"$readout" >/dev/null
+          package=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" |
+            jq -ce --arg name "sli-debian-beta-kit-$KIT_COMMIT" \
+              '[.artifacts[] | select(.name==$name and .expired==false)] | select(length==1) | .[0] |
+               select(.digest | test("^sha256:[a-f0-9]{64}$"))')
+          artifact=$(jq -r .id <<<"$package")
+          zip=$(jq -r .digest <<<"$package")
+          work=$(mktemp -d "$RUNNER_TEMP/sli-kit-checksums.XXXXXXXX")
+          trap 'rm -rf -- "$work"' EXIT
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --max-time 180 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" -o "$work/kit.zip"
+          printf '%s  %s\n' "${zip#sha256:}" "$work/kit.zip" | sha256sum --check --strict >/dev/null
+          python3 -I -B - "$work/kit.zip" "$KIT_COMMIT" "$run" "$artifact" "${zip#sha256:}" <<'PY'
+          import hashlib
+          import json
+          import re
+          import sys
+          import zipfile
+          path, commit, run, artifact, archive_zip_sha = sys.argv[1:]
+          with zipfile.ZipFile(path) as archive:
+              name = "sli-debian-beta-kit.tar.gz"
+              assert archive.namelist().count(name) == archive.namelist().count("SHA256SUMS") == 1
+              index = archive.getinfo("SHA256SUMS")
+              assert index.file_size <= 512
+              total = archive.read(index).decode("ascii").strip()
+              pinned = re.fullmatch(r"([a-f0-9]{64})  sli-debian-beta-kit\.tar\.gz", total)[1]
+              with archive.open(name) as stream:
+                  inner = hashlib.file_digest(stream, "sha256").hexdigest()
+              assert inner == pinned
+          print("BETA_KIT_EVIDENCE " + json.dumps({
+              "source_commit": commit, "run_id": int(run), "artifact_id": int(artifact),
+              "zip_sha256": archive_zip_sha, "tar_sha256": inner, "matches_sha256sums": True,
+          }))
+          PY
