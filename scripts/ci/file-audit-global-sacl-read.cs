@@ -100,21 +100,29 @@ internal static class Program
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim().TrimStart('\ufeff')).Where(line => line.Length > 0).ToArray();
         result["auditpol_nonempty_line_count"] = lines.Length;
-        var descriptionWords = new HashSet<string>((
-            "access auditing audit auditpol a all any are as at be being been has have no not none there they this " +
-            "control configured configure defined definition enabled failure exists exist entries entry empty error file " +
-            "files filesystem for found global is list mask masks missing name object of on or output policy permission " +
-            "permissions present registry resource resourcesacl read result sacl security system set settings specified " +
-            "status success supported the to type undeclared unconfigured user value view was were with without warning " +
-            "available cannot does information specified returned current noaccess exists descriptor").Split(' '),
+        var description = string.Join(" ", lines.Select(line => Regex.Replace(line, @"[\u0000-\u001f\u007f\u200e\u200f\ufeff]", " ").Trim()));
+        result["auditpol_explicitly_absent"] = Regex.IsMatch(description,
+            @"\b(?:no\b.{0,55}\b(?:SACLs?|audit(?:ing)? (?:entries|rules))\b|(?:SACLs?|audit(?:ing)? entries)\b.{0,50}\b(?:does not exist|not configured|not defined|not present|(?:is|are) empty))", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(description, @"\b(?:global|resource)\b.{0,90}\bno (?:entries|records|rules)\b", RegexOptions.IgnoreCase);
+        result["auditpol_ace_rows_present"] = lines.Any(line => Regex.IsMatch(line,
+            @"(?i)(?:\bS-\d+(?:-\d+)+\b|[\p{L}\p{N}_.@$-]+\\[\p{L}\p{N}_.@$-]+).{0,90}\b(?:success|failure)\b"));
+        var safeWords = new HashSet<string>((
+            "access audit auditing auditpol all any are as at be been configured control current defined descriptor does " +
+            "empty entries entry error exist exists failure file files filesystem for found global has have is key list mask masks " +
+            "no none not object of on or permissions present registry resource resources resourcesacl rules records sacl sacls security " +
+            "set specified status success system the there this to type user view was were which with without").Split(' '),
             StringComparer.OrdinalIgnoreCase);
         var publicLines = lines.Take(2).Select(line =>
         {
-            string text = Regex.Replace(line, @"[\u0000-\u001f\u007f]", " ").Trim();
-            if (text.Length > 180 || !Regex.IsMatch(text, @"^[A-Za-z][A-Za-z .,:'()-]*$")
-                || Regex.Matches(text, "[A-Za-z]+").Any(word => !descriptionWords.Contains(word.Value)))
-                return (JsonNode?)JsonValue.Create("[non-generic audit output omitted]");
-            return JsonValue.Create(text);
+            string text = Regex.Replace(line, @"[\u0000-\u001f\u007f\u200e\u200f\ufeff]", " ").Trim();
+            text = Regex.Replace(text, @"(?i)\bS-\d+(?:-\d+)+\b", "[SID]");
+            text = Regex.Replace(text, @"""[^""]*[\\/][^""]*""|(?:[A-Za-z]:[\\/]|\\\\)[^\s]+", "[path]");
+            text = Regex.Replace(text, @"\{[^}]*\}|[\p{L}\p{N}_.@$-]+\\[\p{L}\p{N}_.@$-]+|[\p{L}\p{N}_.-]+@[\p{L}\p{N}_.-]+", "[account]");
+            if (Regex.IsMatch(text, @"(?i)(?:^|\s)[DGS]:\s*\("))
+                return (JsonNode?)JsonValue.Create("[descriptor omitted]");
+            text = Regex.Replace(text, @"\[(?:SID|path|account)\]|[\p{L}\p{N}\p{M}_@/\\$-]+",
+                word => word.Value.StartsWith('[') || safeWords.Contains(word.Value) ? word.Value : "[masked]");
+            return JsonValue.Create(text[..Math.Min(text.Length, 180)]);
         }).ToArray();
         result["auditpol_description"] = new JsonArray(publicLines);
     }
