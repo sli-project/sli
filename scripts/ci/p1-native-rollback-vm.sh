@@ -222,7 +222,8 @@ COMMIT;
 SQL
 )
     printf 'P1_EVIDENCE baseline=%s\n' "$baseline"
-    for relation in sli_agents sli_agent_receipts sli_agent_packet_inbox events_v2_core event_hot event_cold_facts findings; do
+    for relation in sli_agents sli_agent_receipts sli_agent_packet_inbox storage_v2_event_identity_allocations \
+        event_source_representations_v2 events_v2_core event_hot event_cold_facts findings; do
         present=$("${psql_local[@]}" -c "SELECT to_regclass('public.$relation') IS NOT NULL")
         if [[ $present == t ]]; then
             records=$("${psql_local[@]}" -c "SELECT count(*) FROM public.$relation")

@@ -69,6 +69,7 @@ DECLARE
     entries bigint;
     version_top integer;
     digest text;
+    legacy_has_events boolean;
 BEGIN
     SELECT count(*), max(version), encode(sha256(convert_to(
         string_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256')::text,
@@ -82,11 +83,19 @@ BEGIN
        OR EXISTS (SELECT 1 FROM public.sli_agents)
        OR EXISTS (SELECT 1 FROM public.sli_agent_receipts)
        OR EXISTS (SELECT 1 FROM public.sli_agent_packet_inbox)
-       OR EXISTS (SELECT 1 FROM public.events_v2_core)
+       OR EXISTS (SELECT 1 FROM public.storage_v2_event_identity_allocations)
+       OR EXISTS (SELECT 1 FROM public.event_source_representations_v2)
        OR EXISTS (SELECT 1 FROM public.event_hot)
        OR EXISTS (SELECT 1 FROM public.event_cold_facts)
        OR EXISTS (SELECT 1 FROM public.findings)
     THEN RAISE EXCEPTION 'expected the exact 410 ledger on local PostgreSQL 18 and no collected data';
+    END IF;
+    -- Native 410 omits this legacy table. Retain the emptiness guard if it is present.
+    IF to_regclass('public.events_v2_core') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.events_v2_core)' INTO legacy_has_events;
+        IF legacy_has_events THEN
+            RAISE EXCEPTION 'expected no collected data in the legacy event table';
+        END IF;
     END IF;
 END $fixture$;
 SQL
@@ -294,7 +303,7 @@ if phase == "upgraded":
     assert len(present["new_pins"]) == 1
     version, name, checksum = present["new_pins"][0]
     assert (version, name) == (411, "password_successor_coverage")
-    assert re.fullmatch(r"[a-f0-9]{64}", checksum)
+    assert checksum == "313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279"
     assert all(present[key] == before[key] for key in ("prefix_sha256", "receipts", "receipts_sha256", "agents"))
     assert result["schema_changed"] is True and journal["checkpoint_storage"] == "backup_volume"
     expected = journal["checkpoint_sha256"]
