@@ -14,15 +14,15 @@
 #    install -o root -g root -m 0600 /proc/sys/kernel/random/boot_id /run/sli-p1-acceptance.boot-id
 # 4. Supply the two TAR archives and invoke inside the guest:
 #    bash p1-native-410-411-rollback.sh OLD.tar.gz NEW.tar.gz NEW_COMMIT NEW_TAR_SHA256
-# OLD is the exact #229 kit from run 45480994082, artifact 14960504617.
-# NEW_COMMIT and NEW_TAR_SHA256 must come from the reviewed P1-only kit run.
+# OLD is the exact 411 kit from run 45510515483, artifact 14976746044.
+# NEW_COMMIT and NEW_TAR_SHA256 must come from the reviewed shared kit run.
 # Preserve the printed guest evidence directory for the pass or failure record.
 
 set -Eeuo pipefail
 umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C
 
-fail() { printf '410→411 acceptance: %s\n' "$*" >&2; exit 1; }
+fail() { printf '411→415 acceptance: %s\n' "$*" >&2; exit 1; }
 
 [[ $# == 4 ]] || fail 'expected OLD.tar.gz NEW.tar.gz NEW_COMMIT NEW_TAR_SHA256'
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 && $EUID == 0 ]] ||
@@ -45,8 +45,9 @@ grep -qxF 'ID=debian' /etc/os-release && grep -qxE 'VERSION_ID="?13"?' /etc/os-r
     fail 'Debian 13 required'
 mountpoint -q /var/backups/sli || fail 'the native backup volume must be mounted'
 
-old_commit=0f6093b3a9afcecb28fcdd47c7ed50522e50a156
-old_hash=38115eee4fe10dbf5a422d13ccbb644ff5c0837cb371cb397579c0fb56b0338e
+old_commit=1c25b9f1661ac2412bfc584f3fcbffda1ea95229
+old_hash=b3d5b8eb293bebee5142ffd9717620bf3491361bc445dc96bbc35171178177bd
+# The verified 410 prefix plus the expected 411 row cover the full baseline.
 old_ledger=26ee8d9ac77ea7860e2b46e749980d13a460ea85815b47720b1fbd6dc26ed4cd
 new_commit=$3
 new_hash=$4
@@ -73,12 +74,15 @@ DECLARE
 BEGIN
     SELECT count(*), max(version), encode(sha256(convert_to(
         string_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256')::text,
-                   E'\n' ORDER BY version),'UTF8')),'hex')
+                   E'\n' ORDER BY version) FILTER (WHERE version<=410),'UTF8')),'hex')
     INTO entries, version_top, digest
     FROM public.schema_migrations m;
     IF inet_server_addr() IS NOT NULL
        OR current_setting('server_version_num')::integer / 10000 <> 18
-       OR entries <> 377 OR version_top IS DISTINCT FROM 410
+       OR entries <> 378 OR version_top IS DISTINCT FROM 411
+       OR NOT EXISTS (
+           SELECT 1 FROM public.schema_migrations m WHERE version=411 AND name='password_successor_coverage'
+           AND to_jsonb(m)->>'sha256'='313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279')
        OR digest IS DISTINCT FROM current_setting('sli.acceptance_old_ledger')
        OR EXISTS (SELECT 1 FROM public.sli_agents)
        OR EXISTS (SELECT 1 FROM public.sli_agent_receipts)
@@ -88,9 +92,9 @@ BEGIN
        OR EXISTS (SELECT 1 FROM public.event_hot)
        OR EXISTS (SELECT 1 FROM public.event_cold_facts)
        OR EXISTS (SELECT 1 FROM public.findings)
-    THEN RAISE EXCEPTION 'expected the exact 410 ledger on local PostgreSQL 18 and no collected data';
+    THEN RAISE EXCEPTION 'expected the exact 411 ledger on local PostgreSQL 18 and no collected data';
     END IF;
-    -- Native 410 omits this legacy table. Retain the emptiness guard if it is present.
+    -- The native baseline can omit this legacy table. Retain the emptiness guard if it is present.
     IF to_regclass('public.events_v2_core') IS NOT NULL THEN
         EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.events_v2_core)' INTO legacy_has_events;
         IF legacy_has_events THEN
@@ -220,6 +224,14 @@ SELECT '00000000-0000-4000-8000-000000000041','sli.windows.ad-dc',n,
        envelope,'{"status":"committed"}',clock_timestamp()-interval '1 day'
 FROM generate_series(1,2) AS series(n)
 CROSS JOIN LATERAL (SELECT jsonb_build_object('fixture','p1-411', 'sequence',n) AS envelope) p;
+-- Reuse one closed row from the queue fixture (case 212). Insert finding
+-- metadata only, with no access event, evidence copy or risk job.
+INSERT INTO public.findings
+    (id,fingerprint,rule_code,title,status,severity,source,actor,target,evidence_count,first_seen_utc,last_seen_utc)
+VALUES (212,'semantic:'||encode(sha256('finding-212'::bytea),'hex'),
+        'semantic.qw.password-spray','Synthetic finding','closed','high',
+        'semantic-production','synthetic-actor','synthetic-object',0,
+        (clock_timestamp()-interval '2 days')::text,(clock_timestamp()-interval '1 day')::text);
 COMMIT;
 SQL
 } | pg
@@ -235,17 +247,41 @@ WITH pins AS (
            encode(sha256(convert_to(string_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256')::text,
                E'\n' ORDER BY version) FILTER (WHERE version<=410),'UTF8')),'hex') AS prefix_sha256,
            coalesce(jsonb_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256') ORDER BY version)
-               FILTER (WHERE version>410),'[]'::jsonb) AS new_pins
+               FILTER (WHERE version=411),'[]'::jsonb) AS base_pin,
+           coalesce(jsonb_agg(jsonb_build_array(version,name,to_jsonb(m)->>'sha256') ORDER BY version)
+               FILTER (WHERE version>411),'[]'::jsonb) AS new_pins
     FROM public.schema_migrations m
 ), receipt_summary AS (
     SELECT count(*) AS receipts,
            encode(sha256(convert_to(string_agg(to_jsonb(r)::text,E'\n' ORDER BY agent_id,module_id,sequence),
                'UTF8')),'hex') AS receipts_sha256
     FROM public.sli_agent_receipts r
+), history_summary AS (
+    SELECT count(*) AS findings,
+           encode(sha256(convert_to(coalesce(string_agg(to_jsonb(f)::text,E'\n' ORDER BY id),''),
+               'UTF8')),'hex') AS findings_sha256
+    FROM public.findings f
+), decoder AS (
+    SELECT pg_get_userbyid(p.proowner) AS decoder_owner,
+           p.proacl AS decoder_acl, p.prosecdef AS decoder_security_definer,
+           encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex') AS decoder_sha256,
+           jsonb_build_object(
+               'public_decoder',exists(select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+                                       where a.grantee=0 and a.privilege_type='EXECUTE'),
+               'user_decoder',has_function_privilege('adlog_user',p.oid,'EXECUTE'),
+               'worker_decoder',has_function_privilege('adlog_semantic_worker',p.oid,'EXECUTE'),
+               'storage_decoder',has_function_privilege('adlog_storage_worker',p.oid,'EXECUTE'),
+               'worker_reader',has_function_privilege('adlog_semantic_worker',
+                   'public.read_password_episode_portions_v2(jsonb,jsonb,text)','EXECUTE'),
+               'worker_finalizer',has_function_privilege('adlog_semantic_worker',
+                   'public.complete_password_producer_batch_v2(jsonb,jsonb,bigint,bigint,text,jsonb)','EXECUTE')) AS rights
+    FROM pg_proc p WHERE p.oid='public.password_v2_decode(jsonb,jsonb,jsonb)'::regprocedure
 )
-SELECT to_jsonb(pins.*)||to_jsonb(receipt_summary.*)
-       ||jsonb_build_object('agents',(SELECT count(*) FROM public.sli_agents))
-FROM pins CROSS JOIN receipt_summary;
+SELECT to_jsonb(pins.*)||to_jsonb(receipt_summary.*)||to_jsonb(history_summary.*)||to_jsonb(decoder.*)
+       ||jsonb_build_object('agents',(SELECT count(*) FROM public.sli_agents),
+           'access_events', (SELECT count(*) FROM public.event_hot)+(SELECT count(*) FROM public.event_cold_facts)
+                            +(SELECT count(*) FROM public.event_source_representations_v2))
+FROM pins CROSS JOIN receipt_summary CROSS JOIN history_summary CROSS JOIN decoder;
 COMMIT;
 SQL
 }
@@ -260,7 +296,13 @@ assert re.fullmatch(r"[a-f0-9]{64}", base["receipts_sha256"])
 print("P1_DATA baseline_receipts=" + json.dumps({
     key: base[key] for key in ("entries", "version", "prefix_sha256", "agents", "receipts", "receipts_sha256")
 }))
-assert (base["entries"], base["version"], base["prefix_sha256"]) == (377, 410, sys.argv[2])
+assert (base["entries"], base["version"], base["prefix_sha256"]) == (378, 411, sys.argv[2])
+assert base["base_pin"] == [[411, "password_successor_coverage", "313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279"]]
+assert base["findings"] == 1 and base["access_events"] == 0
+assert re.fullmatch(r"[a-f0-9]{64}", base["findings_sha256"])
+assert base["decoder_owner"] == "adlog_storage_owner" and base["decoder_security_definer"] is True
+assert base["rights"] == {"public_decoder": False, "user_decoder": False, "worker_decoder": False,
+                          "storage_decoder": False, "worker_reader": True, "worker_finalizer": True}
 assert base["receipts"] == 2 and base["agents"] == 1 and not base["new_pins"]
 PY
 
@@ -327,12 +369,17 @@ assert result.get("package_reconciliation_required", False) is False
 assert journal["previous"] == "beta1-" + old[:12]
 backups = Path("/var/backups/sli/native")
 if phase == "upgraded":
-    assert (present["entries"], present["version"]) == (378, 411)
-    assert len(present["new_pins"]) == 1
-    version, name, checksum = present["new_pins"][0]
-    assert (version, name) == (411, "password_successor_coverage")
-    assert checksum == "313281ec2d630a7dc82c7a135a863a7ea444228a0699b488ef177bc657e72279"
-    assert all(present[key] == before[key] for key in ("prefix_sha256", "receipts", "receipts_sha256", "agents"))
+    assert (present["entries"], present["version"]) == (382, 415)
+    assert present["new_pins"] == [
+        [412,"sigma_history_test","c6cce426f28c51a2fa9787523d8967d127a9a7b0c796e8f2db1d861ebc52755f"],
+        [413,"workstation_journal_admission","0d86c71b7d4e599af4458224562b106f03840a04cb8b469eb10145681f958c5b"],
+        [414,"file_audit_smb_catalog","13df311e2c430d52de603a592cde45808d69cd30554c30112398f3bc562ed944"],
+        [415,"password_portion_canonical","cba1cc479b34fba8be9d31d718c8953d2bb8da7e3e94e9f6eec1b5c907c99b73"],
+    ]
+    assert all(present[key] == before[key] for key in (
+        "prefix_sha256", "base_pin", "receipts", "receipts_sha256", "agents", "findings",
+        "findings_sha256", "access_events", "decoder_owner", "decoder_acl", "decoder_security_definer", "rights"))
+    assert present["decoder_sha256"] != before["decoder_sha256"]
     assert result["schema_changed"] is True and journal["checkpoint_storage"] == "backup_volume"
     expected = journal["checkpoint_sha256"]
     point = backups / "upgrade-checkpoints" / identity

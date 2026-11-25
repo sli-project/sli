@@ -89,7 +89,7 @@ classifiers = {
     "permission": r"(?:Permission denied|Operation not permitted)",
     "file_not_found": r"No such file or directory",
     "capacity": r"No space left on device",
-    "fixture_guard": r"^ERROR:\s+expected the exact 410 ledger on local PostgreSQL 18 and no collected data",
+    "fixture_guard": r"^ERROR:\s+expected the exact 411 ledger on local PostgreSQL 18 and no collected data",
     "postgres_relation_missing": r"^ERROR:\s+relation .* does not exist",
     "postgres_syntax": r"^ERROR:\s+syntax error",
     "postgres_privilege": r"^ERROR:\s+permission denied",
@@ -207,7 +207,7 @@ APT
         "$(findmnt -n -o SOURCE /srv/sli-db)" "$(findmnt -n -o SOURCE "$backup_root")"
 
     input=/mnt/p1-input
-    stage=install_410
+    stage=install_411
     printf 'P1_EVIDENCE entering=%s\n' "$stage"
     base=$(mktemp -d /var/tmp/p1-predecessor.XXXXXXXX)
     tar -xzf "$input/predecessor.tar.gz" -C "$base"
@@ -295,7 +295,7 @@ SET LOCAL statement_timeout='5s';
 WITH receipts AS (
     SELECT count(*) AS receipts FROM (VALUES (1),(2)) AS items(x)
 ), pins AS (
-    SELECT 410 AS version
+    SELECT 411 AS version
 )
 SELECT jsonb_build_object(
     'scalar',jsonb_typeof(to_jsonb(receipts)),
@@ -330,8 +330,8 @@ fi
 old_dir=$2
 new_dir=$3
 new_commit=$4
-old_commit=0f6093b3a9afcecb28fcdd47c7ed50522e50a156
-old_hash=38115eee4fe10dbf5a422d13ccbb644ff5c0837cb371cb397579c0fb56b0338e
+old_commit=1c25b9f1661ac2412bfc584f3fcbffda1ea95229
+old_hash=b3d5b8eb293bebee5142ffd9717620bf3491361bc445dc96bbc35171178177bd
 evidence="$RUNNER_TEMP/p1-rollback-evidence"
 vm="$RUNNER_TEMP/p1-rollback-vm"
 mkdir -p "$evidence" "$vm/input"
