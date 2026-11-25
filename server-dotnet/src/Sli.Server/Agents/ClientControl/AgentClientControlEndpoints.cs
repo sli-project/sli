@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.ClientControl;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.FileAudit;
 using Sli.Server.Agents.Registry;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Domains;
@@ -35,6 +36,7 @@ public static class AgentClientControlEndpoints
             await using var db=await services.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(ct);
             await using var tx=await db.BeginTransactionAsync(ct);
             var auth=services.GetRequiredService<AgentIdentityService>();var service=services.GetRequiredService<AgentClientControlService>();JsonObject result;
+            Guid? catalogAgent=null;
             if(report) {
                 if (body is JsonObject reportBody && reportBody.ContainsKey("dc_identity"))
                     await AgentEnrollmentService.LockRegistrationAsync(db, tx, ct);
@@ -49,8 +51,26 @@ public static class AgentClientControlEndpoints
                     await tx.CommitAsync(ct);await DomainHttp.WriteAsync(context,result,200,ct);return;
                 }
                 result=await service.CheckInAsync(db,tx,agent,ct);
+                catalogAgent=agent.Id;
             }
-            await tx.CommitAsync(ct);await DomainHttp.WriteAsync(context,result,200,ct);
+            await tx.CommitAsync(ct);
+            if (catalogAgent is Guid agentId && context.Request.Headers[FileAuditCatalog.SupportHeader].ToString()=="1")
+            {
+                result[Sli.Agent.Protocol.FileAuditReadError.Capability]=true;
+                using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);
+                deadline.CancelAfter(TimeSpan.FromSeconds(1));
+                try
+                {
+                    if (await FileAuditCatalog.PollAsync(db,agentId,deadline.Token) is { } request)
+                        result["file_audit_catalog_request"]=request;
+                }
+                catch (Exception error) when (error is Npgsql.NpgsqlException or OperationCanceledException or TimeoutException)
+                {
+                    services.GetRequiredService<ILogger<AgentClientControlService>>()
+                        .LogWarning("Optional File Audit catalog poll failed ({ErrorType})",error.GetType().Name);
+                }
+            }
+            await DomainHttp.WriteAsync(context,result,200,ct);
         }
         catch(AgentCertificateException error){await DomainHttp.WriteAsync(context,new { error=error.Code },error.Status,ct);}
         catch(AgentControlException error){await DomainHttp.WriteAsync(context,new { error=error.Message },error.Status,ct);}

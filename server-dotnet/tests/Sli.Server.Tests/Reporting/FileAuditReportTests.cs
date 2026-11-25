@@ -3,6 +3,7 @@ using Sli.Server.Access;
 using Sli.Server.Reporting.V2;
 using Npgsql;
 using Xunit;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -64,7 +65,8 @@ public sealed class FileAuditReportTests
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
 
-    internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner, CancellationToken ct)
+    internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner,
+        Guid agentId, string sourceId, string rootPath, JsonObject nativeEvent, CancellationToken ct)
     {
         const string legacyId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         await PostCollectionPostgres.Sql(owner, """
@@ -83,15 +85,22 @@ public sealed class FileAuditReportTests
                 jsonb_build_array(jsonb_set(p.policy#>'{roots,0}','{collection_scope_id}','"scope:other"'))) as policy) updated
             where p.revision=2;
             """,ct);
-        await using var time = new NpgsqlCommand("select time_created_utc from event_cold_facts where event_kind=4670", owner);
-        var stamp = (DateTime)(await time.ExecuteScalarAsync(ct))!;
+        var stamp = DateTimeOffset.Parse(nativeEvent["time_created"]!.GetValue<string>(), CultureInfo.InvariantCulture);
+        string scope = nativeEvent["collection_scope_id"]!.GetValue<string>();
+        var shareKey = FileAuditReportReader.ShareKey(new JsonObject
+        {
+            ["agent_id"] = agentId.ToString("D"),
+            ["source_instance_id"] = sourceId,
+            ["collection_scope_id"] = scope
+        });
         var window = $"period=custom&from={stamp.AddDays(-1):yyyy-MM-dd}T00:00:00Z&to={stamp.AddDays(1):yyyy-MM-dd}T00:00:00Z";
+        var filter = $"source_kind=server&share={Uri.EscapeDataString(shareKey)}&path={Uri.EscapeDataString(rootPath)}&include_nested=true&operation=permissions";
         var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
         foreach (string tab in new[] { "permission-changes", "actions" })
         {
             var key = "file-audit." + tab;
             var definition = new ReportDefinitionRegistry().Get(key);
-            var query = $"/api/v2/reports/{key}/data?{window}&operation=permissions&limit=1";
+            var query = $"/api/v2/reports/{key}/data?{window}&{filter}&limit=1";
             const string allowed = """{"mode":"restricted","clauses":[{"collection_scope_ids":["scope:files"]}]}""";
             await using var host = await ReportFixture.Start(Facts(tab, scope: allowed), definition, nativeReader: reader);
             using var first = await host.Client.GetAsync(query, ct);
@@ -102,8 +111,14 @@ public sealed class FileAuditReportTests
             Assert.NotEqual(legacyId, row!["id"]!.ToString());
             Assert.Equal("permissions",row["operation"]!.ToString());
             Assert.Equal("success",row["outcome"]!.ToString());
-            Assert.Equal("scope:files", row["collection_scope_id"]!.ToString());
-            Assert.Equal(4670,row["evidence"]![0]!["event_id"]!.GetValue<int>());
+            Assert.Equal(agentId.ToString("D"), row["agent_id"]!.GetValue<string>());
+            Assert.Equal(sourceId, row["source_instance_id"]!.GetValue<string>());
+            Assert.Equal(scope, row["collection_scope_id"]!.GetValue<string>());
+            Assert.Equal(nativeEvent["path"]!.GetValue<string>(), row["path"]!.GetValue<string>());
+            Assert.Equal(stamp, DateTimeOffset.Parse(row["observed_at"]!.GetValue<string>(), CultureInfo.InvariantCulture));
+            var evidence = Assert.Single(row["evidence"]!.AsArray())!;
+            Assert.Equal(4670, evidence["event_id"]!.GetValue<int>());
+            Assert.Equal(nativeEvent["record_id"]!.ToString(), evidence["record_id"]!.ToString());
             string cursor = page["next_cursor"]!.GetValue<string>();
             using var next = await host.Client.GetAsync(query + "&cursor=" + Uri.EscapeDataString(cursor), ct);
             Assert.Equal(HttpStatusCode.OK,next.StatusCode);
@@ -114,7 +129,7 @@ public sealed class FileAuditReportTests
         const string other = """{"mode":"restricted","clauses":[{"collection_scope_ids":["scope:other"]}]}""";
         var permissions = new ReportDefinitionRegistry().Get("file-audit.permission-changes");
         await using var denied = await ReportFixture.Start(Facts("permission-changes", scope: other), permissions,nativeReader:reader);
-        using var response = await denied.Client.GetAsync("/api/v2/reports/file-audit.permission-changes/data?" + window,ct);
+        using var response = await denied.Client.GetAsync($"/api/v2/reports/file-audit.permission-changes/data?{window}&{filter}", ct);
         Assert.Equal(HttpStatusCode.OK,response.StatusCode);
         var result = await ReportFixture.Body(response);
         Assert.Equal(0,result["filtered_count"]!.GetValue<int>());

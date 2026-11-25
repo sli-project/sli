@@ -21,6 +21,7 @@ using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
 using Sli.Server.Operations;
 using Sli.Server.Agents.Certificates;
+using Sli.Server.Agents.ClientControl;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Tests.Agents;
@@ -122,6 +123,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await seed.ExecuteNonQueryAsync(ct);
         using var backupSettingsSocket = new BackupSettingsEndpointTests.SocketExchange(
             """{"ok":true,"enabled":true,"path":"/mnt/synthetic-backup","revision":"r1","storage_status":"ready"}""" + "\n");
+        var catalogLog = new CatalogPollLogger(output);
         using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(SafeTestEnvironment.ConfigureApiHost).WithWebHostBuilder(b => b
             .UseTestServer()
             .ConfigureLogging(l => l.ClearProviders())
@@ -140,6 +142,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 s.RemoveAll<BackupSettingsClient>();
                 s.AddSingleton(new BackupSettingsClient(_ => ValueTask.FromResult<Stream>(backupSettingsSocket)));
                 s.AddSingleton(transportTrust);
+                s.AddSingleton<ILogger<AgentClientControlService>>(catalogLog);
             }));
         // TestServer replaces only the transport. Schannel credentials are not
         // available in the Windows sandbox; CA/identity validation stays real.
@@ -242,11 +245,15 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             command = new { contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-agent-file", action = "check", policy_revision = (agentRevision+1).ToString(), collection_scope_ids = new[] { "sql-scope" } } });
         var checkReport = new { contract_id = "sli.file-audit.audit-result.v1", command_id = "sql-agent-file",
             policy_revision = (agentRevision + 1).ToString(), action = "check", observed_at_utc = DateTimeOffset.UtcNow,
-            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "unknown", required_masks = new { }, actual_masks = new { } } },
+            scopes = new[] { new { collection_scope_id = "sql-scope", state = "failed", reason_code = "native_unavailable",
+                required_masks = new { }, actual_masks = new { }, read_error = new { stage = "acl", code_kind = "win32", code = 5 } } },
             snapshots = Array.Empty<object>(), ownership_remaining = false };
         var reportAck = await Check("/api/v1/agent/file-audit-report", checkReport, asClient: agentClient);
         if (reportAck?["status"]?.GetValue<string>() != "accepted")
             failures.Add("File Audit check did not return an accepted receipt");
+        var checkReadback = await Check("/api/v1/admin/agents/file-audit?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("acl", checkReadback?["scopes"]?["sql-scope"]?["read_error"]?["stage"]?.ToString());
+        Assert.Equal(5, checkReadback?["scopes"]?["sql-scope"]?["read_error"]?["code"]?.GetValue<int>());
         await Check("/api/v1/agent/file-audit-report", checkReport with { command_id = "sql-unrequested-file" },
             400, error: "file_audit_result_invalid", asClient: agentClient);
         await using (var checkBoundary = new NpgsqlCommand("""
@@ -263,6 +270,70 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             if (await checkBoundary.ExecuteScalarAsync(ct) is not true)
                 failures.Add("File Audit check receipt or event admission did not match the current command");
         }
+        const string catalogRoute = "/api/v1/admin/agents/file-audit/catalog";
+        async Task<Guid> ReadCatalogRequestAsync()
+        {
+            string? request = null;
+            for (int poll = 0; poll < 3; poll++)
+            {
+                if (poll > 0) await Task.Delay(50, ct);
+                var identity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+                Assert.True(identity?[FileAuditReadError.Capability]?.GetValue<bool>() is true,
+                    "The agent identity response did not acknowledge the catalog capability.");
+                request = identity?["file_audit_catalog_request"]?["request_id"]?.ToString();
+                if (request is not null) break;
+            }
+            Assert.True(Guid.TryParseExact(request, "D", out var id),
+                $"Expected a catalog request ID after three identity polls. Last server warning: {catalogLog.LastWarning ?? "none"}");
+            return id;
+        }
+
+        agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
+        await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+        var requested = await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        Assert.Equal("pending", requested?["state"]?.ToString());
+        var catalogRequest = await ReadCatalogRequestAsync();
+        agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
+        var catalogReport = new
+        {
+            request_id = catalogRequest, status = "ready",
+            shares = new[]
+            {
+                new { share_name = "Pilot$", path = @"C:\Pilot" },
+                new { share_name = "C$", path = @"C:\" },
+                new { share_name = "Synthetic", path = @"C:\sql-data" }
+            }
+        };
+        var catalogAck = await Check("/api/v1/agent/file-audit-catalog-report", catalogReport, asClient: agentClient);
+        Assert.Equal("accepted", catalogAck?["status"]?.ToString());
+        await Check("/api/v1/agent/file-audit-catalog-report", catalogReport, asClient: agentClient);
+        await Check("/api/v1/agent/file-audit-catalog-report", catalogReport with { status = "unavailable", shares = [] },
+            409, error: "file_audit_catalog_request_conflict", asClient: agentClient);
+        var catalog = await Check(catalogRoute + "?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("ready", catalog?["state"]?.ToString());
+        var items = catalog!["items"]!.AsArray();
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, row => row?["share_name"]?.ToString() == "Pilot$");
+        var retained = Assert.Single(items.Where(row => row?["share_name"]?.ToString() == "Synthetic"));
+        Assert.Equal("sql-scope", retained?["collection_scope_id"]?.ToString());
+        Assert.Equal("sql-agent-file", catalog["saved_command"]?["command_id"]?.ToString());
+        Assert.Equal("check", catalog["saved_command"]?["action"]?.ToString());
+        var reportShare = JsonNode.Parse(catalog["saved_report_share_key"]!.GetValue<string>())!.AsArray();
+        Assert.Equal(new[] { registered["agent_id"]!.ToString(), agentHost, "sql-scope" },
+            reportShare.Select(value => value!.GetValue<string>()).ToArray());
+        var refreshed = await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        Assert.Equal("pending", refreshed?["state"]?.ToString());
+        agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
+        var nextRequest = await ReadCatalogRequestAsync();
+        agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
+        Assert.NotEqual(catalogRequest, nextRequest);
+        await Check("/api/v1/agent/file-audit-catalog-report",
+            new { request_id = nextRequest, status = "incomplete", native_status = 234, shares = Array.Empty<object>() },
+            asClient: agentClient);
+        var incomplete = await Check(catalogRoute + "?agent_id=" + registered["agent_id"], new { }, method: "GET");
+        Assert.Equal("incomplete", incomplete?["state"]?.ToString());
+        Assert.Equal(234, incomplete?["native_status"]?.GetValue<int>());
+        Assert.Empty(incomplete!["items"]!.AsArray());
         object Heartbeat(long sequence, string before) => Packets.Make(new EcdsaPacketSigner(agentKey), registered["agent_id"]!.ToString(), sequence,
             new Sample("sli.heartbeat", agentHost, "heartbeat", agentHost, new Cursor("record_id", before), new Cursor("record_id", sequence.ToString()),
                 new JsonObject { ["contract"] = "sli.heartbeat.v1", ["status"] = "alive" }), DateTimeOffset.UtcNow).ToJson();
@@ -442,6 +513,23 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                     and attnum>0 and not attisdropped and has_column_privilege('adlog_user',attrelid,attname,'UPDATE'))
             """, db);
         Assert.Equal(true, await privilege.ExecuteScalarAsync(ct));
+    }
+
+    private sealed class CatalogPollLogger(ITestOutputHelper output) : ILogger<AgentClientControlService>
+    {
+        public string? LastWarning { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Warning;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> format)
+        {
+            if (!IsEnabled(logLevel)) return;
+            string message = format(state, exception);
+            if (!message.StartsWith("Optional File Audit catalog poll failed", StringComparison.Ordinal)) return;
+            LastWarning = message;
+            output.WriteLine(message);
+        }
     }
 
     // Only the Unix-socket/network boundary is substituted. All channel,

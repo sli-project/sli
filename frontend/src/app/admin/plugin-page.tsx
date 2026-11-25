@@ -9,13 +9,15 @@ import { navigationRedirect } from "../navigation";
 import { PluginSettingsForm } from "./plugin-settings-form";
 import { PluginReadState, PluginSources } from "./plugin-sources";
 import { PluginRadiusSources } from "./plugin-radius-sources";
+import { fileAuditAgentParameter } from "./plugin-file-audit-controls";
 
 const tabIds = ["overview", "connection", "settings", "rules", "reports"] as const;
 
 /** Mounted only after the existing administration access gate has allowed this route. */
 export function PluginPage({ pluginId, title }: { pluginId: string; title: string }) {
   const access = useEffectiveAccess();
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState<string>(() => pluginId === "sli.file-audit"
+    && new URLSearchParams(window.location.search).has(fileAuditAgentParameter) ? "connection" : "overview");
   const client = useQueryClient();
   const { timeZone } = useTimeZone();
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins });

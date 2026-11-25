@@ -1,11 +1,54 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { acceptedAgentFileAuditCommand, api, ApiResponseError, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { acceptedAgentFileAuditCommand, api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentItem } from "../../api/client";
 import { t } from "../../i18n";
 import { AgentFileAuditControls, AgentFileAuditReadback } from "./agent-file-audit";
 import { agentHostName } from "./agent-actions";
 
+export const fileAuditAgentParameter = "file_audit_agent";
+const catalogKey = (agentId: string | null) => ["admin-file-audit-catalog", agentId] as const;
+
 export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
   const client = useQueryClient();
+  const [agentId, setAgentId] = useState(() => new URLSearchParams(window.location.search).get(fileAuditAgentParameter));
+  const requestedBySelection = useRef<string | null>(null);
+  const catalog = useQuery<AgentFileAuditCatalog>({
+    queryKey: catalogKey(agentId),
+    enabled: agentId !== null && agents.some((agent) => agent.id === agentId && agent.status === "active"),
+    queryFn: async ({ signal }) => {
+      try {
+        return await api.agentFileAuditCatalog(agentId!, signal);
+      } catch (error) {
+        if (error instanceof ApiResponseError && [404, 501].includes(error.status))
+          return { state: "unsupported", items: [], saved_selection: null, saved_command: null };
+        throw error;
+      }
+    },
+    refetchInterval: (query) => query.state.data?.state === "pending" ? 3_000 : false,
+  });
+  const refresh = useMutation({
+    mutationFn: api.requestAgentFileAuditCatalog,
+    onMutate: (id) => client.cancelQueries({ queryKey: catalogKey(id) }),
+    onSuccess: (data, id) => client.setQueryData(catalogKey(id), data),
+  });
+  const requestCatalog = refresh.mutate;
+  useEffect(() => {
+    if (!agentId || requestedBySelection.current !== agentId || catalog.isPending || catalog.isFetching) return;
+    requestedBySelection.current = null;
+    if (!catalog.isError && (catalog.data?.state === "idle" || catalog.data?.state === "expired")) {
+      requestCatalog(agentId);
+    }
+  }, [agentId, catalog.data?.state, catalog.isError, catalog.isFetching, catalog.isPending, requestCatalog]);
+
+  const selectAgent = (id: string | null) => {
+    requestedBySelection.current = id;
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set(fileAuditAgentParameter, id);
+    else url.searchParams.delete(fileAuditAgentParameter);
+    window.history.replaceState(window.history.state, "", url);
+    refresh.reset();
+    setAgentId(id);
+  };
   const action = useMutation({
     mutationFn: async (body: Record<string, unknown>): Promise<{ singleton?: AgentFileAuditCommand; batch?: AgentFileAuditCommand[] }> => {
       const response = await api.agentAction("file-audit", body);
@@ -14,10 +57,11 @@ export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
       if (!command) throw new Error("file_audit_receipt_unrecognized");
       return { singleton: command };
     },
-    onSettled: async (_data, error) => {
+    onSettled: async (_data, error, body) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ["admin-agents"] }),
         error ? undefined : client.invalidateQueries({ queryKey: ["setup-status"] }),
+        typeof body.agent_id === "string" ? client.invalidateQueries({ queryKey: catalogKey(body.agent_id) }) : undefined,
       ]);
     },
   });
@@ -25,7 +69,19 @@ export function PluginFileAuditControls({ agents }: { agents: AgentItem[] }) {
   return <>
     <AgentFileAuditControls agents={agents} busy={action.isPending}
       change={(_, body) => { if (!action.isPending) action.mutate(body); }}
-      accepted={action.data?.singleton}/>
+      accepted={action.data?.singleton}
+      serverCatalog={{
+        agentId, selectAgent, result: catalog.isError || refresh.isError ? undefined : catalog.data,
+        loading: catalog.isPending || refresh.isPending, error: catalog.isError || refresh.isError,
+        denied: [catalog.error, refresh.error].some((error) => error instanceof ApiResponseError && [401, 403].includes(error.status)),
+        refresh: () => {
+          if (agentId) {
+            requestedBySelection.current = null;
+            if (catalog.isError) void catalog.refetch();
+            else requestCatalog(agentId);
+          }
+        },
+      }}/>
     {action.error ? <p role="alert">{t(action.error instanceof ApiResponseError && [401, 403].includes(action.error.status)
       ? "agents.fileAudit.result.denied" : "agents.actionError")}</p> : null}
     {action.data?.batch?.map((command) => {

@@ -19,6 +19,25 @@ public static class FileAuditAccess
         if(access.Capabilities.Contains(Capability)) return true;
         return policies.Any(p=>p.Effect=="allow" && p.Valid && !p.Global && Matches(p.Scope,agent,source,scope));
     }
+    internal static IEnumerable<string> DiscoveryScopes(CapabilityDecisionSet access)
+    {
+        // Each restricted policy either names a scope or applies equally to all unnamed scopes.
+        var named = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var policy in access.Policies.Where(p=>p.CapabilityKey==Capability && p.Valid && !p.Global))
+        {
+            if (policy.Scope.ValueKind!=JsonValueKind.Object || !policy.Scope.TryGetProperty("clauses",out var clauses)
+                || clauses.ValueKind!=JsonValueKind.Array) continue;
+            foreach (var clause in clauses.EnumerateArray().Where(ValidClauseObject))
+                if (clause.TryGetProperty("collection_scope_ids",out var ids))
+                    foreach (var id in ids.EnumerateArray()) named.Add(id.GetString()!);
+        }
+        string unnamed;
+        do { unnamed=Guid.NewGuid().ToString("D"); } while (!named.Add(unnamed));
+        return named;
+    }
+
+    private static bool ValidClauseObject(JsonElement value) => value.ValueKind==JsonValueKind.Object && ValidClause(value);
+
     private static bool Matches(JsonElement value,string agent,string source,string scope)
     {
         if(value.ValueKind!=JsonValueKind.Object || !value.TryGetProperty("mode",out var mode) || mode.ValueKind!=JsonValueKind.String

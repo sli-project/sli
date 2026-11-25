@@ -613,6 +613,8 @@
     "config/postgres_migrations/412_sigma_history_test.sql": "c6cce426f28c51a2fa9787523d8967d127a9a7b0c796e8f2db1d861ebc52755f",
     "config/postgres_migrations/413_workstation_journal_admission.rollback.sql": "a95901de4cf41982bc7cea963077580979d2835435f89720ff8804f5a2fbab27",
     "config/postgres_migrations/413_workstation_journal_admission.sql": "0d86c71b7d4e599af4458224562b106f03840a04cb8b469eb10145681f958c5b",
+    "config/postgres_migrations/414_file_audit_smb_catalog.rollback.sql": "2f120b3b125afc546b0ce47f66db5531d0a827d13bcc4df38e6c6a2880457536",
+    "config/postgres_migrations/414_file_audit_smb_catalog.sql": "13df311e2c430d52de603a592cde45808d69cd30554c30112398f3bc562ed944",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

@@ -36,7 +36,11 @@ public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfi
 
     public Task<JsonObject> GetAsync(string path, CancellationToken cancellationToken) => SendAsync(HttpMethod.Get, path, null, cancellationToken);
 
-    private async Task<JsonObject> SendAsync(HttpMethod method, string path, JsonNode? body, CancellationToken cancellationToken)
+    public Task<JsonObject> GetIdentityAsync(bool supportsFileAuditCatalog, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Get, "/api/v1/agent/identity", null, cancellationToken, supportsFileAuditCatalog);
+
+    private async Task<JsonObject> SendAsync(HttpMethod method, string path, JsonNode? body, CancellationToken cancellationToken,
+        bool supportsFileAuditCatalog = false)
     {
         // HttpClient.Timeout with ResponseHeadersRead ends at the headers. Keep the same deadline
         // through the entire body, including for bootstrap, check-in, reports and packets.
@@ -47,6 +51,7 @@ public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfi
         try
         {
             using var request = new HttpRequestMessage(method, path);
+            if (supportsFileAuditCatalog) request.Headers.Add("X-SLI-File-Audit-Catalog", "1");
             if (body is not null)
             {
                 request.Content = new ByteArrayContent(CanonicalJson.ToBytes(body));

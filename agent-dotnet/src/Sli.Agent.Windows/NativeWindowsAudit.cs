@@ -125,7 +125,8 @@ public sealed class WindowsAuditApi : IWindowsAuditApi
         if (guids.Count == 0) return result;
         var ids = guids.Select(Guid.Parse).Order().ToArray();
         using var privilege = new SecurityPrivilege();
-        if (!AuditQuerySystemPolicy(ids, (uint)ids.Length, out var buffer)) throw new AgentException("agent_audit_query_failed");
+        if (!AuditQuerySystemPolicy(ids, (uint)ids.Length, out var buffer))
+            throw new FileAuditNativeReadException("agent_audit_query_failed", unchecked((uint)Marshal.GetLastPInvokeError()));
         try
         {
             var size = Marshal.SizeOf<PolicyInformation>();
@@ -307,11 +308,22 @@ public sealed class WindowsAuditApi : IWindowsAuditApi
         private TokenPrivilege _previous;
         public SecurityPrivilege()
         {
-            if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, 0x28, out _token)) throw new AgentException("agent_audit_privilege_unavailable");
-            if (!LookupPrivilegeValue(null, "SeSecurityPrivilege", out var luid)) { CloseHandle(_token); throw new AgentException("agent_audit_privilege_unavailable"); }
+            if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, 0x28, out _token))
+                throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", unchecked((uint)Marshal.GetLastPInvokeError()));
+            if (!LookupPrivilegeValue(null, "SeSecurityPrivilege", out var luid))
+            {
+                uint status = unchecked((uint)Marshal.GetLastPInvokeError());
+                CloseHandle(_token);
+                throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", status);
+            }
             var desired = new TokenPrivilege { Count = 1, Luid = luid, Attributes = 2 };
-            if (!AdjustTokenPrivileges(_token, false, ref desired, Marshal.SizeOf<TokenPrivilege>(), out _previous, out _) || Marshal.GetLastPInvokeError() != 0)
-            { CloseHandle(_token); throw new AgentException("agent_audit_privilege_unavailable"); }
+            bool adjusted = AdjustTokenPrivileges(_token, false, ref desired, Marshal.SizeOf<TokenPrivilege>(), out _previous, out _);
+            uint error = unchecked((uint)Marshal.GetLastPInvokeError());
+            if (!adjusted || error != 0)
+            {
+                CloseHandle(_token);
+                throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", error);
+            }
         }
         public void Dispose() { AdjustTokenPrivileges(_token, false, ref _previous, 0, out _, out _); CloseHandle(_token); }
     }

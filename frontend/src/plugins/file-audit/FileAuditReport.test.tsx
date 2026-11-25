@@ -42,9 +42,9 @@ const result = (key: string, params: URLSearchParams): ReportResultDto => ({
   filtered_count: 52, metrics: [], series: {}, coverage: { state: "complete" }, filter_options: {}, limitations: [], window: { timezone: "UTC" },
 });
 let client: QueryClient;
-function mount() {
+function mount(initial = declaration()) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(<QueryClientProvider client={client}><FileAuditReport definition={declaration()}/></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><FileAuditReport definition={initial}/></QueryClientProvider>);
 }
 beforeEach(() => {
   window.history.replaceState({}, "", "/app/report/file-audit.actions");
@@ -67,6 +67,26 @@ it("applies the source filter to data, URL, tabs and export and resets cursor", 
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[0]).toBe("file-audit.access-denials"));
   expect(mocks.data.mock.calls.at(-1)?.[1].get("source_kind")).toBe("workstation");
   expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBeNull();
+});
+
+it("uses the applied server share and subtree from the permission report link", async () => {
+  const key = "file-audit.permission-changes";
+  const share = JSON.stringify(["synthetic-agent", "bound-source", "pilot-scope"]);
+  const path = "C:\\Pilot";
+  const params = new URLSearchParams({
+    period: "24h", source_kind: "server", path, share, operation: "permissions", include_nested: "true",
+  });
+  window.history.replaceState({}, "", `/app/report/${key}?${params}`);
+  mount(declaration(key));
+  await screen.findByRole("table", { name: tabTitle("permission-changes") });
+  expect(mocks.data.mock.calls.at(-1)?.[0]).toBe(key);
+  const actual = mocks.data.mock.calls.at(-1)?.[1] as URLSearchParams;
+  expect(actual.getAll("share")).toEqual([share]);
+  for (const filter of ["source_kind", "path", "operation", "include_nested"]) {
+    expect(actual.get(filter)).toBe(params.get(filter));
+  }
+  expect(actual.get("period")).toBe("custom");
+  expect(Date.parse(actual.get("to")!) - Date.parse(actual.get("from")!)).toBe(24 * 60 * 60 * 1000);
 });
 
 it.each(FILE_AUDIT_TABS)("opens %s through its authorized v2 report key", async (tab) => {

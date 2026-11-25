@@ -23,6 +23,9 @@ public static class FileAuditControlEndpoints
             return body.ContainsKey("agents") ? await service.Batch(db,tx,body,principal,access,ct) : await service.Enqueue(db,tx,body,principal,access,ct);
         }));
         endpoints.MapPost("/api/v1/agent/file-audit-report",FileAuditIngestEndpoint.Handle);
+        endpoints.MapGet(FileAuditCatalog.AdminRoute, (HttpContext context) => FileAuditCatalog.Admin(context));
+        endpoints.MapPost(FileAuditCatalog.AdminRoute, (HttpContext context) => FileAuditCatalog.Admin(context));
+        endpoints.MapPost(FileAuditCatalog.ReportRoute, (HttpContext context) => FileAuditCatalog.Report(context));
         return endpoints;
     }
 }

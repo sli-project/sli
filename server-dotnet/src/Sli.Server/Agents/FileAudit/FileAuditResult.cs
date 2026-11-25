@@ -43,9 +43,12 @@ public static class FileAuditResult
         var selected=command["collection_scope_ids"]!.AsArray().Select(S).ToHashSet(StringComparer.Ordinal); var seen=new HashSet<string>(StringComparer.Ordinal);
         foreach(var item in scopes)
         {
-            if(item is not JsonObject row || !JsonRead.HasExactly(row,"collection_scope_id","state","reason_code","required_masks","actual_masks") || !Text(row["collection_scope_id"],out var id) || !seen.Add(id) || !selected.Contains(id)
+            if(item is not JsonObject row || !ScopeShape(row) || !Text(row["collection_scope_id"],out var id) || !seen.Add(id) || !selected.Contains(id)
                 || !Text(row["state"],out var state) || state is not ("verified" or "partial" or "blocked" or "failed") || !Text(row["reason_code"],out var reason) || !Reasons.Contains(reason)
                 || row["required_masks"] is not JsonObject required || row["actual_masks"] is not JsonObject actual) return false;
+            if (row.ContainsKey("read_error") && (state!="failed" || reason!="native_unavailable" || S(command["action"])!="check"
+                || selected.Count!=1 || config["source_kind"]?.ToString()=="workstation" || snapshots.Count!=0
+                || !FileAuditReadError.Valid(row["read_error"]))) return false;
             var root=config["roots"]!.AsArray().OfType<JsonObject>().Single(x=>S(x["collection_scope_id"])==id);var expected=Requirements(config,root);
             if(state=="failed") { if(required.Count!=0 || actual.Count!=0) return false; }
             else
@@ -68,6 +71,10 @@ public static class FileAuditResult
         }
         return true;
     }
+    private static bool ScopeShape(JsonObject row) => row.ContainsKey("read_error")
+        ? JsonRead.HasExactly(row,"collection_scope_id","state","reason_code","required_masks","actual_masks","read_error")
+        : JsonRead.HasExactly(row,"collection_scope_id","state","reason_code","required_masks","actual_masks");
+
     private static bool Snapshot(JsonObject snap,JsonObject config,JsonObject command)
     {
         if(!JsonRead.HasExactly(snap,"contract_id","collection_scope_id","policy_revision","observed_at_utc","scan_id","page_number","has_more","completeness","unread_objects","share","local_groups","objects","snapshot_sha256","snapshot_id")
