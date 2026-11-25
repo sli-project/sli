@@ -11,7 +11,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      KIT_COMMIT: fa8baf797ca0f0bcd62574aebf551e3aef1e6638
+      KIT_COMMIT: 6a454ca4abc8c6960eb5823748afd4848f3faddf
     steps:
       - name: Request the standard main build with artifact upload
         shell: bash
