@@ -4,12 +4,12 @@ umask 077
 
 [[ $# == 1 && ${GITHUB_ACTIONS:-} == true && ${RUNNER_OS:-} == Linux && ${GITHUB_REPOSITORY:-} == sli-project/sli ]]
 kit=$(realpath -e "$1")
-commit=4a6f14c815e07ff2a01346700d79507689d657e9
+commit=4bc007843aab81272eb56387de1723182bad9c13
 evidence="$RUNNER_TEMP/beta-clean-readme-evidence"
 vm="$RUNNER_TEMP/beta-clean-readme-vm"
 mkdir -p "$evidence" "$vm/input"
 [[ $BETA_SOURCE_ARTIFACT =~ ^[0-9]+$ && $BETA_SOURCE_DIGEST =~ ^sha256:[a-f0-9]{64}$ ]]
-printf 'archived_commit=%s\nsource_workflow=45533669685\nsource_artifact=%s\nsource_zip_digest=%s\n' \
+printf 'archived_commit=%s\nsource_workflow=45539628253\nsource_artifact=%s\nsource_zip_digest=%s\n' \
     "$commit" "$BETA_SOURCE_ARTIFACT" "$BETA_SOURCE_DIGEST" >"$evidence/pins.txt"
 printf 'guest_transport_source=fe958b97829a4f4c72918173988e5e86c5a21a2b\nconfigured_vcpus=4\nconfigured_ram_mib=8192\nconfigured_system_disk_bytes=42949672960\n' >>"$evidence/pins.txt"
 
@@ -53,7 +53,7 @@ sha512sum --check --strict cloud-image.sha512
 cat cloud-image.sha512 >>"$evidence/pins.txt"
 
 cp "$kit/sli-debian-beta-kit.tar.gz" "$kit/SHA256SUMS" input/
-cp "$GITHUB_WORKSPACE/scripts/ci/clean-beta-plan-guest.sh" input/
+cp "$GITHUB_WORKSPACE/scripts/ci/clean-beta-plan-guest.sh" "$GITHUB_WORKSPACE/scripts/ci/prepare-local-vpn-menu-guest.py" input/
 guide="$GITHUB_WORKSPACE/docs/ru/install.md"
 [[ $(git hash-object "$guide") == b03944dbf3ece0e94d35572e0c1f4136c707f28c ]]
 cp "$guide" input/install-guide.md

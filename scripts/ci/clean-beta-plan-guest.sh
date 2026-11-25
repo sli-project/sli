@@ -7,7 +7,7 @@ private_log=/run/beta-readme-install.log
 probe_log=/run/beta-readme-auth.log
 auth_file=/run/beta-browser-session.json
 menu_log=/run/beta-browser-evidence.log
-candidate=4a6f14c815e07ff2a01346700d79507689d657e9
+candidate=4bc007843aab81272eb56387de1723182bad9c13
 operator=debian
 
 for _ in {1..10}; do
@@ -38,6 +38,12 @@ finish() {
             grep -E '^BETA_README_EVIDENCE (probe_phase|probe_status)=[A-Za-z0-9_-]+$' "$probe_log" >&3 || true
         fi
     fi
+    if [[ -n ${results:-} && -d $results && -c /dev/virtio-ports/beta.readme.menu ]]; then
+        if tar -czf /run/beta-menu-screens.tar.gz -C "$results" .; then
+            cat /run/beta-menu-screens.tar.gz >/dev/virtio-ports/beta.readme.menu || true
+        fi
+    fi
+    if [[ -f $auth_file ]]; then unlink "$auth_file"; fi
     evidence "status=$status stage=$stage"
     sync
     systemctl poweroff --no-block
@@ -216,20 +222,134 @@ runuser -u "$operator" -- certutil -N --empty-password -d "sql:$db"
 runuser -u "$operator" -- certutil -A -d "sql:$db" -t "C,," -n sli-guest -i /var/lib/sli/tls-ca.crt
 evidence "browser_ca=guest_nss"
 
-stage=menu_walk
+stage=clean_menu
 driver="/home/$operator/menu-driver"
 cp -a "$input/menu" "$driver"
 chown -R "$operator:$operator" "$driver"
-set +e
-runuser -u "$operator" -- env NODE_EXTRA_CA_CERTS=/var/lib/sli/tls-ca.crt \
-    node "$driver/installed-menu-walk.mjs" "$results" <"$auth_file" >"$menu_log" 2>&1
-menu_status=$?
-set -e
-unlink "$auth_file"
-grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|menu_summary=\{.*\})$' "$menu_log" >&3 || true
-[[ -s "$results/menu.json" ]]
-[[ -c /dev/virtio-ports/beta.readme.menu ]]
-tar -czf /run/beta-menu-screens.tar.gz -C "$results" .
-cat /run/beta-menu-screens.tar.gz >/dev/virtio-ports/beta.readme.menu
-[[ $menu_status == 0 ]]
+
+walk_menu() {
+    local phase=$1 code=0
+    install -d -m 0700 -o "$operator" -g "$operator" "$results/$phase"
+    runuser -u "$operator" -- env NODE_EXTRA_CA_CERTS=/var/lib/sli/tls-ca.crt SLI_MENU_PHASE="$phase" \
+        node "$driver/installed-menu-walk.mjs" "$results/$phase" <"$auth_file" >"$menu_log" 2>&1 || code=$?
+    grep -aE '^BETA_README_EVIDENCE (installed_chromium=[0-9.]+|menu_row=\{.*\}|menu_summary=\{.*\})$' "$menu_log" >&3 || true
+    evidence "menu_phase=$phase browser_status=$code"
+    [[ -s "$results/$phase/menu.json" ]] || return 2
+    return "$code"
+}
+
+clean_status=0
+walk_menu clean || clean_status=$?
+[[ -s "$results/clean/menu.json" ]]
+
+stage=vpn_prepare
+prepare_status=0
+python3 -I -B "$input/prepare-local-vpn-menu-guest.py" >/run/beta-vpn-prepare.log 2>&1 || prepare_status=$?
+grep -Ex '^vpn_fixture_[a-z0-9_]+=[A-Za-z0-9_]+$' /run/beta-vpn-prepare.log |
+    while read -r line; do evidence "$line"; done || true
+evidence "vpn_prepare_status=$prepare_status"
+[[ $prepare_status == 0 ]]
+
+stage=vpn_systemd
+systemctl daemon-reload
+for unit in sli-dotnet-api.service sli-dotnet-post-collection.service; do
+    systemctl cat "$unit" | grep -F 'LoadCredential=radius-agent-route:/etc/sli/radius-accounting/radius-agent-route' >/dev/null
+done
+systemctl cat sli-dotnet-post-collection.service |
+    grep -F 'LoadCredential=radius-agent-dsn:/etc/sli/radius-accounting/radius-agent-dsn' >/dev/null
+systemctl restart sli-dotnet-api.service sli-dotnet-post-collection.service
+systemctl is-active --quiet sli-dotnet-api.service sli-dotnet-post-collection.service
+evidence 'vpn_native_units_credentials=verified'
+
+stage=vpn_readiness
+python3 -I -B - "$candidate" <<'PY'
+import http.client
+import json
+from pathlib import Path
+import ssl
+import sys
+import time
+from urllib.parse import urlsplit
+
+url = urlsplit(json.loads(Path("/etc/sli/runtime.json").read_text())["health_url"])
+context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
+for _ in range(30):
+    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=3)
+    try:
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        if response.status == 200:
+            body = json.loads(response.read(1024 * 1024))
+            if body.get("status") == "ok" and body.get("runtime_identity", {}).get("git_commit") == sys.argv[1]:
+                sys.exit(0)
+    except (OSError, http.client.HTTPException, ValueError):
+        pass
+    finally:
+        connection.close()
+    time.sleep(2)
+sys.exit(1)
+PY
+evidence 'vpn_readiness_same_runtime=verified'
+
+stage=menu_walk
+menu_status=0
+walk_menu full || menu_status=$?
+[[ -s "$results/full/menu.json" ]]
+
+stage=menu_checker
+checker_status=0
+python3 -I -B - "$auth_file" "$results/full/menu.json" >/run/beta-menu-checker.log 2>&1 <<'PY' || checker_status=$?
+import http.client
+import importlib.util
+import json
+from pathlib import Path
+import re
+import ssl
+import sys
+from urllib.parse import urlsplit
+
+auth = json.loads(Path(sys.argv[1]).read_text())
+observation = json.loads(Path(sys.argv[2]).read_text())
+url = urlsplit(auth["url"])
+context = ssl.create_default_context(cafile="/var/lib/sli/tls-ca.crt")
+script = Path("/opt/sli/current/scripts/maintenance/beta_acceptance.py")
+if not script.is_file():
+    print("menu_checker_failure=installed_checker_missing")
+    sys.exit(1)
+spec = importlib.util.spec_from_file_location("installed_beta_acceptance", script)
+checker = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(checker)
+
+def get(path):
+    if path != "/api/health":
+        raise ValueError("unexpected_checker_endpoint")
+    connection = http.client.HTTPSConnection(url.hostname, url.port, context=context, timeout=10)
+    try:
+        connection.request("GET", path, headers={"Cookie": "adlog_session=" + auth["token"]})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError("live_runtime_identity_unavailable")
+        return json.loads(response.read(1024 * 1024))
+    finally:
+        connection.close()
+
+try:
+    checker.menu(get, observation)
+except checker.CheckFailed:
+    keys = checker.menu_entries()
+    failed = observation["summary"]["failed"]
+    if not all(key in keys and re.fullmatch(r"[a-z-]+", key) for key in failed):
+        raise ValueError("unexpected_menu_key")
+    print("menu_checker_failure=" + (",".join(failed) if failed else "installed_checker_rejected_observation"))
+    sys.exit(1)
+except (OSError, http.client.HTTPException, ValueError) as error:
+    name = type(error).__name__
+    print("menu_checker_failure=" + name)
+    sys.exit(1)
+print("menu_checker=passed")
+PY
+grep -Ex '^menu_checker(_failure)?=[A-Za-z0-9_,\-]+$' /run/beta-menu-checker.log |
+    while read -r line; do evidence "$line"; done || true
+evidence "menu_checker_status=$checker_status"
+[[ $clean_status == 0 && $menu_status == 0 && $checker_status == 0 ]]
 stage=browser_verified

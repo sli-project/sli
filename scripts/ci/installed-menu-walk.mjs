@@ -8,13 +8,17 @@ for await (const chunk of process.stdin) input += chunk;
 const { url, token, commit } = JSON.parse(input);
 const origin = new URL(url).origin;
 const results = process.argv[2];
-if (!/^https:/.test(origin) || !token || !results || commit !== '4a6f14c815e07ff2a01346700d79507689d657e9') {
+if (!/^https:/.test(origin) || !token || !results || commit !== '4bc007843aab81272eb56387de1723182bad9c13') {
   throw new Error('Expected a verified guest HTTPS origin and an owner session');
 }
 const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
   group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const entries = registry.beta_entries.map(id => {
+const phase = process.env.SLI_MENU_PHASE;
+if (!["clean", "full"].includes(phase)) throw new Error("Missing menu phase");
+const cleanTargets = new Set(["problems", "events", "gpo-report", "file-audit"]);
+const selectedKeys = phase === "clean" ? registry.beta_entries.filter(key => cleanTargets.has(key)) : registry.beta_entries;
+const entries = selectedKeys.map(id => {
   const entry = all.find(item => item.id === id);
   if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
   return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
@@ -121,11 +125,14 @@ async function vpnPreflight() {
         const target = new URL(item.url());
         return target.pathname === vpnPlugin && item.request().method() === 'POST';
       }),
-      control.check(),
+      control.click(),
     ]);
     vpn.toggleStatus = toggle.status();
     if (toggle.ok()) {
-      vpn.activation = 'enabled_in_guest';
+      const confirmed = await context.request.get(url.href);
+      const activeState = confirmed.ok() ? (await confirmed.json()).items?.find(item => item.plugin_id === 'sli.remote-access') : null;
+      vpn.afterToggle = { status: confirmed.status(), enabled: activeState?.enabled === true, runtime: activeState?.component_runtime ?? null };
+      vpn.activation = vpn.afterToggle.enabled && vpn.afterToggle.runtime === 'running' ? 'enabled_in_guest' : 'state_not_running';
     } else {
       const error = await toggle.json().catch(() => ({}));
       vpn.toggleReason = /^[a-z_]{1,80}$/.test(error.error) ? error.error : null;
@@ -180,7 +187,7 @@ async function inspectOutcome(main, row, visible) {
 
 try {
   console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
-  await vpnPreflight();
+  if (phase === 'full') await vpnPreflight();
   for (const entry of entries) {
     const expected = targetPath(entry.path);
     const row = { id: entry.id, path: expected, commit, clicked: false, failure: [], labels: [], api: [], blocked: [], text: [], responses: [], actions: [], dataEvidence: [] };
@@ -286,7 +293,7 @@ try {
         && (row.data || row.action_phrases === 1);
       await page.close();
       await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, menuPaths: [...seen], rows }, null, 2));
-      const details = { id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
+      const details = { phase, id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
         data: row.data, dataEvidence: row.dataEvidence, action_phrases: row.action_phrases, actions: row.actions,
         load_errors: row.load_errors, completeness_labels: row.completeness_labels, failure: row.failure,
         api: row.api, blocked: row.blocked, labels: row.labels, passed: row.passed };
@@ -295,14 +302,14 @@ try {
   }
 } finally { await browser.close(); }
 const expected = new Set(entries.map(entry => targetPath(entry.path)));
-const unexpected = [...seen].filter(path => !expected.has(path));
+const unexpected = phase === 'full' ? [...seen].filter(path => !expected.has(path)) : [];
 const pages = Object.fromEntries(rows.map(row => [row.id, {
   load_errors: row.load_errors, completeness_labels: row.completeness_labels,
   data: row.data, action_phrases: row.action_phrases,
 }]));
 const failed = rows.filter(row => !row.passed).map(row => row.id);
 const summary = { commit, visited: rows.length, clicked: rows.filter(row => row.clicked).length,
-  expectedKeys: registry.beta_entries, failed, unexpected, vpn, home };
+  phase, expectedKeys: selectedKeys, failed, unexpected, vpn, home };
 await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, pages, summary, rows }, null, 2));
 console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(summary));
-if (rows.length !== registry.beta_entries.length || failed.length || unexpected.length) process.exitCode = 1;
+if (rows.length !== selectedKeys.length || failed.length || unexpected.length || (phase === 'full' && vpn.activation !== 'enabled_in_guest')) process.exitCode = 1;
