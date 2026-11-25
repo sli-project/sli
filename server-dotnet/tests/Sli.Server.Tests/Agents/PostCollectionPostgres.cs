@@ -9,7 +9,7 @@ using Sli.Server.Storage.Lifecycle;
 namespace Sli.Server.Tests.Agents;
 
 // Every test owns a cluster and loopback port; no inherited DSN.
-internal sealed class PostCollectionPostgres(bool canonicalSchema = false, string host = "127.0.0.1", int? fixedPort = null, string database = "postgres", int maxConnections = 100) : IAsyncDisposable
+internal sealed class PostCollectionPostgres(bool canonicalSchema = false, string host = "127.0.0.1", int? fixedPort = null, string database = "postgres", int maxConnections = 100, bool trackCommitTimestamps = false) : IAsyncDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "sli-p04-" + Guid.NewGuid().ToString("N"));
     private readonly Guid identity = Guid.NewGuid();
@@ -53,6 +53,8 @@ internal sealed class PostCollectionPostgres(bool canonicalSchema = false, strin
         else
             CopyTemplateData(templateData, DataDirectory, ct);
         await File.AppendAllTextAsync(Path.Combine(root, "data", "postgresql.conf"), $"\nmax_connections={maxConnections}\nsuperuser_reserved_connections=3\n", ct);
+        if (trackCommitTimestamps)
+            await File.AppendAllTextAsync(Path.Combine(DataDirectory, "postgresql.conf"), "\ntrack_commit_timestamp=on\n", ct);
         using var listener = new TcpListener(IPAddress.Parse(host), fixedPort ?? 0); listener.Start(); int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
         dsn = new NpgsqlConnectionStringBuilder { Host = host, Port = port, Database = "postgres", Username = login, Pooling = false, Timeout = 3, CommandTimeout = 15, SslMode = SslMode.Disable }.ConnectionString;
         if (OperatingSystem.IsWindows()) {

@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Sli.Server.Tests.Semantic;
 
-public sealed class PasswordConcurrentImportWindowPostgresTests
+public sealed partial class PasswordConcurrentImportWindowPostgresTests(ITestOutputHelper output)
 {
     // Test-only lock in a disposable database. The reader, prepare body and
     // finalizer still execute the definitions installed by migrations 1–410.

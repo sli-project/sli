@@ -43,11 +43,11 @@ public sealed class SqlPostgresTemplate : IAsyncDisposable
 }
 
 // Same clean-install path as ReadSqlPostgresTests. No substitute tables or grants.
-internal sealed class SqlPostgresFixture(bool nativeJobAddress = false, string nativeJobHost = "127.0.0.2", int maxConnections = 100) : IAsyncDisposable
+internal sealed class SqlPostgresFixture(bool nativeJobAddress = false, string nativeJobHost = "127.0.0.2", int maxConnections = 100, bool trackCommitTimestamps = false) : IAsyncDisposable
 {
     internal readonly PostCollectionPostgres Pg = nativeJobAddress
-        ? new(canonicalSchema: true, host: nativeJobHost, fixedPort: 5432, database: "sli", maxConnections: maxConnections)
-        : new(canonicalSchema: true, maxConnections: maxConnections);
+        ? new(canonicalSchema: true, host: nativeJobHost, fixedPort: 5432, database: "sli", maxConnections: maxConnections, trackCommitTimestamps: trackCommitTimestamps)
+        : new(canonicalSchema: true, maxConnections: maxConnections, trackCommitTimestamps: trackCommitTimestamps);
     internal static string Repository([System.Runtime.CompilerServices.CallerFilePath] string path = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, "../../.."));
     internal string Dsn(string role) => new NpgsqlConnectionStringBuilder(Pg.ConnectionString) { Username = role }.ConnectionString;
