@@ -866,15 +866,15 @@ public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
         var rootRows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
-            eventKinds: Enumerable.Repeat(4625, 10).ToArray(),
-            nativeTimestamps: Enumerable.Range(0, 10).Select(i => PasswordJson.Stamp(start.AddSeconds(i))).ToArray(),
-            nativeAccounts: Enumerable.Repeat("fixture-account-1", 10).ToArray(),
-            nativeTargetSids: Enumerable.Repeat("S-1-5-21-100000001-200000002-300000003-1101", 10).ToArray());
+            eventKinds: Enumerable.Repeat(4625, 600).ToArray(),
+            nativeTimestamps: Enumerable.Range(0, 600).Select(i => PasswordJson.Stamp(start.AddMilliseconds(10 * i))).ToArray(),
+            nativeAccounts: Enumerable.Repeat("fixture-account-1", 600).ToArray(),
+            nativeTargetSids: Enumerable.Repeat("S-1-5-21-100000001-200000002-300000003-1101", 600).ToArray());
         await ShortEventAdmissionPostgresTests.WriteAsync(fixture, rootRows, ct);
         async Task Pad(int firstRecordId)
         {
             await using var command = new NpgsqlCommand("""
-                update event_hot set fields=fields||jsonb_build_object('FixturePadding',repeat('x',2000000))
+                update event_hot set fields=fields||jsonb_build_object('FixturePadding',repeat('x',30000))
                 where event_record_id>=@first
                 """, owner);
             command.Parameters.AddWithValue("first", firstRecordId);
@@ -882,7 +882,7 @@ public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
         }
         await Pad(1);
         await InstallTestClock(owner, ct);
-        await SetTestClock(owner, start.AddSeconds(129), ct);
+        await SetTestClock(owner, start.AddMilliseconds(125990), ct);
         await using var runtime = PasswordProducerRuntime.Create(
             name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
             _ => throw new InvalidOperationException());
@@ -909,48 +909,49 @@ public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
         }
         var first = await Run();
         Assert.False(first.Failed, first.Diagnostic?.ToJsonString());
-        Assert.Equal(start.AddSeconds(9), PasswordJson.Time(first.Work!["watermark"]));
+        Assert.Equal(start.AddMilliseconds(5990), PasswordJson.Time(first.Work!["watermark"]));
+        Assert.Equal(3, first.Jobs);
         var root = Assert.Single((await State()).Episodes);
-        Assert.Equal(10, root.Budget.RefOccurrences);
+        Assert.Equal(600, root.Budget.RefOccurrences);
 
-        await AdmitEvents(fixture, owner, [(4625, start.AddSeconds(600), 1, 1)], 2, 11, ct);
-        await Pad(11);
+        await AdmitEvents(fixture, owner, [(4625, start.AddSeconds(600), 1, 1)], 2, 601, ct);
+        await Pad(601);
         await SetTestClock(owner, start.AddSeconds(720), ct);
         var continued = await Run();
         Assert.False(continued.Failed, continued.Diagnostic?.ToJsonString());
         Assert.Equal(start.AddSeconds(600), PasswordJson.Time(continued.Work!["watermark"]));
-        await AdmitEvents(fixture, owner, [(4625, start.AddSeconds(650), 2, 2)], 3, 12, ct);
+        Assert.Equal(1, continued.Jobs);
+        await AdmitEvents(fixture, owner, [(4625, start.AddSeconds(650), 2, 2)], 3, 602, ct);
         await SetTestClock(owner, start.AddSeconds(770), ct);
         var expired = await Run();
         Assert.False(expired.Failed, expired.Diagnostic?.ToJsonString());
         Assert.Equal(start.AddSeconds(650), PasswordJson.Time(expired.Work!["watermark"]));
         var before = await State();
         Assert.DoesNotContain(before.Window, m => m.Witness.At < start.AddSeconds(50));
-        Assert.Equal(12, Assert.Single(before.Episodes, e => e.Key == root.Key).Budget.RefOccurrences);
+        Assert.Equal(602, Assert.Single(before.Episodes, e => e.Key == root.Key).Budget.RefOccurrences);
         var oldSignals = await SignalIds(owner, ct);
 
         await AdmitEvents(fixture, owner,
-            Enumerable.Range(660, 6).Select(second => (4625, start.AddSeconds(second), 1, 1)), 4, 13, ct);
-        await Pad(13);
-        await SetTestClock(owner, start.AddSeconds(785), ct);
-        // Even one decision must read all six new rows in its 120-second holdback.
-        // The candidate unit is about 16 MB and history about 22 MB; their union
-        // exceeds 32 MiB. The episode can still safely reserve the first two rows.
+            Enumerable.Range(0, 600).Select(i => (4625, start.AddMilliseconds(660000 + 10 * i), 1, 1)), 4, 603, ct);
+        await Pad(603);
+        await SetTestClock(owner, start.AddMilliseconds(785990), ct);
+        // Even one decision must read all 600 new rows in its 120-second holdback.
+        // The 601-row history and 602-row candidate unit each fit below 32 MiB;
+        // their 1201-row union does not. A prefix still fits the episode budget.
         var resumed = await Run();
         Assert.False(resumed.Failed, resumed.Diagnostic?.ToJsonString());
-        Assert.Equal(start.AddSeconds(661), PasswordJson.Time(resumed.Work!["watermark"]));
+        Assert.Equal(start.AddMilliseconds(663740), PasswordJson.Time(resumed.Work!["watermark"]));
         Assert.False(resumed.CommittedQualifiedDenial);
-        Assert.Equal(1, resumed.Jobs);
+        Assert.Equal(2, resumed.Jobs);
         Assert.InRange(resumed.Work["native_items"]!.GetValue<int>(), 1, 10000);
         Assert.InRange(resumed.Work["xml_bytes"]!.GetValue<int>(), 1, 33554432);
-        Assert.Equal("RetainedChain", resumed.Work["proof_budget"]!["phase"]!.GetValue<string>());
         Assert.True(resumed.Work["proof_backoffs"]!.GetValue<int>() > 0);
         var saved = await State();
-        Assert.Equal(start.AddSeconds(661), saved.Watermark);
+        Assert.Equal(start.AddMilliseconds(663740), saved.Watermark);
         var episode = Assert.Single(saved.Episodes, e => e.Key == root.Key);
         Assert.False(episode.Frozen);
         Assert.Equal(root.Seed, episode.Seed);
-        Assert.Equal(15, episode.Budget.RefOccurrences);
+        Assert.Equal(978, episode.Budget.RefOccurrences);
 
         await using var signals = new NpgsqlCommand("""
             select (document_json->'password_context')::text from semantic_qw_signals
@@ -959,19 +960,21 @@ public sealed class PasswordProofBudgetPostgresTests(ITestOutputHelper output)
                 (document_json#>>'{password_context,portion_index}')::integer
             """, owner);
         signals.Parameters.AddWithValue("key", root.Key);
-        var chain = new List<PasswordEmission>();
+        var contexts = new List<JsonObject>();
         await using (var rows = await signals.ExecuteReaderAsync(ct))
             while (await rows.ReadAsync(ct))
-                chain.Add(PasswordEmission.Reassemble(scope, [JsonNode.Parse(rows.GetString(0))!.AsObject()]));
+                contexts.Add(JsonNode.Parse(rows.GetString(0))!.AsObject());
+        var chain = contexts.GroupBy(context => context["sequence"]!.GetValue<int>()).OrderBy(group => group.Key)
+            .Select(group => PasswordEmission.Reassemble(scope, group.ToArray())).ToArray();
         Assert.Equal(new[] { 1, 2, 3 }, chain.Select(e => e.Sequence));
         Assert.All(chain, e => Assert.Equal(root.Key, e.EpisodeKey));
-        Assert.Equal(Enumerable.Range(900001, 10).Select(id => (long)id), chain[0].Origin.Select(w => w.NativeId));
-        Assert.Equal(900011L, chain[1].Endpoint.NativeId);
+        Assert.Equal(new[] { 3, 1, 2 }, chain.Select(e => e.Portions));
+        Assert.Equal(Enumerable.Range(900001, 600).Select(id => (long)id), chain[0].Occurrences.Select(w => w.NativeId));
+        Assert.Equal(900601L, chain[1].Endpoint.NativeId);
         Assert.Equal(chain[1].Endpoint, chain[2].Predecessor);
-        Assert.Equal(new long[] { 900013, 900014 }, chain[2].NewEvents.Select(w => w.NativeId));
+        Assert.Equal(Enumerable.Range(900603, 375).Select(id => (long)id), chain[2].NewEvents.Select(w => w.NativeId));
         var committedSignals = await SignalIds(owner, ct);
         Assert.True(oldSignals.IsSubsetOf(committedSignals));
-        Assert.Single(committedSignals.Except(oldSignals));
     }
 
     [Fact]

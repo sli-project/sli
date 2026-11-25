@@ -34,7 +34,7 @@ public sealed class PasswordSuccessorCoveragePostgresTests
 
         int sequence = 1, recordId = 1;
         var agent = ShortEventAdmissionPostgresTests.Agent;
-        async Task Admit(DateTimeOffset[] times, int client, bool large = false)
+        async Task Admit(DateTimeOffset[] times, int client, int? totalNativeBytes = null)
         {
             int first = recordId;
             var input = Enumerable.Range(0, times.Length).ToArray();
@@ -48,17 +48,31 @@ public sealed class PasswordSuccessorCoveragePostgresTests
                 packetId: Guid.NewGuid(), sequence: sequence++, firstRecordId: first);
             await ShortEventAdmissionPostgresTests.WriteAsync(fixture, rows, ct);
             recordId += times.Length;
-            if (large) {
-                // Real native XML costs exhaust the lifetime budget. No ledger
-                // counters or proof limits are changed to manufacture a freeze.
+            if (totalNativeBytes is { } total) {
+                // Each short document remains below the 32 KiB fields limit.
+                // Size the real retained representation before its first read;
+                // neither ledger counters nor proof limits are changed.
                 await using var padding = new NpgsqlCommand("""
                     update public.event_hot
-                    set fields=fields||jsonb_build_object('FixturePadding',repeat('x',3500000))
-                    where event_record_id between @first and @last
+                    set fields=fields||jsonb_build_object('FixturePadding','')
+                    where event_record_id between @first and @last;
+                    with sizes as materialized (
+                        select h.event_id,h.time_created_utc,
+                            octet_length(public.short_event_document337(h)::text) as bytes
+                        from public.event_hot h where h.event_record_id between @first and @last
+                    )
+                    update public.event_hot h
+                    set fields=jsonb_set(h.fields,'{FixturePadding}',to_jsonb(repeat('x',
+                        @each + case when h.event_record_id=@first then @remainder else 0 end - sizes.bytes)))
+                    from sizes where h.event_id=sizes.event_id and h.time_created_utc=sizes.time_created_utc;
+                    select sum(octet_length(public.short_event_document337(h)::text))
+                    from public.event_hot h where h.event_record_id between @first and @last
                     """, owner);
                 padding.Parameters.AddWithValue("first", first);
                 padding.Parameters.AddWithValue("last", recordId - 1);
-                await padding.ExecuteNonQueryAsync(ct);
+                padding.Parameters.AddWithValue("each", total / times.Length);
+                padding.Parameters.AddWithValue("remainder", total % times.Length);
+                Assert.Equal((long)total, await padding.ExecuteScalarAsync(ct));
             }
         }
         async Task Clock(DateTimeOffset through)
@@ -68,7 +82,9 @@ public sealed class PasswordSuccessorCoveragePostgresTests
             await clock.ExecuteNonQueryAsync(ct);
         }
 
-        await Admit(Enumerable.Range(0, 9).Select(i => start.AddSeconds(50 * i)).ToArray(), 1, large: true);
+        const int rootNativeBytes = 33554432 - 16384;
+        await Admit(Enumerable.Range(0, 1100).Select(i => start.AddSeconds(400 * i / 1099)).ToArray(),
+            1, totalNativeBytes: rootNativeBytes);
         await Clock(start.AddSeconds(400));
         await using var runtime = PasswordProducerRuntime.Create(
             name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
@@ -138,13 +154,14 @@ public sealed class PasswordSuccessorCoveragePostgresTests
             return Assert.IsType<string>(await command.ExecuteScalarAsync(ct));
         }
 
-        Assert.Equal(1, (await Run(start.AddSeconds(400))).Jobs);
+        Assert.Equal(5, (await Run(start.AddSeconds(400))).Jobs);
+        Assert.Equal(rootNativeBytes, (await Saved()).Ledger["reserved_xml_bytes"]!.GetValue<long>());
         var watermark = start.AddSeconds(900);
         await Admit([watermark], 2);
         Assert.Equal(watermark, PasswordJson.Time((await Run(watermark)).Work!["watermark"]));
 
         var deniedAt = start.AddSeconds(950);
-        await Admit([deniedAt], 1, large: true);
+        await Admit([deniedAt], 1, totalNativeBytes: 30489);
         var denied = await Run(deniedAt);
         Assert.True(denied.CommittedQualifiedDenial);
         Assert.Equal(0, denied.Jobs);
