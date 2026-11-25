@@ -87,6 +87,9 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
             row["on_behalf"] = actor is not null && actor != (target ?? actor) ? actor : null;
             row["presentation_messages"] = new JsonObject { ["title_text"] = title };
             if (target is null && actor is null) row["presentation_messages"]!["participant"] = ReportResult.Message("events.participant_unknown");
+            if (c.WorkstationServerId is not null)
+                row["journal_evidence_available"] = row["journal_expandable"]?.GetValue<bool>() != true
+                    && Integer(row["id"], out long eventId) && exactAccess.Contains(eventId);
         }
         if (journal is not null) await LinkProblemsAsync(c, rows, exactAccess, ct);
         return Render(c, raw, rows);
@@ -100,9 +103,17 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         if (c.Action == "export" && (expand.HasValue || before.HasValue)) throw new ReportRequestException("report_parameter_invalid:expand");
         string view = c.Params.Text("view", "all"), result = c.Params.Text("result"), pivot = c.Params.Text("pivot");
         if (expand.HasValue && before.HasValue) throw new ReportRequestException("report_parameter_invalid:before");
-        return c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
+        string? source = c.Params["source_instance_id"]?.GetValue<string>();
+        if (source is not null && (!Guid.TryParseExact(source, "D", out var sourceId) || sourceId == Guid.Empty))
+            throw new ReportRequestException("report_parameter_invalid:source_instance_id");
+        if (source is not null) source = Guid.Parse(source).ToString("D");
+        string? plugin = c.Params["source_plugin"]?.GetValue<string>();
+        if (plugin is not null && (plugin != "sli.workstations" || source is null))
+            throw new ReportRequestException("report_parameter_invalid:source_plugin");
+        return source is not null || c.WorkstationServerId.HasValue || c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
             pivot.Length > 0 || view is "groups" or "audit"
-            ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"), member) : null;
+            ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"), member)
+                { ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin } : null;
     }
 
     private async Task LinkProblemsAsync(ReportQueryContext c, JsonObject[] rows, HashSet<long> exactAccess, CancellationToken ct)

@@ -3,10 +3,11 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { forbiddenLabels, loadErrors, markdown, redact, waitForVisibleLoadingToFinish } from './checks.mjs';
 import { walkFileServers } from './file-servers.mjs';
+import { walkWorkstations } from './workstations.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
-const { url, token, results, file_servers: fileServers } = JSON.parse(input);
+const { url, token, results, file_servers: fileServers, workstations } = JSON.parse(input);
 if (!new URL(url).hostname.match(/^(127\.0\.0\.1|localhost|\[::1\])$/)) throw new Error('Owned loopback host required');
 const registry = JSON.parse(await readFile(new URL('../../../config/navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group => group.entries));
@@ -15,6 +16,8 @@ const entries = registry.beta_entries.map(id => {
   if (!entry) throw new Error(`Missing navigation declaration: ${id}`);
   return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
 });
+if (workstations && !entries.some(entry => entry.id === 'workstations-overview'))
+  throw new Error('The workstation acceptance fixture requires a visible beta navigation entry');
 await mkdir(results, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH, timeout: 0 });
 const rows = [];
@@ -92,6 +95,7 @@ try {
       for (const label of forbiddenLabels(visibleText, [...reasons])) if (!row.labels.some(item => item.label === clean(label))) row.labels.push({ label: clean(label), where: 'body' });
       await page.screenshot({ path: join(results, `${entry.id}.png`), fullPage: true });
       if (entry.id === 'file-audit') await walkFileServers(page, { url, results, fixture: fileServers });
+      if (entry.id === 'workstations-overview') await walkWorkstations(page, { url, results, fixture: workstations });
     } catch (error) { row.failures.push(clean(error.message)); }
     finally {
       clearInterval(heartbeat);

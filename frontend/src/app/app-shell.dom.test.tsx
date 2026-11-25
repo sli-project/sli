@@ -121,14 +121,14 @@ describe("AppShell", () => {
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
       "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
-      "/report/file-audit.overview", "/report/vpn.connections",
+      "/report/file-audit.overview", "/report/workstations.overview", "/report/vpn.connections",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
   });
 
   it.each([
-    "/admin/plugins/sli.workstations", "/admin/plugins/sli.sigma",
+    "/admin/plugins/sli.sigma",
     "/admin/update", "/admin/activity", "/report-studio",
   ])("opens home for hidden %s for both scoped users and administrators", async (path) => {
     for (const grants of [userAccess, adminAccess]) {
@@ -167,7 +167,7 @@ describe("AppShell", () => {
     expect(within(main).queryByText("В разработке")).toBeNull();
   });
 
-  it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
+  it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access", "sli.workstations"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
     await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());

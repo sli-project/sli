@@ -2,206 +2,181 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import definitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import * as app from "../../app/App";
-import { api } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { WorkstationsPage } from "./route";
+import { WORKSTATIONS_KEY, type StationDetailResult } from "./model";
 
-let lastLogin: unknown = {};
-let deviceSummary: unknown = {};
-let processFinding: Record<string, unknown> | null = null;
-let denied = false;
-let listOverrides: Partial<ReportResultDto> = {};
-let revision = "synthetic-initial";
-const requests: string[] = [];
-const station = { station_id: "ws:ad:123", agent_key: "synthetic-agent", ad_computer_id: null,
-  station_type: "workstation", metadata: { display_name: "Synthetic workstation", operating_system: "Synthetic OS" }, observed_checks: 1 };
-const definition: ReportDefinitionDto = { key: "workstations.overview", section: "reports/workstations", title: "Workstations",
-  description: "", archetype: "journal", params: [], columns: [], views: [], row_key: "station_id", detail: "fields",
-  export: false, limits: { default: 50, max: 50 }, presets: [], row_links: [], filter_options: {} };
-const result = (overrides: Partial<ReportResultDto> = {}): ReportResultDto => ({
-  contract_id: "sli.report-result.v2", report_key: definition.key, state: "partial", items: [{ ...station, last_interactive_login: lastLogin, devices: deviceSummary }],
-  has_more: false, next_cursor: null, filtered_count: 1, metrics: [], series: {}, coverage: {}, filter_options: {},
-  limitations: [], window: {}, collections: { paging: [{ start: 1, has_previous: false, previous_cursor: null }], checks: [] }, ...overrides,
+const definition = { ...definitions.find(item => item.key === WORKSTATIONS_KEY), filter_options: {} } as unknown as ReportDefinitionDto;
+const source = "00000000-0000-4000-8000-000000000001";
+const stationId = "00000000-0000-4000-8000-000000000002";
+const from = "2026-11-25T09:14:23.456Z", to = "2026-11-25T11:18:29.789Z";
+const requests: URL[] = [], invalidRequests: string[] = [];
+let revision = "initial", denied = false, detailMode: "normal" | "denied" | "events_denied" | "malformed" = "normal";
+let client: QueryClient;
+const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
+  agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
+  transport_agent_id: "00000000-0000-4000-8000-000000000003", source_instance_id: index ? `10000000-0000-4000-8000-${String(index).padStart(12, "0")}` : source,
+  display_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`, host_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`,
+  domain_id: 11, domain_name: "synthetic.invalid", server_id: 5, operating_system: "Windows 11", operating_system_version: "26100",
+  metadata_observed_at: "2026-11-25T08:00:00Z", agent_status: "active", last_seen: "2026-11-25T09:05:00Z",
+  policy_revision: 4, applied_policy_revision: 4, collection_state: "enabled", journal_available: true,
+  profile: { state: "supported", event_ids: [4624, 4625, 1102, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045], channels: ["Security", "System", "Microsoft-Windows-Windows Defender/Operational"] },
 });
+const result = (overrides: Partial<ReportResultDto> = {}): ReportResultDto => ({ contract_id: "sli.report-result.v2", report_key: WORKSTATIONS_KEY,
+  state: "ok", items: [], has_more: false, next_cursor: null, filtered_count: 205, metrics: [], series: {}, coverage: {},
+  filter_options: {}, limitations: [], window: { from_utc: from, to_utc_exclusive: to }, collections: { paging: [{ start: 1, has_previous: false, previous_cursor: null }] }, ...overrides });
+const events = [
+  { id: 101, event_id: 4624, title_text: "Synthetic grouped sign-ins", participant: "SYNTHETIC\\alice", channel: "Security", journal_result: "success",
+    time_created_utc: "2026-11-25T10:00:00Z", first_seen_utc: "2026-11-25T08:00:00Z", last_seen_utc: "2026-11-25T12:00:00Z", event_count: 39,
+    journal_expandable: true, journal_evidence_available: true },
+  { id: 102, event_id: 1102, title_text: "Synthetic audit cleared", participant: "SYNTHETIC\\operator", channel: "Security",
+    time_created_utc: "2026-11-25T10:10:00Z", event_count: 1, journal_expandable: false, journal_evidence_available: true,
+    journal_finding_id: 7, journal_severity: "high" },
+];
+const detailResult = (): StationDetailResult => ({ ...result({ items: [station()], filtered_count: 1,
+  ...(detailMode === "denied" ? { access: { allowed: false } } : {}) }), detail: {
+  station: detailMode === "malformed" ? { station_id: stationId } : station(),
+  events: { state: detailMode === "events_denied" ? "denied" : "ok", items: events, filtered_count: 2, journal_event_count: 40, has_more: true,
+    next_cursor: "bound-next-event-page", window: { from_utc: from, to_utc_exclusive: to } },
+  related: { journal: { allowed: detailMode !== "events_denied", params: { domain: 11, server: "WS-WORKSPACE-001", source_instance_id: source,
+    source_plugin: "sli.workstations", period: "custom", from, to, tz: "UTC", collapse: "on" } }, problems: { allowed: true } },
+} });
 
 beforeEach(() => {
-  listOverrides = {};
-  processFinding = null; deviceSummary = {}; lastLogin = {}; denied = false; revision = "synthetic-initial"; requests.length = 0;
+  denied = false; detailMode = "normal"; revision = "initial"; requests.length = 0; invalidRequests.length = 0;
+  localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
-  vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 },
-    evaluated_at_utc: revision, capabilities: ["workstations.read"], reports: [] }) as unknown as ReturnType<typeof app.useEffectiveAccess>);
+  vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 }, evaluated_at_utc: revision,
+    capabilities: ["workstations.read"], reports: [{ report_key: WORKSTATIONS_KEY, allowed: !denied }] }) as unknown as ReturnType<typeof app.useEffectiveAccess>);
   vi.spyOn(app, "useTimeZone").mockReturnValue({ timeZone: "UTC", setTimeZone: vi.fn() } as ReturnType<typeof app.useTimeZone>);
-  window.history.replaceState(null, "", "/app/workstations?tab=stations&search=synthetic&domain_id=11&domain=22");
+  const query = new URLSearchParams({ nav_view: "overview", domain_id: "11", domain: "22", search: "WS-", collection: "enabled",
+    period: "custom", from, to, limit: "50" });
+  window.history.replaceState(null, "", `/app/report/workstations.overview?${query}`);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input); requests.push(url);
-    if (denied && url.includes("/data?")) return new Response(JSON.stringify({ error: "workstation_access_denied" }), { status: 403 });
-    if (url.includes("/detail?") && url.includes("finding_id=")) return new Response(JSON.stringify(result({ state: "ok", items: [{ source_xml: "<Event>synthetic</Event>", source_sha256: "b".repeat(64) }] })));
-    if (url.includes("/detail?")) return new Response(JSON.stringify(result({ collections: { findings: [processFinding ?? {
-      id: "a".repeat(64), check_id: "C05", reason_code: "service_or_task_changed", reason_params: {},
-      evidence_refs: [{ kind: "workstation_observation", observation_id: "c".repeat(64), agent_key: "synthetic-agent" }],
-    }] } })));
-    return new Response(JSON.stringify(url.includes("/data?") ? result(listOverrides) : definition), { headers: { "Content-Type": "application/json" } });
+    const url = new URL(String(input), window.location.origin); requests.push(url);
+    if (!url.pathname.includes("/data") && !url.pathname.includes("/detail")) return new Response(JSON.stringify({ ...definition, access: { allowed: !denied } }));
+    const allowed = new Set([...definition.params.map(param => param.key), "from", "to", "tz", "limit", "cursor"]);
+    const unknown = [...url.searchParams.keys()].filter(key => !allowed.has(key));
+    if (unknown.length) { invalidRequests.push(...unknown); return new Response(JSON.stringify({ error: "report_parameter_unknown" }), { status: 400 }); }
+    if (denied) return new Response(JSON.stringify({ error: "workstation_access_denied" }), { status: 403 });
+    if (url.pathname.includes("/detail")) return new Response(JSON.stringify(detailResult()));
+    const total = url.searchParams.get("source_instance_id") === source ? 1 : 205;
+    const limit = Number(url.searchParams.get("limit")), offset = url.searchParams.has("cursor") ? 200 : 0;
+    const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, index) => station(index + offset));
+    return new Response(JSON.stringify(result({ items, filtered_count: total, has_more: offset + items.length < total, next_cursor: "bound-fleet-page",
+      collections: { paging: [{ start: offset + 1, has_previous: offset > 0, previous_cursor: null }] } })));
   }));
 });
-afterEach(() => { cleanup(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-
+afterEach(() => { cleanup(); client?.clear(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(<QueryClientProvider client={client}><WorkstationsPage/></QueryClientProvider>);
   return { ...view, refresh: () => view.rerender(<QueryClientProvider client={client}><WorkstationsPage/></QueryClientProvider>) };
 }
 
-it.each(["ru", "en"] as const)("explains the first inventory build without a false zero (%s)", async (locale) => {
-  listOverrides = { items: [], filtered_count: null, coverage: { population_status: "inventory_pending" },
-    metrics: [{ key: "stations", label: "workstations.overview.stations", value: null, quality: "unknown" },
-      { key: "observed", label: "workstations.overview.observed", value: null, quality: "unknown" }] };
+it.each(["ru", "en"] as const)("uses the real registry for fleet → full station → grouped fact → permitted evidence → collection → exact return (%s)", async locale => {
   setLocale(locale); mount();
-  expect(await screen.findByText(t("workstations.overview.inventoryPending"))).toBeTruthy();
-  const metrics = screen.getByRole("region", { name: t("reports.summaryAria") });
-  expect(within(metrics).queryByText("0")).toBeNull();
-  expect(within(metrics).queryByText("≥ null")).toBeNull();
-  expect(within(metrics).getAllByText(t("workstations.overview.unknown"))).toHaveLength(2);
+  await screen.findByRole("table", { name: t("workstations.overview.stations") });
+  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  await waitFor(() => expect(within(screen.getByRole("table", { name: t("workstations.overview.stations") })).getAllByRole("row")).toHaveLength(201));
+  expect(requests.filter(url => url.pathname.endsWith("/data")).at(-1)?.searchParams.get("limit")).toBe("200");
+  expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
+  expect(screen.queryByText(t("state.partial.title"))).toBeNull();
+  expect(screen.queryByRole("columnheader", { name: t("workstations.workspace.collection") })).toBeNull();
+  expect(screen.getAllByRole("img", { name: t("workstations.workspace.collection_enabled") })[0].getAttribute("title")).toBe(t("workstations.workspace.collection_enabled"));
+  const fleet = new URLSearchParams(window.location.search); fleet.set("source_instance_id", source);
+  window.history.pushState(null, "", `${window.location.pathname}?${fleet}`); window.dispatchEvent(new PopStateEvent("popstate"));
+  await waitFor(() => expect(within(screen.getByRole("table", { name: t("workstations.overview.stations") })).getAllByRole("row")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("link", { name: "WS-WORKSPACE-001" }));
+  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.event_4624") }));
+  const facts = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
+  expect(within(facts).getByRole("heading", { name: t("workstations.workspace.event_4624") }).getAttribute("title")).toBe("Synthetic grouped sign-ins");
+  expect(within(facts).getByText("39")).toBeTruthy();
+  expect(within(facts).getByText(t("workstations.workspace.saved_group"))).toBeTruthy();
+  expect(within(facts).getByText(t("workstations.workspace.group_boundary"))).toBeTruthy();
+  expect(within(facts).queryByRole("link", { name: t("workstations.workspace.original") })).toBeNull();
+  const groupLink = new URL(within(facts).getByRole("link", { name: t("workstations.workspace.group_journal") }).getAttribute("href")!, window.location.origin);
+  expect(groupLink.searchParams.get("source_instance_id")).toBe(source); expect(groupLink.searchParams.get("expand")).toBe("101");
+  fireEvent.click(screen.getByRole("button", { name: t("workstations.workspace.back_events") }));
+  fireEvent.click(await screen.findByRole("link", { name: t("workstations.workspace.event_1102") }));
+  const evidence = new URL(screen.getByRole("link", { name: t("workstations.workspace.original") }).getAttribute("href")!, window.location.origin);
+  expect(evidence.pathname).toBe("/app/events/102");
+  expect(evidence.searchParams.get("return_to")).toBe(window.location.pathname + window.location.search);
+  expect(screen.getByRole("link", { name: new RegExp(t("workstations.workspace.finding", { id: "7" })) }).getAttribute("href")).toContain("id=7");
+  fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.collection_tab") }));
+  expect(await screen.findByRole("table", { name: t("workstations.workspace.profile_events") })).toBeTruthy();
+  expect(screen.getByText(source)).toBeTruthy();
+  expect(screen.getByText(t("workstations.workspace.profile_scope"))).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.back_fleet") }));
+  await screen.findByRole("table", { name: t("workstations.overview.stations") });
+  const returned = new URLSearchParams(window.location.search);
+  for (const [key, value] of fleet) expect(returned.get(key)).toBe(value);
+  expect(returned.has("station")).toBe(false);
+  expect(returned.get("selected_station")).toBe(stationId);
+  expect(invalidRequests).toEqual([]);
+  const detailCalls = requests.filter(url => url.pathname.includes("/detail"));
+  expect(detailCalls.length).toBeGreaterThan(0);
+  for (const url of detailCalls) {
+    expect(url.searchParams.get("domain")).toBe("11"); expect(url.searchParams.get("source_instance_id")).toBe(source);
+    expect(url.searchParams.get("from")).toBe(from); expect(url.searchParams.get("to")).toBe(to);
+    expect(url.searchParams.has("search")).toBe(false); expect(url.searchParams.has("collection")).toBe(false);
+  }
 });
 
-it.each(["ru", "en"] as const)("explains missing agents and keeps observed counts as lower bounds (%s)", async (locale) => {
-  listOverrides = { coverage: { population_status: "no_agents" },
-    metrics: [{ key: "stations", label: "workstations.overview.stations", value: 3, quality: "observed" }] };
-  setLocale(locale); mount();
-  expect(await screen.findByText(t("workstations.overview.noAgents"))).toBeTruthy();
-  expect(screen.getByText("≥ 3")).toBeTruthy();
+it("opens a direct station URL independently of the fleet page and resets only event paging when its size changes", async () => {
+  const query = new URLSearchParams(window.location.search);
+  query.set("station", stationId); query.set("cursor", "bound-fleet-page"); query.set("event_cursor", "bound-event-page");
+  query.set("event_history", "[null]"); query.set("event_page", "1"); query.set("event_limit", "25");
+  window.history.replaceState(null, "", `/app/report/workstations.overview?${query}`);
+  mount(); await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  expect(requests.some(url => url.pathname.endsWith("/data"))).toBe(false);
+  expect(requests.find(url => url.pathname.includes("/detail"))?.searchParams.get("event_cursor")).toBe("bound-event-page");
+  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  await waitFor(() => expect(requests.filter(url => url.pathname.includes("/detail")).at(-1)?.searchParams.get("event_limit")).toBe("200"));
+  const last = requests.filter(url => url.pathname.includes("/detail")).at(-1)!;
+  expect(last.searchParams.has("event_cursor")).toBe(false); expect(last.searchParams.has("cursor")).toBe(false);
+  expect(new URLSearchParams(window.location.search).get("cursor")).toBe("bound-fleet-page");
+  expect(invalidRequests).toEqual([]);
 });
 
-it.each(["ru", "en"] as const)("explains pending check processing (%s)", async (locale) => {
-  listOverrides = { coverage: { population_status: "awaiting_observations" }, collections: { checks: [
-    { check_id: "C01", title_key: "workstations.checks.C01.title", counts: { stations: { value: null, relation: "unknown" } } },
-  ] } };
-  window.history.replaceState(null, "", "/app/workstations?tab=checks&check_id=C01");
-  setLocale(locale); mount();
-  expect(await screen.findByText(t("workstations.overview.awaitingObservations"))).toBeTruthy();
-  expect(screen.getByText(t("workstations.overview.checkPending"))).toBeTruthy();
+it("restores the original fleet time and cursor after applying a different station event window", async () => {
+  mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  fireEvent.change(screen.getByLabelText(t("period.from")), { target: { value: "2026-11-25T09:30:00.123" } });
+  fireEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
+  await waitFor(() => expect(new URLSearchParams(window.location.search).get("from")).toBe("2026-11-25T09:30:00.123Z"));
+  fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.back_fleet") }));
+  await screen.findByRole("table", { name: t("workstations.overview.stations") });
+  expect(new URLSearchParams(window.location.search).get("from")).toBe(from);
+  expect(new URLSearchParams(window.location.search).get("to")).toBe(to);
 });
 
-it.each(["ru", "en"] as const)("opens the real registered view, card and exact source, preserving return state (%s)", async (locale) => {
-  setLocale(locale); mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  fireEvent.click(await within(dialog).findByRole("button", { name: `${t("workstations.overview.evidence")} 1` }));
-  expect(await screen.findByText("<Event>synthetic</Event>")).toBeTruthy();
-  expect(requests.some((url) => url.includes("finding_id=") && url.includes("evidence_index=1"))).toBe(true);
-  const dataRequests = requests.filter((url) => url.includes("/data?") || url.includes("/detail?"));
-  expect(dataRequests.every((url) => new URL(url, window.location.origin).searchParams.get("domain") === "11")).toBe(true);
-  expect(dataRequests.some((url) => url.includes("/rows/ws%3Aad%3A123/detail?"))).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: t("workstations.overview.backToStation") }));
-  expect(new URLSearchParams(window.location.search).get("station")).toBe("ws:ad:123");
-  expect(new URLSearchParams(window.location.search).get("search")).toBe("synthetic");
-  expect(new URLSearchParams(window.location.search).get("domain_id")).toBe("11");
-  fireEvent.click(within(dialog).getByRole("button", { name: t("drawer.close") }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(new URLSearchParams(window.location.search).has("station")).toBe(false);
+it("clears opened station data when the effective session loses access", async () => {
+  const view = mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  denied = true; revision = "revoked"; view.refresh();
+  await waitFor(() => expect(screen.queryByText("Synthetic audit cleared")).toBeNull());
+  expect(screen.queryByText("SYNTHETIC\\alice")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "WS-WORKSPACE-001" })).toBeNull();
 });
 
-it.each(["ws:ad:123", "ws:agent:60f58b59-3811-4940-85db-a3de8ea664bb"])("encodes the actual client detail URL once (%s)", async (id) => {
-  await api.reportV2Detail("workstations.overview", id, new URLSearchParams("domain=11"));
-  expect(requests).toEqual([`/api/v2/reports/workstations.overview/rows/${encodeURIComponent(id)}/detail?domain=11`]);
+it.each(["denied", "malformed"] as const)("fails closed on a %s station detail result", async mode => {
+  detailMode = mode; mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  await screen.findByRole("alert");
+  expect(screen.queryByText("Synthetic audit cleared")).toBeNull();
+  expect(screen.queryByRole("table", { name: t("workstations.workspace.station_events") })).toBeNull();
 });
 
-it("clears a previously opened source and station after access evaluation changes", async () => {
-  const view = mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  fireEvent.click(await screen.findByRole("button", { name: `${t("workstations.overview.evidence")} 1` }));
-  expect(await screen.findByText("<Event>synthetic</Event>")).toBeTruthy();
-  denied = true; revision = "synthetic-revoked"; view.refresh();
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.queryByText("<Event>synthetic</Event>")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Synthetic workstation" })).toBeNull();
-});
-
-
-it.each(["ru", "en"] as const)("shows the last observed target login in the registered list and card, never an active session (%s)", async (locale) => {
-  lastLogin = { observed_at: "2026-10-19T12:30:00+00:00", logon_type: 10,
-    account: { name: "Synthetic target", domain: "EXAMPLE", sid: "S-1-5-21-1-2-3-1001" },
-    current_state: "unknown", evidence_ref: { observation_id: "c".repeat(64) } };
-  setLocale(locale); mount();
-  expect(await screen.findByText("EXAMPLE\\Synthetic target")).toBeTruthy();
-  expect(screen.queryByText("S-1-5-21-1-2-3-1001")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText("EXAMPLE\\Synthetic target")).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.overview.loginType10"))).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.overview.loginNotCurrent"))).toBeTruthy();
-  expect(within(dialog).getByText(/2026/)).toBeTruthy();
-});
-
-it.each([{}, { observed_at: "invalid", logon_type: 2, account: { name: "bad" } },
-  { observed_at: "2026-10-19T12:30:00Z", logon_type: 3, account: { name: "network" } },
-  { observed_at: "2026-10-19T12:30:00Z", logon_type: "unknown", account: { name: "unclassified" } }])(
-  "does not invent an interactive login from absent or invalid summaries", async (value) => {
-    lastLogin = value; mount();
-    fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-    const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText(t("workstations.overview.lastLogin"));
-    for (const name of ["bad", "network", "unclassified"]) expect(screen.queryByText(name)).toBeNull();
-  });
-
-
-it.each(["ru", "en"] as const)("shows observed device lower bounds in the registered list and card (%s)", async (locale) => {
-  deviceSummary = { devices_7d: { value: 2, relation: "at_least" }, baseline_status: "unknown" };
-  setLocale(locale); mount();
-  expect(await screen.findByText("≥ 2")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText(t("workstations.overview.devices7d"))).toBeTruthy();
-  expect(within(dialog).getByText("≥ 2")).toBeTruthy();
-});
-
-it("does not turn an unknown device baseline into zero", async () => {
-  deviceSummary = { devices_7d: { value: null, relation: "unknown" }, baseline_status: "unknown" };
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(t("workstations.overview.devices7d"));
-  expect(screen.queryByText("≥ 0")).toBeNull();
-});
-
-
-it.each(["ru", "en"] as const)("shows bounded observed C04 metadata without signature or live-process claims (%s)", async (locale) => {
-  processFinding = { id: "a".repeat(64), check_id: "C04", reason_code: "suspicious_process_path", reason_params: {},
-    process_details: { path: "C:\\Windows\\Temp\\fixture.exe", process_id: "17", signature_status: "not_received", current_state: "unknown",
-      command_line: "PRIVATE-COMMAND", signer: "UNPROVEN-SIGNER" } };
-  setLocale(locale); mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText("C:\\Windows\\Temp\\fixture.exe")).toBeTruthy();
-  expect(within(dialog).getByText("17")).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.process.signature_not_received"))).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.process.current_state_unknown"))).toBeTruthy();
-  expect(screen.queryByText("PRIVATE-COMMAND")).toBeNull();
-  expect(screen.queryByText("UNPROVEN-SIGNER")).toBeNull();
-});
-
-it("does not render process details for another check type", async () => {
-  processFinding = { id: "a".repeat(64), check_id: "C05", reason_code: "service_or_task_changed", reason_params: {},
-    process_details: { path: "foreign-process", process_id: "17", signature_status: "not_received" } };
-  mount(); fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(t("workstations.checks.C05.title"));
-  expect(screen.queryByText("foreign-process")).toBeNull();
-});
-
-it.each(["ru", "en"] as const)("labels signature as current file measurement, not executed process trust (%s)", async (locale) => {
-  processFinding = { id: "a".repeat(64), check_id: "C04", reason_code: "suspicious_process_path", reason_params: {},
-    process_details: { path: "C:\\Windows\\Temp\\fixture.exe", process_id: "17", current_state: "unknown",
-      file_measurement: { scope: "file_at_measurement", status: "signed", observed_at_utc: "2026-10-28T12:00:00+00:00",
-        sha256_before: "a".repeat(64), sha256_after: "a".repeat(64), identity_before: "b".repeat(64), identity_after: "b".repeat(64),
-        signer_sha256: "c".repeat(64), kind: "embedded", reason: null } } };
-  setLocale(locale); mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Synthetic workstation" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText("a".repeat(64))).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.process.measurement_signed"))).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.process.measurement_limit"))).toBeTruthy();
-  expect(within(dialog).getByText(t("workstations.process.current_state_unknown"))).toBeTruthy();
-  expect(within(dialog).queryByText(t("workstations.process.signature_not_received"))).toBeNull();
+it("keeps collection metadata available while independently denying the journal branch", async () => {
+  detailMode = "events_denied"; mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  expect(await screen.findByText(t("workstations.workspace.events_denied"))).toBeTruthy();
+  expect(screen.queryByText("Synthetic grouped sign-ins")).toBeNull();
+  expect(screen.queryByRole("link", { name: t("workstations.workspace.open_journal") })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.collection_tab") }));
+  expect(await screen.findByText(source)).toBeTruthy();
 });

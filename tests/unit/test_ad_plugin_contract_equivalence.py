@@ -275,6 +275,11 @@ def test_ad_contracts_equal_pre_registration_baseline(monkeypatch):
             vpn_report = next(redirect for redirect in navigation_payload["redirects"] if redirect["from"] == "/vpn-report")
             assert vpn_report == {"from": "/vpn-report", "to": "/report/vpn.connections", "view": "accounts"}
             vpn_report["view"] = "connections"
+            # The native workstation workspace adds one public route alias.
+            # Pin that additive navigation delta; preserve every AD contract.
+            navigation_payload["redirects"].insert(navigation_payload["redirects"].index(vpn_report), {
+                "from": "/workstations", "to": "/report/workstations.overview", "view": "overview",
+            })
         assert candidate == expected
     finally:
         plugins.registered_plugins.cache_clear()

@@ -41,8 +41,14 @@ public sealed class EventsJournalV2Tests
                     ["definition_json"] = JsonSerializer.SerializeToNode(new { columns = Fields, actions = new[] { "view", "export" }, export_policy = "controlled" })
                 }]);
             }
+            if (sql == "set local jit=off") return Task.FromResult<IReadOnlyList<JsonObject>>([]);
             Assert.Contains("from event_hot h", sql);
             Assert.Contains("limit @", sql);
+            if (sql.Contains("as items from meta")) return Task.FromResult<IReadOnlyList<JsonObject>>([new JsonObject
+            {
+                ["items"] = new JsonArray(Rows.Select(row => (JsonNode)row.DeepClone()).ToArray()),
+                ["filtered_count"] = Rows.Length, ["journal_event_count"] = Rows.Length
+            }]);
             return Task.FromResult<IReadOnlyList<JsonObject>>(Rows);
         }
         public Task CommitAsync(CancellationToken ct) => throw new InvalidOperationException("read_only");
@@ -154,5 +160,38 @@ public sealed class EventsJournalV2Tests
         Assert.Contains("lower(server.hostname)=lower(", sql); Assert.Contains("event.target_user_name", sql);
         Assert.Equal(8, values.Count(v => Equals(v, "all")));
         Assert.DoesNotContain("event.event_id=any(", sql);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Workstation_source_filter_precedes_groups_counts_and_export(bool export)
+    {
+        const string source = "41800000-0000-4000-8000-000000000001";
+        var f = new Fixture();
+        var c = f.Context(new()
+        {
+            ["source_instance_id"] = source, ["source_plugin"] = "sli.workstations",
+            ["domain"] = "7", ["server"] = "WS-01", ["collapse"] = "on"
+        }, action: export ? "export" : "view") with { WorkstationServerId = export ? null : 12 };
+        if (export) await f.Reader.ExportAsync(c, Ct); else await f.Reader.QueryAsync(c, Ct);
+        var (sql, values) = f.Db.Page;
+        Assert.Contains("event.method#>>'{$origin,source_instance_id}'=", sql);
+        Assert.Contains("event.method#>>'{$origin,plugin_id}'=", sql);
+        Assert.Contains(source, values); Assert.Contains("sli.workstations", values);
+        Assert.Contains("lower(server.hostname)=lower(", sql); Assert.Contains("WS-01", values);
+        Assert.True(sql.IndexOf("event.method#>>'{$origin,source_instance_id}'=", StringComparison.Ordinal)
+            < sql.IndexOf("candidates as materialized", StringComparison.Ordinal));
+        if (!export) { Assert.Contains("event.server_id=", sql); Assert.Contains(12L, values); }
+    }
+
+    [Theory]
+    [InlineData("not-a-source", "sli.workstations")]
+    [InlineData(null, "sli.workstations")]
+    [InlineData("41800000-0000-4000-8000-000000000001", "another-plugin")]
+    public void Invalid_source_selection_cannot_silently_become_unfiltered(string? source, string plugin)
+    {
+        var c = new Fixture().Context();
+        c.Params["source_instance_id"] = source; c.Params["source_plugin"] = plugin;
+        Assert.Throws<ReportRequestException>(() => EventsJournalReader.Options(c));
     }
 }

@@ -2,6 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
+import { cleanup, fireEvent, render as renderDom, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 import { localeRuntime, setLocale, t } from "../i18n";
@@ -10,7 +11,7 @@ import { EventCardPage, RawSections } from "./event-card";
 
 const EVENT_PATH = "/app/events/517548?time_from=2026-09-10T00%3A00%3A00Z&time_to=2026-09-11T00%3A00%3A00Z&timezone=UTC";
 
-async function render(options: { role?: string; relations?: unknown; entities?: unknown; semantics?: Record<string, unknown>; sourceState?: EventDetail["source_payload_state"] } = {}) {
+async function render(options: { role?: string; relations?: unknown; entities?: unknown; semantics?: Record<string, unknown>; sourceState?: EventDetail["source_payload_state"]; returnTo?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(["bootstrap"], { effective_role: options.role ?? "viewer" });
   client.setQueryData(["event", "517548"], { item: {
@@ -28,12 +29,13 @@ async function render(options: { role?: string; relations?: unknown; entities?: 
   const root = createRootRoute();
   const route = createRoute({ getParentRoute: () => root, path: "/events/$eventId", component: EventCardPage });
   const investigations = createRoute({ getParentRoute: () => root, path: "/investigations", component: () => null });
-  const router = createRouter({ isServer: true, routeTree: root.addChildren([route, investigations]), basepath: "/app", history: createMemoryHistory({ initialEntries: [EVENT_PATH] }) });
-  const search = EVENT_PATH.slice(EVENT_PATH.indexOf("?"));
+  const eventPath = options.returnTo ? `${EVENT_PATH}&${new URLSearchParams({ return_to: options.returnTo })}` : EVENT_PATH;
+  const router = createRouter({ isServer: true, routeTree: root.addChildren([route, investigations]), basepath: "/app", history: createMemoryHistory({ initialEntries: [eventPath] }) });
+  const search = eventPath.slice(eventPath.indexOf("?"));
   const globalScope = globalThis as unknown as { window?: { location: { href: string; search: string; pathname: string } } };
   const hadWindow = Object.hasOwn(globalScope, "window");
   const previousWindow = globalScope.window;
-  globalScope.window = { location: { href: `http://localhost${EVENT_PATH}`, search, pathname: "/app/events/517548" } };
+  globalScope.window = { location: { href: `http://localhost${eventPath}`, search, pathname: "/app/events/517548" } };
   try {
     await router.load();
     return renderToStaticMarkup(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
@@ -50,6 +52,22 @@ it("renders the exact event facts from the api response", async () => {
   expect(html).toContain("Пароль");
   expect(html).toContain("dc01.example.test");
   expect(html).toContain("12:00:00");
+});
+
+it.each(["ru", "en"] as const)("provides a visible return action with the exact workstation context in %s", async locale => {
+  vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
+  setLocale(locale);
+  const fleet = `/app/report/workstations.overview?${new URLSearchParams({ domain: "7", search: "WS-WORKSPACE-", collection: "enabled", limit: "200", cursor: "saved-page", period: "custom", from: "2026-09-10T00:00:00.123456Z", to: "2026-09-11T00:00:00.987654Z", source_instance_id: "41700000-0000-4000-8000-000000000001" })}`;
+  const station = `${fleet}&${new URLSearchParams({ station: "41700000-0000-4000-8000-000000000002", station_tab: "events", event: "517548", station_return: fleet })}`;
+  try {
+    const document = new DOMParser().parseFromString(await render({ returnTo: station }), "text/html");
+    const action = [...document.querySelectorAll<HTMLAnchorElement>(".sli-ds-header__actions a")]
+      .find(link => link.textContent === t("investigations.case.return_to_source_report"));
+    expect(action?.getAttribute("href")).toBe(station);
+    expect(action?.closest(".sli-ds-crumbs")).toBeNull();
+  } finally {
+    setLocale("ru"); vi.restoreAllMocks();
+  }
 });
 
 it.each(["ru", "en"] as const)("shows server-calculated watch priority in %s", async (locale) => {
@@ -108,15 +126,49 @@ it("does not present relations that were not received as an empty result", async
   expect(await render({ relations: { items: [] } })).toContain(empty);
 });
 
-it("keeps actual relation and action rows without service limits, summaries or truncation notices", async () => {
+it("keeps actual relations and an explicit related-facts action without service limits or truncation notices", async () => {
   const html = await render({ relations: { truncated: true, items: [{
     relation_type: "computed_correlation", related_event_db_id: 2, related_event_id: 4624, confidence: 0.8,
     relation_rule: "synthetic_rule", evidence_fields: ["synthetic_field"],
   }] } });
   expect(html).toContain("Event 4624 · DB 2");
-  expect(html).toContain(t("events.card.statusObserved"));
+  expect(html).toContain(t("events.card.semanticLoad"));
   expect(html).not.toContain("<details");
   expect(html).not.toMatch(/связей усечена|Показано до|Наблюдение\.|synthetic_rule|synthetic_field|synthetic_limit|synthetic-action/);
+});
+
+it("requests optional semantic context only after an explicit action and resets it for another event", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+  const actions = vi.spyOn(api, "semanticActions").mockResolvedValue({ state: "available", items: [{ canonical_action_id: "synthetic-action", status: "observed" }] } as Awaited<ReturnType<typeof api.semanticActions>>);
+  const scenarios = vi.spyOn(api, "semanticScenarios").mockResolvedValue({ state: "empty", items: [] } as unknown as Awaited<ReturnType<typeof api.semanticScenarios>>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  for (const id of ["517548", "517549"]) {
+    client.setQueryData(["event", id], { item: { event_db_id: Number(id), event_id: 7045, server: "WS-WORKSPACE-001", time_created_utc: "2026-09-10T12:00:00Z" } });
+    client.setQueryData(["event-relations", id], { items: [] });
+    client.setQueryData(["event-entities", id], { items: [] });
+  }
+  const root = createRootRoute();
+  const event = createRoute({ getParentRoute: () => root, path: "/events/$eventId", component: EventCardPage });
+  const investigations = createRoute({ getParentRoute: () => root, path: "/investigations", component: () => null });
+  const router = createRouter({ routeTree: root.addChildren([event, investigations]), basepath: "/app", history: createMemoryHistory({ initialEntries: [EVENT_PATH] }) });
+  const original = window.location.href;
+  window.history.replaceState(null, "", EVENT_PATH);
+  try {
+    await router.load();
+    renderDom(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
+    const load = await screen.findByRole("button", { name: t("events.card.semanticLoad") });
+    expect(actions).not.toHaveBeenCalled(); expect(scenarios).not.toHaveBeenCalled();
+    fireEvent.click(load);
+    await screen.findByText(t("events.card.statusObserved"));
+    expect(actions).toHaveBeenCalledTimes(1); expect(scenarios).toHaveBeenCalledTimes(1);
+    expect(actions.mock.calls[0][0]?.get("event_db_id")).toBe("517548");
+    expect(actions.mock.calls[0][0]?.get("time_from")).toBe("2026-09-10T00:00:00Z");
+    await router.navigate({ to: "/events/$eventId", params: { eventId: "517549" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: t("events.card.semanticLoad") })).toBeTruthy());
+    expect(actions).toHaveBeenCalledTimes(1); expect(scenarios).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup(); client.clear(); vi.restoreAllMocks(); window.history.replaceState(null, "", original);
+  }
 });
 
 it("shows an entity query timeout without an empty-result message or a status banner", async () => {

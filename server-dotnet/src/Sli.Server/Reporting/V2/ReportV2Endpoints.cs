@@ -35,6 +35,8 @@ public static class ReportV2Endpoints
         services.TryAddScoped<ISecurityProblemEvidence, SecurityProblemEvidence>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IReportV2Reader, SecurityProblemsReader>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IReportV2Reader, EventsJournalReader>());
+        services.TryAddScoped<EventsJournalReader>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IReportV2Reader, Sli.Server.Workstations.WorkstationWorkspaceReader>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IReportV2Reader, RuleQualityReader>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IReportV2Reader, SecurityEventsReader>());
         return services;

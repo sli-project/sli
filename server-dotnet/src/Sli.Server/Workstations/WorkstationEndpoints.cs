@@ -16,7 +16,9 @@ public static class WorkstationEndpoints
     }
     public static IEndpointRouteBuilder MapWorkstationReports(this IEndpointRouteBuilder endpoints)
     {
-        foreach(string key in WorkstationReportContract.Keys)
+        // The native workspace owns overview. Retained family readers and their
+        // independent history adapters remain deliberately unavailable.
+        foreach(string key in WorkstationReportContract.Keys.Where(key=>key!="workstations.overview"))
         {
             endpoints.MapGet("/api/v2/reports/"+key,c=>Handle(c,key,"declaration"));
             endpoints.MapGet("/api/v2/reports/"+key+"/data",c=>Handle(c,key,"data"));

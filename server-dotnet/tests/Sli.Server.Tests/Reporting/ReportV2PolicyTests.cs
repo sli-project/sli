@@ -40,6 +40,22 @@ public sealed class ReportV2PolicyTests
         Assert.Equal("2026-01-01T03:00:00Z",p["period"]!["from_utc"]!.GetValue<string>()); Assert.Equal("2026-01-01T04:00:00Z",p["period"]!["to_utc"]!.GetValue<string>());
         Assert.Equal("report_period_invalid",Assert.Throws<ReportRequestException>(()=>ReportParameters.Parse(PeriodDefinition(),Query(("period","custom"),("from","2026-01-01T10:00:00"),("to","2026-01-01T11:00:00")))).Message);
     }
+    [Theory]
+    [InlineData("2026-01-01T10:00:00.125+07:00", "2026-01-01T10:00:00.875+07:00", "2026-01-01T03:00:00.125Z", "2026-01-01T03:00:00.875Z")]
+    [InlineData("2026-01-01T10:00:00.123456Z", "2026-01-01T10:00:01.654321Z", "2026-01-01T10:00:00.123456Z", "2026-01-01T10:00:01.654321Z")]
+    [InlineData("2026-01-01T10:00:00Z", "2026-01-01T10:00:01Z", "2026-01-01T10:00:00Z", "2026-01-01T10:00:01Z")]
+    public void Exact_fractional_bounds_survive_workstation_to_journal_handoff(string from, string to, string expectedFrom, string expectedTo)
+    {
+        var registry = new ReportDefinitionRegistry();
+        var (station, _) = ReportParameters.Parse(registry.Get("workstations.overview")!,
+            Query(("period", "custom"), ("from", from), ("to", to)));
+        Assert.Equal(expectedFrom, station["period"]!["from_utc"]!.ToString());
+        Assert.Equal(expectedTo, station["period"]!["to_utc"]!.ToString());
+        var (journal, _) = ReportParameters.Parse(registry.Get("events.journal")!,
+            Query(("period", "custom"), ("from", station["period"]!["from_utc"]!.ToString()),
+                ("to", station["period"]!["to_utc"]!.ToString())));
+        Assert.True(JsonNode.DeepEquals(station["period"], journal["period"]));
+    }
     [Fact]
     public void TextLimitsAndRequiredParametersAreEnforced()
     {
