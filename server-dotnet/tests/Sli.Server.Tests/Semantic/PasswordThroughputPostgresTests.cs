@@ -234,6 +234,22 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
         var producer = new PasswordProducer();
         var agent = ShortEventAdmissionPostgresTests.Agent;
         var invoke = typeof(PasswordProducer).GetMethod("RunCore", BindingFlags.Static | BindingFlags.NonPublic)!;
+        await using var traced = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(traced, """
+            load 'auto_explain';
+            set auto_explain.log_min_duration='50ms';
+            set auto_explain.log_analyze=on;
+            set auto_explain.log_buffers=on;
+            set auto_explain.log_timing=off;
+            set auto_explain.log_nested_statements=on;
+            set track_functions='all';
+            set session authorization sli_semantic_login;
+            set role adlog_semantic_worker;
+            """, ct);
+        await using (var login = new NpgsqlCommand("""
+            select session_user='sli_semantic_login' and current_user='adlog_semantic_worker'
+            """, traced))
+            Assert.Equal(true, await login.ExecuteScalarAsync(ct));
         for (int slice = 0; slice < slices; slice++)
         {
             int[] clients = Enumerable.Range(0, sliceRows).Select(i => i < hotClientRows ? 0 :
@@ -263,18 +279,6 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             if (measured)
                 output.WriteLine("p1_411_spray_shape_before " + await ReadSprayShapeAsync(owner, spray.Pin, ct));
 
-            await using var traced = measured ? await fixture.Pg.OpenAsync(ct) : null;
-            if (traced is not null)
-                await PostCollectionPostgres.Sql(traced, """
-                    load 'auto_explain';
-                    set auto_explain.log_min_duration='50ms';
-                    set auto_explain.log_analyze=on;
-                    set auto_explain.log_buffers=on;
-                    set auto_explain.log_timing=off;
-                    set auto_explain.log_nested_statements=on;
-                    set track_functions='all';
-                    set session authorization sli_semantic_login;
-                    """, ct);
             var memo = new Dictionary<long, PasswordNative>();
             var watch = Stopwatch.StartNew();
             var profiled = new List<PasswordProofObservation>();
@@ -287,7 +291,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                 // The normal reporting threshold hides successful unsplit passes.
                 var observation = new PasswordProofObservation();
                 profiled.Add(observation);
-                var core = (Task<PasswordProducerOutcome>)invoke.Invoke(null, [traced!, rule, token, memo, observation])!;
+                var core = (Task<PasswordProducerOutcome>)invoke.Invoke(null, [traced, rule, token, memo, observation])!;
                 return await core;
             }, ct, rules: [spray], targetWatermark: target);
             watch.Stop();
@@ -310,7 +314,7 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
                 phaseMilliseconds[phase.ToString()] = Math.Round(profiled.Sum(observation =>
                     Counter<TimeSpan[]>(observation, "phaseElapsed")[(int)phase].TotalMilliseconds), 3);
             }
-            await PostCollectionPostgres.Sql(traced!, "select pg_stat_force_next_flush()", ct);
+            await PostCollectionPostgres.Sql(traced, "select pg_stat_force_next_flush()", ct);
             await ReportReadProfileAsync(owner, fixture.Pg, ct, output);
             var result = new JsonObject
             {
