@@ -103,6 +103,16 @@ internal sealed class DetectionDiagnostics
                     ? "Password producer: " + password.Message.Replace("password_v2_", "", StringComparison.Ordinal).Replace('_', ' ') + "."
                     : "Password producer operation failed.";
                 if(password.ProofBudget is {} budget)result["proof_budget"]=budget.Document;
+                if (password.RecordsProofLimit is { } records)
+                    result["records_proof_limit"] = new JsonObject
+                    {
+                        ["check"] = "PasswordRule.Records",
+                        ["records"] = records.Records,
+                        ["xml_bytes"] = records.XmlBytes,
+                        ["limit"] = records.Records > PasswordProofBudget.MaxReferences ? "records" : "xml_bytes",
+                        ["max_records"] = PasswordProofBudget.MaxReferences,
+                        ["max_xml_bytes"] = PasswordProofBudget.MaxXmlBytes
+                    };
                 if (password.WindowCondition is {} windowCheck && Enum.IsDefined(windowCheck))
                     result["window_check"] = windowCheck.ToString();
                 if (password.Check is {} check && Enum.IsDefined(check)) {

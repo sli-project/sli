@@ -22,6 +22,7 @@ public sealed class PasswordFailure(string code) : Exception(code)
     internal bool? WatermarkMatches { get; init; }
     internal int? StateBytes { get; init; }
     internal PasswordProofBudget? ProofBudget { get; init; }
+    internal (int Records, long XmlBytes)? RecordsProofLimit { get; init; }
 }
 
 internal enum PasswordProofPhase { Reader, RetainedChain, Emission, Checkpoint, NativeVerification }
