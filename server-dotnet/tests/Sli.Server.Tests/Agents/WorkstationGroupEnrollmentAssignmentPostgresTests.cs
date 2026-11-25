@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -108,10 +109,11 @@ public sealed class WorkstationGroupEnrollmentAssignmentPostgresTests
         }
     }
 
-    private static async Task<(long Domain, long Computer, long Ou)> PublishDirectoryAsync(SqlPostgresFixture fixture, CancellationToken ct)
+    private static async Task<(long Domain, long Computer, long Ou)> PublishDirectoryAsync(
+        SqlPostgresFixture fixture, CancellationToken ct, [CallerFilePath] string sourceFile = "")
     {
-        string vector = await File.ReadAllTextAsync(Path.Combine(SqlPostgresFixture.Repository(),
-            "server-dotnet/tests/Sli.Server.Tests/Agents/ad-publication-source-vector.json"), ct);
+        string vector = await File.ReadAllTextAsync(Path.Combine(Path.GetDirectoryName(sourceFile)!,
+            "ad-publication-source-vector.json"), ct);
         var observed = DateTimeOffset.UtcNow.AddMinutes(-2);
         string stamp = observed.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
         var data = JsonNode.Parse(vector.Replace("2026-10-08T12:00:00Z", stamp, StringComparison.Ordinal))!.AsObject();
