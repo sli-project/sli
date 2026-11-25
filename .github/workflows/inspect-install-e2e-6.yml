@@ -97,17 +97,7 @@ jobs:
             printf '%s: start_exit=%s\n' "$unit" "$code"
             systemctl show "$unit" --property=Result,ExecMainStatus
             journalctl -u "$unit" -o cat --no-pager |
-              grep -E '^(credential_env_expected|credential_directory_present)=(True|False)$|^(postgres_password|migration_password|runtime_password): (open-ok|invalid-delivery-mode|[A-Z0-9_]+)
-          done
-          FIXTURE
-      - name: Remove the synthetic container
-        if: always()
-        shell: bash
-        run: |
-          if docker inspect sli-credential-fixture >/dev/null 2>&1; then
-            docker rm --force sli-credential-fixture
-          fi
- || true
+              grep -E '^(credential_env_expected|credential_directory_present)=(True|False)$|^(postgres_password|migration_password|runtime_password): (open-ok|invalid-delivery-mode|[A-Z0-9_]+)$' || true
             test "$code" -eq 0
           done
           FIXTURE
