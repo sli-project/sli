@@ -164,7 +164,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
                 var sid = string.IsNullOrEmpty(name) ? null : SelectLocalGroupSid(
                     ResolveGroupSid(builtinAuthority, name), builtinSid,
                     ResolveGroupSid(accountAuthority, name), accountDomainSid);
-                if (sid is null)
+                if (name is null || sid is null)
                 {
                     if (!allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
                     complete = false;
