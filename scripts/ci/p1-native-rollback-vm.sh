@@ -158,7 +158,8 @@ PY
     }
     trap finish_guest EXIT
 
-    mkdir -p /run/p1-old-apt /srv/sli-db /var/backups/sli
+    backup_root=/mnt/sli-p1-checkpoint
+    mkdir -p /run/p1-old-apt /srv/sli-db "$backup_root"
     find /etc/apt/sources.list.d -maxdepth 1 -type f \( -name '*.list' -o -name '*.sources' \) \
         -exec mv -t /run/p1-old-apt -- {} +
     cat >/etc/apt/sources.list <<'APT'
@@ -179,13 +180,13 @@ APT
     database_uuid=$(blkid -s UUID -o value "$database")
     backup_uuid=$(blkid -s UUID -o value "$backup")
     [[ -n $database_uuid && -n $backup_uuid && $database_uuid != "$backup_uuid" ]]
-    printf 'UUID=%s /srv/sli-db ext4 defaults 0 2\nUUID=%s /var/backups/sli ext4 defaults 0 2\n' \
-        "$database_uuid" "$backup_uuid" >>/etc/fstab
+    printf 'UUID=%s /srv/sli-db ext4 defaults 0 2\nUUID=%s %s ext4 defaults 0 2\n' \
+        "$database_uuid" "$backup_uuid" "$backup_root" >>/etc/fstab
     systemctl daemon-reload
     mount /srv/sli-db
-    mount /var/backups/sli
+    mount "$backup_root"
     printf 'P1_EVIDENCE database_mount=%s backup_mount=%s\n' \
-        "$(findmnt -n -o SOURCE /srv/sli-db)" "$(findmnt -n -o SOURCE /var/backups/sli)"
+        "$(findmnt -n -o SOURCE /srv/sli-db)" "$(findmnt -n -o SOURCE "$backup_root")"
 
     input=/mnt/p1-input
     stage=install_410
@@ -196,8 +197,10 @@ APT
         exec 9>"$initial_trace"
         BASH_XTRACEFD=9 bash -x "$base/sli-debian-beta-kit/install-beta-kit" \
             --server 127.0.0.1 --bind 127.0.0.1 --port 443 \
-            --uuid "$database_uuid" --backup-root /var/backups/sli --non-interactive
+            --uuid "$database_uuid" --backup-root "$backup_root" --non-interactive
     ) >>"$initial_log" 2>&1
+    mountpoint -q /var/backups/sli
+    [[ "$backup_root" -ef /var/backups/sli ]]
     printf 'P1_EVIDENCE predecessor_install=completed\n'
     install -o root -g root -m 0600 /proc/sys/kernel/random/boot_id /run/sli-p1-acceptance.boot-id
 
