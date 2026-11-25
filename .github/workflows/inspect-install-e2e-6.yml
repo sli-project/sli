@@ -68,6 +68,9 @@ jobs:
                 {destination:.Destination, propagation:.Propagation, writable:.RW}]}
             | select(.run_tmpfs and (.bind_mounts|length==3) and all(.bind_mounts[]; .propagation=="rprivate"))'
           docker exec sli-install-e2e findmnt --mountpoint /run -n -o TARGET,FSTYPE,PROPAGATION
+          getty=$(docker exec sli-install-e2e systemctl is-enabled getty@tty1.service || true)
+          [[ $getty == masked ]]
+          printf '%s\n' 'Container-only getty@tty1.service is masked.'
       - name: Run the original scenario and retain only safe markers
         shell: bash
         run: |

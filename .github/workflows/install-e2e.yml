@@ -175,11 +175,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # This container has no virtual console for the tty1 login service.
           docker build -t sli-install-e2e - <<'DOCKERFILE'
           FROM debian:trixie
           RUN apt-get update && \
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                 systemd systemd-sysv dbus sudo curl ca-certificates iproute2 && \
+              systemctl --root=/ mask getty@tty1.service && \
               rm -f /usr/sbin/policy-rc.d && rm -rf /var/lib/apt/lists/*
           DOCKERFILE
 
