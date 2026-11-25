@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
+from fnmatch import fnmatchcase
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -52,6 +53,23 @@ VECTORS = {
 
 def workflow(name: str) -> dict:
     return yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(("path", "expected"), [
+    ("server-dotnet/tests/Sli.Server.Tests/Semantic/PasswordThroughputPostgresTests.cs", False),
+    ("server-dotnet/tests/Sli.Server.Tests/Storage/ShortEventAdmissionPostgresTests.cs", True),
+    ("server-dotnet/tests/Sli.Server.Tests/Workspace/BetaMenuWalkTests.cs", True),
+    ("server-dotnet/src/Sli.Server/Auth/Access.cs", True),
+    ("frontend/src/product-main.tsx", True),
+    ("config/postgres_migrations/412_example.sql", True),
+])
+def test_beta_menu_walk_pull_request_path_filter(path, expected):
+    # PyYAML's safe loader interprets the workflow's `on` key as a boolean.
+    triggers = workflow("beta-menu-walk.yml")[True]
+    assert "workflow_dispatch" in triggers
+    filters = triggers["pull_request"]["paths"]
+    last_match = next((rule for rule in reversed(filters) if fnmatchcase(path, rule.removeprefix("!"))), "")
+    assert bool(last_match and not last_match.startswith("!")) == expected
 
 
 def setup_steps(job: dict, action: str) -> list[dict]:
