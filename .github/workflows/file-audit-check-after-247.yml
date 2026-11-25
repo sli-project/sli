@@ -1,0 +1,43 @@
+name: Verify installed File Audit check after #247
+on:
+  push:
+    branches: ['codex/file-audit-debian-kit-23e9547d']
+    paths:
+      - '.github/workflows/file-audit-check-after-247.yml'
+      - 'scripts/ci/file-audit-check-after-247.ps1'
+      - 'scripts/ci/file-audit-check-after-247.cs'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-check:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      KIT_COMMIT: 0d50f8a4613c32cd65b52564c6fc81548a555c52
+      MSI_ARTIFACT_ID: '14988805697'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: agent-dotnet/global.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sli-agent-dotnet-msi-0d50f8a4613c32cd65b52564c6fc81548a555c52
+          path: ${{ runner.temp }}/sli-msi-proof-input
+          run-id: '45538305957'
+          github-token: ${{ github.token }}
+      - name: Verify baseline, inventory and unchanged ACLs under LocalSystem
+        shell: pwsh
+        run: |
+          ./scripts/ci/file-audit-check-after-247.ps1
+      - name: Attach bounded native diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: file-audit-check-after-247-0d50f8a4
+          path: ${{ runner.temp }}/sli-msi-proof-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
