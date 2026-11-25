@@ -90,12 +90,75 @@ internal static class Program
         var policy = new AgentPolicy(1, new CollectionControl("active", 60, 32, 120, 10000000, false, false),
             new JsonArray(), null, null, null) { FileAuditRequest = request };
         var manager = new FileAuditManager(Path.Combine(Path.GetDirectoryName(root)!, "probe-state"), new PhysicalDurableFiles(), api);
+        result["stage"] = "auditpol_resource_view";
+        var auditpol = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "auditpol.exe"))
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        auditpol.ArgumentList.Add("/resourceSACL");
+        auditpol.ArgumentList.Add("/type:File");
+        auditpol.ArgumentList.Add("/view");
+        using (var process = System.Diagnostics.Process.Start(auditpol)!)
+        {
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(15000))
+            {
+                process.Kill();
+                result["auditpol_view"] = "timeout";
+            }
+            else
+            {
+                string message = stdout.GetAwaiter().GetResult() + stderr.GetAwaiter().GetResult();
+                result["auditpol_exit"] = process.ExitCode;
+                result["auditpol_view"] = message.Contains("no global SACL exists", StringComparison.OrdinalIgnoreCase)
+                    ? "explicit_absence" : process.ExitCode == 0 ? "completed_without_explicit_absence" : "error";
+                if (process.ExitCode != 0)
+                {
+                    var native = System.Text.RegularExpressions.Regex.Match(message, @"\b0x[0-9a-fA-F]{1,8}\b");
+                    if (native.Success) result["auditpol_error_hex"] = native.Value;
+                }
+            }
+        }
+        result["stage"] = "native_audit_policy";
+        var config = FileAuditPolicy.Parse(request["config"]!.AsObject());
+        try
+        {
+            result["audit_preflight"] = api.Preflight(config.Roots, describeReadErrors: true);
+        }
+        catch (AgentException error)
+        {
+            result["audit_preflight_error"] = error.Code;
+        }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            result["audit_preflight_win32"] = error.NativeErrorCode;
+        }
+        catch (System.Runtime.InteropServices.COMException error)
+        {
+            result["audit_preflight_hresult"] = unchecked((uint)error.HResult);
+        }
+        try
+        {
+            result["audit_masks_read"] = api.QueryMasks(config.RequiredMasks().Keys.ToArray()).Count;
+        }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            result["audit_masks_win32"] = error.NativeErrorCode;
+        }
         result["stage"] = "check";
         var report = manager.Reconcile(policy, null, DateTimeOffset.UtcNow, readDiagnostics: true).Report!;
         var check = report["scopes"]!.AsArray().Single()!;
         result["check_state"] = check["state"]!.DeepClone();
         result["check_reason"] = check["reason_code"]!.DeepClone();
         result["read_error"] = check["read_error"]?.DeepClone();
+        if (result["audit_preflight_error"]?.ToString() == "global_sacl_unknown"
+            && check["read_error"]?["stage"]?.ToString() == "audit_policy"
+            && check["read_error"]?["code_kind"]?.ToString() == "win32")
+        {
+            result["global_sacl_api_return"] = false;
+            result["global_sacl_api_win32"] = check["read_error"]!["code"]!.DeepClone();
+        }
         var afterAcl = ReadAcl();
         bool unchanged = JsonNode.DeepEquals(beforeAcl["dacl"], afterAcl["dacl"])
             && JsonNode.DeepEquals(beforeAcl["sacl"], afterAcl["sacl"])
