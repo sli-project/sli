@@ -4,6 +4,9 @@ import { reportEnumText } from "../../i18n/report-metadata";
 import { t } from "../../i18n";
 import { withDomain } from "../domain-navigation";
 
+export const AD_DOMAIN_REPORTS: ReadonlySet<string> = new Set(["ad.users.v2", "ad.computers.v6", "ad.infrastructure", "security.events.chains"]);
+const DOMAIN_SELECTORS = ["domain", "domain_id"] as const;
+
 /** VPN source branches load independently; NPS policy tabs do not need Accounting. */
 export function vpnViewBranchKey(view: string): string {
   if (["policy_denials", "policy_denials_growth", "policy_denials_events", "windows", "windows_heatmap"].includes(view)) return view;
@@ -60,15 +63,15 @@ export function defaultValues(definition: ReportDefinitionDto): FilterValues {
 
 export function valuesFromSearch(definition: ReportDefinitionDto, search: URLSearchParams): FilterValues {
   const values = defaultValues(definition);
-  if (definition.key === "security.events.chains" && !search.has("domain") && search.has("domain_id")) values.domain = search.get("domain_id") ?? "";
   if (definition.key === "vpn.connections" || definition.key === "ad.gpo.v2") {
     // Legacy workspace links use domain_id; VPN's existing API uses domain.
     if (!search.has("domain") && search.has("domain_id")) values.domain = search.get("domain_id") ?? "";
     if (search.get("scope") === "all" && !search.has("domain") && !search.has("domain_id")) delete values.domain;
   }
   if (search.get("scope") === "all") values.scope = "all";
-  else if (["ad.users.v2", "ad.computers.v6", "ad.infrastructure", "security.events.chains"].includes(definition.key)) {
-    if (!search.has("domain") && !search.has("domain_id") && definition.default_domain_id != null) values.domain = String(definition.default_domain_id);
+  else if (AD_DOMAIN_REPORTS.has(definition.key) && !search.has("domain") && !search.has("domain_id")
+    && definition.default_domain_id != null && definition.params.some(param => param.key === "domain")) {
+    values.domain = String(definition.default_domain_id);
   }
   for (const param of definition.params) {
     if (param.kind === "period") {
@@ -82,10 +85,24 @@ export function valuesFromSearch(definition: ReportDefinitionDto, search: URLSea
       if (value) values[param.key] = value;
     }
   }
+  // A filtered declaration may hide the selector. The explicit URL scope still applies.
+  if (AD_DOMAIN_REPORTS.has(definition.key)) {
+    const domain = search.get("domain");
+    const domainId = search.get("domain_id");
+    if (domain || domainId) {
+      delete values.domain;
+      delete values.domain_id;
+      if (definition.key === "security.events.chains") values.domain = domain || domainId || undefined;
+      else {
+        if (domain) values.domain = domain;
+        if (domainId) values.domain_id = domainId;
+      }
+    }
+  }
   if (definition.key === "ad.computer-logons" && !search.has("domain_id") && search.has("domain"))
     values.domain_id = search.get("domain") ?? undefined;
-  if (definition.key === "ad.computers.v6" && values.domain_id && definition.params.some((param) => param.key === "domain" && !param.hidden)) {
-    values.domain ??= values.domain_id;
+  if (definition.key === "ad.computers.v6" && values.domain_id && !values.domain && definition.params.some((param) => param.key === "domain" && !param.hidden)) {
+    values.domain = values.domain_id;
     delete values.domain_id;
   }
   return values;
@@ -108,6 +125,12 @@ export function searchFromValues(definition: ReportDefinitionDto, values: Filter
       value.forEach((item) => search.append(param.key, item));
     } else {
       search.set(param.key, String(value));
+    }
+  }
+  if (AD_DOMAIN_REPORTS.has(definition.key)) {
+    for (const key of DOMAIN_SELECTORS) {
+      const selected = values[key];
+      if (typeof selected === "string" && selected && !search.has(key)) search.set(key, selected);
     }
   }
   if (values.scope === "all" && !search.has("domain") && !search.has("domain_id")) search.set("scope", "all");

@@ -44,6 +44,39 @@ it("preserves explicit All from AD through another report and back", () => {
   expect(apiParams(otherDefinition, other, { timeZone: "UTC" }).has("scope")).toBe(false);
 });
 
+describe("AD direct links without a declared domain selector", () => {
+  it.each(["ad.infrastructure", "ad.users.v2", "ad.computers.v6", "security.events.chains"])(
+    "keeps explicit domains in both the URL and API for %s", key => {
+      const filtered = { ...definition, key, params: [], default_domain_id: null };
+      for (const selector of ["domain", "domain_id"]) {
+        const values = valuesFromSearch(filtered, new URLSearchParams({ [selector]: "91" }));
+        const output = key === "security.events.chains" ? "domain" : selector;
+        expect(searchFromValues(filtered, values).toString()).toBe(output + "=91");
+        expect(apiParams(filtered, values, { timeZone: "UTC" }).get(output)).toBe("91");
+      }
+      const empty = valuesFromSearch(filtered, new URLSearchParams());
+      expect(searchFromValues(filtered, empty).toString()).toBe("");
+    },
+  );
+
+  it("does not combine a direct alias with an implicit domain default", () => {
+    const available = { ...definition, params: [{ ...definition.params[0], hidden: false, required: true }],
+      filter_options: { domain: [{ value: "7", label: "Available" }] } };
+    const params = apiParams(available, valuesFromSearch(available, new URLSearchParams("domain_id=8")),
+      { timeZone: "UTC" });
+    expect(params.get("domain")).toBe("8");
+    expect(params.has("domain_id")).toBe(false);
+  });
+
+  it("passes conflicting AD aliases to server validation", () => {
+    const filtered = { ...definition, params: [] };
+    const params = apiParams(filtered, valuesFromSearch(filtered, new URLSearchParams("domain=7&domain_id=8")),
+      { timeZone: "UTC" });
+    expect(params.get("domain")).toBe("7");
+    expect(params.get("domain_id")).toBe("8");
+  });
+});
+
 describe("VPN initial domain and period", () => {
   const vpn = { ...definition, key: "vpn.connections", default_domain_state: "available", params: [
     { key: "domain", label: "Domain", kind: "domain", required: true },
