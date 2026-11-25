@@ -31,6 +31,7 @@ import { EmptyRecoveryActions, EmptyRecoveryDetail, reportEmptyRecovery } from "
 import { ReportPassportMeta } from "./ReportPassportMeta";
 import { ArchiveDomainNotice } from "./ADSourceNotice";
 import { ReportState } from "./ReportState";
+import { FirstAdSource, useFirstAdSource } from "../first-ad-source";
 import { ReportDenied } from "./ReportDenied";
 import { PairsWindowState } from "./PairsWindowState";
 import { preserveNavigationView } from "../navigation";
@@ -100,10 +101,15 @@ function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: ()
   </div>;
 }
 
+const FIRST_AD_REPORTS = new Set(["security.events.chains", "ad.infrastructure", "ad.users.v2", "ad.computers.v6"]);
+
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
 export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
-  if (definition.isLoading) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
+  const firstAdSource = useFirstAdSource(new URLSearchParams(initialSearch ?? window.location.search),
+    FIRST_AD_REPORTS.has(reportKey) && definition.isSuccess
+      && definition.data.default_domain_state !== "available" && !definition.data.filter_options?.domain?.length);
+  if (definition.isLoading || firstAdSource === undefined) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
   if (definition.error || !definition.data) {
     const { state, detail } = errorState(definition.error);
     if (state === "denied") return <ReportDenied reportKey={reportKey} reason={detail} page/>;
@@ -114,6 +120,7 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
     const title = reportMetadataText(reportKey, "title", t("reports.renderer.default_title"));
     return <ReportLayout title={title} state={state} stateView={<ReportState state={state} detail={detail} subject={title} onRetry={() => void definition.refetch()}/>}/>;
   }
+  if (firstAdSource) return <ReportLayout title={definition.data.title} state="empty" stateView={<FirstAdSource/>}/>;
   if (reportKey === "events.journal") {
     const query = new URLSearchParams(initialSearch ?? window.location.search);
     const finding = Number(query.get("finding"));
