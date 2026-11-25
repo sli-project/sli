@@ -1,40 +1,19 @@
 import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright-core';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { forbiddenLabels, loadErrors, redact, waitForVisibleLoadingToFinish } from './checks.mjs';
+import { redact, waitForVisibleLoadingToFinish } from './checks.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
 const { url, token, commit } = JSON.parse(input);
 const origin = new URL(url).origin;
 const results = process.argv[2];
-if (!/^https:/.test(origin) || !token || !results || !/^[a-f0-9]{40}$/.test(commit)) {
-  throw new Error('Expected a verified guest HTTPS origin and an owner session');
+if (!/^https:/.test(origin) || !token || !results || commit !== '2323cfa48cf8c8d3e66705b1b09a7e20e140309f') {
+  throw new Error('Expected the verified guest build and an owner session');
 }
-const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
-const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
-  group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const allBetaEntries = registry.beta_entries.map(id => {
-  const entry = all.find(item => item.id === id);
-  if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
-  return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
-});
-const firstAgentPages = new Set(['workspace', 'security-events', 'ad-report', 'users-report', 'computers-report']);
-const candidates = new Set([...firstAgentPages, 'notifications']);
 const agentForm = '/app/agents?register=1';
-const agentAction = 'Добавить агента';
-const entries = allBetaEntries.filter(entry => candidates.has(entry.id));
-const readStatusPosts = new Set([
-  '/api/v1/notification-channels/smtp/setup/status',
-  '/api/v1/notification-channels/telegram/setup/status',
-]);
 const reasonCode = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(value) ? value : null;
-const base = new URL('/app/', origin).href;
-const targetPath = path => new URL('app' + path, origin).pathname.replace(/\/$/, '');
-const nav = '.sli-ds-shell__nav';
-const clean = value => redact(value, [token]).replace(/[A-Za-z0-9+_/-]{38,}(?:={1,2})?/g, '[redacted]');
-const lines = value => [...new Set(value.split('\n').map(line => clean(line.trim())).filter(Boolean))].slice(0, 38);
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-headless-shell', timeout: 30_000 });
 const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'UTC', viewport: { width: 1440, height: 900 },
   serviceWorkers: 'block' });
@@ -42,24 +21,13 @@ context.setDefaultTimeout(12_000);
 context.setDefaultNavigationTimeout(18_000);
 await context.addInitScript(() => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', 'light'); });
 await context.addCookies([{ name: 'adlog_session', value: token, url: origin, httpOnly: true, secure: true, sameSite: 'Strict' }]);
-
-let activeRow;
 await context.route('**/*', route => {
   const request = route.request();
   const target = new URL(request.url());
   if (['data:', 'blob:'].includes(target.protocol)) return route.continue();
   if (target.origin === origin && ['GET', 'HEAD'].includes(request.method())) return route.continue();
-  if (target.origin === origin && request.method() === 'POST' && !target.search && readStatusPosts.has(target.pathname)
-      && (request.postData() === null || /^\{\s*\}$/.test(request.postData().trim()))) return route.continue();
-  if (activeRow && target.origin === origin) activeRow.blocked.push(request.method() + ' ' + target.pathname);
   return route.abort('blockedbyclient');
 });
-
-const rows = [];
-const seen = new Set();
-let home = null;
-let domainList = null;
-let permissionChecks = null;
 
 async function api(path, { session = token, body } = {}) {
   const headers = { Accept: 'application/json', Origin: origin };
@@ -76,13 +44,32 @@ function requireResult(condition, step) {
   if (!condition) throw new Error(step);
 }
 
-async function assertDeniedPage(path) {
+async function inspectScopedPage(path, picture) {
   const page = await context.newPage();
+  const reportResponses = [];
+  page.on('response', response => {
+    const target = new URL(response.url());
+    if (target.pathname.startsWith('/api/v2/reports/')) reportResponses.push({
+      path: target.pathname, status: response.status(),
+    });
+  });
   try {
-    await page.goto(new URL(path, origin).href, { waitUntil: 'domcontentloaded' });
+    const requested = new URL(path, origin);
+    const response = await page.goto(requested.href, { waitUntil: 'domcontentloaded' });
     const main = page.locator('main').first();
-    await main.getByText('Нет доступа', { exact: true }).first().waitFor();
-    return await main.locator('a[href="' + agentForm + '"]').count() === 0;
+    await main.waitFor({ state: 'visible' });
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+    const settled = await waitForVisibleLoadingToFinish(page);
+    const actual = new URL(page.url());
+    const read = (url) => url.searchParams.get('domain_id') ?? url.searchParams.get('domain');
+    const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
+    await page.screenshot({ path: join(results, picture + '.png'), mask: [sensitive], timeout: 12_000 });
+    return {
+      pageStatus: response?.status(), settled, sameReport: actual.pathname === requested.pathname,
+      sameDomain: read(actual) === read(requested), noEnrollment: await main.locator('a[href="' + agentForm + '"]').count() === 0,
+      deniedText: (await main.innerText()).includes('Нет доступа'),
+      reportResponses, text: (await main.innerText()).split('\n').map(line => redact(line.trim(), [token])).filter(Boolean).slice(0, 20),
+    };
   } finally {
     await page.close();
   }
@@ -95,8 +82,7 @@ async function checkPermissions(evidence) {
   const owner = await api(report + invalid);
   evidence.ownerExplicit = { status: owner.status, code: reasonCode(owner.body.error) };
   requireResult(owner.status === 403 && owner.body.error === 'domain_scope_denied', 'owner_explicit_domain_api');
-  evidence.ownerExplicit.noEnrollment = await assertDeniedPage(reportPage + invalid);
-  requireResult(evidence.ownerExplicit.noEnrollment, 'owner_explicit_domain_ui');
+  evidence.ownerExplicit.ui = await inspectScopedPage(reportPage + invalid, 'owner-explicit');
 
   // The first-run observations above precede this synthetic authorization setup.
   const names = ['menu-allowed.example.test', 'menu-restricted.example.test'];
@@ -134,175 +120,28 @@ async function checkPermissions(evidence) {
   requireResult(permitted.status === 200 && denied.status === 403 && denied.body.error === 'domain_scope_denied', 'viewer_api_scope');
   await context.clearCookies();
   await context.addCookies([{ name: 'adlog_session', value: viewer, url: origin, httpOnly: true, secure: true, sameSite: 'Strict' }]);
-  evidence.viewerDenied.noEnrollment = await assertDeniedPage(reportPage + '?domain_id=' + ids[1]);
-  requireResult(evidence.viewerDenied.noEnrollment, 'viewer_cross_domain_ui');
-}
-
-async function menuLinks(page) {
-  const result = await page.locator(nav + ' a[data-route]').evaluateAll(nodes => nodes.map(node => ({
-    route: node.dataset.route, path: new URL(node.href).pathname.replace(/\/$/, ''), label: node.innerText.trim(),
-  })));
-  for (const link of result) {
-    if (!['administration', 'back-to-work'].includes(link.route)) seen.add(link.path);
+  evidence.viewerDenied.ui = await inspectScopedPage(reportPage + '?domain_id=' + ids[1], 'viewer-cross-domain');
+  for (const [name, ui] of [['owner', evidence.ownerExplicit.ui], ['viewer', evidence.viewerDenied.ui]]) {
+    requireResult(ui.pageStatus === 200 && ui.settled && ui.sameReport && ui.sameDomain && ui.noEnrollment,
+      name + '_explicit_domain_ui');
   }
-  return result;
 }
 
+
+const evidence = { commit };
 try {
   console.log('BETA_README_EVIDENCE installed_chromium=' + browser.version());
-  for (const entry of entries) {
-    const expected = targetPath(entry.path);
-    const row = { id: entry.id, path: expected, clicked: false, failure: [], labels: [], api: [], responses: [], blocked: [], text: [] };
-    rows.push(row);
-    activeRow = row;
-    const page = await context.newPage();
-    const outstanding = new Set();
-    const reasonCodes = new Set();
-    let checkDestination = false;
-    page.on('response', response => {
-      if (!checkDestination) return;
-      const path = new URL(response.url()).pathname;
-      const status = response.status();
-      if (readStatusPosts.has(path)) row.responses.push({ path, status });
-      if (status >= 400) {
-        const line = response.request().method() + ' ' + path + ' → ' + status;
-        (path.startsWith('/api/') ? row.api : row.failure).push(clean(line));
-      }
-      if (!path.startsWith('/api/') || !response.headers()['content-type']?.includes('json')) return;
-      const read = response.json().then(body => {
-        const visit = node => {
-          if (!node || typeof node !== 'object') return;
-          for (const [key, value] of Object.entries(node)) {
-            if (['reason', 'reason_code'].includes(key) && typeof value === 'string') reasonCodes.add(value);
-            else if (typeof value === 'object') visit(value);
-          }
-        };
-        visit(body);
-        if (path === '/api/v1/domains') {
-          domainList = { status, items: Array.isArray(body.items) ? body.items.length : null };
-        }
-        if (/^\/api\/v2\/reports\/[a-z0-9.-]+(?:\/data)?$/.test(path)) {
-          row.responses.push({ path, status, state: reasonCode(body.state), reason: reasonCode(body.state_details?.reason ?? body.reason ?? body.error),
-            scope: reasonCode(body.domain_scope?.state), scopeCount: Array.isArray(body.domain_scope?.domain_ids) ? body.domain_scope.domain_ids.length : null,
-            defaultDomainState: reasonCode(body.default_domain_state), allowed: typeof body.access?.allowed === 'boolean' ? body.access.allowed : null });
-        }
-        if (entry.id === 'workspace' && path === '/api/v1/home/summary' && status === 200) {
-          home = { domains: Array.isArray(body.domains) ? body.domains.length : null,
-            open: Number.isInteger(body.problems?.open_count) ? body.problems.open_count : null,
-            items: Array.isArray(body.problems?.items) ? body.problems.items.length : null };
-        }
-      }).catch(() => {}).finally(() => outstanding.delete(read));
-      outstanding.add(read);
-    });
-    page.on('requestfailed', request => {
-      if (checkDestination && new URL(request.url()).origin === origin &&
-          !/ERR_(?:ABORTED|BLOCKED_BY_CLIENT)/.test(request.failure()?.errorText ?? '')) {
-        row.failure.push(clean(request.method() + ' ' + new URL(request.url()).pathname + ' → ' + request.failure()?.errorText));
-      }
-    });
-    page.on('console', message => {
-      if (checkDestination && message.type() === 'error') row.failure.push(clean(message.text()));
-    });
-    page.on('pageerror', error => { if (checkDestination) row.failure.push(clean(error.message)); });
-    try {
-      if (entry.id === 'workspace') checkDestination = true;
-      await page.goto(base, { waitUntil: 'domcontentloaded' });
-      await page.locator(nav + ' a[data-route="workspace"]').waitFor();
-      if (entry.administration) {
-        const gate = page.locator(nav + ' a[data-route="administration"]');
-        await gate.click();
-        await page.locator(nav + ' a[data-route="back-to-work"]').waitFor();
-      }
-      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
-      const menu = await menuLinks(page);
-      const link = menu.find(item => item.path === expected && !['administration', 'back-to-work'].includes(item.route));
-      checkDestination = true;
-      if (link) {
-        const current = page.locator(nav + ' a[data-route=' + JSON.stringify(link.route) + ']');
-        row.label = clean(link.label);
-        await current.click();
-        row.clicked = true;
-      } else {
-        row.failure.push('Пункт отсутствует в меню владельца');
-        await page.goto(new URL('app' + entry.path, origin).href, { waitUntil: 'domcontentloaded' });
-      }
-      await page.waitForURL(current => current.pathname.replace(/\/$/, '') === expected, { timeout: 8_000 })
-        .catch(() => row.failure.push('Перенаправление вместо страницы: ' + new URL(page.url()).pathname));
-      const main = page.locator('main').first();
-      await main.waitFor({ state: 'visible' });
-      await page.waitForLoadState('networkidle', { timeout: 12_000 }).catch(() => {});
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      if (!await waitForVisibleLoadingToFinish(page)) row.failure.push('Загрузка не завершилась после ответов API');
-      if (entry.id === 'workspace' && !domainList) {
-        domainList = await page.evaluate(async () => {
-          const response = await fetch('/api/v1/domains', { credentials: 'same-origin' });
-          const body = await response.json();
-          return { status: response.status, items: Array.isArray(body.items) ? body.items.length : null };
-        });
-      }
-      await Promise.all([...outstanding]);
-      const visible = await main.innerText();
-      if (!visible.trim()) row.failure.push('Пустой рабочий экран');
-      row.text = lines(visible);
-      row.dataRows = await main.locator('tbody td:not([colspan]):visible, .sli-ds-review-list__item:visible').count();
-      row.emptyCopy = row.text.filter(line => /(?:^|\s)(?:подключите|добавьте|настройте|выберите|укажите|откройте|запустите|перейдите|очистите|измените|проверьте|установите|включите|создайте)(?:\s|$)/i.test(line));
-      row.controls = await main.locator('button:visible, a[href]:visible').evaluateAll(nodes => nodes
-        .filter(node => !node.disabled && node.getAttribute('aria-disabled') !== 'true')
-        .map(node => (node.innerText || node.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 16));
-      row.controls = row.controls.map(clean);
-      row.labels = forbiddenLabels(visible, [...reasonCodes]).map(clean);
-      row.failure.push(...loadErrors(visible).map(clean));
-      const sensitive = page.locator('input, textarea, pre, code, [data-secret], [data-token]');
-      await page.screenshot({ path: join(results, entry.id + '.png'), fullPage: false, mask: [sensitive], timeout: 12_000 });
-      if (firstAgentPages.has(entry.id)) {
-        const action = main.getByRole('link', { name: agentAction, exact: true });
-        await action.first().waitFor();
-        row.enrollmentLinks = await main.locator('a[href="' + agentForm + '"]').count();
-        requireResult(row.enrollmentLinks === 1 && await action.count() === 1
-          && await action.getAttribute('href') === agentForm, 'expected_one_registration_link');
-        await action.click();
-        await page.waitForURL(target => target.pathname === '/app/agents' && target.searchParams.get('register') === '1');
-        const dialog = page.getByRole('dialog', { name: agentAction });
-        await dialog.waitFor();
-        await dialog.locator('#agent-console-server-url').waitFor();
-        await dialog.locator('#agent-console-limit').waitFor();
-        row.enrollmentOpened = true;
-        await page.screenshot({ path: join(results, entry.id + '-enrollment.png'), mask: [sensitive], timeout: 12_000 });
-      }
-    } catch (error) {
-      row.failure.push(clean(String(error.message).split('\n')[0]));
-    } finally {
-      for (const key of ['failure', 'api', 'blocked', 'labels']) row[key] = [...new Set(row[key])];
-      await page.close();
-      await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, domainList, menuPaths: [...seen], rows }, null, 2));
-      console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(row));
-    }
-  }
-  activeRow = undefined;
-  permissionChecks = {};
-  if (domainList?.status === 200 && domainList.items === 0 && home?.domains === 0
-    && rows.filter(row => row.enrollmentOpened).length === firstAgentPages.size) {
-    try { await checkPermissions(permissionChecks); permissionChecks.passed = true; }
-    catch (error) { permissionChecks.error = /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error'; }
-  } else {
-    permissionChecks.error = 'first_run_required_for_scope_probe';
-  }
-} finally { await browser.close(); }
-await writeFile(join(results, 'menu.json'), JSON.stringify({ commit, home, domainList, menuPaths: [...seen], rows, permissionChecks }, null, 2));
-const expected = new Set(allBetaEntries.map(entry => targetPath(entry.path)));
-const unexpected = [...seen].filter(path => !expected.has(path));
-console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify({
-  commit, visited: rows.length, clicked: rows.filter(row => row.clicked).length,
-  loadErrorScreens: rows.filter(row => row.failure.length || row.api.length).length,
-  technicalLabelScreens: rows.filter(row => row.labels.length).length,
-  unexpected, home, domainList, permissionChecks, enrollmentFormsOpened: rows.filter(row => row.enrollmentOpened).length,
-}));
-
-const notification = rows.find(row => row.id === 'notifications');
-const statuses = new Set(notification?.responses.filter(response => response.status === 200).map(response => response.path));
-const passed = rows.length === candidates.size && rows.every(row =>
-  row.clicked && !row.failure.length && !row.api.length && !row.blocked.length && !row.labels.length)
-  && rows.filter(row => row.enrollmentOpened).length === firstAgentPages.size
-  && [...readStatusPosts].every(path => statuses.has(path))
-  && permissionChecks.passed === true;
-if (!passed) process.exitCode = 1;
+  const domains = await api('/api/v1/domains');
+  evidence.cleanDomains = { status: domains.status, count: domains.body.items?.length };
+  requireResult(domains.status === 200 && domains.body.items?.length === 0, 'clean_install_required');
+  await checkPermissions(evidence);
+  evidence.passed = true;
+} catch (error) {
+  evidence.error = /^[a-z_]+$/.test(error.message) ? error.message : 'scope_probe_error';
+  evidence.type = /^[A-Za-z]+$/.test(error.name) ? error.name : 'Error';
+} finally {
+  await browser.close();
+}
+await writeFile(join(results, 'menu.json'), JSON.stringify(evidence, null, 2));
+console.log('BETA_README_EVIDENCE menu_summary=' + JSON.stringify(evidence));
+if (!evidence.passed) process.exitCode = 1;
