@@ -535,11 +535,15 @@ public sealed class PolicyCycleTests : IDisposable
 
     private sealed class FailedSnapshotReader : IDirectorySnapshotReader
     {
+        private readonly TaskCompletionSource _secondAttempt = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public int Attempts;
+        public Task SecondAttempt => _secondAttempt.Task;
 
         public Task<JsonObject> ReadAsync(SnapshotPolicy policy, CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref Attempts);
+            if (Interlocked.Increment(ref Attempts) == 2)
+                _secondAttempt.TrySetResult();
             return Task.FromException<JsonObject>(SnapshotCaptureException.Describe(policy.ModuleId, "ldap_root_dse",
                 new System.ComponentModel.Win32Exception(5, "fixture private details")));
         }
@@ -576,6 +580,7 @@ public sealed class PolicyCycleTests : IDisposable
         await worker.StartAsync(deadline.Token);
         var warning = await logger.Entry.Task.WaitAsync(deadline.Token);
         var next = await logger.SecondEntry.Task.WaitAsync(deadline.Token);
+        await reader.SecondAttempt.WaitAsync(deadline.Token);
         await worker.StopAsync(deadline.Token);
         Assert.Equal(2, Volatile.Read(ref reader.Attempts));
         Assert.Equal(LogLevel.Warning, warning.Level);
