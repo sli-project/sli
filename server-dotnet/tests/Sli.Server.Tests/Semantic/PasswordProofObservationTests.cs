@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Npgsql;
 using Sli.Server.Semantic;
 using Sli.Server.Semantic.Password;
 using Xunit;
@@ -222,6 +223,29 @@ public sealed class PasswordProofObservationTests
         var plannedDiagnostic = DetectionDiagnostics.Describe(planned, lastSqlStep);
         Assert.Equal("RetainedChain", plannedDiagnostic["proof_budget"]!["phase"]!.GetValue<string>());
         Assert.False(plannedDiagnostic.ContainsKey("records_proof_limit"));
+    }
+
+    [Theory]
+    [InlineData("password_v2_tracking_invalid", "complete_password_producer_batch_v2", "22023", "tracking_invalid")]
+    [InlineData("password_v2_emission_hash_conflict", "complete_password_producer_batch_v2", "22023", "emission_hash_conflict")]
+    [InlineData("password_v2_tracking_invalid with extra context", "complete_password_producer_batch_v2", "22023", "unclassified_22023")]
+    [InlineData("password_v2_tracking_invalid", "read_password_episode_portions_v2", "22023", null)]
+    [InlineData("password_v2_tracking_invalid", "complete_password_producer_batch_v2", "40001", null)]
+    public void Finalizer_check_serializes_only_for_invalid_parameters_at_completion(
+        string messageText, string step, string sqlState, string? expected)
+    {
+        var error = new PostgresException(messageText, "ERROR", "ERROR", sqlState);
+        string json = DetectionDiagnostics.Describe(error, step).ToJsonString();
+        var logged = Assert.IsType<JsonObject>(JsonNode.Parse(json));
+
+        Assert.Equal(step, logged["step"]!.GetValue<string>());
+        Assert.Equal(sqlState, logged["sql_state"]!.GetValue<string>());
+        Assert.Equal("operation_failed", logged["reason"]!.GetValue<string>());
+        Assert.DoesNotContain(messageText, json);
+        if (expected is null)
+            Assert.False(logged.ContainsKey("finalizer_check"));
+        else
+            Assert.Equal(expected, logged["finalizer_check"]!.GetValue<string>());
     }
 
     private sealed class UnavailableSink : StringWriter

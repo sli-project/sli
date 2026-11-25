@@ -83,8 +83,19 @@ internal sealed class DetectionDiagnostics
     internal static JsonObject Describe(Exception error, string step)
     {
         string? state = null; string reason = "operation_failed";
+        string? finalizerCheck = null;
         for (Exception? current = error; current is not null; current = current.InnerException) {
-            if (current is PostgresException pg) { state ??= pg.SqlState; if (Reasons.Contains(pg.MessageText)) reason = pg.MessageText; }
+            if (current is PostgresException pg) {
+                if (state is null && pg.SqlState == PostgresErrorCodes.InvalidParameterValue
+                    && step == "complete_password_producer_batch_v2")
+                    finalizerCheck = pg.MessageText switch {
+                        "password_v2_tracking_invalid" => "tracking_invalid",
+                        "password_v2_emission_hash_conflict" => "emission_hash_conflict",
+                        _ => "unclassified_22023",
+                    };
+                state ??= pg.SqlState;
+                if (Reasons.Contains(pg.MessageText)) reason = pg.MessageText;
+            }
             else if (Reasons.Contains(current.Message)) reason = current.Message;
             else if (current is TimeoutException && state is null) reason = "client_timeout";
             else if (current is OperationCanceledException && state is null) reason = "operation_cancelled";
@@ -93,6 +104,7 @@ internal sealed class DetectionDiagnostics
         if (state is not null && (state.Length != 5 || state.Any(c => c is not (>= '0' and <= '9' or >= 'A' and <= 'Z')))) state = "unknown";
         if (state == PostgresErrorCodes.LockNotAvailable && reason == "operation_failed") reason = "lock_busy";
         var result = new JsonObject { ["step"] = step, ["exception_type"] = error.GetType().Name, ["sql_state"] = state, ["reason"] = reason };
+        if (finalizerCheck is not null) result["finalizer_check"] = finalizerCheck;
         if(reason=="password_v2_proof_budget_exceeded")
             result["proof_budget"]=new PasswordProofBudget(PasswordProofPhase.NativeVerification).Document;
         for (Exception? current = error; current is not null; current = current.InnerException)
