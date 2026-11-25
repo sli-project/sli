@@ -61,12 +61,14 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             else
             {
                 var options = after?.Copy() ?? new JsonObject(); options["show_service"] = context.Params.Text("show_service", "false") == "true";
+                if (context.Params["record_unit"] is { } unit) options["record_unit"] = unit.DeepClone();
                 string? operation = context.Params["operation"]?.GetValue<string>();
-                bool nativePermissions = tab == "permission-changes" && operation is null or "permissions"
-                    || tab == "actions" && operation == "permissions";
-                var sql = nativePermissions ? PermissionChangesSql
+                bool objectView = tab == "permissions" && context.Params.Text("view") == "objects";
+                bool nativePermissions = (tab is "permission-changes" or "actions")
+                    && (operation is null or "permissions" || context.Params["record_unit"] is not null);
+                var sql = tab == "overview" ? PermissionOverviewSql : nativePermissions ? PermissionChangesSql
                     : "select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data";
-                data = (await session.QueryAsync(sql, ct,
+                data = objectView ? await ObjectRows(session, context, readRoots, after, ct) : (await session.QueryAsync(sql, ct,
                     readRoots, tab, DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime,
                     DateTimeOffset.Parse(context.Params["period"]!["to_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime,
                     context.Params["path"]?.GetValue<string>(), context.Params.Text("include_nested", "true") == "true", context.Params["employee"]?.GetValue<string>(), operation, options, context.Paging.Limit))[0]!["data"]!.AsObject();
@@ -128,29 +130,56 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
     internal static JsonObject Present(ReportQueryContext context, JsonArray roots, JsonObject data, string tab)
     {
         var items = Array(data["items"]).DeepClone().AsArray();
+        bool rootObservationFilter = tab == "overview" && (context.Params["employee"] is not null || context.Params["operation"] is not null);
         foreach (var row in items.OfType<JsonObject>())
         {
             var root = roots.FirstOrDefault(r => ShareKey(r!) == ShareKey(row)); row["share_label"] = Label(root);
+            foreach (string field in new[] { "source_name", "share_name", "source_kind" })
+                if (root?[field] is { } value) row[field] = value.DeepClone();
             row["operation"] = (row["operation"] ?? row["details"]?["operation"])?.DeepClone();
             if (tab == "mass-operations") { row["operation"] = row.Text("rule_code")["file-audit.mass-".Length..]; row["files_per_minute"] = Math.Round(double.Parse(row["details"]!["distinct_files"]!.ToJsonString(), CultureInfo.InvariantCulture) * 60 / double.Parse(row["details"]!["window_seconds"]!.ToJsonString(), CultureInfo.InvariantCulture), 1, MidpointRounding.ToEven); }
             if (tab is "overview" or "audit-state" && row["snapshot_id"] is null) row["folders_with_read_audit"] = null;
             if (tab == "audit-state") row["delivery_state"] = !row.ContainsKey("delivery_received_at") ? "unknown" : row["delivery_received_at"] is null ? "not_received" : row["delivery_imported_at"] is not null ? "imported" : "pending_import";
+            if (rootObservationFilter) row["actions"] = null;
             row["employee"] = row["subject_sid"]?.DeepClone();
             if (tab == "out-of-hours") row["path"] = Array(row["evidence"]).FirstOrDefault(e => !string.IsNullOrEmpty(Text(e, "path")))?["path"]?.DeepClone();
         }
         var coverage = new JsonObject { ["state"] = "unknown", ["reason"] = "coverage_incomplete", ["completeness"] = "not_proven" };
+        bool serverSource = context.Params.Text("source_kind") == "server"
+            || roots.Count > 0 && roots.All(r => (Text(r, "source_kind") ?? "server") == "server");
+        if (serverSource)
+        {
+            // This describes the supported server collector, not a live-agent
+            // or completeness claim. Older activity remains readable as evidence.
+            coverage["supported_collection_mode"] = "server_permissions_only";
+            coverage["activity_scope"] = "retained_observations";
+            if (items.Count == 0)
+                coverage["reason"] = tab is "mass-operations" or "access-denials" or "out-of-hours"
+                    || tab == "actions" && context.Params["operation"] is not null && context.Params.Text("operation") != "permissions"
+                    ? "full_activity_not_collected" : "no_saved_observations";
+        }
         if (tab is "overview" or "audit-state" or "permissions" && items.Count > 0)
         {
             string? observed = items.Select(r => Text(r, "observed_at")).Where(t => t is not null).Order(StringComparer.Ordinal).LastOrDefault();
             if (observed is not null) { coverage["observed_at_utc"] = observed; coverage["freshness_threshold_seconds"] = 86400; }
         }
-        var collections = tab == "overview" ? new JsonObject { ["timeline"] = data["timeline"]?.DeepClone() ?? new JsonArray() } : tab == "permissions" ? new JsonObject { ["groups"] = Groups(Array(data["inventory"]), Text(context.Params, "employee")) } : new JsonObject();
+        bool objectView = tab == "permissions" && context.Params.Text("view") == "objects";
+        if (objectView) { coverage["inventory_scope"] = "retained_snapshot_pages"; coverage["record_unit"] = "observed_object"; }
+        if (data["native_group_count"] is { } nativeGroups) coverage["native_group_count"] = nativeGroups.DeepClone();
+        if (data.ContainsKey("native_event_count")) coverage["native_event_count"] = data["native_event_count"]?.DeepClone();
+        var collections = tab == "overview" ? new JsonObject { ["timeline"] = rootObservationFilter ? new JsonArray() : data["timeline"]?.DeepClone() ?? new JsonArray() } : tab == "permissions" && !objectView ? new JsonObject { ["groups"] = Groups(Array(data["inventory"]), Text(context.Params, "employee")) } : new JsonObject();
         var result = ReportResult.Create(context.Definition.Key, roots.Count > 0 ? "partial" : "not_collected", items, coverage, collections, [new JsonObject { ["code"] = "coverage_unverified", ["text"] = "Полнота сбора за выбранный период не подтверждена." }]);
         result["filtered_count"] = roots.Count > 0 ? data["filtered_count"]?.DeepClone() : null; result["has_more"] = data["has_more"]?.DeepClone() ?? JsonValue.Create(false);
         result["next_cursor"] = data.Flag("has_more") ? data["after"]!.ToJsonString() : null;
-        result["filter_options"] = new JsonObject { ["share"] = new JsonArray(roots.Select(r => (JsonNode)new JsonObject { ["value"] = ShareKey(r!), ["label"] = Label(r), ["important"] = r!["important"]?.DeepClone() ?? JsonValue.Create(false) }).ToArray()) };
+        result["filter_options"] = new JsonObject
+        {
+            ["share"] = new JsonArray(roots.Select(r => (JsonNode)new JsonObject { ["value"] = ShareKey(r!), ["label"] = Label(r), ["important"] = r!["important"]?.DeepClone() ?? JsonValue.Create(false) }).ToArray()),
+            ["source_instance_id"] = new JsonArray(roots.OfType<JsonObject>().GroupBy(r => Text(r, "source_instance_id")).Select(g => (JsonNode)new JsonObject { ["value"] = g.Key, ["label"] = Text(g.First(), "source_name") ?? g.Key }).ToArray()),
+            ["device_id"] = new JsonArray(roots.OfType<JsonObject>().GroupBy(r => Text(r, "agent_id")).Select(g => (JsonNode)new JsonObject { ["value"] = g.Key, ["label"] = Text(g.First(), "source_name") ?? g.Key }).ToArray())
+        };
         result["window"] = context.Params["period"]!.DeepClone(); result["window"]!["timezone"] = context.Paging.Timezone;
-        if (tab == "overview" && roots.Count > 0) result["metrics"] = new JsonArray(new[] { ("read", "Чтения"), ("write", "Записи"), ("delete", "Удаления"), ("denials", "Отказы") }.Select(p => (JsonNode)new JsonObject { ["key"] = p.Item1, ["label"] = p.Item2, ["value"] = data["summary"]?[p.Item1]?.DeepClone(), ["quality"] = data["summary"]?[p.Item1] is null ? "unknown" : "observed", ["filter"] = p.Item1 == "denials" ? new JsonObject() : new JsonObject { ["operation"] = p.Item1 } }).ToArray());
+        result["window"]!["export_row_limit"] = 10000;
+        if (tab == "overview" && roots.Count > 0 && !rootObservationFilter) result["metrics"] = new JsonArray(new[] { ("read", "Чтения"), ("write", "Записи"), ("delete", "Удаления"), ("denials", "Отказы") }.Select(p => (JsonNode)new JsonObject { ["key"] = p.Item1, ["label"] = p.Item2, ["value"] = data["summary"]?[p.Item1]?.DeepClone(), ["quality"] = data["summary"]?[p.Item1] is null ? "unknown" : "observed", ["filter"] = p.Item1 == "denials" ? new JsonObject() : new JsonObject { ["operation"] = p.Item1 } }).ToArray());
         return result;
     }
     private static string Label(JsonNode? root) => (Text(root, "source_name") ?? "—") + " · " + (Text(root, "share_name") is { Length: > 0 } share ? share : Text(root, "path") ?? "—");
@@ -181,6 +210,9 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             foreach (var row in Array(data["items"])) rows.Add(row!.DeepClone()); more = data.Flag("has_more"); string? next = Text(data, "next_cursor");
             if (more && (string.IsNullOrEmpty(next) || next == cursor)) throw new ReportRequestException("report_export_unavailable"); cursor = next;
         } while (more && rows.Count < 10000);
-        return new(ReportCsv.FromColumns(context.Definition.Columns, rows.OfType<JsonObject>()), rows.Count, more);
+        var columns = context.Definition.Columns;
+        if (context.Definition.Key == "file-audit.permissions" && context.Params.Text("view") == "objects")
+            columns = columns.Where(c => new[] { "source_name", "share_name", "path", "object_type", "owner_sid", "snapshot_id", "observed_at", "completeness", "record_unit" }.Contains(c.Text("key"))).ToArray();
+        return new(ReportCsv.FromColumns(columns, rows.OfType<JsonObject>()), rows.Count, more);
     }
 }

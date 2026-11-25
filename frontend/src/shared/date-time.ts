@@ -36,20 +36,20 @@ export function localDateTimeToUtc(value: string, timeZone: DisplayTimeZone): st
   return new Date(instantMs).toISOString();
 }
 
-export function utcToLocalDateTimeInput(value: string | null | undefined, timeZone: DisplayTimeZone): string {
+export function utcToLocalDateTimeInput(value: string | null | undefined, timeZone: DisplayTimeZone, precision: "minute" | "millisecond" = "minute"): string {
   if (!value) return "";
   const instant = new Date(value);
   if (Number.isNaN(instant.getTime())) return "";
   if (timeZone === "browser") {
     const local = new Date(instant.getTime() - instant.getTimezoneOffset() * 60_000);
-    return local.toISOString().slice(0, 16);
+    return local.toISOString().slice(0, precision === "millisecond" ? 23 : 16);
   }
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    hour: "2-digit", minute: "2-digit", ...(precision === "millisecond" ? { second: "2-digit" as const } : {}), hourCycle: "h23",
   }).formatToParts(instant);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}${precision === "millisecond" ? `:${values.second}.${String(instant.getUTCMilliseconds()).padStart(3, "0")}` : ""}`;
 }
 
 /** Intl locale for the current interface language. */

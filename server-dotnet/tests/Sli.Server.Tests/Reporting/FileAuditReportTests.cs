@@ -171,7 +171,7 @@ public sealed class FileAuditReportTests
         var db = new Database(); var definition = new ReportDefinitionRegistry().Get("file-audit." + tab)!;
         await using var host = await ReportFixture.Start(Facts(tab), definition, nativeReader: new FileAuditReportReader(db));
         using var response = await host.Client.GetAsync($"/api/v2/reports/file-audit.{tab}/{action}", TestContext.Current.CancellationToken);
-        if (action.StartsWith("rows/")) { Assert.Equal(HttpStatusCode.NotFound, response.StatusCode); Assert.Equal("report_detail_not_available", (await ReportFixture.Body(response))["error"]!.GetValue<string>()); Assert.Equal(0, db.Opens); return; }
+        if (action.StartsWith("rows/")) { Assert.Equal(HttpStatusCode.NotFound, response.StatusCode); Assert.Equal(tab == "permissions" ? "file_audit_snapshot_not_found" : "report_detail_not_available", (await ReportFixture.Body(response))["error"]!.GetValue<string>()); Assert.Equal(0, db.Opens); return; }
         Assert.Equal(HttpStatusCode.OK, response.StatusCode); Assert.Equal(1, db.Pages); Assert.Equal(1, db.Commits);
         if (action == "data")
         {
@@ -191,8 +191,8 @@ public sealed class FileAuditReportTests
     public async Task Every_route_rejects_bad_input_or_unavailable_inline_detail(string tab, string action)
     {
         var db = new Database(); await using var h = await ReportFixture.Start(Facts(tab), new ReportDefinitionRegistry().Get("file-audit." + tab), nativeReader: new FileAuditReportReader(db));
-        using var r = await h.Client.GetAsync($"/api/v2/reports/file-audit.{tab}/{action}?limit=101", TestContext.Current.CancellationToken);
-        Assert.Equal(action.StartsWith("rows/") ? HttpStatusCode.NotFound : HttpStatusCode.BadRequest, r.StatusCode); Assert.Equal(0, db.Opens);
+        using var r = await h.Client.GetAsync($"/api/v2/reports/file-audit.{tab}/{action}?limit=201", TestContext.Current.CancellationToken);
+        Assert.Equal(action.StartsWith("rows/") && tab != "permissions" ? HttpStatusCode.NotFound : HttpStatusCode.BadRequest, r.StatusCode); Assert.Equal(0, db.Opens);
     }
     [Fact] public async Task Resource_denies_and_source_filters_run_before_database_paging()
     {

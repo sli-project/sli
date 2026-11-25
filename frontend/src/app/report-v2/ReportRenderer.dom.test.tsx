@@ -648,7 +648,7 @@ it.each(["ru", "en"] as const)("dispatches file audit to its eight-tab report bo
     String(input).includes("/data?") ? page({ report_key: raw.key, filtered_count: 1 }) : raw,
   ), { headers: { "Content-Type": "application/json" } })));
   renderReport(raw.key);
-  await screen.findByRole("heading", { name: t("file-audit.headings.actions") });
+  await screen.findByRole("table", { name: t("file-audit.tabs.actions") });
   expect(screen.getAllByRole("tab")).toHaveLength(8);
   expect(screen.getByRole("checkbox", { name: t("file-audit.include_nested") })).toBeTruthy();
   expect(screen.getByText(t("table.range", { from: 1, to: 1, total: 1 }))).toBeTruthy();

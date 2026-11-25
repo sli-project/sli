@@ -8,8 +8,10 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { FILE_AUDIT_TABS, tabTitle } from "./report";
 import { FileAuditReport } from "./FileAuditReport";
 import { t, setLocale, localeRuntime } from "../../i18n";
+import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
+import type { FileAuditDetailResult } from "./acl";
 
-const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), agents: vi.fn(), access: {
+const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), access: {
   platform_owner: false, preview: false,
   subject: { type: "user", id: 1, coarse_role: "viewer" }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
   reports: ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"].map((key) => ({
@@ -17,7 +19,7 @@ const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), agents: vi
   })),
 } }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...await importOriginal<typeof import("../../api/client")>(),
-  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, agents: mocks.agents } }));
+  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, reportV2Detail: mocks.detail, agents: mocks.agents } }));
 vi.mock("../../app/App", () => ({ useEffectiveAccess: () => mocks.access, useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../app/report-v2/ReportDenied", () => ({ ReportDenied: () => <div role="alert">Denied</div> }));
 
@@ -47,9 +49,11 @@ function mount(initial = declaration()) {
   return render(<QueryClientProvider client={client}><FileAuditReport definition={initial}/></QueryClientProvider>);
 }
 beforeEach(() => {
+  localStorage.clear();
   window.history.replaceState({}, "", "/app/report/file-audit.actions");
   mocks.definition.mockReset().mockImplementation(async (key: string) => declaration(key));
   mocks.data.mockReset().mockImplementation(async (key: string, params: URLSearchParams) => result(key, params));
+  mocks.detail.mockReset();
   mocks.access.capabilities = ["file-audit.view", "file-audit.export"];
   mocks.access.platform_owner = false;
   mocks.access.preview = false;
@@ -111,12 +115,10 @@ it.each(FILE_AUDIT_TABS)("keeps one complete filter panel on %s and applies a cu
   const form = screen.getByRole("form", { name: "Фильтры" });
   expect(screen.getAllByRole("form", { name: "Фильтры" })).toHaveLength(1);
   expect(within(form).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["24 часа", "7 дней", "30 дней", "Свой период"]);
-  expect(within(form).getAllByRole("combobox", { name: "Шара" })).toHaveLength(1);
-  expect(within(form).getByLabelText("Сотрудник")).toBeTruthy();
+  expect(within(form).getAllByRole("combobox", { name: t("file-audit.share") })).toHaveLength(1);
+  expect(within(form).getByLabelText(t("file-audit.employee"))).toBeTruthy();
   expect(within(form).getByLabelText("Действие")).toBeTruthy();
-  expect(within(form).getByLabelText("Объект").closest(".sli-ds-field")?.getAttribute("data-wide")).toBe("true");
   expect(within(form).getByLabelText("Включая вложенные")).toBeTruthy();
-  expect(form.querySelector(".sli-ds-filters__fields")?.getAttribute("data-layout")).toBe("grid");
   await userEvent.click(screen.getByRole("radio", { name: "Свой период" }));
   const from = screen.getByLabelText("С"), to = screen.getByLabelText("По");
   expect(from.getAttribute("type")).toBe("datetime-local");
@@ -165,7 +167,7 @@ it("keeps the shared filters across tabs and resets pagination on Apply", async 
   await screen.findByText("1–50 из 52");
   fireEvent.change(screen.getByLabelText("Объект"), { target: { value: "C:\\Synthetic\\Folder" } });
   await userEvent.click(screen.getByLabelText("Включая вложенные"));
-  fireEvent.change(screen.getByLabelText("Сотрудник"), { target: { value: "synthetic-user" } });
+  fireEvent.change(screen.getByLabelText(t("file-audit.employee")), { target: { value: "synthetic-user" } });
   fireEvent.change(screen.getByLabelText("Действие"), { target: { value: "delete" } });
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("path")).toBe("C:\\Synthetic\\Folder"));
@@ -194,10 +196,39 @@ it("uses cursor pages in both directions and exports the current filters without
   expect(href).not.toContain("cursor=");
 });
 
-it("hides prior rows, drawer and export when a tab denies access", async () => {
+it("applies page size to the server request and resets a previous cursor", async () => {
+  mocks.definition.mockImplementation(async (key: string) => ({ ...declaration(key), limits: { default: 50, max: 200 } }));
+  mocks.data.mockImplementation(async (key: string, params: URLSearchParams) => ({ ...result(key, params),
+    items: Array.from({ length: Number(params.get("limit")) }, (_, index) => ({ id: String(index), path: `Paged object ${index}` })),
+    filtered_count: 260,
+  }));
+  mount({ ...declaration(), limits: { default: 50, max: 200 } });
+  await screen.findByText("1–50 из 260");
+  await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
+  await screen.findByText("51–100 из 260");
+  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  await screen.findByText("1–200 из 260");
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("limit")).toBe("200");
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBeNull();
+  expect(new URLSearchParams(window.location.search).get("limit")).toBe("200");
+});
+
+it("opens retained row details across the full page and restores its cursor on return", async () => {
+  mount();
+  await screen.findByText("1–50 из 52");
+  await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
+  await userEvent.click(await screen.findByText("Synthetic object 50"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
+  await screen.findByText("51–52 из 52");
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBe("synthetic-cursor");
+});
+
+it("hides prior rows, full-page details and export when a tab denies access", async () => {
   mount();
   await userEvent.click(await screen.findByText("Synthetic object 0"));
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
   mocks.data.mockRejectedValueOnce(new ApiResponseError(403, "report_access_denied"));
   await userEvent.click(screen.getByRole("tab", { name: "Права доступа" }));
   expect(await screen.findByText("Denied")).toBeTruthy();
@@ -218,7 +249,7 @@ it("shows partial results and unknown totals without a warning banner or a compl
   expect(container.querySelector(".sli-ds-state--banner")).toBeNull();
   expect(screen.getByRole("table", { name: tabTitle("actions") })).toBeTruthy();
   expect(screen.queryByText(t("state.empty.title"))).toBeNull();
-  expect(screen.getByText("Synthetic metric").closest(".sli-ds-metric")?.textContent).toContain("—");
+  expect(screen.queryByText("Synthetic metric")).toBeNull();
   expect(screen.queryByText("0–0 из 0")).toBeNull();
 });
 
@@ -229,75 +260,171 @@ it("keeps export hidden without its independent capability", async () => {
   expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
 });
 
-it("keeps the counter's relative window through filtered actions, source evidence and back until Apply", async () => {
-  // Only Date is fake: React Query and userEvent keep their real scheduling.
+it("opens ACL from the overview with declared API parameters and a useful object index", async () => {
+  const actualDefinition = (key: string) => ({ ...declaration(key),
+    ...reportDefinitions.find(item => item.key === key), filter_options: {},
+  }) as ReportDefinitionDto;
+  const permissions = actualDefinition("file-audit.permissions");
+  const snapshot = "00000000-0000-4000-8000-000000000001";
+  const previousSnapshot = "00000000-0000-4000-8000-000000000004";
+  const root = { id: "fixture-root", agent_id: "00000000-0000-4000-8000-000000000002",
+    source_instance_id: "fixture-source", collection_scope_id: "fixture-scope", source_name: "FS-01",
+    share_name: "Reports", path: "D:\\Synthetic\\Reports", snapshot_id: snapshot, observed_at: "2026-11-25T08:00:00Z",
+    permission_changes: 7, object_type: "directory", owner_sid: "S-1-5-18", completeness: "complete", record_unit: "observed_object" };
+  const share = JSON.stringify([root.agent_id, root.source_instance_id, root.collection_scope_id]);
+  const scope = new URLSearchParams({ tab: "overview", domain: "7", period: "custom", from: "2026-11-24T08:00:37.125Z",
+    to: "2026-11-25T08:00:37.125Z", source_kind: "server", source_instance_id: root.source_instance_id,
+    device_id: "00000000-0000-4000-8000-000000000003", path: root.path, include_nested: "true", share, limit: "200" });
+  window.history.replaceState({}, "", `/app/report/file-audit.overview?${scope}`);
+  mocks.definition.mockImplementation(async (key: string) => actualDefinition(key));
+  mocks.data.mockImplementation(async (key: string, params: URLSearchParams) => ({ ...result(key, params),
+    items: [root], filtered_count: 1, has_more: false, next_cursor: null }));
+  mocks.detail.mockImplementation(async (key: string, id: string, params: URLSearchParams): Promise<FileAuditDetailResult> => {
+    const allowed = new Set([...permissions.params.map(param => param.key), "from", "to", "cursor", "limit", "sort", "direction", "tz", "tab"]);
+    const unknown = [...params.keys()].find(param => !allowed.has(param));
+    if (unknown) throw new ApiResponseError(400, `report_parameter_unknown:${unknown}`);
+    if (params.has("tab") && !permissions.views.some(view => view.key === params.get("tab"))) throw new ApiResponseError(400, "report_tab_invalid");
+    const acl = { state: "complete" as const, raw: "D:", aces: [] };
+    return { ...result(key, params), items: [], has_more: false, next_cursor: null, filtered_count: 0,
+      detail: { snapshot: { id, observed_at: root.observed_at, policy_revision: "4", scan_id: "fixture-scan", page_number: 0,
+        has_more: false, completeness: "complete", unread_objects: 0 },
+        share: { name: root.share_name, path: root.path, complete: true, dacl: acl },
+        object: { ...root, file_id: "fixture-file", dacl: acl, sacl: acl, sacl_protected: false },
+        comparison: { state: params.has("compare_snapshot_id") ? "unavailable" : "not_requested",
+          reason: params.has("compare_snapshot_id") ? "policy_incompatible" : null, identity_basis: null } },
+      collections: { snapshots: [{ id: snapshot, observed_at: root.observed_at },
+        { id: previousSnapshot, observed_at: "2026-11-24T08:00:00Z" }] } };
+  });
+  mount(actualDefinition("file-audit.overview"));
+  await userEvent.click(await screen.findByRole("button", { name: root.share_name }));
+  await screen.findByRole("table", { name: t("file-audit.acl.ntfs") });
+  const [key, id, params] = mocks.detail.mock.calls.at(-1)! as [string, string, URLSearchParams];
+  expect(key).toBe("file-audit.permissions"); expect(id).toBe(snapshot);
+  for (const name of ["from", "to", "source_kind", "source_instance_id", "device_id", "path", "share", "limit"]) {
+    expect(params.getAll(name), name).toEqual(scope.getAll(name));
+  }
+  expect(params.get("include_nested")).toBe("false");
+  expect(new URLSearchParams(window.location.search).get("domain")).toBe("7");
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.compare.title") }));
+  await screen.findByText(t("file-audit.compare.reason.policy_incompatible"));
+  const comparisonParams = mocks.detail.mock.calls.at(-1)![2] as URLSearchParams;
+  expect(comparisonParams.get("compare_snapshot_id")).toBe(previousSnapshot);
+  for (const [name, value] of params) expect(comparisonParams.get(name), name).toBe(value);
+  expect(comparisonParams.has("domain")).toBe(false);
+  await userEvent.click(screen.getByRole("link", { name: t("file-audit.workspace.back") }));
+  await screen.findByRole("table", { name: tabTitle("overview") });
+  const returned = new URLSearchParams(window.location.search);
+  for (const [name, value] of scope) expect(returned.get(name), name).toBe(value);
+  expect(returned.has("object_path")).toBe(false);
+  await userEvent.click(screen.getByRole("tab", { name: tabTitle("permissions") }));
+  const table = await screen.findByRole("table", { name: tabTitle("permissions") });
+  expect(mocks.data.mock.calls.at(-1)![1].get("view")).toBe("objects");
+  const useful = ["path", "source_name", "share_name", "object_type", "owner_sid", "observed_at", "completeness"];
+  expect(within(table).getAllByRole("columnheader").map(header => header.textContent)).toEqual(
+    permissions.columns.filter(column => useful.includes(column.key)).map(column => column.label));
+  await userEvent.click(screen.getByText(t("table.columns")));
+  const columnControls = screen.getByRole("group", { name: t("table.columns") });
+  const snapshotColumn = permissions.columns.find(column => column.key === "snapshot_id")!;
+  await userEvent.click(within(columnControls).getByRole("checkbox", { name: snapshotColumn.label }));
+  expect(within(table).getByRole("cell", { name: snapshot })).toBeTruthy();
+  for (const name of ["employee", "rule_code", "share_mask", "ntfs_mask"]) {
+    const label = permissions.columns.find(column => column.key === name)!.label;
+    expect((within(columnControls).getByRole("checkbox", { name: label }) as HTMLInputElement).checked).toBe(false);
+  }
+  await userEvent.click(within(table).getByRole("button", { name: root.path }));
+  await screen.findByRole("table", { name: t("file-audit.acl.ntfs") });
+});
+
+it.each(["inside", "overlap"] as const)("keeps the resource counter's exact scope and window through %s evidence and return", async (groupBoundary) => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-24T12:00:00.000Z"));
-  const scope = new URLSearchParams({ tab: "overview", period: "24h", source_kind: "server",
-    path: "C:\\Synthetic\\Folder", include_nested: "false", employee: "synthetic-user", share: "synthetic-share" });
+  const share = JSON.stringify(["fixture-agent", "fixture-source", "fixture-root"]);
+  const scope = new URLSearchParams({ tab: "overview", period: "24h", source_kind: "server", domain: "7", fa_anchor: "2026-10-24T11:59:37.125Z",
+    path: "C:\\Synthetic\\Folder\\Nested", include_nested: "true", employee: "S-1-5-21-1-42", share });
   window.history.replaceState({}, "", `/app/report/file-audit.overview?${scope}`);
-  mocks.definition.mockImplementation(async (key: string): Promise<ReportDefinitionDto> => ({
-    ...declaration(key),
-    params: declaration(key).params.map((param) => param.key === "operation"
-      ? { ...param, options: [{ value: "read", label: "Чтение" }] } : param),
+  const metadataColumns: ReportDefinitionDto["columns"] = [
+    { key: "first_seen_utc", path: "first_seen_utc", label: "First seen", kind: "datetime" },
+    { key: "last_seen_utc", path: "last_seen_utc", label: "Last seen", kind: "datetime" },
+    { key: "aggregate_boundary", path: "aggregate.boundary", label: "Boundary", kind: "text" },
+    { key: "aggregate_count_min", path: "aggregate.count_min", label: "Minimum", kind: "number" },
+    { key: "aggregate_count_max", path: "aggregate.count_max", label: "Maximum", kind: "number" },
+    { key: "correlation_state", path: "correlation_state", label: "Correlation", kind: "text" },
+    { key: "record_unit", path: "record_unit", label: "Record unit", kind: "text" },
+  ];
+  const definitionFor = (key: string): ReportDefinitionDto => ({ ...declaration(key),
+    params: [...declaration(key).params, { key: "record_unit", label: "Unit", kind: "choice" }],
+    columns: key.endsWith("overview") ? [...declaration(key).columns,
+      { key: "permission_changes", path: "permission_changes", label: "4670", kind: "number" }] : [...declaration(key).columns,
+      { key: "observed_at", path: "observed_at", label: "Observed at", kind: "datetime" },
+      { key: "count", path: "count", label: "Events in retained group", kind: "number" }, ...metadataColumns],
     detail: { kind: "inline", title: "Synthetic retained evidence", key: "id", inline: "evidence", row_links: [], columns: [
       { key: "reference", path: "reference", label: "Reference", kind: "code" },
-      { key: "event_id", path: "event_id", label: "Event", kind: "number" },
       { key: "record_id", path: "record_id", label: "Record", kind: "number" },
-      { key: "path", path: "path", label: "Source object", kind: "text" },
-      { key: "payload_sha256", path: "payload_sha256", label: "Hash", kind: "code" },
     ] },
-  }));
-  const boundary = "2026-10-23T12:00:30.000Z";
-  mocks.data.mockImplementation(async (key: string, params: URLSearchParams): Promise<ReportResultDto> => {
-    const response = { ...result(key, params), filter_options: { share: [{ value: "synthetic-share", label: "Synthetic share" }] } };
-    if (key === "file-audit.overview") return { ...response,
-      metrics: [{ key: "read", label: "Synthetic reads", value: 1, quality: "observed", filter: { operation: "read" } }],
-    };
-    // A synthetic retained boundary event disappears if navigation advances the window.
-    const included = params.get("operation") === "read" && params.get("from")! <= boundary && boundary < params.get("to")!;
-    return { ...response, items: included ? [{ id: "boundary-action", path: "Synthetic boundary action", evidence: [{
-      reference: "synthetic-source-reference", event_id: 4663, record_id: 42,
-      path: "C:\\Synthetic\\Folder", payload_sha256: "a".repeat(64),
-    }] }] : [], filtered_count: included ? 1 : 0, has_more: false, next_cursor: null };
   });
-  mount();
-  await screen.findByRole("button", { name: /Synthetic reads/ });
-  await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
-  await screen.findByText("51–52 из 52");
-  const overviewParams = new URLSearchParams(mocks.data.mock.calls.at(-1)![1]);
-  expect(overviewParams.get("from")).toBe("2026-10-23T12:00:00.000Z");
-  expect(overviewParams.get("to")).toBe("2026-10-24T12:00:00.000Z");
-  expect(overviewParams.get("cursor")).toBe("synthetic-cursor");
-
+  mocks.definition.mockImplementation(async (key: string) => definitionFor(key));
+  const boundary = "2026-10-23T11:59:40.000Z";
+  const firstSeen = groupBoundary === "overlap" ? "2026-10-23T11:59:30.000Z" : boundary;
+  const countLabel = groupBoundary === "overlap" ? t("file-audit.workspace.group_count", { count: 7 }) : "7";
+  mocks.data.mockImplementation(async (key: string, params: URLSearchParams): Promise<ReportResultDto> => {
+    const response = result(key, params);
+    if (key === "file-audit.overview") return { ...response, items: [{ id: "root", path: "C:\\Synthetic\\Folder",
+      agent_id: "fixture-agent", source_instance_id: "fixture-source", collection_scope_id: "fixture-root", permission_changes: 7 }] };
+    const included = params.get("record_unit") === "saved_event_group" && params.get("from")! <= boundary && boundary < params.get("to")!;
+    return { ...response, items: included ? [{ id: "boundary-group", path: "Synthetic boundary group",
+      record_unit: "saved_event_group", count: 7, first_seen_utc: firstSeen, last_seen_utc: "2026-10-23T11:59:41.000Z",
+      correlation_state: "not_attempted",
+      aggregate: { count: 7, first_seen_utc: firstSeen, last_seen_utc: "2026-10-23T11:59:41.000Z", boundary: groupBoundary,
+        count_min: groupBoundary === "overlap" ? 1 : 7, count_max: groupBoundary === "overlap" ? 6 : 7, unit: "saved_event_group" },
+      evidence: [{ reference: "retained-group-reference", record_id: 42 }] }] : [],
+      filtered_count: included ? 1 : 0, has_more: false, next_cursor: null };
+  });
+  const first = mount(definitionFor("file-audit.overview"));
+  const link = await screen.findByRole("link", { name: "7" });
+  const overview = new URLSearchParams(mocks.data.mock.calls.at(-1)![1]);
+  const href = link.getAttribute("href")!;
+  const target = new URL(href, window.location.origin).searchParams;
+  for (const key of ["from", "to", "source_kind", "path", "include_nested", "employee", "share", "tz"]) expect(target.getAll(key), key).toEqual(overview.getAll(key));
+  expect(target.get("record_unit")).toBe("saved_event_group");
+  expect(target.get("operation")).toBe("permissions");
+  expect(target.get("domain")).toBe("7");
+  expect(target.get("cursor")).toBeNull();
   vi.setSystemTime(new Date("2026-10-24T12:05:00.000Z"));
-  await userEvent.click(screen.getByRole("button", { name: /Synthetic reads/ }));
-  await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[0]).toBe("file-audit.actions"));
-  const actionsParams = new URLSearchParams(mocks.data.mock.calls.at(-1)![1]);
-  for (const key of ["from", "to", "source_kind", "path", "include_nested", "employee", "share", "tz"]) {
-    expect(actionsParams.getAll(key), key).toEqual(overviewParams.getAll(key));
-  }
-  expect(actionsParams.get("operation")).toBe("read");
-  expect(actionsParams.get("cursor")).toBeNull();
-  await screen.findByText("1–1 из 1");
-  await userEvent.click(screen.getByText("Synthetic boundary action"));
-  const evidence = within(screen.getByRole("dialog")).getByRole("table", { name: "Synthetic retained evidence" });
-  expect(within(evidence).getByText("synthetic-source-reference")).toBeTruthy();
-  expect(within(evidence).getByText("42")).toBeTruthy();
-  expect(within(evidence).getByText("C:\\Synthetic\\Folder")).toBeTruthy();
-  expect(within(evidence).getByText("a".repeat(64))).toBeTruthy();
-  await userEvent.click(screen.getByRole("button", { name: t("drawer.close") }));
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByText("1–1 из 1")).toBeTruthy();
-  const exportParams = new URL(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")!, window.location.origin).searchParams;
-  expect(exportParams.get("from")).toBe(actionsParams.get("from"));
-  expect(exportParams.get("to")).toBe(actionsParams.get("to"));
-  expect(exportParams.get("operation")).toBe("read");
-
-  await userEvent.click(screen.getByRole("button", { name: "Применить" }));
-  await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("to")).toBe("2026-10-24T12:05:00.000Z"));
-  expect(mocks.data.mock.calls.at(-1)?.[1].get("from")).toBe("2026-10-23T12:05:00.000Z");
-  await screen.findByText("0–0 из 0");
+  first.unmount(); client.clear(); window.history.replaceState({}, "", href);
+  mount(definitionFor("file-audit.permission-changes"));
+  const table = await screen.findByRole("table", { name: tabTitle("permission-changes") });
+  expect(within(table).getAllByRole("columnheader").map(header => header.textContent)).toEqual([
+    "Object", t("file-audit.workspace.interval"), t("file-audit.workspace.count"),
+  ]);
+  expect(within(table).getByRole("cell", { name: countLabel })).toBeTruthy();
+  await userEvent.click(screen.getByText(t("table.columns")));
+  const columnsControl = screen.getByRole("group", { name: t("table.columns") });
+  for (const column of metadataColumns) expect((within(columnsControl).getByRole("checkbox", { name: column.label }) as HTMLInputElement).checked).toBe(false);
+  await userEvent.click(within(columnsControl).getByRole("checkbox", { name: "First seen" }));
+  expect(within(table).getByRole("columnheader", { name: "First seen" })).toBeTruthy();
+  await userEvent.click(within(columnsControl).getByRole("checkbox", { name: "Record unit" }));
+  expect(within(table).getByRole("cell", { name: t("file-audit.workspace.saved_4670_groups") })).toBeTruthy();
+  expect(within(table).queryByText("saved_event_group")).toBeNull();
+  await userEvent.click(await screen.findByText("Synthetic boundary group"));
+  const details = screen.getByRole("region", { name: t("file-audit.workspace.evidence") });
+  expect(within(details).getByText("retained-group-reference")).toBeTruthy();
+  expect(within(details).getByText("42")).toBeTruthy();
+  expect(within(details).getByText(`${t("file-audit.workspace.count")}: ${countLabel}`)).toBeTruthy();
+  expect(within(details).getByText(t("file-audit.workspace.saved_4670_groups"))).toBeTruthy();
+  expect(within(details).getByText(t(groupBoundary === "inside" ? "file-audit.workspace.boundary_inside" : "file-audit.workspace.boundary_overlap"))).toBeTruthy();
+  expect(within(details).getAllByText(t("reports.v2.file-audit.permission-changes.columns.correlation_state.labels.not_attempted"))).toHaveLength(1);
+  for (const raw of ["saved_event_group", "inside", "overlap", "not_attempted"]) expect(within(details).queryByText(raw)).toBeNull();
+  for (const label of ["Minimum", "Maximum"]) expect(Boolean(within(details).queryByText(label))).toBe(groupBoundary === "overlap");
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
+  const exported = new URL(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")!, window.location.origin).searchParams;
+  for (const key of ["from", "to", "share", "path", "record_unit"]) expect(exported.getAll(key), key).toEqual(target.getAll(key));
+  expect(exported.get("from")).toBe("2026-10-23T11:59:37.125Z");
+  expect(exported.get("to")).toBe("2026-10-24T11:59:37.125Z");
+  expect((screen.getByLabelText(t("period.from")) as HTMLInputElement).validity.valid).toBe(true);
+  fireEvent.change(screen.getByLabelText(t("file-audit.workspace.record_unit")), { target: { value: "" } });
+  await userEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
+  await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("record_unit")).toBeNull());
+  expect(new URLSearchParams(window.location.search).has("record_unit")).toBe(false);
 });
 
 
@@ -323,7 +450,7 @@ it.each([["domain=7", "domain=7"], ["domain_id=8", "domain=8"], ["scope=all", "s
   fireEvent.click(link);
   expect(window.location.href).toBe(before);
   expect(mocks.data.mock.calls.length).toBe(requests);
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
 });
 it("does not offer owner-only audit controls to access.manage alone", async () => {
   mocks.access.capabilities.push("access.manage");
@@ -344,7 +471,7 @@ it("does not show the link on action rows and removes it on owner revocation", a
   agentRows(); const view = mount();
   await userEvent.click(await screen.findByText("Synthetic agent source"));
   expect(screen.queryByRole("link", { name: t("file-audit.open_agent_new_tab") })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: t("drawer.close") }));
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
   await userEvent.click(screen.getByRole("tab", { name: tabTitle("audit-state") }));
   await userEvent.click(await screen.findByText("Synthetic agent source"));
   expect(screen.getByRole("link", { name: t("file-audit.open_agent_new_tab") })).toBeTruthy();
@@ -359,7 +486,7 @@ it("removes the exact-agent link when report access is denied", async () => {
   await userEvent.click(await screen.findByText("Synthetic agent source"));
   expect(screen.getByRole("link", { name: t("file-audit.open_agent_new_tab") })).toBeTruthy();
   mocks.data.mockRejectedValueOnce(new ApiResponseError(403, "report_access_denied"));
-  await userEvent.click(screen.getByRole("button", { name: t("drawer.close") }));
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   expect(await screen.findByText("Denied")).toBeTruthy();
   expect(screen.queryByRole("link", { name: t("file-audit.open_agent_new_tab") })).toBeNull();
@@ -386,15 +513,16 @@ it("keeps page two and the frozen window in the source tab when opening an agent
   expect(before.get("to")).toBe("2026-10-26T12:00:00.000Z");
   vi.setSystemTime(new Date("2026-10-26T12:05:00.000Z"));
   fireEvent.click(screen.getByRole("link", { name: t("file-audit.open_agent_new_tab") }));
+  expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
   expect(screen.getByText("51–52 из 52")).toBeTruthy();
-  expect(screen.getByRole("dialog")).toBeTruthy();
   expect(mocks.data.mock.calls.length).toBe(requestCount);
   const after = mocks.data.mock.calls.at(-1)![1] as URLSearchParams;
   for (const key of ["from", "to", "cursor", "path"]) expect(after.getAll(key)).toEqual(before.getAll(key));
   expect(new URLSearchParams(window.location.search).get("domain")).toBe("7");
 });
 
-it.each(["ru", "en"] as const)("names permission masks in %s without changing drawer evidence or export", async (locale) => {
+it.each(["ru", "en"] as const)("names permission masks in %s without changing retained evidence or export", async (locale) => {
   const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => {});
   setLocale(locale);
   const source = { id: "rights", path: "Synthetic permissions", details: { share_mask: 0x1301bf, ntfs_mask: 0x1f01ff } };
@@ -429,11 +557,12 @@ it.each(["ru", "en"] as const)("names permission masks in %s without changing dr
     expect(within(groupTable).getByText(t("file-audit.permissions.read"))).toBeTruthy();
     expect(within(groupTable).getByText(`${t("file-audit.permissions.custom")} (${0x21f01ff})`)).toBeTruthy();
     await userEvent.click(within(findings).getByText("Synthetic permissions"));
-    const drawer = screen.getByRole("dialog");
+    const drawer = screen.getByRole("region", { name: t("file-audit.workspace.evidence") });
     expect(within(drawer).getByText("1245631")).toBeTruthy();
     expect(within(drawer).getByText("2032127")).toBeTruthy();
     expect(source.details).toEqual({ share_mask: 1245631, ntfs_mask: 2032127 });
     expect(groups[0].ntfs_mask).toBe(0x21f01ff);
+    await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
     // Export remains the server endpoint, not a localized client-side dataset.
     expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain("/file-audit.permissions/export.csv?");
   } finally {
@@ -442,7 +571,7 @@ it.each(["ru", "en"] as const)("names permission masks in %s without changing dr
   }
 });
 
-it.each(["ru", "en"] as const)("preserves main audit controls, retention and evidence without collection notes (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("preserves main audit controls and evidence without collection notes (%s)", async (locale) => {
   const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => {});
   setLocale(locale);
   mocks.definition.mockImplementation(async (key: string) => ({ ...declaration(key), columns: [...declaration(key).columns,
@@ -462,13 +591,8 @@ it.each(["ru", "en"] as const)("preserves main audit controls, retention and evi
     expect(within(form).getByRole("button", { name: t("filters.apply") })).toBeTruthy();
     expect(screen.getByText("UTC")).toBeTruthy();
     expect(within(table).getByText("RecordID")).toBeTruthy();
-    expect(within(table).getByText("Unread")).toBeTruthy();
-    const retention = within(screen.getByRole("heading", { name: t("file-audit.retention") }).closest("section")!);
+    expect(within(table).getByText(t("file-audit.workspace.scan_gaps"))).toBeTruthy();
     expect(screen.getByText(t("file-audit.audit_scope_note"))).toBeTruthy();
-    for (const suffix of ["payload", "facts", "acl"] as const) {
-      expect(retention.getByText(t(`file-audit.retention.${suffix}`))).toBeTruthy();
-      expect(retention.getByText(t(`file-audit.retention.${suffix}_value`))).toBeTruthy();
-    }
     expect(screen.getByText("Synthetic limitation").closest("details")).toBeNull();
     const collection = screen.getByRole("region", { name: "Synthetic empty groups" });
     expect(screen.queryByText("Synthetic collection note")).toBeNull();

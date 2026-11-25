@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -11,6 +12,7 @@ using Sli.Server.Tests.Ad;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Domains;
 using Sli.Server.Tests.Notifications;
+using Sli.Server.Tests.Reporting;
 using Sli.Server.Tests.Storage;
 using Sli.Server.Tests.Vpn;
 using Xunit;
@@ -34,6 +36,7 @@ public sealed class BetaMenuWalkTests
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct);
         var directory = await NewLogonPairsNativeFixture.SeedAsync(fixture.Pg, DateTimeOffset.UtcNow, 3, ct);
+        JsonObject fileServers;
         await using (var db = await fixture.Pg.OpenAsync(ct))
         {
             var events = await ShortEventAdmissionPostgresTests.SeedAsync(db, ct);
@@ -44,6 +47,7 @@ public sealed class BetaMenuWalkTests
                     'dc-1.example.test','synthetic-user-'||n,now()::text,now()::text,'high','new'
                 from generate_series(0,2) n
                 """, ct);
+            fileServers = await FileServersReportFixture.SeedAsync(db, ct);
         }
         string token = await fixture.SeedOwnerAsync(ct);
         using var accounting = await VpnAccountingPostgresFixture.RegisterAsync(fixture, ct);
@@ -115,7 +119,10 @@ public sealed class BetaMenuWalkTests
         var error = browser.StandardError.ReadToEndAsync(ct);
         try
         {
-            await browser.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { url = client.BaseAddress.AbsoluteUri, token, results }));
+            await browser.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                url = client.BaseAddress.AbsoluteUri, token, results, file_servers = fileServers
+            }));
             browser.StandardInput.Close();
             await browser.WaitForExitAsync(ct);
             await output;
