@@ -21,6 +21,7 @@ using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
 using Sli.Server.Operations;
 using Sli.Server.Agents.Certificates;
+using Sli.Server.Agents.ClientControl;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Tests.Agents;
@@ -122,6 +123,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await seed.ExecuteNonQueryAsync(ct);
         using var backupSettingsSocket = new BackupSettingsEndpointTests.SocketExchange(
             """{"ok":true,"enabled":true,"path":"/mnt/synthetic-backup","revision":"r1","storage_status":"ready"}""" + "\n");
+        var catalogLog = new CatalogPollLogger(output);
         using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(SafeTestEnvironment.ConfigureApiHost).WithWebHostBuilder(b => b
             .UseTestServer()
             .ConfigureLogging(l => l.ClearProviders())
@@ -140,6 +142,7 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 s.RemoveAll<BackupSettingsClient>();
                 s.AddSingleton(new BackupSettingsClient(_ => ValueTask.FromResult<Stream>(backupSettingsSocket)));
                 s.AddSingleton(transportTrust);
+                s.AddSingleton<ILogger<AgentClientControlService>>(catalogLog);
             }));
         // TestServer replaces only the transport. Schannel credentials are not
         // available in the Windows sandbox; CA/identity validation stays real.
@@ -268,14 +271,28 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                 failures.Add("File Audit check receipt or event admission did not match the current command");
         }
         const string catalogRoute = "/api/v1/admin/agents/file-audit/catalog";
+        async Task<Guid> ReadCatalogRequestAsync()
+        {
+            string? request = null;
+            for (int poll = 0; poll < 3; poll++)
+            {
+                if (poll > 0) await Task.Delay(50, ct);
+                var identity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+                Assert.True(identity?[FileAuditReadError.Capability]?.GetValue<bool>() is true,
+                    "The agent identity response did not acknowledge the catalog capability.");
+                request = identity?["file_audit_catalog_request"]?["request_id"]?.ToString();
+                if (request is not null) break;
+            }
+            Assert.True(Guid.TryParseExact(request, "D", out var id),
+                $"Expected a catalog request ID after three identity polls. Last server warning: {catalogLog.LastWarning ?? "none"}");
+            return id;
+        }
+
         agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
         await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
         var requested = await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
         Assert.Equal("pending", requested?["state"]?.ToString());
-        var catalogIdentity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
-        Assert.True(catalogIdentity?["file_audit_read_diagnostics"]?.GetValue<bool>() is true);
-        var catalogRequest = catalogIdentity?["file_audit_catalog_request"]?["request_id"]?.ToString();
-        Assert.True(Guid.TryParse(catalogRequest, out _));
+        var catalogRequest = await ReadCatalogRequestAsync();
         agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
         var catalogReport = new
         {
@@ -304,12 +321,12 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         var reportShare = JsonNode.Parse(catalog["saved_report_share_key"]!.GetValue<string>())!.AsArray();
         Assert.Equal(new[] { registered["agent_id"]!.ToString(), agentHost, "sql-scope" },
             reportShare.Select(value => value!.GetValue<string>()).ToArray());
-        await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        var refreshed = await Check(catalogRoute, new { agent_id = registered["agent_id"]!.ToString() });
+        Assert.Equal("pending", refreshed?["state"]?.ToString());
         agentClient.DefaultRequestHeaders.Add("X-SLI-File-Audit-Catalog", "1");
-        var nextIdentity = await Check("/api/v1/agent/identity", new { }, method: "GET", asClient: agentClient);
+        var nextRequest = await ReadCatalogRequestAsync();
         agentClient.DefaultRequestHeaders.Remove("X-SLI-File-Audit-Catalog");
-        string? nextRequest = nextIdentity?["file_audit_catalog_request"]?["request_id"]?.ToString();
-        Assert.True(Guid.TryParse(nextRequest, out _));
+        Assert.NotEqual(catalogRequest, nextRequest);
         await Check("/api/v1/agent/file-audit-catalog-report",
             new { request_id = nextRequest, status = "incomplete", native_status = 234, shares = Array.Empty<object>() },
             asClient: agentClient);
@@ -496,6 +513,23 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
                     and attnum>0 and not attisdropped and has_column_privilege('adlog_user',attrelid,attname,'UPDATE'))
             """, db);
         Assert.Equal(true, await privilege.ExecuteScalarAsync(ct));
+    }
+
+    private sealed class CatalogPollLogger(ITestOutputHelper output) : ILogger<AgentClientControlService>
+    {
+        public string? LastWarning { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Warning;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> format)
+        {
+            if (!IsEnabled(logLevel)) return;
+            string message = format(state, exception);
+            if (!message.StartsWith("Optional File Audit catalog poll failed", StringComparison.Ordinal)) return;
+            LastWarning = message;
+            output.WriteLine(message);
+        }
     }
 
     // Only the Unix-socket/network boundary is substituted. All channel,

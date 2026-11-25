@@ -214,7 +214,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         var fileImport = await consumer.RunOnceAsync(1, ct);
         Assert.True(fileImport.Imported == 1, string.Join(", ", fileImport.PendingReasons));
 
-        string window = $"period=custom&from={Iso8601.Format(now.AddMinutes(-1))}&to={Iso8601.Format(now.AddMinutes(1))}";
+        string window = $"period=custom&from={now.AddMinutes(-1).UtcDateTime:O}&to={now.AddMinutes(1).UtcDateTime:O}";
         string filter = $"source_kind=server&share={Uri.EscapeDataString(shareKey)}&path={Uri.EscapeDataString(rootPath)}&include_nested=true&operation=permissions";
         using (var response = await admin.GetAsync($"/api/v2/reports/file-audit.permission-changes/data?{window}&{filter}", ct))
         {
