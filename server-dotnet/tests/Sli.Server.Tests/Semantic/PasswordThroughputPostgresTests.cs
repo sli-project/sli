@@ -15,9 +15,15 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
     {
         const int eventsPerHour = 8000;
         var ct = TestContext.Current.CancellationToken;
+        bool measurePhases = Environment.GetEnvironmentVariable("SLI_TEST_P1_PHASES_411") == "1";
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct);
+        if (measurePhases)
+            await fixture.StartAsync(ct, throughVersion: 411);
+        else
+            await fixture.StartAsync(ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
+        if (measurePhases)
+            await InstallPhaseMeasurementAsync(owner, ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1), TimeSpan.Zero);
         var clock = new TestClock(start.AddMinutes(2));
         await PostCollectionPostgres.Sql(owner, """
@@ -131,6 +137,72 @@ public sealed class PasswordThroughputPostgresTests(ITestOutputHelper output)
             output.WriteLine($"{rule} live watermark lag {lag.TotalSeconds:F2}s after {watch.Elapsed.TotalSeconds:F2}s");
             Assert.True(watermark > caughtUp[rule]);
             Assert.InRange(lag, TimeSpan.Zero, TimeSpan.FromMinutes(2));
+        }
+        if (measurePhases)
+            await WritePhaseMeasurementsAsync(fixture.Pg, ct);
+    }
+
+    private static Task InstallPhaseMeasurementAsync(NpgsqlConnection owner, CancellationToken ct) =>
+        PostCollectionPostgres.Sql(owner, """
+            do $probe$
+            declare body text; modified text;
+            begin
+                body:=pg_get_functiondef('public.read_password_episode_portions_v2(jsonb,jsonb,text)'::regprocedure);
+                modified:=replace(body,'declare identity jsonb;',
+                    'declare p1_started timestamptz:=clock_timestamp(); p1_rows integer:=0; p1_refs integer:=0; identity jsonb;');
+                modified:=replace(modified,'        return query select encode(sha256',
+                    $history_rows$        p1_rows:=p1_rows+1;
+                    p1_refs:=p1_refs+coalesce(jsonb_array_length(d->'evidence_refs'),0);
+                    return query select encode(sha256$history_rows$);
+                modified:=replace(modified,E'    end loop;\nend $function(DateTimeOffset at) : TimeProvider
+    {
+        internal DateTimeOffset At { get; set; } = at;
+        public override DateTimeOffset GetUtcNow() => At;
+    }
+}
+,
+                    $history_end$    end loop;
+                raise log 'p1_411_phase %',jsonb_build_object(
+                    'rule',execution->>'rule_id','phase','history_read','rows',p1_rows,'refs',p1_refs,
+                    'elapsed_ms',round(1000*extract(epoch from clock_timestamp()-p1_started),3))::text;
+            end $function$history_end$);
+                if modified=body or strpos(modified,'''history_read''')=0 or strpos(modified,'p1_rows:=p1_rows+1')=0
+                    or strpos(modified,'p1_started timestamptz')=0
+                    then raise exception 'p1_history_measurement_shape'; end if;
+                execute modified;
+
+                body:=pg_get_functiondef('public.complete_password_producer_batch_v2(jsonb,jsonb,bigint,bigint,text,jsonb)'::regprocedure);
+                modified:=replace(body,'declare c public.semantic_password_checkpoints%rowtype;',
+                    'declare p1_started timestamptz:=clock_timestamp(); c public.semantic_password_checkpoints%rowtype;');
+                modified:=replace(modified,$finish$    return jsonb_build_object('status','staged','revision',$finish$,
+                    $finalizer$    raise log 'p1_411_phase %',jsonb_build_object(
+                        'rule',execution->>'rule_id','phase','finalizer','revision',c.state_revision,
+                        'window_rows',jsonb_array_length(next_st->'window'),
+                        'active_episodes',jsonb_array_length(next_st->'episodes'),
+                        'closed_admissions',coalesce(jsonb_array_length(next_st->'closed_admissions'),0),
+                        'elapsed_ms',round(1000*extract(epoch from clock_timestamp()-p1_started),3),
+                        'after_checkpoint_stamp_ms',round(1000*extract(epoch from clock_timestamp()-stamp),3))::text;
+                return jsonb_build_object('status','staged','revision',$finalizer$);
+                if modified=body or strpos(modified,'''finalizer''')=0 or strpos(modified,'p1_started timestamptz')=0
+                    then raise exception 'p1_finalizer_measurement_shape'; end if;
+                execute modified;
+            end $probe$;
+            """, ct);
+
+    private async Task WritePhaseMeasurementsAsync(PostCollectionPostgres postgres, CancellationToken ct)
+    {
+        const string marker = "LOG:  p1_411_phase ";
+        var measurements = (await postgres.DiagnosticsAsync(ct)).Split('\n')
+            .Where(line => line.Contains(marker, StringComparison.Ordinal))
+            .Select(line => JsonNode.Parse(line[(line.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..].Trim())!)
+            .ToArray();
+        foreach (string rule in new[] { "qw.password-brute-force", "qw.password-spray" })
+        {
+            var byRule = measurements.Where(row => row["rule"]!.GetValue<string>() == rule).ToArray();
+            Assert.Contains(byRule, row => row["phase"]!.GetValue<string>() == "finalizer");
+            output.WriteLine($"p1_411_history_calls {rule} {byRule.Count(row => row["phase"]!.GetValue<string>() == "history_read")}");
+            foreach (var row in byRule)
+                output.WriteLine($"p1_411_phase {row.ToJsonString()}");
         }
     }
 
