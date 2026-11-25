@@ -628,7 +628,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           setSelected(null);
           const domainChanged = next.domain !== values.domain;
           if (independentUsers || (computerReport && domainChanged)) {
-            const current = { ...next, domain_id: domainChanged ? undefined : next.domain_id };
+            const current: FilterValues = { ...next, domain_id: domainChanged ? undefined : next.domain_id };
             setValues({ ...current, scope: current.domain || current.domain_id ? undefined : "all" });
           } else setValues(next);
         }}

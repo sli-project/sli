@@ -28,8 +28,12 @@ const emptySetup: SetupStatus = {
 
 function ownerAccess(owner: boolean) {
   vi.spyOn(app, "useEffectiveAccess").mockReturnValue({
-    platform_owner: owner, preview: false, capabilities: ["workspace.view"], reports: [],
-  } as ReturnType<typeof app.useEffectiveAccess>);
+    api_version: "v4", evaluated_at_utc: checkedAt, platform_owner: owner, preview: false,
+    subject: { type: "user", username: "scope-test", coarse_role: owner ? "admin" : "viewer" },
+    groups: [], packages: [], package_explain: [], capabilities: ["workspace.view"], capability_explain: {},
+    reports: [], allowed_report_count: 0, navigation: [],
+    explicit_denies: { packages: [], capabilities: [], reports: [] },
+  });
 }
 
 function show(page: ReactNode) {
