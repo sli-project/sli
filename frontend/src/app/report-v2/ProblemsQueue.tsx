@@ -10,6 +10,7 @@ import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, localDa
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { ReportDenied } from "./ReportDenied";
+import { FirstAdSource, isEmptyFirstAdReportResult, useFirstAdSource } from "../first-ad-source";
 import { statusLabel } from "../problem-lifecycle";
 import "./ProblemsQueue.css";
 
@@ -182,6 +183,9 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const position = visibleRows.findIndex((row) => row.id === selected);
   const denied = list.error instanceof ApiResponseError && [401, 403].includes(list.error.status) || result?.state === "denied";
   const error = list.isError || result?.state === "error";
+  const firstAdSource = useFirstAdSource(initial, initial.size === 0 && !cursor && !domain
+    && view === "all" && !severity && !owner && !search && period.preset === "7d"
+    && definition.access?.allowed !== false && list.isSuccess && !list.isFetching && isEmptyFirstAdReportResult(result));
   const incomplete = (result?.state === "not_collected" || result?.state === "partial" || result?.state === "stale" || result?.state === "processing") && rows.length === 0;
   const counts = incomplete ? {} : record(result?.series?.queue_counts);
   const names = new Set([...(result?.filter_options?.queue_assignee?.map(({ value }) => value) ?? []), ...(users.data?.items.map(({ username }) => username) ?? []), ...rows.map((row) => row.assignee), owner]);
@@ -306,7 +310,8 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
             return <Button disabled={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>{t(members.isFetchNextPageError ? "state.retry" : "table.loadMore")}</Button>;
           return null;
         } : undefined}/>
-      {rows.length === 0 ? <p role="status">{incomplete ? EMPTY_VALUE : t("problems.queue.empty")}</p> : null}
+      {firstAdSource ? <FirstAdSource/>
+        : rows.length === 0 ? <p role="status">{incomplete ? EMPTY_VALUE : t("problems.queue.empty")}</p> : null}
       {footer}
     </ReportLayout>
   </Tabs>;

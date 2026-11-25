@@ -8,6 +8,7 @@ import "../../design-system/split-report.css";
 import { t } from "../../i18n";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
+import { FirstAdSource, isEmptyFirstAdReportResult, useFirstAdSource } from "../../app/first-ad-source";
 import { GpoPolicyCard, hasMismatch, versionPair, type PolicyRow, type PolicyTab } from "./GpoPolicyCard";
 
 const caption = () => t("reports.gpo.title");
@@ -112,6 +113,8 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
     { key: "owner", label: t("reports.gpo.owner"), width: "15rem" },
     { key: "modification_time", label: t("reports.gpo.modified"), kind: "datetime", width: "13rem", sortable: true },
   ];
+  const firstAdSource = useFirstAdSource(initial, initial.size === 0 && !effectiveDomain && !snapshot
+    && !text && !mismatch && !unlinked && data.isSuccess && !data.isFetching && isEmptyFirstAdReportResult(data.data));
   const denied = data.data?.state === "denied" || data.error instanceof ApiResponseError && [401, 403].includes(data.error.status);
   if (denied) return <ReportDenied reportKey={definition.key} page/>;
   const failed = data.isError || data.data?.state === "error";
@@ -140,7 +143,7 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
           </button>
         </div>
         <DataTable columns={columns} rows={rows.slice(start, start + pageSize)} rowKey={(row) => row.id} caption={caption()}
-          selectedKey={focusId} emptyContent="—" sort={{ field: "modification_time", direction }}
+          selectedKey={focusId} emptyContent={firstAdSource ? <FirstAdSource/> : "—"} sort={{ field: "modification_time", direction }}
           onSort={() => { setDirection(direction === "desc" ? "asc" : "desc"); setPage(1); }}
           total={rows.length} pageSize={{ value: pageSize, options: pageSizes, onChange: (size) => { setPageSize(size); setPage(1); } }}
           pagination={{ start: start + 1, onPrevious: currentPage > 1 ? () => setPage(currentPage - 1) : undefined,
