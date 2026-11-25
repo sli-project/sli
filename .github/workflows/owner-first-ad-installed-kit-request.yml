@@ -1,4 +1,4 @@
-name: Request installed AD scope acceptance kit
+name: Request exact four-report beta acceptance kit
 on:
   push:
     branches: ['codex/beta-clean-readme-acceptance']
@@ -11,7 +11,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      KIT_COMMIT: 4a6f14c815e07ff2a01346700d79507689d657e9
+      KIT_COMMIT: 4bc007843aab81272eb56387de1723182bad9c13
     steps:
       - name: Request the standard main build with artifact upload
         shell: bash
