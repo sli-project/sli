@@ -1,4 +1,4 @@
-name: Request installed owner first-AD acceptance kit
+name: Request installed AD scope acceptance kit
 on:
   push:
     branches: ['codex/beta-clean-readme-acceptance']
@@ -11,7 +11,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      KIT_COMMIT: 2323cfa48cf8c8d3e66705b1b09a7e20e140309f
+      KIT_COMMIT: 4a6f14c815e07ff2a01346700d79507689d657e9
     steps:
       - name: Request the standard main build with artifact upload
         shell: bash
