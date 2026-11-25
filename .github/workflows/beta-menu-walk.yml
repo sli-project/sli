@@ -6,6 +6,8 @@ on:
     paths:
       - 'frontend/**'
       - 'server-dotnet/**'
+      # The password throughput test is independent of the menu walk and its fixtures.
+      - '!server-dotnet/tests/Sli.Server.Tests/Semantic/PasswordThroughputPostgresTests.cs'
       - 'config/navigation_v3.json'
       - 'config/postgres_baseline/**'
       - 'config/postgres_migrations/**'
