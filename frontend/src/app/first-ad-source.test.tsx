@@ -96,6 +96,26 @@ it.each(["domain=22", "domain_id=22"])("preserves the denial when the owner requ
     (params.get("domain") ?? params.get("domain_id")) === "22")).toBe(true);
 });
 
+it.each(["domain", "domain_id"])("keeps a direct %s on the AD state report when its declaration hides the selector", async selector => {
+  const entry = "/app/report/ad.infrastructure?" + selector + "=999999";
+  const previous = window.location.pathname + window.location.search + window.location.hash;
+  window.history.replaceState(null, "", entry);
+  vi.mocked(api.reportV2Definition).mockResolvedValue({
+    ...definition("ad.infrastructure"), params: [], default_domain_state: "unknown",
+    views: [{ kind: "table", key: "controls", access: { allowed: false } }],
+  });
+  try {
+    show(<ReportRenderer reportKey="ad.infrastructure"/>);
+    expect(await screen.findByRole("link", { name: t("reports.access.own_rights") })).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get(selector)).toBe("999999");
+    expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
+    expect(api.setupStatus).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    window.history.replaceState(null, "", previous);
+  }
+});
+
 it("does not show enrollment when the global setup has a registered domain", async () => {
   vi.mocked(api.setupStatus).mockResolvedValue({
     ...emptySetup, domains: [{ fqdn: "existing.example.test", netbios_name: null, server_count: 0 }],

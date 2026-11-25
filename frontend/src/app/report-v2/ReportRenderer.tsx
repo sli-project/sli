@@ -18,7 +18,7 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { canResolveProblem, queueStatus, ResolveProblem, statusLabel } from "../problem-lifecycle";
 import {
-  apiParams, applyPreset, columnValue, defaultValues, fillTemplate, filterFields, isPresetActive,
+  AD_DOMAIN_REPORTS, apiParams, applyPreset, columnValue, defaultValues, fillTemplate, filterFields, isPresetActive,
   primaryFilterKeys, searchFromValues, valuesFromSearch, valuesReady, visiblePresets, vpnViewBranchKey,
 } from "./state";
 import { withReturnTo } from "./legacy";
@@ -101,13 +101,11 @@ function EventListError({ reportKey, onRetry }: { reportKey: string; onRetry: ()
   </div>;
 }
 
-const FIRST_AD_REPORTS = new Set(["security.events.chains", "ad.infrastructure", "ad.users.v2", "ad.computers.v6"]);
-
 /** Renders any report declared on the v2 framework (ADR 0010 §4). */
 export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKey: string; initialSearch?: string } & AdditionalTabs) {
   const definition = useQuery({ queryKey: ["report-v2", "definition", reportKey], queryFn: () => api.reportV2Definition(reportKey), staleTime: 5 * 60_000, retry: false });
   const firstAdSource = useFirstAdSource(new URLSearchParams(initialSearch ?? window.location.search),
-    FIRST_AD_REPORTS.has(reportKey) && definition.isSuccess
+    AD_DOMAIN_REPORTS.has(reportKey) && definition.isSuccess
       && definition.data.default_domain_state !== "available" && !definition.data.filter_options?.domain?.length);
   if (definition.isLoading || firstAdSource === undefined) return <ReportLayout title={t("reports.renderer.loading_title")} state="loading"/>;
   if (definition.error || !definition.data) {
@@ -180,7 +178,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const initial = valuesFromSearch(definition, search);
     if (problemQueue && typeof initial.status === "string") initial.status = queueStatus(initial.status);
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
-    if (independentUsers && initial.domain_id) { initial.domain = initial.domain_id; delete initial.domain_id; }
+    if (independentUsers && initial.domain_id && !initial.domain) { initial.domain = initial.domain_id; delete initial.domain_id; }
     return initial;
   });
   const [sort, setSort] = useState<SortState | null>(() => {
