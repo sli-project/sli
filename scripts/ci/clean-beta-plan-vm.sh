@@ -4,12 +4,12 @@ umask 077
 
 [[ $# == 1 && ${GITHUB_ACTIONS:-} == true && ${RUNNER_OS:-} == Linux && ${GITHUB_REPOSITORY:-} == sli-project/sli ]]
 kit=$(realpath -e "$1")
-commit=812533c4b118a43510de75bdac257ade326aae96
+commit=fa8baf797ca0f0bcd62574aebf551e3aef1e6638
 evidence="$RUNNER_TEMP/beta-clean-readme-evidence"
 vm="$RUNNER_TEMP/beta-clean-readme-vm"
 mkdir -p "$evidence" "$vm/input"
 [[ $BETA_SOURCE_ARTIFACT =~ ^[0-9]+$ && $BETA_SOURCE_DIGEST =~ ^sha256:[a-f0-9]{64}$ ]]
-printf 'archived_commit=%s\nsource_workflow=45542573750\nsource_artifact=%s\nsource_zip_digest=%s\n' \
+printf 'archived_commit=%s\nsource_workflow=45548527621\nsource_artifact=%s\nsource_zip_digest=%s\n' \
     "$commit" "$BETA_SOURCE_ARTIFACT" "$BETA_SOURCE_DIGEST" >"$evidence/pins.txt"
 printf 'guest_transport_source=fe958b97829a4f4c72918173988e5e86c5a21a2b\nconfigured_vcpus=4\nconfigured_ram_mib=8192\nconfigured_system_disk_bytes=42949672960\n' >>"$evidence/pins.txt"
 

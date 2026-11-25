@@ -8,14 +8,14 @@ for await (const chunk of process.stdin) input += chunk;
 const { url, token, commit } = JSON.parse(input);
 const origin = new URL(url).origin;
 const results = process.argv[2];
-if (!/^https:/.test(origin) || !token || !results || commit !== '812533c4b118a43510de75bdac257ade326aae96') {
+if (!/^https:/.test(origin) || !token || !results || commit !== 'fa8baf797ca0f0bcd62574aebf551e3aef1e6638') {
   throw new Error('Expected a verified guest HTTPS origin and an owner session');
 }
 const registry = JSON.parse(await readFile(new URL('./navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group =>
   group.entries.map(entry => ({ ...entry, administration: ['admin', 'operations'].includes(section.id) }))));
-const phase = "diagnostic";
-const selectedKeys = registry.beta_entries.filter(key => key === "vpn-connections");
+const phase = "full";
+const selectedKeys = registry.beta_entries;
 const entries = selectedKeys.map(id => {
   const entry = all.find(item => item.id === id);
   if (!entry || !/^[a-z][a-z-]+$/.test(id)) throw new Error('Invalid beta navigation declaration');
@@ -145,51 +145,6 @@ async function vpnPreflight() {
   }
 }
 
-function safeReportQuery(href) {
-  const values = new URL(href, origin).searchParams;
-  return Object.fromEntries([...values].map(([key, value]) => [
-    key, /^(?:nav_view|tab|period|scope|overlap_complete)$/.test(key) && /^[a-z0-9_-]{1,30}$/.test(value) ? value : '[present]',
-  ]));
-}
-
-async function describeVpnInputs(page, row) {
-  const known = await Promise.all([
-    '/api/v2/reports/vpn.connections', '/api/v1/setup/status', '/api/v1/access/effective',
-  ].map(async path => {
-    const response = await context.request.get(new URL(path, origin).href);
-    return { status: response.status(), value: response.ok() ? await response.json() : {} };
-  }));
-  const [report, setup, access] = known.map(item => item.value);
-  const hosts = setup.agent_collection;
-  const existingDomain = setup.report_domain;
-  row.vpnDiagnostics = {
-    installed: commit,
-    linkQuery: row.linkQuery,
-    normalizedQuery: safeReportQuery(page.url()),
-    report: {
-      status: known[0].status, declaredAllowed: report.access?.allowed,
-      firstView: report.views?.[0]?.key, firstViewAllowed: report.views?.[0]?.access?.allowed,
-      plugin: report.plugin && { id: report.plugin.plugin_id, state: report.plugin.state, readOnly: report.plugin.read_only },
-      defaultDomainState: report.default_domain_state, hasDefaultDomain: report.default_domain_id != null,
-      domainOptions: report.filter_options?.domain?.length ?? 0,
-      inlineDomainOptions: report.params?.find(p => p.key === 'domain')?.options?.length ?? 0,
-    },
-    setup: {
-      status: known[1].status, steps: setup.steps?.filter(s => s.id === 'domains').map(s => s.state),
-      domains: setup.domains?.length, controllerSourceConfirmed: setup.domain_controller_source != null,
-      controllers: setup.domain_controllers?.length,
-      hasReportDomain: existingDomain ? Boolean(existingDomain.value) : null,
-      hasConfiguredReportDomain: Boolean(existingDomain?.configured_value),
-      agentsState: hosts?.state, agents: hosts?.items?.length, agentsDiagnostics: Boolean(hosts?.diagnostics),
-      replacedAgents: hosts?.replaced_agents?.length ?? 0,
-    },
-    access: {
-      status: known[2].status, owner: access.platform_owner === true, preview: access.preview === true,
-      canManage: access.capabilities?.includes('access.manage') === true,
-    },
-  };
-}
-
 async function inspectOutcome(main, row, visible) {
   const samples = await main.locator('tbody tr:visible').evaluateAll(trs => trs
     .map(tr => [...tr.querySelectorAll('td:not([colspan])')].map(td => td.innerText.trim()))
@@ -293,7 +248,6 @@ try {
       if (link) {
         const current = page.locator(nav + ' a[data-route=' + JSON.stringify(link.route) + ']');
         row.label = clean(link.label);
-        row.linkQuery = safeReportQuery(await current.getAttribute('href'));
         await current.click();
         row.clicked = true;
       } else {
@@ -319,7 +273,6 @@ try {
         .map(node => (node.innerText || node.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 16));
       row.controls = row.controls.map(clean);
       await inspectOutcome(main, row, visible);
-      if (entry.id === 'vpn-connections') await describeVpnInputs(page, row);
       row.navigation = 'clicked';
       row.labels = forbiddenLabels(visible, [...reasonCodes]).map(clean);
       row.failure.push(...loadErrors(visible).map(clean));
@@ -332,10 +285,6 @@ try {
         row.setupAction = { href: target, links: await action.count(), opened: false };
         if (row.setupAction.links !== 1 || row.actions.length !== 1 || row.actions[0] !== 'Добавить домен') {
           row.failure.push('VPN: нет единственной ссылки добавления домена');
-          await page.goto(new URL(target, origin).href, { waitUntil: 'domcontentloaded' });
-          const panel = page.locator('#setup-domains');
-          await panel.waitFor({ state: 'visible' });
-          row.vpnDiagnostics.existingSetupForm = await panel.locator('#setup-domain-fqdn').count() === 1;
         } else {
           await Promise.all([
             page.waitForURL(current => current.pathname === '/app/setup' && current.hash === '#setup-domains'),
@@ -368,13 +317,13 @@ try {
       const details = { phase, id: row.id, path: row.path, commit: row.commit, clicked: row.clicked,
         data: row.data, dataEvidence: row.dataEvidence, action_phrases: row.action_phrases, actions: row.actions,
         load_errors: row.load_errors, completeness_labels: row.completeness_labels, failure: row.failure,
-        api: row.api, blocked: row.blocked, labels: row.labels, setupAction: row.setupAction, vpnDiagnostics: row.vpnDiagnostics, passed: row.passed };
+        api: row.api, blocked: row.blocked, labels: row.labels, setupAction: row.setupAction, passed: row.passed };
       console.log('BETA_README_EVIDENCE menu_row=' + JSON.stringify(details));
     }
   }
 } finally { await browser.close(); }
 const expected = new Set(entries.map(entry => targetPath(entry.path)));
-const unexpected = [];
+const unexpected = [...seen].filter(path => !expected.has(path));
 const pages = Object.fromEntries(rows.map(row => [row.id, {
   load_errors: row.load_errors, completeness_labels: row.completeness_labels,
   data: row.data, action_phrases: row.action_phrases,
