@@ -47,7 +47,6 @@ public sealed class BetaMenuWalkTests
         }
         string token = await fixture.SeedOwnerAsync(ct);
         using var accounting = await VpnAccountingPostgresFixture.RegisterAsync(fixture, ct);
-        await VpnAccountingPostgresFixture.SetEnabledAsync(fixture, true, ct);
         // Real setup domain logic on an empty test filesystem. Only the
         // privileged socket transport is replaced, as in its endpoint tests.
         // No provider response is consumed and no credentials are configured.
@@ -77,8 +76,24 @@ public sealed class BetaMenuWalkTests
         Assert.True(client.BaseAddress!.IsLoopback);
         // Validate the same real API the browser uses, before entering the menu walk.
         client.DefaultRequestHeaders.Add("Cookie", "adlog_session=" + token);
-        using var definition = await client.GetAsync("/api/v2/reports/vpn.connections", ct);
+        const string vpnDeclaration = "/api/v2/reports/vpn.connections";
+        using var disabled = await client.GetAsync(vpnDeclaration, ct);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, disabled.StatusCode);
+        using var disabledBody = JsonDocument.Parse(await disabled.Content.ReadAsStringAsync(ct));
+        Assert.Equal("module_disabled", disabledBody.RootElement.GetProperty("error").GetString());
+        Assert.False(disabledBody.RootElement.TryGetProperty("plugin", out _));
+
+        await VpnAccountingPostgresFixture.SetEnabledAsync(fixture, true, ct);
+        using var definition = await client.GetAsync(vpnDeclaration, ct);
         Assert.Equal(HttpStatusCode.OK, definition.StatusCode);
+        using var declaration = JsonDocument.Parse(await definition.Content.ReadAsStringAsync(ct));
+        var plugin = declaration.RootElement.GetProperty("plugin");
+        Assert.Equal("sli.remote-access", plugin.GetProperty("plugin_id").GetString());
+        Assert.Equal("enabled", plugin.GetProperty("state").GetString());
+        Assert.False(plugin.GetProperty("read_only").GetBoolean());
+        Assert.True(declaration.RootElement.GetProperty("access").GetProperty("allowed").GetBoolean());
+        Assert.Contains(declaration.RootElement.GetProperty("filter_options").GetProperty("domain").EnumerateArray(),
+            item => item.GetProperty("value").GetString() == directory.DomainId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using var data = await client.GetAsync($"/api/v2/reports/vpn.connections/data?domain={directory.DomainId}&period=7d", ct);
         Assert.Equal(HttpStatusCode.OK, data.StatusCode);
         using var accountingResult = JsonDocument.Parse(await data.Content.ReadAsStringAsync(ct));

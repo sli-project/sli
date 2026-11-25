@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
+using Sli.Server.Reporting.V2;
 using Sli.Server.Vpn;
 using Xunit;
 
@@ -71,6 +72,19 @@ public sealed class VpnRouteTests
             return Task.FromResult(result);
         }
     }
+    private sealed class Metadata(IVpnStore store) : IReportV2Metadata
+    {
+        public Task<string?> PreferredDomainAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+
+        public Task<JsonObject?> PluginAsync(string reportKey, CancellationToken ct)
+        {
+            Assert.Equal("vpn.connections", reportKey);
+            return Task.FromResult<JsonObject?>(store is Store { Installed: true, Enabled: true }
+                ? Json(new { plugin_id = "sli.remote-access", state = "enabled", read_only = false })
+                : null);
+        }
+    }
+
     internal static async Task<IHost> Host(IVpnStore store,AccessFacts? facts=null,bool authenticated=true,string role="operator")
     {
         var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Sli:AuthRequired"]="true" }).Build();
@@ -78,6 +92,7 @@ public sealed class VpnRouteTests
         {
             services.AddRouting();services.AddLogging();services.AddSingleton<IConfiguration>(config);services.AddSingleton(new AuthRequestPolicy(config));services.AddSingleton(new TransportGate(config));
             services.AddSingleton<IPrincipalAuthenticator>(new Authentication(authenticated,role));services.AddSingleton<IAccessFactsRepository>(new Facts(facts??MakeFacts()));services.AddSingleton<IVpnStore>(store);
+            services.AddSingleton<IReportV2Metadata>(new Metadata(store));
         }).Configure(app=> {app.UseRouting();app.UseEndpoints(routes=>routes.MapVpn());})).StartAsync(TestContext.Current.CancellationToken);
     }
     static string Path(string operation,string domain="1")=>"/api/v1/reports/vpn.audit/"+operation+(operation.EndsWith("sources",StringComparison.Ordinal)?"":$"?domain_id={domain}&time_from=2026-01-01T00:00:00Z&time_to=2026-01-02T00:00:00Z"+(operation=="sessions/evidence"?"&session_row_id="+RowId:""));
@@ -177,6 +192,10 @@ public sealed class VpnRouteTests
             payload!["views"]!.AsArray().Select(view => view!["key"]!.ToString()));
         Assert.Equal(new[] { "domain", "period", "q", "department", "status" },
             payload["params"]!.AsArray().Select(parameter => parameter!["key"]!.ToString()));
+        var plugin = Assert.IsType<JsonObject>(payload["plugin"]);
+        Assert.Equal("sli.remote-access", plugin["plugin_id"]!.GetValue<string>());
+        Assert.Equal("enabled", plugin["state"]!.GetValue<string>());
+        Assert.False(plugin["read_only"]!.GetValue<bool>());
         int opened = store.Opens;
         using var inactive = await client.GetAsync(path + "/data?tab=authorizations", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, inactive.StatusCode);
@@ -201,8 +220,12 @@ public sealed class VpnRouteTests
             Assert.Equal(0,store.Opens); Assert.Empty(store.Calls);
         }
         using var deniedHost=await Host(new Store(),MakeFacts(false));
-        using var denied=await deniedHost.GetTestClient().GetAsync("/api/v2/reports/"+report+"/data",TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        using var deniedClient = deniedHost.GetTestClient();
+        foreach (var suffix in new[] { "", "/data" })
+        {
+            using var denied = await deniedClient.GetAsync("/api/v2/reports/" + report + suffix, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        }
     }
     [Theory]
     [InlineData("employees")] [InlineData("daily")] [InlineData("departments")] [InlineData("entitlements")]

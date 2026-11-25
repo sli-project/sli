@@ -101,6 +101,8 @@ public static class VpnEndpoints
                 .Select(parameter => (JsonNode)parameter.DeepClone()).ToArray());
             payload["filter_options"] = VpnJson.Obj(new { domain = domains });
             payload["accounting_scope"] = "domain_history";
+            var metadata = context.RequestServices.GetRequiredService<IReportV2Metadata>();
+            ReportV2Metadata.Annotate(payload, await metadata.PluginAsync(reportKey, ct));
         }
         else
         {
