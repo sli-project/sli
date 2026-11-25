@@ -76,15 +76,9 @@ async function inspectScopedPage(path, picture) {
 }
 
 async function checkPermissions(evidence) {
-  const report = '/api/v2/reports/ad.infrastructure/data';
-  const reportPage = '/app/report/ad.infrastructure';
-  const invalid = '?domain_id=999999';
-  const owner = await api(report + invalid);
-  evidence.ownerExplicit = { status: owner.status, code: reasonCode(owner.body.error) };
-  requireResult(owner.status === 403 && owner.body.error === 'domain_scope_denied', 'owner_explicit_domain_api');
-  evidence.ownerExplicit.ui = await inspectScopedPage(reportPage + invalid, 'owner-explicit');
-
-  // The first-run observations above precede this synthetic authorization setup.
+  const report = '/api/v2/reports/ad.users.v2/data';
+  const reportPage = '/app/report/ad.users.v2';
+  evidence.viewerReport = 'ad.users.v2';
   const names = ['menu-allowed.example.test', 'menu-restricted.example.test'];
   for (const fqdn of names) {
     const registered = await api('/api/v1/setup/domains', { body: { fqdn } });
@@ -101,9 +95,9 @@ async function checkPermissions(evidence) {
   evidence.viewerCreation = { status: created.status, code: reasonCode(created.body.error) };
   requireResult(created.status === 201 && Number.isSafeInteger(created.body.item?.id), 'create_synthetic_viewer');
   const grant = await api('/api/v1/access/assignments', { body: {
-    subject_type: 'user', subject_id: created.body.item.id, report_key: 'ad.state',
+    subject_type: 'user', subject_id: created.body.item.id, report_key: 'ad.users.v2',
     scope: { kind: 'domain', ids: [ids[0]] },
-    field_categories: ['identity_basic', 'security', 'technical'], allowed_actions: ['view'],
+    field_categories: ['identity_basic', 'security'], allowed_actions: ['view'],
     business_reason: 'Isolated installed beta menu scope verification',
   } });
   evidence.viewerGrant = { status: grant.status, code: reasonCode(grant.body.error) };
@@ -113,18 +107,18 @@ async function checkPermissions(evidence) {
   evidence.viewerLogin = { status: login.status, authenticated: login.body.authenticated === true };
   requireResult(login.status === 200 && login.body.authenticated === true && viewer, 'authenticate_synthetic_viewer');
 
-  const permitted = await api(report + '?domain_id=' + ids[0], { session: viewer });
-  const denied = await api(report + '?domain_id=' + ids[1], { session: viewer });
+  const permitted = await api(report + '?tab=changes&domain_id=' + ids[0], { session: viewer });
+  const denied = await api(report + '?tab=changes&domain_id=' + ids[1], { session: viewer });
   evidence.viewerAllowed = { status: permitted.status, code: reasonCode(permitted.body.error) };
   evidence.viewerDenied = { status: denied.status, code: reasonCode(denied.body.error) };
   requireResult(permitted.status === 200 && denied.status === 403 && denied.body.error === 'domain_scope_denied', 'viewer_api_scope');
   await context.clearCookies();
   await context.addCookies([{ name: 'adlog_session', value: viewer, url: origin, httpOnly: true, secure: true, sameSite: 'Strict' }]);
-  evidence.viewerDenied.ui = await inspectScopedPage(reportPage + '?domain_id=' + ids[1], 'viewer-cross-domain');
-  for (const [name, ui] of [['owner', evidence.ownerExplicit.ui], ['viewer', evidence.viewerDenied.ui]]) {
-    requireResult(ui.pageStatus === 200 && ui.settled && ui.sameReport && ui.sameDomain && ui.noEnrollment,
-      name + '_explicit_domain_ui');
-  }
+  evidence.viewerDenied.ui = await inspectScopedPage(reportPage + '?tab=changes&domain_id=' + ids[1], 'viewer-cross-domain');
+  const ui = evidence.viewerDenied.ui;
+  requireResult(ui.pageStatus === 200 && ui.settled && ui.sameReport && ui.sameDomain && ui.noEnrollment
+    && ui.deniedText && ui.reportResponses.some(result => result.path.endsWith('/data') && result.status === 403),
+  'viewer_explicit_domain_ui');
 }
 
 

@@ -1,4 +1,4 @@
-name: Installed AD scope follow-up
+name: Installed restricted AD viewer scope
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
@@ -61,7 +61,7 @@ jobs:
           run-id: '45528985945'
           name: sli-debian-beta-kit-2323cfa48cf8c8d3e66705b1b09a7e20e140309f
           path: ${{ runner.temp }}/beta-candidate
-      - name: Verify the remaining AD scope cases on installed Debian
+      - name: Verify the restricted viewer report scope on installed Debian
         shell: bash
         env:
           BETA_SOURCE_ARTIFACT: ${{ steps.kit.outputs.id }}
@@ -71,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installed-ad-scope-follow-up-evidence
+          name: installed-ad-viewer-scope-evidence
           path: ${{ runner.temp }}/beta-clean-readme-evidence/
           if-no-files-found: error
           retention-days: 7
