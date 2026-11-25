@@ -132,9 +132,16 @@ public sealed class PasswordRule
     }
     private Dictionary<long,PasswordNative> Records(IEnumerable<PasswordNative> natives,PasswordNativeParsing? parsing)
     {
-        var result=new Dictionary<long,PasswordNative>();int bytes=0,count=0;
-        foreach(var native in natives) {
-            if(++count>10000||(bytes=checked(bytes+System.Text.Encoding.UTF8.GetByteCount(native.SourceXml)))>33554432)throw new PasswordFailure("password_v2_proof_bound");
+        var result = new Dictionary<long, PasswordNative>();
+        long bytes = 0;
+        int count = 0;
+        foreach (var native in natives)
+        {
+            count++;
+            bytes += System.Text.Encoding.UTF8.GetByteCount(native.SourceXml);
+            if (count > PasswordProofBudget.MaxReferences || bytes > PasswordProofBudget.MaxXmlBytes)
+                throw new PasswordFailure("password_v2_proof_bound") { RecordsProofLimit = (count, bytes) };
+
             var witness = native.Witness;
             var parsed = parsing?.Parse(witness.Scope,witness.NativeId,witness.Sha256,native.EventId,witness.At,native.SourceXml,NormalizedAccounts)
                 ?? PasswordNative.Parse(witness.Scope,witness.NativeId,witness.Sha256,native.EventId,witness.At,native.SourceXml,NormalizedAccounts);

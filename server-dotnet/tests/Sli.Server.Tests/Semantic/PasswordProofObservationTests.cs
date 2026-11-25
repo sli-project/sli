@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Sli.Server.Semantic;
 using Sli.Server.Semantic.Password;
 using Xunit;
 
@@ -188,6 +189,39 @@ public sealed class PasswordProofObservationTests
 
         using var unavailable = new UnavailableSink();
         PasswordProofObservation.Write(report, unavailable);
+    }
+
+
+    [Theory]
+    [InlineData(10_001, 26_000_000L, "records")]
+    [InlineData(10_000, 33_554_433L, "xml_bytes")]
+    [InlineData(10_001, 33_554_433L, "records")]
+    public void Records_limit_has_diagnostics_separate_from_the_adaptive_proof_budget(
+        int records, long xmlBytes, string limit)
+    {
+        const string lastSqlStep = "read_password_episode_portions_v2";
+        var error = new PasswordFailure("password_v2_proof_bound") { RecordsProofLimit = (records, xmlBytes) };
+        var diagnostic = DetectionDiagnostics.Describe(error, lastSqlStep);
+        var logged = Assert.IsType<JsonObject>(JsonNode.Parse(diagnostic.ToJsonString()));
+
+        Assert.Equal(lastSqlStep, logged["step"]!.GetValue<string>());
+        Assert.Equal("password_v2_proof_bound", logged["reason"]!.GetValue<string>());
+        Assert.Null(error.ProofBudget);
+        Assert.False(logged.ContainsKey("proof_budget"));
+
+        var recordLimit = Assert.IsType<JsonObject>(logged["records_proof_limit"]);
+        Assert.Equal("PasswordRule.Records", recordLimit["check"]!.GetValue<string>());
+        Assert.Equal(records, recordLimit["records"]!.GetValue<int>());
+        Assert.Equal(xmlBytes, recordLimit["xml_bytes"]!.GetValue<long>());
+        Assert.Equal(limit, recordLimit["limit"]!.GetValue<string>());
+        Assert.Equal(PasswordProofBudget.MaxReferences, recordLimit["max_records"]!.GetValue<int>());
+        Assert.Equal(PasswordProofBudget.MaxXmlBytes, recordLimit["max_xml_bytes"]!.GetValue<int>());
+
+        var planned = Assert.Throws<PasswordFailure>(
+            () => PasswordProofBudget.Check(PasswordProofPhase.RetainedChain, records, xmlBytes));
+        var plannedDiagnostic = DetectionDiagnostics.Describe(planned, lastSqlStep);
+        Assert.Equal("RetainedChain", plannedDiagnostic["proof_budget"]!["phase"]!.GetValue<string>());
+        Assert.False(plannedDiagnostic.ContainsKey("records_proof_limit"));
     }
 
     private sealed class UnavailableSink : StringWriter
