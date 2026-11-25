@@ -83,8 +83,15 @@ public sealed class FileAuditManagerTests : IDisposable
 
         NativeFileAuditApi.EnsureLocalGroupRead(0);
         NativeFileAuditApi.EnsureLocalGroupRead(234);
-        var error = Assert.Throws<FileAuditNativeReadException>(() => NativeFileAuditApi.EnsureLocalGroupRead(5));
-        Assert.Equal(5u, error.NativeStatus);
+        try
+        {
+            NativeFileAuditApi.EnsureLocalGroupRead(5);
+            Assert.Fail("NetAPI access denied should be reported as a native read failure.");
+        }
+        catch (FileAuditNativeReadException error)
+        {
+            Assert.Equal(5u, error.NativeStatus);
+        }
     }
 
     [Fact]
