@@ -1,131 +1,153 @@
-name: Read the saved File Audit menu observations
+name: Replay the saved beta menu evidence
 on:
   push:
     branches: [codex/verify-installed-first-ad-2323cfa]
     paths: [.github/workflows/archived-beta-menu-evidence.yml]
 permissions:
   actions: read
+  contents: read
 jobs:
   read:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
-      - name: Verify the two immutable evidence archives
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: fa8baf797ca0f0bcd62574aebf551e3aef1e6638
+          path: exact-source
+          persist-credentials: false
+      - name: Verify the original runs and archives
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          check_artifact() {
-            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$1" |
-              jq -e --arg digest "$3" --argjson run "$2" \
+          check_source() {
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1" |
+              jq -e --arg head "$2" '.head_sha==$head and .status=="completed" and .conclusion=="failure"' >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$3" |
+              jq -e --argjson run "$1" --arg digest "$4" \
                 '.workflow_run.id==$run and .digest==$digest and .expired==false' >/dev/null
           }
-          check_artifact 14992663749 45550092780 sha256:960835ac27e01a06a64f7479b917e5cf8eea3dc736af73d01ad47bbfebdd2bdd
-          check_artifact 14989629606 45542721888 sha256:060eb23b12c88685618663fa3364118cf7bf2f0ce40f571b5cdef0e621f96352
+          check_source 45550092780 04b0413472d906304074a227f443d8d4c7b6798c 14992663749 sha256:960835ac27e01a06a64f7479b917e5cf8eea3dc736af73d01ad47bbfebdd2bdd
+          check_source 45551572971 e8664756920bdd00b15ffebc0b649b9c32533f48 14994082029 sha256:d1e471e5e1f960d70af702a81cbe36a318fb3c145a94c3d0df676a8f072eea86
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           github-token: ${{ github.token }}
           run-id: '45550092780'
           name: installed-beta-menu-native-accounting-evidence
-          path: archived/exact
+          path: archived/full
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           github-token: ${{ github.token }}
-          run-id: '45542721888'
-          name: installed-beta-menu-native-accounting-evidence
-          path: archived/reference
-      - name: Print only allow-listed File Audit observations
+          run-id: '45551572971'
+          name: installed-file-audit-render-evidence
+          path: archived/target
+      - name: Run the unchanged menu checker on the saved exact observations
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git -C exact-source rev-parse HEAD)" = fa8baf797ca0f0bcd62574aebf551e3aef1e6638
+          test "$(git -C exact-source hash-object scripts/maintenance/beta_acceptance.py)" = e644a1c01bb43a9dccfdb0bdafacdee71e16b5d2
+          test "$(git -C exact-source hash-object config/navigation_v3.json)" = 0ed2280e50535e48621874e7f2d9d32cc4bdf24e
           python3 -I -B - <<'PY'
-          import hashlib
+          import importlib.util
           import json
           from pathlib import Path
-          import shutil
-          import struct
-          import subprocess
+          import re
           import tarfile
-          import tempfile
 
-          labels = {
-              "report_title": "Аудит файловых серверов MS",
-              "configure": "Настроить",
-              "no_sources": "Источники ещё не подключены",
-              "not_collected": "Данные не собраны",
-              "no_data": "Нет данных",
-              "loading": "Загрузка",
-              "denied": "Нет доступа",
-              "check_operations": "Проверьте настройки и состояние сбора",
+          commit = "fa8baf797ca0f0bcd62574aebf551e3aef1e6638"
+          package_zip = "246794c40ca8a957a5bb0f411943c2277cb3fdc6022b0b9eb7d23f4773bf704f"
+          script = Path("exact-source/scripts/maintenance/beta_acceptance.py")
+          spec = importlib.util.spec_from_file_location("exact_beta_acceptance", script)
+          checker = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(checker)
+
+          def recorded_health(directory):
+              lines = (directory / "guest.log").read_text(encoding="utf-8").splitlines()
+              expected_identity = f"BETA_README_EVIDENCE installed_release=beta1-{commit[:12]} installed_commit={commit}"
+              assert expected_identity in lines
+              assert "BETA_README_EVIDENCE agents_receipts_hot_events_findings_schema=0,0,0,0,415" in lines
+              # Each pinned harness emits this marker only after real GET /api/health returned
+              # HTTP 200, status ok and that exact runtime_identity.git_commit.
+              assert "BETA_README_EVIDENCE vpn_readiness_same_runtime=verified" in lines
+              return {"status": "ok", "runtime_identity": {"git_commit": commit}}
+
+          def recorded_package(directory):
+              pins = (directory / "pins.txt").read_text(encoding="utf-8").splitlines()
+              assert {
+                  f"archived_commit={commit}", "source_workflow=45548527621", "source_artifact=14992149151",
+                  f"source_zip_digest=sha256:{package_zip}",
+              } <= set(pins)
+              digests = [line.split()[0] for line in pins
+                         if re.fullmatch(r"[a-f0-9]{64} +sli-debian-beta-kit\.tar\.gz", line)]
+              assert len(digests) == 1
+              return digests[0]
+
+          def read_evidence(directory, member_name):
+              with tarfile.open(directory / "menu-screens.tar.gz", "r:gz") as archive:
+                  candidates = [member for member in archive if member.name.removeprefix("./") == member_name]
+                  assert len(candidates) == 1 and candidates[0].isfile() and candidates[0].size <= 2_000_000
+                  return json.load(archive.extractfile(candidates[0]))
+
+          full_dir = Path("archived/full")
+          target_dir = Path("archived/target")
+          full_health = recorded_health(full_dir)
+          assert full_health == recorded_health(target_dir)
+          kit_tar = recorded_package(full_dir)
+          assert kit_tar == recorded_package(target_dir)
+          full = read_evidence(full_dir, "full/menu.json")
+          target = read_evidence(target_dir, "file-audit/menu.json")
+          assert full["commit"] == target["commit"] == commit
+          assert full["summary"]["failed"] == ["file-audit"] and full["summary"]["clicked"] == 19
+          assert set(full["pages"]) == set(checker.menu_entries()) and len(full["rows"]) == len(full["pages"]) == 19
+          assert sum(row["passed"] is True for row in full["rows"]) == 18
+          assert target["target"] == "/app/report/file-audit.overview" and target["vpn"] == "enabled_in_guest"
+          assert target["failed"] == "precondition_or_browser_error" and "passed" not in target
+          assert target["explicit_responses_settled"] is True and target["render_wait"] == "matched"
+          data, = target["requests"]["data"]
+          agents, = target["requests"]["agents"]
+          assert data["http"] == agents["http"] == 200 and data["body"] == agents["body"] == "settled"
+          assert data["fields"]["state"] == "not_collected" and data["fields"]["items"] == 0
+          assert agents["fields"]["agents"] == 0 and agents["fields"]["assigned_file_audit"] == 0
+          final = target["snapshots"]["final"]
+          assert target["snapshots"]["after_bodies"]["ms"] >= max(data["json_ms"], agents["json_ms"])
+          assert final["ms"] >= target["snapshots"]["after_bodies"]["ms"]
+          assert final["cta_count"] == 1 and final["no_sources"] is True and final["report_title"] is True
+          assert final["denied"] is False and target["blocked_same_origin"] == 0
+          assert type(target["final_load_errors"]) is int and type(target["final_completeness_labels"]) is int
+
+          def replay_recorded_health(path):
+              assert path == "/api/health"
+              return full_health
+
+          try:
+              checker.menu(replay_recorded_health, full)
+          except checker.CheckFailed as failure:
+              assert str(failure) == "Не пройдены пункты меню: file-audit"
+              print("SOURCE_FULL_CHECK " + str(failure))
+          else:
+              raise RuntimeError("The original full observation unexpectedly passed")
+
+          pages = dict(full["pages"])
+          pages["file-audit"] = {
+              "data": data["fields"]["items"] > 0,
+              "action_phrases": final["cta_count"],
+              "load_errors": target["final_load_errors"] + target["blocked_same_origin"],
+              "completeness_labels": target["final_completeness_labels"],
           }
-          paths = {
-              "/api/v1/admin/agents": "agents",
-              "/api/v2/reports/file-audit.overview": "definition",
-              "/api/v2/reports/file-audit.overview/data": "data",
-              "/api/v1/access/effective": "effective_access",
+          assert all(pages[key] == full["pages"][key] for key in pages if key != "file-audit")
+          summary = checker.menu(replay_recorded_health, {"commit": commit, "pages": pages})
+          protocol = {
+              "commit": commit, "schema": 415, "kit_artifact": 14992149151, "kit_zip_sha256": package_zip,
+              "kit_tar_sha256": kit_tar, "health": "projection_of_saved_http_200_identity_verification",
+              "full": {"run": 45550092780, "artifact": 14992663749, "ci": "failure", "unchanged_rows": 18},
+              "file_audit": {"run": 45551572971, "artifact": 14994082029, "ci": "failure",
+                             "late_error": "screenshot_mask_passed_locator_instead_of_array",
+                             "data_json_ms": data["json_ms"], "agents_json_ms": agents["json_ms"],
+                             "final_ms": final["ms"], "page": pages["file-audit"]},
+              "pages": pages, "checker": summary,
           }
-
-          def read_member(archive, name, limit):
-              matches = [item for item in archive if item.name.removeprefix("./") == name]
-              assert len(matches) == 1 and matches[0].isfile() and matches[0].size <= limit
-              return archive.extractfile(matches[0]).read(limit + 1)
-
-          def screenshot_observations(png):
-              assert png.startswith(bytes.fromhex("89504e470d0a1a0a")) and png[12:16] == b"IHDR"
-              width, height = struct.unpack(">II", png[16:24])
-              result = {"width": width, "height": height,
-                        "sha256": hashlib.sha256(png).hexdigest(), "ocr": "unavailable"}
-              executable = shutil.which("tesseract")
-              if not executable:
-                  return result
-              try:
-                  languages = subprocess.run([executable, "--list-langs"], check=True, capture_output=True,
-                                             text=True, timeout=5).stdout.splitlines()
-                  if "rus" not in languages:
-                      return result
-                  with tempfile.TemporaryDirectory() as directory:
-                      path = Path(directory) / "file-audit.png"
-                      path.write_bytes(png)
-                      ocr = subprocess.run([executable, str(path), "stdout", "-l", "rus", "--psm", "11"],
-                                           check=True, capture_output=True, text=True, timeout=15).stdout
-                  result["ocr"] = {key: value.casefold() in ocr.casefold() for key, value in labels.items()}
-              except (OSError, subprocess.SubprocessError):
-                  pass
-              return result
-
-          for variant, commit in [
-              ("exact", "fa8baf797ca0f0bcd62574aebf551e3aef1e6638"),
-              ("reference", "812533c4b118a43510de75bdac257ade326aae96"),
-          ]:
-              package = Path("archived", variant, "menu-screens.tar.gz")
-              with tarfile.open(package, "r:gz") as archive:
-                  menu = json.loads(read_member(archive, "full/menu.json", 2_000_000))
-                  png = read_member(archive, "full/file-audit.png", 4_000_000)
-              assert menu["commit"] == commit and len(menu["rows"]) == 19
-              matching = [row for row in menu["rows"] if row["id"] == "file-audit"]
-              assert len(matching) == 1
-              row = matching[0]
-              assert row["commit"] == commit and row["clicked"] is True
-              visible = [item.strip() for item in row["text"] if isinstance(item, str)]
-              actions = row["actions"]
-              controls = row["controls"]
-              responses = [
-                  {"endpoint": paths[resp["path"]], "method": resp["method"], "status": resp["status"]}
-                  for resp in row["responses"]
-                  if resp.get("path") in paths and resp.get("method") in ("GET", "HEAD")
-                  and type(resp.get("status")) is int and 100 <= resp["status"] <= 599
-              ]
-              result = {
-                  "variant": variant, "commit": commit,
-                  "clicked": row["clicked"], "passed": row["passed"],
-                  "data_rows": row["dataRows"], "action_count": len(actions),
-                  "configure_action": labels["configure"] in actions,
-                  "configure_control": labels["configure"] in controls,
-                  "dom": {key: any(value in line for line in visible) for key, value in labels.items()},
-                  "responses": responses,
-                  "error_count": len(row["failure"]) + len(row["api"]) + len(row["blocked"]),
-                  "screenshot": screenshot_observations(png),
-              }
-              print("FILE_AUDIT_ARCHIVE " + json.dumps(result, ensure_ascii=False))
+          print("COMBINED_BETA_MENU " + json.dumps(protocol, ensure_ascii=False, separators=(",", ":")))
           PY
