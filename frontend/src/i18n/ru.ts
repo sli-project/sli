@@ -7779,6 +7779,8 @@ export const ru = {
   "file-audit.workspace.interval": "Время / интервал",
   "file-audit.workspace.count": "Наблюдений",
   "file-audit.workspace.group_count": "{count} в группе",
+  "file-audit.workspace.boundary_inside": "Целиком в периоде",
+  "file-audit.workspace.boundary_overlap": "Пересекает границу периода",
   "file-audit.workspace.aggregate": "Сохранённая группа наблюдений одного пути, субъекта, области и минуты.",
   "file-audit.workspace.boundary": "Группа пересекает границу периода. Число относится ко всей группе; точный вклад в выбранный интервал не сохранён.",
   "file-audit.workspace.service": "Показать служебные записи",

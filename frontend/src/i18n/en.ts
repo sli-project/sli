@@ -7785,6 +7785,8 @@ export const en: Record<MessageKey, string> = {
   "file-audit.workspace.interval": "Time / interval",
   "file-audit.workspace.count": "Observations",
   "file-audit.workspace.group_count": "{count} in group",
+  "file-audit.workspace.boundary_inside": "Entirely within period",
+  "file-audit.workspace.boundary_overlap": "Crosses period boundary",
   "file-audit.workspace.aggregate": "Retained group of observations for one path, subject, scope and minute.",
   "file-audit.workspace.boundary": "The group crosses a period boundary. Its count describes the whole group; the exact contribution to the selected interval was not retained.",
   "file-audit.workspace.service": "Include service activity",

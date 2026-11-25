@@ -14,6 +14,9 @@ import { fileAuditHref, tabTitle, type FileAuditTab } from "./report";
 
 const objectTabs = ["permissions", "permission-changes", "actions", "audit-state"] as const;
 const knownReasons = new Set(["snapshot_unavailable", "object_unavailable", "policy_incompatible", "source_generation_mismatch", "object_replaced", "object_type_mismatch", "path_mismatch", "same_snapshot", "acl_unavailable"]);
+// A browser handoff also carries navigation/domain context, which the detail API rejects.
+const detailQueryKeys = new Set(["period", "from", "to", "source_kind", "path", "include_nested", "employee", "share",
+  "operation", "show_service", "source_instance_id", "device_id", "tz", "limit"]);
 
 export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPath: initialPath, params: initialParams, backHref,
   session, pageSize, onBack }: { snapshotId: string; objectPath: string; params: string; backHref: string;
@@ -27,8 +30,7 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
     : initial.get("object_tab") === "comparison" ? "permission-changes" : "permissions");
   const [compareId, setCompareId] = useState(initial.get("compare_snapshot_id") ?? "");
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
-  const params = new URLSearchParams(initialParams);
-  for (const key of ["cursor", "view", "snapshot_id", "tab", "return_to", "object_path", "object_tab", "detail_row", "selected_row", "page_index", "fa_anchor", "record_unit"]) params.delete(key);
+  const params = new URLSearchParams([...new URLSearchParams(initialParams)].filter(([key]) => detailQueryKeys.has(key)));
   params.set("path", path); params.set("include_nested", "false");
   if (compareId && tab === "permission-changes") params.set("compare_snapshot_id", compareId);
   else params.delete("compare_snapshot_id");

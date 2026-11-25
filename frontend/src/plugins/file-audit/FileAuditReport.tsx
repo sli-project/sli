@@ -15,7 +15,7 @@ import { accessErrorReason } from "../../app/report-v2/access";
 import { FILE_AUDIT_TABS, fileAuditFields, fileAuditParams, fileAuditPageSize, fileAuditPageSizes, fileAuditHref, fileAuditShare,
   fileAuditReturnHref, fileAuditFilterValues, appliedFileAuditValues, tabTitle, type FileAuditTab, type FileAuditRow as Row } from "./report";
 import { FileRansomDetails } from "./FileRansomDetails";
-import { fileAuditColumns, FileAuditCount, FileAuditInterval } from "./FileAuditCells";
+import { fileAuditColumns, fileAuditMetadataValue, FileAuditCount, FileAuditInterval } from "./FileAuditCells";
 import { FileAuditObjectWorkspace } from "./FileAuditObjectWorkspace";
 import { auditAgentHref } from "./agent-navigation";
 import { withDomain } from "../../app/domain-navigation";
@@ -190,12 +190,16 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
         {definition && result && !error ? visibleSelection ? <section aria-label={t("file-audit.workspace.evidence")} className="sli-file-audit__evidence">
           <h2>{String(visibleSelection.path ?? tabTitle(tab))}</h2>
           {visibleSelection.aggregate ? <div className="sli-file-audit__observation">
-            <FileAuditInterval row={visibleSelection}/><strong><FileAuditCount row={visibleSelection}/></strong>
+            <FileAuditInterval row={visibleSelection}/><strong>{t("file-audit.workspace.count")}: <FileAuditCount row={visibleSelection}/></strong>
             <p>{t("file-audit.workspace.aggregate")}</p>
             {(visibleSelection.aggregate as { boundary?: string }).boundary === "overlap" ? <p>{t("file-audit.workspace.boundary")}</p> : null}
           </div> : null}
-          <FactList facts={definition.columns.map(column => ({ label: column.label, value: formatCell(columnValue(column, visibleSelection), cellKind(column)) }))}/>
-          <FactList facts={["subject_sid", "correlation_state", "snapshot_id", "snapshot_sha256", "completeness"].filter(key => visibleSelection[key] != null).map(key => ({ label: t(`file-audit.detail.${key}` as MessageKey), value: String(visibleSelection[key]) }))}/>
+          <FactList facts={definition.columns.filter(column => !["aggregate_count_min", "aggregate_count_max"].includes(column.key)
+            || (visibleSelection.aggregate as { boundary?: string } | undefined)?.boundary !== "inside")
+            .map(column => ({ label: column.label, value: formatCell(fileAuditMetadataValue(column.key, columnValue(column, visibleSelection)), cellKind(column)) }))}/>
+          <FactList facts={["subject_sid", "correlation_state", "snapshot_id", "snapshot_sha256", "completeness"]
+            .filter(key => visibleSelection[key] != null && !definition.columns.some(column => column.key === key || column.path === key))
+            .map(key => ({ label: t(`file-audit.detail.${key}` as MessageKey), value: String(fileAuditMetadataValue(key, visibleSelection[key])) }))}/>
           <div className="sli-ds-header__actions">
             {canPermissions && fileAuditShare(visibleSelection) ? <a className="sli-ds-button" href={hrefFor("permissions", visibleSelection,
               typeof visibleSelection.snapshot_id === "string" ? { object_path: String(visibleSelection.path) } : {})}>{t("file-audit.workspace.open_permissions")}</a> : null}

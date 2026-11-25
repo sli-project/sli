@@ -5,7 +5,7 @@ import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { columnValue, readPath } from "../../app/report-v2/state";
 import { tableColumns } from "../../app/report-v2/DetailSection";
 import { withDomain } from "../../app/domain-navigation";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { fileMaskLabel, type FileMaskLabels } from "./permissionMasks";
 import { fileAuditHref, fileAuditShare, type FileAuditRow, type FileAuditTab } from "./report";
 
@@ -42,6 +42,17 @@ export function FileAuditCount({ row }: { row: FileAuditRow }) {
     ? t("file-audit.workspace.group_count", { count: aggregate.count }) : aggregate.count}</>;
 }
 
+export function fileAuditMetadataValue(key: string, value: unknown) {
+  if (key === "record_unit") return value === "saved_event_group" ? t("file-audit.workspace.saved_4670_groups")
+    : value === "normalized_action" ? t("file-audit.workspace.normalized_actions")
+    : value === "observed_object" ? t("file-audit.workspace.retained_objects") : value;
+  if (key === "aggregate_boundary") return value === "inside" ? t("file-audit.workspace.boundary_inside")
+    : value === "overlap" ? t("file-audit.workspace.boundary_overlap") : value;
+  if (key === "correlation_state" && ["not_attempted", "complete", "partial", "ambiguous"].includes(String(value)))
+    return t(`reports.v2.file-audit.permission-changes.columns.correlation_state.labels.${value}` as MessageKey);
+  return value;
+}
+
 export function fileAuditColumns(columns: ReportColumnDto[], timeZone: string, tab: FileAuditTab,
   rows: FileAuditRow[], params: URLSearchParams | null, open: (row: FileAuditRow) => void,
   hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string) {
@@ -50,16 +61,11 @@ export function fileAuditColumns(columns: ReportColumnDto[], timeZone: string, t
   const result = declared.map((column): TableColumn<FileAuditRow> => {
     const definition = columns.find(item => item.key === column.key)!;
     if (["first_seen_utc", "last_seen_utc", "aggregate_boundary", "aggregate_count_min", "aggregate_count_max", "correlation_state"].includes(column.key)) {
-      return { ...column, hiddenByDefault: true, sortable: false };
+      return { ...column, hiddenByDefault: true, sortable: false, value: row => fileAuditMetadataValue(column.key, columnValue(definition, row)) };
     }
     if (column.key === "record_unit") return { ...column, sortable: false,
       hiddenByDefault: new Set(rows.map(row => readPath(row, definition.path)).filter(value => value != null)).size <= 1,
-      value: row => {
-        const unit = readPath(row, definition.path);
-        return unit === "saved_event_group" ? t("file-audit.workspace.saved_4670_groups")
-          : unit === "normalized_action" ? t("file-audit.workspace.normalized_actions")
-          : unit === "observed_object" ? t("file-audit.workspace.retained_objects") : columnValue(definition, row);
-      } };
+      value: row => fileAuditMetadataValue(column.key, columnValue(definition, row)) };
     if (column.key === "count") return { ...column, label: t("file-audit.workspace.count"), sortable: false,
       render: row => <FileAuditCount row={row}/> };
     if (["share_mask", "smb_mask", "ntfs_mask"].includes(column.key)) return { ...column,
@@ -75,6 +81,10 @@ export function fileAuditColumns(columns: ReportColumnDto[], timeZone: string, t
   });
   if (["actions", "permission-changes"].includes(tab) && rows.some(row => row.aggregate) && !result.some(column => column.key === "count")) {
     result.push({ key: "count", label: t("file-audit.workspace.count"), kind: "number", render: row => <FileAuditCount row={row}/> });
+  }
+  if (tab === "permissions" && (params?.get("view") === "objects" || rows.length > 0 && rows.every(row => row.record_unit === "observed_object"))) {
+    return result.map(column => ["employee", "rule_code", "share_mask", "smb_mask", "ntfs_mask", "snapshot_id"].includes(column.key)
+      ? { ...column, hiddenByDefault: true } : column);
   }
   if (tab !== "overview" || !columns.some(column => column.key === "permission_changes")) return result;
   const dateColumn = (key: string) => result.find(column => column.key === key);
