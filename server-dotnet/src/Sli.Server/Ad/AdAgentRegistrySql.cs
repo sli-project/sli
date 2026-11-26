@@ -1,8 +1,7 @@
 namespace Sli.Server.Ad;
 internal static class AdAgentRegistrySql
 {
-    internal const string Read = """
-/* ad_report_agent_registry */
+    internal const string Bindings = """
             with bindings as (
                 select issued.target::uuid as agent_id,r.computer_entity_id,issued.occurred_at as bound_at
                 from sli_agent_audit issued
@@ -22,6 +21,9 @@ internal static class AdAgentRegistrySql
                 select agent_id,min(computer_entity_id) as entity_id,min(bound_at) as bound_at from bindings
                 group by agent_id having count(distinct computer_entity_id)=1
             )
+""";
+    internal const string Read = "/* ad_report_agent_registry */ " + Bindings + """
+
             select a.id as agent_id,a.created_at,a.last_seen,a.status,e.id as entity_id,e.domain_id,b.bound_at,
                    removal.state as removal_state,removal.reported_at as removed_at,
                    guid.alias_value as object_guid,version.version

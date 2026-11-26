@@ -57,6 +57,17 @@ public sealed class SnapshotCycleConsumer
             Cursor = new() { ["slot_start_utc"] = cycle.Slot.ToString("O"), ["cycle_id"] = cycle.Id.ToString("D") };
         }
         if (cycles.Count == 0) { after = null; Cursor = null; }
+        // Snapshot processing also runs against the predecessor during rollback.
+        await using var inventory = new NpgsqlCommand("select to_regprocedure('public.advance_workstation_ad_inventory432()') is not null", db);
+        if (await inventory.ExecuteScalarAsync(ct) is true)
+        {
+            inventory.CommandText = "select public.advance_workstation_ad_inventory432()";
+            if (await inventory.ExecuteScalarAsync(ct) is long domain)
+            {
+                Cursor ??= new();
+                Cursor["workstation_inventory_domain_id"] = domain;
+            }
+        }
         return new(cycles.Count, completed, reasons) { Cursor = Cursor };
     }
 
