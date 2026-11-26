@@ -197,7 +197,6 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
     }
     public async Task<PasswordProducerBatch> RunOnceAsync(CancellationToken ct,JsonArray? discovered=null)
     {
-        var sources=new List<PasswordScope>();
         if(discovered is null) {
             await using var db=await runtime.OpenAsync(ct);
             if(Work is null)await DetectionProducer.RefreshImportSummary(db,ct);
@@ -206,20 +205,10 @@ public sealed class PasswordProducerPoller(PasswordProducerRuntime runtime,Passw
             await using(var reader=await command.ExecuteReaderAsync(ct))while(await reader.ReadAsync(ct))discovered.Add(new JsonObject{["source"]=JsonNode.Parse(reader.GetString(0))});
             await tx.CommitAsync(ct);
         }
-        foreach(var row in discovered) { var source=row!["source"]!;if(source["scope"]?["plugin_id"]?.GetValue<string>()!="sli.windows.ad-dc")continue;var scope=PasswordScope.Read(source["scope"]);scope.Validate();sources.Add(scope); }
-        int committed=0,failed=0,disabled=0,jobs=0,skipped=0;var diagnostics=new DetectionDiagnostics();
-        foreach(var scope in sources.Distinct()){ct.ThrowIfCancellationRequested();
-            var results=Work is null ? await RunSourceAsync(scope,ct) : await Work.Run("password_source:"+PasswordJson.Hash(scope.Document),()=>RunSourceAsync(scope,ct),ct);
-            if(results is null)continue;foreach(var result in results) {
-                if(result.Work?["proof_budget"] is JsonObject proofBudget)
-                    Console.Error.WriteLine("password_producer_reduced_slice:"+proofBudget.ToJsonString());
-                if(result.Failed){failed++;if(result.Diagnostic is {} diagnostic)diagnostics.Add(diagnostic);else diagnostics.Add(new PasswordFailure("password_v2_outcome_invalid"));}else if(result.Status is "unconfigured" or "busy"){skipped++;if(result.Diagnostic is {} diagnostic)Console.Error.WriteLine("password_producer_cycle_skipped:"+diagnostic.ToJsonString());}else if(result.Status=="disabled")disabled++;else if(result.Status=="committed"){committed++;jobs+=result.Jobs;}else throw new PasswordFailure("password_v2_outcome_invalid");
-            }
-        }
         await using var detectionDb=await runtime.OpenAsync(ct);
-        var detectionBatch=await detections.RunOnceAsync(detectionDb,ct,discovered,refreshImport:false);
-        diagnostics.Write("password_producer");var reasons=diagnostics.Counts;foreach(var (key,value) in detectionBatch.FailureReasons)reasons[key]=(reasons[key]?.GetValue<int>()??0)+value!.GetValue<int>();
-        return new(sources.Count+detectionBatch.Sources,committed,failed+detectionBatch.Failed,disabled,jobs+detectionBatch.Jobs,skipped){Completed=committed+detectionBatch.Completed,FailureReasons=reasons,ImportSummary=detectionBatch.ImportSummary};
+        var batch=await detections.RunOnceAsync(detectionDb,ct,discovered,refreshImport:false);
+        return new(batch.Sources,batch.Completed,batch.Failed,0,batch.Jobs)
+            { Completed=batch.Completed,FailureReasons=batch.FailureReasons,ImportSummary=batch.ImportSummary };
     }
 }
 
@@ -258,7 +247,7 @@ public static class PasswordProducerCommand
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var once=new Option<bool>("--once");var poll=new Option<int>("--poll-seconds"){DefaultValueFactory=_=>10};var command=new RootCommand("Produce managed password brute-force v2 signals and risk jobs.");command.Options.Add(once);command.Options.Add(poll);
+        var once=new Option<bool>("--once");var poll=new Option<int>("--poll-seconds"){DefaultValueFactory=_=>10};var command=new RootCommand("Produce threshold detection signals and risk jobs.");command.Options.Add(once);command.Options.Add(poll);
         command.SetAction(async(parse,ct)=>{
             await using var runtime=PasswordProducerRuntime.TryCreate();if(runtime==null){Console.Error.WriteLine("password_v2_worker_configuration_invalid");return 1;}
             var builder=Host.CreateApplicationBuilder(Array.Empty<string>());builder.Services.AddPasswordProducer(runtime,new(parse.GetValue(once),parse.GetValue(poll)));using var host=builder.Build();var service=host.Services.GetRequiredService<PasswordProducerHostedService>();await host.RunAsync(ct);return service.ExitCode;

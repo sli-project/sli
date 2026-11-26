@@ -997,11 +997,11 @@
         },
         {
           "key": "account_rows",
-          "label": "Строки учётных записей",
+          "label": "Account rows",
           "kind": "choice",
           "hidden": true,
           "options": [
-            { "value": "yes", "label": "Учётные записи" }
+            { "value": "yes", "label": "Accounts" }
           ]
         },
         {

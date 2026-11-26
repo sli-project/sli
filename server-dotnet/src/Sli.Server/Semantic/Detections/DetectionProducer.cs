@@ -53,15 +53,28 @@ public sealed class DetectionProducer(IdentityAttackProducer identities,AttackPr
     public async Task<DetectionBatch> RunOnceAsync(NpgsqlConnection db,CancellationToken ct,JsonArray? discovered=null,bool refreshImport=true)
     {
         if(ct.IsCancellationRequested)return new();var diagnostics=new DetectionDiagnostics();D.Require(db.FullState==ConnectionState.Open,"detection_connection_not_idle");var sources=new List<(JsonObject Source,bool Identity)>();JsonObject importSummary=refreshImport?await RefreshImportSummary(db,ct):new();
+        bool passwordThresholds;
         try { await using(var tx=await db.BeginTransactionAsync(ct)){
             var sql=new DetectionSql(db,tx,diagnostics);
+            passwordThresholds=(await sql.Rows("select to_regprocedure('public.password_threshold_pass418(jsonb,text,timestamptz)') is not null as enabled",ct)).Single()["enabled"]!.GetValue<bool>();
             IEnumerable<JsonNode?> rows=discovered is null ? await sql.Rows("select source from public.default_detection_sources()",ct) : discovered;
             foreach(var row in rows){var source=row!["source"]!.AsObject();if(D.Text(source["scope"]?["plugin_id"]) is "sli.windows.ad-dc" or "sli.ad-snapshot")sources.Add((source,true));}
             foreach(var row in await sql.Rows("select source from public.t109_detection_sources()",ct))sources.Add((row["source"]!.AsObject(),false));importSummary=await ReadImportProgress(sql,ct);await tx.CommitAsync(ct);
         }}catch(OperationCanceledException)when(ct.IsCancellationRequested){throw;}
         catch(Exception error){diagnostics.Add(error);diagnostics.Write("detections");D.Require(db.FullState==ConnectionState.Open,"detection_session_lost");return new(0,0,1){FailureReasons=diagnostics.Counts,ImportSummary=importSummary};}
         async Task<int> Run(NpgsqlConnection connection,JsonObject source,bool identity,DetectionDiagnostics sourceDiagnostics) {
-            int jobs;await using(var tx=await connection.BeginTransactionAsync(ct)){var sql=new DetectionSql(connection,tx,sourceDiagnostics);await sql.Execute("set local statement_timeout=0",ct);await sql.Execute("set local lock_timeout='1s'",ct);jobs=identity?await identities.RunAsync(sql,source,DateTimeOffset.UtcNow,ct):await precursors.RunAsync(sql,source,DateTimeOffset.UtcNow,ct);sourceDiagnostics.Step="source_commit";await tx.CommitAsync(ct);}return jobs;
+            int passwordJobs = 0;
+            Exception? passwordFailure = null;
+            var scope = PasswordScope.Read(source["scope"]);
+            if (passwordThresholds && identity && scope.PluginId == "sli.windows.ad-dc")
+                foreach (string rule in PasswordAttacks.Rules)
+                {
+                    try { passwordJobs += await RunPasswordThreshold(connection, scope, rule, DateTimeOffset.UtcNow, ct); }
+                    catch (Exception error) when (error is not OperationCanceledException && connection.FullState == ConnectionState.Open && !SemanticWork.ConnectionWait(error)) { passwordFailure = error; }
+                }
+            int jobs;await using(var tx=await connection.BeginTransactionAsync(ct)){var sql=new DetectionSql(connection,tx,sourceDiagnostics);await sql.Execute("set local statement_timeout=0",ct);await sql.Execute("set local lock_timeout='1s'",ct);jobs=identity?await identities.RunAsync(sql,source,DateTimeOffset.UtcNow,ct):await precursors.RunAsync(sql,source,DateTimeOffset.UtcNow,ct);sourceDiagnostics.Step="source_commit";await tx.CommitAsync(ct);}
+            if (passwordFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(passwordFailure);
+            return jobs + passwordJobs;
         }
         if(Work is null || Runtime is null) {
             var result=await RunSources(sources,(source,identity)=>Run(db,source,identity,diagnostics),()=>db.FullState==ConnectionState.Open,ct,diagnostics);
@@ -105,6 +118,82 @@ public sealed class DetectionProducer(IdentityAttackProducer identities,AttackPr
         var execution=definition["source_selector"]!["execution"]!.AsObject();var rows=await sql.Rows("select public.ensure_default_qw_policy(@id,1,@definition) as enabled",ct,("id",DetectionSignal.PolicyId(execution)),("definition",CanonicalJson.Serialize(definition,ensureAscii:false)));
         D.Require(rows.Count==1&&rows[0]["enabled"] is JsonValue v&&v.TryGetValue<bool>(out _),"detection_admission_unconfirmed");return rows[0]["enabled"]!.GetValue<bool>();
     }
+    internal static async Task<int> RunPasswordThreshold(NpgsqlConnection db, PasswordScope scope, string rule, DateTimeOffset now, CancellationToken ct)
+    {
+        try
+        {
+            await using var tx = await db.BeginTransactionAsync(ct);
+            var sql = new DetectionSql(db, tx);
+            await sql.Execute("set local lock_timeout='1s'", ct);
+            var policy = new PasswordThresholdPolicy();
+            var definition = PasswordAttacks.PolicyDefinition(scope, rule, policy);
+            var policyId = DetectionSignal.PolicyId(definition["source_selector"]!["execution"]!.AsObject());
+            var admission = (await sql.Rows("select public.admit_password_threshold418(@id,@definition) as enabled", ct,
+                ("id", policyId), ("definition", CanonicalJson.Serialize(definition, ensureAscii: false)))).Single();
+            if (admission["enabled"]?.GetValue<bool>() != true)
+            {
+                await RecordPasswordPass(sql, scope, rule, 0, "disabled", [], ct);
+                await tx.CommitAsync(ct);
+                return 0;
+            }
+            var pass = (await sql.Rows("select * from public.password_threshold_pass418(@scope,@rule,@now)", ct,
+                ("scope", scope.Document), ("rule", rule), ("now", now))).Single();
+            long cursor = pass["cursor_id"]!.GetValue<long>(), end = pass["end_id"]!.GetValue<long>();
+            int jobs = 0;
+            var states = new JsonArray();
+            if (pass["first_at"] is { } first)
+            {
+                var from = (cursor == 0 ? now : D.Time(first)).AddSeconds(-policy.WindowSeconds);
+                var active = (await sql.Rows("select * from public.read_password_threshold_episodes418(@scope,@rule,@from)", ct,
+                    ("scope", scope.Document), ("rule", rule), ("from", from.AddSeconds(-PasswordAttacks.QuietSeconds))))
+                    .ToDictionary(row => D.Text(row["entity_key"]), row => PasswordAttacks.Episode.Read(D.Text(row["episode_key"]), row["facts"]!.AsObject()) with
+                    { ClosedAt = row["closed_at"] is { } closed ? D.Time(closed) : null });
+                var rows = new List<DetectionRow>();
+                var after = from;
+                long id = 0;
+                while (true)
+                {
+                    var page = await sql.Rows("select * from public.read_password_threshold_events418(@scope,@rule,@from,@after,@id,@now,@end)", ct,
+                        ("scope", scope.Document), ("rule", rule), ("from", from), ("after", after), ("id", id), ("now", now), ("end", end));
+                    foreach (var row in page)
+                    {
+                        id = row["native_id"]!.GetValue<long>();
+                        after = D.Time(row["occurred_at_utc"]);
+                        rows.Add(new(new(scope, "core_event", id.ToString(System.Globalization.CultureInfo.InvariantCulture), D.Text(row["sha256"])),
+                            after, row["event_id"]!.GetValue<int>(), Fields: row["fields"]!.AsObject()));
+                    }
+                    if (page.Count < 4000) break;
+                }
+                foreach (var signal in PasswordAttacks.Evaluate(scope, rule, policy, rows, cursor, active, now))
+                {
+                    var facts = PasswordAttacks.Validate(signal);
+                    jobs += await Enqueue(sql, signal, ct);
+                    states.Add(new JsonObject { ["entity_key"] = signal["entity_key"]!.DeepClone(),
+                        ["episode_key"] = signal["episode_key"]!.DeepClone(), ["facts"] = facts.DeepClone() });
+                }
+            }
+            await RecordPasswordPass(sql, scope, rule, end, "current", states, ct);
+            await tx.CommitAsync(ct);
+            return jobs;
+        }
+        catch (Exception error) when (error is not OperationCanceledException && !ct.IsCancellationRequested && db.FullState == ConnectionState.Open && !SemanticWork.ConnectionWait(error))
+        {
+            try
+            {
+                await using var tx = await db.BeginTransactionAsync(ct);
+                var sql = new DetectionSql(db, tx);
+                await sql.Execute("set local lock_timeout='1s'", ct);
+                await RecordPasswordPass(sql, scope, rule, 0, "failed", [], ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (PostgresException) when (!ct.IsCancellationRequested) { }
+            throw;
+        }
+    }
+
+    private static Task RecordPasswordPass(IDetectionSql sql, PasswordScope scope, string rule, long cursor, string state, JsonArray episodes, CancellationToken ct) =>
+        sql.Execute("select public.write_password_threshold_pass418(@scope,@rule,@cursor,@state,@episodes)", ct,
+            ("scope", scope.Document), ("rule", rule), ("cursor", cursor), ("state", state), ("episodes", episodes));
     internal static async Task<IReadOnlyList<DetectionRow>> ReadIdentity(IDetectionSql sql,PasswordScope scope,CancellationToken ct,long[]? refs=null)
     {
         bool snapshot=scope.PluginId=="sli.ad-snapshot";string query=snapshot?"select * from public.read_identity_attack_snapshot_v301(@scope::jsonb,@refs::bigint[])":"select * from public.read_identity_attack_events_v301(@scope::jsonb,@refs::bigint[])";
