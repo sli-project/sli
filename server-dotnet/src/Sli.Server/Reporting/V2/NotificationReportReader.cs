@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
 using Sli.Server.Infrastructure;
+using Sli.Server.Notifications;
 namespace Sli.Server.Reporting.V2;
 
 // Reads only persisted allowlisted metadata. No transport, secret resolution or producer runs here.
@@ -33,7 +34,9 @@ public sealed class NotificationReportReader(IPostgresConnectionFactory connecti
             var items = new JsonArray(); long count = 0; bool more;
             if (channels)
             {
-                await using var command = new NpgsqlCommand("select row_to_json(c)::text from (select kind,enabled,tls_mode,secret_ref,state,revision,updated_at from notification_channels order by kind) c", connection, transaction) { CommandTimeout = 0 };
+                string sql = "select row_to_json(c)::text from (select " + NotificationAdministrationRepository.ChannelFields
+                    + " from (" + NotificationAdministrationRepository.ChannelStatus + ") status order by kind) c";
+                await using var command = new NpgsqlCommand(sql, connection, transaction) { CommandTimeout = 0 };
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {

@@ -59,6 +59,33 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
     }
 
     public const string ChannelFields = "kind,enabled,tls_mode,secret_ref,state,revision,updated_at";
+    // The schema's legacy state column only permits 'not_configured'.
+    internal const string ChannelStatus = """
+        select c.kind,c.enabled,c.tls_mode,c.secret_ref,c.revision,c.updated_at,
+            case when not c.enabled
+                      or (failed.finished_at >= c.updated_at
+                          and (accepted.finished_at is null or failed.finished_at > accepted.finished_at))
+                 then 'not_configured' else 'configured' end as state,
+            accepted.finished_at as last_accepted_at,
+            attempted.result_code as last_result_code,attempted.finished_at as last_attempt_at,
+            null::text as secret_status
+        from notification_channels c
+        left join lateral (
+            select a.finished_at from notification_outbox j join notification_attempts a on a.job_id=j.id
+            where j.channel=c.kind and a.state='accepted'
+            order by a.finished_at desc limit 1
+        ) accepted on true
+        left join lateral (
+            select a.finished_at from notification_outbox j join notification_attempts a on a.job_id=j.id
+            where j.channel=c.kind and a.result_code=c.kind || '_not_configured' and a.finished_at >= c.updated_at
+            order by a.finished_at desc limit 1
+        ) failed on true
+        left join lateral (
+            select a.result_code,a.finished_at from notification_outbox j join notification_attempts a on a.job_id=j.id
+            where j.channel=c.kind
+            order by a.finished_at desc,a.job_id desc,a.attempt desc limit 1
+        ) attempted on true
+        """;
     public const string SubscriptionFields = "id,owner_user_id,recipient_user_id,channel,enabled,revision,updated_at";
     public const string JobFields = "id,subscription_id,object_id,channel,state,attempts,result_code,created_at,updated_at,delivery_reason,delay_minutes";
     private static NpgsqlCommand Command(NpgsqlConnection db, NpgsqlTransaction? tx, string sql, params (string, object?)[] values)
@@ -110,7 +137,7 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
         Audit(db, tx, actor, "notification_channel_update", "notification_channel", kind, new { kind, operation, phase }, ct);
 
     public async Task<JsonArray> ChannelsAsync(CancellationToken ct)
-    { await using var db = await database.OpenAsync(ct); return await Rows(db, null, "select " + ChannelFields + " from notification_channels order by kind", ct); }
+    { await using var db = await database.OpenAsync(ct); return await Rows(db, null, ChannelStatus + " order by c.kind", ct); }
     public async Task<JsonArray> SubscriptionsAsync(CancellationToken ct)
     { await using var db = await database.OpenAsync(ct); return await Rows(db, null, "select " + SubscriptionFields + " from notification_subscriptions order by id limit 1000", ct); }
 
@@ -125,7 +152,8 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
             ?? throw new NotificationException("notification_channel_revision_conflict", 409);
         await Audit(db, tx, actor, "notification_channel_update", "notification_channel", kind,
             new { kind, revision = item["revision"]!.GetValue<long>(), changed_fields = new[] { "enabled", "tls_mode", "secret_ref" } }, ct);
-        await tx.CommitAsync(ct); return Project(item, ChannelFields);
+        var status = (await Rows(db, tx, ChannelStatus + " where c.kind=@kind", ct, ("kind", kind)))[0]!.AsObject();
+        await tx.CommitAsync(ct); return Project(status, ChannelFields);
     }
 
     public async Task<JsonObject> SaveSubscriptionAsync(Principal actor, string? id, JsonObject body, CancellationToken ct, bool channelAudit = false)
@@ -263,12 +291,7 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
         string finding = link ? "case when object_kind='semantic_finding' then public.notification_finding_object(object_id) end" : "null::bigint";
         var items = await Rows(db, null, "select " + JobFields + ",object_kind,object_severity,available_at," + finding + " as finding_id from notification_outbox where " + where + " order by created_at desc,id desc limit 101", ct, parameters.ToArray());
         bool more = items.Count > 100; if (more) items.RemoveAt(100);
-        var channels = await Rows(db, null, "select " + string.Join(',', ChannelFields.Split(',').Select(k => "c." + k)) + """
-            ,(select max(updated_at) from notification_outbox where channel=c.kind and state='accepted') as last_accepted_at,
-            (select result_code from notification_outbox where channel=c.kind order by updated_at desc,id desc limit 1) as last_result_code,
-            (select updated_at from notification_outbox where channel=c.kind order by updated_at desc,id desc limit 1) as last_attempt_at,
-            null::text as secret_status from notification_channels c order by kind
-            """, ct);
+        var channels = await Rows(db, null, ChannelStatus + " order by c.kind", ct);
         return new JsonObject { ["channels"] = channels, ["subscriptions"] = await SubscriptionsAsync(ct), ["counts"] = counts,
             ["items"] = items, ["has_more"] = more, ["next_cursor"] = more ? query.Cursor(items[^1]!.AsObject()) : null,
             ["previous_login_at"] = since, ["can_configure"] = configure };

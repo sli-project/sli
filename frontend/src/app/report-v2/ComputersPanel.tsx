@@ -5,6 +5,7 @@ import type { ReportColumnDto } from "../../api/report-v2-types";
 import { Button, Chart, DataTable, DetailDrawer, FactList, SeverityBadge, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t, type MessageKey } from "../../i18n";
+import { formatDateTime as formatZonedDateTime } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { useEffectiveAccess } from "../App";
 import { tableColumns } from "./DetailSection";
@@ -14,6 +15,15 @@ import { computerRole } from "../../plugins/ad/ComputerChecks";
 
 type Row = Record<string, unknown>;
 type ObservationRow = Row & { observationKey: string };
+type StoredLogonRow = {
+  row_id: string;
+  observed_at_utc: string | undefined;
+  user_name: string | undefined;
+  logon_type: string | undefined;
+  source: string | undefined;
+  repeat_count: number;
+  source_event_id: string | undefined;
+};
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value : undefined;
 const id = (value: unknown) => /^[1-9][0-9]*$/.test(String(value)) ? String(value) : undefined;
 const record = (value: unknown) => (value && typeof value === "object" ? value : {}) as Row;
@@ -36,16 +46,6 @@ export function ComputerLogonsEmpty({ state }: { state: unknown }) {
     case "available": case "empty_unverified": case "empty": case "ok":
       return <p role="status">{t("reports.computers.logons_empty")}</p>;
     default: return null;
-  }
-}
-
-export function computerLogonCount(row: Row) {
-  const count = Number(row.login_count);
-  if (count > 0 || (row.login_count === 0 && row.observation_state === "empty_unverified")) return formatNumber(count);
-  switch (row.observation_state) {
-    case "not_collected": return t("reports.v2.ad.computer-logons.columns.state.labels.not_collected");
-    case "partial": return t("reports.v2.ad.computer-logons.columns.state.labels.partial");
-    default: return dash();
   }
 }
 
@@ -261,9 +261,62 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
   </>;
 }
 
-export function ComputerPanel({ row, logons, logonsNotCollected = false, logonParams, changes, canCompare, onClose, timeZone }: {
+function StoredLogons({ computer, params, timeZone }: { computer: string; params: string; timeZone: string }) {
+  const [pageSize, setPageSize] = useState(50);
+  const [index, setIndex] = useState(0);
+  const query = useInfiniteQuery({
+    queryKey: ["report-v2", "computer-stored-logons", computer, params, pageSize],
+    queryFn: ({ pageParam }) => {
+      const url = new URLSearchParams(params);
+      url.set("limit", String(pageSize));
+      if (pageParam) url.set("cursor", pageParam);
+      return api.reportV2Detail("ad.computer-logons", computer, url);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.has_more ? page.next_cursor : null,
+    retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const page = query.data?.pages[index];
+  const subject = t("reports.v2.ad.computer-logons.detail.title");
+  if (query.isLoading) return <ReportState state="loading"/>;
+  if (page?.state === "denied" || query.error instanceof ApiResponseError && query.error.status === 403) return <ReportState state="denied"/>;
+  if (query.isError || page?.state === "error") return <ReportState state="error" subject={subject} onRetry={() => void query.refetch()}/>;
+  const rows: StoredLogonRow[] = (page?.items ?? []).map((row) => ({
+    row_id: String(row.row_id), observed_at_utc: text(row.observed_at_utc), user_name: text(row.user_name),
+    logon_type: text(row.logon_type), source: text(row.source),
+    repeat_count: Number(row.repeat_count), source_event_id: id(row.source_event_id),
+  }));
+  const columns: TableColumn<StoredLogonRow>[] = [
+    { key: "observed_at_utc", label: t("reports.v2.ad.computer-logons.detail.columns.time.label"),
+      render: (row) => formatZonedDateTime(row.observed_at_utc, timeZone, { seconds: true }) },
+    { key: "user_name", label: t("reports.v2.ad.computer-logons.detail.columns.user.label"), render: (row) => {
+      return <>{row.user_name ?? dash()}{row.repeat_count > 1 ? ` ×${formatNumber(row.repeat_count)}` : null}</>;
+    } },
+    { key: "logon_type", label: t("reports.v2.ad.computer-logons.detail.columns.type.label"), render: (row) => {
+      if (!row.logon_type) return dash();
+      const key = `reports.v2.ad.computer-logons.detail.types.${row.logon_type}` as MessageKey;
+      const label = t(key);
+      return label === key ? row.logon_type : label;
+    } },
+    { key: "source", label: t("reports.v2.ad.computer-logons.detail.columns.source.label") },
+    { key: "source_event_id", label: t("reports.v2.ad.computer-logons.detail.columns.event.label"), render: eventLink },
+  ];
+  return <DataTable caption={subject} columns={columns} rows={rows} rowKey={(row) => row.row_id} compact wrapCells="all"
+    emptyContent={dash()} showFooter={rows.length > 0}
+    pageSize={{ value: pageSize, options: [25, 50, 100, 200], onChange: (size) => { setIndex(0); setPageSize(size); } }}
+    total={page?.filtered_count}
+    pagination={{ start: index * pageSize + 1, busy: query.isFetchingNextPage,
+      onPrevious: index > 0 ? () => setIndex(index - 1) : undefined,
+      onNext: page?.has_more ? async () => {
+        if (!query.data?.pages[index + 1] && (await query.fetchNextPage()).isError) return;
+        setIndex(index + 1);
+      } : undefined }}/>
+}
+
+export function ComputerPanel({ row, logons, logonParams, changes, canCompare, onClose, timeZone }: {
   row: Row; logons: boolean; logonParams: string; changes: ReportColumnDto[]; canCompare: boolean; onClose: () => void; timeZone: string;
-  logonsNotCollected?: boolean;
 }) {
   const [tab, setTab] = useState(canCompare && row.object_guid && row.change_type ? "changes" : "facts");
   const [expanded, setExpanded] = useState(false);
@@ -271,9 +324,12 @@ export function ComputerPanel({ row, logons, logonsNotCollected = false, logonPa
   const canSee = (key: string) => access?.reports.some((report) => report.allowed && report.report_key === key);
   const logonsAllowed = row.computer_type === "workstation" && Boolean(id(row.entity_id)) && canSee("ad.computer-logons");
   const entity = id(row.entity_id);
-  const observations = logonsNotCollected ? <ComputerLogonsEmpty state="not_collected"/>
-    : <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
   const name = text(row.display_name) ?? text(row.name) ?? dash();
+  const computer = logons ? text(row.computer_key) : undefined;
+  if (computer) return <DetailDrawer open inline inlineKeyboard={false} title={name} onClose={onClose}>
+    <StoredLogons key={JSON.stringify([computer, logonParams])} computer={computer} params={logonParams} timeZone={timeZone}/>
+  </DetailDrawer>;
+  const observations = <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
   const tabs = [
     { key: "facts", label: "reports.computers.details" },
     ...(canCompare && row.object_guid ? [{ key: "changes", label: "reports.computers.changes" }] : []),

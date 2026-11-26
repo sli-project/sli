@@ -52,7 +52,6 @@ export function NotificationsPage() {
   const smtp = useQuery({ queryKey: ["smtp-setup", smtpItem?.revision], queryFn: api.smtpSetupStatus,
     enabled: !!data?.can_configure, retry: false, refetchOnWindowFocus: false });
   const smtpData = smtp.isSuccess && !smtp.isError && smtpStatusValid(smtp.data) ? smtp.data : undefined;
-  const smtpConfigured = smtpData ? Boolean(smtpData.host && smtpData.sender && !smtpData.needs_save && smtpData.secret_set) : null;
   const telegram = useQuery({ ...telegramStatusOptions, enabled: !!data?.can_configure && data.channels.some((item) => item.kind === "telegram") });
   const telegramView = telegramStatusView(telegram, !!data?.can_configure);
   const items = [...new Map(query.data?.pages.flatMap((page) => page.items).map((item) => [item.id, item])).values()];
@@ -61,15 +60,11 @@ export function NotificationsPage() {
     : smtpData?.recipients.find((recipient) => recipient.user_id === item.recipient_user_id)?.mailbox || "—";
   const ruleName = (item: NotificationSubscription) => `${t("notify.publishedProblems")} → ${kindLabel(item.channel)}${destination(item) === "—" ? "" : ` (${destination(item)})`}`;
   const refresh = () => { void query.refetch(); };
-  const channelState = (item: NotificationChannel) => {
-    const configured = item.kind === "smtp" ? smtpConfigured : telegramView.state === "available" ? telegramView.secretSet && telegramView.chatBound : null;
-    return configured === null ? "—" : t(item.enabled && configured && (item.kind !== "smtp" || smtpData?.enabled) ? "notify.configured" : "notify.disconnected");
-  };
   const columns: TableColumn<NotificationChannel>[] = [
     { key: "channel", label: t("notify.channel"), render: (item) => <Button variant="ghost" onClick={() => setEditing(item.kind)}>{kindLabel(item.kind)}</Button> },
-    { key: "state", label: t("notify.state"), render: channelState },
+    { key: "state", label: t("notify.state"), render: (item) => t(item.state === "configured" ? "notify.configured" : "notify.disconnected") },
     { key: "attempt", label: t("notify.lastAttempt"), mobile: false, render: (item) => item.last_attempt_at ? `${stamp(item.last_attempt_at)}, ${resultLabel(item.last_result_code)}` : "—" },
-    { key: "last", label: t("notify.lastDelivery"), mobile: false, render: (item) => item.last_accepted_at ? stamp(item.last_accepted_at) : "—" },
+    { key: "last", label: t("notify.lastDelivery"), mobile: false, render: (item) => item.last_accepted_at ? stamp(item.last_accepted_at) : t("notify.noAcceptedDelivery") },
     { key: "actions", label: t("notify.actions"), mobile: false, render: (item) => <div className="notify-channel-actions">
       <Button onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.edit")}</Button>
       <Button disabled={!data?.can_configure} onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.test")}</Button>

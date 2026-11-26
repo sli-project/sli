@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.WebUtilities;
 using Npgsql;
 using static Sli.Server.Ad.AdJson;
 
@@ -7,6 +9,163 @@ namespace Sli.Server.Ad;
 
 internal static class AdLogonReports
 {
+    // Match the admitted DC source and put the date, domain and event kind on
+    // event_hot so PostgreSQL can prune partitions and use the context index.
+    private const string StoredScope = """
+        with logons as (
+            select e.event_id, e.time_created_utc, e.domain_id, e.computer,
+                   lower(e.computer) collate "C" as host,
+                   principal.account, principal.account_domain, principal.workstation, principal.address,
+                   coalesce(e.fields->>'LogonType', e.method->>'LogonType') as logon_type
+            from public.event_hot e
+            join public.servers s on s.id=(e.method->>'$server_id')::bigint
+                and s.domain_id=e.domain_id and s.role='domain_controller'
+            cross join lateral (select
+                nullif(nullif(e.method#>>'{$principals,TargetUserName}', '-'), '') as account,
+                nullif(nullif(e.method#>>'{$principals,TargetDomainName}', '-'), '') as account_domain,
+                coalesce(nullif(nullif(e.method#>>'{$principals,WorkstationName}', '-'), ''),
+                         nullif(nullif(e.method#>>'{$principals,Workstation}', '-'), '')) as workstation,
+                nullif(nullif(e.method#>>'{$principals,IpAddress}', '-'), '') as address
+            ) principal
+            where e.domain_id=any($1) and e.time_created_utc >= $2 and e.time_created_utc < $3
+              and e.event_kind=4624 and e.source_sha256 is not null
+              and lower(e.method->>'$channel')='security'
+              and lower(e.method->>'$provider')='microsoft-windows-security-auditing'
+              and e.computer<>'' and ($4='' or strpos(lower(e.computer), lower($4))>0)
+              and ($6 or (right(principal.account, 1)='$' or lower(principal.account) in ('anonymous', 'anonymous logon')
+                          or principal.address='::1') is not true)
+        """;
+
+    internal static async Task<JsonObject> ReadStoredAsync(NpgsqlConnection db, AdV2Request request, CancellationToken ct)
+    {
+        var period = request.Params["period"]!;
+        DateTimeOffset start = period.Time("from_utc"), end = period.Time("to_utc");
+        string search = request.Params.Text("q") ?? "", user = request.Params.Text("user") ?? "";
+        bool includeService = request.Params.Text("service_logons") == "yes";
+        bool detail = request.Row is not null;
+        string kind = detail ? "stored-logon-groups" : "stored-logon-computers";
+        string binding = AdCursors.LogonBinding(kind, Obj(new
+        {
+            domains = request.Domains.Order(), from = Iso(start), to = Iso(end), search, user,
+            includeService, request.Row, request.Descending
+        }));
+        var after = request.Cursor is null ? null : AdCursors.LogonDecode(request.Cursor, kind, binding);
+        object[] args = [request.Domains, start, end, search, user, includeService];
+        string sql = StoredScope;
+        if (request.Row is { } computerKey)
+        {
+            var (domain, host) = ReadComputerKey(computerKey, request.Domains);
+            args = [..args, domain, host];
+            sql += "\n and e.domain_id=$7 and lower(e.computer) collate \"C\"=$8\n";
+        }
+        sql += """
+            ), accounts as (
+                select *, case when account is null or account_domain is null or strpos(account, chr(92))>0
+                    then account else account_domain || chr(92) || account end as user_name
+                from logons
+            ), matching as (
+                select * from accounts where $5='' or strpos(lower(user_name), lower($5))>0
+            )
+            """;
+        if (detail)
+        {
+            // Count and collapse the whole filtered window before applying the page cursor.
+            sql += """
+                , grouped as (
+                    select max(array[(extract(epoch from time_created_utc) * 1000000)::bigint, event_id]) as latest,
+                           min(user_name collate "C") as user_name, logon_type,
+                           min(workstation collate "C") as workstation, address, count(*) as repeat_count
+                    from matching
+                    group by lower(user_name), logon_type, lower(workstation), address,
+                             case when user_name is null then event_id end
+                ), groups as (
+                    select latest[2]::text as row_id, latest[2] as source_event_id,
+                           'epoch'::timestamptz + latest[1] * interval '1 microsecond' as observed_at_utc,
+                           user_name, logon_type,
+                           workstation as workstation_name, address as ip_address,
+                           nullif(concat_ws(' / ', workstation, address), '') as source, repeat_count,
+                           count(*) over () as total
+                    from grouped
+                )
+                select * from groups
+                """;
+            if (after is not null)
+            {
+                if (after.Int("source_event_id") <= 0 || AdInventoryRows.Date(after["observed_at_utc"]) is not { } time)
+                    throw new AdInputException("invalid_cursor");
+                sql += " where (observed_at_utc, source_event_id)<($9,$10)";
+                args = [..args, time, after.Int("source_event_id")];
+            }
+            sql += " order by observed_at_utc desc, source_event_id desc";
+        }
+        else
+        {
+            sql += """
+                , computer_counts as (
+                    select domain_id, host, min(computer collate "C") as display_name,
+                           count(*) as login_count, max(time_created_utc) as last_observed_logon_at_utc,
+                           count(*) over () as total
+                    from matching group by domain_id, host
+                )
+                select * from computer_counts
+                """;
+            if (after is not null)
+            {
+                if (after.Int("domain_id") <= 0 || after.Text("host") is not { } host)
+                    throw new AdInputException("invalid_cursor");
+                sql += request.Descending ? " where (host, domain_id)<($7,$8)" : " where (host, domain_id)>($7,$8)";
+                args = [..args, host, after.Int("domain_id")];
+            }
+            sql += request.Descending ? " order by host desc, domain_id desc" : " order by host, domain_id";
+        }
+        // The limit has already been checked by AdV2Endpoints.
+        var rows = await AdJson.ReadAsync(db, sql + $" limit ${args.Length + 1}", ct, [..args, request.Limit + 1]);
+        long? total = rows.Count > 0 ? rows[0].Int("total") : after is null ? 0L : null;
+        bool more = rows.Count > request.Limit;
+        if (more) rows.RemoveAt(rows.Count - 1);
+        string? cursor = null;
+        if (more)
+        {
+            var last = rows[^1];
+            cursor = AdCursors.LogonEncode(kind, binding, detail
+                ? Obj(new { observed_at_utc = last.Text("observed_at_utc"), source_event_id = last.Int("source_event_id") })
+                : Obj(new { host = last.Text("host"), domain_id = last.Int("domain_id") }));
+        }
+        foreach (var row in rows)
+        {
+            row.Remove("total");
+            if (detail) continue;
+            row["computer_key"] = $"host-{row.Int("domain_id")}-{WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(row.Text("host")!))}";
+            row.Remove("host");
+        }
+        var result = AdV2Store.Result(request.Key, rows.Count == 0 ? "empty" : "ok", rows);
+        result["window"] = new AdPeriod(start, end).Bounds;
+        result["filtered_count"] = total;
+        result["has_more"] = more;
+        result["next_cursor"] = cursor;
+        return result;
+    }
+
+    private static (long Domain, string Host) ReadComputerKey(string row, long[] domains)
+    {
+        string[] parts = row.Split('-', 3);
+        if (row.Length > 2756 || parts.Length != 3 || parts[0] != "host" ||
+            !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out long domain) ||
+            !domains.Contains(domain) || parts[2].Length == 0 ||
+            parts[2].Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_')))
+            throw new KeyNotFoundException();
+        try
+        {
+            string host = new UTF8Encoding(false, true).GetString(WebEncoders.Base64UrlDecode(parts[2]));
+            if (host.Contains('\0')) throw new KeyNotFoundException();
+            return (domain, host);
+        }
+        catch (Exception error) when (error is FormatException or ArgumentException)
+        {
+            throw new KeyNotFoundException();
+        }
+    }
+
     internal static JsonObject Result(string key, string rawState, List<JsonObject> rows, JsonObject coverage)
     {
         string state = Sli.Server.Reporting.V2.ReportResult.SourceState(rawState);

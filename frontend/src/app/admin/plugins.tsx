@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
-import { Badge, FactList, PageHeader, Panel, StateView } from "../../design-system";
+import { Button, FactList, PageHeader, Panel, StateView } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { FieldError } from "./gate";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
+import { pluginStatusText } from "./plugin-status";
 
 const pluginLabels: Record<string, { name: MessageKey; description: MessageKey }> = {
   "sli.ad": { name: "plugins.ad", description: "plugins.description.ad" },
@@ -17,8 +18,12 @@ const pluginLabels: Record<string, { name: MessageKey; description: MessageKey }
 };
 
 const pluginDetails: Record<string, string | undefined> = {
+  "sli.ad": "/app/admin/plugins/sli.ad",
+  "sli.gpo": "/app/admin/plugins/sli.gpo",
   "sli.file-audit": "/app/admin/plugins/sli.file-audit",
   "sli.remote-access": "/app/admin/plugins/sli.remote-access",
+  "sli.workstations": "/app/admin/plugins/sli.workstations",
+  "sli.sigma": "/app/admin/plugins/sli.sigma",
 };
 
 export function PluginsRoute() {
@@ -34,12 +39,12 @@ export function PluginsRoute() {
 export function PluginsPage() {
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
   return <section className="sli-ds-report">
-    <PageHeader title={t("plugins.title")} subtitle={t("plugins.subtitle")}/>
-    <p>{t("plugins.updateWithSli")}</p>
-    <p>{t("plugins.receiptNote")}</p>
+    <PageHeader title={t("plugins.title")}/>
     {plugins.isLoading ? <StateView state="loading"/> : plugins.error ? <StateView state="unavailable" detail={t("plugins.unavailable")} onRetry={() => void plugins.refetch()}/> : null}
-    {plugins.data && !plugins.data.can_manage ? <p role="note">{t("plugins.readOnly")}</p> : null}
-    {plugins.data?.items.map((item) => <PluginCard key={item.plugin_id} item={item} canManage={plugins.data.can_manage}/>)}
+    {!plugins.isError && plugins.data ? <>
+      {!plugins.data.can_manage ? <p role="note">{t("plugins.readOnly")}</p> : null}
+      {plugins.data.items.map((item) => <PluginCard key={item.plugin_id} item={item} canManage={plugins.data.can_manage}/>)}
+    </> : null}
   </section>;
 }
 
@@ -48,25 +53,17 @@ function PluginCard({ item, canManage }: { item: PluginState; canManage: boolean
   const client = useQueryClient();
   const change = useMutation({
     mutationFn: (enabled: boolean) => api.setPluginEnabled(item, enabled),
-    onSuccess: ({ item: updated }) => {
-      client.setQueryData<{ items: PluginState[]; can_manage: boolean }>(["plugins"], (current) => current ? { ...current, items: current.items.map((value) => value.plugin_id === updated.plugin_id ? { ...updated, data_receipts: value.data_receipts } : value) } : current);
-      void client.invalidateQueries({ queryKey: ["plugins"] });
+    onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["report-v2"] });
+      return client.invalidateQueries({ queryKey: ["plugins"] });
     },
     onError: () => void client.invalidateQueries({ queryKey: ["plugins"] }),
   });
-  const yesNo = (value: boolean) => t(value ? "plugins.yes" : "plugins.no");
-  const draining = item.component_runtime === "draining";
-  const runtime = item.component_runtime === "running" ? t("plugins.runtime.running")
-    : draining ? t("plugins.runtime.draining") : item.component_runtime === "stopped" ? t("plugins.runtime.stopped") : t("plugins.runtime.unknown");
   const labels = Object.prototype.hasOwnProperty.call(pluginLabels, item.plugin_id) ? pluginLabels[item.plugin_id] : undefined;
   const name = labels ? t(labels.name) : item.plugin_id;
   const details = pluginDetails[item.plugin_id];
   const facts = item.data_receipts;
   const formatFact = (value: string | null | undefined) => formatDateTime(value, timeZone);
-  const receipt = facts?.state === "unavailable" ? t("plugins.receiptUnavailable")
-    : facts?.state === "not_supported" ? t("plugins.receiptUnsupported")
-    : formatFact(facts ? facts.last_received_at : item.last_data_at_utc);
   const errorCode = change.error instanceof ApiResponseError ? change.error.code : undefined;
   const errorMessage = (() => {
     switch (errorCode) {
@@ -86,33 +83,21 @@ function PluginCard({ item, canManage }: { item: PluginState; canManage: boolean
       default: return t("plugins.changeFailed");
     }
   })();
-  return <Panel title={<>{name} <Badge tone={item.enabled ? "success" : "warning"}>{t(item.enabled ? "plugins.enabled" : "plugins.disabled")}</Badge></>}
-    subtitle={t(labels?.description ?? "plugins.description.unknown")}>
+  return <Panel title={name} subtitle={pluginStatusText(item.status, name, timeZone)}>
+    <p>{t(labels?.description ?? "plugins.description.unknown")}</p>
     <FactList facts={[
-      { label: t("plugins.installed"), value: yesNo(item.installed) },
-      { label: t("plugins.configured"), value: yesNo(item.configured) },
-      { label: t("plugins.enabled"), value: yesNo(item.enabled) },
       { label: t("plugins.version"), value: item.package_version },
-      { label: t("plugins.lastReceipt"), value: receipt },
-      ...(facts && item.last_data_at_utc ? [
-        { label: t("plugins.legacyObservation"), value: formatFact(item.last_data_at_utc) },
-      ] : []),
-      ...(facts && (facts.state === "observed" || facts.state === "no_receipts") ? [
-        { label: t("plugins.lastImport"), value: formatFact(facts.last_imported_at) },
-        ...(item.plugin_id === "sli.ad" || item.plugin_id === "sli.gpo" ? [
-          { label: t("plugins.lastSnapshotCompleted"), value: formatFact(facts.last_snapshot_completed_at) },
-        ] : []),
-      ] : []),
-      { label: t("plugins.runtime"), value: runtime },
+      ...(facts?.last_received_at ? [{ label: t("plugins.lastReceipt"), value: formatFact(facts.last_received_at) }] : []),
+      ...(facts?.last_imported_at ? [{ label: t("plugins.lastImport"), value: formatFact(facts.last_imported_at) }] : []),
+      ...(facts?.last_snapshot_completed_at ? [{ label: t("plugins.lastSnapshotCompleted"), value: formatFact(facts.last_snapshot_completed_at) }] : []),
     ]}/>
-    {!item.enabled ? <p role="status">{t(draining ? "plugins.draining" : item.plugin_id === "sli.remote-access" ? "plugins.radiusStopped" : "plugins.preserved")}</p> : null}
     {change.error ? <FieldError error={new Error(errorMessage)}/> : null}
     <div className="sli-ds-filters__fields">
       {details ? <a href={details}>{t("plugins.open", { name })}</a> : null}
       <a href="/app/operations#runtime-workers">{t("plugins.diagnostics")}</a>
-      {canManage ? <button type="button" className="sli-ds-button"
+      {canManage ? <Button
       disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
-      onClick={() => change.mutate(!item.enabled)}>{t(change.isPending ? "plugins.saving" : item.enabled ? "plugins.disable" : "plugins.enable")}</button> : null}
+      onClick={() => change.mutate(!item.enabled)}>{t(item.enabled ? "plugins.disable" : "plugins.enable")}</Button> : null}
     </div>
   </Panel>;
 }

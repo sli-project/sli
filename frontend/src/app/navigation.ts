@@ -17,10 +17,17 @@ export type NavAccess = {
 };
 
 const betaOrder = new Map(declarations.beta_entries.map((id, index) => [id, index]));
+const previewOrder = new Map(declarations.preview_entries.map((id, index) => [id, betaOrder.size + index]));
 const entries = declarations.sections.flatMap((section) => section.groups.flatMap<NavigationEntryDto>((group) => group.entries));
 const betaEntries = entries.filter((entry) => betaOrder.has(entry.id));
 const betaReportPaths = new Set(betaEntries.flatMap((entry) => [entry.path, ...(entry.views?.map((view) => view.path) ?? [])]));
 const betaPlugins = new Set(betaEntries.flatMap((entry) => entry.plugin_id ? [entry.plugin_id] : []));
+
+export function previewModulePath(path: string): boolean {
+  const plugin = /^\/(?:admin\/plugins|extensions)\/([^/]+)/.exec(path);
+  if (plugin) return declarations.preview_plugins.includes(plugin[1]);
+  return /^\/reports?\/(?:file-audit|workstations|vpn|sigma)\./.test(path);
+}
 
 function outsideBeta(path: string): boolean {
   if (["/cases", "/report-management", "/report-editor", "/report-builder"].some((alias) => isActivePath(alias, path))) return true;
@@ -41,7 +48,8 @@ export function navigationRedirect(path: string, search: Record<string, unknown>
   // This existing admin alias has no report view in the registry.
   if (path === "/access-center") return { to: "/access", search: { ...search }, replace: true as const };
   const rule = declarations.redirects.find((item) => item.from === path);
-  if (outsideBeta(rule?.to ?? path)) return { to: "/", search: {}, replace: true as const };
+  const destination = rule?.to ?? path;
+  if (!previewModulePath(destination) && outsideBeta(destination)) return { to: "/", search: {}, replace: true as const };
   return rule ? { to: rule.to, search: { ...search, ...("view" in rule ? { nav_view: rule.view } : {}) }, replace: true as const } : null;
 }
 
@@ -86,6 +94,7 @@ export function preserveNavigationView(search: URLSearchParams, currentSearch: s
 export function buildNavigation(access: NavAccess, registry?: NavigationRegistryDto): NavSection[] {
   if (!registry) return [];
   const enabled = new Set(registry.enabled_plugins);
+  const order = (id: string) => betaOrder.get(id) ?? (registry.modules_preview ? previewOrder.get(id) : undefined);
   const destination = (entry: NavigationEntryDto): NavigationEntryDto => {
     if (entry.path === "/admin/language-time") return { ...entry, path: "/settings" };
     return entry;
@@ -97,16 +106,16 @@ export function buildNavigation(access: NavAccess, registry?: NavigationRegistry
       id: group.id,
       title: group.title ? t(group.title as MessageKey) : "",
       items: group.entries.filter((entry) =>
-        betaOrder.has(entry.id)
+        order(entry.id) !== undefined
         && (entry.path !== "/admin/status" || access.capabilities.has("access.manage")
           || ["operations.readiness", "decoys.registry", "watch.registry"].some((key) => access.reports.has(key)))
         && (!entry.plugin_id || enabled.has(entry.plugin_id)) && navigationEntryAllowed(entry, access)
-      ).sort((a, b) => betaOrder.get(a.id)! - betaOrder.get(b.id)!)
+      ).sort((a, b) => order(a.id)! - order(b.id)!)
         .map(destination).map(({ id, label, path, icon }) => ({ id, label: t(label as MessageKey), path, icon: id === "computers-report" ? "computer" : icon })),
     })).filter((group) => group.items.length > 0)
-      .sort((a, b) => betaOrder.get(a.items[0].id)! - betaOrder.get(b.items[0].id)!),
+      .sort((a, b) => order(a.items[0].id)! - order(b.items[0].id)!),
   })).filter((section) => section.groups.length > 0)
-    .sort((a, b) => betaOrder.get(a.groups[0].items[0].id)! - betaOrder.get(b.groups[0].items[0].id)!);
+    .sort((a, b) => order(a.groups[0].items[0].id)! - order(b.groups[0].items[0].id)!);
 }
 
 /** A path is active for its own page and its sub-pages; "/" only matches itself. */

@@ -3,9 +3,9 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { api } from "../api/client";
-import { Button, Icon, IconSprite, OverlayProvider, useOverlays } from "../design-system";
+import { Button, Icon, IconSprite, OverlayProvider, StateView, useOverlays } from "../design-system";
 import { LOCALES, getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
-import { buildNavigation, globalSearchTarget, isActivePath, journalSearchPath } from "./navigation";
+import { buildNavigation, globalSearchTarget, isActivePath, journalSearchPath, previewModulePath } from "./navigation";
 import { AdminRelatedLinks, adminNavigationPath } from "./admin/navigation-pages";
 import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "./theme";
 import { DomainSwitcher } from "./DomainSwitcher";
@@ -208,7 +208,10 @@ function ShellContent() {
       </header>
       <main className="sli-ds-shell__main" id="main" tabIndex={-1}>
         <div className="sli-ds-shell__content" key={scopeKey}>
-          <PageHeaderContext.Provider value={{ domain: domainControl }}><Outlet/></PageHeaderContext.Provider>
+          <PageHeaderContext.Provider value={{ domain: domainControl }}>
+            {previewModulePath(location.pathname) && (catalog.isError || catalog.data?.navigation?.modules_preview !== true)
+              ? <StateView state={catalog.isPending ? "loading" : "unavailable"} message={t("plugins.status.moduleUnavailable")}/> : <Outlet/>}
+          </PageHeaderContext.Provider>
           {inAdminZone ? <AdminRelatedLinks pathname={location.pathname} access={{ capabilities, reports: new Set(reports.map((report) => report.report_key)) }}/> : null}
         </div>
       </main>

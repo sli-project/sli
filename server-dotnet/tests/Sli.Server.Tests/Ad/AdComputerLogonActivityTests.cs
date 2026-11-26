@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Configuration;
 using Sli.Server.Ad;
+using Sli.Server.Infrastructure;
 using Sli.Server.Tests.Agents;
 using Xunit;
 using static Sli.Server.Ad.AdJson;
@@ -8,6 +10,82 @@ namespace Sli.Server.Tests.Ad;
 
 public sealed class AdComputerLogonActivityTests
 {
+    [Fact]
+    public async Task Stored_logons_count_at_the_destination_and_page_groups_within_the_granted_domain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var pg = new PostCollectionPostgres(canonicalSchema: true);
+        await pg.StartAsync(ct);
+        await using var db = await pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(db, """
+            create table servers (id bigint primary key, domain_id bigint, role text);
+            insert into servers values (9, 1, 'domain_controller'), (10, 2, 'domain_controller');
+            create table event_hot (
+                event_id bigint, time_created_utc timestamptz, event_kind int, domain_id bigint,
+                computer text, method jsonb, fields jsonb, source_sha256 bytea
+            ) partition by range(time_created_utc);
+            create table event_hot_fixture partition of event_hot default;
+            insert into event_hot
+            select id, stamp::timestamptz, kind, domain, computer,
+                   jsonb_build_object('$server_id', server, '$channel', 'Security', '$provider', 'Microsoft-Windows-Security-Auditing',
+                       '$principals', jsonb_build_object('TargetUserName', account, 'TargetDomainName', 'EXAMPLE',
+                           'WorkstationName', workstation, 'IpAddress', address)),
+                   jsonb_build_object('LogonType', logon_type), decode(repeat('ab', 32), 'hex')
+            from (values
+                (101, '2026-11-01T10:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.22', '3'),
+                (102, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '3'),
+                (103, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '3'),
+                (104, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.23', '3'),
+                (105, '2026-11-01T12:00:00Z', 4624, 1, 9, 'DC-TEST', 'client$', 'CLIENT-TEST', '192.0.2.22', '3'),
+                (106, '2026-11-01T13:00:00Z', 4624, 1, 9, 'DC-TEST', 'ANONYMOUS LOGON', '-', '-', '3'),
+                (107, '2026-11-01T14:00:00Z', 4624, 1, 9, 'DC-TEST', 'local', '-', '::1', '3'),
+                (108, '2026-11-01T15:00:00Z', 4625, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.22', '3'),
+                (109, '2026-11-01T16:00:00Z', 4624, 2, 10, 'DC-TEST', 'other-domain', '-', '-', '2'),
+                (110, '2026-11-04T00:00:00Z', 4624, 1, 9, 'DC-TEST', 'outside-window', '-', '-', '2')
+            ) as fixture(id, stamp, kind, domain, server, computer, account, workstation, address, logon_type);
+            """, ct);
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Sli"] = pg.ConnectionString
+        }).Build();
+        var store = new AdV2Store(new PostgresConnectionFactory(config), config);
+        var request = new AdV2Request("ad.computer-logons", "view", null, [1],
+            Obj(new { period = new { from_utc = "2026-11-01T00:00:00Z", to_utc = "2026-11-04T00:00:00Z" } }),
+            "table", null, false, 25, null, "UTC");
+        Task<JsonObject> Read(AdV2Request input) => store.ReadAsync(input, _ => true, ct);
+        var result = await Read(request);
+        var computer = Assert.Single(result["items"]!.AsArray());
+        Assert.Equal("DC-TEST", computer.Text("display_name"), ignoreCase: true);
+        Assert.Equal(4, computer.Int("login_count"));
+        Assert.Equal("2026-11-01T11:00:00.123456Z", computer.Text("last_observed_logon_at_utc"));
+
+        var detail = request with { Action = "detail", Row = computer.Text("computer_key"), Limit = 1 };
+        var first = await Read(detail);
+        var differentSource = Assert.Single(first["items"]!.AsArray());
+        Assert.Equal("192.0.2.23", differentSource.Text("ip_address"));
+        var second = await Read(detail with { Cursor = first.Text("next_cursor") });
+        var repeated = Assert.Single(second["items"]!.AsArray());
+        Assert.Equal("EXAMPLE\\Alice", repeated.Text("user_name"));
+        Assert.Equal("3", repeated.Text("logon_type"));
+        Assert.Equal("CLIENT-TEST", repeated.Text("workstation_name"), ignoreCase: true);
+        Assert.Equal("2026-11-01T11:00:00.123456Z", repeated.Text("observed_at_utc"));
+        Assert.Equal(103, repeated.Int("source_event_id"));
+        Assert.Equal(3, repeated.Int("repeat_count"));
+        Assert.Null(second.Text("next_cursor"));
+
+        var service = (JsonObject)request.Params.DeepClone();
+        service["service_logons"] = "yes";
+        var included = await Read(request with { Params = service });
+        Assert.Equal(7, Assert.Single(included["items"]!.AsArray()).Int("login_count"));
+        var missing = (JsonObject)request.Params.DeepClone();
+        missing["user"] = "missing-fixture-user";
+        var empty = await Read(request with { Params = missing });
+        Assert.Equal("empty", empty.Text("state"));
+        Assert.Empty(empty["items"]!.AsArray());
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => Read(detail with { Domains = [2] }));
+        await Assert.ThrowsAsync<AdInputException>(() => Read(detail with { Cursor = first.Text("next_cursor"), Params = service }));
+    }
+
     [Fact]
     public async Task Activity_totals_use_all_matching_observations_across_detail_pages_and_local_days()
     {
