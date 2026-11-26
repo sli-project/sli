@@ -39,7 +39,7 @@ import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerChecks";
-import { UserChanges, UserCheckFilters, userTableColumns } from "../../plugins/ad/UserChecks";
+import { UserCheckFilters, userAccountCount, userTableColumns } from "../../plugins/ad/UserChecks";
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
@@ -225,7 +225,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const [queuePreset, setQueuePreset] = useState<PeriodPreset>("custom");
   const [originalPeriod, setOriginalPeriod] = useState<string | null>(null);
   const views = useMemo(() => {
-    const declared = domainEvents ? definition.views.filter((item) => item.key === "events") : independentUsers ? definition.views.filter((item) => !["users", "temporary_memberships"].includes(item.key)) : definition.views;
+    const declared = domainEvents ? definition.views.filter((item) => item.key === "events") : independentUsers ? definition.views.filter((item) => ["checks", "privileged", "all"].includes(item.key)) : definition.views;
     return declared.length ? declared : [{ kind: "table" as const, key: "table", source: "items" }];
   }, [definition.views, independentUsers, domainEvents]);
   const [activeView, setActiveView] = useState(() => {
@@ -240,7 +240,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const userReview = independentUsers && view.key === "checks";
   const canLinkReport = (key: string) => !access || access.reports.some((report) => report.allowed
     && (report.report_key === key || report.target_path === `/app/report/${key}`));
-  const selectUser = (row: Row, tab = view.key === "changes" ? "changes" : "account") => {
+  const selectUser = (row: Row, tab = "account") => {
     setSelected(row);
     setUserDetailTab(tab);
   };
@@ -606,7 +606,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const count = independentUsers && item.access?.allowed !== false && first && !data.error
       ? item.key === view.key ? item.key === "checks" ? first.coverage.affected_objects : first.filtered_count
         : view.key === "all" && item.key === "privileged" ? first.coverage.privileged_accounts : undefined : undefined;
-    return { key: item.key, label: <>{label}{typeof count === "number" ? <> <span>{count}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
+    return { key: item.key, label: <>{label}{typeof count === "number" ? <> <span>{userAccountCount(count)}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
   });
   const linkedViews = additionalTabs.map((item) => ({ key: item.key, label: <>{item.label}</> }));
   const listPagination = { ...pagination(computerPageSize),
@@ -760,7 +760,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     split={independentUsers}
     drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
-      allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")} onClose={() => setSelected(null)}/> : undefined
+      allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")}
+      allowChanges={canLinkReport("security.events.chains")} onClose={() => setSelected(null)}/> : undefined
       : <DetailDrawer open={selected !== null} title={selected ? problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
       footer={selected ? <>
         {canManageProblems && canResolveProblem(selected) ? <ResolveProblem key={String(selected.id)} row={selected} onResolved={() => setSelected(null)}/> : null}
@@ -783,8 +784,6 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : branch && (branch.state === "error" || branch.state === "denied")
       ? <ReportState state={branch.state} details={{ reason: branch.reason, limitations: branch.limitations }}
         detail={branchDetail} subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
-      : independentUsers && ["changes", "disabled_active"].includes(view.key)
-      ? <UserChanges columns={view.columns ?? []} rows={rows} title={view.title ?? view.key} onSelect={selectUser} paging={userTablePaging}/>
       : independentUsers
       ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={userTableColumns(definition.columns.filter((column) => column.key !== "department" || hasDepartment), selectUser, timeZone, userReview)}
         rows={rows} rowKey={(row) => String(row[definition.row_key])} sort={sort} onSort={toggleSort} onRowClick={selectUser}
