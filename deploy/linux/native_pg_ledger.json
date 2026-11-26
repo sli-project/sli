@@ -630,7 +630,7 @@
     "config/postgres_migrations/422_file_audit_scope_inventory.rollback.sql": "72978f3d6e750d56396b2964f48da8c6e3ef72a550dfc5deb09900d0e8632edb",
     "config/postgres_migrations/422_file_audit_scope_inventory.sql": "92abc6c650cdf9ab1bbd9d226c6e62f058dc17d0af1e13610dfb19d183b5adb6",
     "config/postgres_migrations/428_detection_read_checkpoints.rollback.sql": "04084afb826e80c19f07342ad7c4f019ede87a44dc240f9135473d4714a05489",
-    "config/postgres_migrations/428_detection_read_checkpoints.sql": "f8cdeaf52d3da2f49c169ec1878ac42b65ab326daef7fc03c24870d24f84f9e9",
+    "config/postgres_migrations/428_detection_read_checkpoints.sql": "4aaabe16a988b5169f64c9d3ede5a776c491cb3b6a1d839713af4f9e4899294c",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

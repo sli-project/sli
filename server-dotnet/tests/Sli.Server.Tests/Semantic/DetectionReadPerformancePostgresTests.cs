@@ -19,7 +19,7 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 421);
+        await fixture.StartAsync(ct, throughVersion: 422);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var events = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4625],
             occurredAt: DateTime.UtcNow.Date.AddDays(-1).AddHours(12));
@@ -125,7 +125,7 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
         async Task<string[]> Produce(bool upgraded)
         {
             await using var fixture = new SqlPostgresFixture();
-            await fixture.StartAsync(ct, throughVersion: 421);
+            await fixture.StartAsync(ct, throughVersion: 422);
             if (upgraded) await fixture.Pg.ApplyFileAsync(Migration, null, ct);
             await using var owner = await fixture.Pg.OpenAsync(ct);
             var rows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4625], occurredAt: at);

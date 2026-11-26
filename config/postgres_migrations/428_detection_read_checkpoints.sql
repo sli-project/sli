@@ -89,13 +89,13 @@ begin
             execute format('delete from public.detection_source_catalog428 c
                 where c.partition_oid=$1 and c.origin=$2 and c.channel=$3 and not exists (
                     select 1 from %s h where h.source_sha256 is not null
-                        and h.method->''$origin''=$2 and coalesce(h.method->>''$channel'','''')=$3)',tg_relid::regclass)
+                        and h.method->''$origin''=$2 and coalesce(h.method->''$channel'',''null''::jsonb)=$3)',tg_relid::regclass)
                 using tg_relid,old_origin,old_channel;
         else
             execute format('delete from public.detection_source_catalog428 c
                 where c.partition_oid=$1 and c.origin=$2 and c.channel=$3 and not exists (
                     select 1 from %s h where h.method->''$origin''=$2
-                        and coalesce(h.method->>''$channel'','''')=$3)',tg_relid::regclass)
+                        and coalesce(h.method->''$channel'',''null''::jsonb)=$3)',tg_relid::regclass)
                 using tg_relid,old_origin,old_channel;
         end if;
     end if;

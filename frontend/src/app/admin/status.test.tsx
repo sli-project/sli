@@ -200,6 +200,7 @@ beforeEach(() => {
   access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(api, "setupStatus").mockResolvedValue(setup());
+  vi.spyOn(api, "plugins").mockResolvedValue({ items: [], can_manage: false });
   vi.spyOn(api, "operations").mockResolvedValue(operations);
   vi.spyOn(api, "operationsWorkers").mockResolvedValue({ workers: operations.workers });
   vi.spyOn(api, "storageOverview").mockResolvedValue({ storage: { ...operations.storage, postgres_volume: postgresVolume } });
