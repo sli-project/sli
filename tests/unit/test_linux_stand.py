@@ -366,14 +366,23 @@ def test_migration_requires_successful_readback():
                               {144: "baseline", 145: "first"}, lambda _: None, baseline_version=144)
 
 
-def test_sql_uses_private_passfile_and_hides_error_output(monkeypatch, tmp_path):
+def test_sql_reports_failing_file_and_safe_error(monkeypatch, tmp_path, capsys):
     from deploy.linux import backup, operation_wait
     from tests.unit.linux_operation_process import completed
     captured = {}
+    passfile = tmp_path / "private-passfile"
+    baseline, migration = tmp_path / "baseline.sql", tmp_path / "421_synthetic.sql"
 
     def run(command, **kwargs):
         captured.update(command=command, **kwargs)
-        return SimpleNamespace(returncode=1, stderr=b"synthetic private database row")
+        kwargs["stderr"].write((
+            f"psql:{migration}:12: ERROR: permission denied for table findings\n"
+            "DETAIL: synthetic private database row\n"
+            "CONTEXT: SQL statement with a synthetic private value\n"
+            f'psql: warning: password file "{passfile}" has invalid permissions\n'
+            "ERROR: connection postgresql://example:example-secret@db.example.test/sli\n"
+        ).encode("utf-8"))
+        return SimpleNamespace(returncode=1)
 
     monkeypatch.setattr(migrate.subprocess, "run", run)
     monkeypatch.setattr(migrate.subprocess, 'Popen', lambda *a, **kw: completed(run(*a, **kw)))
@@ -382,11 +391,16 @@ def test_sql_uses_private_passfile_and_hides_error_output(monkeypatch, tmp_path)
     monkeypatch.setattr(operation_wait, 'history_path', lambda: tmp_path / 'summary.json')
     monkeypatch.setenv("PGPASSWORD", "synthetic password")
     with pytest.raises(RuntimeError, match="^linux_sql_step_failed$"):
-        migrate.run_sql([Path("baseline.sql")], passfile=tmp_path / "pgpass", atomic=True)
+        migrate.run_sql([baseline, migration], passfile=passfile, atomic=True)
     assert "--single-transaction" in captured["command"]
-    assert captured["env"]["PGPASSFILE"] == str(tmp_path / "pgpass")
+    assert captured["stdout"] == subprocess.DEVNULL
+    assert captured["env"]["PGPASSFILE"] == str(passfile)
     assert "PGPASSWORD" not in captured["env"]
     assert "synthetic password" not in " ".join(captured["command"])
+    stderr = capsys.readouterr().err
+    assert "421_synthetic.sql:12: ERROR: permission denied for table findings" in stderr
+    for private in ("baseline.sql", passfile.name, "synthetic private", "example-secret", "postgresql://"):
+        assert private not in stderr
 
 
 def test_pgpass_escaping_and_line_injection():
