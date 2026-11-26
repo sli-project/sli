@@ -16,13 +16,35 @@ namespace Sli.Server.Tests.Notifications;
 
 public sealed class ProblemNotificationPostgresTests(ITestOutputHelper output)
 {
+    private const string Migration = "config/postgres_migrations/423_problem_notification_transitions.sql";
+
+    [Fact]
+    public async Task Database_at_migration_422_accepts_423()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 422);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        // While 422 is still on a separate PR, supply its ledger entry to exercise ordering.
+        await PostCollectionPostgres.Sql(owner, """
+            insert into public.schema_migrations(version,name) values(422,'file_audit_scope_inventory')
+            on conflict (version) do nothing
+            """, ct);
+        await using var latest = new NpgsqlCommand("select max(version) from public.schema_migrations", owner);
+        Assert.Equal(422, await latest.ExecuteScalarAsync(ct));
+
+        await fixture.Pg.ApplyFileAsync(Path.Combine(PostCollectionPostgres.Repository(), Migration), null, ct);
+
+        Assert.Equal(423, await latest.ExecuteScalarAsync(ct));
+    }
+
     [Fact]
     public async Task Problem_transitions_queue_once_and_the_journal_names_the_problem()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 418);
-        var migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/419_problem_notification_transitions.sql");
+        await fixture.StartAsync(ct, throughVersion: 420);
+        var migration = Path.Combine(PostCollectionPostgres.Repository(), Migration);
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(owner, """

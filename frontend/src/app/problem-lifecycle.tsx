@@ -1,3 +1,4 @@
+import { Select } from "../design-system/Select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 
@@ -126,7 +127,8 @@ export function ProblemLifecycle({ row, formatTime }: { row: Row; formatTime: (v
     {canManage ? <form className="sli-ds-filters" onSubmit={submit} key={`${id}:${status}`}>
       <div className="sli-ds-filters__fields">
         <div className="sli-ds-field"><label htmlFor={`problem-status-${id}`}>{t("reports.problemLifecycle.status")}</label>
-          <select id={`problem-status-${id}`} name="status" defaultValue={status}>{statuses.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></div>
+          <Select label={t("reports.problemLifecycle.status")} id={`problem-status-${id}`} name="status" defaultValue={status}
+            options={statuses.map((value) => ({ value, label: statusLabel(value) }))}/></div>
         <div className="sli-ds-field"><label htmlFor={`problem-owner-${id}`}>{t("reports.problemLifecycle.owner")}</label>
           <input id={`problem-owner-${id}`} name="assigned_to" defaultValue={String(row.assigned_to ?? "")} placeholder={t("reports.problemLifecycle.ownerPlaceholder")}/></div>
         <div className="sli-ds-field"><label htmlFor={`problem-note-${id}`}>{t("reports.problemLifecycle.comment")}</label>

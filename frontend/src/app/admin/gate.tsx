@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
@@ -22,7 +23,7 @@ export const FieldError = ({ error }: { error?: Error | null }) => (error ? <p c
 
 export function ChoiceGroup({ legend, options, selected, onToggle }: { legend: string; options: Array<{ key: string; label: string }>; selected: string[]; onToggle: (key: string) => void }) {
   return <fieldset className="sli-ds-choices"><legend>{legend}</legend>
-    {options.map((option) => <label key={option.key}><input type="checkbox" checked={selected.includes(option.key)} onChange={() => onToggle(option.key)}/>{option.label}</label>)}
+    {options.map((option) => <Checkbox key={option.key} checked={selected.includes(option.key)} onChange={() => onToggle(option.key)}>{option.label}</Checkbox>)}
   </fieldset>;
 }
 

@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiResponseError } from "../../api/client";
@@ -133,15 +135,12 @@ function BindingEditor({ item, title, smtp, telegramDestination, canConfigure, o
   return <DetailDrawer open title={title} onClose={onClose} footer={<><Button onClick={onClose}>{t("notify.cancel")}</Button>
     <Button variant="primary" disabled={!canConfigure || !valid || !dirty || mutation.isPending} onClick={save}>{t("notify.save")}</Button></>}>
     <div className="sli-ds-field"><label htmlFor="notify-binding-channel">{t("notify.channel")}</label>
-      <select id="notify-binding-channel" value={channel} disabled={!canConfigure || mutation.isPending} onChange={(event) => { setChannel(event.target.value as NotificationKind); setRecipient(""); }}>
-        {(["smtp", "telegram"] as const).map((kind) => <option key={kind} value={kind}>{kindLabel(kind)}</option>)}
-      </select></div>
+      <Select label={t("notify.channel")} id="notify-binding-channel" value={channel} disabled={!canConfigure || mutation.isPending} onChange={(selectedValue) => { setChannel(selectedValue as NotificationKind); setRecipient(""); }}
+        options={(["smtp", "telegram"] as const).map((kind) => ({ value: kind, label: kindLabel(kind) }))}/></div>
     <div className="sli-ds-field"><label htmlFor="notify-recipient">{t("notify.destination")}</label>
-      <select id="notify-recipient" value={recipient} disabled={!canConfigure || mutation.isPending} onChange={(event) => setRecipient(event.target.value)}>
-        <option value="">—</option>{choices.map((row) => <option key={row.user_id} value={row.user_id}>{channel === "smtp" ? row.mailbox : telegramDestination}</option>)}
-        {item && !choices.some((row) => String(row.user_id) === recipient) && recipient ? <option value={recipient}>—</option> : null}
-      </select></div>
-    <label><input type="checkbox" checked={enabled} disabled={!canConfigure || mutation.isPending} onChange={(event) => setEnabled(event.target.checked)}/> {t("notify.enabled")}</label>
+      <Select label={t("notify.destination")} id="notify-recipient" value={recipient} disabled={!canConfigure || mutation.isPending} onChange={(selectedValue) => setRecipient(selectedValue)}
+        options={[{ value: "", label: "—" }, ...(choices.map((row) => ({ value: row.user_id, label: channel === "smtp" ? row.mailbox : telegramDestination })) ?? []), ...(item && !choices.some((row) => String(row.user_id) === recipient) && recipient ? [{ value: recipient, label: "—" }] : [])]}/></div>
+    <Checkbox checked={enabled} disabled={!canConfigure || mutation.isPending} onChange={(event) => setEnabled(event.target.checked)}> {t("notify.enabled")}</Checkbox>
     {mutation.isError ? <p role="alert">{ruleSaveError(mutation.error)}</p> : null}
     {item ? <FactList facts={[{ label: t("notify.recipientId"), value: item.recipient_user_id }]}/> : null}
   </DetailDrawer>;
@@ -156,8 +155,10 @@ function NotificationJournal({ data, items, days, channel, status, setDays, setC
   const filters = ["", "accepted", "errors", "waiting", "other"] as const;
   return <div className="sli-ds-report__views">
     <div className="sli-ds-filters__fields">
-      <div className="sli-ds-field"><label htmlFor="notify-period">{t("notify.period")}</label><select id="notify-period" value={days} onChange={(event) => setDays(Number(event.target.value))}><option value="1">{t("notify.day")}</option><option value="7">{t("notify.week")}</option><option value="30">{t("notify.month")}</option></select></div>
-      <div className="sli-ds-field"><label htmlFor="notify-channel">{t("notify.channel")}</label><select id="notify-channel" value={channel} onChange={(event) => setChannel(event.target.value)}><option value="">{t("notify.all")}</option><option value="smtp">{kindLabel("smtp")}</option><option value="telegram">{kindLabel("telegram")}</option></select></div>
+      <div className="sli-ds-field"><label htmlFor="notify-period">{t("notify.period")}</label><Select label={t("notify.period")} id="notify-period" value={days} onChange={(selectedValue) => setDays(Number(selectedValue))}
+        options={[{ value: "1", label: t("notify.day") }, { value: "7", label: t("notify.week") }, { value: "30", label: t("notify.month") }]}/></div>
+      <div className="sli-ds-field"><label htmlFor="notify-channel">{t("notify.channel")}</label><Select label={t("notify.channel")} id="notify-channel" value={channel} onChange={(selectedValue) => setChannel(selectedValue)}
+        options={[{ value: "", label: t("notify.all") }, { value: "smtp", label: kindLabel("smtp") }, { value: "telegram", label: kindLabel("telegram") }]}/></div>
       {filters.map((key) => <Button key={key} className="sli-ds-chip" aria-pressed={status === key} onClick={() => setStatus(key)}>{t(key ? `notify.${key}` : "notify.all")} {known(data.counts[key || "total"])}</Button>)}
     </div>
     {items.length ? <DataTable rows={items} rowKey={(row) => row.id} caption={t("notify.journal")} onRowClick={onOpen} columns={[

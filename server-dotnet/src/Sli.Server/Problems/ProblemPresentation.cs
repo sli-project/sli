@@ -91,6 +91,21 @@ public static class ProblemPresentation
     internal static bool CatalogDetection(string rule) => rule is "semantic.qw.privileged-group-addition" or "semantic.qw.security-log-cleared" or "semantic.qw.audit-disabled";
     internal static bool IsDcCatalogFinding(string rule) => rule is "semantic.security.dc_scheduled_task_created" or "semantic.security.dc_service_installed";
     internal static bool IsPasswordFinding(string rule) => rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
+
+    private static string PasswordQuantity(string noun, JsonNode count, string language)
+    {
+        long number = ProblemJson.Long(count);
+        string form = DomainHttp.SelectEnglish(language) ? number == 1 ? "one" : "other" : (number % 100, number % 10) switch
+        {
+            (>= 11 and <= 14, _) => "many",
+            (_, 1) => "one",
+            (_, >= 2 and <= 4) => "few",
+            _ => "many"
+        };
+        return ProblemJson.Text(Message($"security.problems.presentation.quantity.{noun}.{form}", language,
+            new() { ["count"] = count.DeepClone() })["text"]);
+    }
+
     internal static JsonObject RuleParameters(JsonObject finding, ProblemAccess? access = null, string language = "")
     {
         var parameters = new JsonObject();
@@ -158,7 +173,11 @@ public static class ProblemPresentation
             {
                 string key = spray ? "spray_threshold_title" : ProblemJson.Long(parameters["address_count"]) > 0
                     ? "brute_threshold_title" : "brute_threshold_title_account";
-                var title = Message("security.problems.presentation." + key, language, parameters);
+                var titleParameters = parameters.DeepClone().AsObject();
+                if (parameters["attempts"] is { } attempts) titleParameters["attempt_quantity"] = PasswordQuantity("attempt", attempts, language);
+                if (parameters["address_count"] is { } addresses) titleParameters["address_quantity"] = PasswordQuantity("address", addresses, language);
+                if (parameters["account_count"] is { } accounts) titleParameters["account_quantity"] = PasswordQuantity("account", accounts, language);
+                var title = Message("security.problems.presentation." + key, language, titleParameters);
                 title["rendered"] = true;
                 return title;
             }
@@ -177,6 +196,15 @@ public static class ProblemPresentation
         {
             if (parameters["target"] is null) code += "_without_object";
             else if (parameters["actor"] is not null) code += "_with_actor";
+        }
+        if (password && !threshold && suffix == "what" && parameters["count"] is { } count)
+        {
+            string noun = rule switch {
+                "semantic.qw.password-success" => "failed_attempt_after",
+                "semantic.qw.password-spray" => "account_into",
+                _ => "failed_sign_in"
+            };
+            parameters["quantity"] = PasswordQuantity(noun, count, language);
         }
         var message = Message(code, language, parameters);
         if (suffix == "what" && CatalogDetection(rule)) {
@@ -267,7 +295,15 @@ public static class ProblemPresentation
             ["actor_text"] = actor is not null ? M("security.problems.identity.name", new() { ["name"] = actor["label"]?.DeepClone() }) : Principal(actorRaw, hideSid: true) ?? RuleParameters(finding, access)["actor"]?.DeepClone(),
             ["wording_limitation"] = null };
         if (!queue || includeDescription) {
-            fields["what_happened"] = RuleMessage(finding, "what", language, access);
+            var what = RuleMessage(finding, "what", language, access);
+            if (IsPasswordFinding(rule) && access.Fields("technical", "raw_evidence") &&
+                finding["presentation_facts"]?["reported_domains"] is JsonArray { Count: > 0 } domains)
+            {
+                string claims = string.Join(", ", domains.Take(20).Select(value => ProblemJson.Text(value)).Where(value => value.Length is > 0 and <= 256));
+                var details = M("security.problems.presentation.password_reported_domains", new() { ["domains"] = claims });
+                what["text"] = string.Join(" ", new[] { ProblemJson.Text(what["text"]), ProblemJson.Text(details["text"]) }.Where(value => value.Length > 0));
+            }
+            fields["what_happened"] = what;
             fields["why_text"] = RuleMessage(finding, "why", language, access);
             fields["next_text"] = RuleMessage(finding, "next", language, access);
         }
@@ -294,6 +330,20 @@ public static class ProblemPresentation
             ("evidence", new[] { "event_db_id", "event_record_id", "event_id", "hostname", "channel", "time_created_utc", "evidence_role", "note" }),
             ("entities", new[] { "entity_type", "display_name", "entity_role" }), ("status_history", new[] { "id", "old_status", "new_status", "changed_at", "changed_by", "note" }) })
             row[key] = new JsonArray(ProblemJson.Array(finding[key]).OfType<JsonObject>().Select(r => (JsonNode)ProblemJson.Pick(r, fieldsToKeep)).ToArray());
+        if (IsPasswordFinding(rule)) {
+            string? Decision(string note)
+            {
+                if (note == "password_rule_replaced420") return ProblemJson.Text(M("security.problems.presentation.password_replaced")["text"]);
+                const string merged = "password_rule_merged420:";
+                if (note.StartsWith(merged, StringComparison.Ordinal) &&
+                    long.TryParse(note.AsSpan(merged.Length), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0)
+                    return ProblemJson.Text(M("security.problems.presentation.password_merged", new() { ["id"] = id })["text"]);
+                return null;
+            }
+            if (Decision(ProblemJson.Text(row["status_reason"])) is { } reason) row["status_reason"] = reason;
+            foreach (var entry in ProblemJson.Array(row["status_history"]).OfType<JsonObject>())
+                if (ProblemJson.Text(entry["changed_by"]) == "SLI" && Decision(ProblemJson.Text(entry["note"])) is { } note) entry["note"] = note;
+        }
         row["risk_acceptance"] = finding["risk_acceptance"] is JsonObject risk
             ? ProblemJson.Pick(risk, queue && !includeDescription ? ["state", "expires_at"] : RiskFields) : null;
         row["risk_audit"] = new JsonArray(ProblemJson.Array(finding["risk_audit"]).OfType<JsonObject>().Select(r => {
@@ -341,7 +391,8 @@ public static class ProblemPresentation
                 if (rule == "semantic.qw.password-spray") {
                     var count = finding["presentation_facts"]?["account_count"];
                     entity = source is not null && ProblemJson.Long(count) > 0
-                        ? M("security.problems.presentation.spray_object", new() { ["source"] = source.DeepClone(), ["count"] = count!.DeepClone() })
+                        ? M("security.problems.presentation.spray_object", new() { ["source"] = source.DeepClone(),
+                            ["account_quantity"] = PasswordQuantity("account", count!, language) })
                         : source;
                 }
                 row["entity_text"] = (entity is JsonObject message ? message["text"] : entity)?.DeepClone();

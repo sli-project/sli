@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -257,8 +258,8 @@ it("selects service accounts by name without displaying identifiers and confirms
   const { container } = mount(); await screen.findByText("fixture-service");
   expect(container.textContent).not.toContain(sid);
   change("platformSettings.service_exceptions.title", "backup");
-  const choice = await screen.findByLabelText(t("platformSettings.service_exceptions.choose"));
-  fireEvent.change(choice, { target: { value: sid2 } });
+  const choice = await screen.findByLabelText(t("platformSettings.service_exceptions.choose"), { selector: "button" });
+  await chooseOption(choice, sid2);
   fireEvent.click(saveButton()); await screen.findByRole("status");
   expect(state.update).toHaveBeenLastCalledWith("ad.service_account_exceptions", JSON.stringify([sid, sid2]));
   const remove = screen.getByRole("button", { name: t("platformSettings.service_exceptions.remove", { name: "fixture-service" }) });
@@ -279,7 +280,7 @@ it("retains existing service exceptions if account names cannot be loaded", asyn
 
 it("edits calendar controls while preserving dates and account exceptions", async () => {
   mount(); await screen.findByLabelText(t("platformSettings.time.start"));
-  change("platformSettings.time.start", "08:00"); change("platformSettings.time.zone", "Europe/Moscow");
+  change("platformSettings.time.start", "08:00"); await chooseOption(screen.getByLabelText(t("platformSettings.time.zone"), { selector: "button" }), "Europe/Moscow");
   fireEvent.click(screen.getByLabelText(t("platformSettings.day.sat")));
   fireEvent.click(saveButton()); await screen.findByRole("status");
   expect(JSON.parse(state.update.mock.calls[0][1])).toEqual({ ...calendar, start: "08:00", timezone: "Europe/Moscow", weekdays: [0, 1, 2, 3, 4, 5] });
@@ -301,7 +302,7 @@ it("does not invent working hours when no calendar is configured", async () => {
   expect(input("platformSettings.time.start").value).toBe("");
   expect(screen.getAllByRole("checkbox").every((element) => !(element as HTMLInputElement).checked)).toBe(true);
   change("platformSettings.time.start", "09:00"); expect(saveButton().disabled).toBe(true);
-  change("platformSettings.time.end", "18:00"); change("platformSettings.time.zone", "UTC");
+  change("platformSettings.time.end", "18:00"); await chooseOption(screen.getByLabelText(t("platformSettings.time.zone"), { selector: "button" }), "UTC");
   fireEvent.click(screen.getByLabelText(t("platformSettings.day.mon")));
   fireEvent.click(saveButton()); await screen.findByRole("status");
   expect(JSON.parse(state.update.mock.calls[0][1])).toEqual({ timezone: "UTC", weekdays: [0], start: "09:00", end: "18:00", excluded_dates: [], exceptions: [] });
@@ -309,10 +310,12 @@ it("does not invent working hours when no calendar is configured", async () => {
 
 it("selects registered active domains and does not silently change an archived preference", async () => {
   state.list.mockResolvedValue({ items: [{ ...setting("reports.domain_fqdn", "old.example.test"), effective_value: "example.test", effective_state: "available" }] });
-  mount(); await screen.findByRole("option", { name: "example.test" });
-  expect(input("platformSettings.report_domain.title").value).toBe("old.example.test");
+  mount();
+  const domain = await screen.findByLabelText(t("platformSettings.report_domain.title"), { selector: "button" });
+  await waitFor(() => expect(domain).toHaveProperty("disabled", false));
+  expect(domain.textContent).toContain("old.example.test");
   expect(saveButton().disabled).toBe(true); expect(state.update).not.toHaveBeenCalled();
-  change("platformSettings.report_domain.title", "example.test"); fireEvent.click(saveButton()); await screen.findByRole("status");
+  await chooseOption(domain, "example.test"); fireEvent.click(saveButton()); await screen.findByRole("status");
   expect(state.update).toHaveBeenCalledWith("reports.domain_fqdn", "example.test");
 });
 

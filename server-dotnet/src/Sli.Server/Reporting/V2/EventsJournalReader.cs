@@ -34,13 +34,24 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         var identities = rows.Select(Identity).Where(i => i.HasValue).Select(i => i!.Value).ToHashSet();
         var titles = new Dictionary<(string Key, long EventId, string Channel), JsonObject>();
         var exactAccess = new HashSet<long>();
+        var evidence = new Dictionary<JsonObject, HashSet<long>>(ReferenceEqualityComparer.Instance);
+        var exactScopes = new Dictionary<(long Domain, long Server, string Channel), bool>();
+        bool CanReadExact(long domain, long server, string channel)
+        {
+            if (domain <= 0 || server <= 0) return false;
+            var scope = (domain, server, channel);
+            if (exactScopes.TryGetValue(scope, out bool allowed)) return allowed;
+            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: channel)]];
+            allowed = ResourceAccessDecisions.ReportAction(c.Access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed
+                && new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.All(cap => ResourceAccessDecisions.Capability(c.Access.Capabilities, cap, resources).Allowed);
+            exactScopes.Add(scope, allowed);
+            return allowed;
+        }
         void AdmitTitle(JsonObject source)
         {
             if (Identity(source) is not {} identity || !identities.Contains(identity)
-                || !Integer(source["domain_id"], out long domain) || !Integer(source["server_id"], out long server) || domain <= 0 || server <= 0) return;
-            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: identity.Channel)]];
-            if (!ResourceAccessDecisions.ReportAction(c.Access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed
-                || new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.Any(cap => !ResourceAccessDecisions.Capability(c.Access.Capabilities, cap, resources).Allowed)) return;
+                || !Integer(source["domain_id"], out long domain) || !Integer(source["server_id"], out long server)
+                || !CanReadExact(domain, server, identity.Channel)) return;
             if (Integer(source["id"], out long eventId)) exactAccess.Add(eventId);
             string provider = source["provider_name"]?.ToString().Trim() ?? "";
             if (provider.Length == 0) return;
@@ -59,13 +70,28 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         {
             foreach (var row in rows)
             {
+                var members = row["_journal_members"] as JsonArray;
+                row.Remove("_journal_members");
                 if (row["_journal_origin"] is not JsonObject origin) continue;
                 row.Remove("_journal_origin");
                 foreach (string field in new[] { "id", "event_id", "day", "summary_key", "channel" })
                     origin[field] = row[field]?.DeepClone();
                 AdmitTitle(origin);
-                if (Integer(row["id"], out long id) && exactAccess.Contains(id) && DomainChangeDomain(c.Access, origin) is { } domain)
-                    row["journal_change_domain"] = domain;
+                if (Identity(origin) is not {} identity || !Integer(row["id"], out long id)
+                    || !Integer(origin["domain_id"], out long domain) || !Integer(origin["server_id"], out long server)) continue;
+                var ids = new HashSet<long>();
+                if (CanReadExact(domain, server, identity.Channel))
+                {
+                    ids.Add(id);
+                    if (DomainChangeDomain(c.Access, origin) is { } changeDomain) row["journal_change_domain"] = changeDomain;
+                }
+                else row.Remove("journal_action");
+                if (members is not null)
+                    foreach (var member in members.OfType<JsonArray>())
+                        if (member.Count == 2 && Integer(member[0], out long memberId) && memberId > 0
+                            && Integer(member[1], out long memberServer) && CanReadExact(domain, memberServer, identity.Channel))
+                            ids.Add(memberId);
+                if (ids.Count > 0) evidence.Add(row, ids);
             }
         }
         else if (identities.Count > 0)
@@ -96,7 +122,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 row["journal_evidence_available"] = row["journal_expandable"]?.GetValue<bool>() != true
                     && Integer(row["id"], out long eventId) && exactAccess.Contains(eventId);
         }
-        if (journal is not null) await LinkProblemsAsync(c, rows, exactAccess, ct);
+        if (evidence.Count > 0) await LinkProblemsAsync(c, evidence, ct);
         return Render(c, raw, rows);
     }
     internal static JournalOptions? Options(ReportQueryContext c)
@@ -120,18 +146,17 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 { ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin } : null;
     }
 
-    private async Task LinkProblemsAsync(ReportQueryContext c, JsonObject[] rows, HashSet<long> exactAccess, CancellationToken ct)
+    private async Task LinkProblemsAsync(ReportQueryContext c, Dictionary<JsonObject, HashSet<long>> evidence, CancellationToken ct)
     {
-        long[] ids = rows.Where(row => row["journal_expandable"]?.GetValue<bool>() != true)
-            .Select(row => Integer(row["id"], out long id) ? id : 0).Where(exactAccess.Contains).Distinct().ToArray();
-        if (ids.Length == 0) return;
         long[]? domains;
         try { domains = new ProblemAccess(c.Access).Scope("security.queue").Domains(); }
         catch (ProblemException) { return; }
 
+        long[] ids = evidence.Values.SelectMany(group => group).Distinct().ToArray();
         await using var db = await database.OpenAsync(false, ct);
         var links = await db.QueryAsync($"""
-            select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id
+            select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id,
+                   case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end as priority
             from (select distinct event_db_id,finding_id from finding_event_details337 where event_db_id=any($1)) linked
             join findings_active findings on findings.id=linked.finding_id
             where is_semantic_finding_published_v1(findings.id)
@@ -140,13 +165,15 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
               and not ({ProblemRepository.Suppressed})
               and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
                   and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
-            order by linked.event_db_id,case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end,findings.id desc
+            order by linked.event_db_id,priority,findings.id desc
             """, ct, ids, domains);
-        var byId = links.OfType<JsonObject>().Where(row => Integer(row["event_db_id"], out _)).ToDictionary(row => row["event_db_id"]!.GetValue<long>());
-        foreach (var row in rows)
+        var byId = links.OfType<JsonObject>().Where(link => Integer(link["event_db_id"], out _) && Integer(link["finding_id"], out _))
+            .ToDictionary(link => link["event_db_id"]!.GetValue<long>(), link => (Id: link["finding_id"]!.GetValue<long>(), Priority: link["priority"]!.GetValue<int>()));
+        foreach (var (row, group) in evidence)
         {
-            if (row["journal_expandable"]?.GetValue<bool>() == true || !Integer(row["id"], out long id) || !byId.TryGetValue(id, out var link)) continue;
-            row["journal_finding_id"] = link["finding_id"]?.DeepClone();
+            var link = group.Where(byId.ContainsKey).Select(id => byId[id])
+                .DefaultIfEmpty().MinBy(link => (link.Priority, -link.Id));
+            if (link.Id > 0) row["journal_finding_id"] = link.Id;
         }
     }
 
@@ -161,7 +188,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         var result = ReportResult.Create(c.Definition.Key, state, new JsonArray(rows.Select(r => (JsonNode?)r.DeepClone()).ToArray()), raw["coverage"] as JsonObject,
             limitations: new JsonArray(new JsonObject { ["code"] = "no_risk_in_slice", ["text"] = "Оценка риска не входит в этот срез. Название показывается только при точном совпадении источника и разрешённом доступе к доказательству; неизвестный участник не восстанавливается." }));
         result["has_more"] = raw["has_more"]?.DeepClone() ?? JsonValue.Create(false); result["next_cursor"] = raw["next_cursor"]?.DeepClone();
-        foreach (string field in new[] { "filtered_count", "journal_event_count", "journal_counts" })
+        foreach (string field in new[] { "filtered_count", "journal_event_count", "journal_counts", "journal_varying_columns" })
             if (raw[field] is { } value) result[field] = value.DeepClone();
         result["window"] = new JsonObject { ["from_utc"] = c.Params["period"]!["from_utc"]!.DeepClone(), ["to_utc_exclusive"] = c.Params["period"]!["to_utc"]!.DeepClone() };
         return result;

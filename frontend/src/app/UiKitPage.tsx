@@ -1,3 +1,4 @@
+import { Select } from "../design-system/Select";
 import { useMemo, useState } from "react";
 import { t } from "../i18n";
 import { shortWeekday } from "../shared/date-time";
@@ -84,8 +85,10 @@ export function UiKitPage() {
       title={t("uiKit.title")}
       subtitle={t("uiKit.subtitle")}
       crumbs={[{ label: t("uiKit.administration") }, { label: t("uiKit.designSystem") }]}
-      meta={<><span>{t("uiKit.theme")}: <select aria-label={t("uiKit.theme")} value={theme} onChange={(event) => applyTheme(event.target.value as typeof theme)}><option value="auto">{t("uiKit.themeAuto")}</option><option value="light">{t("uiKit.themeLight")}</option><option value="dark">{t("uiKit.themeDark")}</option></select></span>
-        <span>{t("uiKit.density")}: <select aria-label={t("uiKit.density")} value={density} onChange={(event) => applyDensity(event.target.value as typeof density)}><option value="normal">{t("uiKit.densityNormal")}</option><option value="compact">{t("uiKit.densityCompact")}</option></select></span></>}
+      meta={<><span>{t("uiKit.theme")}: <Select label={t("uiKit.theme")} value={theme} onChange={(selectedValue) => applyTheme(selectedValue as typeof theme)}
+        options={[{ value: "auto", label: t("uiKit.themeAuto") }, { value: "light", label: t("uiKit.themeLight") }, { value: "dark", label: t("uiKit.themeDark") }]}/></span>
+        <span>{t("uiKit.density")}: <Select label={t("uiKit.density")} value={density} onChange={(selectedValue) => applyDensity(selectedValue as typeof density)}
+          options={[{ value: "normal", label: t("uiKit.densityNormal") }, { value: "compact", label: t("uiKit.densityCompact") }]}/></span></>}
       actions={<button type="button" className="sli-ds-button">{t("uiKit.export")}</button>}
       metrics={<MetricStrip items={[
         { key: "all", label: t("uiKit.computers"), value: DEMO_ROWS.length, tone: "accent", onSelect: () => setOsFilter(null), active: osFilter === null },

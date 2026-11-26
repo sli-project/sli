@@ -47,6 +47,9 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
             await PostCollectionPostgres.Sql(seed, """
                 insert into servers(id,domain_id,hostname,fqdn,role)
                     select 900001,id,'dc01','dc01.example.test','domain_controller' from domains where fqdn='example.test';
+                insert into servers(id,domain_id,hostname,fqdn,role)
+                    select 900002,id,'dc02','dc02.example.test','domain_controller' from domains where fqdn='example.test';
+                update domains set netbios_name='EXAMPLE' where fqdn='example.test';
                 select create_event_storage_partitions(current_date-1,current_date);
                 select create_event_storage_partitions(current_date-20,current_date-20);
                 insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
@@ -57,23 +60,27 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
                 from generate_series(1,23000) n;
                 insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
                 select id,((current_date-1)::timestamp at time zone 'UTC')+interval '11 hours'+seconds*interval '1 second',
-                    code,1,actor,'dc01.example.test',address,'dc01.example.test',
-                    jsonb_build_object('$server_id',900001,'$channel','Security',
+                    code,1,actor,'dc01.example.test',address,case when id=24002 then 'dc02.example.test' else 'dc01.example.test' end,
+                    jsonb_build_object('$server_id',case when id=24002 then 900002 else 900001 end,'$channel','Security',
                         '$provider',case when code=1102 then 'Microsoft-Windows-Eventlog' else 'Microsoft-Windows-Security-Auditing' end,
-                        '$principals',jsonb_build_object('TargetUserName',account,'TargetDomainName','EXAMPLE',
-                            'SubjectUserName',initiator,'SubjectDomainName','EXAMPLE')),
+                        '$principals',jsonb_build_object('TargetUserName',account,'TargetDomainName',
+                            case id when 24001 then 'dc01.example.test' when 24002 then 'REPORTED' when 24020 then null else 'EXAMPLE' end,
+                            'SubjectUserName',initiator,'SubjectDomainName','EXAMPLE',
+                            'IpAddress',case when id between 24014 and 24016 or id=24026 then address end)),
                     jsonb_strip_nulls(jsonb_build_object('Status',status)),
-                    jsonb_strip_nulls(jsonb_build_object('LogonType',logon_type))
+                    jsonb_strip_nulls(jsonb_build_object('LogonType',logon_type,
+                        'TargetLogonId',case id when 24021 then '0x42' when 24027 then '0x43' end,
+                        'SubjectLogonId',case when id in (24022,24023) then '0x42' when id=24028 then '0x43' end))
                 from (values
-                    (24001,181,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
-                    (24002,182,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24001,181,4625,'dc01.example.test','пример','operator','192.0.2.10','3','0xc000006a'),
+                    (24002,182,4625,'dc01.example.test','ПРИМЕР','operator','192.0.2.10','3','0xc000006d'),
                     (24003,183,4625,'dc01.example.test','other-user','operator','192.0.2.10','3','0xc000006d'),
-                    (24004,184,4625,'dc01.example.test','target-user','operator','192.0.2.11','3','0xc000006d'),
-                    (24005,185,4625,'dc01.example.test','target-user','operator','192.0.2.10','9','0xc000006d'),
-                    (24006,186,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006a'),
+                    (24004,184,4625,'dc01.example.test','пример','operator','192.0.2.11','3','0xc000006d'),
+                    (24005,185,4625,'dc01.example.test','пример','operator','192.0.2.10','9','0xc000006d'),
+                    (24006,186,4625,'dc01.example.test','пример','operator','192.0.2.15','3','0xc000006a'),
                     (24007,187,4625,'dc01.example.test',null,'operator','192.0.2.10','3','0xc000006d'),
                     (24008,188,4625,'dc01.example.test',null,'operator','192.0.2.10','3','0xc000006d'),
-                    (24009,600,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24009,600,4625,'dc01.example.test','пример','operator','192.0.2.10','3','0xc000006d'),
                     (24010,190,4624,'EXAMPLE\target-user','target-user','target-user','192.0.2.10','3',null),
                     (24011,191,4624,'EXAMPLE\target-user','target-user','target-user','192.0.2.10','3',null),
                     (24012,192,4672,'EXAMPLE\privileged-user',null,'privileged-user',null,null,null),
@@ -83,7 +90,16 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
                     (24016,196,4776,'EXAMPLE\credential-user','different-name',null,'192.0.2.12',null,'0x0'),
                     (24017,197,4624,'EXAMPLE\device$','device$',null,'192.0.2.13','3',null),
                     (24018,198,4728,'EXAMPLE\operator','test-group','operator',null,null,null),
-                    (24019,200,1102,'EXAMPLE\operator',null,'operator',null,null,null)
+                    (24019,200,1102,'EXAMPLE\operator',null,'operator',null,null,null),
+                    (24020,180,4776,'пример','пример',null,'reported-station',null,'0xc000006a'),
+                    (24021,211,4624,'EXAMPLE\privileged-user','privileged-user',null,'192.0.2.13','10',null),
+                    (24022,211,4672,'EXAMPLE\privileged-user',null,'privileged-user',null,null,null),
+                    (24023,301,4672,'EXAMPLE\privileged-user',null,'privileged-user',null,null,null),
+                    (24024,212,4740,'EXAMPLE\operator','target-user','operator',null,null,null),
+                    (24025,213,4776,'EXAMPLE\credential-user','credential-user',null,'192.0.2.253',null,'0xc000006a'),
+                    (24026,181,4776,'пример','пример',null,'192.0.2.99',null,'0xc000006a'),
+                    (24027,217,4624,'EXAMPLE\service-user','service-user',null,null,'5',null),
+                    (24028,217,4672,'EXAMPLE\service-user',null,'service-user',null,null,null)
                 ) v(id,seconds,code,actor,account,initiator,address,logon_type,status);
                 insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 select current_date-20,sha256(('journal-totals-'||kind)::bytea),kind,1,'synthetic-daily',null,'192.0.2.10','dc01.example.test',
@@ -122,25 +138,49 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         var rows = first["items"]!.AsArray().OfType<JsonObject>().ToArray();
         JsonObject Row(long id) => Assert.Single(rows, row => row["id"]!.GetValue<long>() == id);
         var group = Row(24002);
-        Assert.Equal(@"EXAMPLE\target-user", group["journal_account"]!.GetValue<string>());
+        Assert.Equal(@"EXAMPLE\ПРИМЕР", group["journal_account"]!.GetValue<string>());
         Assert.Equal(@"EXAMPLE\operator", group["journal_initiator"]!.GetValue<string>());
         Assert.Equal("192.0.2.10", group["journal_address"]!.GetValue<string>());
-        Assert.Equal("dc01.example.test", group["journal_computer"]!.GetValue<string>());
+        Assert.Null(group["journal_computer"]);
         Assert.Equal("3", group["logon_type"]!.GetValue<string>());
+        Assert.Equal("failed_logon", group["journal_action"]!.GetValue<string>());
+        Assert.Equal(2, group["event_count"]!.GetValue<long>());
+        Assert.Equal(3, group["journal_source_count"]!.GetValue<long>());
+        Assert.DoesNotContain(rows, row => row["id"]!.GetValue<long>() is 24020 or 24022);
+        Assert.Equal("192.0.2.99", Row(24026)["journal_address"]!.GetValue<string>());
+        Assert.Equal("privileged_logon", Row(24021)["journal_action"]!.GetValue<string>());
+        Assert.Equal(1, Row(24021)["event_count"]!.GetValue<long>());
+        Assert.Equal("192.0.2.13", Row(24021)["journal_address"]!.GetValue<string>());
+        Assert.Equal("10", Row(24021)["logon_type"]!.GetValue<string>());
+        Assert.Null(Row(24023)["journal_action"]);
+        Assert.Null(Row(24025)["journal_address"]);
+        Assert.Equal("192.0.2.253", Row(24025)["journal_workstation"]!.GetValue<string>());
         Assert.NotEqual(group["first_seen_utc"]!.ToString(), group["last_seen_utc"]!.ToString());
         Assert.Null(Row(24011)["journal_initiator"]);
         Assert.Equal(@"EXAMPLE\credential-user", Row(24015)["journal_account"]!.GetValue<string>());
         Assert.Equal("success", Row(24016)["journal_result"]!.GetValue<string>());
         Assert.Null(Row(24008)["journal_account"]);
-        foreach (long id in new long[] { 24003, 24004, 24005, 24006, 24007, 24008, 24009, 24016 })
+        foreach (long id in new long[] { 24003, 24004, 24005, 24006, 24007, 24008, 24009, 24012, 24013, 24016, 24023 })
             Assert.False(Row(id)["journal_expandable"]!.GetValue<bool>());
 
-        foreach (long id in new long[] { 24002, 24011, 24013, 24015 })
+        var paired = await Read(options with { Expand = 24002 }, budgetMs: 2000);
+        var evidence = paired["items"]!.AsArray().OfType<JsonObject>().ToArray();
+        Assert.Equal(new long[] { 24002, 24001, 24020 }, evidence.Select(row => row["id"]!.GetValue<long>()));
+        Assert.Equal(new[] { @"REPORTED\ПРИМЕР", @"dc01.example.test\пример", "пример" },
+            evidence.Select(row => row["journal_reported_account"]!.GetValue<string>()));
+        Assert.Equal(new[] { "dc02.example.test", "dc01.example.test", "dc01.example.test" },
+            evidence.Select(row => row["journal_computer"]!.GetValue<string>()));
+        Assert.Equal(new long[] { 24001, 24002, 24020 },
+            group["_journal_members"]!.AsArray().Select(member => member![0]!.GetValue<long>()).Order());
+        var privilegedEvidence = await Read(options with { Expand = 24021 }, budgetMs: 2000);
+        Assert.Equal(new long[] { 24022, 24021 }, privilegedEvidence["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
+
+        foreach (long id in new long[] { 24011, 24015 })
         {
             var parent = Row(id);
             Assert.True(parent["journal_expandable"]!.GetValue<bool>());
             var expanded = options with { Expand = id };
-            var page = await Read(expanded, limit: 1, budgetMs: id == 24002 ? 2000 : null);
+            var page = await Read(expanded, limit: 1);
             Assert.True(page["has_more"]!.GetValue<bool>());
             Assert.Null(page["journal_counts"]);
             var next = await Read(expanded, limit: 1, cursor: page["next_cursor"]!.GetValue<string>());
@@ -153,16 +193,18 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
 
         var withinWindow = await Read(options, start: from.AddHours(1).AddSeconds(182), end: from.AddHours(1).AddSeconds(183));
         Assert.False(Assert.Single(withinWindow["items"]!.AsArray())!["journal_expandable"]!.GetValue<bool>());
-        var accountPivot = await Read(options with { Pivot = "account" }, search: @"EXAMPLE\target-user");
+        var accountPivot = await Read(options with { Pivot = "account" }, search: @"EXAMPLE\Пример");
         Assert.Contains(accountPivot["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24002);
         var withoutCollapse = await Read(options with { Collapse = false }, limit: 25);
         Assert.Contains(withoutCollapse["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24001);
         var services = await CheckView("service");
-        Assert.Equal(24017L, Assert.Single(services["items"]!.AsArray())!["id"]!.GetValue<long>());
-        Assert.DoesNotContain(rows, row => row["id"]!.GetValue<long>() == 24017);
+        Assert.Equal(new long[] { 24027, 24017 }, services["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
+        Assert.Equal(2, services["items"]![0]!["journal_source_count"]!.GetValue<long>());
+        Assert.DoesNotContain(rows, row => row["id"]!.GetValue<long>() is 24017 or 24027 or 24028);
         var failures = await CheckView("failures");
         Assert.All(failures["items"]!.AsArray(), row => Assert.Equal("failure", row!["journal_result"]!.GetValue<string>()));
         Assert.Contains(failures["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24015);
+        Assert.Contains(failures["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24024);
         var logons = await CheckView("authentication");
         Assert.Contains(logons["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24013);
         Assert.DoesNotContain(logons["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24017);

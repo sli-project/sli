@@ -1,5 +1,8 @@
-import { useId } from "react";
-import { t } from "../i18n";
+import { useEffect, useId, useRef, useState } from "react";
+import { parseDate } from "@internationalized/date";
+import { Button, Calendar, CalendarCell, CalendarGrid, Dialog, DialogTrigger, Heading, I18nProvider, Popover } from "react-aria-components";
+import { getLocale, t } from "../i18n";
+import { Icon } from "./Icon";
 
 export type PeriodPreset = "2h" | "24h" | "7d" | "30d" | "90d" | "custom";
 /** `from`/`to` are local dates or local date-times, according to the picker precision. */
@@ -41,11 +44,71 @@ export function previousPeriod(value: PeriodValue, window?: { from: string; to: 
   return { preset: "custom", from: new Date(from - (to - from)).toISOString(), to: bounds.from };
 }
 
-function openPicker(input: HTMLInputElement) {
-  try { input.showPicker?.(); } catch { /* not user-activated or unsupported: plain input still works */ }
+export function isPeriodBoundary(value: string | undefined, precision: "date" | "datetime-local"): value is string {
+  if (!value) return false;
+  const pattern = precision === "date" ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/;
+  if (!pattern.test(value)) return false;
+  const date = new Date(value + (precision === "date" ? "T00:00:00Z" : "Z"));
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 16) === (precision === "date" ? value + "T00:00" : value.slice(0, 16));
 }
 
-export function PeriodPicker({ value, onChange, label = t("period.label"), presets = ["24h", "7d", "30d", "90d", "custom"], precision = "date", step }: {
+export function DateInput({ id, label, value, defaultValue = "", precision = "datetime-local", required,
+  name, "aria-describedby": describedBy, "aria-invalid": invalid, onChange }: {
+  id?: string;
+  label: string;
+  value?: string;
+  defaultValue?: string;
+  precision?: "date" | "datetime-local";
+  required?: boolean;
+  name?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
+  onChange?: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(defaultValue);
+  const current = value ?? draft;
+  const input = useRef<HTMLInputElement>(null);
+  const malformed = Boolean(current) && !isPeriodBoundary(current, precision);
+  useEffect(() => {
+    input.current?.setCustomValidity(malformed ? t("period.invalidBoundary") : "");
+  }, [malformed]);
+  const change = (next: string) => {
+    if (value === undefined) setDraft(next);
+    onChange?.(next);
+  };
+  const withTime = precision === "datetime-local";
+  const date = current.slice(0, 10);
+  const time = current.split("T")[1];
+  return <div className="sli-ds-field__control sli-ds-date-input">
+      <input id={id} ref={input} aria-label={label} aria-describedby={describedBy} aria-invalid={invalid || malformed || undefined} type="text" placeholder={t(withTime ? "period.dateTimeFormat" : "period.dateFormat")}
+        pattern={withTime ? "[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}(:[0-9]{2}([.][0-9]{1,3})?)?" : "[0-9]{4}-[0-9]{2}-[0-9]{2}"}
+        autoComplete="off" required={required} value={current.replace("T", " ")}
+        onChange={(event) => change(event.target.value.replace(" ", "T"))}/>
+      {name ? <input type="hidden" name={name} value={current}/> : null}
+      <I18nProvider locale={getLocale()}>
+        <DialogTrigger>
+          <Button className="sli-ds-button" aria-label={t("period.chooseDate", { label })}><Icon name="calendar"/></Button>
+          <Popover className="sli-ds-calendar">
+            <Dialog aria-label={t("period.chooseDate", { label })}>{({ close }) =>
+              <Calendar aria-label={label} value={isPeriodBoundary(date, "date") ? parseDate(date) : null} onChange={(day) => {
+                change(day.toString() + (withTime ? "T" + (time || "00:00") : ""));
+                close();
+              }}>
+                <header className="sli-ds-calendar__header">
+                  <Button slot="previous" className="sli-ds-button" aria-label={t("table.previous")}><Icon name="chevron-left"/></Button>
+                  <Heading/>
+                  <Button slot="next" className="sli-ds-button" aria-label={t("table.next")}><Icon name="chevron-right"/></Button>
+                </header>
+                <CalendarGrid>{(day) => <CalendarCell date={day} className="sli-ds-calendar__day"/>}</CalendarGrid>
+              </Calendar>}
+            </Dialog>
+          </Popover>
+        </DialogTrigger>
+      </I18nProvider>
+    </div>;
+}
+
+export function PeriodPicker({ value, onChange, label = t("period.label"), presets = ["24h", "7d", "30d", "90d", "custom"], precision = "date" }: {
   value: PeriodValue | undefined;
   onChange: (value: PeriodValue) => void;
   label?: string;
@@ -54,7 +117,10 @@ export function PeriodPicker({ value, onChange, label = t("period.label"), prese
   step?: number | "any";
 }) {
   const id = useId();
-  const invalid = value?.preset === "custom" && value.from && value.to && value.from > value.to;
+  const invalid = value?.preset === "custom" && (
+    Boolean(value.from && !isPeriodBoundary(value.from, precision)) ||
+    Boolean(value.to && !isPeriodBoundary(value.to, precision)) ||
+    Boolean(value.from && value.to && value.from > value.to));
   return <fieldset className="sli-ds-period">
     <legend>{label}</legend>
     <div className="sli-ds-period__presets" role="radiogroup" aria-label={label}>
@@ -62,10 +128,12 @@ export function PeriodPicker({ value, onChange, label = t("period.label"), prese
         className="sli-ds-chip" onClick={() => onChange(preset === "custom" ? { preset, from: value?.from, to: value?.to } : { preset })}>{periodLabel(preset)}</button>)}
     </div>
     {value?.preset === "custom" ? <div className="sli-ds-period__custom">
-      <label htmlFor={`${id}-from`}>{t("period.from")}</label>
-      <input id={`${id}-from`} type={precision} step={step} required={precision === "datetime-local"} value={value.from ?? ""} max={value.to} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, from: event.target.value })}/>
-      <label htmlFor={`${id}-to`}>{t("period.to")}</label>
-      <input id={`${id}-to`} type={precision} step={step} required={precision === "datetime-local"} value={value.to ?? ""} min={value.from} onClick={(event) => openPicker(event.currentTarget)} onChange={(event) => onChange({ ...value, to: event.target.value })}/>
+      <label htmlFor={id + "-from"}>{t("period.from")}</label>
+      <DateInput id={id + "-from"} required={precision === "datetime-local"} label={t("period.from")} value={value.from ?? ""} precision={precision}
+        onChange={(from) => onChange({ ...value, from })}/>
+      <label htmlFor={id + "-to"}>{t("period.to")}</label>
+      <DateInput id={id + "-to"} required={precision === "datetime-local"} label={t("period.to")} value={value.to ?? ""} precision={precision}
+        onChange={(to) => onChange({ ...value, to })}/>
       {invalid ? <span role="alert" className="sli-ds-field__error">{t("period.invalid")}</span> : null}
     </div> : null}
   </fieldset>;

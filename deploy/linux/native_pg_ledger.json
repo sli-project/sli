@@ -623,8 +623,10 @@
     "config/postgres_migrations/417_password_frozen_frontier_progress.sql": "e597c140155df34fa321a24afb5c3341a641d5335dbb91ad716014ac6d1759aa",
     "config/postgres_migrations/418_password_threshold_rules.rollback.sql": "9dd61e00c6da581d66339ddea6eceb5f0245ecf6ce578be1f62a23cfc3858c98",
     "config/postgres_migrations/418_password_threshold_rules.sql": "07d6df70d50a29f59d93410773a0c1260b46bc508e567c3dfa3e29ac0468b5c8",
-    "config/postgres_migrations/419_problem_notification_transitions.rollback.sql": "2bbe0ee9bccada1576fcaf32f18f1ca28cd7392f52a76f46e279d2312e3b19a2",
-    "config/postgres_migrations/419_problem_notification_transitions.sql": "81bcf4e99bae7eeff8a705c8060faffecb1048c4090c1a99ba832d9dda9d5292",
+    "config/postgres_migrations/420_password_rule_identity.rollback.sql": "cd6e9933bd911553d5e7a49ee0cdd1d567d82ea853924dc396a6d20c23e497f8",
+    "config/postgres_migrations/420_password_rule_identity.sql": "415b4684896f22a4a3c065c82ee74434729353c778c22a113c4e8c556945242f",
+    "config/postgres_migrations/423_problem_notification_transitions.rollback.sql": "73a9d47ce7545a912d4e499c5f8b4e50fb73b206ba35c31d836ce0923698fce1",
+    "config/postgres_migrations/423_problem_notification_transitions.sql": "3055d2c6cf75c6fa00be549a25e9859cb6b498422ddd12e0f717bc645b5ea320",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

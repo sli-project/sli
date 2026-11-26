@@ -117,7 +117,7 @@ internal static class PasswordRiskPublication
             await sql.Rows("select public.enqueue_qw_finding_notifications(@scenario) as enqueued",ct,("scenario",sid));
         else if(ProblemNotification.IsTransition(created.Count>0,reopened.Count>0,RiskJson.String(findings[0],"status"),
             RiskJson.String(findings[0],"severity"),severity))
-            await sql.Rows("select public.enqueue_problem_notification419(@scenario,@job) as enqueued",ct,("scenario",sid),("job",work.Lease.Id));
+            await sql.Rows("select public.enqueue_problem_notification423(@scenario,@job) as enqueued",ct,("scenario",sid),("job",work.Lease.Id));
         await SupersedeFinding(sql,sid,finding,ct);return finding;
     }
 

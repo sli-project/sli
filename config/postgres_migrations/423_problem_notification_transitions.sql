@@ -1,10 +1,10 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_problem_notification_transitions419'));
+select pg_advisory_xact_lock(hashtext('sli_problem_notification_transitions423'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=417 and name='password_frozen_frontier_progress')
-       or exists(select 1 from public.schema_migrations where version>=419) then
-        raise exception 'problem_notification_transitions419_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=420 and name='password_rule_identity')
+       or exists(select 1 from public.schema_migrations where version>=423) then
+        raise exception 'problem_notification_transitions423_preflight' using errcode='55000';
     end if;
 end $$;
 
@@ -28,7 +28,7 @@ begin
     return new;
 end $$;
 
-create function public.insert_problem_notification419(p_scenario uuid,p_key text,p_severity text,p_reason text,p_at timestamptz)
+create function public.insert_problem_notification423(p_scenario uuid,p_key text,p_severity text,p_reason text,p_at timestamptz)
 returns integer language plpgsql set search_path=pg_catalog,pg_temp as $$
 declare added integer; required integer; minutes integer:=0; reason text:=p_reason; at_now timestamptz:=clock_timestamp();
 begin
@@ -65,9 +65,9 @@ begin
     get diagnostics added=row_count;
     return added;
 end $$;
-revoke all on function public.insert_problem_notification419(uuid,text,text,text,timestamptz) from public;
+revoke all on function public.insert_problem_notification423(uuid,text,text,text,timestamptz) from public;
 
-create function public.enqueue_problem_notification419(p_scenario uuid,p_job uuid) returns integer
+create function public.enqueue_problem_notification423(p_scenario uuid,p_job uuid) returns integer
 language plpgsql security definer set search_path=pg_catalog,pg_temp as $$
 declare current_job record; event_at timestamptz; latest_event timestamptz; reason text; finding bigint; severity text;
 begin
@@ -140,14 +140,14 @@ begin
         else event_at:=latest_event; end if;
     end if;
 
-    return public.insert_problem_notification419(p_scenario,'problem:'||p_job,severity,reason,event_at);
+    return public.insert_problem_notification423(p_scenario,'problem:'||p_job,severity,reason,event_at);
 end $$;
-revoke all on function public.enqueue_problem_notification419(uuid,uuid) from public;
-grant execute on function public.enqueue_problem_notification419(uuid,uuid) to adlog_semantic_worker;
+revoke all on function public.enqueue_problem_notification423(uuid,uuid) from public;
+grant execute on function public.enqueue_problem_notification423(uuid,uuid) to adlog_semantic_worker;
 
 -- A manual reopen may reuse a publication that has already delivered. The
 -- audit record gives that action a durable identity in the same transaction.
-create function public.notify_manual_problem_reopen419() returns trigger
+create function public.notify_manual_problem_reopen423() returns trigger
 language plpgsql security definer set search_path=pg_catalog,pg_temp as $$
 declare scenario uuid; severity text;
 begin
@@ -163,18 +163,18 @@ begin
       and f.rule_code not in ('semantic.qw.nps-denials','semantic.qw.file-decoy','semantic.qw.file-acl-broad-write')
     order by p.created_at desc,p.scenario_id limit 1;
     if found then
-        perform public.insert_problem_notification419(scenario,'reopen:'||new.id,severity,'live',null);
+        perform public.insert_problem_notification423(scenario,'reopen:'||new.id,severity,'live',null);
     end if;
     return new;
 end $$;
-revoke all on function public.notify_manual_problem_reopen419() from public;
+revoke all on function public.notify_manual_problem_reopen423() from public;
 
 -- The canonical legacy status history table belongs to adlog_user.
 reset role;
-create trigger notify_manual_problem_reopen419 after insert on public.finding_status_history for each row
+create trigger notify_manual_problem_reopen423 after insert on public.finding_status_history for each row
 when (new.old_status in ('closed','false_positive') and new.new_status not in ('closed','false_positive')
       and new.changed_by is distinct from 'semantic-worker')
-execute function public.notify_manual_problem_reopen419();
+execute function public.notify_manual_problem_reopen423();
 
-insert into public.schema_migrations(version,name) values(419,'problem_notification_transitions');
+insert into public.schema_migrations(version,name) values(423,'problem_notification_transitions');
 commit;

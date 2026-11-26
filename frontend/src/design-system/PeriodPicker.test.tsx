@@ -4,13 +4,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PeriodPicker, periodBounds, previousPeriod } from "./PeriodPicker";
 
 afterEach(cleanup);
-it("keeps date inputs by default and supports exact date-time inputs when requested", () => {
+it("accepts whole days and preserves the exact local time selected", () => {
   const change = vi.fn();
   const { rerender } = render(<PeriodPicker value={{ preset: "custom" }} onChange={change}/>);
-  expect((screen.getByLabelText("С") as HTMLInputElement).type).toBe("date");
+  expect(screen.getByLabelText("С").getAttribute("placeholder")).toBe("ГГГГ-ММ-ДД");
   rerender(<PeriodPicker value={{ preset: "custom", from: "2026-10-01T09:15", to: "2026-10-01T10:45" }} precision="datetime-local" onChange={change}/>);
-  expect((screen.getByLabelText("С") as HTMLInputElement).type).toBe("datetime-local");
-  fireEvent.change(screen.getByLabelText("По"), { target: { value: "2026-10-01T11:30" } });
+  expect((screen.getByLabelText("С") as HTMLInputElement).value).toBe("2026-10-01 09:15");
+  fireEvent.change(screen.getByLabelText("По"), { target: { value: "2026-10-01 11:30" } });
   expect(change).toHaveBeenCalledWith({ preset: "custom", from: "2026-10-01T09:15", to: "2026-10-01T11:30" });
 });
 

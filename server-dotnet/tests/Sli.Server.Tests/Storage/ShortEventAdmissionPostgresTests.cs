@@ -54,7 +54,8 @@ public sealed class ShortEventAdmissionPostgresTests
         string[]? nativeTimestamps = null, string[]? nativeAccounts = null, string[]? nativeAddresses = null,
         Guid? packetId = null, int sequence = 1, int firstRecordId = 1, string hostName = "dc.example.test",
         IReadOnlyDictionary<string, string>? nativeFields = null, string? eventChannel = null,
-        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null, bool history = false, string[]? nativeWorkstations = null, int? nativeVersion = null)
+        DateTimeOffset[]? allocatedAt = null, string[]? nativeTargetSids = null, bool history = false, string[]? nativeWorkstations = null, int? nativeVersion = null,
+        string[]? nativeDomains = null)
     {
         var agent = registered?.Agent ?? Agent; var host = registered?.Host ?? hostId ?? Agent;
         var packet = packetId ?? Packet;
@@ -78,6 +79,9 @@ public sealed class ShortEventAdmissionPostgresTests
             };
             if(nativeAccounts is not null) fields=fields.Replace("synthetic-user",nativeAccounts[natives.Count]);
             if(nativeAddresses is not null) fields=fields.Replace("192.0.2.1",nativeAddresses[natives.Count]);
+            if (nativeDomains is not null)
+                fields = fields.Replace("<Data Name='TargetDomainName'>example.test</Data>",
+                    new XElement("Data", new XAttribute("Name", "TargetDomainName"), nativeDomains[natives.Count]).ToString(SaveOptions.DisableFormatting));
             if(nativeTargetSids is not null) fields=fields.Replace("S-1-5-21-100000001-200000002-300000003-1001",nativeTargetSids[natives.Count]);
             if (nativeWorkstations is not null) fields=fields.Replace("client.example.test",nativeWorkstations[natives.Count]);
             if (nativeFields is not null) {
