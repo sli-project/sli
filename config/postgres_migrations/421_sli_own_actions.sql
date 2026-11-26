@@ -9,9 +9,6 @@ do $$ begin
         raise exception 'sli_own_actions421_preflight' using errcode='55000';
     end if;
 end $$;
--- The kit can reassign findings to sli_migration before this migration runs.
--- Issue the temporary grant from the migration session.
-grant update(status_reason) on public.findings to adlog_storage_owner;
 set local role adlog_storage_owner;
 
 create table public.sli_maintenance_catalog421(
@@ -100,6 +97,10 @@ begin
     execute patched;
 end $patch$;
 
+-- The kit and peer upgrade both connect as postgres. Restore that role for
+-- the status_reason backfill and history write.
+reset role;
+
 -- Resolve only findings whose entire retained evidence has one maintenance reason.
 with candidates as materialized (
     select finding.id, finding.status, finding.rule_code,
@@ -137,7 +138,5 @@ with candidates as materialized (
 insert into public.finding_status_history(finding_id,old_status,new_status,changed_by,note)
 select id,old_status,'closed','migration:421',status_reason from closed;
 
-reset role;
-revoke update(status_reason) on public.findings from adlog_storage_owner;
 insert into public.schema_migrations(version,name) values(421,'sli_own_actions');
 commit;
