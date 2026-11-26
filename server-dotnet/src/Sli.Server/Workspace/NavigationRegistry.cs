@@ -23,6 +23,9 @@ internal static class NavigationRegistry
     internal static JsonObject[] Manifests() => PluginSections.Keys.Order(StringComparer.Ordinal).Select(id =>
         InstallationPackages.Contract("plugin_packages/v3/" + (id == "sli.workstations" ? "sli.workstations.1.1.0" : id) + ".json")).ToArray();
     internal static JsonObject Configuration() => (JsonObject)Bundled.Value.Config.DeepClone();
+    internal static bool IsPreviewPlugin(string id) => Items(Bundled.Value.Config["preview_plugins"]).Any(p => Text(p) == id);
+    internal static bool PreviewEnabled(IConfiguration? configuration) =>
+        bool.TryParse(configuration?["modules:preview"] ?? configuration?["modules.preview"], out bool enabled) && enabled;
     internal static IReadOnlyDictionary<string, JsonObject> Owners() => Bundled.Value.Owners.ToDictionary(p => p.Key, p => (JsonObject)p.Value.DeepClone(), StringComparer.Ordinal);
     private static string Text(JsonNode? node) => node?.GetValue<string>() ?? "";
     private static JsonNode[] Items(JsonNode? node) => node?.AsArray().Select(n => n!).ToArray() ?? [];

@@ -10,8 +10,8 @@ const entries = registry.sections.flatMap((section) => section.groups.flatMap((g
 const access = (reports: string[], capabilities: string[] = []): NavAccess => ({ reports: new Set(reports), capabilities: new Set(capabilities) });
 const allAccess = access(entries.flatMap((entry) => entry.reports ?? []), entries.flatMap((entry) => entry.capabilities ?? []));
 const items = (sections: ReturnType<typeof buildNavigation>) => sections.flatMap((section) => section.groups.flatMap((group) => group.items));
-const workPaths = ["/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal", "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2", "/report/file-audit.overview", "/report/workstations.overview", "/report/vpn.connections"];
-const adminPaths = ["/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings", "/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access"];
+const workPaths = ["/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal", "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2"];
+const adminPaths = ["/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings", "/plugins"];
 
 afterEach(() => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
@@ -20,9 +20,19 @@ afterEach(() => {
 });
 
 describe("buildNavigation for beta", () => {
+  it("keeps preview modules off both menus unless the server opts in", () => {
+    const defaultPaths = items(buildNavigation(allAccess, registry)).map((item) => item.path);
+    const previewPaths = items(buildNavigation(allAccess, { ...registry, modules_preview: true })).map((item) => item.path);
+    for (const path of ["/report/file-audit.overview", "/report/workstations.overview", "/report/vpn.connections",
+      "/admin/plugins/sli.file-audit", "/admin/plugins/sli.workstations", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma"]) {
+      expect(defaultPaths).not.toContain(path);
+      expect(previewPaths).toContain(path);
+    }
+  });
+
   it.each([
-    ["ru", ["Главная", "Проблемы", "Изменения в домене", "Журнал событий", "Состояние AD", "Пользователи", "Компьютеры", "Групповые политики", "Обзор", "Обзор", "VPN"], ["Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время", "Все плагины", "Файловый аудит", "VPN / NPS"]],
-    ["en", ["Home", "Problems", "Domain changes", "Event journal", "AD state", "Users", "Computers", "Group policies", "Overview", "Overview", "VPN"], ["System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time", "All plugins", "File auditing", "VPN / NPS"]],
+    ["ru", ["Главная", "Проблемы", "Изменения в домене", "Журнал событий", "Состояние AD", "Пользователи", "Компьютеры", "Групповые политики"], ["Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время", "Все плагины"]],
+    ["en", ["Home", "Problems", "Domain changes", "Event journal", "AD state", "Users", "Computers", "Group policies"], ["System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time", "All plugins"]],
   ] as const)("shows only the ordered beta destinations in %s even with all grants", (locale, workLabels, adminLabels) => {
     vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
     setLocale(locale);
