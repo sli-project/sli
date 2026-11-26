@@ -140,6 +140,12 @@ export type PluginState = {
   plugin_id: string; package_version: string; installed: boolean; configured: boolean;
   enabled: boolean; receiving_data: boolean; component_runtime: string; queue_state: string;
   revision: number; last_data_at_utc: string | null;
+  status?: {
+    state: "disabled" | "no_sources" | "waiting" | "working" | "error";
+    last_data_at: string | null;
+    error_at: string | null;
+    error_object: string | null;
+  };
   data_receipts?: {
     state: "observed" | "no_receipts" | "unavailable" | "not_supported";
     last_received_at: string | null; last_imported_at: string | null;

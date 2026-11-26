@@ -277,7 +277,9 @@ it.each(["unavailable", "incomplete", "transport"] as const)("allows a manual se
 it.each([[false, true], [true, false]])("hides commands with connection=%s and canEdit=%s", async (connection, canEdit) => {
   const action = vi.spyOn(api, "agentAction");
   mount(connection, canEdit);
-  await screen.findByText(t("pluginPage.noSources"));
+  if (canEdit) await screen.findByRole("heading", { name: t("pluginPage.serversFolders") });
+  else await screen.findByRole("link", { name: t("pluginPage.computers") });
+  expect(screen.queryByText(t("pluginPage.noSources"))).toBeNull();
   expect(screen.queryByText(t("agents.fileAudit.title"))).toBeNull();
   expect(action).not.toHaveBeenCalled();
   if (!canEdit) expect(api.agents).not.toHaveBeenCalled();

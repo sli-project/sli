@@ -6,6 +6,15 @@ import { t, type MessageKey } from "../../i18n";
 import { isValidTimeZone, zonedParts } from "../../shared/date-time";
 import { agentHasDcAudit } from "./agent-actions";
 
+export function auditGroupPolicyStatus(report?: AgentItem["windows_audit"]) {
+  if (report?.management_state !== "blocked") return null;
+  const families = Object.values(report.families ?? {});
+  const rows = families.flatMap((family) => family?.required ?? []).filter((row) => row.state === "managed_by_gpo");
+  if (!rows.length && !families.some((family) => family?.state === "managed_by_gpo")) return null;
+  const names = [...new Set(rows.flatMap((row) => row.policy_name ? [row.policy_name] : []))];
+  return names.length ? t("agents.auditBlockedByNamedPolicy", { name: names.join(", ") }) : t("agents.auditBlockedByPolicy");
+}
+
 const subcategoryKeys: Record<string, MessageKey> = {
   logon: "agents.auditSubcategory.logon", logoff: "agents.auditSubcategory.logoff",
   process_creation: "agents.auditSubcategory.process_creation",
