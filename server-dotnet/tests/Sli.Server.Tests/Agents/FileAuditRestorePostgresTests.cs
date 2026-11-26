@@ -116,7 +116,7 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         var signer = new EcdsaPacketSigner(key);
         string statusPath = Control + "?agent_id=" + agentId;
 
-        async Task<JsonObject> Queue(string action, string commandId, long currentRevision)
+        async Task<JsonObject> Queue(string action, string commandId, long currentRevision, bool removeAssignment = false)
         {
             var command = new JsonObject {
                 ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = commandId, ["action"] = action,
@@ -132,6 +132,8 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
                 body["enabled"] = true;
                 body["activate_collection"] = true;
             }
+            if (removeAssignment)
+                body["remove_assignment"] = true;
             using var response = await Post(admin, Control, body, ct);
             var result = await Read(response, HttpStatusCode.OK, ct);
             Assert.Equal(commandId, result["command_id"]!.ToString());
@@ -208,9 +210,15 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
             Assert.Equal(1, await legacyApply.ExecuteNonQueryAsync(ct));
         }
         var otherScope = await SendPacket(SignedFile(applyRevision, "scope:other"));
+        var beforeFileReceipt = await admin.GetFromJsonAsync<JsonObject>(statusPath, ct);
+        Assert.Null(beforeFileReceipt!["last_event"]);
         var fileReceipt = await SendPacket(SignedFile(applyRevision, Scope));
         Assert.Equal("agent_file_audit_packet_invalid", otherScope["error_code"]!.ToString());
         Assert.True(fileReceipt["status"]!.ToString() == "committed", fileReceipt.ToJsonString());
+        var afterFileReceipt = await admin.GetFromJsonAsync<JsonObject>(statusPath, ct);
+        Assert.Equal(Scope, afterFileReceipt!["last_event"]?["collection_scope_id"]?.ToString());
+        Assert.Equal(Iso8601.Format(now), afterFileReceipt["last_event"]?["observed_at"]?.ToString());
+        Assert.Equal(fileReceipt["committed_at_utc"]?.ToString(), afterFileReceipt["last_event"]?["received_at"]?.ToString());
         var fileImport = await consumer.RunOnceAsync(1, ct);
         Assert.True(fileImport.Imported == 1, string.Join(", ", fileImport.PendingReasons));
 
@@ -238,7 +246,10 @@ public sealed class FileAuditRestorePostgresTests(ITestOutputHelper output)
         output.WriteLine($"Repeat check report HTTP {(int)checkedReport.StatusCode}");
         await AssertSavedCommand(recheck);
 
-        var restore = await Queue("restore", "synthetic-restore", beforeRestore!["policy_revision"]!.GetValue<long>());
+        var restore = await Queue("restore", "synthetic-restore", beforeRestore!["policy_revision"]!.GetValue<long>(), removeAssignment: true);
+        var restoring = await agent.GetFromJsonAsync<JsonObject>(AgentIdentity, ct);
+        Assert.DoesNotContain(restoring!["assigned_modules"]!.AsArray(), item => item?["module_id"]?.ToString() == "sli.file-audit");
+        Assert.True(JsonNode.DeepEquals(restore, restoring["file_audit"]?["command"]));
         var restoreReport = Report(policy, restore, now.AddSeconds(2));
         await Confirm(restoreReport);
         await Confirm(restoreReport);

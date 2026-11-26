@@ -2,7 +2,7 @@ import { formatNumber } from "../shared/format";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { t } from "../i18n";
 import { PeriodPicker, type PeriodValue } from "./PeriodPicker";
-import { Button } from "./Primitives";
+import { Button, Checkbox } from "./Primitives";
 import { SearchMultiSelect, type SearchOption } from "./SearchMultiSelect";
 
 export type FilterOption = { value: string; label: string; count?: number };
@@ -74,13 +74,12 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
             apply({ ...draft, [field.key]: value });
         }}/>;
     }
-    if (field.kind === "checkbox") return <label key={field.key} className="sli-ds-button">
-      <input type="checkbox" checked={draft[field.key] === field.onValue} onChange={(event) => {
+    if (field.kind === "checkbox") return <Checkbox key={field.key} label={field.label}
+      checked={draft[field.key] === field.onValue} onChange={(event) => {
         const value = event.target.checked ? field.onValue : field.offValue;
         set(field.key, value);
         if (applyInline) apply({ ...draft, [field.key]: value });
-      }}/>{field.label}
-    </label>;
+      }}/>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
     return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>

@@ -283,6 +283,7 @@ button.sli-ds-metric:hover { border-color: var(--sli-border-strong); }
 .sli-ds-list-filters > input[type="search"] { flex: 1; min-width: 0; }
 .sli-ds-list-filters label, .sli-ds-list-toolbar label { display: inline-flex; align-items: center; gap: var(--sli-space-2); }
 .sli-ds-list-filters input, .sli-ds-list-filters select, .sli-ds-list-toolbar select, .sli-ds-field select { color: var(--sli-text); background: var(--sli-surface-1); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-md); padding: var(--sli-space-2); font: inherit; }
+.sli-ds-field select[data-size="compact"] { height: var(--sli-control-height-compact); padding-block: 0; }
 .sli-ds-list-toolbar .sli-ds-table__columns { position: relative; align-self: center; }
 .sli-ds-list-toolbar .sli-ds-table__columns > div { position: absolute; right: 0; z-index: 4; min-width: var(--sli-field-min-width); display: grid; padding: var(--sli-space-3); background: var(--sli-surface-1); border: 1px solid var(--sli-border); }
 .sli-ds-report__split > * { min-width: 0; }

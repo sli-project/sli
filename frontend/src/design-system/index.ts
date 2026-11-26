@@ -16,4 +16,4 @@ export { useDateFormatters } from "./useDateFormatters";
 export { formatCell, formatDateTime, setDisplayTimeZone, type CellKind } from "./format";
 export { Icon, IconSprite } from "./Icon";
 export { OverlayProvider, useOverlays, type OverlayApi } from "./Overlays";
-export { Badge, Button, Callout, EmptyState, Panel, type Tone } from "./Primitives";
+export { Badge, Button, Callout, Checkbox, EmptyState, Panel, Select, type Tone } from "./Primitives";
