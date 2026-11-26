@@ -18,8 +18,11 @@ public sealed class AdComputerLogonActivityTests
         await pg.StartAsync(ct);
         await using var db = await pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(db, """
-            create table servers (id bigint primary key, domain_id bigint, role text);
-            insert into servers values (9, 1, 'domain_controller'), (10, 2, 'domain_controller');
+            create table servers (id bigint primary key, domain_id bigint, hostname text, fqdn text, role text);
+            insert into servers values
+                (9, 1, 'DC-TEST', 'dc-test.example.test', 'domain_controller'),
+                (10, 2, 'DC-TEST', 'dc-test.example.test', 'domain_controller'),
+                (11, 1, 'APP-TEST', 'app-test.example.test', 'member_server');
             create table event_hot (
                 event_id bigint, time_created_utc timestamptz, event_kind int, domain_id bigint,
                 computer text, method jsonb, fields jsonb, source_sha256 bytea
@@ -32,17 +35,36 @@ public sealed class AdComputerLogonActivityTests
                            'WorkstationName', workstation, 'IpAddress', address)),
                    jsonb_build_object('LogonType', logon_type), decode(repeat('ab', 32), 'hex')
             from (values
-                (101, '2026-11-01T10:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.22', '3'),
-                (102, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '3'),
-                (103, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '3'),
-                (104, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.23', '3'),
+                (101, '2026-11-01T10:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.22', '10'),
+                (102, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '10'),
+                (103, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'dc-test', 'Alice', 'client-test', '192.0.2.22', '10'),
+                (104, '2026-11-01T11:00:00.123456Z', 4624, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.23', '10'),
                 (105, '2026-11-01T12:00:00Z', 4624, 1, 9, 'DC-TEST', 'client$', 'CLIENT-TEST', '192.0.2.22', '3'),
                 (106, '2026-11-01T13:00:00Z', 4624, 1, 9, 'DC-TEST', 'ANONYMOUS LOGON', '-', '-', '3'),
                 (107, '2026-11-01T14:00:00Z', 4624, 1, 9, 'DC-TEST', 'local', '-', '::1', '3'),
                 (108, '2026-11-01T15:00:00Z', 4625, 1, 9, 'DC-TEST', 'alice', 'CLIENT-TEST', '192.0.2.22', '3'),
                 (109, '2026-11-01T16:00:00Z', 4624, 2, 10, 'DC-TEST', 'other-domain', '-', '-', '2'),
-                (110, '2026-11-04T00:00:00Z', 4624, 1, 9, 'DC-TEST', 'outside-window', '-', '-', '2')
+                (110, '2026-11-04T00:00:00Z', 4624, 1, 9, 'DC-TEST', 'outside-window', '-', '-', '2'),
+                (111, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', '-', '-', '4'),
+                (112, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', '-', '-', '5'),
+                (113, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', '-', '-', '9'),
+                (114, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'NT AUTHORITY\SYSTEM', '-', '-', '2'),
+                (115, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'Local Service', '-', '-', '7'),
+                (116, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'Network Service', '-', '-', '11'),
+                (117, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'VIRTUAL USERS\sshd_test', '-', '-', '2'),
+                (118, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'Window Manager\DWM-1', '-', '-', '2'),
+                (119, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'Font Driver Host\UMFD-1', '-', '-', '2'),
+                (120, '2026-11-01T15:00:00Z', 4624, 1, 9, 'DC-TEST', 'client$', '-', '-', '2'),
+                (121, '2026-11-01T10:00:00Z', 4624, 1, 9, 'app-test.example.test', 'alice', '-', '::1', '2'),
+                (122, '2026-11-01T10:00:00Z', 4624, 1, 9, 'app-test.example.test', 'alice', '-', '-', '7'),
+                (123, '2026-11-01T10:00:00Z', 4624, 1, 9, 'app-test.example.test', 'alice', '-', '-', '11'),
+                (124, '2026-11-01T14:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', '-', '192.0.2.22', '3'),
+                (125, '2026-11-01T14:00:00Z', 4624, 1, 9, 'DC-TEST', 'alice', '-', '-', null)
             ) as fixture(id, stamp, kind, domain, server, computer, account, workstation, address, logon_type);
+            update event_hot
+            set method=jsonb_set(jsonb_set(method, '{$principals,TargetDomainName}', '"vIrTuAl UsErS"'),
+                                 '{$principals,TargetUserName}', '"sshd_test"')
+            where event_id=117;
             """, ct);
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -54,8 +76,13 @@ public sealed class AdComputerLogonActivityTests
             "table", null, false, 25, null, "UTC");
         Task<JsonObject> Read(AdV2Request input) => store.ReadAsync(input, _ => true, ct);
         var result = await Read(request);
-        var computer = Assert.Single(result["items"]!.AsArray());
+        var computers = result["items"]!.AsArray();
+        Assert.Equal(2, computers.Count);
+        var computer = computers[1];
         Assert.Equal("DC-TEST", computer.Text("display_name"), ignoreCase: true);
+        Assert.Equal("domain_controller", computer.Text("computer_type"));
+        Assert.Equal("server", computers[0].Text("computer_type"));
+        Assert.Equal(3, computers[0].Int("login_count"));
         Assert.Equal(4, computer.Int("login_count"));
         Assert.Equal("2026-11-01T11:00:00.123456Z", computer.Text("last_observed_logon_at_utc"));
 
@@ -66,7 +93,7 @@ public sealed class AdComputerLogonActivityTests
         var second = await Read(detail with { Cursor = first.Text("next_cursor") });
         var repeated = Assert.Single(second["items"]!.AsArray());
         Assert.Equal("EXAMPLE\\Alice", repeated.Text("user_name"));
-        Assert.Equal("3", repeated.Text("logon_type"));
+        Assert.Equal("10", repeated.Text("logon_type"));
         Assert.Equal("CLIENT-TEST", repeated.Text("workstation_name"), ignoreCase: true);
         Assert.Equal("2026-11-01T11:00:00.123456Z", repeated.Text("observed_at_utc"));
         Assert.Equal(103, repeated.Int("source_event_id"));
@@ -76,7 +103,10 @@ public sealed class AdComputerLogonActivityTests
         var service = (JsonObject)request.Params.DeepClone();
         service["service_logons"] = "yes";
         var included = await Read(request with { Params = service });
-        Assert.Equal(7, Assert.Single(included["items"]!.AsArray()).Int("login_count"));
+        var includedCount = included["items"]!.AsArray()[1].Int("login_count");
+        Assert.Equal(19, includedCount);
+        var includedDetail = await Read(detail with { Params = service, Limit = 25 });
+        Assert.Equal(includedCount, includedDetail["items"]!.AsArray().Sum(item => item.Int("repeat_count")));
         var missing = (JsonObject)request.Params.DeepClone();
         missing["user"] = "missing-fixture-user";
         var empty = await Read(request with { Params = missing });

@@ -8,6 +8,7 @@ import { eventEvidenceHref, exactNavigationId } from "../../app/event-presentati
 import { CopyFactsButton, rowFactsText } from "../../app/report-v2/DetailSection";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { t } from "../../i18n";
+import { formatNumber } from "../../shared/format";
 import { userDeviations, UserStateMark, userObject as object, userObjects as objects, userText as text } from "./UserChecks";
 
 type Row = Record<string, unknown>;
@@ -16,7 +17,7 @@ type UserLabel<Section extends "card" | "event"> =
 const missing = () => t("table.noValue");
 const cardText = (key: UserLabel<"card">) => t(`reports.ad.users.card.${key}`);
 const groupId = (value: unknown) => exactNavigationId(text(value)?.replace(/^group:/, ""), "entity_id");
-const tabs = ["account", "rights", "activity", "changes"] as const;
+const tabs = ["account", "rights", "activity"] as const;
 
 function GroupLink({ group }: { group: Row }) {
   const id = groupId(group.id);
@@ -29,7 +30,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Privileges({ row }: { row: Row }) {
-  const paths = objects(row.privilege_paths);
+  const paths = objects(row.privilege_paths).filter((path) => path.relation === "nested" && objects(path.nodes).length > 2);
   const groups = objects(row.direct_memberships);
   return <>
     {paths.length ? <Section title={cardText("privilege_path")}>
@@ -49,19 +50,12 @@ function Privileges({ row }: { row: Row }) {
   </>;
 }
 
-const eventLabels: Record<number, UserLabel<"event">> = {
-  4624: "success", 4625: "failure", 4720: "created", 4722: "enabled", 4723: "password_changed",
-  4724: "password_reset", 4725: "disabled", 4726: "deleted", 4728: "member_added", 4729: "member_removed",
-  4732: "member_added", 4733: "member_removed", 4738: "updated", 4740: "locked", 4756: "member_added",
-  4757: "member_removed", 4767: "unlocked", 4781: "renamed",
-};
-
 function Timeline({ rows, returnTo }: { rows: Row[]; returnTo: string }) {
   const [collapse, setCollapse] = useState(true);
   const { formatDateTime } = useDateFormatters();
   const label = (row: Row) => [
-    t(`reports.ad.users.event.${eventLabels[Number(row.event_id)] ?? "updated"}`),
-    ...new Set([row.member, row.target, row.actor, row.source].map(text).filter((value) => value && value !== "-" && value !== "S-1-0-0")),
+    t(Number(row.event_id) === 4624 ? "reports.ad.users.event.success" : "reports.ad.users.event.failure"),
+    ...new Set([row.target, row.actor, row.source].map(text).filter((value) => value && value !== "-" && value !== "S-1-0-0")),
   ].join(" · ");
   const groups: Row[][] = [];
   for (const row of rows) {
@@ -110,9 +104,9 @@ function LogonStrip({ row }: { row: Row }) {
   </Section>;
 }
 
-export function UserCard({ selected, columns, timeZone, initialTab, historical, allowJournal, allowProblems, onClose }: {
+export function UserCard({ selected, columns, timeZone, initialTab, historical, allowJournal, allowProblems, allowChanges, onClose }: {
   selected: Row; columns: ReportColumnDto[]; timeZone: string; initialTab: string; historical: boolean;
-  allowJournal: boolean; allowProblems: boolean; onClose: () => void;
+  allowJournal: boolean; allowProblems: boolean; allowChanges: boolean; onClose: () => void;
 }) {
   const { formatDateTime, formatCell } = useDateFormatters();
   const [tab, setTab] = useState(initialTab);
@@ -120,7 +114,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   const domain = exactNavigationId(selected.domain_id, "entity_id");
   const query = useQuery({ queryKey: ["ad-user-card", domain, id, timeZone], enabled: !!id && !historical,
     queryFn: async () => {
-      const params = new URLSearchParams({ tab: "changes", tz: timeZone });
+      const params = new URLSearchParams({ tab: "all", tz: timeZone });
       if (domain) params.set("domain", domain);
       return (await api.reportV2Detail("ad.users.v2", id!, params)).items[0] ?? null;
     }, retry: false, staleTime: 60_000, refetchOnWindowFocus: false });
@@ -130,11 +124,19 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   const name = text(row.display_name) ?? account ?? missing();
   const returnTo = window.location.pathname + window.location.search;
   const journalParams = new URLSearchParams({ q: text(row.sid) ?? sam ?? "", period: "30d" });
-  const problemsParams = new URLSearchParams(id ? { entity_id: id } : undefined);
-  if (domain) { journalParams.set("domain", domain); problemsParams.set("domain", domain); }
+  if (domain) journalParams.set("domain", domain);
+  const scope = id && domain ? { entity_id: id, domain } : null;
+  const problemsParams = new URLSearchParams({ ...scope, population: "open" });
+  const problems = useQuery({
+    queryKey: ["report-v2", "user-open-problems", domain, id],
+    enabled: allowProblems && scope !== null,
+    queryFn: () => api.reportV2Data("security.problems", new URLSearchParams({ ...scope, population: "open", queue_view: "all", limit: "1" })),
+    retry: false,
+  });
+  const counts = problems.data?.coverage.open_by_severity;
+  const openCount = counts && !problems.isError ? Object.values(counts).reduce((total, count) => total + count, 0) : null;
   const canSee = (key: string) => columns.some((column) => column.key === key);
-  const events = objects(row.timeline);
-  const changes = objects(row.changes);
+  const events = objects(row.timeline).filter((event) => [4624, 4625].includes(Number(event.event_id)));
   const computers = objects(row.computers);
   const deviations = userDeviations(row);
   const values = [
@@ -149,7 +151,6 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   ].filter((fact) => canSee(fact.key) && (fact.key !== "department" || fact.value !== null));
   return <DetailDrawer open responsive title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
     {allowJournal && sam ? <a className="sli-ds-button" data-variant="primary" href={withReturnTo(`/app/report/events.journal?${journalParams}`, returnTo)}>{cardText("journal")}</a> : null}
-    {allowProblems && id ? <a className="sli-ds-button" href={withReturnTo(`/app/report/security.problems?${problemsParams}`, returnTo)}>{cardText("problems")}</a> : null}
     <CopyFactsButton text={rowFactsText(name, columns, row, timeZone)}/>
   </>}>
     <Tabs items={tabs.map((key) => ({ key, label: cardText(key) }))} active={tab} onChange={setTab}>
@@ -158,6 +159,14 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
         {query.isError ? <div role="alert">{cardText("load_error")} <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></div> : null}
         {tab === "account" ? <>
           <FactList facts={values}/>
+          {scope && (allowProblems || allowChanges) ? <ul className="sli-ds-path">
+            {allowProblems ? <li><a href={withReturnTo(`/app/report/security.problems?${problemsParams}`, returnTo)}>
+              {openCount === null ? cardText("problems") : t("reports.ad.users.card.open_problems", { count: formatNumber(openCount) })} →
+            </a></li> : null}
+            {allowChanges ? <li><a href={withReturnTo(`/app/report/security.events.chains?${new URLSearchParams(scope)}`, returnTo)}>
+              {cardText("object_changes")} →
+            </a></li> : null}
+          </ul> : null}
           {deviations.length ? <Section title={t("reports.ad.users.list.deviation")}>
             <ul className="sli-ds-path">{deviations.map((reason) => <li key={reason.key}>
               {reason.severity ? <><SeverityBadge severity={reason.severity}/> </> : null}{reason.label}
@@ -175,14 +184,9 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
           </Section> : null}
         </> : tab === "rights" ? <Privileges row={row}/>
           : <>
-            {tab === "activity" ? <LogonStrip row={row}/> : null}
-            {tab === "changes" && selected.label ? <FactList facts={[
-              { label: cardText("changes"), value: text(selected.label) },
-              { label: cardText("before"), value: formatCell(selected.before, "text") },
-              { label: cardText("after"), value: formatCell(selected.after, "text") },
-            ]}/> : null}
-            <Timeline key={tab} rows={tab === "changes" ? changes : events} returnTo={returnTo}/>
-            {!query.isFetching && !query.isError && !(tab === "changes" ? changes.length || selected.label : events.length) ? <p>{missing()}</p> : null}
+            <LogonStrip row={row}/>
+            <Timeline rows={events} returnTo={returnTo}/>
+            {!query.isFetching && !query.isError && !events.length ? <p>{missing()}</p> : null}
           </>}
       </TabPanel>
     </Tabs>
