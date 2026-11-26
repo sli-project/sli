@@ -79,7 +79,7 @@ public sealed partial class OperationsService
         select rule_id,state,observed_at from public.read_password_live_status400(
             array(select d.id::bigint from public.domains d where not d.is_archived))
         """;
-    private const string PasswordThresholdStatusSql = """
+    internal const string PasswordThresholdStatusSql = """
         select rule_id,state,observed_at from public.read_password_threshold_status418(
             array(select d.id::bigint from public.domains d where not d.is_archived))
         """;

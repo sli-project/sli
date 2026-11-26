@@ -56,15 +56,15 @@ public sealed class OperationsStorageViewTests
     public async Task WorkersViewReadsOnlyHeartbeatsAndPasswordHealth(bool projectionUnavailable)
     {
         using var app = await OperationsEndpointTests.Start();
-        app.Queries.FailContaining = projectionUnavailable ? "read_password_live_status400" : "semantic_processing_outbox";
+        app.Queries.FailContaining = projectionUnavailable ? "read_password_threshold_status418" : "semantic_processing_outbox";
         var observed = OperationsEndpointTests.Now.ToString("O");
         app.Queries.Workers = new JsonArray(new JsonObject
         {
             ["worker_name"] = "semantic", ["worker_id"] = "fixture-semantic", ["status"] = "running", ["heartbeat_at"] = observed,
         });
-        app.Queries.Results[OperationsService.PasswordLiveStatusSql] = new JsonArray(
+        app.Queries.Results[OperationsService.PasswordThresholdStatusSql] = new JsonArray(
             new JsonObject { ["rule_id"] = "qw.password-brute-force", ["state"] = "current", ["observed_at"] = observed },
-            new JsonObject { ["rule_id"] = "qw.password-spray", ["state"] = "quiet", ["observed_at"] = observed });
+            new JsonObject { ["rule_id"] = "qw.password-spray", ["state"] = "unknown" });
 
         using var response = await app.Client.GetAsync("/api/v1/operations/overview?view=workers", TestContext.Current.CancellationToken);
         var body = await OperationsEndpointTests.Body(response);
@@ -86,7 +86,7 @@ public sealed class OperationsStorageViewTests
         else
         {
             Assert.Equal(new[] { "qw.password-brute-force", "qw.password-spray" }, rules.Select(row => (string?)row?["rule_id"]));
-            Assert.Equal(new[] { "current", "quiet" }, rules.Select(row => (string?)row?["state"]));
+            Assert.Equal(new[] { "current", "unknown" }, rules.Select(row => (string?)row?["state"]));
         }
 
         Assert.Collection(app.Queries.Calls,
@@ -97,10 +97,7 @@ public sealed class OperationsStorageViewTests
             },
             health =>
             {
-                Assert.Equal("""
-                    select rule_id,state,observed_at from public.read_password_live_status400(
-                        array(select d.id::bigint from public.domains d where not d.is_archived))
-                    """, health.Sql);
+                Assert.Equal(OperationsService.PasswordThresholdStatusSql, health.Sql);
                 Assert.Empty(health.Parameters);
             });
         Assert.Null(workers["semantic_queues"]);

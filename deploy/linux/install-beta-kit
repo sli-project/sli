@@ -48,6 +48,7 @@ install=()
 target_version=
 host_package=
 host_version=
+upgrade=
 for file in "${packages[@]}"; do
     package=$(dpkg-deb -f "$file" Package)
     version=$(dpkg-deb -f "$file" Version)
@@ -86,6 +87,7 @@ done
 if [[ -n $target_version ]]; then
     host_status=$(dpkg-query -W -f='${db:Status-Status}' sli-host 2>/dev/null) || host_status=
     if [[ $host_status == installed || -L /opt/sli/current || -e /opt/sli/current ]]; then
+        upgrade=1
         [[ -n $host_package && $host_version == "$target_version" ]] || fail 'Missing matching sli-host package'
         mkdir -p -- preflight/deploy
         dpkg-deb --extract "$host_package" preflight/package
@@ -101,3 +103,9 @@ sudo env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes \
     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     install --no-remove --fix-broken "${install[@]}"
 sudo /usr/sbin/sli-setup "$@"
+
+# Package activation runs under APT. Purge only after APT and setup have exited.
+if [[ -n $upgrade ]]; then
+    sudo /usr/sbin/sli-native-upgrade purge-old-release-packages "$target_version" ||
+        printf 'native_upgrade_release_purge_warning: Could not start package cleanup\n' >&2
+fi
