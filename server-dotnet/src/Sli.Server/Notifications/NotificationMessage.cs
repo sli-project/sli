@@ -47,6 +47,8 @@ public static class NotificationMessage
             Fact("computer", ProblemJson.Text(parameters["computer"]));
         }
         long count = ProblemJson.Long(row["occurrence_count"]);
+        if (count <= 0 && finding["presentation_facts"]?["version"] is not null && ProblemPresentation.IsPasswordFinding(rule))
+            count = ProblemJson.Long(finding["presentation_facts"]?["attempts"]);
         if (count <= 0)
             count = ProblemPresentation.IsPasswordFinding(rule)
                 ? Math.Max(ProblemJson.Long(finding["evidence_count"]), ProblemJson.Long(parameters["count"]))
