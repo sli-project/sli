@@ -996,6 +996,15 @@
           "hidden": true
         },
         {
+          "key": "account_rows",
+          "label": "Account rows",
+          "kind": "choice",
+          "hidden": true,
+          "options": [
+            { "value": "yes", "label": "Accounts" }
+          ]
+        },
+        {
           "key": "as_of",
           "label": "Состав на дату",
           "kind": "text",
@@ -1817,6 +1826,12 @@
         "privilege"
       ],
       "check": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "account_rows": [
         "identity_basic",
         "privilege",
         "security",

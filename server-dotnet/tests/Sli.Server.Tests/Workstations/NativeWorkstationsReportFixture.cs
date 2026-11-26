@@ -21,6 +21,7 @@ internal static class NativeWorkstationsReportFixture
     internal static async Task<JsonObject> SeedAsync(NpgsqlConnection owner, CancellationToken ct)
     {
         var now = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var repeatWindow = now.AddSeconds(-(now.ToUnixTimeSeconds() % 600)).AddMinutes(-10);
         var first = new DateTimeOffset(now.UtcDateTime.Date.AddDays(-20).AddHours(10), TimeSpan.Zero);
         var last = first.AddMinutes(4);
         var policy = AgentModuleAssignmentRules.NormalizeWorkstation(new JsonObject { ["policy_revision"] = "1" }, true);
@@ -69,6 +70,12 @@ internal static class NativeWorkstationsReportFixture
                 ["source_instance_id"] = source, ["source_generation"] = source }
         };
         var security = Method("Security", "Microsoft-Windows-Security-Auditing", Source.ToString("D"));
+        var failedLogon = (JsonObject)security.DeepClone();
+        failedLogon["$principals"] = new JsonObject
+        {
+            ["TargetUserName"] = "user", ["TargetDomainName"] = "EXAMPLE",
+            ["SubjectUserName"] = "operator", ["SubjectDomainName"] = "EXAMPLE"
+        };
         var service = Method("System", "Service Control Manager", Source.ToString("D"));
         var other = Method("System", "Service Control Manager", "41800000-0000-4000-8000-000000999999");
         // Seed retained individual facts. Direct event_hot inserts deliberately
@@ -80,14 +87,15 @@ internal static class NativeWorkstationsReportFixture
             insert into event_cold_facts(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
                 values(@event,@now-interval '5 minutes',7045,@domain,'EXAMPLE\\operator',null,null,@host,@service,'{}',
                     '{"ServiceName":"Workspace service","ImagePath":"C:\\Program Files\\Workspace\\service.exe"}'),
-                    (@event+1,@now-interval '10 minutes',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{"Status":"0xc000006d"}','{}'),
-                    (@event+2,@now-interval '9 minutes',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{"Status":"0xc000006d"}','{}'),
+                    (@event+1,@repeat_window+interval '1 minute',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@failed_logon,'{"Status":"0xc000006d"}','{"LogonType":"3"}'),
+                    (@event+2,@repeat_window+interval '2 minutes',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@failed_logon,'{"Status":"0xc000006d"}','{"LogonType":"3"}'),
                     (@event+3,@now-interval '2 minutes',7045,@domain,'OTHER-SOURCE',null,null,@host,@other,'{}','{}');
             insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 values(@first::date,sha256(convert_to('workstation-workspace-daily','UTF8')),4624,@domain,
                     'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{}',37,@first,@last);
             """, ("event", ExactEvent), ("now", now.UtcDateTime), ("first", first.UtcDateTime), ("last", last.UtcDateTime),
-            ("domain", domain), ("host", Host), ("service", service), ("security", security), ("other", other));
+            ("domain", domain), ("host", Host), ("service", service), ("security", security), ("other", other),
+            ("repeat_window", repeatWindow.UtcDateTime), ("failed_logon", failedLogon));
         return new JsonObject
         {
             ["station_id"] = Agent.ToString("D"), ["agent_id"] = Agent.ToString("D"),
