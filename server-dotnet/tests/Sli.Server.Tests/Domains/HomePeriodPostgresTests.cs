@@ -45,6 +45,8 @@ public sealed partial class HomeSummaryEndpointTests
             create table findings_active(id bigint primary key,domain_id bigint,rule_code text,title text,summary text,severity text,
                 actor text,target text,first_seen_utc text,closed_at text,status text,repeat_count int);
             create function is_semantic_finding_published_v1(finding bigint) returns boolean language sql stable as 'select finding <> 9';
+            create function home_published_findings424(ids bigint[]) returns table(finding_id bigint) language sql stable
+                as 'select id from unnest(ids) id where is_semantic_finding_published_v1(id)';
             create function semantic_finding_in_domains_v265(finding bigint, ids bigint[]) returns boolean language sql stable
                 as 'select ids is null or exists(select 1 from findings_active f where f.id=finding and f.domain_id=any(ids))';
             create function semantic_finding_suppressed_v160(finding bigint,rule text) returns boolean language sql stable as 'select false';
@@ -55,6 +57,9 @@ public sealed partial class HomeSummaryEndpointTests
             create table finding_event_copies337(finding_id bigint,event_id bigint,event_kind int,domain_id bigint,time_created_utc timestamptz,
                 computer text,method jsonb,fields jsonb);
             create index on finding_event_copies337(finding_id,event_kind,event_id);
+            create index on finding_event_copies337(domain_id,event_kind,event_id,time_created_utc,finding_id);
+            create index on finding_event_copies337
+                (finding_id,(event_kind in (4728,4729,4732,4733,4756,4757,4719)) desc,time_created_utc desc,event_id desc);
             create table storage_v2_entity_type(id bigint,value text);
             create table entities_v2_active(id bigint,entity_type_id bigint,domain_id bigint,display_name text);
             create table ad_context_entity_versions(entity_id bigint,source_section text,valid_from_utc timestamptz,
@@ -73,6 +78,7 @@ public sealed partial class HomeSummaryEndpointTests
                 source_sha256 bytea,primary key(time_created_utc,event_id)) partition by range(time_created_utc);
             create table event_hot_fixture partition of event_hot default;
             create index on event_hot(domain_id,event_kind,time_created_utc) where source_sha256 is not null;
+            create index on event_hot(domain_id,event_kind,time_created_utc desc,event_id desc);
             """, ct);
         await using (var seed = new NpgsqlCommand("""
             do $partitions$ declare day date;
@@ -128,7 +134,7 @@ public sealed partial class HomeSummaryEndpointTests
                 (12,7,'qw.ad-hardening.privileged-nonexpiring','Password never expires',null,'high',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (13,7,'semantic.security.privileged_group_member_added','Earlier occurrence',null,'high',null,'test-group',(@end-interval '8 days')::text,null,'new',0);
             alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int, add column assigned_to text,
-                add column created_at timestamptz, alter column closed_at type timestamptz using closed_at::timestamptz;
+                add column created_at timestamptz;
             update findings_active set last_seen_utc=first_seen_utc,created_at=first_seen_utc::timestamptz;
             insert into auth_users values
                 (1,'admin-example','admin',true,false,@end-interval '1 day'),

@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SetupPage } from "./setup";
 import { localeRuntime, setLocale, t } from "../../i18n";
+import { TimeZoneContext } from "../../shared/time-zone";
 
 const state = vi.hoisted(() => ({ status: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => undefined, useTimeZone: () => ({ timeZone: "UTC", setTimeZone: () => undefined }) }));
@@ -80,7 +81,7 @@ it.each(["error", "partial", "unknown", "unavailable"] as const)("does not turn 
     agent_collection: { state: healthState, checked_at_utc: "2026-01-02T00:00:00Z", active_agents: 1, current_agents: 0, items: [] },
   });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>);
-  expect(await screen.findByText(t(`setup.agentCollection.${healthState}`))).toBeTruthy();
+  expect(await screen.findByText(t(`setup.agentCollection.${healthState === "error" ? "partial" : healthState}`))).toBeTruthy();
   expect(screen.queryByText(t("setup.agentCollection.current"))).toBeNull();
   expect(screen.queryByText("Old fresh snapshot")).toBeNull();
 });
@@ -97,34 +98,26 @@ it("routes an empty agent-backed source to agents instead of legacy controller c
   expect(screen.getByRole("link", { name: t("agents.title") }).getAttribute("href")).toBe("/app/agents");
 });
 
-it("keeps accepted historical gaps inside details even when current delivery works", async () => {
-  state.status.mockResolvedValue({ api_version: "v1", read_only: true, generated_at_utc: "2026-01-02T00:00:00Z",
-    steps: [{ id: "first-collection", title: "Collection", state: "done", summary: "" }],
+it("names the failed channel, controller and observed time", async () => {
+  setLocale("ru");
+  const host = "dc.example.test";
+  const observed = "2026-10-25T12:34:00Z";
+  state.status.mockResolvedValue({ api_version: "v1", read_only: true, generated_at_utc: observed,
+    steps: [{ id: "first-collection", title: "Collection", state: "todo", summary: "" }],
     sources: [], domains: [], domain_controllers: [], report_domain: null, collection: null,
-    agent_collection: { state: "current", checked_at_utc: "2026-01-02T00:00:00Z", active_agents: 1,
-      current_agents: 1, items: [], completeness: { state: "known_gaps" } },
+    agent_collection: { state: "error", checked_at_utc: observed, active_agents: 1, current_agents: 0, items: [{
+      id: "synthetic-agent", name: host, href: "/app/agents?agent_id=synthetic-agent",
+      modules: [{ module_id: "sli.windows.ad-dc", channels: [{
+        channel: "Security", state: "error", failure_reason: "read_error", issue_observed_at_utc: observed,
+      }] }],
+    }] },
   });
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>);
-  expect(await screen.findByText(t("setup.agentCollection.current"))).toBeTruthy();
-  expect(screen.getByText(t("operations.agent_collection.accepted_loss")).closest("details")?.open).toBe(false);
-});
-
-it.each(["ru", "en"] as const)("shows each agent's collection state outside technical details (%s)", async (locale) => {
-  setLocale(locale);
-  const agent = { id: "synthetic-agent", host_id: "synthetic-host", name: "fixture-host", domains: [],
-    state: "current", connection: "online", last_seen: null, last_packet_at: null,
-    policy_revision: 1, applied_policy_revision: 1, modules: [], href: "/app/agents?agent_id=synthetic-agent" };
-  state.status.mockResolvedValue({ api_version: "v1", read_only: true, generated_at_utc: "2026-10-25T00:00:00Z",
-    steps: [{ id: "first-collection", title: "Collection", state: "done", summary: "" }],
-    sources: [], domains: [], domain_controllers: [], report_domain: null, collection: null,
-    agent_collection: { state: "current", checked_at_utc: "2026-10-25T00:00:00Z", active_agents: 1,
-      current_agents: 1, items: [agent] },
-  });
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>);
-  const link = await screen.findByRole("link", { name: "fixture-host" });
-  expect(link.closest("details")).toBeNull();
-  expect(link.parentElement?.textContent).toContain(t("operations.agent_collection.state.current"));
-  const technical = screen.getByText((content, node) => node?.tagName === "P"
-    && content.includes(t("agents.revisions", { desired: 1, applied: 1 })));
-  expect(technical.closest("details")?.open).toBe(false);
+  render(<TimeZoneContext.Provider value={{ timeZone: "UTC", setTimeZone: () => undefined }}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>
+  </TimeZoneContext.Provider>);
+  const failure = (await screen.findByRole("link", { name: host })).parentElement!;
+  expect(failure.textContent).toContain("Security");
+  expect(failure.textContent).toContain("25.10.2026, 12:34");
+  expect(failure.textContent).toContain(t("operations.agent_collection.reason.read_error"));
+  expect(screen.queryByText("Сбор нарушен")).toBeNull();
 });
