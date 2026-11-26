@@ -59,7 +59,7 @@ beforeEach(() => {
   vi.spyOn(api, "setupStatus").mockResolvedValue(emptySetup);
   vi.spyOn(api, "homePeriod").mockResolvedValue({
     domains: [], domain_id: null, from: checkedAt, to: checkedAt, updated_at: checkedAt,
-    problems: null, controllers: null, changes: null,
+    active_operator_count: null, since_previous_login: null, problems: null, weak_spots: null, changes: null,
   });
   vi.spyOn(api, "reportV2Definition").mockImplementation(async key => definition(key));
   vi.spyOn(api, "reportV2Data").mockRejectedValue(new ApiResponseError(403, "domain_scope_denied"));
