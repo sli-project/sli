@@ -963,6 +963,8 @@
   "reports.v2.ad.computers.v6.params.activity.options.within_30_days": "Up to 30 days",
   "reports.v2.ad.computers.v6.params.activity.options.days_31_to_90": "31–90 days",
   "reports.v2.ad.computers.v6.params.activity.options.over_60_days": "Over 60 days",
+  "reports.v2.ad.computers.v6.params.activity.options.over_90_days": "Over 90 days",
+  "reports.v2.ad.computers.v6.params.activity.options.never": "Never",
   "reports.v2.ad.computers.v6.params.threshold_days.label": "Age threshold",
   "reports.v2.ad.computers.v6.params.threshold_days.options.30": "30 days",
   "reports.v2.ad.computers.v6.params.threshold_days.options.60": "60 days",
