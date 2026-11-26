@@ -114,7 +114,7 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   const rootRow = () => page.getByRole('table').getByRole('row').filter({ hasText: fixture.path });
   await expect(rootRow()).toHaveCount(1);
   overview = await readResponse(page, 'select 200 resource rows', reportPath('overview'),
-    () => page.getByRole('combobox', { name: 'Строк на странице', exact: true }).selectOption('200'),
+    () => page.getByRole('radiogroup', { name: 'Строк на странице' }).getByText('200', { exact: true }).click(),
     params => params.get('limit') === '200');
   assertWindow(overview.params, fixture, false);
   const resource = overview.body.items.find(row => row.agent_id === fixture.agent_id
@@ -164,10 +164,10 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(permissions.body.detail.object.dacl.aces.length, 126, 'The large ACL must come from the retained API projection');
   const acl = page.getByRole('region', { name: permissionsTitle, exact: true });
   await expect(acl).toBeVisible();
-  await acl.getByRole('combobox', { name: 'Строк на странице', exact: true }).selectOption('200');
+  await acl.getByRole('radiogroup', { name: 'Строк на странице' }).getByText('200', { exact: true }).click();
   const aceRows = acl.getByRole('table', { name: permissionsTitle, exact: true }).locator('tbody > tr[data-clickable]');
   await expect(aceRows).toHaveCount(126);
-  await expect(acl.getByText('1–126 из 126', { exact: true })).toBeVisible();
+  await expect(acl.getByText('Страница 1 из 1', { exact: true })).toBeVisible();
   await expect(acl.getByRole('button', { name: 'Вперёд', exact: true })).toBeDisabled();
   const lastSid = permissions.body.detail.object.dacl.aces.at(-1).sid;
   const search = acl.getByLabel('Поиск по субъекту, SID или маске', { exact: true });
@@ -185,8 +185,12 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(compared.body.detail.comparison.state, 'available');
   assert.equal(compared.body.detail.comparison.before.snapshot.id, fixture.before_snapshot_id);
   assert.equal(compared.body.detail.comparison.after.snapshot.id, fixture.snapshot_id);
-  await expect(page.getByRole('combobox', { name: 'Было', exact: true })).toHaveValue(fixture.before_snapshot_id);
-  await expect(page.getByRole('combobox', { name: 'Стало', exact: true })).toHaveValue(fixture.snapshot_id);
+  for (const [name, id] of [['Было', fixture.before_snapshot_id], ['Стало', fixture.snapshot_id]]) {
+    const picker = page.getByRole('button', { name: new RegExp(name + '$') });
+    await picker.click();
+    await expect(page.getByRole('option', { selected: true })).toHaveAttribute('data-key', id);
+    await page.keyboard.press('Escape');
+  }
   const comparison = page.getByRole('region', { name: 'Сравнение снимков', exact: true });
   await expect(comparison).toBeVisible();
   const difference = comparison.getByRole('table').locator('tbody > tr[data-clickable]').first();
@@ -206,5 +210,5 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);
   await assertResourceReturn(page, resourceUrl);
-  await expect(page.getByRole('combobox', { name: 'Строк на странице', exact: true })).toHaveValue('200');
+  await expect(page.getByRole('radiogroup', { name: 'Строк на странице' }).getByRole('radio', { name: '200', exact: true })).toBeChecked();
 }

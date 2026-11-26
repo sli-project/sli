@@ -291,21 +291,21 @@ for (const screen of screens) {
       const policyNames = list.locator('tbody tr > td:first-child');
       const finalOnFirst = policyNames.filter({ hasText: /^Объект 50$/ });
       const firstOnNext = policyNames.filter({ hasText: /^Объект 51$/ });
-      await expect(footer.getByRole('combobox', { name: 'Строк на странице' })).toHaveValue('50');
-      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByRole('radiogroup', { name: 'Строк на странице' }).getByRole('radio', { name: '50', exact: true })).toBeChecked();
+      await expect(footer.getByText('Страница 1 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(1);
       await expect(firstOnNext).toHaveCount(0);
       await expect(previous).toBeDisabled();
       await next.click();
       await expect(list.locator(rows)).toHaveCount(10);
-      await expect(footer.getByText('51–60 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByText('Страница 2 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(0);
       await expect(firstOnNext).toHaveCount(1);
       await expect(policyNames.filter({ hasText: /^Объект 60$/ })).toHaveCount(1);
       await expect(next).toBeDisabled();
       await previous.click();
       await expect(list.locator(rows)).toHaveCount(50);
-      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByText('Страница 1 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(1);
       await expect(firstOnNext).toHaveCount(0);
     }
@@ -323,13 +323,15 @@ for (const screen of screens) {
       const panelScreenshot = testInfo.outputPath('problem-panel.png');
       await page.screenshot({ path: panelScreenshot });
       await testInfo.attach('problem-panel.png', { path: panelScreenshot, contentType: 'image/png' });
-      const state = panel.getByRole('combobox', { name: 'Состояние' });
-      await state.selectOption('closed');
+      const state = panel.getByRole('button', { name: /Состояние$/ });
+      await state.click();
+      await page.getByRole('option', { name: 'Решена', exact: true }).click();
       const decision = page.getByRole('dialog', { name: 'Изменить состояние' });
-      await decision.getByLabel('Причина решения').selectOption('fixed');
+      await decision.getByRole('button', { name: /Причина решения$/ }).click();
+      await page.getByRole('option', { name: 'Реальная проблема (исправлено)', exact: true }).click();
       await decision.getByRole('button', { name: 'Сохранить решение' }).click();
       await expect(decision).toBeHidden();
-      await expect(state).toHaveValue('closed');
+      await expect(state).toContainText('Решена');
       expect(decisions).toEqual([{ ids: [1], state: 'closed', classification: 'fixed' }]);
     }
     if (isUsers) {
@@ -584,7 +586,7 @@ for (const locale of ['ru', 'en']) {
       expect((await panel.boundingBox())!.x).toBeGreaterThan(listBounds.x + listBounds.width);
       const areaName = russian ? 'Область' : 'Area';
       const area = page.getByText(areaName, { exact: true });
-      const control = (await page.getByRole('combobox', { name: areaName }).boundingBox())!;
+      const control = (await page.getByRole('button', { name: new RegExp(areaName + '$') }).boundingBox())!;
       expect(control.x + control.width).toBeLessThanOrEqual(listBounds.x + listBounds.width + 1);
       expect(await area.evaluate(element => {
         const range = new Range();

@@ -6,6 +6,33 @@ import { DataTable } from "./DataTable";
 
 afterEach(cleanup);
 const rows = [{ id: "one" }, { id: "two" }];
+
+it("hides empty columns while retaining zero, false and row controls", () => {
+  render(<DataTable columns={[
+    { key: "id", label: "ID" },
+    { key: "unknown", label: "Unknown" },
+    { key: "empty", label: "Empty", render: () => "—" },
+    { key: "count", label: "Count", kind: "number", value: () => 0 },
+    { key: "enabled", label: "Enabled", value: () => false },
+    { key: "action", label: "", render: () => <button>Open</button> },
+  ]} rows={rows} rowKey={(row) => row.id} caption="Rows"/>);
+  expect(screen.queryByRole("columnheader", { name: "Unknown" })).toBeNull();
+  expect(screen.queryByRole("columnheader", { name: "Empty" })).toBeNull();
+  expect(screen.getByRole("columnheader", { name: "Count" }).dataset.align).toBe("end");
+  expect(screen.getAllByRole("cell", { name: "0" })[0].dataset.align).toBe("end");
+  expect(screen.getAllByRole("cell", { name: "Нет" })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "Open" })).toHaveLength(2);
+});
+
+it("uses the page-size choice to show a page number and lets the user select another size", async () => {
+  const resize = vi.fn();
+  render(<DataTable columns={[{ key: "id", label: "ID" }]} rows={rows} rowKey={(row) => row.id} caption="Rows"
+    pageSize={{ value: 25, options: [25, 50, 100, 200], onChange: resize }} pagination={{ start: 26 }} total={51}/>);
+  expect(screen.getByText("Страница 2 из 3")).toBeTruthy();
+  expect((screen.getByRole("radio", { name: "25" }) as HTMLInputElement).checked).toBe(true);
+  await userEvent.click(screen.getByRole("radio", { name: "50" }));
+  expect(resize).toHaveBeenCalledWith(50);
+});
 it("renders a page range with previous and next controls and disables navigation while fetching", async () => {
   const previous = vi.fn(), next = vi.fn();
   const props = { columns: [{ key: "id", label: "ID" }], rows, rowKey: (row: { id: string }) => row.id, caption: "Rows", total: 102 };

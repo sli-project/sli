@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { useEffect, useRef, useState } from "react";
 import { Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -74,24 +76,19 @@ export function GpoPlanButton({ selection }: { selection: GpoPlanSelection }) {
                 <span><b>{t(`reports.ad.gpo.method.${value}`)}</b><small className="sli-ds-field__help">{t(`reports.ad.gpo.method.${value}.description`)}</small></span>
               </label>)}
             </div>
-            {method !== "manual" ? <label className="sli-ds-field">
+            {method !== "manual" ? <div className="sli-ds-field">
               <span>{t("reports.ad.gpo.credential")}</span>
-              <select value={method === "gpo" ? credentialId : ""} disabled={busy || method !== "gpo"} onChange={(event) => {
-                const id = event.target.value;
+              <Select label={String(t("reports.ad.gpo.credential")) + String("")} value={method === "gpo" ? credentialId : ""} disabled={busy || method !== "gpo"} onChange={(selectedValue) => {
+                const id = selectedValue;
                 void execute(async () => {
                   setCredentialId(id); await discard();
                   const item = items.find((item) => item.eligible && item.credential_id === id);
                   if (item) await preview(item);
                 });
-              }}>
-                <option value="">{t("reports.ad.gpo.credential.choose")}</option>
-                {items.map((item) => <option key={item.credential_id} value={item.credential_id} disabled={!item.eligible || method !== "gpo"}>
-                  {item.label} · {item.username} · {t(item.eligible ? "reports.ad.gpo.credential.unverified" : "reports.ad.gpo.credential.unavailable")}
-                  {item.credential_id === lastCredentialId ? ` · ${t("reports.ad.gpo.credential.lastUsed")}` : ""}
-                </option>)}
-              </select>
+              }}
+                options={[{ value: "", label: t("reports.ad.gpo.credential.choose") }, ...(items.map((item) => ({ value: item.credential_id, label: String(item.label) + String(" · ") + String(item.username) + String(" · ") + String(t(item.eligible ? "reports.ad.gpo.credential.unverified" : "reports.ad.gpo.credential.unavailable")) + String(item.credential_id === lastCredentialId ? ` · ${t("reports.ad.gpo.credential.lastUsed")}` : ""), disabled: !item.eligible || method !== "gpo" })) ?? [])]}/>
               <span className="sli-ds-field__help"><a href="/app/ad-accounts">{t("reports.ad.gpo.credential.manage")}</a></span>
-            </label> : null}
+            </div> : null}
             <p role="status">{t("reports.ad.gpo.readOnly")}</p>
             {method === "gpo" && plan ? <>
             <details><summary>{t("reports.ad.gpo.targets", { count: plan.targets.length })}</summary>
@@ -107,7 +104,7 @@ export function GpoPlanButton({ selection }: { selection: GpoPlanSelection }) {
               : <p>{t("reports.ad.gpo.packageUnknown")}</p>}</section>
             <section><h4>{t("reports.ad.gpo.when")}</h4><p>{t("reports.ad.gpo.whenDescription")}</p><p>{t("reports.ad.gpo.removal")}</p></section>
             <p>{t("reports.ad.gpo.expires", { date: formatDateTime(plan.expires_at) })}</p>
-            <label><input type="checkbox" checked={acknowledged} disabled={busy || expired} onChange={(event) => setAcknowledged(event.target.checked)}/>{t("reports.ad.gpo.acknowledge")}</label>
+            <Checkbox checked={acknowledged} disabled={busy || expired} onChange={(event) => setAcknowledged(event.target.checked)}>{t("reports.ad.gpo.acknowledge")}</Checkbox>
             {expired ? <p role="alert">{t("reports.ad.gpo.expired")}</p> : null}
             </> : null}
             {method === "manual" ? <p>{t("reports.ad.gpo.packageUnknown")}</p> : null}

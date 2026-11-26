@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
@@ -103,9 +104,11 @@ it("preserves an enabled or disabled filter without offering unknown status", as
   window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all");
   show();
   await screen.findByRole("table");
-  const filter = screen.getByRole("combobox", { name: t("reports.v2.ad.users.v2.params.account_state.label") });
-  expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).not.toContain("unknown");
-  fireEvent.change(filter, { target: { value: "disabled" } });
+  const filter = screen.getByLabelText(t("reports.v2.ad.users.v2.params.account_state.label"), { selector: "button" });
+  await userEvent.click(filter);
+  const options = await screen.findAllByRole("option");
+  expect(options.map((option) => option.dataset.key)).not.toContain("unknown");
+  await userEvent.click(options.find((option) => option.dataset.key === "disabled")!);
   await waitFor(() => expect(calls.some((params) => params.get("account_state") === "disabled")).toBe(true));
 });
 
@@ -145,14 +148,14 @@ it("pages fifty at a time, supports back and resets after filtering", async () =
   mock((params) => new Response(JSON.stringify(page("all", params.get("cursor") === "50"
     ? { items: [account(51)], filtered_count: 51 }
     : { items: Array.from({ length: 50 }, (_, i) => account(i + 1)), filtered_count: 51, has_more: true, next_cursor: "50" }))));
-  show(); expect(await screen.findByText("1–50 из 51")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Вперёд" })); expect(await screen.findByText("51–51 из 51")).toBeTruthy();
+  show(); expect(await screen.findByText("Страница 1 из 2")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Вперёд" })); expect(await screen.findByText("Страница 2 из 2")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "synthetic-1" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Назад" })); expect(await screen.findByText("1–50 из 51")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Назад" })); expect(await screen.findByText("Страница 1 из 2")).toBeTruthy();
   expect(calls.every((params) => params.get("domain") === "8")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Вперёд" })); await screen.findByText("51–51 из 51");
+  fireEvent.click(screen.getByRole("button", { name: "Вперёд" })); await screen.findByText("Страница 2 из 2");
   fireEvent.change(screen.getByLabelText("Поиск"), { target: { value: "synthetic" } }); fireEvent.submit(screen.getByLabelText("Поиск").closest("form")!);
-  expect(await screen.findByText("1–50 из 51")).toBeTruthy();
+  expect(await screen.findByText("Страница 1 из 2")).toBeTruthy();
 });
 
 it("requests composition on a date and preserves that date in CSV", async () => {
@@ -178,7 +181,7 @@ it("uses server counts and changes page size on the disabled-active list", async
   fireEvent.click(screen.getByRole("tab", { name: titles.disabled_active }));
   expect(await screen.findByRole("tab", { name: "Отключены, но активны 1" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "synthetic-3" })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Строк на странице"), { target: { value: "25" } });
+  fireEvent.click(within(screen.getByRole("radiogroup", { name: "Строк на странице" })).getByRole("radio", { name: "25" }));
   await waitFor(() => expect(calls.some((params) => params.get("tab") === "disabled_active" && params.get("limit") === "25")).toBe(true));
 });
 

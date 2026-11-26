@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
@@ -125,6 +125,7 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   definition: ReportDefinitionDto; stationId: string; search: URLSearchParams; session: string; timeZone: string;
   update: (patch: Record<string, string | null>, replace?: boolean) => void; onBack: () => void;
 }) {
+  const [periodTarget, setPeriodTarget] = useState<HTMLDivElement | null>(null);
   const { formatDateTime: format } = useDateFormatters();
   const params = requestParams(search, timeZone, definition, true);
   const query = useQuery({ queryKey: [WORKSTATIONS_KEY, session, "station", stationId, params?.toString()],
@@ -200,8 +201,8 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   return <div className="sli-workstations sli-workstations--station"><Tabs items={[
     { key: "events", label: t("workstations.workspace.events") }, { key: "collection", label: t("workstations.workspace.collection_tab") },
   ]} active={tab} onChange={value => update({ station_tab: value, event: null })}>
-    <ReportLayout title={title} tabbed state={state} metrics={<></>} controls={{ showBreadcrumbs: true }}
-      crumbs={[{ label: t("workstations.overview.title"), href: backHref }, { label: title }]}
+    <ReportLayout title={title} tabbed state={state} metrics={<></>}
+      periodPicker={!denied && tab === "events" && !selected ? <div ref={setPeriodTarget}/> : undefined}
       meta={station ? <><span>{station.domain_name ?? "—"}</span>{station.operating_system ? <span>{station.operating_system}</span> : null}
         <span>{t("workstations.workspace.last_contact")}: {format(station.last_seen)}</span><CollectionStatus station={station}/></> : null}
       actions={<><a className="sli-ds-button" href={backHref} onClick={event => {
@@ -212,7 +213,7 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
           if (search.get("event_cursor")) update(resetEvents); else void query.refetch();
         }}>{t("workstations.workspace.refresh")}</button> : null}</>}
       tabs={<TabList label={title} variant="underline"/>}
-      filters={!denied && tab === "events" && !selected ? <FilterBar align="start" layout="grid" primaryKeys={["period", "view"]}
+      filters={!denied && tab === "events" && !selected ? <FilterBar periodTarget={periodTarget} align="start" layout="grid" primaryKeys={["period", "view"]}
         fields={[{ key: "period", label: t("workstations.workspace.event_period"), kind: "period", presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", step: "any" },
           { key: "view", label: t("workstations.workspace.event_view"), kind: "select", options: EVENT_VIEWS.map(value => ({ value, label: t(`workstations.workspace.view_${value}`) })) }]}
         values={eventFilters} defaults={{ period: { preset: "7d" }, view: "all" }} onApply={draft => update({ ...appliedFilters(draft, search, timeZone), ...resetEvents, cursor: null })}/> : null}

@@ -250,7 +250,10 @@ internal sealed partial class SemanticProduction
                 }
             }
             if (native.Count is < 1 or > 256) throw new InvalidDataException("semantic_native_evidence_limit");
-            await VerifyNative(session, native, ct); partition = document["acl_context"].Text("resource_key") ?? Password.PasswordJson.Hash(native[0]!["scope"]); at = SigmaProjection.At(document, "occurred_at_utc"); completeness = Math.Min(100, 100 * native.Count / policy.Expected);
+            await VerifyNative(session, native, ct);
+            partition = (passwordFacts is null ? null : Detections.PasswordAttacks.ScenarioPartition(policy.Selector, passwordFacts))
+                ?? document["acl_context"].Text("resource_key") ?? Password.PasswordJson.Hash(native[0]!["scope"]);
+            at = SigmaProjection.At(document, "occurred_at_utc"); completeness = Math.Min(100, 100 * native.Count / policy.Expected);
         }
         // Control-health proposals use the selected immutable observation itself.
         if (policy.Source != "control_health") foreach (string control in policy.Controls)

@@ -1,3 +1,5 @@
+import { Select } from "../../design-system/Select";
+import { Checkbox } from "../../design-system/Checkbox";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { api, ApiResponseError } from "../../api/client";
@@ -74,9 +76,8 @@ export function TelegramSetupPanel({ item, canConfigure, onClose, onRefresh }: {
   const canBindChat = canChooseChat && !!choice;
   const prerequisite = view.state === "loading" ? telegramStatusLabel(view) : available ? !saved ? t("notify.telegram.needToken") : !bound ? t("notify.telegram.needChat") : null : null;
   return <DetailDrawer open title="Telegram" onClose={onClose} footer={<Button onClick={onClose}>{t("notify.cancel")}</Button>}>
-    <label><input type="checkbox" role="switch" checked={item.enabled} aria-describedby={prerequisite ? prerequisiteId : undefined} disabled={!canConfigure || busy || !saved || !bound}
-      onChange={(event) => { if (event.target.checked) toggle.mutate(true); else overlays.openModal({ title: t("notify.confirmDisable", { name: "Telegram" }),
-        body: <Button onClick={() => { overlays.closeModal(); toggle.mutate(false); }}>{t("notify.confirm")}</Button> }); }}/> {t("notify.enabled")}</label>
+    <Checkbox role="switch" checked={item.enabled} aria-describedby={prerequisite ? prerequisiteId : undefined} disabled={!canConfigure || busy || !saved || !bound} onChange={(event) => { if (event.target.checked) toggle.mutate(true); else overlays.openModal({ title: t("notify.confirmDisable", { name: "Telegram" }),
+        body: <Button onClick={() => { overlays.closeModal(); toggle.mutate(false); }}>{t("notify.confirm")}</Button> }); }}> {t("notify.enabled")}</Checkbox>
     {prerequisite ? <span id={prerequisiteId} className="sli-ds-field__help">{prerequisite}</span> : null}
     {canConfigure && !available ? <Button disabled={status.isFetching} onClick={() => void status.refetch()}>{t("notify.telegram.retryStatus")}</Button> : null}
     <section><h3>{t("notify.telegram.step1")}</h3>
@@ -94,9 +95,8 @@ export function TelegramSetupPanel({ item, canConfigure, onClose, onRefresh }: {
       <span>{t("notify.destination")}: {telegramDestination(view)}</span>
       <Button disabled={!canConfigure || busy || !saved} onClick={() => chats.mutate()}>{t("notify.telegram.find")}</Button>
       {chats.data?.chats?.length ? <div className="sli-ds-field"><label htmlFor="telegram-chat">{t("notify.telegram.choose")}</label>
-        <select id="telegram-chat" value={choice} disabled={!canChooseChat} onChange={(event) => { if (canChooseChat) setChoice(event.target.value); }}>
-          <option value="">{t("notify.telegram.choose")}</option>{chats.data.chats.map((chat) => <option key={chat.choice} value={chat.choice}>{chat.name}</option>)}
-        </select><Button disabled={!canBindChat} onClick={() => { if (canBindChat) bind.mutate(); }}>{t("notify.save")}</Button></div> : chats.isSuccess ? <p>{t("notify.telegram.noChats")}</p> : null}
+        <Select label={t("notify.telegram.choose")} id="telegram-chat" value={choice} disabled={!canChooseChat} onChange={(selectedValue) => { if (canChooseChat) setChoice(selectedValue); }}
+          options={[{ value: "", label: t("notify.telegram.choose") }, ...(chats.data.chats.map((chat) => ({ value: chat.choice, label: chat.name })) ?? [])]}/><Button disabled={!canBindChat} onClick={() => { if (canBindChat) bind.mutate(); }}>{t("notify.save")}</Button></div> : chats.isSuccess ? <p>{t("notify.telegram.noChats")}</p> : null}
     </section>
     <h3>{t("notify.telegram.step3")}</h3>
     <ChannelTest key={item.revision} channel="telegram" enabled={canConfigure && !busy && item.enabled && saved && bound} onRefresh={onRefresh}/>

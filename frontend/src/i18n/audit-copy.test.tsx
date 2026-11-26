@@ -2,7 +2,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StateView } from "../design-system/StateView";
-import { PageHeader } from "../design-system/PageHeader";
 import { CollectionView } from "../app/report-v2/views";
 import { reportEmptyText } from "../app/report-v2/empty-copy";
 import { objectTypeLabel, roleLabel } from "../app/report-labels";
@@ -75,9 +74,8 @@ describe("audited English presentation", () => {
     expect(catalog.items[0].executable).toBe(false);
   });
 
-  it("translates breadcrumbs, roles and known explanations, leaving unknown server text intact", () => {
+  it("translates roles and known explanations, leaving unknown server text intact", () => {
     setLocale("en");
-    expect(renderToStaticMarkup(<PageHeader title="Title" crumbs={[{ label: "Reports" }]}/>)).toContain('aria-label="Breadcrumbs"');
     expect(objectTypeLabel("ad_computer")).toBe("AD computer");
     expect(roleLabel("admin")).toBe("administrator");
     expect(fixedText("Данные сильно устарели", "operations.source.fixed.")).toBe("Data is severely outdated");

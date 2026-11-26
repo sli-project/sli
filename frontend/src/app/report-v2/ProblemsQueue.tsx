@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { DateInput } from "../../design-system/PeriodPicker";
+import { useMemo, useState, type FormEvent } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
-import { Button, DataTable, DetailDrawer, FactList, Icon, PeriodPicker, ReportLayout, SeverityBadge, StateView, TabList, TabPanel, Tabs,
+import { Button, Checkbox, DataTable, DetailDrawer, FactList, FilterChips, Pager, ReportLayout, Select, SeverityBadge, StateView, TabList, TabPanel, Tabs,
   periodBounds, type PeriodValue, type TableColumn, useOverlays } from "../../design-system";
-import { periodLabel } from "../../design-system/PeriodPicker";
 import { getLocale, t } from "../../i18n";
 import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, localDateTimeToUtc } from "../../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
@@ -104,7 +104,6 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const [search, setSearch] = useState(initial.get("q") ?? "");
   const [draft, setDraft] = useState(search);
   const [period, setPeriod] = useState<PeriodValue>(initial.has("time_from") ? { preset: "custom" } : { preset: "7d" });
-  const periodMenu = useRef<HTMLDetailsElement>(null);
   const [bounds, setBounds] = useState(() => {
     const from = initial.get("time_from"), to = initial.get("time_to");
     return from && to ? { from, to } : (["id", "entity_id", "created_from", "created_to", "cohort", "time_from", "time_to"].some((key) => initial.has(key)) ? null : periodBounds(period));
@@ -203,10 +202,8 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       current={ids.length === 1 && ids[0] === active?.id ? active?.assignee : undefined} zone={timeZone} onSave={save}/> });
   };
   const columns: TableColumn<Problem>[] = [
-    ...(canManage ? [{ key: "select", label: "", width: "2.6rem", render: (row: Problem) => <input type="checkbox" aria-label={t("problems.queue.selectNumber", { id: row.id })}
-      checked={checked.includes(row.id)} disabled={checked.length >= 200 && !checked.includes(row.id)} onClick={(event) => event.stopPropagation()}
-      onChange={(event) => setChecked((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))}/> }] : []),
-    { key: "number", label: "№", width: "3.4rem", render: (row) => {
+    ...(canManage ? [{ key: "select", label: "", width: "2.6rem", render: (row: Problem) => <Checkbox aria-label={t("problems.queue.selectNumber", { id: row.id })} checked={checked.includes(row.id)} disabled={checked.length >= 200 && !checked.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => setChecked((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))}/> }] : []),
+    { key: "number", align: "end", label: "№", width: "3.4rem", render: (row) => {
       const index = rows.findIndex((item) => item.id === row.id);
       return index < 0 ? EMPTY_VALUE : cursors.length * size + index + 1;
     } },
@@ -223,7 +220,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
     { key: "entities", label: t("problems.queue.object"), width: "12%", value: (row) => row.entity },
     { key: "actor", label: t("problems.queue.actor"), width: "10%", value: (row) => row.actor },
     { key: "last_seen_utc", label: t("problems.queue.latest"), width: "9%", sortable: true, render: (row) => timeLabel(row.last, timeZone, true) },
-    { key: "evidence", label: t("problems.queue.evidence"), width: "8%", render: (row) => row.evidence ? <button className="sli-ds-link" type="button" onClick={(event) => { event.stopPropagation(); select(row.id); }}>{quantity("eventCount", row.evidence)}</button> : EMPTY_VALUE },
+    { key: "evidence", align: "end", label: t("problems.queue.evidence"), width: "8%", render: (row) => row.evidence ? <button className="sli-ds-link" type="button" onClick={(event) => { event.stopPropagation(); select(row.id); }}>{quantity("eventCount", row.evidence)}</button> : EMPTY_VALUE },
     { key: "state", label: t("problems.queue.status"), width: "9%", render: (row) => stateName(row.state) },
     { key: "owner", label: t("problems.queue.owner"), width: "9%", value: (row) => row.assignee },
   ];
@@ -232,41 +229,30 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const totalPages = typeof count === "number" ? Math.max(1, Math.ceil(count / size)) : null;
   const controls = !denied ? <>
     <form className="sli-ds-list-filters" onSubmit={(event) => { event.preventDefault(); setSearch(draft.trim()); clearRows(); }}>
-      <details ref={periodMenu} className="sli-ds-header__period"><summary className="sli-ds-button"><Icon name="calendar"/>{t("period.label")} · {periodLabel(period.preset)}<Icon name="chevron-down"/></summary>
-        <div className="sli-ds-header__period-menu"><PeriodPicker value={period} onChange={(value) => {
-          setPeriod(value);
-          const window = value.preset === "custom" && value.from && value.to && value.from <= value.to ? {
-            from: localDateTimeToUtc(`${value.from}T00:00`, timeZone),
-            to: localDateTimeToUtc(`${new Date(Date.parse(value.to) + 86_400_000).toISOString().slice(0, 10)}T00:00`, timeZone),
-          } : value.preset === "custom" ? null : periodBounds(value);
-          if (window?.from && window.to) {
-            setBounds({ from: window.from, to: window.to }); clearRows();
-            if (value.preset !== "custom" && periodMenu.current) periodMenu.current.open = false;
-          }
-        }}/></div>
-      </details>
       <span className="sli-ds-chip">{formatClockWithOffset(new Date(), timeZone).zone}</span>
-      <label>{t("problems.queue.domain")} <select value={domain} onChange={(event) => { setDomain(event.target.value); clearRows(); }}>
-        <option value="">{t("filters.any")}</option>
-        {definition.filter_options.domain?.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-      </select></label>
       {definition.params.some(({ key }) => key === "q") ? <input aria-label={t("problems.queue.search")} type="search" maxLength={256} placeholder={t("problems.queue.search")} value={draft} onChange={(event) => { setDraft(event.target.value); if (!event.target.value) { setSearch(""); clearRows(); } }}/> : null}
-      <label>{t("problems.queue.severity")} <select value={severity} onChange={(event) => { setSeverity(event.target.value); clearRows(); }}>
-        <option value="">{t("filters.any")}</option>{severityOptions.map((value) => <option key={value} value={value}>{t(`shell.severity.${value}`)}</option>)}
-      </select></label>
-      {ownerAllowed ? <label>{t("problems.queue.owner")} <select value={owner} onChange={(event) => { setOwner(event.target.value); clearRows(); }}>
-        <option value="">{t("filters.any")}</option><option value="-">{t("security.problems.assignee.unassigned")}</option>
-        {[...names].filter((name) => name && name !== "-").sort().map((name) => <option key={name}>{name}</option>)}
-      </select></label> : null}
+      <div className="sli-ds-control-field"><span>{t("problems.queue.severity")}</span>
+        <Select label={t("problems.queue.severity")} value={severity} onChange={(value) => { setSeverity(value); clearRows(); }}
+          options={[{ value: "", label: t("filters.any") }, ...severityOptions.map((value) => ({ value, label: t(`shell.severity.${value}`) }))]}/>
+      </div>
+      {ownerAllowed ? <div className="sli-ds-control-field"><span>{t("problems.queue.owner")}</span>
+        <Select label={t("problems.queue.owner")} value={owner} onChange={(value) => { setOwner(value); clearRows(); }}
+          options={[{ value: "", label: t("filters.any") }, { value: "-", label: t("security.problems.assignee.unassigned") },
+            ...[...names].filter((name) => name && name !== "-").sort().map((name) => ({ value: name, label: name }))]}/>
+      </div> : null}
     </form>
-    <div className="sli-ds-list-toolbar"><TabList label={t("problems.queue.views")} variant="segmented"/><div className="sli-ds-header__actions">
-      <label><input type="checkbox" checked={fold} onChange={(event) => { setFold(event.target.checked); clearRows(); }}/>{t("problems.queue.fold")}</label>
-      <select aria-label={t("problems.queue.density")} value={compact ? "compact" : "standard"} onChange={(event) => setCompact(event.target.value === "compact")}>
-        <option value="compact">{t("problems.queue.compact")}</option><option value="standard">{t("problems.queue.standard")}</option>
-      </select>
-      <details className="sli-ds-table__columns"><summary>{t("table.columns")}</summary>
+    <div className="sli-ds-list-toolbar">
+      <FilterChips label={t("problems.queue.views")} value={view}
+        items={views.map((item) => ({ key: item, label: t(`problems.queue.view.${item}`),
+          count: asCount(counts[item]) === null ? undefined : formatNumber(Number(counts[item])) }))}
+        onChange={(key) => { const next = views.find((item) => item === key); if (next) { setView(next); clearRows(); } }}/>
+      <div className="sli-ds-header__actions">
+      <Checkbox checked={fold} onChange={(event) => { setFold(event.target.checked); clearRows(); }}>{t("problems.queue.fold")}</Checkbox>
+      <Select label={t("problems.queue.density")} value={compact ? "compact" : "standard"} onChange={(value) => setCompact(value === "compact")}
+        options={[{ value: "compact", label: t("problems.queue.compact") }, { value: "standard", label: t("problems.queue.standard") }]}/>
+      <details className="sli-ds-table__columns"><summary className="sli-ds-button">{t("table.columns")}</summary>
         <div role="group" aria-label={t("table.columns")}>{availableColumns.filter(({ key }) => !["select", "title"].includes(key)).map(({ key, label }) =>
-          <label key={key}><input type="checkbox" checked={!hidden.includes(key)} onChange={(event) => setHidden((old) => event.target.checked ? old.filter((item) => item !== key) : [...old, key])}/>{label}</label>)}</div>
+          <Checkbox key={key} checked={!hidden.includes(key)} onChange={(event) => setHidden((old) => event.target.checked ? old.filter((item) => item !== key) : [...old, key])}>{label}</Checkbox>)}</div>
       </details>
       <Button aria-pressed={selected !== null} disabled={selected === null && !rows.length} onClick={() => select(selected === null ? rows[0].id : null)}>{t("problems.queue.details")}</Button>
     </div></div>
@@ -278,20 +264,27 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       </div>
     </div> : null}
   </> : null;
-  const footer = <div className="sli-ds-table__footer"><div className="sli-ds-header__actions">
-    <span>{t("problems.queue.rowsPerPage")}</span>{[25, 50, 100, 200].map((value) => <Button key={value} variant={size === value ? "primary" : undefined} aria-pressed={size === value} onClick={() => { setSize(value); clearRows(); }}>{value}</Button>)}
-  </div><div className="sli-ds-header__actions">
-    <Button aria-label={t("table.previous")} disabled={!cursors.length || list.isFetching} onClick={() => { setExpanded(null); setChecked([]); select(null); setPage({ key: base, cursors: cursors.slice(0, -1) }); }}>←</Button>
-    <span>{t("problems.queue.page", { page: cursors.length + 1, total: totalPages ?? EMPTY_VALUE })}</span>
-    <Button aria-label={t("table.next")} disabled={!result?.next_cursor || list.isFetching} onClick={() => { setExpanded(null); setChecked([]); select(null); setPage({ key: base, cursors: [...cursors, result!.next_cursor!] }); }}>→</Button>
-  </div></div>;
+  const footer = <Pager pageSize={{ value: size, options: [25, 50, 100, 200], onChange: (value) => { setSize(value); clearRows(); } }}
+    label={t("table.page", { page: cursors.length + 1, total: totalPages ?? EMPTY_VALUE })} busy={list.isFetching}
+    onPrevious={cursors.length ? () => { setExpanded(null); setChecked([]); select(null); setPage({ key: base, cursors: cursors.slice(0, -1) }); } : undefined}
+    onNext={result?.next_cursor ? () => { setExpanded(null); setChecked([]); select(null); setPage({ key: base, cursors: [...cursors, result.next_cursor!] }); } : undefined}/>;
 
-  return <Tabs items={views.map((item) => ({ key: item, label: `${t(`problems.queue.view.${item}`)}${asCount(counts[item]) === null ? "" : ` (${formatNumber(Number(counts[item]))})`}` }))} active={view}
-    onChange={(key) => { const tab = views.find((item) => item === key); if (tab) { setView(tab); clearRows(); } }}>
-    <ReportLayout title={definition.title} crumbs={[{ label: t("problems.queue.crumb") }, { label: definition.title }]} split tabbed={!denied} showDomain={false}
+  const domainPicker = !denied ? <Select label={t("problems.queue.domain")} value={domain}
+    onChange={(value) => { setDomain(value); clearRows(); }}
+    options={[{ value: "", label: t("reports.filters.all_domains") }, ...(definition.filter_options.domain ?? [])]}/> : undefined;
+
+  return <ReportLayout title={definition.title} split showDomain={false} domainPicker={domainPicker}
+      controls={denied ? {} : { refreshing: list.isFetching, onRefresh: refresh, period: {
+        value: period.preset === "custom" && !period.from && bounds ? { preset: "custom", ...bounds } : period,
+        precision: "datetime-local", showPrevious: false, onChange: (value) => {
+          const window = value.preset === "custom" && value.from && value.to ? {
+            from: localDateTimeToUtc(value.from, timeZone), to: localDateTimeToUtc(value.to, timeZone),
+          } : periodBounds(value);
+          if (window?.from && window.to) { setPeriod(value); setBounds({ from: window.from, to: window.to }); clearRows(); }
+        },
+      }}}
       state={denied ? "denied" : list.isLoading ? "loading" : error ? "error" : "ok"}
       busy={list.isFetching && !list.isLoading} stateView={denied ? <ReportDenied reportKey={definition.key}/> : error ? <StateView state="error" detail={t("problems.queue.loadFailed")} onRetry={() => void list.refetch()}/> : undefined}
-      actions={denied ? undefined : <Button icon="refresh" disabled={list.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>}
       tabs={controls} drawer={active && selected !== null ? <div data-problems-queue-drawer>
         <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
           retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} tab={panelTab} onTab={setPanelTab} canManage={canManage}
@@ -313,8 +306,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       {firstAdSource ? <FirstAdSource/>
         : rows.length === 0 ? <p role="status">{incomplete ? EMPTY_VALUE : t("problems.queue.empty")}</p> : null}
       {footer}
-    </ReportLayout>
-  </Tabs>;
+    </ReportLayout>;
 }
 
 function DecisionForm({ kind, choose, ids, current, zone, onSave }: {
@@ -351,17 +343,15 @@ function DecisionForm({ kind, choose, ids, current, zone, onSave }: {
     if (!await onSave(payload)) { setError(t("problems.queue.saveFailed")); setSaving(false); }
   };
   return <form className="sli-ds-report__views" onSubmit={(event) => void submit(event)}>
-    {kind === "state" ? <label className="sli-ds-field">{t("problems.queue.status")}<select value={state} onChange={(event) => setState(stateOf(event.target.value))}>
-      {states.map((item) => <option key={item} value={item}>{stateName(item)}</option>)}
-    </select></label> : null}
+    {kind === "state" ? <div className="sli-ds-field">{t("problems.queue.status")}<Select label={t("problems.queue.status")} value={state} onChange={(selectedValue) => setState(stateOf(selectedValue))}
+      options={states.map((item) => ({ value: item, label: stateName(item) }))}/></div> : null}
     {kind === "assign" ? responsibles.isError ? <StateView state="error" detail={t("problems.queue.usersFailed")} onRetry={() => void responsibles.refetch()}/>
-      : responsibles.isPending ? <StateView state="loading"/> : <label className="sli-ds-field">{t("problems.queue.owner")}<select name="assignee" defaultValue={users.find(({ username }) => username === current)?.id ?? ""}>
-        <option value="">{t("security.problems.assignee.unassigned")}</option>{users.map(({ id, username }) => <option key={id} value={id}>{username}</option>)}
-      </select></label> : null}
-    {kind !== "assign" && state === "closed" ? <label className="sli-ds-field">{t("problems.queue.classification")}<select name="classification" required defaultValue="">
-      <option value="" disabled>{EMPTY_VALUE}</option>{(["fixed", "expected", "false_positive"] as const).map((reason) => <option key={reason} value={reason}>{t(`problems.queue.reason.${reason}`)}</option>)}
-    </select></label> : null}
-    {kind !== "assign" && state === "deferred" ? <label className="sli-ds-field">{t("problems.queue.until")}<input name="until" type="datetime-local" required/></label> : null}
+      : responsibles.isPending ? <StateView state="loading"/> : <div className="sli-ds-field">{t("problems.queue.owner")}<Select label={t("problems.queue.owner")} name="assignee" defaultValue={users.find(({ username }) => username === current)?.id ?? ""}
+        options={[{ value: "", label: t("security.problems.assignee.unassigned") }, ...(users.map(({ id, username }) => ({ value: id, label: username })) ?? [])]}/></div> : null}
+    {kind !== "assign" && state === "closed" ? <div className="sli-ds-field">{t("problems.queue.classification")}<Select label={t("problems.queue.classification")} name="classification" required defaultValue=""
+      options={[{ value: "", label: EMPTY_VALUE, disabled: true }, ...((["fixed", "expected", "false_positive"] as const).map((reason) => ({ value: reason, label: t(`problems.queue.reason.${reason}`) })) ?? [])]}/></div> : null}
+    {kind !== "assign" && state === "deferred" ? <div className="sli-ds-field"><label htmlFor="problem-until">{t("problems.queue.until")}</label>
+      <DateInput id="problem-until" name="until" label={t("problems.queue.until")} required/></div> : null}
     <label className="sli-ds-field">{t("reports.problemLifecycle.optionalComment")}<textarea name="comment" maxLength={2000}/></label>
     {error ? <span role="alert" className="sli-ds-field__error">{error}</span> : null}
     <Button type="submit" variant="primary" disabled={saving || kind === "assign" && !responsibles.data}>{t(error ? "state.retry" : "reports.problemLifecycle.save")}</Button>
@@ -429,7 +419,7 @@ function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zo
   const evidence = useProblemEvidence(row.id, domain, zone, canEvidence, openEntity);
   const options = new URLSearchParams({ finding: String(row.id), ...(domain ? { domain } : {}) });
   const event = evidence.data?.pages.flatMap((page) => page.items).find((item) => eventHref(item.event_db_id));
-  const tabs = [{ key: "evidence", label: t("problems.queue.evidence") }, { key: "history", label: t("problems.queue.history") }, { key: "rule", label: t("problems.queue.rule") }];
+  const tabs = [{ key: "evidence", align: "end", label: t("problems.queue.evidence") }, { key: "history", label: t("problems.queue.history") }, { key: "rule", label: t("problems.queue.rule") }];
   const history = row.history.length ? <ul className="sli-ds-decision-list">{row.history.map((entry) => <li key={String(entry.id)}>
     <time>{timeLabel(asText(entry.changed_at), zone, true)}</time><span>{entry.changed_by === "semantic-worker" ? t("reports.problemLifecycle.semanticWorker") : entry.changed_by === "system" ? t("reports.problemLifecycle.system") : text(entry.changed_by)}</span>
     <span>{historyAction(entry, zone)}</span>
@@ -444,9 +434,8 @@ function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zo
     </>}>
     <div className="sli-ds-header__actions"><SeverityBadge severity={row.severity}/>
       <span aria-hidden="true">·</span>
-      {canManage ? <label className="sli-ds-field"><span className="sli-ds-sr-only">{t("problems.queue.status")}</span><select value={row.state} onChange={(event) => onChange("state", stateOf(event.target.value))}>
-        {states.map((state) => <option key={state} value={state}>{stateName(state)}</option>)}
-      </select></label> : stateName(row.state)}
+      {canManage ? <div className="sli-ds-field"><span className="sli-ds-sr-only">{t("problems.queue.status")}</span><Select label={t("problems.queue.status")} value={row.state} onChange={(selectedValue) => onChange("state", stateOf(selectedValue))}
+        options={states.map((state) => ({ value: state, label: stateName(state) }))}/></div> : stateName(row.state)}
       {row.until ? <time>{timeLabel(row.until, zone)}</time> : null}
     </div>
     {canAssign ? <div className="sli-ds-header__actions"><span>{t("problems.queue.owner")}</span><span>{row.assignee || EMPTY_VALUE}</span>

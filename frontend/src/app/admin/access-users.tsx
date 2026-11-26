@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type AuthUserInventory, type V4AccessAuditItem } from "../../api/client";
@@ -81,12 +82,12 @@ export function AccessUsersContent() {
       <TabPanel>{tab === "users" ? <>
         {inventory.isLoading ? <StateView state="loading" skeleton="table"/>
           : inventory.isError || !inventory.data ? <StateView state="unavailable" detail={t("access.people.error.users")} onRetry={() => void inventory.refetch()}/>
-            : users.length ? <DataTable columns={userColumns} rows={users} rowKey={user => String(user.id)} caption={title} onRowClick={user => openEditor({ mode: "details", user })}/>
+            : users.length ? <DataTable localPagination columns={userColumns} rows={users} rowKey={user => String(user.id)} caption={title} onRowClick={user => openEditor({ mode: "details", user })}/>
               : <div>{t("access.people.empty")}</div>}
       </> : <>
         {audit.isLoading ? <StateView state="loading" skeleton="table"/>
           : audit.isError || !audit.data ? <StateView state="unavailable" detail={t("access.people.error.audit")} onRetry={() => void audit.refetch()}/>
-            : audit.data.items.length ? <DataTable columns={auditColumns} rows={audit.data.items} rowKey={item => String(item.id)} caption={t("access.people.audit.title")} onRowClick={setAuditItem}/>
+            : audit.data.items.length ? <DataTable localPagination columns={auditColumns} rows={audit.data.items} rowKey={item => String(item.id)} caption={t("access.people.audit.title")} onRowClick={setAuditItem}/>
               : <div>{t("access.people.audit.empty")}</div>}
       </>}</TabPanel>
     </Tabs>
@@ -136,7 +137,7 @@ function UserDrawer({ editor, onClose, onSaved, statusError }: { editor: Editor;
     try { await navigator.clipboard.writeText(createdPassword!); setCopyState("copied"); }
     catch { setCopyState("error"); }
   };
-  const roleOptions = <><option value="viewer">{userRole("viewer")}</option><option value="admin">{userRole("admin")}</option></>;
+  const roleOptions = [{ value: "viewer", label: userRole("viewer") }, { value: "admin", label: userRole("admin") }];
   return <DetailDrawer open title={title} subtitle={editor.mode !== "details" ? user?.username : undefined} onClose={onClose}
     footer={editor.mode !== "details" && !createdPassword ? <button type="submit" form="access-user-editor" className="sli-ds-button" data-variant="primary"
       disabled={pending || (editor.mode === "role" ? role === savedRole : editor.mode === "create" ? !username.trim() || !password : !password)}>{t("access.people.save")}</button> : undefined}>
@@ -154,7 +155,8 @@ function UserDrawer({ editor, onClose, onSaved, statusError }: { editor: Editor;
         {create.isError && !passwordRejected ? <p className="sli-ds-field__error" role="alert">{t("access.people.error.create")}</p> : null}
       </div> : null}
       {editor.mode === "create" || editor.mode === "role" ? <div className="sli-ds-field"><label htmlFor="access-user-role">{t("access.admin.field.role")}</label>
-        <select id="access-user-role" value={role} disabled={pending} onChange={event => setRole(event.target.value)}>{savedRole === "operator" ? <option value="operator" disabled>{userRole("operator")}</option> : null}{roleOptions}</select>
+        <Select label={t("access.admin.field.role")} id="access-user-role" value={role} disabled={pending} onChange={(selectedValue) => setRole(selectedValue)}
+          options={[...(savedRole === "operator" ? [{ value: "operator", label: userRole("operator"), disabled: true }] : []), ...(roleOptions ?? [])]}/>
         {changeRole.isError ? <p className="sli-ds-field__error" role="alert">{t("access.admin.error.updateUser")}</p> : null}
       </div> : null}
       {editor.mode === "create" || editor.mode === "password" ? <div className="sli-ds-field"><label htmlFor="access-user-password">{t(editor.mode === "password" ? "access.admin.reset.newPassword" : "access.admin.field.password")}</label>

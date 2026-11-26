@@ -49,7 +49,8 @@ internal static class PasswordAttacks
             ["risk"] = new JsonObject { ["class"] = "high", ["raw_score"] = "60", ["display_points"] = 60, ["rationale"] = DetectionMessages.Text(prefix + "_threshold_what", english: true) } };
     }
 
-    private sealed record Event(DetectionRow Row, string Account, string Name, string? Address, bool New, int Replaced = 0)
+    private sealed record Event(DetectionRow Row, string Account, string Name, long DomainId, string ReportedDomain,
+        string? Address, bool New, int Replaced = 0)
     {
         internal long Id => long.Parse(Row.Ref.NativeId, CultureInfo.InvariantCulture);
         internal bool Success => Row.EventId == 4624;
@@ -71,13 +72,15 @@ internal static class PasswordAttacks
     {
         string name = Clean(row.Get("TargetUserName"));
         if (name is "" or "-") return null;
-        string domain = UnicodeCaseFold.Fold(Clean(row.Get("TargetDomainName")));
-        string netbios = UnicodeCaseFold.Fold(Clean(row.Get("domain_netbios")));
-        string fqdn = UnicodeCaseFold.Fold(Clean(row.Get("domain_fqdn")));
-        if (domain is "" or "-" || domain == fqdn) domain = netbios.Length > 0 ? netbios : fqdn;
-        string account = domain + '\0' + UnicodeCaseFold.Fold(name);
-        return new(row, account, name, Client(row.Get("IpAddress")), long.Parse(row.Ref.NativeId, CultureInfo.InvariantCulture) > cursor);
+        long domain = D.Number(row.Fields?["domain_id"]) ?? 0;
+        string account = domain.ToString(CultureInfo.InvariantCulture) + '\0' + UnicodeCaseFold.Fold(name);
+        return new(row, account, name, domain, Clean(row.Get("TargetDomainName")), Client(row.Get("IpAddress")),
+            long.Parse(row.Ref.NativeId, CultureInfo.InvariantCulture) > cursor);
     }
+
+    internal static string? ScenarioPartition(string rule, JsonObject facts) =>
+        rule == Brute && D.Number(facts["domain_id"]) is > 0 and var domain
+            ? "password-domain:" + domain.ToString(CultureInfo.InvariantCulture) : null;
 
     // State belongs to the existing identity-attack episode. Evidence is taken
     // from this pass and merged into the finding's bounded set at publication.
@@ -96,17 +99,18 @@ internal static class PasswordAttacks
         bool spray = rule == Spray;
         var events = rows.Select(row => Normalize(row, cursor)).OfType<Event>();
         if (spray) events = events.Where(e => e.Address is not null && e.Row.EventId is 4624 or 4625);
-        else events = BruteEvents(events.Where(e => !e.Name.EndsWith('$')), policy.WindowSeconds);
+        else events = BruteEvents(events.Where(e => e.DomainId > 0 && !e.Name.EndsWith('$')), policy.WindowSeconds);
         foreach (var group in events.GroupBy(e => spray ? e.Address! : e.Account))
         {
             if (!group.Any(e => e.New)) continue;
-            int separator = group.Key.IndexOf('\0');
             string entity = spray ? D.Hash(JsonValue.Create(group.Key)) :
-                D.Hash(new JsonArray(group.Key[..separator], group.Key[(separator + 1)..]));
+                SemanticProposal.HashText(group.Key);
             active.TryGetValue(entity, out var episode);
             var closedAt = episode?.ClosedAt;
             if (closedAt.HasValue) episode = null;
+            Episode? previousBurst = null;
             var window = new Queue<Event>();
+            var reportedDomains = new List<string>(20);
             var accounts = new Dictionary<string, int>(StringComparer.Ordinal);
             var firstRefs = new List<Event>(10);
             var recentRefs = new Queue<Event>(40);
@@ -121,6 +125,8 @@ internal static class PasswordAttacks
 
             void Keep(Event e)
             {
+                if (reportedDomains.Count < 20 && e.ReportedDomain is not ("" or "-") && !reportedDomains.Contains(e.ReportedDomain))
+                    reportedDomains.Add(e.ReportedDomain);
                 if (firstRefs.Count < 10) firstRefs.Add(e);
                 else
                 {
@@ -135,6 +141,11 @@ internal static class PasswordAttacks
                 var facts = new JsonObject { ["version"] = 1, ["attempts"] = current.Attempts,
                     ["first"] = D.Stamp(current.First), ["last_failure"] = D.Stamp(current.LastFailure), ["last"] = D.Stamp(current.Last),
                     ["password_success"] = current.Successful };
+                var priorDomains = (current.Facts["reported_domains"] as JsonArray)?.Select(D.Text)
+                    .Where(value => value is not ("" or "-") && Clean(value) == value) ?? [];
+                facts["reported_domains"] = D.Array(priorDomains.Concat(reportedDomains).Distinct(StringComparer.Ordinal).Take(20),
+                    value => JsonValue.Create(value));
+                if (!spray) facts["domain_id"] = last!.DomainId;
                 // A success can arrive after the final counts were already published.
                 if (dimensions.Length == 0 && current.Facts.Count > 0)
                 {
@@ -150,8 +161,10 @@ internal static class PasswordAttacks
                 else
                 {
                     facts["account"] = current.Facts["account"]?.DeepClone() ?? JsonValue.Create(window.LastOrDefault()?.Name ?? last!.Name);
-                    facts["address_count"] = dimensions.Length;
-                    facts["addresses"] = D.Array(dimensions.Take(20), e => JsonValue.Create(e.Address));
+                    var priorAddresses = (current.Facts["addresses"] as JsonArray)?.Select(D.Text) ?? [];
+                    var addresses = priorAddresses.Concat(dimensions.Select(e => e.Address!)).Distinct(StringComparer.Ordinal).ToArray();
+                    facts["address_count"] = Math.Max(checked((int)(D.Number(current.Facts["address_count"]) ?? 0)), addresses.Length);
+                    facts["addresses"] = D.Array(addresses.Take(20), address => JsonValue.Create(address));
                 }
                 var context = new JsonObject { ["policy"] = policy.Document, ["facts"] = facts };
                 string severity = !spray && current.Successful ? "critical" : "high";
@@ -168,9 +181,12 @@ internal static class PasswordAttacks
                     if (changed)
                     {
                         dimensions = CurrentDimensions();
-                        yield return Emit();
+                        var signal = Emit();
+                        if (!spray) episode = episode with { Facts = signal["password_threshold_context"]!["facts"]!.AsObject() };
+                        yield return signal;
                     }
-                    firstRefs.Clear(); recentRefs.Clear(); dimensions = []; episode = null; changed = false;
+                    if (!spray) previousBurst = episode;
+                    firstRefs.Clear(); recentRefs.Clear(); reportedDomains.Clear(); dimensions = []; episode = null; changed = false;
                 }
                 while (window.TryPeek(out var expired) && e.Row.At - expired.Row.At > span)
                 {
@@ -199,7 +215,9 @@ internal static class PasswordAttacks
                     if (!qualifying.Any(f => f.New)) continue;
                     var first = qualifying[0];
                     string seed = D.Hash(new JsonArray(rule, entity, first.Id, qualifying[^1].Id));
-                    episode = new(seed, first.Row.At, qualifying[^1].Row.At, qualifying[^1].Row.At, count, false, new());
+                    episode = previousBurst is { } open
+                        ? open with { LastFailure = qualifying[^1].Row.At, Last = qualifying[^1].Row.At, Attempts = open.Attempts + count }
+                        : new(seed, first.Row.At, qualifying[^1].Row.At, qualifying[^1].Row.At, count, false, new());
                     foreach (var failed in qualifying) Keep(failed);
                 }
                 else
@@ -268,7 +286,14 @@ internal static class PasswordAttacks
         string subject = D.Text(facts[spray ? "source" : "account"]);
         var names = facts[spray ? "accounts" : "addresses"]!.AsArray();
         int total = facts[spray ? "account_count" : "address_count"]!.GetValue<int>();
-        D.Require(context.Count == 2 && facts.Count == 9 && facts["version"]!.GetValue<int>() == 1 &&
+        var reported = facts["reported_domains"] as JsonArray;
+        long? domain = D.Number(facts["domain_id"]);
+        bool legacy = facts.Count == 9 && reported is null && domain is null;
+        bool newFacts = reported is { Count: <= 20 } && reported.All(value => D.Text(value) is { Length: > 0 } text && Clean(text) == text) &&
+            (spray ? facts.Count == 10 && domain is null : facts.Count == 11 && domain > 0 &&
+                SemanticProposal.HashText(domain.Value.ToString(CultureInfo.InvariantCulture) + '\0' + UnicodeCaseFold.Fold(subject)) ==
+                D.Text(signal["entity_key"]));
+        D.Require(context.Count == 2 && (legacy || newFacts) && facts["version"]!.GetValue<int>() == 1 &&
             JsonNode.DeepEquals(DetectionSignal.Execution(signal), Execution(scope, rule, policy)) &&
             scope.PluginId == "sli.windows.ad-dc" && scope.CollectionScopeId == "" && refs.Length <= 50 && refs.All(r => r.Kind == "core_event") &&
             attempts >= (spray ? policy.SprayAccounts : policy.BruteAttempts) && names.Count == Math.Min(total, 20) &&

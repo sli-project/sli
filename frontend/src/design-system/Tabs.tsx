@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, type KeyboardEvent, type ReactNode } from "react";
 
-type TabItem = { key: string; label: ReactNode };
+type TabItem = { key: string; label: ReactNode; count?: string };
 type TabsContextValue = { id: string; items: TabItem[]; active: string; onChange: (key: string) => void };
 const TabsContext = createContext<TabsContextValue | null>(null);
 
@@ -16,7 +16,8 @@ export function Tabs({ items, active, onChange, children }: Omit<TabsContextValu
   return <TabsContext.Provider value={{ id, items, active, onChange }}>{children}</TabsContext.Provider>;
 }
 
-export function TabList({ label, variant }: { label: string; variant?: "segmented" | "underline" }) {
+/** Switches the active view. Use FilterChips to refine results within a view. */
+export function TabList({ label }: { label: string; variant?: "underline" | "segmented" }) {
   const { id, items, active, onChange } = useTabs();
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next: number;
@@ -31,10 +32,10 @@ export function TabList({ label, variant }: { label: string; variant?: "segmente
     onChange(items[next].key);
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
-  return <div className="sli-ds-header__meta" role="tablist" aria-label={label} data-variant={variant}>
+  return <div className="sli-ds-tabs" role="tablist" aria-label={label}>
     {items.map((item, index) => <button key={item.key} type="button" role="tab" id={`${id}-tab-${item.key}`} aria-controls={`${id}-panel`}
-      className="sli-ds-chip" aria-selected={item.key === active} aria-pressed={item.key === active} tabIndex={item.key === active ? 0 : -1}
-      onClick={() => onChange(item.key)} onKeyDown={(event) => navigate(event, index)}>{item.label}</button>)}
+      className="sli-ds-chip" aria-selected={item.key === active} tabIndex={item.key === active ? 0 : -1}
+      onClick={() => onChange(item.key)} onKeyDown={(event) => navigate(event, index)}>{item.label}{item.count === undefined ? null : <> <strong>{item.count}</strong></>}</button>)}
   </div>;
 }
 
