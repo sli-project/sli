@@ -5665,7 +5665,7 @@ export const ru = {
   "reports.v2.ad.computer-logons.params.period.label": "Период",
   "reports.v2.ad.computer-logons.params.q.label": "Компьютер",
   "reports.v2.ad.computer-logons.params.user.label": "Пользователь",
-  "reports.v2.ad.computer-logons.params.service_logons.label": "Служебные входы",
+  "reports.v2.ad.computer-logons.params.service_logons.label": "Сетевые и служебные входы",
   "reports.v2.ad.computer-logons.detail.title": "Входы на компьютер",
   "reports.v2.ad.computer-logons.detail.columns.user.label": "Пользователь",
   "reports.v2.ad.computer-logons.detail.columns.time.label": "Время",

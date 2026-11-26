@@ -5669,7 +5669,7 @@ export const en: Record<MessageKey, string> = {
   "reports.v2.ad.computer-logons.params.period.label": "Period",
   "reports.v2.ad.computer-logons.params.q.label": "Computer",
   "reports.v2.ad.computer-logons.params.user.label": "User",
-  "reports.v2.ad.computer-logons.params.service_logons.label": "Service logons",
+  "reports.v2.ad.computer-logons.params.service_logons.label": "Network and service logons",
   "reports.v2.ad.computer-logons.detail.title": "Logons to computer",
   "reports.v2.ad.computer-logons.detail.columns.user.label": "User",
   "reports.v2.ad.computer-logons.detail.columns.time.label": "Time",
