@@ -129,7 +129,8 @@ public static class AdV2Endpoints
             ct.ThrowIfCancellationRequested();
             if(!Available()){await DomainHttp.WriteAsync(c,new{error="report_plugin_unavailable"},503,ct);return;}
             AdV2Result.Finish(result);
-            Redact(result, definition, SelectedFields, request.Tab);
+            bool reviewAccounts = AdReviewChecks.UsesAccountRows(request);
+            Redact(result, definition, SelectedFields, reviewAccounts ? "all" : request.Tab);
             if(request.Tab=="checks"&&key is "ad.users.v2" or "ad.computers.v6")AdReviewChecks.Localize(result,DomainHttp.SelectEnglish(c.Request.Headers.AcceptLanguage.ToString()));
             bool selectedDomain=c.Request.Query.ContainsKey("domain")||c.Request.Query.ContainsKey("domain_id");
             result["domain_scope"] = Obj(new { mode = selectedDomain ? "domain" : "accessible", domain_id = selectedDomain&&request.Domains.Length==1 ? (long?)request.Domains[0] : null, domain_ids = request.Domains,state=request.Domains.Length>0?"available":"no_domains" });
@@ -138,7 +139,8 @@ public static class AdV2Endpoints
             {
                 if(result.Text("state") is not ("ok" or "partial" or "stale" or "empty")) throw new AdInputException(key switch{"ad.users.v2"=>"users_v2_export_unavailable","ad.infrastructure"=>request.Tab=="changes"?"active_directory_history_not_exportable":"active_directory_evidence_not_exportable",_=>"computers_v6_export_unavailable"});
                 var exportView=declaration["views"]!.AsArray().FirstOrDefault(v=>v!.Text("key")==request.Tab);
-                var exportColumns=exportView?["columns"] as JsonArray ?? declaration["columns"]!.AsArray();
+                var exportColumns=reviewAccounts ? ReviewAccountColumns(declaration)
+                    : exportView?["columns"] as JsonArray ?? declaration["columns"]!.AsArray();
                 var exportRows=exportView.Text("source") is {} collection&&result["collections"]?[collection] is JsonArray collectionRows?collectionRows:result["items"]!.AsArray();
                 if(key=="ad.computers.v6"&&request.Tab=="checks")exportRows=Array(exportRows.OfType<JsonObject>().Select(r=>{var row=(JsonObject)r.DeepClone();row["objects"]=Array((r["objects"] as JsonArray??[]).Select(o=>o!.Text("name")));return row;}));
                 string csv = key=="ad.computers.v6"&&request.Tab=="computers"?AdInventoryRows.ComputerCsv(exportRows):key=="ad.infrastructure"&&request.Tab is not ("semantic" or "changes" or "spn_collisions" or "privileged_changes")?AdInfrastructure.CsvControls(exportRows):Csv(exportColumns,exportRows);
@@ -259,6 +261,18 @@ public static class AdV2Endpoints
         }
     }
     internal static string PythonText(JsonNode? node)=>node switch{null=>"",JsonArray array=>string.Join(", ",array.Select(PythonText)),JsonObject=>node.ToJsonString(),_=>AdInventoryRows.Bool(node) switch{true=>"True",false=>"False",_=>node.ToString()}};
+    static JsonArray ReviewAccountColumns(JsonObject declaration)
+    {
+        var columns = declaration["columns"]!.AsArray();
+        return Array(new[] { "name", "privilege_basis", "activity", "reason" }
+            .Select(key => columns.FirstOrDefault(column => column.Text("key") == key))
+            .Where(column => column is not null).Select(column =>
+            {
+                var copy = column!.DeepClone().AsObject();
+                copy["path"] = copy.Text("key") switch { "name" => "account_label", "privilege_basis" => "review_privileges", _ => copy.Text("path") };
+                return copy;
+            }));
+    }
     internal static string CsvCell(string value,char delimiter=',')
     {
         if(value.StartsWith('\t')||value.StartsWith('\r')||value.StartsWith('\n')||value.TrimStart().Length>0&&"=+-@".Contains(value.TrimStart()[0]))value="'"+value;
