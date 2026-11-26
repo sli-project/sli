@@ -125,14 +125,23 @@ internal static class AdUsersActivity
         var counts=temporary.GroupBy(t=>t.Key).ToDictionary(g=>g.Key,g=>g.Count());foreach(var(row,key)in temporary)row["repeats"]=counts[key];
         return Obj(new{disabled_active=disabled,temporary_memberships=temporary.Where(t=>counts[t.Key]>=minRepeats).Select(t=>t.Row),unknown_identity_events=unknown,unprocessed_events=ordered.Count(e=>!Interpreted(e))});
     }
-    internal static JsonObject Current(IEnumerable<JsonObject> sources) => Obj(new{users=sources.SelectMany(s=>(s["snapshot"]?["users"] as JsonArray??[]).OfType<JsonObject>()),metadata=new{observed_at=sources.Select(s=>s.Text("observed_at_utc")).FirstOrDefault(),watch_groups=sources.SelectMany(s=>(s["snapshot"]?["metadata"]?["watch_groups"] as JsonArray??[]).OfType<JsonObject>())}});
-    internal static async Task<JsonObject> LoadAsync(NpgsqlConnection db,JsonObject current,long[] domains,JsonObject parameters,bool disabled,CancellationToken ct,IConfiguration? config=null)
+    internal static IEnumerable<JsonObject> Users(IEnumerable<JsonObject> sources) =>
+        sources.SelectMany(source => (source["snapshot"]?["users"] as JsonArray ?? []).OfType<JsonObject>());
+    internal static IEnumerable<JsonObject> WatchGroups(IEnumerable<JsonObject> sources) =>
+        sources.SelectMany(source => (source["snapshot"]?["metadata"]?["watch_groups"] as JsonArray ?? []).OfType<JsonObject>());
+    internal static JsonObject Current(IEnumerable<JsonObject> sources) =>
+        Obj(new { users = Users(sources), metadata = new { observed_at = sources.FirstOrDefault().Text("observed_at_utc"), watch_groups = WatchGroups(sources) } });
+    internal static Task<JsonObject> LoadAsync(NpgsqlConnection db,JsonObject current,long[] domains,JsonObject parameters,bool disabled,CancellationToken ct,IConfiguration? config=null) =>
+        LoadAsync(db, (current["users"] as JsonArray ?? []).OfType<JsonObject>(),
+            (current["metadata"]?["watch_groups"] as JsonArray ?? []).OfType<JsonObject>(), domains, parameters, disabled, ct, config);
+    internal static async Task<JsonObject> LoadAsync(NpgsqlConnection db, IEnumerable<JsonObject> accounts,
+        IEnumerable<JsonObject> watchGroups, long[] domains, JsonObject parameters, bool disabled, CancellationToken ct, IConfiguration? config = null)
     {
         var(period,minutes,repeats)=Window(parameters);
         var empty=Obj(new{disabled_active=new object[0],temporary_memberships=new object[0],unknown_identity_events=0,unprocessed_events=0,state="partial",truncated=false,window=period.Bounds});
         if(domains.Length==0)return empty;
-        var users=(current["users"] as JsonArray??[]).OfType<JsonObject>().Where(u=>u.Int("entityId")>0).ToDictionary(u=>u.Int("entityId"));
-        var groups=(current["metadata"]?["watch_groups"] as JsonArray??[]).OfType<JsonObject>().Where(g=>g.Text("id")?.StartsWith("group:")==true&&AdInventoryRows.Bool(g["watchGroup"])==true).GroupBy(g=>long.Parse(g.Text("id")![6..],CultureInfo.InvariantCulture)).ToDictionary(g=>g.Key,g=>g.First());
+        var users=accounts.Where(u=>u.Int("entityId")>0).ToDictionary(u=>u.Int("entityId"));
+        var groups=watchGroups.Where(g=>g.Text("id")?.StartsWith("group:")==true&&AdInventoryRows.Bool(g["watchGroup"])==true).GroupBy(g=>long.Parse(g.Text("id")![6..],CultureInfo.InvariantCulture)).ToDictionary(g=>g.Key,g=>g.First());
         if(users.Count==0||!disabled&&groups.Count==0)return empty;
         await Read(db,"savepoint ad_users_activity",ct);
         try
@@ -185,7 +194,12 @@ internal static class AdUsersActivity
         {await Read(db,"rollback to savepoint ad_users_activity",ct);empty["state"]="unavailable";return empty;}
         finally {await Read(db,"release savepoint ad_users_activity",ct);}
     }
-    internal static void Enrich(JsonObject user,JsonObject data) => user["temporaryMemberships"]=Array((data["temporary_memberships"] as JsonArray??[]).Where(e=>e.Int("entity_id")==user.Int("entityId")));
+    internal static void Enrich(JsonObject user, ILookup<long, JsonObject> episodes)
+    {
+        var memberships = episodes[user.Int("entityId")];
+        user.Remove("temporaryMemberships");
+        if (memberships.Any()) user["temporaryMemberships"] = Array(memberships);
+    }
     internal static void ApplyCoverage(JsonObject result,JsonObject data,bool tab)
     {
         result["coverage"]!["completeness"]="not_proven";result["coverage"]!["activity"]=Obj(new{state=data.Text("state"),truncated=false,window=data["window"],unknown_identity_events=data.Int("unknown_identity_events"),unprocessed_events=data.Int("unprocessed_events")});

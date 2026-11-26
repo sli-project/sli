@@ -11,6 +11,7 @@ using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Notifications;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Tests.Notifications;
 
@@ -66,7 +67,7 @@ internal sealed class NotificationRepositoryStub : INotificationAdministrationRe
     private void Read(string op) { Operations.Add(op); if (Throw) throw new IOException("synthetic private diagnostic"); }
     public Task<JsonArray> ChannelsAsync(CancellationToken ct) { Read("channels"); return Task.FromResult(new JsonArray(Channel("smtp"), Channel("telegram"))); }
     public Task<JsonArray> SubscriptionsAsync(CancellationToken ct) { Read("subscriptions"); return Task.FromResult(Subscriptions.DeepClone().AsArray()); }
-    public Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, bool link, bool configure, CancellationToken ct)
+    public Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, ProblemAccess? problems, bool configure, string language, CancellationToken ct)
     {
         Read("workspace"); return Task.FromResult(new JsonObject { ["channels"] = new JsonArray(Channel("smtp"), Channel("telegram")), ["subscriptions"] = Subscriptions.DeepClone(),
             ["counts"] = JsonNode.Parse("{\"total\":0,\"accepted\":0,\"errors\":0,\"waiting\":0,\"other\":0,\"new_count\":null}"), ["items"] = new JsonArray(),

@@ -9,6 +9,9 @@ on:
       commit:
         required: true
         type: string
+      branch_build:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,10 +37,16 @@ jobs:
         shell: pwsh
         env:
           KIT_COMMIT: ${{ inputs.commit }}
+          BRANCH_BUILD: ${{ inputs.branch_build }}
         run: |
-          if ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:KIT_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full SHA on main.' }
-          git merge-base --is-ancestor $env:KIT_COMMIT $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) { throw 'Agent source commit is outside main.' }
+          if ($env:KIT_COMMIT -cnotmatch '\A[a-f0-9]{40}\z') { throw 'Expected a full source SHA.' }
+          if ($env:GITHUB_REF -eq 'refs/heads/main') {
+            git merge-base --is-ancestor $env:KIT_COMMIT $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) { throw 'Agent source commit is outside main.' }
+          } elseif ($env:BRANCH_BUILD -ne 'true' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or
+                    $env:GITHUB_REF_TYPE -ne 'branch' -or $env:KIT_COMMIT -cne $env:GITHUB_SHA) {
+            throw 'A build-only dispatch requires the dispatched branch tip.'
+          }
           git checkout --detach $env:KIT_COMMIT
           if ($LASTEXITCODE -ne 0) { throw 'Agent source checkout failed.' }
       - name: Resolve the agent product versions

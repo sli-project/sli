@@ -138,7 +138,7 @@ function RepeatRows({ params, row, columns, onSelect }: {
   const repeats = useInfiniteQuery({
     queryKey: ["journal", "repeats", input.toString()],
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => api.reportV2Data("events.journal", followup(input, undefined, pageParam)),
+    queryFn: ({ pageParam, signal }) => api.reportV2Data("events.journal", followup(input, undefined, pageParam), signal),
     getNextPageParam: (last) => last.next_cursor || undefined,
     retry: false,
   });
@@ -177,7 +177,7 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
   context.set("limit", "5");
   const earlier = useQuery({
     queryKey: ["journal", "before", context.toString()],
-    queryFn: () => api.reportV2Data("events.journal", context),
+    queryFn: ({ signal }) => api.reportV2Data("events.journal", context, signal),
     enabled: Boolean(row.id && !row.expandable && params.has("from") && params.has("to")),
     retry: false,
   });
@@ -315,7 +315,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const data = useInfiniteQuery({
     queryKey: ["journal", definition.key, params.toString(), refresh],
     initialPageParam: {} as { cursor?: string; window?: { from: string; to: string } },
-    queryFn: ({ pageParam }) => api.reportV2Data(definition.key, followup(params, pageParam.window, pageParam.cursor)),
+    queryFn: ({ pageParam, signal }) => api.reportV2Data(definition.key, followup(params, pageParam.window, pageParam.cursor), signal),
     getNextPageParam: (last, all) => last.next_cursor ? { cursor: last.next_cursor, window: pageWindow(all[0]) } : undefined,
     enabled: valid,
     retry: false,
