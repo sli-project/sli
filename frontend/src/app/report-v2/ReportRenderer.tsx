@@ -39,11 +39,11 @@ import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerChecks";
-import { UserChanges, UserCheckFilters, userTableColumns } from "../../plugins/ad/UserChecks";
+import { UserCheckFilters, userAccountCount, userTableColumns } from "../../plugins/ad/UserChecks";
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
-import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
+import { ComputerPanel, computerEmpty, computerInventoryColumns, LogonComputerName } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -195,6 +195,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }, [computerLogons]);
   const [computerPageSize, setComputerPageSize] = useState(50);
   const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
+  const [logonPeriodTarget, setLogonPeriodTarget] = useState<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(true);
   const [detailsVisible, setDetailsVisible] = useState(true);
   const [refreshWindow, setRefreshWindow] = useState(0);
@@ -225,7 +226,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const [queuePreset, setQueuePreset] = useState<PeriodPreset>("custom");
   const [originalPeriod, setOriginalPeriod] = useState<string | null>(null);
   const views = useMemo(() => {
-    const declared = domainEvents ? definition.views.filter((item) => item.key === "events") : independentUsers ? definition.views.filter((item) => !["users", "temporary_memberships"].includes(item.key)) : definition.views;
+    const declared = domainEvents ? definition.views.filter((item) => item.key === "events") : independentUsers ? definition.views.filter((item) => ["checks", "privileged", "all"].includes(item.key)) : definition.views;
     return declared.length ? declared : [{ kind: "table" as const, key: "table", source: "items" }];
   }, [definition.views, independentUsers, domainEvents]);
   const [activeView, setActiveView] = useState(() => {
@@ -240,7 +241,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const userReview = independentUsers && view.key === "checks";
   const canLinkReport = (key: string) => !access || access.reports.some((report) => report.allowed
     && (report.report_key === key || report.target_path === `/app/report/${key}`));
-  const selectUser = (row: Row, tab = view.key === "changes" ? "changes" : "account") => {
+  const selectUser = (row: Row, tab = "account") => {
     setSelected(row);
     setUserDetailTab(tab);
   };
@@ -606,7 +607,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const count = independentUsers && item.access?.allowed !== false && first && !data.error
       ? item.key === view.key ? item.key === "checks" ? first.coverage.affected_objects : first.filtered_count
         : view.key === "all" && item.key === "privileged" ? first.coverage.privileged_accounts : undefined : undefined;
-    return { key: item.key, label: <>{label}{typeof count === "number" ? <> <span>{count}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
+    return { key: item.key, label: <>{label}{typeof count === "number" ? <> <span>{userAccountCount(count)}</span></> : null}{itemBranch ? <> <span className="sli-ds-badge" data-tone={itemBranch.state === "ok" ? "success" : itemBranch.state === "not_requested" || itemBranch.state === "empty" ? "neutral" : "warning"}>{t(`reports.renderer.branch_state.${itemBranch.state}`)}</span></> : null}</> };
   });
   const linkedViews = additionalTabs.map((item) => ({ key: item.key, label: <>{item.label}</> }));
   const listPagination = { ...pagination(computerPageSize),
@@ -614,10 +615,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       ? t("reports.computers.page_of", { page: userPage + 1, total: Math.ceil(first.filtered_count / computerPageSize) })
       : t("reports.computers.page", { page: userPage + 1 }) : undefined };
   const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
-    : columns.map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false }));
+    : columns.map((column) => column.key === "name"
+      ? { ...column, hiddenByDefault: undefined, render: (row: Row) => <LogonComputerName row={row}/> }
+      : { ...column, hiddenByDefault: false });
   const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
     <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
-      emptyContent={t("table.noValue")} showFooter={false}/> : computerReport ? computerEmpty() : null;
+      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport ? computerEmpty() : null;
   const detailParams = new URLSearchParams(baseParams);
   for (const key of ["limit", "sort", "direction"]) detailParams.delete(key);
   if (first?.window.from_utc && first.window.to_utc_exclusive) {
@@ -688,7 +691,9 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       </div> : null}
       {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers || computersScreen ? "inline" : undefined}
         primaryKeys={computersScreen ? undefined : gpoReport || infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
-        applyInline={computersScreen} leadingControls={computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
+        applyInline={computersScreen} periodTarget={computerLogons ? logonPeriodTarget : undefined}
+        leadingControls={computerLogons ? <><div ref={setLogonPeriodTarget}/>{computerScope}</>
+          : computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
         values={values} defaults={resetValues} onApply={(next) => {
           setSelected(null);
           const domainChanged = next.domain !== values.domain;
@@ -760,7 +765,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     split={independentUsers}
     drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
-      allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")} onClose={() => setSelected(null)}/> : undefined
+      allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")}
+      allowChanges={canLinkReport("security.events.chains")} onClose={() => setSelected(null)}/> : undefined
       : <DetailDrawer open={selected !== null} title={selected ? problemQueue ? String(selected.title_text ?? selected.title ?? "") : formatCell(columnValue(definition.columns[0], selected), cellKind(definition.columns[0])) : ""} onClose={() => setSelected(null)}
       footer={selected ? <>
         {canManageProblems && canResolveProblem(selected) ? <ResolveProblem key={String(selected.id)} row={selected} onResolved={() => setSelected(null)}/> : null}
@@ -783,8 +789,6 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : branch && (branch.state === "error" || branch.state === "denied")
       ? <ReportState state={branch.state} details={{ reason: branch.reason, limitations: branch.limitations }}
         detail={branchDetail} subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
-      : independentUsers && ["changes", "disabled_active"].includes(view.key)
-      ? <UserChanges columns={view.columns ?? []} rows={rows} title={view.title ?? view.key} onSelect={selectUser} paging={userTablePaging}/>
       : independentUsers
       ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={userTableColumns(definition.columns.filter((column) => column.key !== "department" || hasDepartment), selectUser, timeZone, userReview)}
         rows={rows} rowKey={(row) => String(row[definition.row_key])} sort={sort} onSort={toggleSort} onRowClick={selectUser}

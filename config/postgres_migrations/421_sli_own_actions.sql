@@ -9,9 +9,9 @@ do $$ begin
         raise exception 'sli_own_actions421_preflight' using errcode='55000';
     end if;
 end $$;
-set local role adlog_user;
+-- The kit can reassign findings to sli_migration before this migration runs.
+-- Issue the temporary grant from the migration session.
 grant update(status_reason) on public.findings to adlog_storage_owner;
-reset role;
 set local role adlog_storage_owner;
 
 create table public.sli_maintenance_catalog421(
@@ -138,8 +138,6 @@ insert into public.finding_status_history(finding_id,old_status,new_status,chang
 select id,old_status,'closed','migration:421',status_reason from closed;
 
 reset role;
-set local role adlog_user;
 revoke update(status_reason) on public.findings from adlog_storage_owner;
-reset role;
 insert into public.schema_migrations(version,name) values(421,'sli_own_actions');
 commit;

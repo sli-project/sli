@@ -240,10 +240,39 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
             : await SnapshotIngress.CheckQuotaAsync(connection,transaction,snapshot,receipt,limits,ct);
         if (quota is not null) return Reject(quota,"retry_later");
         await ledger.StoreAsync(envelope,payload,rows,receipt,ct);
+        if (filePermissions)
+            await RecordFileAuditEventAsync(connection,transaction,identity.Id,envelope.PolicyRevision,payload,now,ct);
         if (envelope.ContinuityState=="gap") await ledger.GapAsync(envelope,previous,summary,ct);
         if (snapshot is not null) await SnapshotIngress.StoreAsync(connection,transaction,snapshot,ct);
         if (observation is not null) await recovery.AcceptAsync(observation,envelope,now,ct);
         return receipt;
+    }
+
+    // Update the card in the same transaction as the signed packet receipt.
+    private static async Task RecordFileAuditEventAsync(NpgsqlConnection db,NpgsqlTransaction tx,Guid agent,
+        string revision,JsonObject payload,DateTimeOffset received,CancellationToken ct)
+    {
+        var latest = payload["records"]!.AsArray().OfType<JsonObject>()
+            .Where(record => record["format"]?.ToString() == "file_action")
+            .Select(record => record["payload"]!.AsObject())
+            .MaxBy(row => AgentAdDcUtc.Parse(row["last_seen_utc"]!.GetValue<string>()));
+        if (latest is null) return;
+        string scope=latest["collection_scope_id"]!.GetValue<string>();
+        var observed=AgentAdDcUtc.Parse(latest["last_seen_utc"]!.GetValue<string>());
+        var activity=new JsonObject { ["collection_scope_id"]=scope,["observed_at"]=Iso8601.Format(observed),["received_at"]=Iso8601.Format(received) };
+        await using var write=new NpgsqlCommand("""
+            update public.sli_agents set file_audit=jsonb_set(file_audit,'{last_event}',@activity)
+            where id=@agent and file_audit->>'permissions_scope'=@scope
+              and file_audit#>>'{request,command,policy_revision}'=@revision
+              and (file_audit#>>'{last_event,observed_at}' is null
+                   or (file_audit#>>'{last_event,observed_at}')::timestamptz < @observed)
+            """,db,tx);
+        write.Parameters.AddWithValue("agent",agent);
+        write.Parameters.AddWithValue("scope",scope);
+        write.Parameters.AddWithValue("revision",revision);
+        write.Parameters.AddWithValue("observed",observed);
+        write.Parameters.AddWithValue("activity",NpgsqlTypes.NpgsqlDbType.Jsonb,activity.ToJsonString());
+        await write.ExecuteNonQueryAsync(ct);
     }
 
     private static bool Follows(Envelope envelope, JsonObject? previous)

@@ -294,6 +294,18 @@ jobs:
             sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
           fi
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+      - name: Verify the beta kit migration path on private PostgreSQL 18
+        if: matrix.shard == 1
+        shell: bash
+        run: |
+          python -B - <<'PY'
+          from pathlib import Path
+
+          from deploy.linux import build_beta_kit as kit
+
+          pg_bin = Path("/usr/lib/postgresql/18/bin")
+          kit.runtime_inventory(Path.cwd(), pg_bin, "18", kit.postgres_environment(pg_bin))
+          PY
       - name: Verify migrations and backup recovery on private PostgreSQL 18
         if: matrix.shard == 1
         env:

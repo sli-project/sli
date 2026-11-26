@@ -23,6 +23,8 @@ export type PageHeaderControls = {
     onChange: (value: PeriodValue) => void;
     onClear?: () => void;
   };
+  scope?: ReactNode;
+  showBreadcrumbs?: boolean;
   updatedAt?: string | number | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -86,7 +88,7 @@ function UpdatedTime({ value }: { value: string | number }) {
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
-export function PageHeader({ title, subtitle, actions, meta, controls, domain, domainPicker, periodPicker, showDomain = true }: {
+export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain, domainPicker, periodPicker, showDomain = true }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -100,12 +102,16 @@ export function PageHeader({ title, subtitle, actions, meta, controls, domain, d
   showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel } = controls ?? scope.controls ?? {};
+  const { period, scope: scopeControl, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
   const domainControl = domainPicker ?? (showDomain ? scope.domain?.(domain) : null);
   return <header className="sli-ds-header">
+    {showBreadcrumbs && crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
+      <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
+    </nav> : null}
     <div className="sli-ds-header__row">
       <h1 className="sli-ds-header__title" data-page-heading tabIndex={-1}>{title}</h1>
       {domainControl}
+      {scopeControl}
       {periodPicker ?? (period ? <HeaderPeriod {...period}/> : null)}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}

@@ -66,7 +66,7 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   await user.click(screen.getByRole("button", { name: "Collapse repeats for #41" }));
   expect(screen.queryByRole("link", { name: /Repeated sign-in failures/ })).toBeNull();
   await user.click(attack);
-  const panel = await screen.findByRole("dialog", { name: "Password spray" });
+  const panel = await screen.findByRole("dialog", { name: "Password spray · operator.one, operator.two and 10 more" });
   expect(await within(panel).findByText("4625")).toBeTruthy();
   expect(within(panel).getByRole("link", { name: "Open in journal" }).getAttribute("href"))
     .toBe("/app/report/events.journal?finding=41&domain=7");
@@ -107,7 +107,7 @@ it("submits a classified decision and shows who changed state", async () => {
     changed_at: "2026-11-22T11:55:00Z", changed_by: "reviewer", old_status: "new", new_status: "closed",
     note: 'sli.queue:{"classification":"fixed","comment":"Reset password"}' }] : [] }]) : page([{ ...problem, status }, third]));
   await user.click(await screen.findByRole("link", { name: /Password spray/ }));
-  const panel = screen.getByRole("dialog", { name: "Password spray" });
+  const panel = screen.getByRole("dialog", { name: "Password spray · operator.one, operator.two and 10 more" });
   await chooseOption(within(panel).getByLabelText("State", { selector: "button" }), "closed");
   const dialog = screen.getByRole("dialog", { name: "Change state" });
   await chooseOption(within(dialog).getByLabelText("Resolution reason", { selector: "button" }), "fixed");

@@ -1,6 +1,5 @@
-import { Select } from "../../design-system/Select";
-import { useId, useMemo, useState } from "react";
-import { DataTable, FactList, type TableColumn } from "../../design-system";
+import { useMemo, useState } from "react";
+import { DataTable, FactList, FilterBar, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { fileMaskLabel } from "./permissionMasks";
 import { fileMaskLabels } from "./FileAuditCells";
@@ -30,10 +29,9 @@ export function FileAuditAceDetails({ ace }: { ace: FileAuditAce }) {
   ]}/><details><summary>{t("file-audit.acl.raw")}</summary><pre>{ace.raw}</pre></details></div>;
 }
 
-export function FileAuditAclTable({ acl, title, initialPageSize = 50, onPageSize }: {
-  acl?: FileAuditAcl; title: string; initialPageSize?: number; onPageSize?: (size: number) => void;
+export function FileAuditAclTable({ acl, title, initialPageSize = 50, onPageSize, shareLevel = false }: {
+  acl?: FileAuditAcl; title: string; initialPageSize?: number; shareLevel?: boolean; onPageSize?: (size: number) => void;
 }) {
-  const id = useId();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<AceFilter>("all");
   const [page, setPage] = useState(0);
@@ -48,23 +46,23 @@ export function FileAuditAclTable({ acl, title, initialPageSize = 50, onPageSize
     { key: "inheritance", label: t("file-audit.acl.inheritance"), value: ace => t(ace.inherited ? "file-audit.acl.inherited" : "file-audit.acl.explicit") },
     { key: "ordinal", label: t("file-audit.acl.position"), kind: "number", hiddenByDefault: true },
   ];
+  const visibleColumns = shareLevel ? columns.slice(0, 3) : columns;
   const reset = () => { setPage(0); setSelected(null); };
   return <section className="sli-file-audit__acl" aria-label={title}>
     <h2>{title}</h2>
     {!acl || acl.state === "missing" ? <p className="sli-file-audit__local-state">{t("file-audit.acl.not_read")}</p> : <>
-      {acl.state !== "complete" ? <p className="sli-file-audit__local-state">{t(acl.state === "partial" ? "file-audit.compare.incomplete" : "file-audit.acl.unsupported_descriptor")}</p> : null}
-      <DataTable caption={title} columns={columns} rows={entries.slice(page * pageSize, (page + 1) * pageSize)}
-        rowKey={ace => String(ace.ordinal)} compact density="compact" wrapCells selectedKey={selected}
+      <DataTable caption={title} columns={visibleColumns} rows={entries.slice(page * pageSize, (page + 1) * pageSize)}
+        rowKey={ace => String(ace.ordinal)} compact density="compact" showFooter={!shareLevel || entries.length > pageSize} wrapCells selectedKey={selected}
         onRowClick={ace => setSelected(current => current === String(ace.ordinal) ? null : String(ace.ordinal))}
         renderExpandedRow={ace => <FileAuditAceDetails ace={ace}/>}
-        toolbar={<div className="sli-file-audit__acl-filters">
-          <label htmlFor={`${id}-search`} className="sli-ds-sr-only">{t("file-audit.acl.search")}</label>
-          <input id={`${id}-search`} type="search" placeholder={t("file-audit.acl.search")} value={search} onChange={event => { reset(); setSearch(event.target.value); }}/>
-          <label htmlFor={`${id}-filter`} className="sli-ds-sr-only">{t("file-audit.acl.filter")}</label>
-          <Select label={t("file-audit.acl.filter")} id={`${id}-filter`} value={filter} onChange={(selectedValue) => { reset(); setFilter(selectedValue as AceFilter); }}
-            options={(["all", "explicit", "inherited", "deny"] as const).map(value => ({ value: value, label: t(`file-audit.acl.${value}`) }))}/>
-        </div>}
-        emptyContent={t(acl.aces.length === 0 && acl.state === "complete" ? "file-audit.acl.empty" : "file-audit.acl.no_matches")} total={entries.length}
+        toolbar={!shareLevel || (acl.aces.length > initialPageSize) ? <FilterBar layout="inline" applyInline compact
+          primaryKeys={["search", "filter"]} fields={[
+            { key: "search", kind: "text", label: t("file-audit.acl.search"), placeholder: t("file-audit.acl.search"), immediate: true },
+            { key: "filter", kind: "select", label: t("file-audit.acl.filter"), hideLabel: true, options: (["all", "explicit", "inherited", "deny"] as const)
+              .map(value => ({ value, label: t("file-audit.acl." + value as "file-audit.acl.all") })) },
+          ]}
+          values={{ search, filter }} onApply={next => { reset(); setSearch(String(next.search ?? "")); setFilter((next.filter ?? "all") as AceFilter); }}/>
+          : undefined} total={entries.length}
         pageSize={{ value: pageSize, options: FILE_AUDIT_PAGE_SIZES, onChange: size => { reset(); setPageSize(size); onPageSize?.(size); } }}
         pagination={{ start: page * pageSize + 1, onPrevious: page > 0 ? () => { setSelected(null); setPage(page - 1); } : undefined,
           onNext: (page + 1) * pageSize < entries.length ? () => { setSelected(null); setPage(page + 1); } : undefined }}/>
