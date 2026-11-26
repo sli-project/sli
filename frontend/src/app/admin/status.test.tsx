@@ -19,17 +19,9 @@ const agent: AgentCollectionHealth["items"][number] = {
   modules: [{ module_id: "sli.windows.ad-dc", channels: [{ channel: "Security", state: "current",
     last_packet_at: "2026-11-14T01:15:00Z", last_import_at: "2026-11-14T01:15:10Z", import_lag_seconds: 0, budget_seconds: 900 }] }],
 };
-const health = (items: typeof agent[]): AgentCollectionHealth => ({ state: items.length ? "current" : "unknown", checked_at_utc: "2026-11-14T01:16:00Z", active_agents: items.length, current_agents: items.length, items });
+const health = (items: typeof agent[]): AgentCollectionHealth => ({ connected_domain_controllers: items.filter((item) => item.connection === "online").length, state: items.length ? "current" : "unknown", checked_at_utc: "2026-11-14T01:16:00Z", active_agents: items.length, current_agents: items.length, items });
 const setup = (items: typeof agent[] = []): SetupStatus => ({ api_version: "v1", generated_at_utc: "2026-11-14T01:16:00Z", read_only: true,
   steps: [], sources: [], domains: [], domain_controllers: [], domain_controller_source: null, report_domain: null, collection: null, agent_collection: health(items) });
-const dcSource = (receiving: boolean): SetupStatus => ({ ...setup([agent]),
-  domain_controllers: [{ hostname: "LAB-DC01", connect_address: "lab-dc01.example.test", domain: "example.test",
-    enabled: true, source: "db", dns_readback: false }],
-  sources: [{ pack_id: "sli.windows.ad-dc", display_name: "AD", version: "1", source_kind: "event", enabled: true,
-    instances: [{ source_instance_id: "lab-dc01.example.test", configured: true, enabled: true, data_received: receiving,
-      data_state: receiving ? "fresh" : "never", last_data_utc: receiving ? agent.modules[0].channels[0].last_import_at : null,
-      next_action: receiving ? null : "check_data" }] }],
-});
 const operations = {
   api_version: "v1", read_only: true, generated_at_utc: "2026-11-14T01:16:00Z", collection: {}, collector_health: {}, postgres: {},
   workers: { status: "ok", items: [{ worker_name: "notification_delivery", label: "Internal label", state: "active", status: "running", started_at: "2026-11-13T12:00:00Z" }] },
@@ -200,6 +192,7 @@ beforeEach(() => {
   access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(api, "setupStatus").mockResolvedValue(setup());
+  vi.spyOn(api, "plugins").mockResolvedValue({ items: [], can_manage: false });
   vi.spyOn(api, "operations").mockResolvedValue(operations);
   vi.spyOn(api, "operationsWorkers").mockResolvedValue({ workers: operations.workers });
   vi.spyOn(api, "storageOverview").mockResolvedValue({ storage: { ...operations.storage, postgres_volume: postgresVolume } });
@@ -341,7 +334,7 @@ it("shows actual launch times for running and disabled services", async () => {
 });
 
 it("hides onboarding when an agent has sent data and a channel is configured", async () => {
-  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(true));
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
   vi.mocked(api.notificationWorkspace).mockResolvedValue(notifications(true));
   renderPage();
   await waitFor(() => expect(api.telegramSetup).toHaveBeenCalledWith("status"));
@@ -350,17 +343,17 @@ it("hides onboarding when an agent has sent data and a channel is configured", a
   expect(screen.getByRole("table", { name: "Диск" }).textContent).toContain("3 ГБ");
 });
 
-it("completes the controller step only for a configured target receiving data", async () => {
-  vi.mocked(api.setupStatus).mockResolvedValue(setup([agent]));
+it("counts a connected controller before its first import and without a legacy target", async () => {
+  const waiting = structuredClone(agent);
+  waiting.state = "waiting";
+  waiting.last_packet_at = null;
+  waiting.modules[0].channels[0] = { ...waiting.modules[0].channels[0], state: "waiting", last_packet_at: null, last_import_at: null };
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([waiting]));
   renderPage();
-  const step = (await screen.findByText(t("systemStatus.step.agent"))).closest("li")!;
-  expect(within(step).getByLabelText(t("systemStatus.pending"))).toBeTruthy();
-  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(false));
-  await clients.at(-1)!.invalidateQueries({ queryKey: ["setup-status"] });
-  expect(within(step).getByLabelText(t("systemStatus.pending"))).toBeTruthy();
-  vi.mocked(api.setupStatus).mockResolvedValue(dcSource(true));
-  await clients.at(-1)!.invalidateQueries({ queryKey: ["setup-status"] });
-  await waitFor(() => expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy());
+  const step = (await screen.findByText(t("setup.controllers.currentCount", { count: 1 }))).closest("li")!;
+  expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy();
+  expect(screen.queryByText(t("systemStatus.step.agent"))).toBeNull();
+  expect(await screen.findByText(t("systemStatus.step.waiting"))).toBeTruthy();
 });
 
 it("does not call an enabled channel configured without a saved token and chat", async () => {
@@ -383,12 +376,12 @@ it("shows a silent source with its name, last packet time and action", async () 
 });
 
 it("keeps the source receiving and the controller step checked during a normal import wait", async () => {
-  const data = dcSource(true);
+  const data = setup([agent]);
   data.agent_collection!.items = [structuredClone(agent)];
   data.agent_collection!.items[0].modules[0].channels[0].last_packet_at = "2026-11-14T01:14:40Z";
   vi.mocked(api.setupStatus).mockResolvedValue(data);
   renderPage();
-  const step = (await screen.findByText(t("systemStatus.step.agent"))).closest("li")!;
+  const step = (await screen.findByText(t("setup.controllers.currentCount", { count: 1 }))).closest("li")!;
   expect(within(step).getByLabelText(t("systemStatus.done"))).toBeTruthy();
 
   const pending = structuredClone(data);

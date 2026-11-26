@@ -180,7 +180,7 @@
   "notifications.smtp.setup.needs_save": "Настройки изменились — сохраните их заново.",
   "setup.agentCollection.current": "Сбор работает.",
   "setup.agentCollection.error": "Сбор прерван — проверьте агента.",
-  "setup.agentCollection.partial": "Сбор ещё не подтверждён — проверьте агентов.",
+  "setup.agentCollection.partial": "Ожидается завершение первого сбора.",
   "setup.agentCollection.unknown": "Проверьте назначение и состояние агентов.",
   "setup.agentCollection.unavailable": "Не удалось проверить сбор — повторите проверку.",
   "reports.v2.security.problems.columns.occurrence_count.label": "Раз",

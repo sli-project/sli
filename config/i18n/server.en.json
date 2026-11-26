@@ -180,7 +180,7 @@
   "notifications.smtp.setup.needs_save": "Settings changed — save them again.",
   "setup.agentCollection.current": "Collection is working.",
   "setup.agentCollection.error": "Collection failed — check the agent.",
-  "setup.agentCollection.partial": "Collection is not yet confirmed — check the agents.",
+  "setup.agentCollection.partial": "Waiting for the first collection to finish.",
   "setup.agentCollection.unknown": "Check agent assignments and status.",
   "setup.agentCollection.unavailable": "Could not check collection — try again.",
   "reports.v2.security.problems.columns.occurrence_count.label": "Times",

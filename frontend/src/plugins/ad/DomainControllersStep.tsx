@@ -4,7 +4,6 @@ import { useState } from "react";
 import { ApiResponseError, api, type SetupDomain, type SetupDomainController, type SetupSourceInstance } from "../../api/client";
 import { useEffectiveAccess } from "../../app/App";
 import { FieldError } from "../../app/admin/gate";
-import { agentCollectionLabel } from "../../app/agent-collection-view";
 import { t, type MessageKey } from "../../i18n";
 
 const CONTROLLER_ERRORS: Record<string, MessageKey> = {
@@ -43,30 +42,28 @@ export function DomainControllersStep({ controllers, domains, agentInstances }: 
   });
   const fromFile = controllers.some((item) => item.source === "file");
   // Exact source binding only: never match short hostnames or infer a target.
-  const rows: { name: string; target?: SetupDomainController; observation?: SetupSourceInstance }[] = agentInstances === undefined
-    ? controllers.map((target) => ({ name: target.hostname, target, observation: undefined as SetupSourceInstance | undefined }))
-    : agentInstances.map((observation) => ({ name: observation.source_instance_id, observation,
+  const rows = agentInstances === undefined
+    ? controllers.map((target) => ({ name: target.hostname, target }))
+    : agentInstances.map((observation) => ({ name: observation.source_instance_id,
       target: controllers.find((target) => target.hostname.toLocaleLowerCase("en-US") === observation.source_instance_id.toLocaleLowerCase("en-US")) }));
   if (agentInstances !== undefined) {
     for (const target of controllers) {
       if (!rows.some((row) => row.name.toLocaleLowerCase("en-US") === target.hostname.toLocaleLowerCase("en-US"))) {
-        rows.push({ name: target.hostname, target, observation: undefined });
+        rows.push({ name: target.hostname, target });
       }
     }
   }
   return <>
-    {agentInstances !== undefined ? <p className="sli-ds-header__subtitle">{t("setup.controllers.agentBasis")}</p> : null}
     {rows.length ? <table>
       <caption>{t("setup.dc.tableCaption")}</caption>
-      <thead><tr><th scope="col">{t("setup.dc.colController")}</th><th scope="col">{t("setup.dc.colDomain")}</th><th scope="col">{t("setup.dc.colSource")}</th><th scope="col">{t("setup.dc.colDnsCheck")}</th><th scope="col">{t("setup.dc.colState")}</th>{canManage ? <th scope="col">{t("setup.dc.colAction")}</th> : null}</tr></thead>
-      <tbody>{rows.map(({ name, target, observation }) => <tr key={name}>
+      <thead><tr><th scope="col">{t("setup.dc.colController")}</th><th scope="col">{t("setup.dc.colDomain")}</th><th scope="col">{t("setup.dc.colSource")}</th><th scope="col">{t("setup.dc.colDnsCheck")}</th>{agentInstances === undefined ? <th scope="col">{t("setup.dc.colState")}</th> : null}{canManage ? <th scope="col">{t("setup.dc.colAction")}</th> : null}</tr></thead>
+      <tbody>{rows.map(({ name, target }) => <tr key={name}>
         <td>{target?.connect_address ?? name}</td><td>{target?.domain ?? t("table.noValue")}</td><td>{target ? t(SOURCE_LABELS[target.source]) : t("setup.controllers.agentSource")}</td>
         <td>{target ? target.dns_readback ? t("setup.dc.dnsEnabled") : t("setup.dc.dnsNo") : t("table.noValue")}</td>
-        <td>{observation ? observation.collection_state ? agentCollectionLabel(observation.collection_state) : t("setup.source.unknown") : agentInstances !== undefined ? t("setup.source.unknown") : target?.enabled ? t("setup.dc.enabled") : t("setup.dc.disabled")}</td>
-        {canManage ? <td>{target?.source === "db" ? <>
-          {agentInstances !== undefined ? <span>{t("setup.controllers.targetConfiguration")}: {target.enabled ? t("setup.dc.enabled") : t("setup.dc.disabled")} </span> : null}
+        {agentInstances === undefined ? <td>{target?.enabled ? t("setup.dc.enabled") : t("setup.dc.disabled")}</td> : null}
+        {canManage ? <td>{target?.source === "db" ?
           <button type="button" className="sli-ds-button" disabled={toggle.isPending} onClick={() => toggle.mutate(target)}>{target.enabled ? t("setup.dc.actionDisable") : t("setup.dc.actionEnable")}</button>
-        </> : null}</td> : null}
+        : null}</td> : null}
       </tr>)}</tbody>
     </table> : null}
     {fromFile ? <p className="sli-ds-header__subtitle">{t("setup.dc.fileWarning")}</p> : null}
