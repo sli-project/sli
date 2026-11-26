@@ -174,7 +174,7 @@ def test_catalog_completeness_and_frontend_wording():
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
     frontend_only_user_labels = tuple(f"reports.ad.users.{section}." for section in (
-        "deviation", "list", "card", "event",
+        "deviation", "list", "card", "event", "count",
     ))
     expected |= {key for key in frontend_catalog("ru") if key.startswith((
         "reports.v2.security.problems.", "security.problems.status.", "security.problems.entity.",

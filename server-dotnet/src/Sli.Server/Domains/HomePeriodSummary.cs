@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Sli.Server.Ad;
+using Sli.Server.Auth;
 using Sli.Server.Gpo;
+using Sli.Server.Reporting.V2;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Domains.HomeJson;
@@ -10,10 +12,12 @@ using static Sli.Server.Domains.HomePresentation;
 namespace Sli.Server.Domains;
 
 internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore? gpo, IConfiguration? configuration,
-    ILogger<HomeSummaryService>? logger)
+    ILogger<HomeSummaryService>? logger, IAdV2Store? ad)
 {
+    private sealed record WeakSpot(string Key, string? Label, long Count, string Href, string? LabelKey = null);
+
     internal async Task<JsonObject> Build(IReadOnlyList<HomeReport> reports, IReadOnlyList<DomainItem> domains,
-        HomeSummaryQuery query, CancellationToken ct)
+        Principal principal, HomeSummaryQuery query, CancellationToken ct)
     {
         var window = query.Period!;
         bool openQueue = query.OpenQueue;
@@ -46,15 +50,28 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         bool objectLinks = infrastructure?.Capabilities?.Decide("entity.view").Allowed == true
             || queue?.Capabilities?.Decide("entity.view").Allowed == true;
 
+        var operatorTask = ReadBlock("operators", openQueue && queueIds.Length > 0
+            ? reads.Read(HomePeriodSql.OperatorContext, ct, ("session", principal.Type == "session"), ("user", principal.Id))
+            : Task.FromResult<IReadOnlyList<JsonObject>>([]));
+        var checkReaders = new (string Key, Task<WeakSpot[]?> Read)[]
+        {
+            ("ad.infrastructure", ReadAdWeakSpots(infrastructure, "controls")),
+            ("ad.users.v2", ReadAdWeakSpots(Report("ad.users.v2"), "checks")),
+            ("ad.computers.v6", ReadAdWeakSpots(Report("ad.computers.v6"), "checks")),
+            ("ad.gpo.v2", ReadBlock("ad.gpo.v2", openQueue && policyIds.Length > 0 && gpo is not null
+                ? ReadGpoWeakSpots() : Task.FromResult<WeakSpot[]>([])))
+        };
         var problemsTask = ReadBlock("problems", queueIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([]) : ReadProblems());
-        var controllerTask = ReadBlock("controllers", dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
+        var deltaTask = ReadSignInDelta();
+        var controllerTask = ReadBlock("controllers", openQueue || dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
             : reads.Read(HomePeriodSql.Controllers, ct, ("ids", dcIds), ("to", window.To)));
         var passwordTask = ReadBlock("changes", dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
             : reads.Read(HomePeriodSql.PasswordPolicyChanges, ct, [.. windowArgs, ("ids", dcIds)]));
         var gpoTask = ReadBlock("changes", policyIds.Length == 0 || gpo is null ? Task.FromResult<IEnumerable<JsonObject>>([]) : ReadGpo());
         var activityTask = ReadBlock("activity", !openQueue && eventScope is { } activityScope ? ReadActivity(activityScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
         var eventsTask = ReadBlock("changes", eventScope is { } changeScope ? ReadEventChanges(changeScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
-        await Task.WhenAll(problemsTask, controllerTask, passwordTask, gpoTask, activityTask, eventsTask);
+        await Task.WhenAll([problemsTask, deltaTask, controllerTask, passwordTask, gpoTask, activityTask, eventsTask,
+            .. checkReaders.Select(reader => (Task)reader.Read)]);
 
         var problems = await problemsTask;
         var controllers = await controllerTask;
@@ -137,20 +154,121 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                 })
             }
         });
-        if (openQueue) result.Remove("activity");
+        if (openQueue)
+        {
+            result.Remove("activity");
+            result.Remove("controllers");
+            result["active_operator_count"] = (await operatorTask)?.SingleOrDefault()?["active_operator_count"].Copy();
+            result["since_previous_login"] = await deltaTask;
+            var checkResults = await Task.WhenAll(checkReaders.Select(async reader => (reader.Key, Items: await reader.Read)));
+            result["weak_spots"] = Object(new {
+                items = checkResults.SelectMany(source => (source.Items ?? [])
+                    .OrderByDescending(item => item.Count).ThenBy(item => item.Key, StringComparer.Ordinal)
+                    .Select((item, index) => new { item, index, report = source.Key }))
+                    .OrderBy(row => row.index).ThenByDescending(row => row.item.Count)
+                    .ThenBy(row => row.report, StringComparer.Ordinal).Take(10)
+                    .Select(row => new { id = row.report + ":" + row.item.Key, label = row.item.Label, label_key = row.item.LabelKey,
+                        count = row.item.Count, href = row.item.Href, row.report }),
+                failed = checkResults.Where(source => source.Items is null).Select(source => source.Key)
+            });
+        }
         return result;
 
-        Task<IReadOnlyList<JsonObject>> ReadProblems() =>
-            openQueue
-                ? reads.Read(HomePeriodSql.OpenQueue, ct, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical),
-                    ("queue", query.QueueFilter == "unassigned" && !queueIdentity ? "all" : query.QueueFilter),
-                    ("limit", query.QueueLimit), ("offset", (query.QueuePage - 1L) * query.QueueLimit))
-                : reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
+        async Task<IReadOnlyList<JsonObject>> ReadProblems()
+        {
+            if (!openQueue)
+                return await reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
+            var operators = (await operatorTask)?.SingleOrDefault();
+            bool showAssignment = queueIdentity && operators.Number("active_operator_count") >= 2;
+            bool reset = query.QueueFilter == "unassigned" && !showAssignment;
+            return await reads.Read(HomePeriodSql.OpenQueue, ct, ("ids", queueIds), ("identity", queueIdentity),
+                ("assignment", showAssignment), ("technical", queueTechnical), ("queue", reset ? "all" : query.QueueFilter),
+                ("limit", query.QueueLimit), ("offset", reset ? 0L : (query.QueuePage - 1L) * query.QueueLimit));
+        }
+
+        async Task<JsonObject?> ReadSignInDelta()
+        {
+            var since = (await operatorTask)?.SingleOrDefault().Stamp("previous_login_at");
+            if (since is null || since >= query.Now) return null;
+            var rows = await ReadBlock("sign-in", reads.Read(HomePeriodSql.SincePreviousLogin, ct, ("ids", queueIds),
+                ("since", since.Value), ("now", query.Now)));
+            if (rows?.SingleOrDefault() is not { } row) return null;
+            return Object(new {
+                from = since.Value, to = query.Now, new_count = row.Number("new_count"), closed_count = row.Number("closed_count"),
+                new_href = HomeSummaryQuery.Href("security.problems", new Dictionary<string, object?>(links) {
+                    ["queue_view"] = "all", ["fold"] = "false",
+                    ["created_from"] = HomeSummaryQuery.Iso(since.Value), ["created_to"] = HomeSummaryQuery.Iso(query.Now)
+                })
+            });
+        }
+
+        async Task<WeakSpot[]?> ReadAdWeakSpots(HomeReport? report, string tab)
+        {
+            var ids = Ids(report);
+            if (!openQueue || ad is null || report is null || ids.Length == 0) return [];
+            bool accounts = report.Key == "ad.users.v2";
+            var definition = AdV2Endpoints.Definitions[report.Key];
+            bool Fields(IEnumerable<string> required) => report.Fields(ids, required.ToArray());
+            if (!Fields(AdV2Endpoints.Strings(definition?["view_fields"]?[tab])
+                .Concat(AdV2Endpoints.Strings(definition?["param_fields"]?[tab == "controls" ? "q" : "check"]))
+                .Concat(accounts ? AdV2Endpoints.Strings(definition?["param_fields"]?["account_rows"]) : []))) return [];
+            var parameters = tab == "controls" ? new JsonObject { ["qualification"] = "failed" } : new JsonObject();
+            if (accounts) parameters["account_rows"] = "yes";
+            var request = new AdV2Request(report.Key, "view", null, ids, parameters, tab, null, false, 200, null, query.TimeZone);
+            var data = await ReadBlock(report.Key, ad.ReadAsync(request, Fields, ct));
+            if (!report.Available() || data.Text("state") == "denied") return [];
+            if (data is null || data.Text("state") is "error" or "unavailable") return null;
+            bool english = DomainHttp.SelectEnglish(query.Language);
+            if (tab == "controls")
+            {
+                var localized = ReportPresentation.Apply(data, english);
+                return Rows(localized["items"]).Where(row => row.Text("qualification") == "failed" && row.Text("control_id") is not null)
+                    .GroupBy(row => row.Text("control_id")!).Select(group =>
+                    {
+                        var label = group.First().Text("label");
+                        return new WeakSpot(group.Key, label, group.Select(row => row.Number("entity_id")).Distinct().LongCount(),
+                            HomeSummaryQuery.Href(report.Key, new Dictionary<string, object?>(links) {
+                                ["tab"] = tab, ["qualification"] = "failed", ["q"] = label
+                            }));
+                    }).ToArray();
+            }
+            AdReviewChecks.Localize(data, english);
+            var checks = accounts ? Rows(data["filter_options"]?["check"]) : Rows(data["items"]);
+            string keyField = accounts ? "value" : "key", countField = accounts ? "count" : "total";
+            return checks.Where(row => row.Number(countField) > 0 && row.Text(keyField) is not (null or "new_computer"))
+                .Select(row =>
+                {
+                    var check = row.Text(keyField)!;
+                    var checkFilters = new Dictionary<string, object?>(links) { ["tab"] = tab };
+                    if (accounts)
+                    {
+                        checkFilters["check"] = check;
+                        checkFilters["account_rows"] = "yes";
+                    }
+                    return new WeakSpot(check, row.Text(accounts ? "label" : "title"), row.Number(countField), HomeSummaryQuery.Href(report.Key, checkFilters));
+                }).ToArray();
+        }
+
+        async Task<WeakSpot[]> ReadGpoWeakSpots()
+        {
+            var pair = await gpo!.PairAsync(policyIds, ct);
+            if (pair["current"] is not JsonObject snapshot)
+            {
+                if (pair.Text("state") is "error" or "unavailable") throw new GpoSourceException();
+                return [];
+            }
+            if (policies?.Available() != true) return [];
+            var count = GpoInventory.Filter(snapshot, "attention").Total;
+            if (count == 0) return [];
+            return [new WeakSpot("version_mismatch", null, count, HomeSummaryQuery.Href("ad.gpo.v2",
+                new Dictionary<string, object?>(links) { ["tab"] = "gpos", ["view"] = "attention" }),
+                "reports.v2.ad.gpo.v2.reasons.version_mismatch.title")];
+        }
 
         async Task<T?> ReadBlock<T>(string block, Task<T> read) where T : class
         {
             try { return await read; }
-            catch (Exception error) when (!ct.IsCancellationRequested && error is (Npgsql.NpgsqlException or TimeoutException))
+            catch (Exception error) when (!ct.IsCancellationRequested && error is (Npgsql.NpgsqlException or TimeoutException or GpoSourceException))
             {
                 logger?.LogWarning("Home block read failed for {Block} ({ErrorType})", block, error.GetType().Name);
                 return null;
@@ -187,7 +305,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             ];
             return openQueue
                 ? reads.Read(HomePeriodSql.OpenQueueChanges(source, scope.Sql), ct,
-                    [.. args, ("queue_access", queueIds.Length > 0), ("identity", queueIdentity), ("event_identity", eventIdentity),
+                    [.. args, ("queue_access", queueIds.Length > 0), ("assignment", false), ("event_identity", eventIdentity),
                      ("kinds", AdSecurity.ChangeEventIds().Where(id => id is not (4723 or 4724)).ToArray())])
                 : reads.Read(HomePeriodSql.EventChanges(source, scope.Sql), ct, args);
         }

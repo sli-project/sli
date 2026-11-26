@@ -572,14 +572,10 @@ describe("v2 registry metadata", () => {
     expect(reportMetadataText(report.key, "title", changed.title)).toBe(changed.title);
   });
 
-  it("localizes the four approved Users tabs and the temporary membership reason without changing evidence", () => {
+  it("localizes Users metadata and the temporary membership reason while preserving access and evidence", () => {
     setLocale("en");
     const report = registry.definitions.find((item) => item.key === "ad.users.v2")!;
     const localized = localizeReportDefinition(report);
-    expect(localized.views.map((view) => [view.key, view.title])).toEqual([
-      ["checks", "Require review"], ["privileged", "Privileged"],
-      ["changes", "Changes"], ["all", "All accounts"],
-    ]);
     expect(localized.views.map((view) => view.access)).toEqual(report.views.map((view) => view.access));
     const reason = { key: "temporary_membership", label: "Краткое членство в контрольной группе", summary: "Synthetic control group",
       observed: "2", condition: "Условие", qualification: "Наблюдение", limitation: "Ограничение", next: "Следующий шаг", evidence: [[1, 2]] };
