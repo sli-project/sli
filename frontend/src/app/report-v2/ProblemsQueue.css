@@ -1,3 +1,49 @@
+[data-problems-queue-table] > .sli-ds-table > .sli-ds-table__scroll {
+  max-height: calc(100dvh - var(--sli-list-viewport-inset));
+}
+
+[data-problems-queue-table] > .sli-ds-table > .sli-ds-table__scroll > table > :is(thead, tbody) > :is(thead > tr, tr[data-clickable]) > :is(th, td) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: var(--sli-space-2);
+}
+
+[data-problems-queue-table] > .sli-ds-table > .sli-ds-table__scroll > table td:has(> .sli-ds-check) {
+  padding-inline: 0;
+  text-align: center;
+}
+
+[data-problems-queue-title],
+[data-problems-queue-values] {
+  display: flex;
+  align-items: center;
+  gap: var(--sli-space-1);
+}
+
+[data-problems-queue-title] > a,
+[data-problems-queue-values] > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-problems-queue-title] > .sli-ds-button,
+[data-problems-queue-values] > :nth-child(2) {
+  flex: none;
+}
+
+[data-problems-queue-table] > .sli-ds-table > .sli-ds-table__scroll > table td > .sli-ds-severity {
+  white-space: nowrap;
+}
+
+[data-problems-queue-table] .sli-ds-table[data-density="standard"] [data-problems-queue-values] > :first-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
 [data-problems-queue-drawer] {
   display: contents;
 }

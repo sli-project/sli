@@ -153,9 +153,11 @@ public class FileAuditConsumerDatabaseTests
     [Fact]
     public async Task Check_receipt_retention_keeps_the_first_and_last_legacy_failure_and_new_attempts()
     {
+        const int version = 431;
         var ct = TestContext.Current.CancellationToken;
+        int previous = MigrationDirectory.Read().Where(m => m.Version < version).Max(m => m.Version);
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 424);
+        await fixture.StartAsync(ct, throughVersion: previous);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(owner, """
             insert into sli_plugin_file_audit.audit_commands values

@@ -23,6 +23,8 @@ public sealed class ReportRunner(IReportDatabase database, IConfiguration? confi
         Require(report is not null, "report_not_found"); Require(report!.Flag("allowed"), "report_access_denied", 403);
         report = RawReport(report);
         await using var db = await database.OpenAsync(false, ct);
+        if (journal?.PageOnly == true)
+            await db.QueryAsync("set transaction isolation level repeatable read", [], ct);
         if (key == "ad.users.v2") await ReportDomain.ResolveIdAsync(db, ct);
         var definition = First(await Query(db, "select r.definition_json,d.dataset_key,d.fields_json from report_registry_v4 r join report_datasets_v4 d on d.id=r.dataset_id where r.report_key=@p0 and r.version=@p1", ct, key, report.Number("version")));
         Require(definition.Count > 0, "report_definition_not_found");

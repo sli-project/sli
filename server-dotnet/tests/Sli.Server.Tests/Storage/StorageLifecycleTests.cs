@@ -21,6 +21,7 @@ public sealed class StorageLifecycleTests
         internal Queue<JsonObject> InboxResults = new(), ReceiptResults = new(), OutboxResults = new();
         internal List<(DateTime Cutoff, Guid After, int Limit)> InboxCalls = [], ReceiptCalls = [], OutboxCalls = [];
         internal List<DateTime> InboxReceived = [];
+        internal Queue<long?> FileAuditPruneResults = new();
         internal List<(string Status, string Phase, int Interval, JsonObject Details)> Beats = [];
         internal bool ProcessLock = true, LostLock;
         internal Func<CancellationToken, Task<JsonObject>>? Partition;
@@ -46,20 +47,40 @@ public sealed class StorageLifecycleTests
         public Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct) { Phases.Add("inbox"); InboxCalls.Add((cutoff,after,limit)); InboxReceived.Add(afterReceivedAt); return Task.FromResult(InboxResults.Count>0 ? InboxResults.Dequeue() : Page("last_scanned_packet_id",after)); }
         public Task<JsonObject> RetainReceiptsAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) { Phases.Add("receipts"); ReceiptCalls.Add((cutoff,after,limit)); return Task.FromResult(ReceiptResults.Count>0 ? ReceiptResults.Dequeue() : Page("last_scanned_packet_id",after)); }
         public Task<long?> PruneFileAuditCheckReceiptsAsync(int limit, CancellationToken ct)
-        { Phases.Add("file-audit-check-receipts"); return Task.FromResult<long?>(0); }
+        {
+            Phases.Add("file-audit-check-receipts");
+            return Task.FromResult(FileAuditPruneResults.TryDequeue(out var count) ? count : 0L);
+        }
         public Task<JsonObject> RetainOutboxAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) { Phases.Add("outbox"); OutboxCalls.Add((cutoff,after,limit)); return Task.FromResult(OutboxResults.Count>0 ? OutboxResults.Dequeue() : Page("last_scanned_job_id",after)); }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
     static readonly DateTime Now = new(2026,11,16,0,0,0,DateTimeKind.Utc);
 
     [Fact]
-    public async Task Cycle_runs_only_partition_and_short_queue_retention()
+    public async Task Full_cycle_runs_hot_window_retention_and_prunes_file_audit_receipts_in_batches()
+    {
+        using var state = new State();
+        var session = new Session();
+        session.FileAuditPruneResults.Enqueue(2);
+        session.FileAuditPruneResults.Enqueue(1);
+        var result = await new StorageLifecycleWorker(session, state.Files, () => Now)
+            .CycleAsync(new(BatchSize: 2), TestContext.Current.CancellationToken);
+        Assert.Equal("ok", result["status"]?.ToString());
+        Assert.Contains("partitions", session.Phases);
+        Assert.Equal(Now.AddDays(-7), Assert.Single(session.InboxCalls).Cutoff);
+        Assert.Equal(Now.AddDays(-7), Assert.Single(session.ReceiptCalls).Cutoff);
+        Assert.Equal(Now.AddDays(-1), Assert.Single(session.OutboxCalls).Cutoff);
+        Assert.Equal(3L, LifecycleJson.Number(result, "file_audit_check_receipts_deleted_count"));
+        Assert.Equal(2, session.Phases.Count(phase => phase == "file-audit-check-receipts"));
+    }
+    [Fact]
+    public async Task Short_cycle_drains_outbox_without_running_partition_or_receipt_retention()
     {
         using var state = new State(); var session = new Session();
-        var result = await new StorageLifecycleWorker(session,state.Files,()=>Now).CycleAsync(new(),TestContext.Current.CancellationToken);
-        Assert.Equal("ok", result["status"]?.ToString());
-        Assert.Equal(new[] {"inbox","partitions","receipts","outbox","file-audit-check-receipts"},session.Phases);
-        Assert.Equal(Now.AddDays(-7),Assert.Single(session.InboxCalls).Cutoff);
+        var worker = new StorageLifecycleWorker(session, state.Files, () => Now);
+        await worker.CycleAsync(new(), TestContext.Current.CancellationToken, inboxOnly: true);
+        Assert.Equal(new[] { "inbox", "outbox" }, session.Phases);
+        Assert.Equal(Now.AddDays(-1), Assert.Single(session.OutboxCalls).Cutoff);
     }
     [Fact]
     public async Task Queues_drain_more_than_fifty_batches_and_aggregate_holds_without_stalling_other_lanes()
