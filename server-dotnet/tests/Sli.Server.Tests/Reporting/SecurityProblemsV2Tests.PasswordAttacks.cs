@@ -43,6 +43,40 @@ public sealed partial class SecurityProblemsV2Tests
     }
 
     [Theory]
+    [InlineData("en", "Sign-ins from 192.0.2.28 · 18 accounts · 2,002 attempts",
+        "Password guessing · test-user · 21 addresses · 111,890 attempts")]
+    [InlineData("ru", "Попытки входа с 192.0.2.28 · 18 учётных записей · 2\u00a0002 попытки",
+        "Подбор пароля · test-user · 21 адрес · 111\u00a0890 попыток")]
+    public void QueueTitlesUsePublishedTotalsInsteadOfRetainedEvidence(string language, string sprayTitle, string bruteTitle)
+    {
+        foreach (bool spray in new[] { true, false })
+        {
+            int attempts = spray ? 2002 : 111890;
+            var raw = new JsonObject {
+                ["id"] = 1, ["deferred_until"] = null, ["evidence_count"] = 50,
+                ["rule_code"] = spray ? "semantic.qw.password-spray" : "semantic.qw.password-brute-force",
+                ["presentation_facts"] = new JsonObject { ["version"] = 1, ["attempts"] = attempts,
+                    ["source"] = "192.0.2.28", ["account"] = "test-user", ["account_count"] = 18, ["address_count"] = 21,
+                    ["accounts"] = new JsonArray("test-account-one", "test-account-two"),
+                    ["addresses"] = new JsonArray("198.51.100.10", "198.51.100.11") }
+            };
+            var queue = ProblemPresentation.Finding(raw, Access, language, queue: true, includeDescription: false);
+            Assert.Equal(spray ? sprayTitle : bruteTitle, (string?)queue["title_text"]);
+            Assert.Equal(attempts, (int?)queue["queue_attack"]!["event_count"]);
+            Assert.Equal(21, (int?)queue["queue_attack"]!["address_count"]);
+            var restricted = Sli.Server.Tests.Problems.ProblemLifecycleTests.Access("security.queue", fields: ["security"]);
+            var limited = ProblemPresentation.Finding(raw, restricted, language, queue: true, includeDescription: false);
+            Assert.DoesNotContain("test-user", (string)limited["title_text"]!);
+            Assert.DoesNotContain("192.0.2.28", (string)limited["title_text"]!);
+            Assert.Null(limited["queue_attack"]!["address_count"]);
+
+            raw["presentation_facts"]!.AsObject().Remove("version");
+            var legacy = ProblemPresentation.Finding(raw, Access, language, queue: true, includeDescription: false);
+            Assert.Null(legacy["queue_attack"]!["event_count"]);
+        }
+    }
+
+    [Theory]
     [InlineData("ru")]
     [InlineData("en")]
     public void PasswordFactsRespectQueueAndHomeFieldAccess(string language)

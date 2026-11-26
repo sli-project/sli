@@ -5620,6 +5620,10 @@
         "identity_basic",
         "technical"
       ],
+      "queue_attack.address_count": [
+        "identity_basic",
+        "technical"
+      ],
       "entities": [
         "identity_basic"
       ],
