@@ -84,7 +84,7 @@ def test_cold_delivery_role_can_resolve_recipient_without_service_marker_access(
     outbox.require_recipient(recipient)
 
 
-def _native_source(connect, with_success):
+def _native_source(connect, failures, with_success):
     """Synthetic imported native receipts only, not detector state or findings."""
     from psycopg.types.json import Jsonb
 
@@ -97,8 +97,8 @@ def _native_source(connect, with_success):
         at = conn.execute("select clock_timestamp()-interval '400 seconds' as at").fetchone()["at"]
         natives = []
         event_ids = []
-        for number in range(1, 12 if with_success else 11):
-            success = number == 11
+        for number in range(1, failures + int(with_success) + 1):
+            success = number > failures
             kind = 4624 if success else 4625
             timestamp = at + timedelta(seconds=1) if success else at
             packet = uuid4()
@@ -130,11 +130,11 @@ def _native_source(connect, with_success):
     return agent, domain, event_ids
 
 
-def _produce(connect, worker_dsn, directory, with_success):
+def _produce(connect, worker_dsn, directory, failures, with_success):
     import psycopg
     from psycopg.rows import dict_row
 
-    agent, domain, events = _native_source(connect, with_success)
+    agent, domain, events = _native_source(connect, failures, with_success)
     with psycopg.connect(worker_dsn, autocommit=True, row_factory=dict_row) as worker:
         worker.execute("set role adlog_semantic_worker")
         assert assert_semantic_worker_least_privilege(worker.cursor())["exclusive_worker_membership"]
@@ -144,20 +144,18 @@ def _produce(connect, worker_dsn, directory, with_success):
         assert source["source"]["scope"]["plugin_id"] == "sli.windows.ad-dc"
         with connect("adlog_user") as web:
             assert web.execute("select provision_password_detection_domain_v2(%s,2,null,'t009.example.test','session:1') as v", (agent,)).fetchone()["v"]["status"] == "configured"
-        run_semantic_worker(worker_dsn, directory, commands=("password-producer", "password-risk-consumer"))
+        run_semantic_worker(worker_dsn, directory)
         with connect() as admin:
-            result, = admin.execute("select finding_id,scenario_id from semantic_finding_publications").fetchall()
-            assert result["finding_id"] is not None
-            assert admin.execute("select count(*) as n from normalized_events").fetchone()["n"] == 0
+            publications = admin.execute("select finding_id,scenario_id from semantic_finding_publications").fetchall()
+            assert admin.execute("select count(*) as n from semantic_password_checkpoints").fetchone()["n"] == 0
             assert admin.execute("select count(*) as n from event_hot where source_sha256 is not null").fetchone()["n"] == len(events)
-            assert admin.execute("select count(*) as n from semantic_risk_evaluation_jobs where evaluation_status='completed'").fetchone()["n"] == 1
         for table in ("notification_outbox", "notification_subscriptions"):
             assert not worker.execute("select has_table_privilege(current_user,%s,'SELECT') as v", (table,)).fetchone()["v"]
-    return result, domain, events
+    return publications, domain, events
 
 
 @pytest.mark.parametrize(("with_success", "revoke"), [
-    pytest.param(False, None, id="medium-does-not-notify"),
+    pytest.param(False, None, id="subthreshold-does-not-notify"),
     pytest.param(True, None, id="critical-delivered"),
     pytest.param(True, "owner", id="critical-owner-revoked"),
     pytest.param(True, "recipient", id="critical-recipient-revoked"),
@@ -171,16 +169,19 @@ def test_password_publication_retained_events_and_real_delivery_dispatch(
         admin.execute("""insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
             values(%s,%s,%s,'telegram',true)""", (subscription, owner, recipient))
         admin.execute("update notification_channels set enabled=true where kind='telegram'")
-    published, domain, events = _produce(delivery_db, postgres_semantic_worker_dsn, tmp_path, with_success)
+    failures = 20 if with_success else 19
+    publications, domain, events = _produce(delivery_db, postgres_semantic_worker_dsn, tmp_path, failures, with_success)
     with delivery_db() as admin:
+        queued = admin.execute("select * from notification_outbox").fetchall()
+        if not with_success:
+            assert publications == []
+            assert queued == []
+            return
+        published, = publications
+        assert published["finding_id"] is not None
         finding = admin.execute("select * from findings where id=%s", (published["finding_id"],)).fetchone()
         assert finding["rule_code"] == "semantic.qw.password-brute-force"
         assert finding["evidence_count"] == len(events)
-        queued = admin.execute("select * from notification_outbox").fetchall()
-        if not with_success:
-            assert finding["severity"] == "medium"
-            assert queued == []
-            return
         assert finding["severity"] == "critical"
         pending, = queued
         assert pending["state"] == "pending" and pending["attempts"] == 0

@@ -3394,14 +3394,14 @@
         "sources": [
           "Canonical: retained Windows Security 4624 records in the granted domain and window."
         ],
-        "freshness_expectation": "The report reads the stored events in the requested window.",
+        "freshness_expectation": "Отчёт показывает сохранённые события за заданный период.",
         "rights": "ad.computer-logons view grant with computer_logon_observation and the server-resolved domain scope.",
         "field_classes": [
           "computer_logon_observation"
         ],
         "coverage": "Retained individual logon events.",
         "completeness": "Counts reflect the retained events; collection continuity is unverified.",
-        "denominator": "Ожидаемые источники входов выбранных компьютеров × период; без непрерывности сбора полнота не подтверждена.",
+        "denominator": "Сохранённые входы на выбранные компьютеры за заданный период.",
         "retention": "The report follows hot event retention.",
         "provenance": "Destination computer, target account, client workstation and address, source event ID, domain and observation time.",
         "primary_archetype": "timeline",

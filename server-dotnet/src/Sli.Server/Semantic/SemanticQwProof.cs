@@ -16,6 +16,7 @@ internal sealed partial class SemanticProduction
             || rule == "qw.account-decoy" && document["decoy_context"] is null || rule == "qw.file-decoy" && document["file_decoy_context"] is null || rule == "qw.file-acl-broad-write" && document["acl_context"] is null)
             throw new InvalidDataException("qw_signal_invalid");
         if (mode is not ("test" or "shadow" or "enabled") || revision < 1 || refs.Any(x => !JsonNode.DeepEquals(x!["scope"], scope)) || document.Text("quality") is not ("good" or "degraded" or "unknown") || document.Text("conclusion_state") is not ("observed" or "not_found" or "not_checked")) throw new InvalidDataException("qw_signal_invalid");
+        if (document["password_threshold_context"] is not null) Detections.PasswordAttacks.Validate(document);
         string processing = document.Text("processing_mode") ?? "live"; if (processing is not ("live" or "historical_replay" or "history_import")) throw new InvalidDataException("qw_processing_mode_invalid");
         var now = SigmaProjection.At(document, "received_at_utc");
         string? contextKey = document["watch_context"] is not null ? "watch_context" : document["decoy_context"] is not null ? "decoy_context" : document["file_decoy_context"] is not null ? "file_decoy_context" : null;

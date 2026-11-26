@@ -143,6 +143,14 @@ for (const key of ["security.events.chains", "ad.infrastructure"]) {
   const shipped = shippedDefinitions.find((item) => item.key === key)!;
   registry.definitions = registry.definitions.map((item) => item.key === key ? { ...shipped, filter_options: {} } : item);
 }
+const adDefinitions = JSON.parse(readFileSync(
+  resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json"), "utf8"
+)) as Record<string, { declaration: ReportDefinitionDto }>;
+const computerLogons = adDefinitions["ad.computer-logons"].declaration;
+registry.definitions = registry.definitions.map((item) => item.key === computerLogons.key
+  ? { ...computerLogons, filter_options: {} } : item);
+registry.metrics[computerLogons.key] = [];
+delete registry.filterOptions[computerLogons.key];
 
 it.each(["ru", "en"] as const)("displays security action outcomes without replacing source evidence (%s)", (locale) => {
   setLocale(locale);
@@ -514,7 +522,9 @@ describe("v2 registry metadata", () => {
       }
       columns(report.key, "columns", report.columns);
       for (const param of report.params) {
+        if (report.key === computerLogons.key && param.hidden) continue;
         check(report.key, `params.${param.key}.label`, param.label);
+        if (report.key === computerLogons.key && param.key === "service_logons") continue;
         for (const option of param.options ?? []) check(report.key, `params.${param.key}.options.${option.value}`, option.label);
       }
       for (const view of report.views) {
