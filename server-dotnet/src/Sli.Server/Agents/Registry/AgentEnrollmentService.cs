@@ -577,23 +577,30 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (host is not null && !string.IsNullOrEmpty(token) && host.Contains(token, StringComparison.Ordinal))
             host = null;
         // Keep the whole claim in the rate-limit key. The displayed claim is
-        // bounded and escaped independently, including NUL and markup.
+        // bounded and escaped independently, including NUL, format characters and markup.
         host = host is null ? null : string.Concat(host.EnumerateRunes());
         var key = host is null ? "" : HostNameKey(host.Normalize(NormalizationForm.FormC));
         var target = Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(key)));
         await AdvisoryAsync(connection, transaction, $"sli-agent-enroll-rejected:{target}:{code}", ct);
+        var displayHost = host is null ? null : string.Concat(host.EnumerateRunes().Take(253).Select(rune =>
+            (Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format ? JavaScriptEncoder.Default : AuditHostEncoder)
+                .Encode(rune.ToString())));
         var details = new JsonObject
         {
+            ["outcome"] = "rejected",
             ["code"] = code,
-            ["reported_hostname"] = host is null ? null : AuditHostEncoder.Encode(string.Concat(host.EnumerateRunes().Take(253))),
+            ["reported_hostname"] = displayHost,
             ["source_address"] = sourceAddress?.ToString()
         };
+        // The audit schema uses 'issue' for certificate issuance. Rejections
+        // use a host digest and a generic actor in place of agent and token IDs.
         await using var insert = new NpgsqlCommand("""
             insert into sli_agent_audit(action,actor,target,details)
-            select 'enroll_rejected','enrollment',@target,@details::jsonb
+            select 'issue','enrollment',@target,@details::jsonb
             where not exists (
-                select 1 from sli_agent_audit where action='enroll_rejected' and target=@target
-                    and details->>'code'=@code and occurred_at > clock_timestamp() - interval '10 minutes'
+                select 1 from sli_agent_audit where action='issue' and actor='enrollment' and target=@target
+                    and details->>'outcome'='rejected' and details->>'code'=@code
+                    and occurred_at > clock_timestamp() - interval '10 minutes'
             )
             """, connection, transaction);
         insert.Parameters.AddWithValue("target", target);

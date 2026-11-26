@@ -106,10 +106,8 @@ public class AgentEnrollmentTests
         }
         var repeated = await Task.WhenAll(Enroll(retryGrant, "PC\u200B01"), Enroll(retryGrant, "pc\u200b01"));
         Assert.All(repeated, response => Assert.Equal(HttpStatusCode.BadRequest, response.Status));
-        await using (var count = new NpgsqlCommand("select count(*) from sli_agent_audit where action='enroll_rejected'", db))
-            Assert.Equal(5L, await count.ExecuteScalarAsync(ct));
         await using (var audit = new NpgsqlCommand("""
-            select details::text from sli_agent_audit where action='enroll_rejected'
+            select details::text from sli_agent_audit where action='issue' and details->>'outcome'='rejected'
                 and details->>'reported_hostname'=@name
             """, db))
         {
@@ -131,6 +129,10 @@ public class AgentEnrollmentTests
             read.Parameters.AddWithValue("id", Guid.Parse(enrolled.Body["agent_id"]!.GetValue<string>()));
             Assert.Equal(accepted.Normalize(), await read.ExecuteScalarAsync(ct));
         }
+        await using var count = new NpgsqlCommand("""
+            select count(*) from sli_agent_audit where action='issue' and details->>'outcome'='rejected'
+            """, db);
+        Assert.Equal(5L, await count.ExecuteScalarAsync(ct));
     }
 
     [Fact]
