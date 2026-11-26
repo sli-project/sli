@@ -187,7 +187,7 @@ it.each([["Asia/Novosibirsk", false, false], ["America/New_York", false, false],
   await user.click(await screen.findByRole("button", { name: t("access.requests.button.review") }));
   const dialog = await screen.findByRole("dialog");
   const input = within(dialog).getByLabelText(t("access.requests.drawer.validUntilLimit")) as HTMLInputElement;
-  expect(input.value).toBe(timeZone === "Asia/Novosibirsk" ? "2026-12-01T19:00" : "2026-12-01T07:00");
+  expect(input.value).toBe(timeZone === "Asia/Novosibirsk" ? "2026-12-01 19:00" : "2026-12-01 07:00");
   if (edited) fireEvent.change(input, { target: { value: timeZone === "Asia/Novosibirsk" ? "2026-12-01T18:00" : "2026-12-01T06:00" } });
   if (zoneChanged) {
     state.timeZone = "UTC";

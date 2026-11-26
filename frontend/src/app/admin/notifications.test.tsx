@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -65,8 +66,8 @@ it.each((["ru", "en"] as const).flatMap((locale) => (["503", "403", "malformed",
     const find = within(panel).getByRole("button", { name: t("notify.telegram.find") });
     await waitFor(() => expect(find).toHaveProperty("disabled", false));
     fireEvent.click(find);
-    const choices = await within(panel).findByLabelText(t("notify.telegram.choose"));
-    fireEvent.change(choices, { target: { value: "fixture-choice" } });
+    const choices = await within(panel).findByLabelText(t("notify.telegram.choose"), { selector: "button" });
+    await chooseOption(choices, "fixture-choice");
     const save = within(panel).getByRole("button", { name: t("notify.save") });
     expect(save).toHaveProperty("disabled", false);
     failed = true;
@@ -78,8 +79,9 @@ it.each((["ru", "en"] as const).flatMap((locale) => (["503", "403", "malformed",
     expect(mock.telegram.mock.calls.filter(([action]) => action === "bind")).toHaveLength(0);
     expect(save).toHaveProperty("disabled", true);
     expect(choices).toHaveProperty("disabled", true);
-    fireEvent.change(choices, { target: { value: "other-choice" } });
-    expect(choices).toHaveProperty("value", "fixture-choice");
+    fireEvent.click(choices);
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(choices.textContent).toBe("Fixture chat");
     failed = false;
     await act(async () => { await client.refetchQueries({ queryKey: ["telegram-setup"] }); });
     await waitFor(() => expect(save).toHaveProperty("disabled", false));
@@ -293,8 +295,8 @@ it.each(["ru", "en"] as const)("connects Telegram and waits for worker acceptanc
   expect(within(panel).queryByLabelText(t("notify.telegram.token"))).toBeNull();
   expect(within(panel).getByRole("button", { name: t("notify.telegram.change") })).toBeTruthy();
   fireEvent.click(within(panel).getByRole("button", { name: t("notify.telegram.find") }));
-  const choices = await within(panel).findByLabelText(t("notify.telegram.choose"));
-  fireEvent.change(choices, { target: { value: "fixture-choice" } });
+  const choices = await within(panel).findByLabelText(t("notify.telegram.choose"), { selector: "button" });
+  await chooseOption(choices, "fixture-choice");
   fireEvent.click(within(panel).getByRole("button", { name: t("notify.save") }));
   await waitFor(() => expect(within(panel).getByRole("button", { name: t("notify.sendTest") })).toHaveProperty("disabled", false));
   fireEvent.click(within(panel).getByRole("button", { name: t("notify.sendTest") }));
@@ -370,7 +372,7 @@ it.each(["ru", "en"] as const)("opens editable SMTP settings from the existing r
   expect(panel.isConnected).toBe(true);
   expect((within(panel).getByLabelText(t("notify.smtp.password")) as HTMLInputElement).value).toBe("");
   expect(panel.textContent).not.toContain("••");
-  fireEvent.change(within(panel).getByLabelText(t("notify.tls")), { target: { value: "tls" } });
+  await chooseOption(within(panel).getByLabelText(t("notify.tls"), { selector: "button" }), "tls");
   fireEvent.click(within(panel).getByRole("button", { name: t("notify.save") }));
   await waitFor(() => expect(mock.smtpSave).toHaveBeenCalledWith({
     host: "mail.example.test", port: 587, username: "fixture-login", sender: "sender@example.test", password: "",
@@ -447,7 +449,7 @@ it("requests server filters and never treats a page length as the total", async 
   fireEvent.click(screen.getByRole("tab", { name: t("notify.journal") }));
   fireEvent.click(screen.getByRole("button", { name: `${t("notify.errors")} 4` }));
   await waitFor(() => expect(mock.list.mock.calls.at(-1)?.[0].get("status")).toBe("errors"));
-  fireEvent.change(await screen.findByLabelText(t("notify.period")), { target: { value: "30" } });
+  await chooseOption(await screen.findByLabelText(t("notify.period"), { selector: "button" }), "30");
   await waitFor(() => expect(mock.list.mock.calls.at(-1)?.[0].get("days")).toBe("30"));
 });
 
@@ -473,7 +475,7 @@ it("names the rule save operation when the server rejects it", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: t("notify.rules") }));
   fireEvent.click(screen.getByRole("button", { name: t("notify.addRule") }));
   const dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText(t("notify.destination")), { target: { value: "2" } });
+  await chooseOption(within(dialog).getByLabelText(t("notify.destination"), { selector: "button" }), "2");
   fireEvent.click(within(dialog).getByRole("button", { name: t("notify.save") }));
   expect((await within(dialog).findByRole("alert")).textContent).toBe("Не удалось сохранить правило оповещений");
 });

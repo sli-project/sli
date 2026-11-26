@@ -22,6 +22,7 @@ const symbols: Array<[string, ReactNode]> = [
   ["refresh", <path d="M20 12a8 8 0 1 1-2.4-5.7L20 9m0-5v5h-5"/>],
   ["chevron-down", <path d="m6 9 6 6 6-6"/>],
   ["chevron-left", <path d="m15 6-6 6 6 6"/>],
+  ["chevron-right", <path d="m9 6 6 6-6 6"/>],
   ["info", <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>], ["check", <path d="m5 12 4 4L19 6"/>],
   ["eye", <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>],
   ["link", <><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"/></>],

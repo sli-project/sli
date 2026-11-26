@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useMemo, useState } from "react";
 import { DataTable, FactList, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
@@ -52,7 +53,7 @@ export function FileAuditComparison({ comparison, pageSize: initialSize }: { com
     </div> : changes === null ? <p className="sli-file-audit__local-state">{t("file-audit.compare.incomplete")}</p> : <DataTable
       caption={labels[layer]} columns={columns} rows={rows.slice(page * pageSize, (page + 1) * pageSize)} rowKey={row => row.id}
       compact density="compact" wrapCells selectedKey={selected} onRowClick={row => setSelected(current => current === row.id ? null : row.id)}
-      toolbar={<div className="sli-file-audit__acl-filters"><label><input type="checkbox" checked={onlyChanges} onChange={event => { reset(); setOnlyChanges(event.target.checked); }}/>{t("file-audit.compare.only_changes")}</label>
+      toolbar={<div className="sli-file-audit__acl-filters"><Checkbox checked={onlyChanges} onChange={event => { reset(); setOnlyChanges(event.target.checked); }}>{t("file-audit.compare.only_changes")}</Checkbox>
         <input type="search" aria-label={t("file-audit.acl.search")} placeholder={t("file-audit.acl.search")} value={search} onChange={event => { reset(); setSearch(event.target.value); }}/></div>}
       total={rows.length} emptyContent={t("file-audit.compare.no_change")}
       pageSize={{ value: pageSize, options: FILE_AUDIT_PAGE_SIZES, onChange: size => { reset(); setPageSize(size); } }}

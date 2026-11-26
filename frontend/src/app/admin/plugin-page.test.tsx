@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -139,7 +140,7 @@ it("renders nested workstation policy controls without a JSON editor", async () 
   fireEvent.click(await screen.findByRole("button", { name: "Настроить" }));
   fireEvent.click(screen.getByRole("button", { name: "Добавить запись" }));
   expect(screen.getByRole("textbox", { name: "Идентификатор станции" })).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "Область действия" }), { target: { value: "1" } });
+  await chooseOption(screen.getByLabelText("Область действия", { selector: "button" }), "1");
   expect(screen.getByRole("textbox", { name: "Путь подразделения" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Идентификатор станции" })).toBeNull();
 });
@@ -200,9 +201,9 @@ it("shows denied settings distinctly", async () => {
 });
 
 it("lists and filters multiple domains without discarding their controllers", async () => {
-  mount(); await screen.findByRole("combobox", { name: "Домен" });
+  mount(); await screen.findByLabelText("Домен", { selector: "button" });
   expect(screen.getByText(/DC-01/)).toBeTruthy(); expect(screen.getByText(/DC-02/)).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "Домен" }), { target: { value: "two.example.invalid" } });
+  await chooseOption(screen.getByLabelText("Домен", { selector: "button" }), "two.example.invalid");
   expect(screen.queryByText(/DC-01/)).toBeNull(); expect(screen.getByText(/DC-02/)).toBeTruthy();
 });
 

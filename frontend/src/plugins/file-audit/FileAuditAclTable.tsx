@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useId, useMemo, useState } from "react";
 import { DataTable, FactList, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
@@ -60,9 +61,8 @@ export function FileAuditAclTable({ acl, title, initialPageSize = 50, onPageSize
           <label htmlFor={`${id}-search`} className="sli-ds-sr-only">{t("file-audit.acl.search")}</label>
           <input id={`${id}-search`} type="search" placeholder={t("file-audit.acl.search")} value={search} onChange={event => { reset(); setSearch(event.target.value); }}/>
           <label htmlFor={`${id}-filter`} className="sli-ds-sr-only">{t("file-audit.acl.filter")}</label>
-          <select id={`${id}-filter`} value={filter} onChange={event => { reset(); setFilter(event.target.value as AceFilter); }}>
-            {(["all", "explicit", "inherited", "deny"] as const).map(value => <option key={value} value={value}>{t(`file-audit.acl.${value}`)}</option>)}
-          </select>
+          <Select label={t("file-audit.acl.filter")} id={`${id}-filter`} value={filter} onChange={(selectedValue) => { reset(); setFilter(selectedValue as AceFilter); }}
+            options={(["all", "explicit", "inherited", "deny"] as const).map(value => ({ value: value, label: t(`file-audit.acl.${value}`) }))}/>
         </div>}
         emptyContent={t(acl.aces.length === 0 && acl.state === "complete" ? "file-audit.acl.empty" : "file-audit.acl.no_matches")} total={entries.length}
         pageSize={{ value: pageSize, options: FILE_AUDIT_PAGE_SIZES, onChange: size => { reset(); setPageSize(size); onPageSize?.(size); } }}

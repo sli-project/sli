@@ -17,6 +17,7 @@ export const periodField = (): FilterField => ({ key: "period", label: t("workst
 
 /** Native registered sources and their canonical journal; retained projections are not a current-state source. */
 export function WorkstationsReport({ definition, initialSearch: providedSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
+  const [periodTarget, setPeriodTarget] = useState<HTMLDivElement | null>(null);
   const access = useEffectiveAccess();
   const { timeZone } = useTimeZone();
   const { formatDateTime } = useDateFormatters();
@@ -130,9 +131,10 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
     }}/>;
 
   return <div className="sli-workstations"><ReportLayout title={t("workstations.overview.title")} state={state} metrics={<></>}
+    periodPicker={!denied ? <div ref={setPeriodTarget}/> : undefined}
     meta={windowBounds && !denied ? <><span>{t("workstations.workspace.event_period")}: {formatDateTime(windowBounds.from)} — {formatDateTime(windowBounds.to)}</span><span>{timeZone}</span></> : null}
     actions={!denied ? <button type="button" className="sli-ds-button" disabled={query.isFetching} onClick={refresh}>{t("workstations.workspace.refresh")}</button> : null}
-    filters={!denied ? <FilterBar align="start" layout="grid" primaryKeys={["search", "collection", "period"]}
+    filters={!denied ? <FilterBar periodTarget={periodTarget} align="start" layout="grid" primaryKeys={["search", "collection", "period"]}
       fields={[{ key: "search", label: t("workstations.workspace.search"), kind: "text", placeholder: t("workstations.workspace.search_placeholder") },
         { key: "collection", label: t("workstations.workspace.collection"), kind: "select", options: [
           { value: "all", label: t("filters.any") }, { value: "enabled", label: t("workstations.workspace.collection_enabled") },

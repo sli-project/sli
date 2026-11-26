@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -29,9 +30,9 @@ function mount(row: Record<string, unknown> = {}) {
 }
 
 const future = () => new Date(Date.now() + 86400000).toISOString();
-function fill() {
+async function fill() {
   fireEvent.change(screen.getByLabelText("Reason"), { target: { value: " Fixture reason " } });
-  fireEvent.change(screen.getByLabelText("Responsible platform user"), { target: { value: "12" } });
+  await chooseOption(screen.getByLabelText("Responsible platform user", { selector: "button" }), "12");
   fireEvent.change(screen.getByLabelText("Valid until"), { target: { value: future().slice(0, 16) } });
 }
 
@@ -46,11 +47,11 @@ it("opens a dialog with mandatory fields, investigation and finding export", asy
   const dialog = screen.getByRole("dialog", { name: "Snooze" });
   expect(within(dialog).getByRole("button", { name: "Open investigation" })).toBeTruthy();
   expect(within(dialog).getByRole("button", { name: "Export finding" })).toBeTruthy();
-  await screen.findByRole("option", { name: "fixture-owner" });
+  await waitFor(() => expect(screen.getByLabelText("Responsible platform user", { selector: "button" })).toHaveProperty("disabled", false));
   fireEvent.click(within(dialog).getByRole("button", { name: "Snooze" }));
   expect(change).not.toHaveBeenCalled();
   expect(screen.getByRole("alert").textContent).toContain("reason");
-  fill();
+  await fill();
   fireEvent.click(within(dialog).getByRole("button", { name: "Snooze" }));
   await waitFor(() => expect(change).toHaveBeenCalledWith(7, expect.objectContaining({
     action: "create", reason: "Fixture reason", responsible_user_id: 12, expires_at: expect.any(String),
@@ -93,8 +94,8 @@ it("retains the dialog and renders translated contract errors on failure", async
   vi.spyOn(api, "changeFindingRisk").mockRejectedValue(new ApiResponseError(400, "responsible_not_found", "raw server text"));
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
-  await screen.findByRole("option", { name: "fixture-owner" });
-  fill();
+  await waitFor(() => expect(screen.getByLabelText("Responsible platform user", { selector: "button" })).toHaveProperty("disabled", false));
+  await fill();
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Snooze" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("active platform user"));
   expect(screen.getByRole("dialog")).toBeTruthy();
@@ -105,8 +106,8 @@ it.each(["2000-01-01T00:00", "2100-01-01T00:00"])("rejects an expiry outside the
   const change = vi.spyOn(api, "changeFindingRisk");
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
-  await screen.findByRole("option", { name: "fixture-owner" });
-  fill();
+  await waitFor(() => expect(screen.getByLabelText("Responsible platform user", { selector: "button" })).toHaveProperty("disabled", false));
+  await fill();
   fireEvent.change(screen.getByLabelText("Valid until"), { target: { value: expiry } });
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Snooze" }));
   expect(change).not.toHaveBeenCalled();

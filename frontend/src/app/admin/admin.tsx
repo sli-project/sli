@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { EMPTY_VALUE } from "../../shared/format";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -57,7 +58,7 @@ export function AdminPage() {
     ? { ...role, label: t(ROLE_MESSAGES[role.id].label), description: t(ROLE_MESSAGES[role.id].description) }
     : role);
   const visibleUsers = filterAccounts(inventory.data.items, accountFilter);
-  const roleOptions = roles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>);
+  const roleOptions = roles.map((item) => ({ value: item.id, label: item.label }));
   const submitUser = (event: FormEvent) => {
     event.preventDefault();
     if (window.confirm(t("access.admin.confirm.createUser", { username: username.trim(), role }))) createUser.mutate({ username: username.trim(), password, role });
@@ -74,10 +75,11 @@ export function AdminPage() {
 
   const userColumns: TableColumn<UserRow>[] = [
     { key: "username", label: t("access.admin.users.col.username") },
-    { key: "role", label: t("access.admin.users.col.role"), render: (user) => <select aria-label={t("access.admin.users.aria.role", { username: user.username })} value={user.role} onChange={(event) => {
-      const nextRole = event.target.value;
+    { key: "role", label: t("access.admin.users.col.role"), render: (user) => <Select label={t("access.admin.users.aria.role", { username: user.username })} value={user.role} onChange={(selectedValue) => {
+      const nextRole = selectedValue;
       if (window.confirm(t("access.admin.confirm.changeRole", { username: user.username, role: nextRole }))) updateUser.mutate({ id: user.id, body: { role: nextRole } });
-    }}>{roleOptions}</select> },
+    }}
+      options={roleOptions}/> },
     { key: "is_active", label: t("access.admin.users.col.status"), render: (user) => <button type="button" className="sli-ds-button" disabled={updateUser.isPending} onClick={() => {
       const active = !user.is_active;
       if (window.confirm(t("access.admin.confirm.toggleUser", { action: active ? t("access.admin.action.enable") : t("access.admin.action.disable"), username: user.username }))) updateUser.mutate({ id: user.id, body: { is_active: active } });
@@ -109,7 +111,8 @@ export function AdminPage() {
       <div className="sli-ds-filters__fields">
         <div className="sli-ds-field"><label htmlFor="new-username">{t("access.admin.field.username")}</label><input id="new-username" required minLength={1} value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username"/></div>
         <div className="sli-ds-field"><label htmlFor="new-password">{t("access.admin.field.password")}</label><input id="new-password" required minLength={12} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password"/></div>
-        <div className="sli-ds-field"><label htmlFor="new-role">{t("access.admin.field.role")}</label><select id="new-role" value={role} onChange={(event) => setRole(event.target.value)}>{roleOptions}</select></div>
+        <div className="sli-ds-field"><label htmlFor="new-role">{t("access.admin.field.role")}</label><Select label={t("access.admin.field.role")} id="new-role" value={role} onChange={(selectedValue) => setRole(selectedValue)}
+          options={roleOptions}/></div>
       </div>
       {createUser.isError ? <p className="sli-ds-field__error" role="alert">{t("access.admin.error.createUser")}</p> : null}
       <div className="sli-ds-filters__actions"><button type="submit" className="sli-ds-button" data-variant="primary" disabled={createUser.isPending}>{createUser.isPending ? t("access.admin.button.creating") : t("access.admin.button.create")}</button></div>
@@ -119,7 +122,7 @@ export function AdminPage() {
     <div className="sli-ds-filters"><div className="sli-ds-filters__fields">
       <AccountFilterField value={accountFilter} onChange={(value) => { setAccountFilter(value); setResetUser(null); setResetPassword(""); }}/>
     </div></div>
-    {visibleUsers.length ? <DataTable columns={userColumns} rows={visibleUsers} rowKey={(user) => String(user.id)} caption={t("access.admin.section.users")}/> : <StateView state="empty" detail={t(accountFilter === "service" ? "access.accountFilter.emptyService" : "access.admin.users.empty")}/>}
+    {visibleUsers.length ? <DataTable key={accountFilter} localPagination columns={userColumns} rows={visibleUsers} rowKey={(user) => String(user.id)} caption={t("access.admin.section.users")}/> : <StateView state="empty" detail={t(accountFilter === "service" ? "access.accountFilter.emptyService" : "access.admin.users.empty")}/>}
     {updateUser.isError ? <p className="sli-ds-field__error" role="alert">{t("access.admin.error.updateUser")}</p> : null}
 
     {resetUser ? <form className="sli-ds-filters" aria-label={t("access.admin.section.resetPassword", { username: resetUser.username })} onSubmit={submitReset}>
@@ -138,7 +141,8 @@ export function AdminPage() {
     <form className="sli-ds-filters" aria-label={t("access.admin.button.createKey")} onSubmit={submitKey}>
       <div className="sli-ds-filters__fields">
         <div className="sli-ds-field"><label htmlFor="key-label">{t("access.admin.keys.field.label")}</label><input id="key-label" required maxLength={120} value={keyLabel} onChange={(event) => setKeyLabel(event.target.value)} placeholder={t("access.admin.keys.field.label.placeholder")} autoComplete="off"/></div>
-        <div className="sli-ds-field"><label htmlFor="key-role">{t("access.admin.keys.field.role")}</label><select id="key-role" value={keyRole} onChange={(event) => setKeyRole(event.target.value)}>{roleOptions}</select></div>
+        <div className="sli-ds-field"><label htmlFor="key-role">{t("access.admin.keys.field.role")}</label><Select label={t("access.admin.keys.field.role")} id="key-role" value={keyRole} onChange={(selectedValue) => setKeyRole(selectedValue)}
+          options={roleOptions}/></div>
       </div>
       {createApiKey.isError ? <p className="sli-ds-field__error" role="alert">{t("access.admin.error.createKey")}</p> : null}
       <div className="sli-ds-filters__actions"><button type="submit" className="sli-ds-button" data-variant="primary" disabled={createApiKey.isPending}>{createApiKey.isPending ? t("access.admin.button.creating") : t("access.admin.button.createKey")}</button></div>
@@ -150,7 +154,7 @@ export function AdminPage() {
     </Note> : null}
     {apiKeys.isLoading ? <StateView state="loading"/>
       : apiKeys.isError ? <StateView state="unavailable" detail={t("access.admin.error.keysUnavailable")} onRetry={() => void apiKeys.refetch()}/>
-        : apiKeys.data?.items.length ? <DataTable columns={keyColumns} rows={apiKeys.data.items} rowKey={(key) => String(key.id)} caption={t("access.admin.section.keys")}/> : <StateView state="empty" detail={t("access.admin.keys.empty")}/>}
+        : apiKeys.data?.items.length ? <DataTable localPagination columns={keyColumns} rows={apiKeys.data.items} rowKey={(key) => String(key.id)} caption={t("access.admin.section.keys")}/> : <StateView state="empty" detail={t("access.admin.keys.empty")}/>}
     <FieldError error={revokeApiKey.isError ? new Error(t("access.admin.error.revokeKey")) : null}/>
   </section>;
 }

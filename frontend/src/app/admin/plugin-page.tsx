@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
@@ -44,9 +45,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     && (!["sli.file-audit", "sli.remote-access"].includes(pluginId) || !navigationRedirect(`/report/${report.key}`, {}))) ?? [];
   return <section className="sli-ds-report">
     <PageHeader title={title} subtitle={item ? <Badge tone={item.enabled ? "success" : "neutral"}>{t(!item.enabled ? "plugins.disabled" : item.component_runtime === "running" ? "plugins.runtime.running" : item.component_runtime === "draining" ? "plugins.runtime.draining" : item.component_runtime === "stopped" ? "plugins.runtime.stopped" : "plugins.runtime.unknown")}</Badge> : undefined}
-      actions={item && plugins.data?.can_manage && canEdit ? <label><input type="checkbox" role="switch" checked={item.enabled}
-        disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
-        onChange={(event) => change.mutate({ item, enabled: event.target.checked })}/>{t("plugins.enabled")}</label> : undefined}/>
+      actions={item && plugins.data?.can_manage && canEdit ? <Checkbox role="switch" checked={item.enabled} disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))} onChange={(event) => change.mutate({ item, enabled: event.target.checked })}>{t("plugins.enabled")}</Checkbox> : undefined}/>
     <PluginReadState loading={plugins.isLoading} error={plugins.error} retry={() => void plugins.refetch()}/>
     {plugins.data && !item ? <StateView state="empty" detail={t("plugins.error.notFound")}/> : null}
     {!canEdit ? <p role="note">{t("pluginPage.readOnly")}</p> : null}

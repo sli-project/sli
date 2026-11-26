@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError, type AgentCollectionHealth, type SetupStatus } from "../../api/client";
@@ -74,9 +75,8 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
   return <>
     {health?.state === "unavailable" || health?.diagnostics?.state === "unavailable" ? <StateView state="unavailable" compact detail={t("pluginPage.coverageUnavailable")}/> : null}
     {domainPlugin ? <>
-      {domains.length ? <div className="sli-ds-field"><label htmlFor="plugin-domain">{t("pluginPage.object")}</label><select id="plugin-domain" value={selected} onChange={(event) => setSelected(event.target.value)}>
-        <option value="">{t("pluginPage.allDomains")}</option>{domains.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
-      </select></div> : <p>{t("pluginPage.noDomains")}</p>}
+      {domains.length ? <div className="sli-ds-field"><label htmlFor="plugin-domain">{t("pluginPage.object")}</label><Select label={t("pluginPage.object")} id="plugin-domain" value={selected} onChange={(selectedValue) => setSelected(selectedValue)}
+        options={[{ value: "", label: t("pluginPage.allDomains") }, ...(domains.map((domain) => ({ value: domain, label: domain })) ?? [])]}/></div> : <p>{t("pluginPage.noDomains")}</p>}
       {domains.filter((domain) => !selected || selected === domain).map((domain) => {
         const controllers = data.domain_controllers.filter((controller) => controller.domain?.toLowerCase() === domain.toLowerCase());
         const domainAgents = agents.filter((agent) => agent.domains.some((name) => name.toLowerCase() === domain.toLowerCase()));

@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useId } from "react";
 import { t } from "../../i18n";
 
@@ -12,9 +13,7 @@ export function AccountFilterField({ value, onChange }: { value: AccountFilter; 
   const id = useId();
   return <div className="sli-ds-field">
     <label htmlFor={id}>{t("access.accountFilter.label")}</label>
-    <select id={id} value={value} onChange={(event) => onChange(event.target.value === "service" ? "service" : "people")}>
-      <option value="people">{t("access.accountFilter.people")}</option>
-      <option value="service">{t("access.accountFilter.service")}</option>
-    </select>
+    <Select label={t("access.accountFilter.label")} id={id} value={value} onChange={(selectedValue) => onChange(selectedValue === "service" ? "service" : "people")}
+      options={[{ value: "people", label: t("access.accountFilter.people") }, { value: "service", label: t("access.accountFilter.service") }]}/>
   </div>;
 }

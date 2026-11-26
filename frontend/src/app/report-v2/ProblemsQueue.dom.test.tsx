@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -56,7 +57,7 @@ function renderQueue(data = (params: URLSearchParams) => {
 it("shows filter counts, expands repeat rows in place and opens exact evidence", async () => {
   const user = userEvent.setup();
   const reads = renderQueue();
-  await screen.findByRole("tab", { name: "Open (2)" });
+  await screen.findByRole("button", { name: "Open 2" });
   expect(screen.queryByRole("link", { name: "Export CSV" })).toBeNull();
   expect(screen.getByRole("checkbox", { name: "Collapse repeats" })).toHaveProperty("checked", true);
   const attack = screen.getByRole("link", { name: /Password spray.*operator.one, operator.two.*192.0.2.28.*12 accounts.*64 events/ });
@@ -72,10 +73,10 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   await user.click(within(panel).getByRole("button", { name: "Next problem" }));
   expect(await screen.findByRole("dialog", { name: "Audit policy changed" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Close" }));
-  await user.selectOptions(screen.getByLabelText("Severity", { selector: "select" }), "high");
-  await user.click(await screen.findByRole("tab", { name: "In progress (1)" }));
+  await chooseOption(screen.getByLabelText("Severity", { selector: "button" }), "high");
+  await user.click(await screen.findByRole("button", { name: "In progress 1" }));
   expect(reads.mock.calls.some(([, params]) => params.get("queue_view") === "active" && params.get("severity") === "high")).toBe(true);
-  await user.selectOptions(screen.getByLabelText("Domain", { selector: "select" }), "");
+  await chooseOption(screen.getByLabelText("Domain", { selector: "button" }), "");
   await waitFor(() => {
     const params = reads.mock.lastCall?.[1];
     expect(params?.has("domain")).toBe(false);
@@ -95,7 +96,7 @@ it("opens the finding journal directly and links back to the same problem", asyn
   expect(readEvidence).toHaveBeenCalledWith(key, "41", new URLSearchParams({ queue_view: "all", tz: "UTC", domain: "7" }));
 });
 
-it("submits a classified decision and shows who changed state, then assigns selected findings", async () => {
+it("submits a classified decision and shows who changed state", async () => {
   const user = userEvent.setup();
   let status = "new";
   const decide = vi.spyOn(api, "decideProblems").mockImplementation(async (input) => {
@@ -107,20 +108,25 @@ it("submits a classified decision and shows who changed state, then assigns sele
     note: 'sli.queue:{"classification":"fixed","comment":"Reset password"}' }] : [] }]) : page([{ ...problem, status }, third]));
   await user.click(await screen.findByRole("link", { name: /Password spray/ }));
   const panel = screen.getByRole("dialog", { name: "Password spray" });
-  await user.selectOptions(within(panel).getByLabelText("State"), "closed");
+  await chooseOption(within(panel).getByLabelText("State", { selector: "button" }), "closed");
   const dialog = screen.getByRole("dialog", { name: "Change state" });
-  await user.selectOptions(within(dialog).getByLabelText("Resolution reason"), "fixed");
+  await chooseOption(within(dialog).getByLabelText("Resolution reason", { selector: "button" }), "fixed");
   await user.type(within(dialog).getByRole("textbox"), "Reset password");
   await user.click(within(dialog).getByRole("button", { name: "Save decision" }));
   expect(decide).toHaveBeenCalledWith({ ids: [41], state: "closed", classification: "fixed", comment: "Reset password" });
   expect(await within(panel).findByText(/Real problem \(fixed\).*Reset password/)).toBeTruthy();
   expect(within(panel).getByText("reviewer")).toBeTruthy();
-  await user.click(within(panel).getByRole("button", { name: "Close" }));
-  await user.click(screen.getByRole("checkbox", { name: "Select problem #41" }));
+});
+
+it("assigns the selected findings to the chosen user", async () => {
+  const user = userEvent.setup();
+  const decide = vi.spyOn(api, "decideProblems").mockResolvedValue({ status: "ok", changed: 2 });
+  renderQueue();
+  await user.click(await screen.findByRole("checkbox", { name: "Select problem #41" }));
   await user.click(screen.getByRole("checkbox", { name: "Select problem #43" }));
   await user.click(within(screen.getByRole("group", { name: "Selected problems" })).getByRole("button", { name: "Assign" }));
   const assignment = screen.getByRole("dialog", { name: "Assign" });
-  await user.selectOptions(within(assignment).getByLabelText("Assignee"), "8");
+  await chooseOption(within(assignment).getByLabelText("Assignee", { selector: "button" }), "8");
   await user.click(within(assignment).getByRole("button", { name: "Save decision" }));
   expect(decide).toHaveBeenLastCalledWith({ ids: [41, 43], assignee_id: 8 });
 });

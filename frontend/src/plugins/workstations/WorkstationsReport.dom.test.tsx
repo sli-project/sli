@@ -80,7 +80,7 @@ function mount() {
 it.each(["ru", "en"] as const)("uses the real registry for fleet → full station → grouped fact → permitted evidence → collection → exact return (%s)", async locale => {
   setLocale(locale); mount();
   await screen.findByRole("table", { name: t("workstations.overview.stations") });
-  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  fireEvent.click(screen.getByRole("radio", { name: "200" }));
   await waitFor(() => expect(within(screen.getByRole("table", { name: t("workstations.overview.stations") })).getAllByRole("row")).toHaveLength(201));
   expect(requests.filter(url => url.pathname.endsWith("/data")).at(-1)?.searchParams.get("limit")).toBe("200");
   expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
@@ -136,7 +136,7 @@ it("opens a direct station URL independently of the fleet page and resets only e
   mount(); await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
   expect(requests.some(url => url.pathname.endsWith("/data"))).toBe(false);
   expect(requests.find(url => url.pathname.includes("/detail"))?.searchParams.get("event_cursor")).toBe("bound-event-page");
-  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  fireEvent.click(screen.getByRole("radio", { name: "200" }));
   await waitFor(() => expect(requests.filter(url => url.pathname.includes("/detail")).at(-1)?.searchParams.get("event_limit")).toBe("200"));
   const last = requests.filter(url => url.pathname.includes("/detail")).at(-1)!;
   expect(last.searchParams.has("event_cursor")).toBe(false); expect(last.searchParams.has("cursor")).toBe(false);
@@ -147,6 +147,7 @@ it("opens a direct station URL independently of the fleet page and resets only e
 it("restores the original fleet time and cursor after applying a different station event window", async () => {
   mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
   await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  fireEvent.click(screen.getByLabelText(new RegExp(t("period.custom")), { selector: "summary" }));
   fireEvent.change(screen.getByLabelText(t("period.from")), { target: { value: "2026-11-25T09:30:00.123" } });
   fireEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
   await waitFor(() => expect(new URLSearchParams(window.location.search).get("from")).toBe("2026-11-25T09:30:00.123Z"));

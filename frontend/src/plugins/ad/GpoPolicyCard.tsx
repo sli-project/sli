@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
@@ -221,10 +222,8 @@ function PolicySettings({ settings, changes, item, selectItem }: {
       </div>
       <label className="sli-ds-field" data-grow="" data-search=""><Icon name="search"/><input type="search" aria-label={t("reports.gpo.search_settings")} placeholder={t("reports.gpo.search_settings")}
         value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></label>
-      {categories.length ? <label className="sli-ds-field"><select aria-label={t("reports.gpo.category")} value={category} onChange={(event) => { setCategory(event.target.value); setPage(0); }}>
-        <option value="">{t("reports.gpo.all_categories")}</option>
-        {categories.map((value) => <option key={value}>{value}</option>)}
-      </select></label> : null}
+      {categories.length ? <div className="sli-ds-field"><Select label={t("reports.gpo.category")} value={category} onChange={(selectedValue) => { setCategory(selectedValue); setPage(0); }}
+        options={[{ value: "", label: t("reports.gpo.all_categories") }, ...(categories.map((value) => ({ value: value, label: value })) ?? [])]}/></div> : null}
     </div>
     {item && !settings.some((row) => row.id === item) ? <p role="status">{t("reports.gpo.setting_unavailable")}</p> : null}
     <DataTable caption={t("reports.gpo.settings")} rows={rows.slice(start, start + pageSize)} columns={columns} rowKey={(row) => row.id}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -220,7 +221,7 @@ it("requires an explicit registered domain when adding a controller with multipl
   fireEvent.change(await screen.findByLabelText(t("setup.dc.labelHostname")), { target: { value: "dc1.second.example.test" } });
   const add = screen.getByRole("button", { name: t("setup.dc.add") }) as HTMLButtonElement;
   expect(add.disabled).toBe(true);
-  fireEvent.change(screen.getByRole("combobox", { name: t("setup.dc.labelDomain") }), { target: { value: "second.example.test" } });
+  await chooseOption(screen.getByLabelText(t("setup.dc.labelDomain"), { selector: "button" }), "second.example.test");
   fireEvent.click(add);
   await waitFor(() => expect(state.addDc).toHaveBeenCalledWith({ hostname: "dc1.second.example.test", domain: "second.example.test" }));
 });
@@ -230,7 +231,7 @@ it("cannot add a controller before a domain is registered", async () => {
   state.access = { capabilities: ["access.manage"] };
   mount();
   fireEvent.change(await screen.findByLabelText(t("setup.dc.labelHostname")), { target: { value: "dc1.corp.example.test" } });
-  expect((screen.getByRole("combobox", { name: t("setup.dc.labelDomain") }) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByLabelText(t("setup.dc.labelDomain"), { selector: "button" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.submit(screen.getByRole("button", { name: t("setup.dc.add") }).closest("form")!);
   expect(state.addDc).not.toHaveBeenCalled();
 });

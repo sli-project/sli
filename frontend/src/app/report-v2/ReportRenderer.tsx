@@ -7,7 +7,7 @@ import { formatClockWithOffset, isValidTimeZone, localDateTimeToUtc } from "../.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
-  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, StateView, TabList, Tabs,
+  DataTable, DetailDrawer, FactList, FilterBar, MetricStrip, periodBounds, ReportLayout, Select, StateView, TabList, Tabs,
   type FilterValues, type PeriodPreset, type PeriodValue, type ResultState, type SortState,
 } from "../../design-system";
 import type { PageHeaderControls } from "../../design-system/PageHeader";
@@ -431,7 +431,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     }), [definition, liveOptions, activeView, computerReport, computerLogons, computersScreen, independentUsers, view.key, first?.state]);
   const headerPeriodField = fields.find((field) => field.kind === "period");
   const hasDepartment = !independentUsers || !!values.department || !!liveOptions?.department?.length || rows.some((row) => Boolean(row.department));
-  const bodyFields = fields.filter((field) => (computersScreen || field !== headerPeriodField) && (field.key !== "department" || hasDepartment))
+  const computerDomainField = computerReport ? fields.find((field) => field.kind === "select" && field.key === "domain") : undefined;
+  const bodyFields = fields.filter((field) => field !== computerDomainField && (computerLogons || field !== headerPeriodField) && (field.key !== "department" || hasDepartment))
     .map((field) => independentUsers && field.kind === "select" ? { ...field, immediate: true } : field);
   const declaredColumns = useMemo(() => workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
       (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
@@ -604,12 +605,16 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }}><ReportLayout
     title={definition.title}
     domain={String(values.domain ?? values.domain_id ?? "") || undefined} showDomain={!independentUsers}
+    domainPicker={computerDomainField?.kind === "select" ? <Select label={computerDomainField.label}
+      value={String(values.domain ?? values.domain_id ?? "")}
+      options={computerDomainField.options.some((option) => option.value === "") ? computerDomainField.options
+        : [{ value: "", label: t("reports.filters.all_domains") }, ...computerDomainField.options]}
+      onChange={(domain) => { setSelected(null); setValues({ ...values, domain: domain || undefined, domain_id: undefined, scope: domain ? undefined : "all" }); }}/> : undefined}
     controls={state === "denied" ? undefined : {
-      period: computersScreen ? undefined : headerPeriod,
+      period: computerLogons ? undefined : headerPeriod,
       updatedAt: !independentUsers && qualityResult && !computersScreen ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
       refreshing: data.isFetching,
       showRefreshLabel: computersScreen || independentUsers,
-      showBreadcrumbs: computersScreen,
       onRefresh: ready ? () => {
         if (computersScreen) setRefreshWindow((value) => value + 1);
         if (!computerPeriod) void data.refetch({ cancelRefetch: false });
@@ -652,11 +657,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
             setValues({ ...current, scope: current.domain || current.domain_id ? undefined : "all" });
           } else setValues(next);
         }}
-        quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <label className="sli-ds-field">{t("reports.v2.ad.infrastructure.views.changes.title")}
-          <select value={view.key} onChange={(event) => selectView(event.target.value)}>
-            {infrastructureChanges.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
-          </select>
-        </label> : domainEvents && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
+        quickFilters={infrastructureChange && infrastructureChanges.length > 1 ? <div className="sli-ds-field">
+          <label htmlFor="infrastructure-view">{t("reports.v2.ad.infrastructure.views.changes.title")}</label>
+          <Select id="infrastructure-view" label={t("reports.v2.ad.infrastructure.views.changes.title")} value={view.key}
+            options={infrastructureChanges.map((item) => ({ value: item.key, label: item.title ?? item.key }))} onChange={selectView}/>
+        </div> : domainEvents && presets.length ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.renderer.quick_scenarios")}>
           {presets.map((preset) => <button key={preset.label} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}</button>)}
         </div> : gpoReport && view === mainView ? <div role="group" aria-label={t("reports.renderer.quick_scenarios")} className="sli-ds-header__actions">
         {presets.map((preset) => {
@@ -747,11 +752,15 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         columns={computerReport && view.key === "changes" ? computerTableColumns(view.columns ?? [], chooseComputer, [], timeZone) : computerTable}
         rows={rows} rowKey={rowKey} onRowClick={chooseComputer} total={first?.filtered_count} selectedKey={activeComputer ? rowKey(activeComputer) : null}
         compact={compact} density={compact ? undefined : "comfortable"} wrapCells="all" pagination={listPagination} sort={activeSort}
-        onSort={toggleSort} columnsControlTarget={columnsTarget} footerControls={<div className="sli-ds-header__meta" role="group" aria-label={t("reports.computers.rows_per_page")}>
+        onSort={toggleSort} columnsControlTarget={columnsTarget}
+        pageSize={computerReport ? { value: computerPageSize, options: [25, 50, 100, 200], onChange: (size) => {
+          setSelected(null); setComputerPageSize(size);
+        } } : undefined}
+        footerControls={computerLogons ? <div className="sli-ds-header__meta" role="group" aria-label={t("reports.computers.rows_per_page")}>
           <span>{t("reports.computers.rows_per_page")}</span>
           {[25, 50, 100, 200].map((size) => <button key={size} type="button" className="sli-ds-chip" aria-pressed={size === computerPageSize}
             onClick={() => { setSelected(null); setComputerPageSize(size); }}>{size}</button>)}
-        </div>}/>
+        </div> : undefined}/>
         : computerEmptyView
       : gpoReport && view !== mainView
       ? (first?.collections?.[view.source ?? ""]?.length
