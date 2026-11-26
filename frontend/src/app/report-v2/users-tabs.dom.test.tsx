@@ -10,10 +10,14 @@ const titles = { checks: "Требуют проверки", privileged: "При�
 const definition: ReportDefinitionDto = {
   key: "ad.users.v2", section: "reports/identity", title: "Пользователи", description: "", archetype: "inventory-status",
   params: [{ key: "q", kind: "text", label: "Поиск" }, { key: "domain", kind: "domain", label: "Домен", hidden: true },
+    { key: "account_rows", kind: "text", label: "Account rows", hidden: true },
+    { key: "check", kind: "text", label: "Check", hidden: true },
     { key: "as_of", kind: "text", label: "Состав на дату", hidden: true },
-    { key: "account_state", kind: "choice", label: "Состояние", options: [{ value: "disabled", label: "Отключена" }] }],
+    { key: "account_state", kind: "choice", label: "Состояние", options: [{ value: "disabled", label: "Отключена" }, { value: "unknown", label: "Нет данных" }] }],
   columns: [{ key: "name", label: "Пользователь", path: "display_name", kind: "text", link: "/app/entities/{entity_id}" },
     { key: "state", label: "Включена", path: "enabled", kind: "boolean" },
+    { key: "activity", path: "activity_at", label: "Последняя активность", kind: "datetime" },
+    { key: "reason", path: "reason_text", label: "Отклонение", kind: "text" },
     { key: "privilege_basis", label: "Основание привилегий", path: "privilege_basis", kind: "list" }],
   views: Object.entries(titles).map(([key, title]) => ({ key, title, kind: "table", source: key === "checks" || key === "changes" ? key : "items",
     ...(key === "changes" ? { columns: [{ key: "name", path: "display_name", label: "Пользователь", kind: "text" as const },
@@ -22,14 +26,19 @@ const definition: ReportDefinitionDto = {
 };
 const calls: URLSearchParams[] = [];
 const account = (id: number, name = `Synthetic account ${id}`) => ({ id, entity_id: id, domain_id: 8, display_name: name, sam: `synthetic-${id}`, enabled: true });
-const check = { id: "users:reversible_password", key: "reversible_password", title: "Synthetic check", severity: "high", severity_text: "Высокая",
-  status: "not_evaluated", status_text: "Не оценено", total: 7, new_count: null, objects: [1, 2, 3].map((id) => ({ ...account(id), name: `synthetic-${id}`, domain_id: 8, domain_name: "example.test" })),
-  remaining_objects: 4, why: "Synthetic why", action: "Synthetic action", remediation: "Synthetic remediation" };
+const mainReason = { key: "reversible_password", label: "Synthetic primary deviation", severity: "high" };
+const otherReason = { key: "password_never_expires", label: "Synthetic secondary deviation", severity: "low" };
+const reviewAccount = { ...account(1), severity: "high", review_reasons: [mainReason, otherReason] };
+const checkOptions = [
+  { value: mainReason.key, label: mainReason.label, count: 7 },
+  { value: otherReason.key, label: otherReason.label, count: 1 },
+  { value: "zero", label: "Zero check", count: 0 },
+];
 function page(tab: string, overrides: Partial<ReportResultDto> = {}): ReportResultDto {
   return { contract_id: "sli.report-result.v2", report_key: definition.key, state: "ok",
-    items: tab === "checks" ? [check] : [account(1, `Synthetic ${tab}`)], filtered_count: 1,
+    items: tab === "checks" ? [reviewAccount] : [account(1, `Synthetic ${tab}`)], filtered_count: 1,
     has_more: false, next_cursor: null, metrics: [], series: {},
-    coverage: { population: 7, affected_objects: 7, not_evaluated_count: 2 }, filter_options: {}, limitations: [], window: {},
+    coverage: { population: 7, affected_objects: 7, not_evaluated_count: 2 }, filter_options: tab === "checks" ? { check: checkOptions } : {}, limitations: [], window: {},
     collections: tab === "changes" ? { changes: [{ ...account(1), label: "Synthetic change" }] } : {}, ...overrides };
 }
 function mock(response: (params: URLSearchParams) => Response | Promise<Response> = (params) => new Response(JSON.stringify(page(params.get("tab") ?? "checks"))), raw = definition) {
@@ -64,33 +73,40 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it("defaults to checks and shows the affected account count without counter queries", async () => {
-  const { container } = show(); await screen.findByText("Synthetic check", { selector: "strong" });
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([titles.checks + " 7", ...Object.values(titles).slice(1)]);
-  expect(new URLSearchParams(window.location.search).get("tab")).toBe("checks");
-  expect(screen.queryByText(/Не оценено|Нет сравнения|Одна учётка|≥/)).toBeNull();
-  expect(container.querySelector(".sli-ds-review-list__objects")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Применить" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Сбросить" })).toBeNull();
-  expect(screen.queryByText("Полнота не подтверждена")).toBeNull();
+it("starts with account rows, filters by nonempty checks, and opens the filtered account", async () => {
+  mock((params) => new Response(JSON.stringify(page("checks", params.has("check")
+    ? { items: [{ ...account(2), review_reasons: [otherReason] }] } : {}))));
+  show();
+  const table = await screen.findByRole("table", { name: titles.checks });
+  const row = within(table).getByRole("row", { name: /synthetic-1/ });
+  expect(within(row).getByText(mainReason.label)).toBeTruthy();
+  expect(within(row).queryByText(otherReason.label)).toBeNull();
+  const more = within(row).getByRole("button", { name: t("reports.ad.users.list.more_deviations", { count: 1 }) });
+  fireEvent.click(more);
+  const unfilteredCard = within(await screen.findByRole("dialog"));
+  expect(unfilteredCard.getByText(otherReason.label)).toBeTruthy();
+  fireEvent.click(unfilteredCard.getByRole("button", { name: t("drawer.close") }));
+  expect(screen.queryByRole("button", { name: /Zero check/ })).toBeNull();
+  expect(calls[0].get("account_rows")).toBe("yes");
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(otherReason.label) }));
+  const filtered = await screen.findByRole("row", { name: /synthetic-2/ });
+  expect(screen.queryByRole("row", { name: /synthetic-1/ })).toBeNull();
+  expect(new URLSearchParams(window.location.search).get("check")).toBe(otherReason.key);
+  fireEvent.click(filtered);
+  const card = within(await screen.findByRole("dialog"));
+  expect(card.getByRole("heading", { name: "Synthetic account 2" })).toBeTruthy();
+  expect(card.getByText(otherReason.label)).toBeTruthy();
   expect(calls.some((params) => params.get("limit") === "1")).toBe(false);
 });
 
-it("uses the check view projection when inventory job-title access is absent", async () => {
-  mock(() => new Response(JSON.stringify(page("checks", { items: [{ ...check, title: undefined }], collections: { checks: [check, { section: "not_evaluated" }] } }))));
-  show(); expect(await screen.findByText("Synthetic check", { selector: "strong" })).toBeTruthy();
-});
-
-it("expands a check and opens every exact match with a bounded request", async () => {
-  mock((params) => new Response(JSON.stringify(params.has("check")
-    ? page("all", { items: Array.from({ length: 7 }, (_, i) => ({ ...account(i + 1), name: `synthetic-${i + 1}` })), filtered_count: 7 }) : page("checks"))));
-  show(); fireEvent.click((await screen.findByText("Synthetic check", { selector: "strong" })).closest("summary")!);
-  expect(await screen.findByText("Synthetic why")).toBeTruthy();
-  expect(screen.getByText("Показаны 3 из 7")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Открыть все" }));
-  expect(await screen.findByRole("button", { name: "synthetic-7" })).toBeTruthy();
-  const request = calls.find((params) => params.has("check"))!;
-  expect(request.get("check")).toBe("reversible_password"); expect(request.get("limit")).toBe("50");
+it("preserves an enabled or disabled filter without offering unknown status", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all");
+  show();
+  await screen.findByRole("table");
+  const filter = screen.getByRole("combobox", { name: t("reports.v2.ad.users.v2.params.account_state.label") });
+  expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).not.toContain("unknown");
+  fireEvent.change(filter, { target: { value: "disabled" } });
+  await waitFor(() => expect(calls.some((params) => params.get("account_state") === "disabled")).toBe(true));
 });
 
 it("opens the right panel from a name and restores focus without losing the list", async () => {
@@ -167,7 +183,7 @@ it("uses server counts and changes page size on the disabled-active list", async
 });
 
 it("renders changes and restores tabs through browser history", async () => {
-  show(); await screen.findByText("Synthetic check", { selector: "strong" }); fireEvent.click(screen.getByRole("tab", { name: "Изменения" }));
+  show(); await screen.findByRole("table", { name: titles.checks }); fireEvent.click(screen.getByRole("tab", { name: "Изменения" }));
   expect(await screen.findByText("Synthetic change")).toBeTruthy(); window.history.back();
   await waitFor(() => expect(screen.getByRole("tab", { name: /^Требуют проверки/ }).getAttribute("aria-selected")).toBe("true"));
 });
@@ -180,7 +196,7 @@ it.each(["active", "disabled", "risk", "semantic"])("normalizes legacy %s links"
 
 it("keeps denied tabs visible without querying or exporting them", async () => {
   mock(undefined, { ...definition, views: definition.views.map((view) => view.key === "privileged" ? { ...view, access: { allowed: false } } : view) });
-  show(); await screen.findByText("Synthetic check", { selector: "strong" }); fireEvent.click(screen.getByRole("tab", { name: "Привилегированные" }));
+  show(); await screen.findByRole("table", { name: titles.checks }); fireEvent.click(screen.getByRole("tab", { name: "Привилегированные" }));
   expect(within(await screen.findByRole("alert")).getByText("Нет доступа")).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Экспорт CSV" })).toBeNull(); expect(calls.some((params) => params.get("tab") === "privileged")).toBe(false);
 });
@@ -190,42 +206,16 @@ it.each(["ru", "en"] as const)("shows partial results without source warnings or
     domains: [{ domain_id: 8, domain_name: "example.test", state: "complete", observed_at_utc: "2020-01-01T00:00:00Z" }] },
     state_details: { reason: "freshness_exceeded", source: "dc01.example.test", stale_since_utc: "2020-01-01T00:00:00Z" },
   }))));
-  const { container } = show(); await screen.findByText("Synthetic check", { selector: "strong" });
+  const { container } = show(); await screen.findByRole("table", { name: t("reports.v2.ad.users.v2.views.checks.title") });
   expect(screen.queryByRole("status")).toBeNull();
   expect(container.querySelector(".sli-ds-state--banner")).toBeNull();
-  expect(screen.queryByRole("button", { name: "synthetic-1" })).toBeNull();
+  expect(screen.getByRole("button", { name: "synthetic-1" })).toBeTruthy();
   expect(screen.queryByText(/(?:Не оценено|Not evaluated): 0/)).toBeNull();
   expect(screen.queryByText("Полнота не подтверждена")).toBeNull();
 });
 
-it.each(["ru", "en"] as const)("keeps check columns, omits empty results and retains real zero counts (%s)", async (locale) => {
-  setLocale(locale);
-  const rows = [
-    { ...check, key: "comparison", status: "no_comparison", status_text: "Нет сравнения с прошлым снимком", total: 0, is_lower_bound: true },
-    { ...check, key: "unknown", total: null },
-    { ...check, key: "zero", severity: "low", title: "Zero check", status: "unchanged", status_text: "Stable", total: 0, new_count: 0 },
-  ];
-  mock(() => new Response(JSON.stringify(page("checks", { items: rows }))));
-  const { container } = show(); await screen.findByText("Zero check", { selector: "strong" });
-  expect([...container.querySelectorAll(".sli-ds-review-list__heading > span")].map((cell) => cell.textContent)).toEqual([
-    t("reports.ad.checks.column.severity"), t("reports.ad.checks.column.title"), t("reports.ad.checks.column.status_text"),
-    t("reports.ad.checks.column.new_count"), t("reports.ad.checks.column.total"),
-  ]);
-  const summaries = [...container.querySelectorAll(".sli-ds-review-list__summary")];
-  expect(summaries).toHaveLength(2);
-  expect(summaries[0].querySelector(".sli-ds-review-list__status")?.textContent).toBe(locale === "ru" ? "Первая проверка" : "First check");
-  expect(summaries[0].querySelector(".sli-ds-review-list__new")?.textContent).toBe("—");
-  expect(summaries[0].querySelector(".sli-ds-review-list__total")?.textContent).toBe("0");
-  expect(summaries[1].querySelector(".sli-ds-review-list__total")?.textContent).toBe("0");
-  expect(container.textContent).not.toMatch(/Нет сравнения|No comparison|≥/);
-  expect(screen.queryByText(/Одна учётка|An account may|Не оценено:|Not evaluated:/)).toBeNull();
-  expect(screen.queryByRole("button", { name: "synthetic-1" })).toBeNull();
-  fireEvent.click(summaries[0]);
-  expect(await within(summaries[0].closest("details")!).findByRole("button", { name: "synthetic-1" })).toBeTruthy();
-});
-
 it("submits search once, preserves its URL and clears it without an apply button", async () => {
-  show(); await screen.findByText("Synthetic check", { selector: "strong" });
+  show(); await screen.findByRole("table", { name: titles.checks });
   const search = screen.getByRole("searchbox", { name: "Поиск" });
   fireEvent.change(search, { target: { value: "synthetic" } });
   expect(calls.some((params) => params.has("q"))).toBe(false);
