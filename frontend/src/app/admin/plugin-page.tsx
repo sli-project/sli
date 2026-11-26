@@ -52,7 +52,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
       : change.error instanceof ApiResponseError && change.error.code === "plugin_revision_conflict" ? "plugins.error.revisionConflict" : "plugins.changeFailed")}</p> : null}
     <Tabs active={tab} onChange={setTab} items={tabIds.map((key) => ({ key, label: t(`pluginPage.tab.${key}`) }))}>
       <TabList label={title}/><TabPanel>
-        {tab === "overview" && !domainPlugin && item?.package_version ? <p>{t("plugins.version")} · {item.package_version}</p> : null}
+        {tab === "overview" && !domainPlugin && item?.package_version ? <p>{t("pluginPage.version")} · {item.package_version}</p> : null}
         {tab === "connection" || tab === "overview" && domainPlugin ? pluginId === "sli.remote-access" ? <PluginRadiusSources connection/>
           : <PluginSources key={pluginId} pluginId={pluginId} connection={tab === "connection"} canEdit={canManageAgents}/> : null}
         {tab === "settings" || tab === "rules" ? <PluginReadState loading={settings.isLoading} error={settings.error} retry={() => void settings.refetch()}/> : null}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { DataTable, LoadingRegion, PageHeader, TableSkeleton, type TableColumn } from "../../design-system";
@@ -10,6 +10,7 @@ import { downloadOperationsExport } from "../operations-actions";
 import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
+import { moduleName, moduleRows, moduleStatusId, moduleStatusText } from "./plugin-status";
 
 const updateCommand = "sudo apt update && sudo apt upgrade";
 
@@ -33,6 +34,12 @@ export function SystemStatusPage() {
   const diagnostics = useQuery({ queryKey: ["operations-diagnostics"], queryFn: api.diagnostics, ...options });
   const securityLogFull = useQuery({ queryKey: ["operations-security-log-full"], queryFn: api.securityLogFull, ...options,
     enabled: canViewOperations });
+  const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, ...options, enabled: canViewOperations });
+  const pluginItems = plugins.isError ? undefined : plugins.data?.items;
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (pluginItems && target.startsWith("module-")) document.getElementById(target)?.scrollIntoView?.();
+  }, [pluginItems]);
   const notifications = useQuery({ queryKey: ["system-status-notifications"], queryFn: () => api.notificationWorkspace(new URLSearchParams()), ...options });
   const smtp = useQuery({ queryKey: ["smtp-setup"], queryFn: api.smtpSetupStatus, ...options,
     enabled: !!notifications.data?.can_configure && notifications.data.channels.some((channel) => channel.kind === "smtp" && channel.enabled) });
@@ -155,6 +162,14 @@ export function SystemStatusPage() {
         : <p role="status">{t("systemStatus.passwordDetection.unavailable")}</p>}
     </> : null}
     {importIssue ? <p>{importIssue}</p> : null}
+    {canViewOperations ? <>
+      <h2 className="sli-ds-section-title">{t("plugins.title")}</h2>
+      {plugins.isPending ? loading(2) : plugins.isError ? failed(t("plugins.title"), plugins.refetch)
+        : <DataTable caption={t("plugins.title")} rows={moduleRows(pluginItems ?? [])} rowKey={moduleStatusId} showFooter={false} columns={[
+          { key: "name", label: t("plugins.module"), render: (item) => <span id={moduleStatusId(item)} tabIndex={-1}>{moduleName(item)}</span> },
+          { key: "status", label: t("systemStatus.state"), render: (item) => moduleStatusText(item, timeZone) },
+        ]}/>}
+    </> : null}
     {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },
