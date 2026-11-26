@@ -23,7 +23,7 @@ internal sealed class DetectionSql(NpgsqlConnection db,NpgsqlTransaction tx,Dete
     {
         diagnostics?.Query(query);await using var cmd=Command(query,db,tx,args);await using var reader=await cmd.ExecuteReaderAsync(ct);var result=new List<JsonObject>();long bytes=0;
         while(await reader.ReadAsync(ct)){D.Require(result.Count<10001,"detection_reader_bound");var row=new JsonObject();for(int i=0;i<reader.FieldCount;i++){
-            if(reader.IsDBNull(i)){row[reader.GetName(i)]=null;continue;}object v=reader.GetValue(i);row[reader.GetName(i)]=reader.GetDataTypeName(i) is "jsonb" or "json"?JsonNode.Parse((string)v):v switch{DateTime t=>JsonValue.Create(D.Stamp(new(t))),long l=>JsonValue.Create(l),int n=>JsonValue.Create(n),bool b=>JsonValue.Create(b),string s=>JsonValue.Create(s),_=>throw new DetectionFailure("detection_reader_type")};
+            if(await reader.IsDBNullAsync(i,ct)){row[reader.GetName(i)]=null;continue;}object v=reader.GetValue(i);row[reader.GetName(i)]=reader.GetDataTypeName(i) is "jsonb" or "json"?JsonNode.Parse((string)v):v switch{DateTime t=>JsonValue.Create(D.Stamp(new(t))),long l=>JsonValue.Create(l),int n=>JsonValue.Create(n),bool b=>JsonValue.Create(b),string s=>JsonValue.Create(s),_=>throw new DetectionFailure("detection_reader_type")};
         }bytes+=CanonicalJson.Length(row);D.Require(bytes<=33554432,"detection_reader_bound");result.Add(row);}return result;
     }
     public async Task Execute(string query,CancellationToken ct,params (string,object?)[] args){diagnostics?.Query(query);await using var cmd=Command(query,db,tx,args);await cmd.ExecuteNonQueryAsync(ct);}
@@ -72,7 +72,21 @@ public sealed class DetectionProducer(IdentityAttackProducer identities,AttackPr
                     try { passwordJobs += await RunPasswordThreshold(connection, scope, rule, DateTimeOffset.UtcNow, ct); }
                     catch (Exception error) when (error is not OperationCanceledException && connection.FullState == ConnectionState.Open && !SemanticWork.ConnectionWait(error)) { passwordFailure = error; }
                 }
-            int jobs;await using(var tx=await connection.BeginTransactionAsync(ct)){var sql=new DetectionSql(connection,tx,sourceDiagnostics);await sql.Execute("set local statement_timeout=0",ct);await sql.Execute("set local lock_timeout='1s'",ct);jobs=identity?await identities.RunAsync(sql,source,DateTimeOffset.UtcNow,ct):await precursors.RunAsync(sql,source,DateTimeOffset.UtcNow,ct);sourceDiagnostics.Step="source_commit";await tx.CommitAsync(ct);}
+            int jobs = 0;
+            await using (var tx = await connection.BeginTransactionAsync(ct))
+            {
+                var sql = new DetectionSql(connection, tx, sourceDiagnostics);
+                await sql.Execute("set local statement_timeout=0", ct);
+                await sql.Execute("set local lock_timeout='1s'", ct);
+                string key = "sli.attack-source:" + PasswordJson.Hash(scope.Document) + ":" + identity;
+                var lease = (await sql.Rows("select pg_try_advisory_xact_lock(hashtextextended(@key,0)) as acquired",
+                    ct, ("key", key))).Single();
+                if (lease["acquired"]!.GetValue<bool>())
+                    jobs = identity ? await identities.RunAsync(sql, source, DateTimeOffset.UtcNow, ct)
+                        : await precursors.RunAsync(sql, source, DateTimeOffset.UtcNow, ct);
+                sourceDiagnostics.Step = "source_commit";
+                await tx.CommitAsync(ct);
+            }
             if (passwordFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(passwordFailure);
             return jobs + passwordJobs;
         }
