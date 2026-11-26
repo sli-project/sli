@@ -101,6 +101,10 @@ sli_secrets.ensure(native_install.SECRETS, names=sorted(set(files + sys.argv[1:]
         target.chmod(0o600)
         shutil.chown(target, user="postgres", group="postgres")
 
+    # The runner home is not readable by the postgres account; give it a readable copy of the old release code.
+    readable = work / "previous"
+    for part in ("deploy", "config"):
+        shutil.copytree(previous / part, readable / part)
     postgres = ["runuser", "-u", "postgres", "--"]
     subprocess.run([*postgres, PG_BIN / "initdb", "-D", data, "-U", "postgres", "--auth-local=peer",
                     "--auth-host=scram-sha-256", "--pwfile", credentials / "postgres_password",
@@ -118,7 +122,7 @@ native_host.BOOTSTRAP_MARKER = Path(sys.argv[1])
 native_host.bootstrap_pg()
 """
         subprocess.run([*postgres, "/usr/bin/python3", "-B", "-c", bootstrap, data / ".sli-bootstrap.json"],
-                       cwd=previous, env={**env, "CREDENTIALS_DIRECTORY": str(credentials)}, check=True)
+                       cwd=readable, env={**env, "CREDENTIALS_DIRECTORY": str(credentials)}, check=True)
         migrate = """
 import os, sys
 from deploy.linux import native_install
