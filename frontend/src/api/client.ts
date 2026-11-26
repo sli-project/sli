@@ -2383,7 +2383,7 @@ export const api = {
   reportsV2Catalog: () => request<ReportCatalogV2Dto>("/api/v2/reports").then(localizeReportCatalog),
   reportV2Definition: (key: string) => request<ReportDefinitionDto>(`/api/v2/reports/${encodeURIComponent(key)}`).then(localizeReportDefinition),
   reportV2Detail: (key: string, rowId: string, params: URLSearchParams) => request<ReportResultDto>(`/api/v2/reports/${encodeURIComponent(key)}/rows/${encodeURIComponent(rowId)}/detail?${params.toString()}`).then((result) => localizeReportResult(result, params.get("tz") ?? undefined)),
-  reportV2Data: (key: string, params: URLSearchParams) => request<ReportResultDto>(`/api/v2/reports/${encodeURIComponent(key)}/data?${params.toString()}`).then((result) => localizeReportResult(result, params.get("tz") ?? undefined)),
+  reportV2Data: (key: string, params: URLSearchParams, signal?: AbortSignal) => request<ReportResultDto>(`/api/v2/reports/${encodeURIComponent(key)}/data?${params.toString()}`, signal).then((result) => localizeReportResult(result, params.get("tz") ?? undefined)),
   problemPasswordCoverage: (params: URLSearchParams, signal: AbortSignal) =>
     request<ReportResultDto>(`/api/v2/reports/security.problems/password-coverage?${params.toString()}`, signal),
   bootstrap: () => request<Bootstrap>("/api/v1/ui/bootstrap"),
