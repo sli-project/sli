@@ -4,6 +4,14 @@ import { t, type MessageKey } from "../../i18n";
 import { withDomain } from "../domain-navigation";
 import { agentHostName } from "./agent-actions";
 
+function fileAuditReason(reason: string) {
+  const [step, code] = reason.split(":");
+  const key = `agents.fileAudit.reason.${step}` as MessageKey;
+  const wording = t(key);
+  if (wording === key) return null;
+  return code ? `${wording} ${t("agents.fileAudit.readError.code", { code })}` : wording;
+}
+
 type Root = { collection_scope_id: string; share_name: string; path: string; important: boolean;
   sacl: { trustee_sids: string[]; inherit_files: boolean; inherit_directories: boolean } };
 type AuditDraft = Partial<{ paths: string; shares: string; scopes: string; exclusions: string; enabled: boolean; important: boolean; catalogScope: string; manualServer: boolean }>;
@@ -275,10 +283,10 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
       const code = detail?.code_kind === "hresult" && detail.code
         ? "0x" + detail.code.toString(16).toUpperCase().padStart(8, "0") : detail?.code;
       return <div key={scope}><dt>{scope}</dt><dd>
-        {detail ? <>
+        {fileAuditReason(row.reason_code) ?? (detail ? <>
           <p>{t(`agents.fileAudit.readError.${detail.stage}`)}</p>
           {code ? <p>{t("agents.fileAudit.readError.code", { code })}</p> : null}
-        </> : row.reason_code}
+        </> : row.reason_code)}
       </dd></div>;
     })}</dl> : null}
     <button className="sli-ds-button" type="button" disabled={result.state === "loading"} onClick={() => {
@@ -291,9 +299,12 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
       <dt>{t("file-audit.receipt.action")}</dt><dd>{t(`agents.fileAudit.${accepted.action}`)}</dd>
       {result.receipt?.reported_at ? <><dt>{t("agents.fileAudit.result.receivedAt")}</dt><dd>{result.receipt.reported_at}</dd></> : null}
     </dl>
-      {result.receipt && (!terminalFailure || explanation) ? <dl>{accepted.collection_scope_ids.map((scope) => <div key={scope}>
-        <dt>{scope}</dt><dd>{result.receipt?.scopes?.[scope]?.reason_code ?? t("agents.fileAudit.result.noScopeReceipt")}</dd>
-      </div>)}</dl> : null}
+      {result.receipt && (!terminalFailure || explanation) ? <dl>{accepted.collection_scope_ids.map((scope) => {
+        const scopeReason = result.receipt?.scopes?.[scope]?.reason_code;
+        return <div key={scope}>
+          <dt>{scope}</dt><dd>{scopeReason ? fileAuditReason(scopeReason) ?? scopeReason : t("agents.fileAudit.result.noScopeReceipt")}</dd>
+        </div>;
+      })}</dl> : null}
     </details>
   </div>;
 }

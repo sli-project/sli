@@ -176,3 +176,14 @@ it("shows the ACL read step and numeric code from the matching failed check", as
   expect(screen.getByText(t("agents.fileAudit.readError.code", { code: 5 }))).toBeTruthy();
   expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
 });
+
+it("shows the specific local group failure and Windows code for a partial check", async () => {
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt("partial"), scopes: {
+    [body.command.collection_scope_ids[0]]: { state: "partial", reason_code: "local_groups_unavailable:2221" },
+  } });
+  render(<AgentFileAuditControls {...props}/>); selectServer();
+  expect(await screen.findByText(t("agents.fileAudit.result.partial"))).toBeTruthy();
+  expect(screen.getByText(t("agents.fileAudit.reason.local_groups_unavailable") + " " +
+    t("agents.fileAudit.readError.code", { code: 2221 }))).toBeTruthy();
+  expect(screen.queryByText("local_groups_unavailable:2221")).toBeNull();
+});

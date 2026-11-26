@@ -208,6 +208,120 @@ public class FileAuditConsumerDatabaseTests
     }
 
     [Fact]
+    public async Task Scope_inventory_upgrade_keeps_the_discovery_request_and_names_the_registered_source()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 418);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await Register(owner, ct);
+        await PostCollectionPostgres.Sql(owner, "update sli_agents set policy_revision=3,assigned_modules='[]'", ct);
+        var (envelope, _, policy) = AgentFileAuditValidatorTests.ActionPacket("permissions", 4670);
+        policy.Value.Remove("source_name");
+        var now = Iso8601.ParseUtc(envelope.ObservedAtUtc);
+        var identity = new AgentIdentity(Agent, AgentFileAuditValidatorTests.ActionHost, new string('a', 64), "active");
+        var control = new FileAuditControlService(new AgentControlAudit());
+        var ingest = new FileAuditIngestService(null!);
+        var principal = new Principal("session", 1, "admin");
+        var access = new CapabilityDecisionSet(true, new HashSet<string>(), new HashSet<string>(), [],
+            new Dictionary<string, System.Text.Json.JsonElement>());
+        await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+
+        async Task QueueCheck(int expectedRevision, string id)
+        {
+            await using var tx = await app.BeginTransactionAsync(ct);
+            var queued = await control.Enqueue(app, tx, new JsonObject {
+                ["agent_id"] = Agent.ToString(), ["expected_revision"] = expectedRevision, ["config"] = policy.Value.DeepClone(),
+                ["command"] = new JsonObject {
+                    ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = id,
+                    ["action"] = "check", ["policy_revision"] = (expectedRevision + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["collection_scope_ids"] = new JsonArray("scope:files")
+                }
+            }, principal, access, ct);
+            Assert.Equal("pending", queued.GetProperty("state").GetString());
+            await tx.CommitAsync(ct);
+        }
+
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/422_file_audit_scope_inventory.sql");
+        await QueueCheck(3, "pre-upgrade-check");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(1, await Number(owner, "select count(*) from acquisition_source_instances where display_name='files.example.test' and source_kind='sli.file-audit.server'", ct));
+        await using (var labels = new NpgsqlCommand("select sli_plugin_file_audit.report_roots()->0->>'source_name'", app))
+            Assert.Equal("files.example.test", await labels.ExecuteScalarAsync(ct));
+
+        // A subsequent scope save registers the host through the regular control path.
+        await PostCollectionPostgres.Sql(owner, "delete from acquisition_source_instances where source_kind='sli.file-audit.server'", ct);
+        const string commandId = "post-upgrade-check";
+        await QueueCheck(4, commandId);
+        await using (var registration = new NpgsqlCommand("select display_name from acquisition_source_instances where source_instance_id=@source", owner))
+        {
+            registration.Parameters.AddWithValue("source", identity.HostId.ToString("D"));
+            Assert.Equal("files.example.test", await registration.ExecuteScalarAsync(ct));
+        }
+        await using (var privileges = new NpgsqlCommand("select has_table_privilege(current_user,'public.acquisition_source_instances','insert')", app))
+            Assert.Equal(false, await privileges.ExecuteScalarAsync(ct));
+        await using (var privileges = new NpgsqlCommand("select has_column_privilege(current_user,'public.sli_file_audit_smb_catalog','scope_inventory','select')", app))
+            Assert.Equal(false, await privileges.ExecuteScalarAsync(ct));
+
+        var requestId = Guid.NewGuid();
+        async Task Submit(DateTimeOffset at, string dacl)
+        {
+            var result = ReportForRoot(policy, "directory", at, commandId, "5", "check");
+            var scope = result["scopes"]![0]!;
+            scope["state"] = "partial";
+            scope["reason_code"] = "local_groups_unavailable:2221";
+            var snapshot = result["snapshots"]![0]!.AsObject();
+            snapshot["completeness"] = "partial";
+            snapshot["local_groups"]!["complete"] = false;
+            snapshot["share"]!["dacl"] = dacl;
+            snapshot.Remove("snapshot_id");
+            snapshot.Remove("snapshot_sha256");
+            var hash = Packets.Digest(snapshot);
+            snapshot["snapshot_sha256"] = hash;
+            snapshot["snapshot_id"] = AuthAudit.Uuid5(commandId + hash).ToString();
+            await using var tx = await app.BeginTransactionAsync(ct);
+            Assert.Equal("accepted", (await ingest.Ingest(app, tx, identity, result, ct, () => new MemoryStream()))["status"]!.ToString());
+            await tx.CommitAsync(ct);
+        }
+        const string dacl = "D:(A;;FA;;;SY)";
+        await Submit(now, dacl);
+        await FileAuditCatalog.PollAsync(app, Agent, ct);
+        await using (var pending = new NpgsqlCommand("update public.sli_file_audit_smb_catalog set request_id=@request,expires_at=now()+interval '5 minutes' where agent_id=@agent", owner))
+        {
+            pending.Parameters.AddWithValue("request", requestId);
+            pending.Parameters.AddWithValue("agent", Agent);
+            Assert.Equal(1, await pending.ExecuteNonQueryAsync(ct));
+        }
+        await Submit(now, dacl);
+        await Submit(now.AddSeconds(-1), "D:");
+        Assert.Equal(requestId.ToString("D"), (await FileAuditCatalog.PollAsync(app, Agent, ct))!["request_id"]!.ToString());
+
+        await using (var catalog = new NpgsqlCommand("""
+            select source_id,inventory_revision,scope_inventory#>>'{scope:files,share_name}',
+                scope_inventory#>>'{scope:files,path}',scope_inventory#>>'{scope:files,dacl}',result_status,shares::text
+            from public.sli_file_audit_smb_catalog where agent_id=@agent
+            """, owner))
+        {
+            catalog.Parameters.AddWithValue("agent", Agent);
+            await using var row = await catalog.ExecuteReaderAsync(ct);
+            Assert.True(await row.ReadAsync(ct));
+            Assert.Equal(identity.HostId.ToString("D"), row.GetString(0));
+            Assert.Equal(5, row.GetInt64(1));
+            Assert.Equal("Files", row.GetString(2));
+            Assert.Equal(@"C:\Files", row.GetString(3));
+            Assert.Equal(dacl, row.GetString(4));
+            Assert.True(row.IsDBNull(5));
+            Assert.Equal("[]", row.GetString(6));
+        }
+        Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.access_snapshots where completeness='partial'", ct));
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Equal(0, await Number(owner, "select count(*) from acquisition_source_instances where source_kind='sli.file-audit.server'", ct));
+        Assert.Equal(1, await Number(owner, "select count(*) from sli_file_audit_smb_catalog where request_id is not null", ct));
+        Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.access_snapshots where completeness='partial'", ct));
+    }
+
+    [Fact]
     public async Task Permissions_opt_in_requires_fresh_apply_and_exact_verified_directory()
     {
         var ct=TestContext.Current.CancellationToken;

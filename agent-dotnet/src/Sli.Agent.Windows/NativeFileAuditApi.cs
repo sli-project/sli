@@ -28,8 +28,18 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         if (!_audit.IsSystem) return "system_required";
         var owner=_audit.Ownership(); if (owner is not ("ok" or "managed_by_gpo")) return owner;
         using var privilege=new WindowsAuditApi.SecurityPrivilege();
-        using (var reader=new System.Diagnostics.Eventing.Reader.EventLogReader(new System.Diagnostics.Eventing.Reader.EventLogQuery("Security",System.Diagnostics.Eventing.Reader.PathType.LogName,"*")))
-        using (reader.ReadEvent(TimeSpan.FromSeconds(1))) { }
+        try
+        {
+            using var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(
+                new System.Diagnostics.Eventing.Reader.EventLogQuery("Security",System.Diagnostics.Eventing.Reader.PathType.LogName,"*"));
+            using var entry = reader.ReadEvent(TimeSpan.FromSeconds(1));
+        }
+        catch (Exception e) when (e is System.Diagnostics.Eventing.Reader.EventLogException or UnauthorizedAccessException)
+        {
+            uint status = unchecked((uint)e.HResult);
+            throw new FileAuditNativeReadException("file_audit_security_log_unavailable",
+                (status & 0xFFFF0000u) == 0x80070000u ? status & 0xFFFFu : 0);
+        }
         bool globalSaclRead = AuditQueryGlobalSacl("File", out var acl);
         uint globalSaclStatus = globalSaclRead ? 0u : unchecked((uint)Marshal.GetLastPInvokeError());
         string? globalSaclBlock;
@@ -41,8 +51,12 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         finally { if (globalSaclRead && acl != IntPtr.Zero) LocalFree(acl); }
         if (globalSaclBlock is not null)
         {
-            if (describeReadErrors && globalSaclBlock == "global_sacl_unknown")
-                throw new FileAuditNativeReadException(globalSaclBlock, globalSaclStatus);
+            if (globalSaclBlock == "global_sacl_unknown")
+            {
+                var error = new FileAuditNativeReadException(globalSaclBlock, globalSaclStatus);
+                if (describeReadErrors) throw error;
+                return FileAuditNativeReadException.Reason("audit_policy", error);
+            }
             return globalSaclBlock;
         }
         object? locator=null, service=null, rows=null;
@@ -177,7 +191,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
                 var ids = new JsonArray();
                 try
                 {
-                    EnsureLocalGroupRead(memberStatus);
+                    EnsureLocalGroupRead(memberStatus, "file_audit_group_members_unavailable");
                     complete &= memberStatus == 0 && memberResume == 0;
                     for (var j = 0; j < memberCount; j++)
                     {
@@ -200,11 +214,11 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         return new() { ["complete"] = complete, ["groups"] = groups };
     }
 
-    internal static void EnsureLocalGroupRead(uint status)
+    internal static void EnsureLocalGroupRead(uint status, string reason = "file_audit_groups_unavailable")
     {
         const uint ErrorMoreData = 234;
         if (status is not (0 or ErrorMoreData))
-            throw new FileAuditNativeReadException("file_audit_groups_unavailable", status);
+            throw new FileAuditNativeReadException(reason, status);
     }
 
     private static SecurityIdentifier? ResolveGroupSid(string authority, string name)
@@ -238,12 +252,12 @@ public sealed class NativeFileAuditApi : IFileAuditApi
         var attributes = new LsaObjectAttributes();
         var status = LsaOpenPolicy(IntPtr.Zero, ref attributes, PolicyViewLocalInformation, out var policy);
         if (status != 0)
-            throw new FileAuditNativeReadException("file_audit_groups_unavailable", LsaNtStatusToWinError(status));
+            throw new FileAuditNativeReadException("file_audit_group_domain_unavailable", LsaNtStatusToWinError(status));
         try
         {
             status = LsaQueryInformationPolicy(policy, PolicyAccountDomainInformation, out var buffer);
             if (status != 0)
-                throw new FileAuditNativeReadException("file_audit_groups_unavailable", LsaNtStatusToWinError(status));
+                throw new FileAuditNativeReadException("file_audit_group_domain_unavailable", LsaNtStatusToWinError(status));
             try
             {
                 if (buffer == IntPtr.Zero) throw new AgentException("file_audit_group_domain_unavailable");
@@ -334,13 +348,15 @@ public sealed class NativeFileAuditApi : IFileAuditApi
             if ((current.ControlFlags&ControlFlags.SystemAclProtected) != (proposed.ControlFlags&ControlFlags.SystemAclProtected)) throw new AgentException("file_audit_sacl_plan_failed");
             current.SystemAcl=proposed.SystemAcl; current.SetFlags(current.ControlFlags|ControlFlags.SystemAclPresent);
             var parentPath=Path.GetDirectoryName(_path) ?? _path;
-            if (GetNamedSecurityInfo(parentPath,1,8,out _,out _,out _,out _,out var parentSd) != 0) throw new AgentException("file_audit_sacl_plan_failed");
+            uint status = GetNamedSecurityInfo(parentPath,1,8,out _,out _,out _,out _,out var parentSd);
+            if (status != 0) throw new FileAuditNativeReadException("file_audit_sacl_plan_failed", status);
             byte[] parent;
             try { var size=GetSecurityDescriptorLength(parentSd); if (size is < 20 or > 1048576) throw new AgentException("file_audit_sacl_plan_failed"); parent=new byte[size]; Marshal.Copy(parentSd,parent,0,(int)size); }
             finally { LocalFree(parentSd); }
             var mapping=new GenericMapping {Read=0x120089,Write=0x120116,Execute=0x1200a0,All=0x1f01ff};
             // Same in-memory inheritance operation and flags as Python LocalObject.expected_sacl.
-            if (!CreatePrivateObjectSecurityEx(parent,Binary(current),out var result,IntPtr.Zero,Describe()["object_type"]!.ToString() == "directory",2|8|16,IntPtr.Zero,ref mapping)) throw new AgentException("file_audit_sacl_plan_failed");
+            if (!CreatePrivateObjectSecurityEx(parent,Binary(current),out var result,IntPtr.Zero,Describe()["object_type"]!.ToString() == "directory",2|8|16,IntPtr.Zero,ref mapping))
+                throw new FileAuditNativeReadException("file_audit_sacl_plan_failed", unchecked((uint)Marshal.GetLastPInvokeError()));
             try { return Format(result,8); }
             finally { DestroyPrivateObjectSecurity(ref result); }
         }
@@ -349,7 +365,8 @@ public sealed class NativeFileAuditApi : IFileAuditApi
             var sd=new RawSecurityDescriptor(value == "" ? "S:" : value); var acl=sd.SystemAcl;
             var bytes=acl is null ? null : new byte[acl.BinaryLength]; if (bytes is not null) acl!.GetBinaryForm(bytes,0);
             // MAXIMUM_ALLOWED pins the target without triggering uncontrolled propagation to descendants.
-            if (SetSecurityInfo(Handle,1,8,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,bytes) != 0) throw new AgentException("file_audit_sacl_write_failed");
+            uint status = SetSecurityInfo(Handle,1,8,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,bytes);
+            if (status != 0) throw new FileAuditNativeReadException("file_audit_sacl_write_failed", status);
         }
         public IEnumerable<string> Children() => Directory.EnumerateFileSystemEntries(_path).Select(p => Path.GetFileName(p));
         public bool InheritedFrom(string previous,string applied)
