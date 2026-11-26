@@ -344,6 +344,8 @@
   "home.period.problem.accounts": "Учётные записи: {count}",
   "home.period.problem.addresses": "Адреса источников: {count}",
   "home.period.problem.attempts": "Неудачные попытки: {count}",
+  "home.period.problem.sample_accounts": "Учётные записи в сохранённых событиях: {count}",
+  "home.period.problem.sample_attempts": "Сохранённые неудачные попытки: {count}",
   "security.problems.presentation.brute_title": "Подбор пароля к одной учётной записи",
   "security.problems.presentation.brute_threshold_title": "Подбор пароля к учётной записи {account} · {address_quantity} · {attempt_quantity}",
   "security.problems.presentation.brute_threshold_title_account": "Подбор пароля к учётной записи {account} · {attempt_quantity}",

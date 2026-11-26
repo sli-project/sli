@@ -6864,6 +6864,7 @@ export const en: Record<MessageKey, string> = {
   "home.source": "Source",
   "home.time": "Time",
   "home.observations": "Observations",
+  "home.observations.sample": "Event sample ({count})",
   "home.openObject": "Object card",
   "home.openProblem": "Problem",
   "home.openQueue": "All problems →",

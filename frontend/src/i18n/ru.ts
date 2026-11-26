@@ -6860,6 +6860,7 @@ export const ru = {
   "home.source": "Источник",
   "home.time": "Время",
   "home.observations": "Наблюдения",
+  "home.observations.sample": "Выборка событий ({count})",
   "home.openObject": "Карточка объекта",
   "home.openProblem": "Проблема",
   "home.openQueue": "Все проблемы →",

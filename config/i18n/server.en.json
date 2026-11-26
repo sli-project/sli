@@ -344,6 +344,8 @@
   "home.period.problem.accounts": "Accounts: {count}",
   "home.period.problem.addresses": "Source addresses: {count}",
   "home.period.problem.attempts": "Failed attempts: {count}",
+  "home.period.problem.sample_accounts": "Accounts in retained events: {count}",
+  "home.period.problem.sample_attempts": "Retained failed attempts: {count}",
   "security.problems.presentation.brute_title": "Repeated password attempts against one account",
   "security.problems.presentation.brute_threshold_title": "Password guessing against {account} · {address_quantity} · {attempt_quantity}",
   "security.problems.presentation.brute_threshold_title_account": "Password guessing against {account} · {attempt_quantity}",
