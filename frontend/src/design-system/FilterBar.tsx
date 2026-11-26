@@ -22,6 +22,10 @@ export type FilterField =
 export type FilterValue = string | string[] | PeriodValue | undefined;
 export type FilterValues = Record<string, FilterValue>;
 
+function optionWithCount(option: FilterOption) {
+  return { ...option, label: typeof option.count === "number" ? `${option.label} (${formatNumber(option.count)})` : option.label };
+}
+
 function isActive(value: FilterValue): boolean {
   if (value === undefined || value === "") return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -32,7 +36,7 @@ function isActive(value: FilterValue): boolean {
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline, periodTarget }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline, compact, periodTarget }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -47,6 +51,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   quickFilters?: ReactNode;
   leadingControls?: ReactNode;
   applyInline?: boolean;
+  compact?: boolean;
   /** Moves the period control into the page header while keeping one filter draft. */
   periodTarget?: HTMLElement | null;
 }) {
@@ -106,34 +111,34 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
       }}>{field.label}</Checkbox>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
-    return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
-      <label htmlFor={id} className={layout === "inline" && (field.kind === "text" || field.kind === "select" && field.hideLabel) ? "sli-ds-sr-only" : undefined}>{field.label}</label>
-      {field.kind === "text"
-        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
-          onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
-            set(field.key, event.target.value);
-            const next = { ...draft, [field.key]: event.target.value };
-            if (field.immediate && event.target.value) {
-              window.clearTimeout(searchTimer.current);
-              searchTimer.current = window.setTimeout(() => onApply(next), 250);
-            } else if (field.immediate || layout === "inline" && !event.target.value) apply(next);
-          }}/>
-          {field.nested ? <Checkbox className="sli-ds-field__help" checked={draft[field.nested.key] === "true"}
-            onChange={(event) => set(field.nested!.key, String(event.target.checked))}>{field.nested.label}</Checkbox> : null}</>
-        : field.kind === "select"
-          ? <Select id={id} label={field.label} value={(draft[field.key] as string | undefined) ?? ""}
-              options={[
-                ...(!field.options.some((option) => option.value === "") ? [{ value: "", label: t("filters.any") }] : []),
-                ...field.options.map((option) => ({ ...option, label: typeof option.count === "number" ? option.label + " (" + formatNumber(option.count) + ")" : option.label })),
-              ]}
-              onChange={(selected) => {
-                const value = selected || undefined;
-                set(field.key, value);
-                if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
-              }}/>
-          : <Select id={id} label={field.label} multiple value={(draft[field.key] as string[] | undefined) ?? []}
-              options={field.options.map((option) => ({ ...option, label: typeof option.count === "number" ? option.label + " (" + formatNumber(option.count) + ")" : option.label }))}
-              onChange={(values) => set(field.key, values)}/>}
+    if (field.kind === "multiselect") return <div key={field.key} className="sli-ds-field" data-kind="multiselect">
+      <label htmlFor={id}>{field.label}</label>
+      <Select id={id} label={field.label} multiple value={(draft[field.key] as string[] | undefined) ?? []}
+        options={field.options.map(optionWithCount)} onChange={(values) => set(field.key, values)}/>
+    </div>;
+    if (field.kind === "select") return <div key={field.key} className="sli-ds-field" data-kind="select">
+      <label htmlFor={id} className={layout === "inline" && field.hideLabel ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <Select id={id} label={field.label}
+        options={(field.options.some(option => option.value === "") ? field.options : [{ value: "", label: t("filters.any") }, ...field.options]).map(optionWithCount)}
+        value={(draft[field.key] as string | undefined) ?? ""} onChange={selected => {
+          const value = selected || undefined;
+          set(field.key, value);
+          if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
+        }}/>
+    </div>;
+    return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.wide || undefined}>
+      <label htmlFor={id} className={layout === "inline" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
+        onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
+          set(field.key, event.target.value);
+          const next = { ...draft, [field.key]: event.target.value };
+          if (field.immediate && event.target.value) {
+            window.clearTimeout(searchTimer.current);
+            searchTimer.current = window.setTimeout(() => onApply(next), 250);
+          } else if (field.immediate || layout === "inline" && !event.target.value) apply(next);
+        }}/>
+      {field.nested ? <Checkbox className="sli-ds-field__help" checked={draft[field.nested.key] === "true"}
+        onChange={(event) => set(field.nested!.key, String(event.target.checked))}>{field.nested.label}</Checkbox> : null}
     </div>;
   });
 
@@ -143,7 +148,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     <Button type="submit" variant="primary">{t("filters.apply")}</Button>
   </div>;
 
-  return <form className="sli-ds-filters" onSubmit={submit} aria-label={t("filters.title")} data-layout={layout} data-collapsed={collapsed} data-grouped={primaryKeys ? true : undefined} data-quick-filters={quickFilters ? true : undefined}>
+  return <form className="sli-ds-filters" onSubmit={submit} aria-label={t("filters.title")} data-layout={layout} data-compact={compact || undefined} data-collapsed={collapsed} data-grouped={primaryKeys ? true : undefined} data-quick-filters={quickFilters ? true : undefined}>
     {!primaryKeys ? <Button className="sli-ds-filters__toggle" aria-expanded={!collapsed} aria-controls={`${formId}-fields`} onClick={() => setCollapsed((value) => !value)}>
       {t("filters.title")}{activeCount ? ` · ${t("filters.active", { count: activeCount })}` : ""}
     </Button> : null}

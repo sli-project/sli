@@ -8625,6 +8625,13 @@
     "key": "file-audit.overview",
     "params": [
       {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
@@ -9101,6 +9108,42 @@
   {
     "key": "file-audit.actions",
     "params": [
+      {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "path_search",
+        "label": "Path or file name",
+        "kind": "text",
+        "max_length": 4096,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "account_search",
+        "label": "Account or SID",
+        "kind": "text",
+        "max_length": 256,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "activity",
+        "label": "File changes",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "changes",
+            "label": "Changes"
+          }
+        ],
+        "hidden": true,
+        "field_categories": []
+      },
       {
         "key": "period",
         "label": "Период",
@@ -9958,6 +10001,29 @@
     "key": "file-audit.permission-changes",
     "params": [
       {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "path_search",
+        "label": "Path or file name",
+        "kind": "text",
+        "max_length": 4096,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "account_search",
+        "label": "Account or SID",
+        "kind": "text",
+        "max_length": 256,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
@@ -10418,6 +10484,29 @@
     "key": "file-audit.access-denials",
     "params": [
       {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "path_search",
+        "label": "Path or file name",
+        "kind": "text",
+        "max_length": 4096,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "account_search",
+        "label": "Account or SID",
+        "kind": "text",
+        "max_length": 256,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
@@ -10806,6 +10895,29 @@
     "key": "file-audit.out-of-hours",
     "params": [
       {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "path_search",
+        "label": "Path or file name",
+        "kind": "text",
+        "max_length": 4096,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "account_search",
+        "label": "Account or SID",
+        "kind": "text",
+        "max_length": 256,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
@@ -11193,6 +11305,13 @@
   {
     "key": "file-audit.permissions",
     "params": [
+      {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
       {
         "key": "period",
         "label": "Период",
@@ -11720,6 +11839,13 @@
   {
     "key": "file-audit.audit-state",
     "params": [
+      {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
       {
         "key": "period",
         "label": "Период",

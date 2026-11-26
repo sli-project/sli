@@ -19,8 +19,7 @@ const definition: ReportDefinitionDto = {
   filter_options: { share: [{ value: "scope:one", label: "Synthetic server · Share", important: true }] },
 };
 
-it("recognizes exactly eight report identifiers", () => {
-  expect(FILE_AUDIT_TABS).toHaveLength(8);
+it("keeps old report links valid", () => {
   for (const tab of FILE_AUDIT_TABS) expect(isFileAuditReport(`file-audit.${tab}`)).toBe(true);
   expect(isFileAuditReport("file-audit.actions/extra")).toBe(false);
   expect(isFileAuditReport("file-audit.unreviewed")).toBe(false);
@@ -45,12 +44,11 @@ it("requests each supported page size and refuses a size beyond the declaration 
   expect(fileAuditParams(definition, { period: { preset: "24h" } }, "UTC", null, new Date(), 200)?.get("limit")).toBe("100");
 });
 
-it("declares a single share field, nested paths and four date-time presets", () => {
-  const fields = fileAuditFields(definition);
-  expect(fields.map((field) => field.key)).toEqual(["period", "source_kind", "path", "employee", "share", "operation"]);
-  expect(fields[0]).toMatchObject({ presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local" });
-  expect(fields[2]).toMatchObject({ wide: true, nested: { key: "include_nested" } });
-  expect(fields[4]).toMatchObject({ kind: "search-multiselect", options: [{ important: true }] });
+it("keeps the action searches separate from resource and permission filters", () => {
+  const fields = fileAuditFields("actions");
+  expect(fields.some(field => field.key === "path_search" && field.kind === "text")).toBe(true);
+  expect(fields.some(field => field.key === "account_search" && field.kind === "text")).toBe(true);
+  expect(fileAuditFields("overview").some(field => field.key === "account_search")).toBe(false);
 });
 
 it("sends the exact selected time range in the SLI time zone, all shares and a bounded page", () => {

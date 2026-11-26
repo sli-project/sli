@@ -3,9 +3,10 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
-import { Button, Checkbox, DataTable, DetailDrawer, FactList, FilterChips, Pager, ReportLayout, Select, SeverityBadge, StateView, TabList, TabPanel, Tabs,
+import { Button, Checkbox, DataTable, DetailDrawer, FactList, FilterChips, Pager, ReportLayout, Select, SeverityBadge, StateView,
   periodBounds, type PeriodValue, type TableColumn, useOverlays } from "../../design-system";
 import { getLocale, t } from "../../i18n";
+import { eventSemanticText } from "../../i18n/event-metadata";
 import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, localDateTimeToUtc } from "../../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { useEffectiveAccess, useTimeZone } from "../App";
@@ -29,6 +30,24 @@ const asCount = (value: unknown) => value == null || !Number.isSafeInteger(Numbe
 const stateOf = (raw: string): State => raw === "review" ? "active" : raw === "confirmed" || raw === "repeated" ? "new" : states.find((state) => state === raw) ?? "new";
 const stateName = (state: State) => t(`problems.queue.state.${state}`);
 const severityOptions = ["critical", "high", "medium", "low"] as const;
+const hostText = (value: unknown) => asText(value).slice(0, 256);
+
+function distinctNames(value: unknown) {
+  const names = new Map<string, string>();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const name = hostText(item);
+      const key = name.toLowerCase();
+      if (name && name !== EMPTY_VALUE && !names.has(key)) names.set(key, name);
+    }
+  }
+  return [...names.values()];
+}
+
+function readableName(value: string) {
+  // Common UTF-8 decoding errors in Windows-1251 and Windows-1252, plus invalid/control characters.
+  return !/[\p{Cc}\p{Cf}\p{Cs}\uFFFD]|(?:[РС][\u0400-\u045f\u2010-\u203f]){2}|(?:[ÐÑ][\u0080-\u00bf\u2010-\u203f]){2}|[ÃÂ][\u0080-\u00bf]/u.test(value);
+}
 
 function quantity(kind: "eventCount" | "accountCount", count: number) {
   const plural = new Intl.PluralRules(getLocale()).select(count);
@@ -37,21 +56,50 @@ function quantity(kind: "eventCount" | "accountCount", count: number) {
 
 function problemRow(row: RecordRow) {
   const attack = record(row.queue_attack);
-  const names = (value: unknown) => Array.isArray(value) ? value.map(asText).filter(Boolean).join(", ") : "";
-  const accounts = names(attack.accounts), addresses = names(attack.addresses) || asText(row.actor_text);
+  const rawAccounts = distinctNames(attack.accounts);
+  const accounts = rawAccounts.filter(readableName);
+  const sources = distinctNames(attack.addresses);
+  const addresses = sources.join(", ") || hostText(row.actor_text);
   const accountCount = asCount(attack.account_count), eventCount = asCount(attack.event_count);
-  const baseTitle = text(row.title_text);
-  const facts = Object.keys(attack).length ? [accounts, addresses, accountCount ? quantity("accountCount", accountCount) : "", eventCount ? quantity("eventCount", eventCount) : ""]
-    : [asText(row.queue_group), asText(row.queue_participant) || asText(row.entity_text), asText(row.actor_text)];
-  const title = [baseTitle, ...new Set(facts.filter((fact) => fact && !baseTitle.includes(fact)))].join(" · ");
+  const rule = asText(row.rule_code);
+  const messages = record(row.presentation_messages);
+  const displayText = (value: unknown, code: unknown) => {
+    const label = asText(value);
+    return label === EMPTY_VALUE || label === rule || label === code || /^semantic\.[\w.-]+$/u.test(label) ? "" : label;
+  };
+  const rawTitle = displayText(row.title_text, record(messages.title_text).code) || t("problems.queue.title");
+  const brute = rule === "semantic.qw.password-brute-force";
+  const titleContainsAccount = accounts.some((name) => rawTitle.toLowerCase().includes(name.toLowerCase()));
+  const baseTitle = brute && (!readableName(rawTitle) || accounts.length > 1 && titleContainsAccount)
+    ? t("security.problems.presentation.brute_title") : rawTitle;
+  const accountList = accounts.slice(0, 3).join(", ");
+  const readableCount = Math.max(accounts.length, (accountCount ?? 0) - (rawAccounts.length - accounts.length));
+  const more = readableCount - Math.min(accounts.length, 3);
+  const accountSummary = accountList && more ? t("problems.queue.moreAccounts", { names: accountList, count: formatNumber(more) }) : accountList;
+  const titleAccounts = brute && baseTitle === rawTitle && accounts.length === 1 && titleContainsAccount ? "" : accountSummary;
+  const cardTitle = [baseTitle, titleAccounts].filter(Boolean).join(" · ");
+  const participant = hostText(row.queue_participant);
+  const group = hostText(row.queue_group);
+  const entity = hostText(row.entity_text);
+  const facts = Object.keys(attack).length ? [addresses, accountCount ? quantity("accountCount", accountCount) : "", eventCount ? quantity("eventCount", eventCount) : ""]
+    : [group, participant || entity, hostText(row.actor_text)];
+  const title = [cardTitle, ...new Set(facts.filter((fact) => fact && !cardTitle.includes(fact)))].join(" · ");
+  const what = record(messages.what_happened);
+  const parameters = record(what.params);
+  const nextCode = record(messages.next_text).code;
+  const next = nextCode === "security.problems.presentation.default_next" ? "" :
+    nextCode === "security.problems.presentation.password_next" && rule === "semantic.qw.password-spray" && sources.length === 1
+      ? t("problems.queue.sprayAction", { source: sources[0] }) : displayText(row.next_text, nextCode);
   return {
-    id: Number(row.id), state: stateOf(asText(row.status)), severity: row.severity, title, baseTitle,
-    entity: accounts || asText(row.entity_text), actor: addresses, assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort),
+    id: Number(row.id), state: stateOf(asText(row.status)), severity: row.severity, title, cardTitle,
+    entity: accountSummary || entity, actor: addresses, assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort),
     evidence: asCount(row.evidence_total), occurrences: asCount(row.occurrence_count) ?? 1,
-    first: asText(row.first_seen_utc), last: asText(row.last_seen_utc), published: asText(row.published_at_utc), until: asText(row.deferred_until),
-    rule: asText(row.rule_code), participant: asText(row.queue_participant), group: asText(row.queue_group),
-    description: asText(row.what_happened), interpretation: asText(row.why_text), next: asText(row.next_text),
-    history: Array.isArray(row.status_history) ? row.status_history.map(record) : [],
+    first: asText(row.first_seen_utc), last: asText(row.last_seen_utc), until: asText(row.deferred_until),
+    object: accountSummary || [participant || entity, group].filter(Boolean).join(", "),
+    source: hostText(parameters.source) || (Object.keys(attack).length ? addresses : "") || hostText(parameters.computer),
+    description: displayText(row.what_happened, what.code), whatCode: asText(what.code), next,
+    history: Array.isArray(row.status_history) ? row.status_history.map(record).filter((entry) =>
+      !(entry.changed_by === "semantic-worker" && entry.note === "created from enabled semantic scenario")) : [],
   };
 }
 
@@ -73,7 +121,6 @@ function historyAction(entry: RecordRow, zone: string) {
   const statuses = [entry.old_status, entry.new_status].flatMap((value) => typeof value === "string" ? [value === "deferred" ? stateName("deferred") : statusLabel(value)] : []);
   const until = asText(decision.until);
   const assignment = decision.assignment_changed ? t("problems.queue.assignment", { from: text(decision.old_assignee), to: text(decision.new_assignee) }) : "";
-  if (entry.changed_by === "semantic-worker" && note === "created from enabled semantic scenario") note = t("reports.problemLifecycle.created");
   if (entry.changed_by === "system" && note === "created from event") note = t("reports.problemLifecycle.createdFromEvent");
   if (entry.changed_by === "system" && note === "repeat evidence added") note = t("reports.problemLifecycle.repeatEvidence");
   if (note === "risk_acceptance_expired") note = t("reports.risk.expired");
@@ -120,9 +167,8 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
     return Number.isSafeInteger(id) && id > 0 ? id : null;
   });
   const [checked, setChecked] = useState<number[]>([]);
-  const [panelTab, setPanelTab] = useState("evidence");
   const clearRows = () => { setPage({ key: "", cursors: [] }); setExpanded(null); setSelected(null); setChecked([]); };
-  const select = (id: number | null, tab = "evidence") => { setSelected(id); setPanelTab(tab); };
+  const select = setSelected;
   const refresh = () => {
     if (period.preset !== "custom" && bounds) {
       setBounds(periodBounds(period));
@@ -287,7 +333,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       busy={list.isFetching && !list.isLoading} stateView={denied ? <ReportDenied reportKey={definition.key}/> : error ? <StateView state="error" detail={t("problems.queue.loadFailed")} onRetry={() => void list.refetch()}/> : undefined}
       tabs={controls} drawer={active && selected !== null ? <div data-problems-queue-drawer>
         <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
-          retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} tab={panelTab} onTab={setPanelTab} canManage={canManage}
+          retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} canManage={canManage}
           canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}
           onClose={() => select(null)} previous={position > 0 ? () => select(visibleRows[position - 1].id) : undefined}
           next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
@@ -374,21 +420,44 @@ function eventHref(value: unknown) {
   return id && id > 0 ? `/app/events/${id}` : undefined;
 }
 
-function EvidenceTable({ evidence, zone }: { evidence: ReturnType<typeof useProblemEvidence>; zone: string }) {
+function EvidenceTable({ evidence, zone, card = false }: { evidence: ReturnType<typeof useProblemEvidence>; zone: string; card?: boolean }) {
+  const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const key = (row: RecordRow) => `${row.evidence_id ?? row.evidence_key ?? row.event_db_id}:${row.time_created_utc ?? ""}:${row.evidence_role ?? ""}`;
   const rows = evidence.data?.pages.flatMap((page) => page.items) ?? [];
-  const columns: TableColumn<RecordRow>[] = [
-    { key: "time", label: t("problems.queue.time"), render: (row) => timeLabel(asText(row.time_created_utc ?? row.observed_at_utc), zone, true) },
+  const timeColumn: TableColumn<RecordRow> = { key: "time", label: t("problems.queue.time"), width: card ? "16%" : undefined, wrap: card,
+    render: (row) => timeLabel(asText(row.time_created_utc ?? row.observed_at_utc), zone, true) };
+  const columns: TableColumn<RecordRow>[] = card ? [
+    timeColumn,
+    { key: "event", label: t("problems.queue.event"), width: "44%", render: (row) => {
+      if (row.storage_kind === "file_audit_snapshot") return t("evidence.acl.snapshot");
+      if (row.event_id == null) return EMPTY_VALUE;
+      const code = String(row.event_id);
+      const title = eventSemanticText(asText(row.event_title_code), "");
+      const label = title ? `${title} · ${code}` : code;
+      if (row.event_record_id == null && !eventHref(row.event_db_id)) return label;
+      const id = key(row);
+      return <Button variant="ghost" aria-expanded={id === expandedEvent}
+        onClick={() => setExpandedEvent(id === expandedEvent ? null : id)}>{label}</Button>;
+    } },
+    { key: "account", label: t("problems.queue.account"), width: "20%", wrap: true, value: (row) => typeof row.account === "string" ? row.account.slice(0, 256) : "" },
+    { key: "from", label: t("problems.queue.from"), width: "20%", wrap: true, value: (row) => hostText(row.source) || hostText(row.hostname) },
+  ] : [
+    timeColumn,
     { key: "code", label: t("problems.queue.code"), render: (row) => row.event_id == null ? EMPTY_VALUE : eventHref(row.event_db_id)
       ? <a href={eventHref(row.event_db_id)}>{String(row.event_id)}</a> : String(row.event_id) },
     { key: "source", label: t("problems.queue.source"), value: (row) => asText(row.hostname) || asText(row.channel) },
   ];
-  if (evidence.isError && !rows.length) return <StateView state="error" detail={t("problems.queue.evidenceFailed")} onRetry={() => void evidence.refetch()}/>;
+  const loadFailed = t(card ? "problems.queue.eventsFailed" : "problems.queue.evidenceFailed");
+  if (evidence.isError && !rows.length) return <StateView state="error" detail={loadFailed} onRetry={() => void evidence.refetch()}/>;
   if (evidence.isPending) return <StateView state="loading"/>;
-  if (!rows.length) return <span>{EMPTY_VALUE}</span>;
-  return <><DataTable caption={t("problems.queue.proof")} rows={rows} columns={columns} density="compact" stickyHeader={false}
-    rowKey={(row) => `${row.evidence_id ?? row.evidence_key}:${row.time_created_utc ?? ""}:${row.evidence_role ?? ""}`}
+  if (!rows.length) return card ? <p role="status">{t("security.problems.evidence.empty")}</p> : <span>{EMPTY_VALUE}</span>;
+  return <><DataTable caption={t(card ? "problems.queue.events" : "problems.queue.proof")} rows={rows} columns={columns} density="compact" stickyHeader={false} wrapCells={card ? "all" : false}
+    rowKey={key} expandedContent={card ? (row) => expandedEvent === key(row) ? <>
+      {row.event_record_id != null ? <FactList facts={[{ label: t("problems.queue.windowsRecord"), value: String(row.event_record_id) }]}/> : null}
+      {eventHref(row.event_db_id) ? <a href={eventHref(row.event_db_id)}>{t("problems.queue.original")}</a> : null}
+    </> : null : undefined}
     hasMore={Boolean(evidence.hasNextPage)} showFooter={Boolean(evidence.hasNextPage)} loadingMore={evidence.isFetchingNextPage} onLoadMore={() => void evidence.fetchNextPage()}/>
-    {evidence.isFetchNextPageError ? <StateView state="error" detail={t("problems.queue.evidenceFailed")} onRetry={() => void evidence.fetchNextPage()}/> : null}</>;
+    {evidence.isFetchNextPageError ? <StateView state="error" detail={loadFailed} onRetry={() => void evidence.fetchNextPage()}/> : null}</>;
 }
 
 function ExpandedEvidence({ id, domain, zone, openEntity, members, failed, retry }: { id: number; domain: string; zone: string; openEntity: string | null; members?: ReportResultDto; failed: boolean; retry: () => void }) {
@@ -410,21 +479,34 @@ export function ProblemJournal({ definition, finding, domain }: { definition: Re
   </ReportLayout>;
 }
 
-function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zone, openEntity, tab, onTab, canManage, canAssign, canEvidence, onClose, previous, next, onChange }: {
-  publicRow: Problem; detail: Problem | null; detailError: boolean; retryDetails: () => void; domain: string; zone: string; openEntity: string | null; tab: string;
-  onTab: (key: string) => void; canManage: boolean; canAssign: boolean; canEvidence: boolean; onClose: () => void;
+function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zone, openEntity, canManage, canAssign, canEvidence, onClose, previous, next, onChange }: {
+  publicRow: Problem; detail: Problem | null; detailError: boolean; retryDetails: () => void; domain: string; zone: string; openEntity: string | null;
+  canManage: boolean; canAssign: boolean; canEvidence: boolean; onClose: () => void;
   previous?: () => void; next?: () => void; onChange: (kind: "state" | "assign" | "defer", state?: State) => void;
 }) {
   const row = detail ?? publicRow;
   const evidence = useProblemEvidence(row.id, domain, zone, canEvidence, openEntity);
   const options = new URLSearchParams({ finding: String(row.id), ...(domain ? { domain } : {}) });
   const event = evidence.data?.pages.flatMap((page) => page.items).find((item) => eventHref(item.event_db_id));
-  const tabs = [{ key: "evidence", align: "end", label: t("problems.queue.evidence") }, { key: "history", label: t("problems.queue.history") }, { key: "rule", label: t("problems.queue.rule") }];
-  const history = row.history.length ? <ul className="sli-ds-decision-list">{row.history.map((entry) => <li key={String(entry.id)}>
-    <time>{timeLabel(asText(entry.changed_at), zone, true)}</time><span>{entry.changed_by === "semantic-worker" ? t("reports.problemLifecycle.semanticWorker") : entry.changed_by === "system" ? t("reports.problemLifecycle.system") : text(entry.changed_by)}</span>
-    <span>{historyAction(entry, zone)}</span>
-  </li>)}</ul> : <span>{EMPTY_VALUE}</span>;
-  return <DetailDrawer responsive open title={row.baseTitle} eyebrow={`#${row.id}`} onClose={onClose}
+  const first = timeLabel(row.first, zone);
+  const last = timeLabel(row.last, zone);
+  const time = last !== EMPTY_VALUE ? last : first;
+  const observedTime = first !== EMPTY_VALUE && last !== EMPTY_VALUE && first !== last
+    ? t("problems.queue.observedRange", { first, last })
+    : time !== EMPTY_VALUE ? t("problems.queue.observedTime", { time }) : "";
+  const facts = [
+    row.object && t("problems.queue.observedObject", { object: row.object }),
+    row.source && t("problems.queue.observedSource", { source: row.source }),
+    observedTime,
+  ].filter(Boolean).join(" ");
+  const description = row.description && (facts
+    ? new Intl.Segmenter(getLocale(), { granularity: "sentence" }).segment(row.description).containing(0)?.segment.trim()
+    : row.description);
+  const spray = row.whatCode === "security.problems.presentation.spray_threshold_what" ||
+    row.whatCode === "security.problems.presentation.spray_what";
+  const summary = spray && facts ? t("problems.queue.sprayObservation", { facts })
+    : [description, facts && t("problems.queue.observation", { facts })].filter(Boolean).join(" ");
+  return <DetailDrawer responsive open title={row.cardTitle} eyebrow={`#${row.id}`} onClose={onClose}
     headerActions={<><Button variant="ghost" aria-label={t("problems.queue.previous")} disabled={!previous} onClick={previous}>↑</Button>
       <Button variant="ghost" aria-label={t("problems.queue.next")} disabled={!next} onClick={next}>↓</Button></>}
     footer={<>
@@ -441,27 +523,22 @@ function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zo
     {canAssign ? <div className="sli-ds-header__actions"><span>{t("problems.queue.owner")}</span><span>{row.assignee || EMPTY_VALUE}</span>
       {canManage ? <Button variant="ghost" onClick={() => onChange("assign")}>{t("problems.queue.action.assign")}</Button> : null}</div> : null}
     {detailError ? <StateView state="error" detail={t("problems.queue.detailsFailed")} onRetry={retryDetails}/> : null}
-    <Tabs items={tabs} active={tab} onChange={onTab}><TabList label={t("problems.queue.details")} variant="underline"/><TabPanel>
-      {tab === "evidence" ? <>
-        <FactList facts={[
-          { label: t("problems.queue.participant"), value: row.participant || row.entity },
-          ...(row.group ? [{ label: t("problems.queue.group"), value: row.group }] : []),
-          { label: t("problems.queue.actor"), value: row.actor },
-          { label: t("problems.queue.rule"), value: row.rule ? <button className="sli-ds-link" type="button" onClick={() => onTab("rule")}>{row.rule}</button> : null },
-        ]}/>
-        {canEvidence ? <section><h3>{t("problems.queue.proof")}</h3><EvidenceTable evidence={evidence} zone={zone}/></section> : null}
-        {event ? <div className="sli-ds-report__views">
-          {event.event_record_id != null ? <span>{[asText(event.channel), `EventRecordID ${String(event.event_record_id)}`].filter(Boolean).join(" · ")}</span> : null}
-          <a href={eventHref(event.event_db_id)}>{t("problems.queue.original")} →</a>
-        </div> : null}
-        <FactList facts={[{ label: t("problems.queue.eventTime"), value: timeLabel(row.last, zone) }, { label: t("problems.queue.published"), value: timeLabel(row.published, zone) }]}/>
-        <section><h3>{t("problems.queue.history")}</h3>{history}</section>
-      </> : tab === "history" ? history : <FactList facts={[
-        { label: t("problems.queue.rule"), value: row.rule },
-        ...(row.description ? [{ label: t("reports.v2.security.problems.columns.what.label"), value: row.description }] : []),
-        ...(row.interpretation ? [{ label: t("reports.v2.security.problems.columns.why.label"), value: row.interpretation }] : []),
-        ...(row.next && row.next !== EMPTY_VALUE ? [{ label: t("reports.v2.security.problems.columns.next.label"), value: row.next }] : []),
-      ]}/>}
-    </TabPanel></Tabs>
+    {summary ? <section>
+      <h3>{t("reports.v2.security.problems.columns.what.label")}</h3>
+      <p>{summary}</p>
+    </section> : null}
+    {row.next && row.next !== EMPTY_VALUE ? <section>
+      <h3>{t("reports.v2.security.problems.columns.next.label")}</h3>
+      <p>{row.next}</p>
+    </section> : null}
+    {canEvidence ? <section><h3>{t("problems.queue.events")}</h3><EvidenceTable evidence={evidence} zone={zone} card/></section> : null}
+    {row.history.length ? <section>
+      <h3>{t("problems.queue.history")}</h3>
+      <ul className="sli-ds-decision-list">{row.history.map((entry) => <li key={String(entry.id)}>
+        <time>{timeLabel(asText(entry.changed_at), zone, true)}</time>
+        <span>{entry.changed_by === "semantic-worker" || entry.changed_by === "system" ? t("reports.problemLifecycle.system") : text(entry.changed_by)}</span>
+        <span>{historyAction(entry, zone)}</span>
+      </li>)}</ul>
+    </section> : null}
   </DetailDrawer>;
 }

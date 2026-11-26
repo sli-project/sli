@@ -6,6 +6,7 @@ import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportIntentDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "./ReportRenderer";
+import { ProblemsQueue } from "./ProblemsQueue";
 import { api } from "../../api/client";
 import { OverlayProvider } from "../../design-system";
 import { PAGE_ACTIONS } from "./custom";
@@ -307,6 +308,63 @@ it.each((["ru", "en"] as const).flatMap(locale =>
   },
 );
 
+it.each(["en", "ru"] as const)("shows the problem card's facts, action and expandable Windows events (%s)", async (locale) => {
+  setLocale(locale);
+  const raw = {
+    ...definition, key: "security.problems", params: [{ key: "queue_view", kind: "choice", label: "View" }],
+    detail: { columns: [], query_available: true },
+  } as unknown as ReportDefinitionDto;
+  const attack = {
+    id: 1700, status: "new", severity: "high", title_text: "Failed sign-ins", rule_code: "semantic.qw.password-spray",
+    first_seen_utc: "2026-11-26T03:00:00Z", last_seen_utc: "2026-11-26T03:09:00Z", evidence_total: 1,
+    queue_attack: { accounts: ["Tatiana", "backup", "TATIANA", "Victoria", "admins", "bad�name", "РўРµСЃС‚"], addresses: ["203.0.113.5"] },
+    what_happened: "Failed sign-ins were recorded.", next_text: "Check the affected accounts.",
+    presentation_messages: {
+      what_happened: { code: "security.problems.presentation.spray_threshold_what", rendered: true, text: "Failed sign-ins were recorded." },
+      next_text: { code: "security.problems.presentation.password_next", rendered: true, text: "Check the affected accounts." },
+    },
+    status_history: [{ id: 1, changed_by: "semantic-worker", new_status: "new", note: "created from enabled semantic scenario" }],
+  };
+  const event = { event_db_id: 42, event_id: 4625, event_record_id: 25735126, time_created_utc: attack.last_seen_utc,
+    account: "bad�name<img>", source: "203.0.113.5", hostname: "dc01.example.test",
+    event_title_code: "Security:Microsoft-Windows-Security-Auditing:4625.title" };
+  const publicAttack = { id: attack.id, title_text: attack.title_text, queue_attack: attack.queue_attack };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    return Response.json(page({ items: url.pathname.endsWith("/detail") ? [event] :
+      url.searchParams.has("id") ? [attack] : [publicAttack] }));
+  }));
+  window.history.replaceState(null, "", "/app/report/security.problems?id=1700");
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OverlayProvider><ProblemsQueue definition={raw}/></OverlayProvider></QueryClientProvider>);
+
+  const drawer = within(await screen.findByRole("dialog"));
+  const title = await drawer.findByRole("heading", { name: /Tatiana, backup, Victoria/ });
+  expect(title.textContent).toContain(locale === "en" ? "and 1 more" : "и ещё 1");
+  expect(title.textContent).not.toMatch(/admins|TATIANA|bad�name|РўРµСЃС‚/);
+  const what = drawer.getByText(locale === "en" ? "What happened" : "Что случилось");
+  const action = await drawer.findByText(locale === "en" ? "What to do" : "Что сделать");
+  expect(what.parentElement?.textContent).toContain("203.0.113.5");
+  expect(what.parentElement?.textContent).toContain("10:00:00");
+  expect(what.parentElement?.textContent).toContain("10:09:00");
+  expect(action.parentElement?.textContent).toContain(locale === "en" ? "block 203.0.113.5" : "заблокируйте адрес 203.0.113.5");
+  const events = within(await drawer.findByRole("table", { name: locale === "en" ? "Events" : "События" }));
+  expect(events.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(
+    locale === "en" ? ["Time", "Event", "Account", "From"] : ["Время", "Событие", "Учётная запись", "Откуда"]);
+  expect(events.getByText("bad�name<img>")).toBeTruthy();
+  expect(events.queryByRole("img")).toBeNull();
+  expect(drawer.queryByText(/semantic\.qw\.|EventRecordID|25735126|Опубликовано|Published|Участник|Participant/)).toBeNull();
+  expect(drawer.queryByText(/Сервис семантического анализа|Semantic analysis service|Создана по опубликованному/)).toBeNull();
+  const expand = events.getByRole("button", { name: /4625/ });
+  expect(expand.textContent).toContain(t("events.semantic.Security:Microsoft-Windows-Security-Auditing:4625.title"));
+  fireEvent.click(expand);
+  expect(events.getByText(locale === "en" ? "Windows event record number" : "Номер записи в журнале Windows")).toBeTruthy();
+  expect(events.getByText("25735126")).toBeTruthy();
+  expect(events.getByRole("link", { name: /Open original event|Открыть исходное событие/ }).getAttribute("href")).toBe("/app/events/42");
+  fireEvent.click(events.getByRole("button", { name: /4625/ }));
+  expect(events.queryByText("25735126")).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("shows the problem queue's default columns and three labelled paragraphs (%s)", async (locale) => {
   setLocale(locale);
   const sid = "S-1-5-21-100000001-200000002-300000003-1101";
@@ -466,30 +524,26 @@ it.each((["ru", "en"] as const).flatMap((locale) => [149, 161].map((repeats) => 
   expect(new URL(dataRequests[1], window.location.origin).searchParams.get("cursor")).toBe("next-50");
 });
 
-it("opens RANSOM reasons alongside the retained file evidence in both languages", async () => {
-  const raw: ReportDefinitionDto = { ...definition, key: "file-audit.mass-operations", params: [], presets: [], row_links: [],
-    columns: [{ key: "employee", label: "Synthetic actor", kind: "text", path: "employee" }],
-    detail: { title: "Synthetic file evidence", key: "id", kind: "inline", inline: "evidence", row_links: [],
-      columns: [{ key: "path", label: "Synthetic file", kind: "text", path: "path" }] } };
-  const body = page({ report_key: raw.key, items: [{ id: "synthetic-result", employee: "Synthetic actor",
-    details: { threshold: 100, window_seconds: 300, distinct_files: 110 },
-    ransom: { state: "excluded", exclusion: { reason: "Synthetic backup approval", approved_by: "synthetic-admin",
-      active_from: "2026-10-18T00:00:00Z", active_to: "2026-10-18T01:00:00Z" } },
-    evidence: [{ path: "C:\\synthetic\\file.txt" }],
+it.each(["ru", "en"] as const)("links a file action to Problems and opens its retained evidence in place (%s)", async (locale) => {
+  setLocale(locale);
+  const raw = reportDefinitions.find(item => item.key === "file-audit.actions")!;
+  const path = "C:\\Synthetic\\Report.txt";
+  const actor = "EXAMPLE\\operator";
+  const body = page({ report_key: raw.key, items: [{
+    id: "file-action", path, subject_name: actor, operation: "write", problem_id: 7,
+    evidence: [{ event_id: 4663, record_id: 40123 }],
   }] });
-  for (const locale of ["ru", "en"] as const) {
-    setLocale(locale);
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
-      JSON.stringify(String(input).includes("/data?") ? body : raw), { headers: { "Content-Type": "application/json" } },
-    )));
-    renderReport(raw.key);
-    fireEvent.click((await screen.findAllByText("Synthetic actor")).at(-1)!);
-    expect(await screen.findByRole("heading", { name: t("file-audit.ransom.title") })).toBeTruthy();
-    expect(screen.getByText(t("file-audit.ransom.state.excluded"))).toBeTruthy();
-    expect(screen.getByText("Synthetic backup approval")).toBeTruthy();
-    expect(screen.getByText("C:\\synthetic\\file.txt")).toBeTruthy();
-    cleanup();
-  }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(
+    String(input).includes("/data?") ? body : { ...raw, filter_options: {} },
+  )));
+  renderReport(raw.key);
+  const table = within(await screen.findByRole("table", { name: t("file-audit.screen.actions") }));
+  expect(table.getByText(actor)).toBeTruthy();
+  expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "7" }) }).getAttribute("href"))
+    .toBe("/app/report/security.problems?id=7");
+  await userEvent.click(table.getByRole("button", { name: path }));
+  expect(table.getByText(t("file-audit.workspace.interval")).closest("td")?.colSpan).toBeGreaterThan(1);
+  expect(table.getByText(/4663.*40123/)).toBeTruthy();
 });
 
 it.each([
@@ -640,19 +694,28 @@ it.each(["ru", "en"] as const)("requests all accessible security domains and cat
   expect(screen.getByRole("button", { name: new RegExp(t("reports.filters.all_domains")) })).toBeTruthy();
 });
 
-it.each(["ru", "en"] as const)("dispatches file audit to its eight-tab report body (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("routes File Servers views to their declared data sources (%s)", async (locale) => {
   setLocale(locale);
-  const raw: ReportDefinitionDto = { ...definition, key: "file-audit.actions", params: [
-    { key: "period", label: "Период", kind: "period", default: "24h", required: true },
-  ] };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(
-    String(input).includes("/data?") ? page({ report_key: raw.key, filtered_count: 1 }) : raw,
-  ), { headers: { "Content-Type": "application/json" } })));
-  renderReport(raw.key);
-  await screen.findByRole("table", { name: t("file-audit.tabs.actions") });
-  expect(screen.getAllByRole("tab")).toHaveLength(8);
-  expect(screen.getByRole("checkbox", { name: t("file-audit.include_nested") })).toBeTruthy();
-  expect(screen.getByText(t("table.page", { page: 1, total: 1 }))).toBeTruthy();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requested.push(url);
+    const key = url.match(/\/reports\/(file-audit\.[a-z-]+)/)?.[1];
+    const declaration = reportDefinitions.find(item => item.key === key);
+    if (!declaration) return new Response(null, { status: 404 });
+    return Response.json(url.includes("/data?")
+      ? page({ report_key: declaration.key, items: [], filtered_count: 0 })
+      : { ...declaration, filter_options: {} });
+  }));
+  renderReport("file-audit.actions");
+  await screen.findByRole("table", { name: t("file-audit.screen.actions") });
+  expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("tab", { name: t("file-audit.tabs.mass-operations") })).toBeNull();
+  for (const view of ["overview", "permissions"] as const) {
+    const name = t(`file-audit.screen.${view}`);
+    await userEvent.click(screen.getByRole("tab", { name }));
+    await screen.findByRole("table", { name });
+    expect(requested.some(url => url.includes("/file-audit." + view + "/data?"))).toBe(true);
+  }
 });
 
 it.each(["ru", "en"] as const)("keeps an empty collection free of limitation notes (%s)", async (locale) => {

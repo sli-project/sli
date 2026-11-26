@@ -1,7 +1,7 @@
-import type { ReportDefinitionDto, ReportOption } from "../../api/report-v2-types";
+import type { ReportDefinitionDto } from "../../api/report-v2-types";
 import { periodBounds, type FilterField, type FilterValues, type PeriodValue } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
-import { apiParams, paramOptions, valuesReady } from "../../app/report-v2/state";
+import { apiParams, valuesReady } from "../../app/report-v2/state";
 import { localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
 
 export const FILE_AUDIT_TABS = ["overview", "actions", "mass-operations", "permission-changes",
@@ -18,29 +18,17 @@ export function fileAuditPageSize(value: unknown, maximum = 200): number {
   return sizes.includes(requested) ? requested : sizes.filter(size => size <= requested).at(-1) ?? sizes[0] ?? 50;
 }
 
-export function fileAuditFields(definition: ReportDefinitionDto, options?: Record<string, ReportOption[]>): FilterField[] {
-  const fields: FilterField[] = [
-    { key: "period", label: t("period.label"), kind: "period", presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", step: "any" },
-    { key: "source_kind", label: t("file-audit.source"), kind: "select", options: [
-      { value: "server", label: t("file-audit.source.server") },
-      { value: "workstation", label: t("file-audit.source.workstation") },
-    ] },
-    { key: "path", label: t("file-audit.object"), kind: "text", wide: true, nested: { key: "include_nested", label: t("file-audit.include_nested") } },
-    { key: "employee", label: t("file-audit.employee"), kind: "text" },
-    { key: "share", label: t("file-audit.share"), kind: "search-multiselect", options: paramOptions(definition, "share", options) },
-    { key: "operation", label: t("file-audit.operation"), kind: "select", options: paramOptions(definition, "operation", options) },
+export const FILE_SERVER_VIEWS = ["actions", "overview", "permissions"] as const;
+export type FileServerView = typeof FILE_SERVER_VIEWS[number];
+export const ACTION_FILTERS = ["all", "delete", "changes", "permission-changes", "access-denials", "out-of-hours"] as const;
+export type ActionFilter = typeof ACTION_FILTERS[number];
+
+export function fileAuditFields(view: FileServerView): FilterField[] {
+  if (view === "actions") return [
+    { key: "path_search", label: t("file-audit.screen.path_search"), placeholder: t("file-audit.screen.path_search"), kind: "text", immediate: true },
+    { key: "account_search", label: t("file-audit.screen.account_search"), placeholder: t("file-audit.screen.account_search"), kind: "text", immediate: true },
   ];
-  if (definition.params.some(param => param.key === "source_instance_id")) fields.splice(2, 0,
-    { key: "source_instance_id", label: t("file-audit.workspace.server"), kind: "select", options: paramOptions(definition, "source_instance_id", options) });
-  if (definition.params.some(param => param.key === "show_service")) fields.push(
-    { key: "show_service", label: t("file-audit.workspace.service"), kind: "checkbox", onValue: "true", offValue: "false" });
-  if (definition.params.some(param => param.key === "record_unit")) fields.push(
-    { key: "record_unit", label: t("file-audit.workspace.record_unit"), kind: "select", options: [
-      { value: "", label: t("file-audit.workspace.all_observations") },
-      { value: "saved_event_group", label: t("file-audit.workspace.saved_4670_groups") },
-      { value: "normalized_action", label: t("file-audit.workspace.normalized_actions") },
-    ] });
-  return fields;
+  return [];
 }
 
 export function fileAuditParams(definition: ReportDefinitionDto, values: FilterValues, timeZone: string, cursor?: string | null, anchor = new Date(), limit = 50) {
@@ -51,6 +39,11 @@ export function fileAuditParams(definition: ReportDefinitionDto, values: FilterV
   for (const key of ["source_instance_id", "device_id"]) {
     const value = values[key];
     if (typeof value === "string" && value) params.set(key, value);
+  }
+  for (const key of ["path_search", "account_search"]) {
+    const value = params.get(key)?.trim();
+    if (value) params.set(key, Array.from(value).slice(0, key === "path_search" ? 4096 : 256).join(""));
+    else params.delete(key);
   }
   if (!period || !["24h", "7d", "30d", "custom"].includes(period.preset)) return null;
   if (period?.preset === "custom") {
