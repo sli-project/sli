@@ -32,8 +32,6 @@ internal static class AdLogonReports
               and lower(e.method->>'$channel')='security'
               and lower(e.method->>'$provider')='microsoft-windows-security-auditing'
               and e.computer<>'' and ($4='' or strpos(lower(e.computer), lower($4))>0)
-              and ($6 or (right(principal.account, 1)='$' or lower(principal.account) in ('anonymous', 'anonymous logon')
-                          or principal.address='::1') is not true)
         """;
 
     internal static async Task<JsonObject> ReadStoredAsync(NpgsqlConnection db, AdV2Request request, CancellationToken ct)
@@ -64,7 +62,16 @@ internal static class AdLogonReports
                     then account else account_domain || chr(92) || account end as user_name
                 from logons
             ), matching as (
-                select * from accounts where $5='' or strpos(lower(user_name), lower($5))>0
+                select * from accounts
+                where ($5='' or strpos(lower(user_name), lower($5))>0)
+                  and ($6 or (
+                      logon_type in ('2', '7', '10', '11')
+                      and right(user_name, 1)<>'$'
+                      and lower(split_part(user_name, chr(92), -1)) not in
+                          ('system', 'local service', 'network service', 'anonymous', 'anonymous logon')
+                      and lower(split_part(user_name, chr(92), 1)) not in
+                          ('virtual users', 'window manager', 'font driver host')
+                  ))
             )
             """;
         if (detail)
@@ -107,7 +114,16 @@ internal static class AdLogonReports
                            count(*) over () as total
                     from matching group by domain_id, host
                 )
-                select * from computer_counts
+                select computer_counts.*, (
+                    select case when min(destination.role)=max(destination.role) then
+                        case min(destination.role) when 'member_server' then 'server' else min(destination.role) end
+                    end
+                    from public.servers destination
+                    where destination.domain_id=computer_counts.domain_id
+                      and (lower(destination.hostname)=host or lower(destination.fqdn)=host)
+                      and destination.role in ('domain_controller', 'member_server', 'server', 'workstation')
+                ) as computer_type
+                from computer_counts
                 """;
             if (after is not null)
             {

@@ -258,6 +258,23 @@ public sealed class AdReviewChecksTests : IClassFixture<AdReviewChecksTests.Data
         Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
         Assert.Empty(deniedStore.Reads);
     }
+    [Fact] public async Task Established_protected_membership_does_not_put_an_account_in_default_review()
+    {
+        await using var db = await Open();
+        var member = Privileged();
+        await Seed(db, true, [member, User(2)], role: 1);
+        await Seed(db, true, [member, User(2, 512 | 128)]);
+        var request = new AdV2Request("ad.users.v2", "view", null, [1], new() { ["account_rows"] = "yes" },
+            "checks", null, false, 50, null, "UTC");
+        var sources = await AdV2Store.Snapshots(db, "users_v2", request.Domains, Ct);
+
+        var review = await AdReviewChecks.ReadAsync(db, request, sources, Ct, Legacy);
+
+        Assert.Equal(1, review.Int("filtered_count"));
+        var account = Assert.Single(review["items"]!.AsArray())!;
+        Assert.Equal(2, account.Int("entity_id"));
+        Assert.Contains(account["review_reasons"]!.AsArray(), reason => reason.Text("key") == "reversible_password");
+    }
     [Fact] public async Task Login_baseline_is_distinct_from_latest_pair_and_creation()
     {
         await using var db = await Open(); await Login(db);

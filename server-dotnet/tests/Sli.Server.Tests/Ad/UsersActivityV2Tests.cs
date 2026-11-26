@@ -147,7 +147,7 @@ public sealed class UsersActivityV2Tests
         }
     }
     [Fact]
-    public async Task UserCardCountsDailyLogonsAndKeepsActorTargetChangesWithinTheDomain()
+    public async Task UserCardCountsDailyLogonsWithinTheDomainAndOmitsDirectoryChanges()
     {
         await using var pg = new PostCollectionPostgres(canonicalSchema: true);
         await pg.StartAsync(Ct);
@@ -179,21 +179,17 @@ public sealed class UsersActivityV2Tests
         }
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["Sli:Storage:HotRetentionDays"] = "7" }).Build();
-        async Task<JsonObject> Read(bool privilege) => Assert.Single(await AdJson.ReadAsync(db,
-            AdAccountEvents.Source(config) + AdUserCard.ActivitySql, Ct, new[] { 4624, 4625, 4728, 4738 }, today.AddDays(-30),
-            today, 1L, Sid, new[] { "test-user@example.test" }, today, privilege));
-
-        var result = await Read(true);
+        var result = Assert.Single(await AdJson.ReadAsync(db,
+            AdAccountEvents.Source(config) + AdUserCard.ActivitySql, Ct, new[] { 4624, 4625 }, today.AddDays(-30),
+            today, 1L, Sid, new[] { "test-user@example.test" }, today));
         var totals = JsonNode.Parse(result.Text("logon_totals")!)!;
         Assert.Equal(4, totals.Int("successes"));
         Assert.Equal(1, totals.Int("failures"));
         Assert.Equal(0, totals.Int("typical"));
         var computers = JsonNode.Parse(result.Text("computers")!)!.AsArray();
         Assert.Equal(1, Assert.Single(computers).Int("id"));
-        var changes = JsonNode.Parse(result.Text("changes")!)!.AsArray();
-        Assert.Equal([6L, 4L, 3L], changes.Select(row => row.Int("id")));
-        var redacted = JsonNode.Parse((await Read(false)).Text("changes")!)!.AsArray();
-        Assert.Equal([6L, 4L], redacted.Select(row => row.Int("id")));
+        var timeline = JsonNode.Parse(result.Text("timeline")!)!.AsArray();
+        Assert.Equal([1L, 2L], timeline.Where(row => row.Int("id") > 0).Select(row => row.Int("id")).Order());
     }
 
     [Fact]
