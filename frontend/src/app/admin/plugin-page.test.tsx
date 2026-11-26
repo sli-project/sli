@@ -21,7 +21,8 @@ let denySettings = false;
 let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
 const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: true,
-  component_runtime: "running", revision: 7, last_data_at_utc: null });
+  component_runtime: "running", revision: 7, last_data_at_utc: null,
+  status: { state: plugin_id === "sli.remote-access" ? "disabled" : "waiting", last_data_at: null, error_at: null, error_object: null } });
 
 beforeEach(() => {
   settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = [];
@@ -69,11 +70,19 @@ const writes = () => requests.filter((request) => request.method === "PUT");
 it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"])("renders five working tabs for %s", async (id) => {
   mount(id);
   expect(screen.getAllByRole("tab")).toHaveLength(5);
-  expect(await screen.findByRole("switch", { name: "Включён" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Выключить" })).toBeTruthy();
   expect(screen.queryByText("В разработке")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
   if (id === "sli.remote-access") expect(await screen.findByText("Журнал NPS Accounting не подключён.")).toBeTruthy();
   else expect(await screen.findByRole("link", { name: "Компьютеры и агенты" })).toHaveProperty("pathname", "/app/agents");
+});
+
+it("uses the server status in the file audit header and reads sources only from the connection tab", async () => {
+  mount("sli.file-audit");
+  expect(await screen.findByText(t("plugins.status.waiting"))).toBeTruthy();
+  expect(screen.queryByText(t("pluginPage.noData"))).toBeNull();
+  expect(screen.queryByText(t("plugins.disabled"))).toBeNull();
+  expect(requests.some((request) => request.path === "/api/v1/setup/status")).toBe(false);
 });
 
 it("shows each registered Accounting source once with its distinct subscription states", async () => {

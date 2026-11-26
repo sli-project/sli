@@ -55,8 +55,7 @@ export function defaultValues(definition: ReportDefinitionDto): FilterValues {
         ? options.find((option) => definition.default_domain_id != null && option.value === String(definition.default_domain_id))
         : options.find((option) => option.value === String(param.default)) ?? (param.required ? options[0] : undefined);
       if (selected) values[param.key] = selected.value;
-    } else if (definition.key === "ad.computer-logons" && param.key === "with_logons") values[param.key] = "yes";
-    else if (param.default !== undefined) values[param.key] = String(param.default);
+    } else if (param.default !== undefined) values[param.key] = String(param.default);
   }
   return values;
 }

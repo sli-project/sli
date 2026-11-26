@@ -30,7 +30,6 @@ jobs:
       DOTNET_NOLOGO: '1'
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_gcServer: '0'
-      DOTNET_GCHeapHardLimit: '40000000'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

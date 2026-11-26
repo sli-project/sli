@@ -19,7 +19,7 @@ vi.mock("../../api/client", async (original) => {
 import { NotificationsPage } from "./notifications";
 
 const workspace = (): NotificationWorkspace => ({
-  channels: [{ kind: "telegram", enabled: true, tls_mode: "tls", secret_ref: "SLI_NOTIFY_TELEGRAM_TOKEN", state: "active",
+  channels: [{ kind: "telegram", enabled: true, tls_mode: "tls", secret_ref: "SLI_NOTIFY_TELEGRAM_TOKEN", state: "not_configured",
     revision: 1, updated_at: "2026-11-14T01:00:00Z", last_accepted_at: null, last_attempt_at: "2026-11-14T02:01:00Z", last_result_code: "telegram_chat_denied", secret_status: null }],
   subscriptions: [{ id: "fixture-subscription", owner_user_id: 2, recipient_user_id: 2, channel: "telegram", enabled: true,
     revision: 1, updated_at: "2026-11-14T01:00:00Z" }],
@@ -51,7 +51,7 @@ it("separates configuration from history in five columns", async () => {
   expect(within(table).getAllByRole("columnheader")).toHaveLength(5);
   expect(within(table).queryByRole("columnheader", { name: "Куда" })).toBeNull();
   expect(within(row).queryByText("Не подтверждена")).toBeNull();
-  expect(within(row).getAllByRole("cell")[3].textContent).toBe("—");
+  expect(within(row).getByRole("cell", { name: "Принятых доставок нет" })).toBeTruthy();
   expect(state.querySelectorAll("div, .sli-ds-badge")).toHaveLength(0);
   expect(row.textContent).not.toMatch(/Токен не задан|Чат не подключён/);
   expect(view.container.querySelector(".sli-ds-callout, .sli-ds-header__subtitle")).toBeNull();
@@ -91,6 +91,9 @@ it("sends a Telegram test in the panel and shows the actual delivery time", asyn
 
 it.each(["ru", "en"] as const)("keeps configured channels separate from an old failed attempt (%s)", async (locale) => {
   setLocale(locale);
+  const data = workspace();
+  data.channels[0].state = "configured";
+  mock.workspace.mockResolvedValue(data);
   mock.telegram.mockResolvedValue({ secret_set: true, chat_bound: true, chat_name: "Fixture chat" });
   mount();
   const table = await screen.findByRole("table", { name: t("notify.channels") });
@@ -99,5 +102,5 @@ it.each(["ru", "en"] as const)("keeps configured channels separate from an old f
   const cells = within(row).getAllByRole("cell");
   expect(cells[2].textContent).toMatch(/2026.*9:01|09:01/);
   expect(cells[2].textContent).toContain(t("reports.v2.notifications.deliveries.columns.result_code.labels.telegram_chat_denied"));
-  expect(cells[3].textContent).toBe("—");
+  expect(cells[3].textContent).toBe(t("notify.noAcceptedDelivery"));
 });

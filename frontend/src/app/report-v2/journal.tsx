@@ -4,7 +4,7 @@ import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import {
   Button, DataTable, DetailDrawer, FactList, FilterBar, Icon, ReportLayout,
-  SeverityBadge, TabList, TabPanel, Tabs, type FilterValues, type PeriodValue, type TableColumn,
+  TabList, TabPanel, Tabs, type FilterField, type FilterValues, type PeriodValue, type TableColumn,
 } from "../../design-system";
 import { t } from "../../i18n";
 import { dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone } from "../../shared/date-time";
@@ -18,7 +18,7 @@ import { ReportDenied } from "./ReportDenied";
 import { FirstAdSource, isEmptyFirstAdReportResult, useFirstAdSource } from "../first-ad-source";
 import { apiParams, defaultValues, filterFields, searchFromValues, valuesFromSearch, valuesReady } from "./state";
 
-const categories = ["all", "authentication", "accounts", "groups", "audit"] as const;
+const categories = ["all", "authentication", "failures", "service"] as const;
 const sizes = [25, 50, 100, 200];
 type JournalTextKey<T> = T extends `reports.v2.events.journal.${infer Key}` ? Key : never;
 const journalText = (key: JournalTextKey<Parameters<typeof t>[0]>, params?: Record<string, string | number>) =>
@@ -42,15 +42,14 @@ type JournalRow = {
   channel: string;
   logonType: string;
   findingId: string;
-  severity: string;
+  changeDomain: string;
 };
 
 function decode(row: Record<string, unknown>): JournalRow {
   const value = (key: string) => ["string", "number"].includes(typeof row[key]) && !["-", "—"].includes(String(row[key]).trim()) ? String(row[key]).trim() : "";
   const id = value("id");
   const messages = row.presentation_messages as Record<string, { code?: string }> | undefined;
-  const account = value("target") || value("actor") ||
-    (messages?.participant?.code === "events.participant_unknown" ? "" : value("participant"));
+  const account = value("journal_account");
   return {
     key: id || `${value("day")}:${value("summary_key") || [value("time_created_utc"), value("event_id"), account, value("journal_computer")].join(":")}`,
     id: /^[1-9][0-9]*$/.test(id) ? id : undefined,
@@ -59,11 +58,11 @@ function decode(row: Record<string, unknown>): JournalRow {
     first: value("first_seen_utc"), last: value("last_seen_utc"),
     count: typeof row.event_count === "number" ? row.event_count : 1,
     expandable: row.journal_expandable === true,
-    account, initiator: value("on_behalf"),
-    computer: value("journal_computer"), address: value("ip_address"), result: value("journal_result"),
+    account, initiator: value("journal_initiator"),
+    computer: value("journal_computer"), address: value("journal_address"), result: value("journal_result"),
     channel: value("channel"), logonType: value("logon_type"),
     findingId: /^[1-9][0-9]*$/.test(value("journal_finding_id")) ? value("journal_finding_id") : "",
-    severity: value("journal_severity"),
+    changeDomain: /^[1-9][0-9]*$/.test(value("journal_change_domain")) ? value("journal_change_domain") : "",
   };
 }
 
@@ -85,13 +84,11 @@ function followup(params: URLSearchParams, window?: { from: string; to: string }
 }
 
 function Result({ value }: { value: string }) {
-  return value === "success" || value === "failure"
-    ? <span className="sli-ds-result" data-result={value}>{journalText(`result.${value}`)}</span>
-    : <>{EMPTY_VALUE}</>;
+  return value === "success" || value === "failure" ? journalText(`result.${value}`) : EMPTY_VALUE;
 }
 
 function eventTitle(row: JournalRow) {
-  return row.count > 1 ? <>{row.title || EMPTY_VALUE} <strong>×{formatNumber(row.count)}</strong></> : row.title || EMPTY_VALUE;
+  return row.count > 1 ? <>{row.title || EMPTY_VALUE} ×{formatNumber(row.count)}</> : row.title || EMPTY_VALUE;
 }
 
 function eventTime(row: JournalRow, zone: string, details = false) {
@@ -100,7 +97,7 @@ function eventTime(row: JournalRow, zone: string, details = false) {
     if (dates || (zone !== "browser" && !isValidTimeZone(zone))) return formatDateTime(value, zone, { seconds: true, withYear: details });
     return formatClockWithOffset(new Date(value), zone, true).time;
   };
-  if (row.count > 1 && row.first && row.last && row.first !== row.last) {
+  if (row.count > 1 && row.first && row.last) {
     const dates = details || dayKey(row.first, zone) !== dayKey(row.last, zone);
     return `${format(row.first, dates)} – ${format(row.last, dates)}`;
   }
@@ -116,14 +113,12 @@ function pivotLink(value: string, type: Pivot, href: (type: Pivot, value: string
   }}>{label}</a> : EMPTY_VALUE;
 }
 
-function RepeatRows({ params, row, columns, onSelect, member }: {
-  params: URLSearchParams; row: JournalRow; columns: TableColumn<JournalRow>[]; onSelect: (row: JournalRow) => void; member?: string;
+function RepeatRows({ params, row, columns, onSelect }: {
+  params: URLSearchParams; row: JournalRow; columns: TableColumn<JournalRow>[]; onSelect: (row: JournalRow) => void;
 }) {
-  const [active, setActive] = useState<string>();
   const [page, setPage] = useState(0);
   const input = new URLSearchParams(params);
   input.set("expand", row.id!);
-  if (member) input.set("member", member);
   input.set("limit", "25");
   const repeats = useInfiniteQuery({
     queryKey: ["journal", "repeats", input.toString()],
@@ -133,29 +128,17 @@ function RepeatRows({ params, row, columns, onSelect, member }: {
     retry: false,
   });
   const rows = repeats.data?.pages[page]?.items.map(decode) ?? [];
-  const toggle = (item: JournalRow) => setActive((current) => current === item.id ? undefined : item.id);
-  const pickPage = (index: number) => { setActive(undefined); setPage(index); };
-  const memberColumns = columns.map((column) => column.key === "title" ? {
-    ...column, render: (item: JournalRow) => <span className="sli-ds-table__cell-line">
-      {item.expandable && item.id ? <Button variant="ghost" icon={active === item.id ? "chevron-down" : "chevron"}
-        aria-label={journalText(active === item.id ? "fold" : "expand")} aria-expanded={active === item.id}
-        onClick={(event) => { event.stopPropagation(); toggle(item); }}/> : null}
-      <span>{eventTitle(item)}</span>
-    </span>,
-  } : column);
   if (repeats.isLoading) return <span role="status">{t("state.loading")}</span>;
   return <>
-    {rows.length ? <DataTable compact caption={journalText("expand")} rows={rows} rowKey={(item) => item.key} columns={memberColumns}
-      onRowClick={(item) => { if (item.expandable) toggle(item); else onSelect(item); }} stickyHeader={false}
-      expanded={(item) => !member && active && item.id === active
-        ? <RepeatRows params={params} row={row} member={active} columns={columns} onSelect={onSelect}/> : null}
+    {rows.length ? <DataTable compact caption={journalText("expand")} rows={rows} rowKey={(item) => item.key} columns={columns}
+      onRowClick={onSelect} stickyHeader={false}
       showFooter={page > 0 || repeats.hasNextPage}
       total={repeats.data?.pages[0]?.filtered_count}
       pagination={{
         start: page * 25 + 1, busy: repeats.isFetchingNextPage,
-        onPrevious: page > 0 ? () => pickPage(page - 1) : undefined,
-        onNext: (repeats.data?.pages.length ?? 0) > page + 1 ? () => pickPage(page + 1) : repeats.hasNextPage ? () => {
-          void repeats.fetchNextPage().then((next) => { if ((next.data?.pages.length ?? 0) > page + 1) pickPage(page + 1); });
+        onPrevious: page > 0 ? () => setPage(page - 1) : undefined,
+        onNext: (repeats.data?.pages.length ?? 0) > page + 1 ? () => setPage(page + 1) : repeats.hasNextPage ? () => {
+          void repeats.fetchNextPage().then((next) => { if ((next.data?.pages.length ?? 0) > page + 1) setPage(page + 1); });
         } : undefined,
       }}/> : null}
     {repeats.isError ? <div role="alert">{journalText("repeats_failed")}{" "}<Button onClick={() => void repeats.refetch()}>{t("state.retry")}</Button></div> : null}
@@ -212,9 +195,7 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
       {event && row.id ? <a className="sli-ds-button" href={withReturnTo(`/app/events/${row.id}`, window.location.pathname + window.location.search)}>{journalText("original")}</a> : null}
       <CopyFactsButton text={[title, when, ...facts.map((fact) => `${fact.label} · ${fact.text}`)].join("\n")}/>
     </>}>
-    {row.severity || row.result ? <div className="sli-ds-header__meta">
-      <Result value={row.result}/>{row.severity ? <SeverityBadge severity={row.severity}/> : null}
-    </div> : null}
+    {row.result ? <div className="sli-ds-header__meta"><Result value={row.result}/></div> : null}
     {raw ? <Tabs items={[
       { key: "details", label: journalText("details") },
       { key: "source", label: journalText("original") },
@@ -240,11 +221,12 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
   </DetailDrawer>;
 }
 
-function journalRouteValues(definition: ReportDefinitionDto, routeSearch: string) {
+function journalRouteValues(definition: ReportDefinitionDto, routeSearch: string): FilterValues {
   const search = new URLSearchParams(routeSearch);
   const legacyDomain = search.get("domain_id");
   if (legacyDomain && !search.has("domain")) search.set("domain", legacyDomain);
-  return valuesFromSearch(definition, search);
+  if (!categories.some((category) => category === search.get("view"))) search.delete("view");
+  return { collapse: "on", ...valuesFromSearch(definition, search) };
 }
 
 export function EventJournal({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
@@ -294,9 +276,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   }, [definition, values, returnTo]);
 
   const collapse = values.collapse !== "off";
-  const requestedView = values.view;
-  const active = requestedView === "attention" || requestedView === "tasks" ? requestedView
-    : categories.find((category) => category === requestedView) ?? "all";
+  const active = categories.find((category) => category === values.view) ?? "all";
   const valid = valuesReady(definition, values);
   const params = apiParams(definition, { ...values, view: active, collapse: collapse ? "on" : "off" }, { timeZone, limit: size });
   const requestKey = `${params}:${refresh}`;
@@ -325,18 +305,17 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const link = (type: Pivot, value: string) => `?${searchFromValues(definition, pivotValues(type, value))}`;
   const pivot = (type: Pivot, value: string) => change(pivotValues(type, value));
   const pickPage = (index: number) => { setPage(index); setExpanded(null); setSelection(null); };
-  const viewKeys = active === "attention" || active === "tasks" ? [...categories, active] as const : categories;
   const counts = first?.journal_counts;
-  const tabs = viewKeys.map((key) => ({
-    key, label: <>{journalText(`view.${key}`)}{typeof counts?.[key] === "number" ? <> <strong>{formatNumber(counts[key])}</strong></> : null}</>,
+  const tabs = categories.map((key) => ({
+    key, label: <>{journalText(`view.${key}`)}{typeof counts?.[key] === "number" ? ` ${formatNumber(counts[key])}` : null}</>,
   }));
-  const defaults = defaultValues(definition);
+  const defaults = { ...defaultValues(definition), collapse: "on" };
   const currentSearch = new URLSearchParams(initialSearch ?? window.location.search);
   const hasExplicitScope = ["domain", "domain_id", "scope"].some(key => entrySearch.has(key) || currentSearch.has(key));
   const firstAdSource = useFirstAdSource(currentSearch, !hasExplicitScope && page === 0 && active === "all"
     && searchFromValues(definition, values).toString() === searchFromValues(definition, defaults).toString()
     && definition.access?.allowed !== false && data.isSuccess && !data.isFetching && isEmptyFirstAdReportResult(first));
-  const filterDefinitions = filterFields(definition).filter((field) => ["q", "result"].includes(field.key)).map((field) => (
+  const filterDefinitions: FilterField[] = filterFields(definition).filter((field) => ["q", "result"].includes(field.key)).map((field) => (
     field.key === "q" && field.kind === "text" ? { ...field, immediate: true, placeholder: journalText("search") }
       : field.key === "result" && field.kind === "select" ? { ...field, label: journalText("result"), immediate: true, hideLabel: true, options: [
           { value: "", label: journalText("result.any") },
@@ -344,20 +323,30 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
           { value: "failure", label: journalText("result.failure") },
         ] } : field
   ));
+  filterDefinitions.push({ key: "collapse", kind: "checkbox", label: journalText("collapse"), onValue: "on", offValue: "off" });
   const columns: TableColumn<JournalRow>[] = [
-    { key: "severity", label: journalText("severity"), render: (row) => <SeverityBadge severity={row.severity}/> },
     { key: "time", label: journalText("columns.time.label"), kind: "datetime", render: (row) => eventTime(row, timeZone) },
     { key: "title", label: journalText("columns.event.label"), render: (row) => <span className="sli-ds-table__cell-line">
         {row.expandable && row.id ? <Button variant="ghost" icon={expanded === row.key ? "chevron-down" : "chevron"}
           aria-label={journalText(expanded === row.key ? "fold" : "expand")} aria-expanded={expanded === row.key}
           onClick={(event) => { event.stopPropagation(); setExpanded(expanded === row.key ? null : row.key); }}/> : null}
-        <span>{eventTitle(row)}</span>
+        <span title={row.title || undefined}>{row.title || EMPTY_VALUE}</span>
+        {row.count > 1 ? `×${formatNumber(row.count)}` : null}
+        {row.id && row.changeDomain && windowBounds ? <a className="sli-ds-button" data-variant="ghost" href={`/app/report/security.events.chains?${new URLSearchParams({
+          domain: row.changeDomain, period: "custom", from: windowBounds.from, to: windowBounds.to,
+          event_db_id: row.id, repeat_mode: "individual",
+        })}`} onClick={(event) => event.stopPropagation()}>{journalText("open_change")}</a> : null}
       </span> },
-    { key: "computer", label: journalText("computer"), render: (row) => pivotLink(row.computer, "computer", link, pivot) },
     { key: "account", label: journalText("account"), render: (row) => pivotLink(row.account, "account", link, pivot) },
+    { key: "initiator", label: journalText("initiator"), mobile: false, render: (row) => pivotLink(row.initiator, "account", link, pivot) },
     { key: "address", label: journalText("address"), mobile: false, render: (row) => pivotLink(row.address, "address", link, pivot) },
+    { key: "logonType", label: journalText("logon_type"), mobile: false, render: (row) => row.logonType || EMPTY_VALUE },
+    { key: "computer", label: journalText("computer"), render: (row) => pivotLink(row.computer, "computer", link, pivot) },
     { key: "result", label: journalText("result"), render: (row) => <Result value={row.result}/> },
     { key: "code", label: journalText("code"), kind: "code", mobile: false },
+    { key: "problem", label: journalText("problem"), render: (row) => row.findingId ? <a
+      href={`/app/report/security.problems?id=${row.findingId}`} onClick={(event) => event.stopPropagation()}>
+      {journalText("problem_number", { id: row.findingId })}</a> : null },
   ];
   const denied = first?.state === "denied" || data.error instanceof ApiResponseError && data.error.status === 403;
   if (denied) return <ReportDenied reportKey={definition.key} page/>;
@@ -405,11 +394,10 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
         {definition.export && valid ? <a className="sli-ds-button" aria-label={t("reports.renderer.export_csv")}
           title={t("reports.renderer.export_csv")} href={`/api/v2/reports/events.journal/export.csv?${fixedParams}`} download><Icon name="download"/></a> : null}
       </>}
-      filters={<FilterBar layout="inline" fields={filterDefinitions} primaryKeys={["q", "result"]} values={values}
+      filters={<FilterBar layout="inline" fields={filterDefinitions} primaryKeys={["q", "result", "collapse"]} values={values} applyInline
         defaults={{ ...defaults, domain: values.domain, period: values.period }}
         onApply={(next) => change({ ...next, pivot: next.q === values.q ? values.pivot : undefined })}
-        leadingControls={<TabList label={journalText("params.view.label")}/>}
-        quickFilters={<label className="sli-ds-field"><input type="checkbox" checked={collapse} onChange={(event) => change({ ...values, collapse: event.target.checked ? "on" : "off" })}/>{journalText("collapse")}</label>}/>}
+        leadingControls={<TabList label={journalText("params.view.label")}/>}/>}
       state={data.isLoading ? "loading" : failed ? "error" : "ok"}
       stateView={failed ? <div role="alert">{journalText("load_failed")} <Button onClick={() => void data.refetch()}>{t("state.retry")}</Button></div> : undefined}
       busy={data.isFetching && !data.isLoading} drawer={!wide ? drawer : undefined} inlineDrawer={wide ? drawer : undefined}>

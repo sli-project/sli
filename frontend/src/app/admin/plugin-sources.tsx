@@ -11,7 +11,7 @@ import { PluginFileAuditControls } from "./plugin-file-audit-controls";
 
 const packs: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-context", "sli.windows.ad-dc"], "sli.gpo": ["sli.windows.ad-context"],
-  "sli.workstations": ["sli.windows.workstations"], "sli.file-audit": ["sli.windows.file-audit"],
+  "sli.workstations": ["sli.windows.workstations"], "sli.file-audit": [],
   "sli.sigma": [],
 };
 const modules: Record<string, string[]> = {
@@ -92,7 +92,8 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
       {data.domain_controllers.some((controller) => !controller.domain) ? <><h2>{t("pluginPage.unknownDomain")}</h2><ul>{data.domain_controllers.filter((controller) => !controller.domain).map((controller) => <li key={controller.hostname}>{controller.hostname} · {t("pluginPage.coverageUnavailable")}</li>)}</ul></> : null}
     </> : <>
       {agents.length ? <ul>{agents.map(agentRow)}</ul> : null}
-      {!agents.length && !sources.some((source) => source.instances?.length) ? <p>{t(pluginId === "sli.sigma" ? "pluginPage.sigmaSources" : "pluginPage.noSources")}</p> : null}
+      {pluginId !== "sli.file-audit" && !agents.length && !sources.some((source) => source.instances?.length)
+        ? <p>{t(pluginId === "sli.sigma" ? "pluginPage.sigmaSources" : "pluginPage.noSources")}</p> : null}
     </>}
     {sources.map((source) => <details key={source.pack_id} open className="sli-ds-filters__additional"><summary>{setupSourceName(source)}</summary>
       {!source.enabled ? <p>{t("plugins.disabled")}</p> : null}

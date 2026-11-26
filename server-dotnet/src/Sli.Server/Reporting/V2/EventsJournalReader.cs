@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Globalization;
 using Sli.Server.Access;
 using Sli.Server.Access.Administration;
+using Sli.Server.Ad;
 using Sli.Server.Semantic;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Entities;
@@ -12,6 +13,8 @@ namespace Sli.Server.Reporting.V2;
 
 public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsRepository facts, ISemanticDatabase database, BuiltinReportExports exports) : IReportV2Reader
 {
+    private static readonly HashSet<int> DomainChangeCodes = AdSecurity.ChangeEventIds().ToHashSet();
+
     public string OwnerId => "sli.core";
     public bool Handles(string key) => key == "events.journal";
     public Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct) => exports.ExportAsync(c, ct);
@@ -61,6 +64,8 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 foreach (string field in new[] { "id", "event_id", "day", "summary_key", "channel" })
                     origin[field] = row[field]?.DeepClone();
                 AdmitTitle(origin);
+                if (Integer(row["id"], out long id) && exactAccess.Contains(id) && DomainChangeDomain(c.Access, origin) is { } domain)
+                    row["journal_change_domain"] = domain;
             }
         }
         else if (identities.Count > 0)
@@ -98,8 +103,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
     {
         long? Id(string key) => c.Params[key] is null ? null : long.TryParse(c.Params[key]!.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0
             ? id : throw new ReportRequestException("report_parameter_invalid:" + key);
-        long? expand = Id("expand"), before = Id("before"), member = Id("member");
-        if (member.HasValue && !expand.HasValue) throw new ReportRequestException("report_parameter_invalid:member");
+        long? expand = Id("expand"), before = Id("before");
         if (c.Action == "export" && (expand.HasValue || before.HasValue)) throw new ReportRequestException("report_parameter_invalid:expand");
         string view = c.Params.Text("view", "all"), result = c.Params.Text("result"), pivot = c.Params.Text("pivot");
         if (expand.HasValue && before.HasValue) throw new ReportRequestException("report_parameter_invalid:before");
@@ -111,8 +115,8 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         if (plugin is not null && (plugin != "sli.workstations" || source is null))
             throw new ReportRequestException("report_parameter_invalid:source_plugin");
         return source is not null || c.WorkstationServerId.HasValue || c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
-            pivot.Length > 0 || view is "groups" or "audit"
-            ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"), member)
+            pivot.Length > 0 || view is "groups" or "audit" or "failures" or "service"
+            ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"))
                 { ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin } : null;
     }
 
@@ -127,7 +131,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
 
         await using var db = await database.OpenAsync(false, ct);
         var links = await db.QueryAsync($"""
-            select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id,findings.severity
+            select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id
             from (select distinct event_db_id,finding_id from finding_event_details337 where event_db_id=any($1)) linked
             join findings_active findings on findings.id=linked.finding_id
             where is_semantic_finding_published_v1(findings.id)
@@ -143,9 +147,14 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         {
             if (row["journal_expandable"]?.GetValue<bool>() == true || !Integer(row["id"], out long id) || !byId.TryGetValue(id, out var link)) continue;
             row["journal_finding_id"] = link["finding_id"]?.DeepClone();
-            row["journal_severity"] = link["severity"]?.DeepClone();
         }
     }
+
+    internal static long? DomainChangeDomain(AccessDecision access, JsonObject origin) =>
+        origin.Text("server_role") == "domain_controller" && origin.Text("channel") == "Security" &&
+        Integer(origin["event_id"], out long code) && code is > 0 and <= int.MaxValue && DomainChangeCodes.Contains((int)code) &&
+        origin.Text("provider_name") == (code == 1102 ? "Microsoft-Windows-Eventlog" : "Microsoft-Windows-Security-Auditing") &&
+        Integer(origin["domain_id"], out long domain) && domain > 0 && AdReportEndpoints.Allowed(access, "security", domain) ? domain : null;
     internal static JsonObject Render(ReportQueryContext c, JsonObject raw, JsonObject[] rows)
     {
         string state = ReportResult.SourceState(raw.Text("state")); if (state == "ok" && rows.Length == 0) state = "empty";

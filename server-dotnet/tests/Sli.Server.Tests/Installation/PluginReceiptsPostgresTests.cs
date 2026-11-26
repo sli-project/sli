@@ -4,6 +4,7 @@ using Npgsql;
 using Sli.Server.Auth;
 using Sli.Server.Infrastructure;
 using Sli.Server.InstallationSetup;
+using Sli.Server.Semantic;
 using Sli.Server.Tests.Agents;
 using Xunit;
 
@@ -28,10 +29,12 @@ public sealed class PluginReceiptsPostgresTests
         readonly PostCollectionPostgres pg = new(canonicalSchema: true);
         public readonly Connections Connections;
         public readonly InstallationService Service;
-        public Fixture()
+        public Fixture(bool preview = false)
         {
             Connections = new(pg);
-            Service = new(new InstallationDatabase(Connections), new InstallationPackages(new ConfigurationBuilder().Build()));
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                { ["modules:preview"] = preview.ToString() }).Build();
+            Service = new(new InstallationDatabase(Connections), new InstallationPackages(configuration), configuration);
         }
         public async Task StartAsync(CancellationToken ct)
         {
@@ -104,6 +107,92 @@ public sealed class PluginReceiptsPostgresTests
 
         FactEquals(facts["sli.ad"], "no_receipts");
         Assert.Equal(1, f.Connections.Opens);
+    }
+
+    [Fact]
+    public async Task File_audit_state_combines_the_active_assignment_and_durable_receipt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var f = new Fixture(preview: true);
+        await f.StartAsync(ct);
+        await f.SqlAsync("""
+            create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
+                file_audit jsonb, registration_host_name text);
+            create table sli_agent_module_bindings(agent_id integer, module_id text);
+            insert into sli_agents values
+                (1, 'active', '[{"module_id":"sli.file-audit","enabled":true,"config":{"roots":[{}]}}]',
+                 '{"interval_seconds":60}', '{}', 'file.example.test');
+            create function read_plugin_states_v1() returns table(plugin_id text,enabled boolean)
+                language sql as $$select 'sli.file-audit'::text,true$$;
+            """, ct);
+        async Task<JsonNode> ReadStatus()
+        {
+            var response = await f.Service.DispatchAsync("GET", "/api/v1/plugins", new(),
+                new Principal("session", 1, "admin", "fixture"), null, true, ct);
+            return Assert.Single(response["items"]!.AsArray())!["status"]!;
+        }
+
+        Assert.Equal("waiting", (await ReadStatus())["state"]!.ToString());
+        await f.SqlAsync("""
+            insert into sli_agent_receipts values ('fixture-packet','sli.file-audit',now()-interval '1 minute');
+            insert into sli_agent_packet_inbox values ('fixture-packet',now()-interval '30 seconds');
+            """, ct);
+        var working = await ReadStatus();
+        Assert.Equal("working", working["state"]!.ToString());
+        Assert.NotNull(working["last_data_at"]);
+
+        await f.SqlAsync("""
+            update sli_agents set file_audit=jsonb_build_object('state','failed','reported_at',now());
+            """, ct);
+        var failure = await ReadStatus();
+        Assert.Equal("error", failure["state"]!.ToString());
+        Assert.Equal("file.example.test", failure["error_object"]!.ToString());
+        Assert.NotNull(failure["error_at"]);
+    }
+
+    [Fact]
+    public async Task Sigma_status_preserves_consumed_data_across_idle_heartbeats()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var f = new Fixture(preview: true);
+        await f.StartAsync(ct);
+        await f.SqlAsync("""
+            create table semantic_risk_policies(policy_id text,policy_version integer,source_kind text,lifecycle_status text,definition_json jsonb);
+            create table semantic_policy_admission(policy_id text,policy_version integer,enabled boolean);
+            create function semantic_policy_mode_v160(text,integer,text) returns text language sql as $$select 'enabled'::text$$;
+            create table runtime_worker_heartbeats(worker_name text primary key,worker_id text,process_pid integer,status text,phase text,
+                expected_interval_seconds integer,started_at timestamptz,heartbeat_at timestamptz,updated_at timestamptz,details_json jsonb);
+            create function read_plugin_states_v1() returns table(plugin_id text,enabled boolean)
+                language sql as $$select 'sli.sigma'::text,true$$;
+            """, ct);
+        async Task<JsonNode> ReadStatus()
+        {
+            var response = await f.Service.DispatchAsync("GET", "/api/v1/plugins", new(),
+                new Principal("session", 1, "admin", "fixture"), null, true, ct);
+            return Assert.Single(response["items"]!.AsArray())!["status"]!;
+        }
+        Assert.Equal("no_sources", (await ReadStatus())["state"]!.ToString());
+        await f.SqlAsync("""
+            insert into semantic_risk_policies values ('fixture',1,'detection_match','active','{"source_selector":{"execution":{"scope":{}}}}');
+            insert into semantic_policy_admission values ('fixture',1,true);
+            """, ct);
+        Assert.Equal("waiting", (await ReadStatus())["state"]!.ToString());
+
+        await using var connection = await f.Connections.OpenAsync(ct);
+        var worker = Guid.NewGuid();
+        Task Pulse(string status, JsonNode? observation = null) => SemanticProduction.Heartbeat(connection, worker,
+            SemanticRuntimeSettings.FindingsMode, status, 30, ct, observation is null ? null : new JsonObject { ["sigma"] = observation });
+        string stamp = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        await Pulse("running", new JsonObject { ["last_data_at"] = stamp });
+        await Pulse("running");
+        var first = await ReadStatus();
+        Assert.Equal("working", first["state"]!.ToString());
+        Assert.Equal(stamp, first["last_data_at"]!.ToString());
+
+        await Pulse("error", new JsonObject { ["failure_at"] = stamp });
+        Assert.Equal("error", (await ReadStatus())["state"]!.ToString());
+        await Pulse("idle", new JsonObject());
+        Assert.Equal(stamp, (await ReadStatus())["last_data_at"]!.ToString());
     }
 
     [Fact]

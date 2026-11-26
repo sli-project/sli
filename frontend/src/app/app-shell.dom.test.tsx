@@ -8,7 +8,7 @@ import fixture from "../../../config/navigation_v3.json";
 import type { AgentCollectionHealth } from "../api/client";
 import type { NavigationEntryDto } from "../api/report-v2-types";
 
-const registryState = vi.hoisted(() => ({ disabled: [] as string[] }));
+const registryState = vi.hoisted(() => ({ disabled: [] as string[], preview: false }));
 
 const state = vi.hoisted(() => ({
   access: {
@@ -28,7 +28,8 @@ vi.mock("../api/client", async (importOriginal) => {
       v4Access: vi.fn().mockImplementation(async () => state.access),
       reportsV2Catalog: vi.fn().mockImplementation(async () => ({
         contract_id: "sli.report-catalog.v2", items: [],
-        navigation: { ...fixture, enabled_plugins: fixture.enabled_plugins.filter((id) => !registryState.disabled.includes(id)) },
+        navigation: { ...fixture, modules_preview: registryState.preview,
+          enabled_plugins: fixture.enabled_plugins.filter((id) => !registryState.disabled.includes(id)) },
       })),
       agentCollection: vi.fn(),
       plugins: vi.fn().mockResolvedValue({ items: [], can_manage: false }),
@@ -53,7 +54,7 @@ function TimeZoneProbe() {
   return <output aria-label="Display time zone">{timeZone} · {formatDateTime("2026-11-14T00:00:00Z")}</output>;
 }
 
-async function renderShell(initialPath = "/", showTimeZone = false) {
+async function renderShell(initialPath = "/", showTimeZone = false, waitForHeading = true) {
   const root = createRootRoute({ component: AppShell, beforeLoad: ({ location }) => navigationBeforeLoad(location) });
   const page = (path: string) => createRoute({ getParentRoute: () => root, path, component: () => <><h1 data-page-heading tabIndex={-1}>Главная страница</h1>{showTimeZone ? <TimeZoneProbe/> : null}</> });
   const search = createRoute({ getParentRoute: () => root, path: "/report/events.journal", component: () => {
@@ -61,11 +62,11 @@ async function renderShell(initialPath = "/", showTimeZone = false) {
     return <><h1 data-page-heading>Журнал событий</h1><output aria-label="Journal query">{new URLSearchParams(searchStr).get("q")}</output></>;
   } });
   const plugins = createRoute({ getParentRoute: () => root, path: "/plugins", component: PluginsRoute });
-  const routes = [page("/"), plugins, page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
+  const routes = [page("/"), plugins, page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/report/$reportKey"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
   const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }), parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
-  await waitFor(() => expect(document.querySelector("[data-page-heading]")).not.toBeNull());
+  if (waitForHeading) await waitFor(() => expect(document.querySelector("[data-page-heading]")).not.toBeNull());
   return client;
 }
 
@@ -91,6 +92,7 @@ afterEach(() => {
   cleanup();
   state.access = userAccess;
   registryState.disabled = [];
+  registryState.preview = false;
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
   setLocaleQuiet("ru");
@@ -121,14 +123,12 @@ describe("AppShell", () => {
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
       "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
-      "/report/file-audit.overview", "/report/workstations.overview", "/report/vpn.connections",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
   });
 
   it.each([
-    "/admin/plugins/sli.sigma",
     "/admin/update", "/admin/activity", "/report-studio",
   ])("opens home for hidden %s for both scoped users and administrators", async (path) => {
     for (const grants of [userAccess, adminAccess]) {
@@ -142,6 +142,20 @@ describe("AppShell", () => {
       client.clear();
     }
   });
+
+  it.each(["/admin/plugins/sli.file-audit", "/admin/plugins/sli.sigma", "/report/vpn.connections"])(
+    "keeps the unavailable page at %s and mounts the route after server opt-in", async (path) => {
+      state.access = adminAccess;
+      const client = await renderShell(path, false, false);
+      const main = await screen.findByRole("main");
+      expect(await within(main).findByText("Модуль недоступен.")).toBeTruthy();
+      expect(within(main).queryByRole("heading")).toBeNull();
+      registryState.preview = true;
+      await client.invalidateQueries({ queryKey: ["report-v2", "catalog"] });
+      expect(await within(main).findByRole("heading")).toBeTruthy();
+      expect(within(main).queryByText("Модуль недоступен.")).toBeNull();
+    },
+  );
 
   const placeholderPages = [
     ["/admin/language-time", "Язык и время", "Language & time"],
@@ -168,6 +182,7 @@ describe("AppShell", () => {
   });
 
   it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access", "sli.workstations"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
+    registryState.preview = true;
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
     await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());
@@ -182,6 +197,7 @@ describe("AppShell", () => {
 
   it("opens both plugin pages from the administration menu even when their collection is off", async () => {
     state.access = adminAccess;
+    registryState.preview = true;
     registryState.disabled = ["sli.file-audit", "sli.remote-access"];
     await renderShell("/admin/status");
     const nav = screen.getByRole("navigation", { name: "Разделы" });
@@ -400,14 +416,14 @@ describe("AppShell", () => {
     for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
     expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
-      "/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access",
+      "/plugins",
     ]);
     expect(within(nav).getAllByRole("link").slice(1).map((link) => link.textContent)).toEqual(locale === "ru" ? [
       "Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время",
-      "Все плагины", "Файловый аудит", "VPN / NPS",
+      "Все плагины",
     ] : [
       "System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time",
-      "All plugins", "File auditing", "VPN / NPS",
+      "All plugins",
     ]);
     expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual(["/admin/status"]);
     expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");

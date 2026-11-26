@@ -996,6 +996,15 @@
           "hidden": true
         },
         {
+          "key": "account_rows",
+          "label": "Account rows",
+          "kind": "choice",
+          "hidden": true,
+          "options": [
+            { "value": "yes", "label": "Accounts" }
+          ]
+        },
+        {
           "key": "as_of",
           "label": "Состав на дату",
           "kind": "text",
@@ -1817,6 +1826,12 @@
         "privilege"
       ],
       "check": [
+        "identity_basic",
+        "privilege",
+        "security",
+        "technical"
+      ],
+      "account_rows": [
         "identity_basic",
         "privilege",
         "security",
@@ -3381,7 +3396,7 @@
       ],
       "section": "reports/computers",
       "title": "Входы на компьютеры",
-      "description": "Кто и когда входил на рабочие станции: наблюдения успешных входов, а не длительность работы.",
+      "description": "Успешные входы на компьютеры за выбранный период.",
       "archetype": "investigation-evidence",
       "intent": {
         "contract_id": "sli.report-intent.v1",
@@ -3392,31 +3407,30 @@
         "scope": "One server-resolved granted domain, selected computers and bounded observation window.",
         "exclusions": "Logons are not work duration; DC 4624 alone does not prove workstation interactive use.",
         "sources": [
-          "Canonical: successful computer-logon observations in the granted domain and window.",
-          "Supplemental: latest AD computer inventory for the same domain."
+          "Canonical: retained Windows Security 4624 records in the granted domain and window."
         ],
-        "freshness_expectation": "Свежесть наблюдений входов и снимка инвентаря проверяется раздельно.",
-        "rights": "ad.computer-logons view grant with computer_logon_observation; engine enforces domain and event scope; export separately granted.",
+        "freshness_expectation": "Отчёт показывает сохранённые события за заданный период.",
+        "rights": "ad.computer-logons view grant with computer_logon_observation and the server-resolved domain scope.",
         "field_classes": [
           "computer_logon_observation"
         ],
-        "coverage": "Inventory coverage and logon observation coverage are separate source dimensions.",
-        "completeness": "Duration of source-confirmed logon collection intervals divided by expected source-window duration; neither row count nor an empty result proves continuity. Currently not_proven without source evidence.",
-        "denominator": "Ожидаемые источники входов выбранных компьютеров × период; без непрерывности сбора полнота не подтверждена.",
-        "retention": "Derived logon observations follow the storage policy; exact source events may expire independently.",
-        "provenance": "Computer entity, account identity, source event ID, domain and observation time.",
+        "coverage": "Retained individual logon events.",
+        "completeness": "Counts reflect the retained events; collection continuity is unverified.",
+        "denominator": "Сохранённые входы на выбранные компьютеры за заданный период.",
+        "retention": "The report follows hot event retention.",
+        "provenance": "Destination computer, target account, client workstation and address, source event ID, domain and observation time.",
         "primary_archetype": "timeline",
         "product_archetype": "investigation-evidence",
-        "deterministic_policy": "Present retained 4624/4634 observations against current AD inventory; logons do not establish work duration.",
-        "result_limits": "Server-resolved report domain and declared period/page bounds apply; inventory and observation coverage are independent.",
-        "fallback": "Keep empty_unverified, not_collected and partial observation coverage; inventory or observation reader failure is unavailable.",
+        "deterministic_policy": "Count retained 4624 events by destination. Within the selected window, group logons by target account, type and client source, and link the latest event in each group.",
+        "result_limits": "Server-resolved report domain and declared period/page bounds apply.",
+        "fallback": "A successful query with no matching events returns an empty result.",
         "acceptance_lanes": {
           "product_user": "Observed logons answer the selected computer/window question without estimating work duration.",
           "authorization": "computer_logon_observation grants resolve to the configured report domain and constrain detail.",
-          "deterministic_interpretation": "Native observations and current inventory matching retain their separate meaning.",
-          "api_view_model": "Computer pages and observation detail preserve reader states, cursors and UTC window.",
-          "ui_honest_states": "Empty_unverified, partial, not_collected and unavailable observations remain honest states.",
-          "evidence_audit": "Logon event identity, source channel and inventory matching provenance remain available."
+          "deterministic_interpretation": "Counts refer to destination computers; client workstations and addresses describe the source.",
+          "api_view_model": "Computer and grouped logon pages preserve filters, cursors and the UTC window.",
+          "ui_honest_states": "The report distinguishes an empty query from a read failure or denied access.",
+          "evidence_audit": "Every group identifies its latest original event."
         },
         "qualification": {
           "status": "not_applicable",
@@ -3459,14 +3473,21 @@
         },
         {
           "key": "with_logons",
-          "label": "Показывать",
+          "label": "Computers with logons only",
+          "kind": "choice",
+          "hidden": true,
+          "options": [
+            { "value": "yes", "label": "Yes" },
+            { "value": "no", "label": "No" }
+          ]
+        },
+        {
+          "key": "service_logons",
+          "label": "Служебные входы",
           "kind": "choice",
           "options": [
-            {
-              "value": "yes",
-              "label": "Только ПК со входами"
-            },
-            { "value": "no", "label": "Все компьютеры" }
+            { "value": "yes", "label": "Yes" },
+            { "value": "no", "label": "No" }
           ]
         }
       ],
@@ -3486,21 +3507,9 @@
         },
         {
           "key": "last",
-          "label": "Последний вход",
+          "label": "Последний наблюдаемый вход",
           "kind": "datetime",
           "path": "last_observed_logon_at_utc"
-        },
-        {
-          "key": "state",
-          "label": "Наблюдения",
-          "kind": "state",
-          "path": "observation_state",
-          "labels": {
-            "observed": "Входы наблюдались",
-            "empty_unverified": "Не наблюдались (полнота не доказана)",
-            "partial": "Данные частичные",
-            "not_collected": "Данные не собраны"
-          }
         }
       ],
       "views": [
@@ -3510,26 +3519,38 @@
           "source": "items"
         }
       ],
-      "row_key": "entity_id",
+      "row_key": "computer_key",
       "detail": {
         "kind": "sub",
         "title": "Входы на компьютер",
-        "key": "entity_id",
+        "key": "computer_key",
         "inline": null,
         "row_component": null,
         "actions": null,
         "columns": [
           {
-            "key": "user",
-            "label": "Пользователь",
-            "kind": "text",
-            "path": "user_text"
-          },
-          {
             "key": "time",
             "label": "Время входа",
             "kind": "datetime",
             "path": "observed_at_utc"
+          },
+          {
+            "key": "user",
+            "label": "User",
+            "kind": "text",
+            "path": "user_name"
+          },
+          {
+            "key": "type",
+            "label": "Logon type",
+            "kind": "text",
+            "path": "logon_type"
+          },
+          {
+            "key": "source",
+            "label": "Source",
+            "kind": "text",
+            "path": "source"
           },
           {
             "key": "event",
@@ -3552,20 +3573,8 @@
         "max": 200
       },
       "page_actions": null,
-      "presets": [
-        {
-          "label": "Только ПК со входами",
-          "params": {
-            "with_logons": "yes"
-          }
-        }
-      ],
-      "row_links": [
-        {
-          "label": "Карточка компьютера",
-          "href": "/app/entities/{entity_id}"
-        }
-      ]
+      "presets": [],
+      "row_links": []
     },
     "access_key": "ad.computer-logons",
     "required_fields": [
@@ -3577,13 +3586,13 @@
       "domain_id": [],
       "q": [],
       "user": [],
-      "with_logons": []
+      "with_logons": [],
+      "service_logons": []
     },
     "column_fields": {
       "name": [],
       "count": [],
-      "last": [],
-      "state": []
+      "last": []
     },
     "row_categories": {},
     "view_fields": {
