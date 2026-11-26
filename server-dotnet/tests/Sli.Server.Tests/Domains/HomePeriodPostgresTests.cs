@@ -346,7 +346,14 @@ public sealed partial class HomeSummaryEndpointTests
 
         await PostCollectionPostgres.Sql(db, """
             create function public.password_queue_presentation399(bigint,text) returns table(facts jsonb,aliases jsonb)
-                language sql as 'select public.password_problem_facts395($1,$2),null::jsonb';
+                language sql as $$
+                    select case when $1=7 then '{"version":1,"account_count":18,"attempts":2002}'::jsonb
+                        else public.password_problem_facts395($1,$2) end,null::jsonb
+                $$;
+            insert into finding_event_copies337
+            select 7,980000+n,4625,7,f.first_seen_utc::timestamptz+n*interval '1 second','DC02.example.test',
+                jsonb_build_object('$principals',jsonb_build_object('TargetUserName','test-account-'||(n%12),'IpAddress','203.0.113.'||n)), '{}'
+            from findings_active f cross join generate_series(39,50) n where f.id=7;
             update findings_active set assigned_to='analyst-example' where id=1;
             update findings_active set repeat_count=2 where id=4;
             insert into findings_active(id,domain_id,rule_code,severity,target,first_seen_utc,last_seen_utc,status)
@@ -375,6 +382,13 @@ public sealed partial class HomeSummaryEndpointTests
         var firstPage = open["problems"]!["items"]!.AsArray();
         Assert.Equal(25, firstPage.Count);
         Assert.DoesNotContain(firstPage, row => row.Number("id") is 2 or 5 or 9);
+        var spray = firstPage.Single(row => row.Number("id") == 7);
+        Assert.Equal("Accounts: 18", spray.Text("name"));
+        Assert.Contains("Failed attempts: 2,002", spray.Text("fact"));
+        Assert.Equal(20, spray!["observations"]!.AsArray().Count);
+        Assert.True(spray.Boolean("observations_are_sample"));
+        var retainedOnly = firstPage.Single(row => row.Number("id") == 6);
+        Assert.Contains("Retained failed attempts: 19", retainedOnly.Text("fact"));
         var inProgress = await Read(1, openQueue: true, filter: "in_work");
         var olderProblem = inProgress["problems"]!["items"]!.AsArray().Single(row => row.Number("id") is 4 or 223);
         Assert.Equal(4, olderProblem.Number("occurrence_count"));

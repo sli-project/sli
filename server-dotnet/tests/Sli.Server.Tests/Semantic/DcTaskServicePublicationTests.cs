@@ -332,6 +332,7 @@ public sealed class DcTaskServicePublicationTests
         environment.Set("SLI_NOTIFICATION_TELEGRAM_TOKEN", null);
         environment.Set("SLI_NOTIFICATION_TELEGRAM_TOKEN_FILE", token);
         await PostCollectionPostgres.Sql(owner, "update notification_channels set enabled=true,next_delivery_at=now() where kind='telegram'", ct);
+        await PostCollectionPostgres.Sql(owner, "insert into user_interface_languages(user_id,language) values(1,'ru') on conflict(user_id) do update set language=excluded.language", ct);
         await using var database = Assert.IsType<NotificationDatabase>(NotificationDatabase.TryCreate());
         await using (var connection = await database.OpenAsync(ct))
         await using (var tx = await connection.BeginTransactionAsync(ct))

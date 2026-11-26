@@ -462,6 +462,19 @@ it("keeps aggregate counts, safe reasons and a delivery drawer", async () => {
   expect(screen.getByRole("dialog").textContent).toContain("1");
 });
 
+it("names the delivered problem and links its drawer to the exact problem", async () => {
+  window.history.replaceState({}, "", "/app/notifications?tab=journal");
+  const data = fixture();
+  const title = "Critical · Password guessing · synthetic-user · 192.0.2.1";
+  data.items = [{ ...data.items[0], object_kind: "semantic_finding", finding_id: 42, problem_title: title }];
+  mock.list.mockResolvedValue(data);
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: title }));
+  expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
+  expect(screen.getByRole("link", { name: t("notify.openProblem") }).getAttribute("href"))
+    .toBe("/app/report/security.problems?id=42");
+});
+
 it("requests server filters and never treats a page length as the total", async () => {
   mount(); await screen.findByRole("tab", { name: t("notify.journal") });
   fireEvent.click(screen.getByRole("tab", { name: t("notify.journal") }));

@@ -25,7 +25,7 @@ public sealed class EventsJournalSemanticsTests
         report_key = "events.explorer", effect = "allow", allowed_actions = new[] { "view" },
         field_categories = fields ?? Fields, scope_json = JsonNode.Parse(scope)
     });
-    static AccessFacts Facts(bool owner = true, JsonElement[]? grants = null, string? denied = null, bool scoped = false, bool exact = true)
+    internal static AccessFacts Facts(bool owner = true, JsonElement[]? grants = null, string? denied = null, bool scoped = false, bool exact = true)
     {
         string[] caps = ExactCaps.Concat(["field.identity_basic"]).Where(c => exact || c != "evidence.exact").ToArray();
         var policies = caps.Select(c => JsonSerializer.SerializeToElement(new
@@ -39,6 +39,15 @@ public sealed class EventsJournalSemanticsTests
         return new(owner, "admin", [], [], policies, caps.Select(c => JsonSerializer.SerializeToElement(new { capability_key = c })).ToArray(), [], grants ?? [Grant()],
             [ReportFixture.J("""{"report_key":"events.explorer","version":1,"dataset_version":1,"definition_json":{"actions":["view"]},"actions_json":["view"],"fields_json":[{"category":"security"},{"category":"technical"},{"category":"raw_evidence"},{"category":"identity_basic"}]}""")]);
     }
+    internal static AccessFacts WithQueue(AccessFacts facts) => facts with
+    {
+        Definitions = [.. facts.Definitions, ReportFixture.J("""
+            {"report_key":"security.queue","version":1,"dataset_version":1,"definition_json":{"actions":["view"]},"actions_json":["view"],"fields_json":[{"category":"security"}]}
+            """)],
+        ReportAssignments = [.. facts.ReportAssignments, ReportFixture.J("""
+            {"report_key":"security.queue","effect":"allow","allowed_actions":["view"],"field_categories":["security"],"scope_json":{"kind":"all"}}
+            """)],
+    };
     sealed class Fixture
     {
         internal readonly PageDatabase Page = new();
@@ -71,6 +80,7 @@ public sealed class EventsJournalSemanticsTests
         internal JsonObject[] Rows = [Visible()];
         internal string[] Columns = ["id", "event_id", "channel", "subject_user_name", "target_user_name", "time_created_utc"];
         internal Dictionary<string, string> Categories = new() { ["event_id"] = "security", ["channel"] = "technical", ["id"] = "technical", ["subject_user_name"] = "identity_basic", ["target_user_name"] = "identity_basic" };
+        internal Func<CancellationToken, Task<IReadOnlyList<JsonObject>>>? ReadPage;
         public Task<IReportSession> OpenAsync(bool write, CancellationToken ct) => Task.FromResult<IReportSession>(this);
         public Task CommitAsync(CancellationToken ct) => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -82,10 +92,19 @@ public sealed class EventsJournalSemanticsTests
                 ["definition_json"] = JsonSerializer.SerializeToNode(new { columns = Columns, filters = Array.Empty<object>(), sort = Array.Empty<object>(), actions = new[] { "view" } }),
                 ["fields_json"] = JsonSerializer.SerializeToNode(Columns.Select(c => new { key = c, category = Categories.GetValueOrDefault(c, "technical") }))
             }]);
-            if (sql == "set local jit=off") return Task.FromResult<IReadOnlyList<JsonObject>>([]);
+            if (sql is "set local jit=off" or "set transaction isolation level repeatable read")
+                return Task.FromResult<IReadOnlyList<JsonObject>>([]);
+            if (sql.Contains("as window_event", StringComparison.Ordinal))
+                return Task.FromResult<IReadOnlyList<JsonObject>>([new()
+                {
+                    ["window_event"] = Rows.FirstOrDefault()?["time_created_utc"] is { } time
+                        && DateTimeOffset.Parse(time.ToString()) < (DateTimeOffset)values[1]!
+                        ? time.DeepClone() : null,
+                }]);
             Assert.Contains("from event_hot h", sql);
             if (sql.Contains("as items from meta"))
-                return Task.FromResult<IReadOnlyList<JsonObject>>([new() { ["items"] = new JsonArray(Rows.Select(r => r.DeepClone()).ToArray()) }]);
+                return ReadPage?.Invoke(ct) ??
+                    Task.FromResult<IReadOnlyList<JsonObject>>([new() { ["items"] = new JsonArray(Rows.Select(r => r.DeepClone()).ToArray()) }]);
             return Task.FromResult<IReadOnlyList<JsonObject>>(Rows.Select(r => r.DeepClone().AsObject()).ToArray());
         }
     }
@@ -127,16 +146,7 @@ public sealed class EventsJournalSemanticsTests
                     {"capability_key":"evidence.exact","effect":"deny","scope_json":{"kind":"server","ids":[2]}}
                     """)]
             };
-        if (queue)
-            facts = facts with
-            {
-                Definitions = [.. facts.Definitions, ReportFixture.J("""
-                    {"report_key":"security.queue","version":1,"dataset_version":1,"definition_json":{"actions":["view"]},"actions_json":["view"],"fields_json":[{"category":"security"}]}
-                    """)],
-                ReportAssignments = [.. facts.ReportAssignments, ReportFixture.J("""
-                    {"report_key":"security.queue","effect":"allow","allowed_actions":["view"],"field_categories":["security"],"scope_json":{"kind":"all"}}
-                    """)]
-            };
+        if (queue) facts = WithQueue(facts);
         var f = new Fixture(facts);
         f.Page.Rows = [O("""
             {"id":5,"event_id":4625,"channel":"Security","time_created_utc":"2026-10-01T12:00:00Z",
@@ -152,6 +162,30 @@ public sealed class EventsJournalSemanticsTests
         Assert.Null(row["_journal_origin"]);
         Assert.Null(row["_journal_members"]);
         if (!queue) Assert.Empty(f.Evidence.Queries);
+    }
+
+    [Fact]
+    public async Task Request_abort_cancels_the_journal_database_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = new Fixture();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Page.ReadPage = async token =>
+        {
+            using var registration = token.Register(() => canceled.TrySetResult());
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            return [];
+        };
+        await using var host = await ReportFixture.Start(fixture.Facts, fixture.Definition, nativeReader: fixture.Reader);
+        using var clientAbort = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var request = host.Client.GetAsync("/api/v2/reports/events.journal/data?collapse=on&from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z",
+            clientAbort.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        clientAbort.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+        await canceled.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
     }
 
     [Fact]

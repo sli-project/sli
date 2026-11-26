@@ -134,6 +134,11 @@ internal static class HomePeriodSql
         with admitted as ({{OpenPopulation}}),
         ranked as (
             select findings.*,cohort.key,
+                   jsonb_build_object('attempts',password.facts->'attempts',
+                       'accounts',case when @identity then coalesce(password.facts->'account_count',
+                           case when password.facts->>'account' is not null and findings.rule_code='semantic.qw.password-brute-force'
+                               then '1'::jsonb end) end,
+                       'account',case when @identity then password.facts->>'account' end) as password_totals,
                    case findings.severity when 'critical' then 0 when 'high' then 1
                         when 'medium' then 2 when 'low' then 3 else 4 end as importance
             from admitted findings {{ProblemCohorts.Sql("queue-cohort", usePasswordProjection: true)}}
@@ -160,9 +165,9 @@ internal static class HomePeriodSql
             order by importance,last_seen desc nulls last,id desc
             limit @limit offset (select least(@offset,greatest((filtered_count-1)/@limit,0)*@limit) from totals)
         ), details as (
-            select page.*,admitted.rule_code,admitted.actor,admitted.target,admitted.source,admitted.status,
+            select page.*,ranked.rule_code,ranked.actor,ranked.target,ranked.source,ranked.status,ranked.password_totals,
                    (array['critical','high','medium','low','unknown'])[page.importance+1] as severity
-            from page join admitted using(id)
+            from page join ranked using(id)
         )
         select totals.*,
                (least(@offset,greatest((filtered_count-1)/@limit,0)*@limit)/@limit)+1 as page,
