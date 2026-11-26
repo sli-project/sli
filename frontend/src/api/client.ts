@@ -3,7 +3,7 @@ import { ru } from "../i18n/ru";
 import { resolveMessage, type ApiMessage } from "../i18n/messages";
 import { localizeReportCatalog, localizeReportDefinition, localizeReportResult, reportMetadataText, reportText } from "../i18n/report-metadata";
 import type { ReportCatalogV2Dto, ReportDefinitionDto, ReportResultDto, ReportStateDetails } from "./report-v2-types";
-import type { SigmaValidationRequest, SigmaValidationResponse, SigmaRuleScope, SigmaRuleListResponse } from "./sigma-types";
+import type { SigmaLiveRulesResponse, SigmaValidationRequest, SigmaValidationResponse, SigmaRuleScope, SigmaRuleListResponse } from "./sigma-types";
 import type { PluginSettings } from "./plugin-settings-types";
 import type { HomePeriod } from "./home-period";
 
@@ -2538,6 +2538,9 @@ export const api = {
   semanticScenarios: (params = new URLSearchParams()) => request<SemanticScenariosWorkspace>(`/api/v1/semantic/scenarios?${params.toString()}`),
   sigmaValidation: (params: SigmaValidationRequest) => request<SigmaValidationResponse>(`/api/v1/semantic/attack-coverage?${new URLSearchParams(params).toString()}`),
   sigmaRules: (scope?: SigmaRuleScope) => request<SigmaRuleListResponse>(`/api/v1/semantic/sigma-rules${scope ? `?${new URLSearchParams(scope).toString()}` : ""}`),
+  sigmaLiveRules: () => request<SigmaLiveRulesResponse>("/api/v1/semantic/sigma-live-rules"),
+  setSigmaLiveRule: (rule_id: string, enabled: boolean) => requestMutation<SigmaLiveRulesResponse>(
+    "/api/v1/semantic/sigma-live-rules", "POST", { rule_id, enabled }),
   securityProblems: (params = new URLSearchParams()) => {
     const query = new URLSearchParams(params);
     query.set("source", "semantic-production");

@@ -24,6 +24,8 @@ public static class SemanticEndpoints
     {
         foreach (string leaf in new[] { "scenarios", "actions", "calibration", "relations", "sigma-rules", "attack-coverage" })
             endpoints.MapGet("/api/v1/semantic/" + leaf, HandleAsync);
+        endpoints.MapGet("/api/v1/semantic/sigma-live-rules", HandleAsync);
+        endpoints.MapPost("/api/v1/semantic/sigma-live-rules", HandleAsync);
         endpoints.MapPost("/api/v1/semantic/scenarios/{id}/review", HandleAsync);
         endpoints.MapGet("/api/v1/platform-settings/semantic-control", HandleAsync);
         endpoints.MapPost("/api/v1/platform-settings/semantic-control", HandleAsync);
@@ -64,6 +66,13 @@ public static class SemanticEndpoints
             bool exact = leaf is "scenarios" or "actions" && query.ExactEventId() is not null;
             var facts = await services.GetRequiredService<IAccessFactsRepository>().LoadAsync(principal, ct);
             var caps = new CapabilityComposer().Compose(facts); var access = new ReportEligibility().Compose(facts, caps);
+            if (leaf == "sigma-live-rules")
+            {
+                if (!caps.IsOwner) { await Error(context, "platform_owner_required", 403); return; }
+                var response = await services.GetRequiredService<SigmaProjection>().LiveRulesAsync(context, principal, mutation, ct);
+                await DomainHttp.WriteAsync(context, response, 200, ct);
+                return;
+            }
             bool resourceAware = exact || leaf is "relations" or "sigma-rules" or "attack-coverage";
             // The platform-settings prefix has the same coarse access.manage gate as Python.
             string capability = leaf == "semantic-control" ? "access.manage" : "semantic.review";
