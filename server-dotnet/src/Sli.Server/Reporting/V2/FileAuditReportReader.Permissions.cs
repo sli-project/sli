@@ -13,6 +13,8 @@ public sealed partial class FileAuditReportReader
             select encode(sha256(convert_to('file-audit-native:'||f.event_id::text,'UTF8')),'hex') as id,
                 f.time_created_utc as observed_at, r.agent_id, r.source_instance_id, r.collection_scope_id,
                 f.actor, f.event_id, f.event_kind, f.event_record_id, f.fields->>'path' as path,
+                f.fields->>'operation' as operation, f.source as client_ip, f.outcome->>'outcome' as outcome,
+                f.domain_id, f.fields->>'old_path' as old_path,
                 f.method#>>'{$origin,source_generation}' as generation, encode(f.source_sha256,'hex') as payload_sha256,
                 coalesce((f.fields#>>'{aggregate,count}')::bigint,1) as weight,
                 coalesce((f.fields#>>'{aggregate,first_seen_utc}')::timestamptz,f.time_created_utc) as first_seen,
@@ -24,12 +26,16 @@ public sealed partial class FileAuditReportReader
             where f.time_created_utc < $4
                 -- The admitted source contract confines every group to one UTC minute.
                 and f.time_created_utc >= $3-interval '1 minute'
-                and f.event_kind=4670 and f.fields->>'operation'='permissions' and f.outcome->>'outcome'='success'
+                and f.fields->>'operation' in ('permissions','access_denied','read','write','delete','rename')
+                and ($2='actions' or $2 in ('overview','permission-changes') and f.event_kind=4670
+                    and f.fields->>'operation'='permissions' and f.outcome->>'outcome'='success'
+                    or $2='access-denials' and f.outcome->>'outcome'='failure')
                 and f.method#>>'{$origin,plugin_id}'='sli.file-audit'
-                and f.method->>'operation'='permissions' and f.method->>'$channel'='Security'
+                and f.method->>'operation'=f.fields->>'operation' and f.method->>'$channel'='Security'
                 and f.method->>'$provider'='Microsoft-Windows-Security-Auditing'
                 and f.source_sha256 is not null and f.event_record_id>0
-                and (coalesce($8,'')='' or $8='permissions')
+                and (coalesce($8,'')='' or $8=f.fields->>'operation')
+                and ($9->>'activity' is distinct from 'changes' or f.fields->>'operation' in ('write','rename'))
                 and coalesce($9->>'record_unit','')<>'normalized_action'
                 and (coalesce($7,'')='' or f.actor=$7)
                 and (lower((f.fields->>'path') collate pg_catalog.pg_unicode_fast)=lower(r.path collate pg_catalog.pg_unicode_fast)
@@ -65,7 +71,8 @@ public sealed partial class FileAuditReportReader
             union all
             select p.id,p.observed_at,jsonb_build_object('id',p.id,'action_id',p.id,'observed_at',p.observed_at,
                 'agent_id',p.agent_id,'source_instance_id',p.source_instance_id,'collection_scope_id',p.collection_scope_id,
-                'subject_sid',p.actor,'path',p.path,'operation','permissions','outcome','success','correlation_state','not_attempted',
+                'subject_sid',p.actor,'path',p.path,'old_path',p.old_path,'operation',p.operation,'outcome',p.outcome,
+                'client_ip',p.client_ip,'domain_id',p.domain_id,'correlation_state','not_attempted',
                 'record_unit','saved_event_group','count',p.weight,'first_seen_utc',p.first_seen,'last_seen_utc',p.last_seen,
                 'aggregate',jsonb_build_object('unit','saved_event_group','count',p.weight,
                     'first_seen_utc',p.first_seen,'last_seen_utc',p.last_seen,
@@ -73,7 +80,7 @@ public sealed partial class FileAuditReportReader
                     'count_min',p.count_min,'count_max',p.count_max),
                 'evidence',jsonb_build_array(jsonb_build_object('reference','event_cold_facts:'||p.event_id::text,
                     'event_id',p.event_kind,'record_id',p.event_record_id,'generation',p.generation,'role','primary',
-                    'path',p.path,'operation','permissions','payload_sha256',p.payload_sha256)))
+                    'path',p.path,'operation',p.operation,'payload_sha256',p.payload_sha256)))
             from native_page p
             order by observed_at desc,id desc limit ($10+1)
         ), page as materialized (

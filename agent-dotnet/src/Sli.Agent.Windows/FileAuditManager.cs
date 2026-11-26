@@ -113,12 +113,18 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var writable = false; var reason = "ok";
         bool describeReads = readDiagnostics && action == "check" && !config.Workstation && selected.Count == 1;
         FileAuditReadError? readError = null;
+        string? preflightFailure = null;
+        var stage = "audit_policy";
         JsonObject? applyLocalGroups = null;
         Exception? applyLocalGroupError = null;
         try
         {
             reason = action == "check" ? api.CheckPreflight(selected, describeReads) : api.Preflight(selected, describeReads);
-            if (describeReads && reason is ("unknown" or "global_sacl_unknown")) readError = new("audit_policy");
+            if (describeReads && reason is ("unknown" or "global_sacl_unknown"))
+            {
+                preflightFailure = reason;
+                readError = new("audit_policy");
+            }
             writable = action != "check" && policy.Control.ManageWindowsAudit && policy.Control.State == "active" && reason == "ok";
             if (writable && action == "apply")
             {
@@ -144,10 +150,14 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             if (writable)
                 foreach (var root in selected.OfType<JsonObject>())
                 {
+                    stage = "share";
                     if (!InventoryShare(root)["complete"]!.GetValue<bool>()) throw new AgentException("file_audit_share_unavailable");
+                    stage = "directory";
                     using var obj = api.Open(Text(root,"path"),Text(root,"path"));
+                    stage = "acl";
                     if (Text(obj.Describe(),"object_type") != "directory") throw new AgentException("file_audit_root_invalid");
                 }
+            stage = "inventory";
             if (action == "apply" && state["active"] is not null && !JsonNode.DeepEquals(state["active"],selected)) { writable=false; reason="restore_required"; }
             if (writable && action == "apply") { state["active"]=selected.DeepClone(); state["masks"]=Masks(required); Save(state); }
             if (writable && action == "restore")
@@ -165,17 +175,28 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            reason="native_unavailable"; writable=false;
-            if (describeReads) readError = FileAuditNativeReadException.Describe("audit_policy", e);
+            reason = FileAuditNativeReadException.Reason(stage, e);
+            writable = false;
+            if (action == "check") preflightFailure = reason;
+            if (describeReads) readError = FileAuditNativeReadException.Describe(stage, e);
         }
         var auditReport = applyLocalGroupError is null ? Shared(writable && action == "apply") : null;
         var report = new JsonObject { ["contract_id"]="sli.file-audit.audit-result.v1",["command_id"]=key,["policy_revision"]=cmd["policy_revision"]!.DeepClone(),
             ["action"]=action,["observed_at_utc"]=Iso8601.Format(now),["scopes"]=new JsonArray(),["snapshots"]=new JsonArray(),["ownership_remaining"]=true };
-        var stage = "audit_policy";
+        stage = "audit_policy";
+        JsonObject Failed(JsonNode id, string failure) => new()
+        {
+            ["collection_scope_id"] = id.DeepClone(), ["state"] = "failed", ["reason_code"] = failure,
+            ["required_masks"] = new JsonObject(), ["actual_masks"] = new JsonObject()
+        };
         try
         {
-            if (applyLocalGroupError is not null) ExceptionDispatchInfo.Throw(applyLocalGroupError);
-            if (readError is not null) throw new AgentException("file_audit_check_read_failed");
+            if (applyLocalGroupError is not null)
+            {
+                stage = "local_groups";
+                ExceptionDispatchInfo.Throw(applyLocalGroupError);
+            }
+            if (preflightFailure is not null) throw new AgentException("file_audit_check_read_failed");
             var actual = api.QueryMasks(required.Keys.Union(OwnedMasks().Keys).ToArray());
             stage = "inventory";
             var policyOk = OwnedMasks().All(x => (actual.GetValueOrDefault(x.Key) & x.Value) == x.Value);
@@ -185,8 +206,20 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             {
                 var scopeId = Text(root,"collection_scope_id");
                 if (state["walks"]![scopeId]?["done"]?.GetValue<bool>() == true) continue;
-                var (scope,snapshot) = Inventory(state,root,config,cmd,now,writable && action == "apply" && policyOk,
-                    describeReads ? value => stage = value : null, applyLocalGroups);
+                JsonObject scope, snapshot;
+                try
+                {
+                    (scope,snapshot) = Inventory(state,root,config,cmd,now,writable && action == "apply" && policyOk,
+                        value => stage = value, applyLocalGroups);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    scope = Failed(root["collection_scope_id"]!, FileAuditNativeReadException.Reason(stage, e));
+                    if (describeReads) scope["read_error"] = FileAuditNativeReadException.Describe(stage, e).ToJson();
+                    if (action == "check") state["walks"]![scopeId]!["done"] = true;
+                    report["scopes"]!.AsArray().Add(scope);
+                    break;
+                }
                 if (action == "check" && reason != "ok" || action != "check" && !writable)
                 {
                     scope["state"]="blocked"; scope["reason_code"]=reason == "ok" ? "management_disabled" : reason;
@@ -202,8 +235,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            report["scopes"]=new JsonArray(cmd["collection_scope_ids"]!.AsArray().Select(id => (JsonNode?)new JsonObject
-            { ["collection_scope_id"]=id!.DeepClone(),["state"]="failed",["reason_code"]="native_unavailable",["required_masks"]=new JsonObject(),["actual_masks"]=new JsonObject() }).ToArray());
+            var failure = preflightFailure ?? FileAuditNativeReadException.Reason(stage, e);
+            report["scopes"]=new JsonArray(cmd["collection_scope_ids"]!.AsArray().Select(id => (JsonNode?)Failed(id!, failure)).ToArray());
             report["snapshots"]=new JsonArray();
             if (describeReads)
                 report["scopes"]![0]!["read_error"] = (readError ?? FileAuditNativeReadException.Describe(stage, e)).ToJson();
@@ -220,32 +253,45 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
     }
     private JsonObject InventoryShare(JsonObject root) => Text(root,"share_name") == "" ? new JsonObject { ["name"]="",["path"]=root["path"]!.DeepClone(),["dacl"]="",["complete"]=true } : api.Share(Text(root,"share_name"),Text(root,"path"));
     private static string ObjectKey(JsonObject objects,string path) => objects.Select(x => x.Key).FirstOrDefault(k => k.Equals(path,StringComparison.OrdinalIgnoreCase)) ?? path;
-    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply,Action<string>? setReadStage,JsonObject? cachedLocalGroups)
+    private (JsonObject Scope,JsonObject Snapshot) Inventory(JsonObject state,JsonObject root,FileAuditPolicy config,JsonObject cmd,DateTimeOffset now,bool apply,Action<string> setReadStage,JsonObject? cachedLocalGroups)
     {
         var timer = System.Diagnostics.Stopwatch.StartNew(); TimeSpan Clock() => clock?.Invoke() ?? timer.Elapsed;
         var deadline = Clock() + TimeSpan.FromSeconds(config.Number("wall_seconds"));
         var scopeId = Text(root,"collection_scope_id"); var rootPath = Text(root,"path"); var walks = state["walks"]!.AsObject();
         if (walks[scopeId] is null) walks[scopeId]=new JsonObject { ["stack"]=new JsonArray(new JsonArray(rootPath,0)),["page"]=0,["done"]=false,["gaps"]=0,["started"]=Iso8601.Format(now),["sacl_missing"]=0 };
         var walk = walks[scopeId]!.AsObject(); var stack = walk["stack"]!.AsArray(); var rows = new JsonArray(); var seen=0; var gaps=0;
-        setReadStage?.Invoke("share");
+        setReadStage("share");
         var share = InventoryShare(root);
-        setReadStage?.Invoke("local_groups");
-        var groups = cachedLocalGroups ?? api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: Text(cmd, "action") == "check");
-        setReadStage?.Invoke("inventory");
-        if (!share["complete"]!.GetValue<bool>() || !groups["complete"]!.GetValue<bool>()) gaps++;
+        setReadStage("local_groups");
+        string? inventoryFailure = null;
+        JsonObject groups;
+        try
+        {
+            groups = cachedLocalGroups ?? api.LocalGroups(config.Number("inventory_objects"), allowUnresolvedSid: Text(cmd, "action") == "check");
+        }
+        catch (Exception e) when (!apply && e is not OperationCanceledException)
+        {
+            inventoryFailure = FileAuditNativeReadException.Reason("local_groups", e);
+            groups = new JsonObject { ["complete"] = false, ["groups"] = new JsonArray() };
+        }
+        setReadStage("inventory");
+        var metadataIncomplete = !share["complete"]!.GetValue<bool>() || !groups["complete"]!.GetValue<bool>();
         var objects = state["objects"]!.AsObject();
         while (stack.Count > 0)
         {
             if (seen >= config.Number("inventory_objects") || Clock() >= deadline) { gaps++; break; }
             var item = stack[^1]!.AsArray(); var path = item[0]!.ToString(); var depth = item[1]!.GetValue<int>(); stack.RemoveAt(stack.Count-1); seen++;
             var objectKey = ObjectKey(objects,path);
+            var objectStage = "directory";
             try
             {
                 if (!FileAuditPolicy.InRoot(path,rootPath)) throw new AgentException("file_audit_scope_escape");
-                setReadStage?.Invoke("directory");
+                setReadStage(objectStage);
                 using var obj = api.Open(path,rootPath);
-                setReadStage?.Invoke("acl");
+                objectStage = "acl";
+                setReadStage(objectStage);
                 var row = obj.Describe();
+                if (depth == 0 && Text(row,"object_type") != "directory") throw new AgentException("file_audit_root_invalid");
                 var protectedChild = path != rootPath && row["sacl_protected"]!.GetValue<bool>();
                 var eligible = path == rootPath || root["sacl"]![Text(row,"object_type") == "directory" ? "inherit_directories" : "inherit_files"]!.GetValue<bool>();
                 var aces = FileAuditPolicy.DesiredAces(root); var plan = eligible && !protectedChild ? obj.Plan(aces) : Text(row,"sacl");
@@ -279,7 +325,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                 if (CanonicalJson.ToBytes(new JsonArray(rows.Select(r => r!.DeepClone()).Append(candidate.DeepClone()).ToArray())).Length > Math.Min(config.Number("max_bytes"),48*1024-16384))
                 { if (rows.Count > 0) stack.Add(new JsonArray(path,depth)); else gaps++; break; }
                 rows.Add(candidate); if (walk["sacl_missing"] is not null) walk["sacl_missing"]=walk["sacl_missing"]!.GetValue<int>() + (missing ? 1 : 0);
-                setReadStage?.Invoke("directory");
+                objectStage = "directory";
+                setReadStage(objectStage);
                 if (Text(row,"object_type") == "directory" && !protectedChild && !conflict)
                     foreach (var name in obj.Children())
                     {
@@ -290,27 +337,28 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                if (setReadStage is not null && depth == 0)
+                if (depth == 0 && rows.Count == 0 && !apply)
                 {
                     stack.Add(new JsonArray(path, depth));
                     throw;
                 }
+                inventoryFailure ??= FileAuditNativeReadException.Reason(objectStage, e);
                 if (objects[objectKey]?["phase"]?.ToString() == "pending") { stack.Add(new JsonArray(path,depth)); break; }
                 gaps++;
             }
         }
-        setReadStage?.Invoke("inventory");
+        setReadStage("inventory");
         walk["done"]=stack.Count == 0; walk["gaps"]=walk["gaps"]!.GetValue<int>()+gaps;
         var snapshot = new JsonObject { ["contract_id"]="sli.file-audit.inventory.v1",["collection_scope_id"]=scopeId,["policy_revision"]=cmd["policy_revision"]!.DeepClone(),
             ["observed_at_utc"]=Iso8601.Format(now),["scan_id"]=Uuid5(Text(cmd,"command_id")+scopeId+Text(walk,"started")),["page_number"]=walk["page"]!.DeepClone(),
-            ["has_more"]=stack.Count > 0,["completeness"]=gaps > 0 || stack.Count > 0 || walk["page"]!.GetValue<int>() > 0 ? "partial" : "complete",["unread_objects"]=gaps,
+            ["has_more"]=stack.Count > 0,["completeness"]=metadataIncomplete || gaps > 0 || stack.Count > 0 || walk["page"]!.GetValue<int>() > 0 ? "partial" : "complete",["unread_objects"]=gaps,
             ["share"]=share,["local_groups"]=groups,["objects"]=rows };
         var hash=Hash(snapshot); snapshot["snapshot_sha256"]=hash; snapshot["snapshot_id"]=Uuid5(Text(cmd,"command_id")+hash);
         walk["page"]=walk["page"]!.GetValue<int>()+1;
         if (CanonicalJson.ToBytes(snapshot).Length > 48*1024) throw new AgentException("file_audit_snapshot_limit");
         var missingAny = Text(cmd,"action") != "restore" && walk["sacl_missing"]?.GetValue<int>() > 0;
-        var incomplete = walk["gaps"]!.GetValue<int>() > 0 || stack.Count > 0 || Text(cmd,"action") != "restore" && walk["sacl_missing"] is null;
-        return (new JsonObject { ["collection_scope_id"]=scopeId,["state"]=incomplete || missingAny ? "partial" : "verified",["reason_code"]=incomplete ? "coverage_incomplete" : missingAny ? "sacl_missing" : "ok" },snapshot);
+        var incomplete = metadataIncomplete || walk["gaps"]!.GetValue<int>() > 0 || stack.Count > 0 || Text(cmd,"action") != "restore" && walk["sacl_missing"] is null;
+        return (new JsonObject { ["collection_scope_id"]=scopeId,["state"]=incomplete || missingAny ? "partial" : "verified",["reason_code"]=inventoryFailure ?? (incomplete ? "coverage_incomplete" : missingAny ? "sacl_missing" : "ok") },snapshot);
     }
     private string RestoreGuard(JsonObject state,FileAuditPolicy config)
     {
