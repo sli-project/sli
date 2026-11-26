@@ -371,13 +371,12 @@
       ],
       "activity_at": "2024-01-01T00:00:00+00:00",
       "activity_source": "lastLogonTimestamp",
-      "reason_text": "Учётная запись заблокирована, Срок действия учётной записи истёк, Пароль наблюдался истёкшим, Наблюдался security-related флаг, Членство в контрольной группе, Возраст пароля превышает политику, Активность старше порога политики, Пароль не требуется, Не требуется предварительная аутентификация Kerberos (AS-REP roasting), SPN у привилегированной учётной записи, SPN и пароль старше 365 дней, Пароль привилегированной учётной записи не истекает",
+      "reason_text": "Учётная запись заблокирована, Срок действия учётной записи истёк, Пароль наблюдался истёкшим, Наблюдался security-related флаг, Возраст пароля превышает политику, Активность старше порога политики, Пароль не требуется, Не требуется предварительная аутентификация Kerberos (AS-REP roasting), SPN у привилегированной учётной записи, SPN и пароль старше 365 дней, Пароль привилегированной учётной записи не истекает",
       "reason_keys": [
         "locked_out",
         "account_expired",
         "password_expired",
         "sensitive_uac_flag",
-        "watch_group_membership",
         "password_age",
         "inactive_threshold",
         "password_not_required",
@@ -440,18 +439,6 @@
             "TrustedToAuthForDelegation = true",
             "UseDESKeyOnly = true"
           ]
-        },
-        {
-          "key": "watch_group_membership",
-          "label": "Членство в контрольной группе",
-          "summary": "Example watch",
-          "observed": "Эффективные группы: Example watch",
-          "condition": "effectiveGroups ∩ metadata.watch_groups ≠ ∅",
-          "qualification": "Пользователь входит в явно настроенную контрольную выборку групп.",
-          "limitation": "Название группы и сам факт совпадения не являются автоматической оценкой привилегий.",
-          "next": "Открыть путь членства и проверить актуальность доступа по утверждённому владельцу группы.",
-          "order": 4,
-          "severity": "medium"
         },
         {
           "key": "password_age",
@@ -701,19 +688,6 @@
             "TrustedToAuthForDelegation = true",
             "UseDESKeyOnly = true"
           ],
-          "category": "confirmed"
-        },
-        {
-          "key": "watch_group_membership",
-          "label": "Членство в контрольной группе",
-          "summary": "Example watch",
-          "observed": "Эффективные группы: Example watch",
-          "condition": "effectiveGroups ∩ metadata.watch_groups ≠ ∅",
-          "qualification": "Пользователь входит в явно настроенную контрольную выборку групп.",
-          "limitation": "Название группы и сам факт совпадения не являются автоматической оценкой привилегий.",
-          "next": "Открыть путь членства и проверить актуальность доступа по утверждённому владельцу группы.",
-          "order": 4,
-          "severity": "medium",
           "category": "confirmed"
         },
         {

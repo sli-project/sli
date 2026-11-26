@@ -6,7 +6,7 @@ import { ru } from "../../i18n/ru";
 import { en } from "../../i18n/en";
 import type { ReportColumnDto } from "../../api/report-v2-types";
 import { DataTable } from "../../design-system";
-import { UserChanges, userTableColumns } from "./UserChecks";
+import { userTableColumns } from "./UserChecks";
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale("ru"); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
@@ -31,18 +31,4 @@ it("opens the account and its privilege paths from the corresponding cells", () 
   expect(select).toHaveBeenLastCalledWith(row);
   fireEvent.click(screen.getByRole("button", { name: "Synthetic Admins" }));
   expect(select).toHaveBeenLastCalledWith(row, "rights");
-});
-
-it("opens an account from its change and omits an unrecorded initiator column", () => {
-  const select = vi.fn();
-  const row = { id: 1, sam: "synthetic-account", actor: null, label: "Synthetic change" };
-  render(<UserChanges title="Changes" rows={[row]} onSelect={select} columns={[
-    { key: "name", path: "sam", label: "Account", kind: "text", link: "/app/entities/{id}" },
-    { key: "change", path: "label", label: "Change", kind: "text" },
-    { key: "actor", path: "actor", label: "Actor", kind: "text" },
-  ]}/>);
-  fireEvent.click(screen.getByRole("button", { name: "synthetic-account" }));
-  expect(select).toHaveBeenCalledWith(row);
-  expect(screen.queryByRole("link")).toBeNull();
-  expect(screen.queryByRole("columnheader", { name: "Actor" })).toBeNull();
 });
