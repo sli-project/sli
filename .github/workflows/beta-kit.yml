@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       commit:
-        description: 'Full SHA on main (default is the dispatched main commit)'
+        description: 'Full SHA on main or the dispatched branch tip for a build-only run'
         required: false
         type: string
       upload_artifact:
@@ -27,13 +27,14 @@ permissions: {}
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (!inputs.release && github.ref_type == 'branch')
     permissions:
       contents: read
     uses: ./.github/workflows/beta-kit-build.yml
     with:
       commit: ${{ inputs.commit || github.sha }}
       upload_artifact: ${{ inputs.upload_artifact || inputs.release }}
+      branch_build: ${{ !inputs.release && github.ref_type == 'branch' && github.ref != 'refs/heads/main' }}
 
   release:
     if: inputs.release && github.ref == 'refs/heads/main'

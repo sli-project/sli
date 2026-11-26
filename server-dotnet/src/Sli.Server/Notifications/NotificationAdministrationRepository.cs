@@ -6,6 +6,7 @@ using Sli.Server.Access;
 using Sli.Server.Access.Administration;
 using Sli.Server.Auth;
 using Sli.Server.Infrastructure;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Notifications;
 
@@ -28,7 +29,7 @@ public interface INotificationAdministrationRepository
 {
     Task<JsonArray> ChannelsAsync(CancellationToken ct);
     Task<JsonArray> SubscriptionsAsync(CancellationToken ct);
-    Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, bool link, bool configure, CancellationToken ct);
+    Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, ProblemAccess? problems, bool configure, string language, CancellationToken ct);
     Task<JsonObject> UpdateChannelAsync(Principal actor, string kind, JsonObject body, CancellationToken ct);
     Task<JsonObject> SaveSubscriptionAsync(Principal actor, string? id, JsonObject body, CancellationToken ct, bool channelAudit = false);
     Task<JsonObject> EnqueueAsync(Principal actor, string id, Guid problem, CancellationToken ct, bool channelAudit = false);
@@ -264,7 +265,7 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
         finally { await Execute(db, null, "select pg_advisory_unlock(hashtext('sli_smtp_setup'))", CancellationToken.None); }
     }
 
-    public async Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, bool link, bool configure, CancellationToken ct)
+    public async Task<JsonObject> WorkspaceAsync(Principal actor, NotificationWorkspaceQuery query, ProblemAccess? problems, bool configure, string language, CancellationToken ct)
     {
         await using var db = await database.OpenAsync(ct);
         string? since = null;
@@ -288,12 +289,35 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
         if (query.Status is not null) { where += " and state=any(@states)"; parameters.Add(("states", NotificationWorkspaceQuery.States[query.Status])); }
         if (query.Before is not null)
         { where += " and (created_at,id)<(@before,@before_id)"; parameters.Add(("before", query.Before.Value.UtcDateTime)); parameters.Add(("before_id", query.BeforeId)); }
-        string finding = link ? "case when object_kind='semantic_finding' then public.notification_finding_object(object_id) end" : "null::bigint";
+        string finding = problems is not null ? "case when object_kind='semantic_finding' then public.notification_finding_object(object_id) end" : "null::bigint";
         var items = await Rows(db, null, "select " + JobFields + ",object_kind,object_severity,available_at," + finding + " as finding_id from notification_outbox where " + where + " order by created_at desc,id desc limit 101", ct, parameters.ToArray());
         bool more = items.Count > 100; if (more) items.RemoveAt(100);
+        if (problems is not null) await AttachProblemTitles(db, items, problems, language, ct);
         var channels = await Rows(db, null, ChannelStatus + " order by c.kind", ct);
         return new JsonObject { ["channels"] = channels, ["subscriptions"] = await SubscriptionsAsync(ct), ["counts"] = counts,
             ["items"] = items, ["has_more"] = more, ["next_cursor"] = more ? query.Cursor(items[^1]!.AsObject()) : null,
             ["previous_login_at"] = since, ["can_configure"] = configure };
+    }
+
+    private static async Task AttachProblemTitles(NpgsqlConnection db, JsonArray items, ProblemAccess access, string language, CancellationToken ct)
+    {
+        var deliveries = items.OfType<JsonObject>().Where(row => ProblemJson.Long(row["finding_id"]) > 0)
+            .ToLookup(row => ProblemJson.Long(row["finding_id"]));
+        if (!deliveries.Any()) return;
+        var findings = await Rows(db, null, """
+            select f.id,f.rule_code,f.severity,left(f.actor,2048) as actor,left(f.target,2048) as target,
+                   left(f.source,2048) as source,f.evidence_count,
+                   (select facts from public.password_queue_presentation399(f.id,f.rule_code)) as presentation_facts
+            from public.findings_active f
+            where f.id=any(@ids) and public.is_semantic_finding_published_v1(f.id)
+              and (f.rule_code<>'semantic.qw.file-acl-broad-write' or public.semantic_finding_in_domains_v265(f.id,null))
+              and (@domains::bigint[] is null or public.semantic_finding_in_domains_v265(f.id,@domains))
+            """, ct, ("ids", deliveries.Select(group => group.Key).ToArray()), ("domains", access.Scope("security.queue").Domains()));
+        foreach (var finding in findings.OfType<JsonObject>())
+            foreach (var delivery in deliveries[ProblemJson.Long(finding["id"])])
+            {
+                var view = (JsonObject)finding.DeepClone();
+                delivery["problem_title"] = NotificationMessage.ProblemHeadline(view, ProblemJson.Text(delivery["object_severity"]), access, language);
+            }
     }
 }

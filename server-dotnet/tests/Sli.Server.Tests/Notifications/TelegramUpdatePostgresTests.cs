@@ -88,7 +88,9 @@ public sealed class TelegramUpdatePostgresTests
 
             var access = ProblemLifecycleTests.Access("security.queue", fields: ["security", "identity_basic", "technical"]);
             var finding = await NotificationAlert.FormatAsync(delivery, tx, problem, settings.BaseUrl, access, telegram, ct);
-            Assert.StartsWith("Средняя · Подбирают пароль к учётной записи\n", finding);
+            var headline = finding.Split('\n', 2)[0];
+            Assert.StartsWith("Высокая · Подбирают пароль к учётной записи · ", headline);
+            Assert.Contains("Administrator", headline);
             Assert.Contains("Источник: 192.0.2.10", finding);
             Assert.Contains("Впервые: 22.11 03:00", finding);
             Assert.EndsWith("/app/report/security.problems?id=42", finding);

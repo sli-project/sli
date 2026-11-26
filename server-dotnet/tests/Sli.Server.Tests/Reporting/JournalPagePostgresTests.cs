@@ -114,7 +114,8 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         DateTimeOffset boundary = new(DateTime.UtcNow.Date.AddDays(-14), TimeSpan.Zero);
         await using var db = await new ReportDatabase(new Connections(fixture)).OpenAsync(false, ct);
         async Task<JsonObject> Read(JournalOptions options, int limit = 25, string? cursor = null, string? search = null,
-            long domain = 1, string[]? fields = null, DateTimeOffset? start = null, DateTimeOffset? end = null, int? budgetMs = null)
+            long domain = 1, string[]? fields = null, DateTimeOffset? start = null, DateTimeOffset? end = null, int? budgetMs = null,
+            bool includePeriodMetadata = false)
         {
             var sql = new ReportQuery();
             string scope = " where event.domain_id=" + sql.Parameter(domain);
@@ -128,12 +129,13 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
             if (options.View is "attention" or "tasks") query["view"] = options.View;
             var result = await JournalPage.ReadAsync(budgetMs is { } budget ? new MeasuredSession(db, output, budget) : db, sql, scope, new JsonObject(),
                 fields ?? ["id", "event_id", "time_created_utc", "channel", "subject_user_name", "target_user_name"],
-                query, options, limit, boundary, ct);
+                query, options with { PageOnly = !includePeriodMetadata }, limit, boundary, ct);
             return result;
         }
 
         var options = new JournalOptions(true, null, null, "all", "", "", null);
         var first = await Read(options, budgetMs: 2000);
+        var firstCounts = (await Read(options, includePeriodMetadata: true))["journal_counts"];
         await Read(options, end: from.AddSeconds(100), budgetMs: 1000);
         var rows = first["items"]!.AsArray().OfType<JsonObject>().ToArray();
         JsonObject Row(long id) => Assert.Single(rows, row => row["id"]!.GetValue<long>() == id);
@@ -232,8 +234,9 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         async Task<JsonObject> CheckView(string view)
         {
             var page = await Read(options with { View = view }, budgetMs: 2000);
-            Assert.True(JsonNode.DeepEquals(first["journal_counts"], page["journal_counts"]));
-            Assert.True(JsonNode.DeepEquals(first["journal_counts"]![view], page["journal_event_count"]));
+            var report = await Read(options with { View = view }, includePeriodMetadata: true);
+            Assert.True(JsonNode.DeepEquals(firstCounts, report["journal_counts"]));
+            Assert.True(JsonNode.DeepEquals(firstCounts![view], report["journal_event_count"]));
             return page;
         }
     }
