@@ -37,15 +37,17 @@ const captions = [
 
 function reportDefinition(key: string, title: string): ReportDefinitionDto {
   const computerInventory = key === "ad.computers.v6";
+  const computerLogons = key === "ad.computer-logons";
   return { key, title, section: "reports/identity", description: title, archetype: "list",
     params: [{ key: "domain", label: "Домен", kind: "domain", required: true }],
     columns: computerInventory
       ? [{ key: "display_name", label: "Компьютер", kind: "text", path: "display_name" }]
+      : computerLogons ? [{ key: "name", label: "Компьютер", kind: "text", path: "display_name" }]
       : [{ key: "name", label: "Объект", kind: "text", path: "name", link: "/app/objects/ad_user/{id}" }],
     views: computerInventory
       ? [{ kind: "table", key: "checks", source: "checks" }, { kind: "table", key: "computers", title: "Все компьютеры" }]
       : [{ kind: "table", key: "table" }],
-    row_key: "id", detail: "fields", export: true,
+    row_key: computerLogons ? "computer_key" : "id", detail: "fields", export: !computerLogons,
     limits: { default: 100, max: 500 }, presets: [], row_links: [],
     filter_options: { domain: [{ value: "1", label: "synthetic.test" }] },
   };
@@ -105,16 +107,30 @@ it("keeps the logon alias, workspace query and back link", () => {
 
 it.each(captions)("renders bundled %s with the same caption, rows, export and query for either pilot flag", async (key, title) => {
   const requests: string[] = [];
+  const computerLogons = key === "ad.computer-logons";
+  const computerKey = "host-1-c3ludGhldGljLWhvc3Q";
+  const computerDetailPath = `/api/v2/reports/${key}/rows/${computerKey}/detail?`;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input); requests.push(url);
-    return new Response(JSON.stringify(url.includes("/data?") ? reportResult(key) : reportDefinition(key, title)));
+    const result = reportResult(key);
+    if (computerLogons && url.includes("/detail?")) {
+      result.items = url.startsWith(computerDetailPath) ? [{ row_id: "20", user_name: "synthetic-user", logon_type: "10" }] : [];
+      result.filtered_count = result.items.length;
+      return new Response(JSON.stringify(result));
+    }
+    if (computerLogons) {
+      result.items = [{ computer_key: "host-1-c3ludGhldGljLWZpcnN0", display_name: "synthetic-first" },
+        { computer_key: computerKey, display_name: "synthetic-host" }];
+      result.filtered_count = result.items.length;
+    }
+    return new Response(JSON.stringify(url.includes("/data?") ? result : reportDefinition(key, title)));
   }));
   window.history.replaceState(null, "", `/app/report/${key}?domain=1&nav_view=logons`);
   const { rerender, client } = mount(<PluginReportPage reportKey={key} pilotEnabled={false}/>);
   const computerInventory = key === "ad.computers.v6";
   const caption = computerInventory ? "Все компьютеры" : title;
   const table = await screen.findByRole("table", { name: caption });
-  expect(within(table).getByRole("columnheader", { name: computerInventory ? "Компьютер" : key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект" })).toBeTruthy();
+  expect(within(table).getByRole("columnheader", { name: computerInventory || computerLogons ? "Компьютер" : key === "ad.users.v2" ? "Учётная запись / ФИО" : "Объект" })).toBeTruthy();
   if (computerInventory) {
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
     expect(screen.getByRole("tab", { name: caption, selected: true })).toBeTruthy();
@@ -124,6 +140,12 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
     fireEvent.click(within(table).getByRole("button", { name: "synthetic-object" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
+  } else if (computerLogons) {
+    expect(screen.queryByRole("cell", { name: "synthetic-user" })).toBeNull();
+    fireEvent.click(within(table).getByRole("row", { name: "synthetic-host" }));
+    await screen.findByRole("cell", { name: "synthetic-user" });
+    const observations = screen.getByRole("table", { name: "Входы на компьютер" });
+    expect(within(observations).getByRole("cell", { name: "synthetic-user" })).toBeTruthy();
   } else {
     const link = within(table).getByRole("link", { name: "synthetic-object" });
     const back = new URL(link.getAttribute("href")!, "http://synthetic.test").searchParams.get("return_to");
@@ -131,8 +153,12 @@ it.each(captions)("renders bundled %s with the same caption, rows, export and qu
     expect(back).toContain("domain=1");
     expect(back).toContain("nav_view=logons");
   }
-  expect(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href"))
-    .toContain(`/api/v2/reports/${key}/export.csv?`);
+  if (computerLogons) {
+    expect(screen.queryByRole("link", { name: "Экспорт CSV" })).toBeNull();
+  } else {
+    expect(screen.getByRole("link", { name: "Экспорт CSV" }).getAttribute("href"))
+      .toContain(`/api/v2/reports/${key}/export.csv?`);
+  }
   const before = table.outerHTML;
   rerender(<QueryClientProvider client={client}><PluginReportPage reportKey={key} pilotEnabled/></QueryClientProvider>);
   expect(screen.getByRole("table", { name: caption }).outerHTML).toBe(before);

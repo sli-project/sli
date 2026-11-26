@@ -377,8 +377,8 @@ for (const width of [1920, 2560]) {
     const panel = queue.locator('.sli-ds-drawer__panel');
     await expect(panel).toBeVisible();
     await expect(panel).toHaveJSProperty('role', width === 1920 ? 'dialog' : null);
-    const linkedEvents = panel.getByRole('link', { name: '4625', exact: true });
-    await expect(linkedEvents).toHaveCount(25);
+    const eventButtons = panel.getByRole('button', { name: '4625', exact: true });
+    await expect(eventButtons).toHaveCount(25);
     const journal = panel.getByRole('link', { name: 'Открыть в журнале' });
     await expect(journal).toHaveAttribute('href', '/app/report/events.journal?finding=1&domain=1');
     const measurements = await panel.evaluate(detail => {
@@ -415,15 +415,17 @@ for (const width of [1920, 2560]) {
       expect(bounds.bottom).toBeLessThanOrEqual(1080);
     }
 
-    await linkedEvents.first().focus();
+    await eventButtons.first().focus();
     for (let i = 1; i < 25; i++) await page.keyboard.press('Tab');
-    await expect(linkedEvents.last()).toBeFocused();
-    await expect(linkedEvents.last()).toHaveAttribute('href', '/app/events/25');
-    await expect(linkedEvents.last()).toBeInViewport({ ratio: 1 });
+    const lastEvent = eventButtons.last();
+    await expect(lastEvent).toBeFocused();
+    await expect(lastEvent).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Enter');
+    await expect(lastEvent).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Tab');
     const original = panel.getByRole('link', { name: /Открыть исходное событие/ });
     await expect(original).toBeFocused();
-    await expect(original).toHaveAttribute('href', '/app/events/1');
+    await expect(original).toHaveAttribute('href', '/app/events/25');
     await expect(original).toBeInViewport({ ratio: 1 });
     await page.keyboard.press('Tab');
     await expect(journal).toBeFocused();
@@ -436,7 +438,7 @@ for (const width of [1920, 2560]) {
 
     await page.goBack();
     await finding(1).press('Enter');
-    await expect(panel.getByRole('link', { name: '4625', exact: true })).toHaveCount(1);
+    await expect(eventButtons).toHaveCount(1);
     const shortJournal = panel.getByRole('link', { name: 'Открыть в журнале' });
     await expect(shortJournal).toBeInViewport({ ratio: 1 });
     await shortJournal.press('Escape');

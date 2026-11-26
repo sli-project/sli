@@ -331,8 +331,9 @@ const logons: ReportDefinitionDto = { ...definition, key: "ad.computer-logons", 
   params: [{ key: "period", label: "Период", kind: "period", default: "30d", required: true },
     { key: "domain_id", label: "Домен", kind: "domain", hidden: true }, { key: "user", label: "Пользователь", kind: "text" },
     { key: "with_logons", label: "Только ПК со входами", kind: "choice", hidden: true },
-    { key: "service_logons", label: "Служебные входы", kind: "choice" }],
+    { key: "service_logons", label: "Сетевые и служебные входы", kind: "choice" }],
   views: [{ key: "table", kind: "table" }],
+  row_key: "computer_key",
   columns: [{ key: "name", label: "Компьютер", kind: "text", path: "display_name" },
     { key: "count", label: "Входов за период", kind: "number", path: "login_count" },
     { key: "last", label: "Последний вход", kind: "datetime", path: "last_observed_logon_at_utc" }],
@@ -343,27 +344,40 @@ it("keeps the logon window and filters when paging and opening the next computer
   const detail: URLSearchParams[] = [];
   respondTo = (url) => {
     if (url.pathname.endsWith(key)) return logons;
+    const includesService = url.searchParams.get("service_logons") === "yes";
     if (url.pathname.endsWith("/detail")) {
       detail.push(url.searchParams);
-      return page({ report_key: key, items: [{ source_event_id: 20, observed_at_utc: "2026-11-21T12:00:00Z", user_name: "synthetic-user" }] });
+      return page({ report_key: key, state: "ok", items: [
+        { row_id: "20", source_event_id: 20, observed_at_utc: "2026-11-21T12:00:00Z", user_name: "synthetic-user", logon_type: "10", repeat_count: 1 },
+        ...(includesService ? [{ row_id: "21", source_event_id: 21, user_name: "SYSTEM", logon_type: "5", repeat_count: 2 }] : []),
+      ] });
     }
     if (url.pathname.endsWith("/data")) {
       const next = url.searchParams.has("cursor");
-      return page({ report_key: key, items: [{ entity_id: next ? 2 : 1, login_count: 1,
+      return page({ report_key: key, state: "ok", items: [{ computer_key: next ? "host-8-bmV4dA" : "host-8-aG9zdA",
+        computer_type: next ? "server" : "domain_controller", login_count: includesService ? 3 : 1,
         display_name: next ? "synthetic-next" : "synthetic-host" }], has_more: !next, next_cursor: next ? null : "opaque" });
     }
   };
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&user=synthetic-user");
   show({ reportKey: key });
   await screen.findByRole("link", { name: "#20" });
-  const serviceLogons = screen.getByRole<HTMLInputElement>("checkbox", { name: "Служебные входы" });
+  const serviceLogons = screen.getByRole<HTMLInputElement>("checkbox", { name: "Сетевые и служебные входы" });
+  const computers = () => within(screen.getByRole("table", { name: "Входы на компьютеры" }));
+  expect(computers().getByRole("img", { name: "Контроллер домена" })).toBeTruthy();
+  expect(computers().getByRole("cell", { name: "1" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "#21" })).toBeNull();
   expect(serviceLogons.checked).toBe(false);
   expect(requests[0].get("service_logons")).not.toBe("yes");
   fireEvent.click(serviceLogons);
-  await waitFor(() => expect(detail.at(-1)?.get("service_logons")).toBe("yes"));
+  await screen.findByRole("link", { name: "#21" });
+  expect(computers().getByRole("cell", { name: "3" })).toBeTruthy();
+  expect(detail.at(-1)?.get("service_logons")).toBe("yes");
   const detailCountBeforePaging = detail.length;
-  fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
+  const nextComputerPage = screen.getAllByRole<HTMLButtonElement>("button", { name: t("table.next") }).find((button) => !button.disabled)!;
+  fireEvent.click(nextComputerPage);
   await screen.findByRole("complementary", { name: "synthetic-next" });
+  expect(computers().getByRole("img", { name: "Сервер" })).toBeTruthy();
   expect(requests.at(-1)?.get("cursor")).toBe("opaque");
   expect(requests.at(-1)?.get("service_logons")).toBe("yes");
   await waitFor(() => expect(detail.length).toBeGreaterThan(detailCountBeforePaging));
@@ -375,6 +389,9 @@ it("keeps the logon window and filters when paging and opening the next computer
     expect(params.get("user")).toBe("synthetic-user");
     expect(params.get("domain_id")).toBe("8");
   }
+  fireEvent.click(serviceLogons);
+  await waitFor(() => expect(computers().getByRole("cell", { name: "1" })).toBeTruthy());
+  expect(screen.queryByRole("link", { name: "#21" })).toBeNull();
 });
 
 it("shows an empty logon table without requesting computer details", async () => {
@@ -389,7 +406,7 @@ it("shows an empty logon table without requesting computer details", async () =>
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&with_logons=yes");
   show({ reportKey: logons.key });
   const table = await screen.findByRole("table", { name: "Входы на компьютеры" });
-  expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["—"]);
+  expect(within(table).getByText("За выбранный период записей нет.")).toBeTruthy();
   expect(screen.queryByRole("checkbox", { name: "Только ПК со входами" })).toBeNull();
   expect(details).not.toHaveBeenCalled();
 });

@@ -1,8 +1,9 @@
-import { Checkbox } from "../../design-system/Checkbox";
-import { Select } from "../../design-system/Select";
-import { useEffect, useState } from "react";
-import { api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentFileAuditStatus, type AgentItem } from "../../api/client";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { acceptedAgentFileAuditCommand, api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentFileAuditStatus, type AgentItem } from "../../api/client";
+import { Button, Checkbox, Select } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
+import { formatDateTime } from "../../shared/date-time";
 import { withDomain } from "../domain-navigation";
 import { agentHostName } from "./agent-actions";
 
@@ -30,6 +31,128 @@ const kindOf = (agent: AgentItem) => {
 };
 const workstation = (agent: AgentItem) => agent.assigned_modules.some(
   (module) => typeof module !== "string" && module.module_id === "sli.workstations" && module.enabled);
+
+const folderFailures: Readonly<Record<string, MessageKey>> = {
+  sacl_missing: "agents.fileServer.saclMissing",
+  policy_missing: "agents.fileServer.auditIncomplete",
+  managed_by_gpo: "agents.fileServer.groupPolicy",
+};
+
+export function AgentFileServerCard({ agent, busy, canManage, timeZone }: {
+  agent: AgentItem; busy: boolean; canManage: boolean; timeZone?: string;
+}) {
+  const client = useQueryClient();
+  const assignment = fileConfig(agent);
+  const config = assignment?.config ?? {};
+  const root = Array.isArray(config.roots) && config.roots.length === 1 ? config.roots[0] as Root : undefined;
+  const assigned = Boolean(assignment?.enabled);
+  const [choosing, setChoosing] = useState(false);
+  const [scope, setScope] = useState("");
+  const statusKey = ["admin-file-server-status", agent.id] as const;
+  const catalogKey = ["admin-file-audit-catalog", agent.id] as const;
+  const status = useQuery({
+    queryKey: statusKey,
+    queryFn: async () => {
+      try { return await api.agentFileAuditStatus(agent.id); }
+      catch (error) {
+        if (error instanceof ApiResponseError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    enabled: agent.status === "active" && (assigned || canManage) && kindOf(agent) !== "workstation",
+    retry: false,
+    refetchInterval: (query) => query.state.data?.state === "pending" || query.state.data?.state === "partial" ? 5_000 : assigned ? 15_000 : false,
+  });
+  const mayEdit = canManage && status.isSuccess && agent.status === "active" && kindOf(agent) !== "workstation";
+  const catalog = useQuery({ queryKey: catalogKey, enabled: choosing && mayEdit, retry: false,
+    queryFn: ({ signal }) => api.agentFileAuditCatalog(agent.id, signal),
+    refetchInterval: (query) => query.state.data?.state === "pending" ? 5_000 : false,
+  });
+  const refresh = useMutation({ mutationFn: api.requestAgentFileAuditCatalog,
+    onMutate: () => client.cancelQueries({ queryKey: catalogKey }),
+    onSuccess: (data) => client.setQueryData(catalogKey, data),
+  });
+  const requestedCatalog = useRef(false);
+  const requestCatalog = refresh.mutate;
+  const catalogState = catalog.data?.state;
+  useEffect(() => {
+    if (!choosing) requestedCatalog.current = false;
+    if (choosing && mayEdit && !requestedCatalog.current && !catalog.isFetching && (catalogState === "idle" || catalogState === "expired")) {
+      requestedCatalog.current = true;
+      requestCatalog(agent.id);
+    }
+  }, [agent.id, catalog.isFetching, catalogState, choosing, mayEdit, requestCatalog]);
+  const change = useMutation({
+    mutationFn: async ({ selected, remove }: { selected: Root; remove: boolean }) => {
+      const body = { agent_id: agent.id, expected_revision: agent.policy_revision,
+        command: { contract_id: "sli.file-audit.audit-command.v1", command_id: crypto.randomUUID(),
+          action: remove ? "restore" : "apply", policy_revision: String(agent.policy_revision + 1),
+          collection_scope_ids: [selected.collection_scope_id] },
+        config: { ...config, source_kind: "server", roots: [selected] },
+        ...(remove ? { remove_assignment: true } : { enabled: true, activate_collection: true }) };
+      const accepted = acceptedAgentFileAuditCommand(body, await api.agentAction("file-audit", body));
+      if (!accepted) throw new Error("file_audit_receipt_unrecognized");
+      return accepted;
+    },
+    onSuccess: () => { setChoosing(false); setScope(""); },
+    onSettled: async () => {
+      await Promise.all([client.invalidateQueries({ queryKey: ["admin-agents"] }), client.invalidateQueries({ queryKey: statusKey })]);
+    },
+  });
+  if (kindOf(agent) === "workstation" || agent.status !== "active") return null;
+
+  const observed = status.data;
+  const accepted = change.data;
+  const enabled = accepted && Number(accepted.policy_revision) > agent.policy_revision ? accepted.action === "apply" : assigned;
+  const matches = !accepted || (observed?.command.command_id === accepted.command_id
+    && observed.command.policy_revision === accepted.policy_revision);
+  const folder = root ?? change.variables?.selected;
+  const observedScope = observed?.command.collection_scope_ids.length === 1 ? observed.command.collection_scope_ids[0] : undefined;
+  const folderScope = folder?.collection_scope_id ?? (observed?.command.action === "restore" ? observedScope : undefined);
+  const path = folder?.path ?? (folderScope ? observed?.folders?.[folderScope] : undefined);
+  const lastEvent = observed?.last_event?.collection_scope_id === folderScope ? observed?.last_event : undefined;
+  const receipt = folderScope && matches && observed && observed.command.action !== "check"
+    && observed.command.collection_scope_ids.includes(folderScope) ? observed.scopes[folderScope] : undefined;
+  const selected = catalog.data?.items.find((item) => item.collection_scope_id === scope);
+  const restoring = observed?.command.action === "restore" && observed.may_own_audit;
+  const disabled = busy || change.isPending || !mayEdit || restoring || (enabled && !root);
+  const toggle = (checked: boolean) => {
+    change.reset();
+    if (checked || !enabled) { setChoosing(checked); return; }
+    if (root && window.confirm(t("agents.fileServer.confirmDisable", { path: root.path }))) change.mutate({ selected: root, remove: true });
+  };
+  const save = () => {
+    if (!selected) return;
+    change.mutate({ remove: false, selected: { ...selected, important: false,
+      sacl: { trustee_sids: ["S-1-1-0"], inherit_files: true, inherit_directories: true } } });
+  };
+  return <section className="sli-ds-filters__fields" data-align="start">
+    <Checkbox checked={enabled || choosing} disabled={disabled}
+      onChange={(event) => toggle(event.target.checked)}>{t("agents.fileServer.role")}</Checkbox>
+    {choosing && mayEdit ? <>
+      <Select label={t("agents.fileServer.folder")} value={scope} onChange={setScope} disabled={disabled}
+        options={[{ value: "", label: t("agents.deployment.choose") }, ...(catalog.data?.items ?? []).map((share) => ({
+          value: share.collection_scope_id,
+          label: `${share.share_name} · ${share.path}`,
+        }))]}/>
+      {catalog.data?.state !== "ready" || !catalog.data.items.length ? <Button
+        disabled={disabled || catalog.isFetching || catalog.data?.state === "pending" || refresh.isPending}
+        onClick={() => refresh.mutate(agent.id)}>{t("agents.fileAudit.catalog.refresh")}</Button> : null}
+      {catalog.isError || refresh.isError ? <p role="alert">{t("agents.fileAudit.catalog.unavailable")}</p> : null}
+      <Button variant="primary" disabled={disabled || !selected || !agent.collection_policy?.manage_windows_audit}
+        onClick={save}>{t("agents.saveAudit")}</Button>
+      {!agent.collection_policy?.manage_windows_audit ? <p>{t("agents.fileServer.managementOff")}</p> : null}
+    </> : null}
+    {!choosing && path ? <p role="status">{path} · {receipt && observed?.reported_at ? <>{formatDateTime(observed.reported_at, timeZone)} · {
+      receipt.state === "verified" ? t(observed.command.action === "restore" ? "agents.fileServer.restored" : "agents.fileServer.applied")
+        : t(Object.hasOwn(folderFailures, receipt.reason_code) ? folderFailures[receipt.reason_code] : "agents.fileServer.auditFailed")}</>
+      : t(status.isError ? "agents.fileServer.readFailed"
+        : status.isPending || observed?.state === "pending" || !matches ? "agents.fileAudit.result.pending" : "agents.fileServer.noResult")}
+      {lastEvent ? <> · {t("agents.fileServer.lastEvent", { time: formatDateTime(lastEvent.observed_at, timeZone) })}</> : null}
+    </p> : null}
+    {change.isError ? <p role="alert">{t("agents.fileServer.changeFailed")}</p> : null}
+  </section>;
+}
 
 export function AgentFileAuditControls({ agents, busy, change, accepted, serverCatalog }: {
   agents: AgentItem[]; busy: boolean; change: Change; accepted?: AgentFileAuditCommand; serverCatalog?: ServerCatalog;
