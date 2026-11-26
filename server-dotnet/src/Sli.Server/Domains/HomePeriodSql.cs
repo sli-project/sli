@@ -32,7 +32,14 @@ internal static class HomePeriodSql
         select count(*) filter(where first_seen>=@from and first_seen<@to) as new_count,
                count(*) filter(where closed_at>=@from and closed_at<@to) as closed_count,
                (select count(distinct cohort.key) from open_findings findings {{ProblemCohorts.Sql("queue-cohort")}}) as open_count,
-               (select jsonb_agg(to_jsonb(top) || jsonb_build_object('entity',(
+               ({{ProblemItems("top", "case top.severity when 'critical' then 0 when 'high' then 1 else 2 end, top.first_seen desc, top.id desc", "c.time_created_utc>=@from and c.time_created_utc<@to")}}) as items,
+               (select jsonb_agg(jsonb_build_object('at',first_seen,'severity',severity,'id',id) order by first_seen)
+                from recent) as markers
+        from population
+        """;
+
+    private static string ProblemItems(string source, string order, string observationWindow) => $$"""
+        select jsonb_agg(to_jsonb(top) || jsonb_build_object('entity',(
                    select jsonb_build_object('id',min(entity.id),'name',min(entity.display_name)) from finding_entities linked
                    join entities_v2_active entity on entity.id=linked.entity_id and entity.domain_id=any(@ids)
                    where @identity and linked.finding_id=top.id
@@ -48,11 +55,10 @@ internal static class HomePeriodSql
                        from (select distinct c.time_created_utc as at,c.event_id,c.event_kind,c.computer as source
                              from finding_event_copies337 c
                              where c.finding_id=top.id and c.domain_id=any(@ids)
-                              and c.time_created_utc>=@from and c.time_created_utc<@to
+                              and {{observationWindow}}
                              order by at desc,c.event_id desc limit 20) observation))
                    else '{}'::jsonb end || jsonb_build_object('password',to_jsonb(password),'subject',to_jsonb(subject))
-                   order by case top.severity when 'critical' then 0 when 'high' then 1 else 2 end,
-                            top.first_seen desc,top.id desc) from top
+                   order by {{order}}) from {{source}} top
                 left join lateral (
                     select count(distinct (c.event_id,c.time_created_utc)) filter (where c.event_kind<>4624) as attempts,
                            min(c.time_created_utc) as first_at,max(c.time_created_utc) as last_at,
@@ -66,7 +72,7 @@ internal static class HomePeriodSql
                         and principal.name !~* '^(sid:|S-1-)' then principal.name end as name) account
                     cross join lateral (select case when @technical and principal.ip ~ '^[0-9a-fA-F:.]+$'
                         and pg_input_is_valid(principal.ip,'inet') then host(principal.ip::inet) end as name) address
-                    where c.finding_id=top.id and c.domain_id=any(@ids) and c.time_created_utc>=@from and c.time_created_utc<@to
+                    where c.finding_id=top.id and c.domain_id=any(@ids) and {{observationWindow}}
                       and c.event_kind in (4624,4625,4771,4776)
                       and top.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
                     having count(*)>0
@@ -79,13 +85,65 @@ internal static class HomePeriodSql
                            c.method#>>'{$principals,TargetUserName}' as account,c.computer
                     from finding_event_copies337 c
                     where @identity and top.rule_code not in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
-                      and c.finding_id=top.id and c.domain_id=any(@ids) and c.time_created_utc>=@from and c.time_created_utc<@to
+                      and c.finding_id=top.id and c.domain_id=any(@ids) and {{observationWindow}}
                     order by (c.event_kind in (4728,4729,4732,4733,4756,4757,4719)) desc,c.time_created_utc desc,c.event_id desc
                     limit 1
-                ) subject on true) as items,
-               (select jsonb_agg(jsonb_build_object('at',first_seen,'severity',severity,'id',id) order by first_seen)
-                from recent) as markers
-        from population
+                ) subject on true
+        """;
+
+    private static string OpenPopulation => $$"""
+        select findings.id,findings.rule_code,findings.severity,findings.actor,findings.target,
+               findings.source,findings.fingerprint,findings.repeat_count,
+               coalesce(findings.last_seen_utc,findings.first_seen_utc)::timestamptz as last_seen,
+               ({{HomeSummarySql.EffectiveStatus}}) as status,
+               case when @identity then nullif(btrim(findings.assigned_to),'') end as assignee
+        {{HomeSummarySql.Population}}
+        where ({{HomeSummarySql.EffectiveStatus}}) in ('new','confirmed','repeated','active','review')
+          and is_semantic_finding_published_v1(findings.id)
+          and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
+          and not coalesce(risk.state='active' and risk.expires_at>statement_timestamp(),false)
+          and not ({{ProblemRepository.Suppressed}})
+          and semantic_finding_in_domains_v265(findings.id,@ids)
+        """;
+
+    internal static readonly string OpenQueue = $$"""
+        with admitted as ({{OpenPopulation}}),
+        ranked as (
+            select findings.*,cohort.key,
+                   case findings.severity when 'critical' then 0 when 'high' then 1
+                        when 'medium' then 2 when 'low' then 3 else 4 end as importance
+            from admitted findings {{ProblemCohorts.Sql("queue-cohort", usePasswordProjection: true)}}
+        ), groups as materialized (
+            select key, (array_agg(id order by (status in ('active','review')) desc,importance,last_seen desc nulls last,id desc))[1] as id,
+                   min(importance) as importance,max(last_seen) as last_seen,
+                   sum(1::bigint+greatest(coalesce(repeat_count,0),0)) as occurrence_count,
+                   bool_or(status in ('active','review')) as in_work,
+                   count(assignee)=0 as unassigned,
+                   case when count(*)=count(assignee) and min(assignee)=max(assignee) then min(assignee) end as assignee,
+                   case when not @identity then 'unknown' when count(assignee)=0 then 'unassigned'
+                        when count(*)=count(assignee) and min(assignee)=max(assignee) then 'assigned' else 'mixed' end as assignee_state
+            from ranked group by key
+        ), totals as (
+            select count(*) as open_count,
+                   case when @identity then count(*) filter(where unassigned) end as unassigned_count,
+                   count(*) filter(where in_work) as in_work_count,
+                   count(*) filter(where @queue='all' or (@queue='unassigned' and @identity and unassigned)
+                                                    or (@queue='in_work' and in_work)) as filtered_count
+            from groups
+        ), page as (
+            select * from groups where @queue='all' or (@queue='unassigned' and @identity and unassigned)
+                                                    or (@queue='in_work' and in_work)
+            order by importance,last_seen desc nulls last,id desc
+            limit @limit offset (select least(@offset,greatest((filtered_count-1)/@limit,0)*@limit) from totals)
+        ), details as (
+            select page.*,admitted.rule_code,admitted.actor,admitted.target,admitted.source,admitted.status,
+                   (array['critical','high','medium','low','unknown'])[page.importance+1] as severity
+            from page join admitted using(id)
+        )
+        select totals.*,
+               (least(@offset,greatest((filtered_count-1)/@limit,0)*@limit)/@limit)+1 as page,
+               ({{ProblemItems("details", "top.importance, top.last_seen desc nulls last, top.id desc", "true")}}) as items
+        from totals
         """;
 
     internal const string Controllers = """
@@ -116,7 +174,7 @@ internal static class HomePeriodSql
         """;
 
     internal const string PasswordPolicyChanges = """
-        select e.display_name as name, v.valid_from_utc as at, field.key as field,
+        select e.display_name as name, v.valid_from_utc as at, prior.valid_from_utc as before_at, field.key as field,
                prior.attributes_json->'attributes'->field.key as before, field.value as after
         from entities_v2_active e join storage_v2_entity_type kind on kind.id=e.entity_type_id
         join ad_context_entity_versions v on v.entity_id=e.id and v.source_section='domain_posture'
@@ -194,6 +252,28 @@ internal static class HomePeriodSql
                 and copy.domain_id=e.domain_id and is_semantic_finding_published_v1(copy.finding_id)
           )
         order by at desc,e.id desc limit 200
+        """;
+
+    internal static string OpenQueueChanges(string source, string scope) => $$"""
+        with short_events as not materialized ({{source}}),
+        open_findings as materialized (select id from ({{OpenPopulation}}) admitted where @queue_access)
+        select e.id,e.time_created_utc as at,e.event_id,
+               case when @event_identity then coalesce(nullif(e.method#>>'{$principals,SubjectUserName}','-'),e.actor) end as initiator,
+               case when @event_identity then coalesce(nullif(e.fields->>'ObjectDN','-'),
+                    nullif(e.method#>>'{$principals,TargetUserName}','-'),e.target,e.fields->>'SamAccountName') end as name,
+               case when @event_identity and e.event_id in (4728,4729,4732,4733,4756,4757)
+                    then nullif(e.fields->>'MemberName','-')
+                    when @event_identity and e.event_id=4738 then nullif(e.fields->>'UserPrincipalName','-') end as value,
+               case when @event_identity and e.event_id=4781 then nullif(e.fields->>'OldTargetUserName','-') end as before,
+               case when @event_identity and e.event_id=4781 then nullif(e.fields->>'NewTargetUserName','-') end as after
+        from short_events e
+        where ({{scope}}) and e.time_created_utc<@to and e.event_id=any(@kinds)
+          and not exists (
+              select 1 from open_findings f
+              join finding_event_copies337 copy on copy.finding_id=f.id and copy.event_kind=e.event_id and copy.event_id=e.id
+              where copy.time_created_utc=e.time_created_utc and copy.domain_id=e.domain_id
+          )
+        order by at desc,e.id desc limit 10
         """;
 
     internal static string Activity(string source, string scope) => $$"""

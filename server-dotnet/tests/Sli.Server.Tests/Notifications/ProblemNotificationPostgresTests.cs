@@ -21,7 +21,7 @@ public sealed class ProblemNotificationPostgresTests(ITestOutputHelper output)
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 417);
+        await fixture.StartAsync(ct, throughVersion: 418);
         var migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/419_problem_notification_transitions.sql");
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);

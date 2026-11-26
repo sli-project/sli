@@ -11,6 +11,7 @@ namespace Sli.Server.Semantic;
 internal sealed record SemanticProposal(SemanticPolicy Policy, string SourceId, DateTimeOffset At, string Partition, JsonObject Strict, JsonObject Factors, Guid[] Evidence, JsonArray Native, JsonArray Coverage, string Conclusion = "observed")
 {
     internal JsonObject? DcCatalogEvidence { get; init; }
+    internal JsonObject? PasswordThresholdFacts { get; init; }
     internal string Contribution => HashText($"risk-policy:{Policy.Id}:{Policy.Version}:{Policy.Source}:{SourceId}");
     internal string Step => HashText($"policy-step:risk-policy:{Policy.Id}:{Policy.Version}:{Policy.Source}:{SourceId}");
     internal string Identity => SemanticJson.Hash(new JsonObject { ["scenario_kind"] = Policy.Kind, ["result_class"] = Policy.Result, ["partition_key"] = Partition, ["strict_keys"] = Strict.Copy(), ["merge_window_seconds"] = Policy.Window });
@@ -136,6 +137,7 @@ internal sealed partial class SemanticProduction
     internal static async Task<SemanticProposal> Proposal(ISemanticSession session, SemanticPolicy policy, string id, string mode, CancellationToken ct, JsonObject? dcEvidence = null)
     {
         JsonArray evidence = new(), native = new(), coverage = new(); var strict = new JsonObject(); DateTimeOffset at; string partition, identity = "exact"; bool confirmed = false; int completeness = 100; string parser = "good", timeQuality = "good", conclusion = "observed";
+        JsonObject? passwordFacts = null;
         if (policy.Source is "canonical_action" or "correlation_candidate")
         {
             bool action = policy.Source == "canonical_action";
@@ -197,6 +199,13 @@ internal sealed partial class SemanticProduction
                 await VerifyQWContext(session, document, ct);
                 var allowed = await session.QueryAsync("select public.qw_signal_evidence_allowed($1,true) as verified", ct, document); if (!allowed[0].Flag("verified")) throw new InvalidDataException("semantic_qw_evidence_denied");
                 native = (JsonArray)document["evidence_refs"]!.DeepClone(); strict["kind"] = document["kind"].Copy(); strict["entity"] = document["entity_key"].Copy(); strict["episode"] = document["episode_key"].Copy(); conclusion = document.Text("conclusion_state")!;
+                if (document["password_threshold_context"]?["facts"] is JsonObject facts)
+                {
+                    if (policy.Risk != "high" || policy.Kind != policy.Selector || policy.Window != Detections.PasswordAttacks.QuietSeconds)
+                        throw new InvalidDataException("password_threshold_policy_mismatch");
+                    passwordFacts = facts;
+                    if (document.Text("effective_severity") == "critical") policy = policy with { Risk = "critical", Raw = 80, Points = 80 };
+                }
                 if (document.Text("rule_id") == "qw.agent-tamper")
                 {
                     Detections.AttackPrecursors.Validate(document);
@@ -234,7 +243,8 @@ internal sealed partial class SemanticProduction
             coverage.Add(latest.Copy() ?? new JsonObject { ["control_id"] = control, ["coverage_status"] = "unknown", ["reason"] = "No control health observation is available", ["observed_at_utc"] = SemanticJson.Stamp(at) });
         }
         var factors = new JsonObject { ["identity_resolution"] = identity, ["state_confirmed"] = confirmed, ["multi_source_confirmed"] = false, ["sequence_completeness"] = completeness, ["time_quality"] = timeQuality, ["parser_quality"] = parser };
-        return new(policy, id, at, partition, strict, factors, evidence.Select(x => Guid.Parse(x.Text("normalized_event_id")!)).ToArray(), native, coverage, conclusion) { DcCatalogEvidence = dcEvidence };
+        return new(policy, id, at, partition, strict, factors, evidence.Select(x => Guid.Parse(x.Text("normalized_event_id")!)).ToArray(), native, coverage, conclusion)
+            { DcCatalogEvidence = dcEvidence, PasswordThresholdFacts = passwordFacts };
     }
     internal static string CandidateIdentityResolution(JsonArray evidence, string[] strictRoles)
     {
