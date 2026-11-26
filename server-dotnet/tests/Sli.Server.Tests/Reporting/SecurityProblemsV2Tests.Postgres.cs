@@ -56,7 +56,7 @@ public sealed partial class SecurityProblemsV2Tests
                     create table ad_context_sections(run_id uuid,section_name text,status text);
                     create table finding_event_details337(finding_id bigint,event_db_id bigint,event_id int,time_created_utc timestamptz,
                         domain_id bigint,server_id bigint,target_user_sid text,membership_member_sid text,channel text,identity_provider text,
-                        target_domain_name text,target_user_name text,ip_address text,workstation_name text,
+                        target_domain_name text,target_user_name text,subject_user_name text,ip_address text,workstation_name text,
                         event_record_id bigint,hostname text,evidence_role text,note text);
                     create table finding_status_history(id bigint,finding_id bigint,old_status text,new_status text,changed_at timestamptz,changed_by text,note text);
                     create function is_semantic_finding_published_v1(bigint) returns boolean language sql as $$select published from findings_active where id=$1$$;
@@ -232,6 +232,34 @@ public sealed partial class SecurityProblemsV2Tests
         Assert.Equal(Enumerable.Range(1,70).Select(n => (long)n), seen); Assert.Equal(4, pages);
         await pg.Sql("update findings_active set published=false where id=7; drop table finding_event_details337");
         Assert.Equal(404, (await Assert.ThrowsAsync<ReportRequestException>(() => reader.DetailAsync(c, "7", Ct))).Status);
+    }
+
+    [Fact]
+    public async Task Event_details_show_retained_account_and_source_only_with_field_access()
+    {
+        await using var pg = await Pg.Start();
+        await pg.Sql("""
+            insert into finding_event_details337(finding_id,event_db_id,event_id,time_created_utc,evidence_role,
+                event_record_id, target_user_name, subject_user_name, ip_address, workstation_name, hostname, channel, identity_provider)
+            values (7,1,4625,'2026-10-01T00:00:00Z','primary',42,'bad�name','SYSTEM','203.0.113.5','client.example.test','dc.example.test','Security','Microsoft-Windows-Security-Auditing'),
+                   (7,2,4728,'2026-10-01T00:00:01Z','primary',43,'Administrators','admin','-','client.example.test','dc.example.test',null,null);
+            """);
+        var c = Context() with { FieldAccess = _ => true };
+        var page = await pg.Evidence.PageAsync(c, 7, null, Ct);
+        var events = page["items"]!.AsArray();
+        Assert.Equal("bad�name", events[0]!["account"]!.GetValue<string>());
+        Assert.Equal("203.0.113.5", events[0]!["source"]!.GetValue<string>());
+        Assert.Equal("Security:Microsoft-Windows-Security-Auditing:4625.title", events[0]!["event_title_code"]!.GetValue<string>());
+        Assert.Equal(42, events[0]!["event_record_id"]!.GetValue<long>());
+        Assert.Equal("admin", events[1]!["account"]!.GetValue<string>());
+        Assert.Equal("client.example.test", events[1]!["source"]!.GetValue<string>());
+
+        var restricted = await pg.Evidence.PageAsync(c with { FieldAccess = fields => !fields.Contains("identity_basic") }, 7, null, Ct);
+        Assert.Null(restricted["items"]![0]!["account"]);
+        Assert.Equal("203.0.113.5", restricted["items"]![0]!["source"]!.GetValue<string>());
+        restricted = await pg.Evidence.PageAsync(c with { FieldAccess = fields => !fields.Contains("technical") }, 7, null, Ct);
+        Assert.Null(restricted["items"]![0]!["source"]);
+        Assert.Equal("bad�name", restricted["items"]![0]!["account"]!.GetValue<string>());
     }
 
     [Fact]

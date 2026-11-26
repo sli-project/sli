@@ -1,13 +1,13 @@
-import type { ReactNode } from "react";
 import type { ReportColumnDto } from "../../api/report-v2-types";
-import { SeverityBadge, type TableColumn } from "../../design-system";
+import { type TableColumn } from "../../design-system";
+import { formatDateTime } from "../../shared/date-time";
+import { useTimeZone } from "../../shared/time-zone";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { columnValue, readPath } from "../../app/report-v2/state";
-import { tableColumns } from "../../app/report-v2/DetailSection";
 import { withDomain } from "../../app/domain-navigation";
-import { t, type MessageKey } from "../../i18n";
+import { t } from "../../i18n";
 import { fileMaskLabel, type FileMaskLabels } from "./permissionMasks";
-import { fileAuditHref, fileAuditShare, type FileAuditRow, type FileAuditTab } from "./report";
+import { fileAuditHref, fileAuditShare, type FileAuditRow, type FileAuditTab, type FileServerView } from "./report";
 
 export const fileMaskLabels = (): FileMaskLabels => ({
   none: t("file-audit.permissions.none"), read: t("file-audit.permissions.read"),
@@ -16,99 +16,121 @@ export const fileMaskLabels = (): FileMaskLabels => ({
   full: t("file-audit.permissions.full"), custom: t("file-audit.permissions.custom"),
 });
 
-export function FileAuditStatus({ state, children }: { state: unknown; children: ReactNode }) {
-  const tone = ["complete", "verified", "imported"].includes(String(state)) ? "success"
-    : ["failed", "blocked"].includes(String(state)) ? "danger"
-    : ["partial", "pending", "pending_import"].includes(String(state)) ? "warning" : "neutral";
-  return <span className="sli-file-audit__status" title={typeof children === "string" ? children : undefined}>
-    <span className="sli-file-audit__dot" data-tone={tone} aria-hidden="true"/>{children}
-  </span>;
-}
-
 export function FileAuditInterval({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
-  const aggregate = row.aggregate as { first_seen_utc?: string; last_seen_utc?: string } | undefined;
+  const { timeZone } = useTimeZone();
+  const aggregate = row.aggregate as { first_seen_utc?: string; last_seen_utc?: string; count?: number } | undefined;
   if (!aggregate?.first_seen_utc) return <>{formatCell(row.observed_at, "datetime")}</>;
+  const first = aggregate.first_seen_utc;
+  const last = aggregate.last_seen_utc;
+  const start = formatDateTime(first, timeZone, { seconds: true, withYear: false });
+  const end = last && last !== first ? formatDateTime(last, timeZone, { seconds: true, withYear: false,
+    timeOnly: formatDateTime(first, timeZone, { withTime: false }) === formatDateTime(last, timeZone, { withTime: false }) }) : null;
   return <span className="sli-file-audit__interval">
-    {formatCell(aggregate.first_seen_utc, "datetime")}
-    {aggregate.last_seen_utc && aggregate.last_seen_utc !== aggregate.first_seen_utc
-      ? <small>— {formatCell(aggregate.last_seen_utc, "datetime")}</small> : null}
+    <span>{start}{end ? "\u2013" + end : null}</span>{aggregate.count != null ? <small>×{aggregate.count}</small> : null}
   </span>;
 }
 
-export function FileAuditCount({ row }: { row: FileAuditRow }) {
-  const aggregate = row.aggregate as { count?: number; boundary?: string } | undefined;
-  return <>{aggregate?.count == null ? "—" : aggregate.boundary === "overlap"
-    ? t("file-audit.workspace.group_count", { count: aggregate.count }) : aggregate.count}</>;
-}
+const hostText = (value: unknown, limit = 4096) => typeof value === "string" ? value.slice(0, limit) : undefined;
+const when = (key: string) => ({ key, kind: "datetime" as const });
+const problemNumber = (row: FileAuditRow) => {
+  const value = row.problem_id;
+  return (typeof value === "number" && Number.isSafeInteger(value) || typeof value === "string") && /^[1-9]\d*$/.test(String(value))
+    ? String(value) : null;
+};
 
-export function fileAuditMetadataValue(key: string, value: unknown) {
-  if (key === "record_unit") return value === "saved_event_group" ? t("file-audit.workspace.saved_4670_groups")
-    : value === "normalized_action" ? t("file-audit.workspace.normalized_actions")
-    : value === "observed_object" ? t("file-audit.workspace.retained_objects") : value;
-  if (key === "aggregate_boundary") return value === "inside" ? t("file-audit.workspace.boundary_inside")
-    : value === "overlap" ? t("file-audit.workspace.boundary_overlap") : value;
-  if (key === "correlation_state" && ["not_attempted", "complete", "partial", "ambiguous"].includes(String(value)))
-    return t(`reports.v2.file-audit.permission-changes.columns.correlation_state.labels.${value}` as MessageKey);
-  return value;
-}
-
-export function fileAuditColumns(columns: ReportColumnDto[], timeZone: string, tab: FileAuditTab,
-  rows: FileAuditRow[], params: URLSearchParams | null, open: (row: FileAuditRow) => void,
-  hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string) {
-  const declared = tableColumns(columns, timeZone).filter(column =>
-    !["client_ip", "process", "process_name"].includes(column.key) || rows.some(row => row[column.key] != null));
-  const result = declared.map((column): TableColumn<FileAuditRow> => {
-    const definition = columns.find(item => item.key === column.key)!;
-    if (["first_seen_utc", "last_seen_utc", "aggregate_boundary", "aggregate_count_min", "aggregate_count_max", "correlation_state"].includes(column.key)) {
-      return { ...column, hiddenByDefault: true, sortable: false, value: row => fileAuditMetadataValue(column.key, columnValue(definition, row)) };
-    }
-    if (column.key === "record_unit") return { ...column, sortable: false,
-      hiddenByDefault: new Set(rows.map(row => readPath(row, definition.path)).filter(value => value != null)).size <= 1,
-      value: row => fileAuditMetadataValue(column.key, columnValue(definition, row)) };
-    if (column.key === "count") return { ...column, label: t("file-audit.workspace.count"), sortable: false,
-      render: row => <FileAuditCount row={row}/> };
-    if (["share_mask", "smb_mask", "ntfs_mask"].includes(column.key)) return { ...column,
-      value: row => fileMaskLabel(readPath(row, definition.path), fileMaskLabels()) ?? columnValue(definition, row) };
-    if (["completeness", "audit_state", "delivery_state"].includes(column.key)) return { ...column,
-      render: row => <FileAuditStatus state={readPath(row, definition.path)}>{String(columnValue(definition, row) ?? "—")}</FileAuditStatus> };
-    if (column.key === "observed_at" && rows.some(row => row.aggregate)) return { ...column,
-      label: t("file-audit.workspace.interval"), render: row => <FileAuditInterval row={row}/> };
-    if (column.key === "path") return { ...column, wrap: true, minWidth: "14rem", render: row =>
-      <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>{String(row.path ?? "—")}</button> };
-    if (column.key === "unread_objects") return { ...column, label: t("file-audit.workspace.scan_gaps") };
-    return { ...column, sortable: false };
+export function evidenceRecordNumbers(row: FileAuditRow) {
+  if (!Array.isArray(row.evidence)) return [];
+  const records = row.evidence.flatMap((item: unknown) => {
+    if (!item || typeof item !== "object" || !("event_id" in item) || !Number.isSafeInteger(item.event_id)) return [];
+    const record = "record_id" in item && (typeof item.record_id === "number" || typeof item.record_id === "string")
+      ? String(item.record_id) : "";
+    return [/^[1-9]\d{0,19}$/.test(record) ? String(item.event_id) + " · " + record : String(item.event_id)];
   });
-  if (["actions", "permission-changes"].includes(tab) && rows.some(row => row.aggregate) && !result.some(column => column.key === "count")) {
-    result.push({ key: "count", label: t("file-audit.workspace.count"), kind: "number", render: row => <FileAuditCount row={row}/> });
+  return records.length ? [{ label: t("file-audit.screen.security_event"), value: [...new Set(records)].join(", ") }] : [];
+}
+
+export function fileAuditOperation(row: FileAuditRow, column?: ReportColumnDto) {
+  if (row.operation === "permissions") return t("file-audit.screen.permission_change");
+  if (row.operation === "access_denied" || !column && row.outcome === "failure") return t("file-audit.screen.access_denied");
+  const known = ["read", "write", "delete", "rename", "delete_right", "share_change", "audit_change", "access_check", "unknown"] as const;
+  const operation = known.find(value => value === row.operation);
+  return operation ? t("reports.v2.file-audit.actions.columns.operation.labels." + operation as "reports.v2.file-audit.actions.columns.operation.labels.read")
+    : column ? columnValue(column, row) : undefined;
+}
+
+export function fileServerColumns(view: FileServerView, declared: ReportColumnDto[], rows: FileAuditRow[],
+  params: URLSearchParams | null, canPermissions: boolean, open: (row: FileAuditRow) => void,
+  hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string): TableColumn<FileAuditRow>[] {
+  const operation = declared.find(column => column.key === "operation");
+  if (view === "actions") {
+    const columns: TableColumn<FileAuditRow>[] = [
+      { ...when("observed_at"), label: t("file-audit.screen.time"), render: row => <FileAuditInterval row={row}/> },
+      { key: "operation", label: t("file-audit.operation"), value: row => fileAuditOperation(row, operation) },
+      { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "35%", render: row =>
+        <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>{hostText(row.path) ?? "—"}</button> },
+      { key: "account", label: t("file-audit.screen.who"), value: row => hostText(row.subject_name, 256) || hostText(row.subject_sid, 256) },
+      { key: "client_ip", label: t("file-audit.screen.from"), value: row => hostText(row.client_ip, 64) },
+      { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
+      { key: "problem", label: t("file-audit.screen.problem"), render: row => {
+        const id = problemNumber(row);
+        return id ? <a href={withDomain('/app/report/security.problems?id=' + id, window.location.search)}
+          onClick={event => event.stopPropagation()}>{t("file-audit.screen.problem_number", { id })}</a> : null;
+      } },
+    ];
+    return columns.filter(column => column.key !== "client_ip" || rows.some(row => hostText(row.client_ip, 64)));
   }
-  if (tab === "permissions" && (params?.get("view") === "objects" || rows.length > 0 && rows.every(row => row.record_unit === "observed_object"))) {
-    return result.map(column => ["employee", "rule_code", "share_mask", "smb_mask", "ntfs_mask", "snapshot_id"].includes(column.key)
-      ? { ...column, hiddenByDefault: true } : column);
-  }
-  if (tab !== "overview" || !columns.some(column => column.key === "permission_changes")) return result;
-  const dateColumn = (key: string) => result.find(column => column.key === key);
+  if (view === "permissions") return [
+    { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
+    { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "32%", render: row =>
+      canPermissions && row.snapshot_id && fileAuditShare(row) ? <button type="button" className="sli-ds-table__link"
+        onClick={event => { event.stopPropagation(); open(row); }}>{hostText(row.path) ?? "—"}</button> : hostText(row.path) ?? "—" },
+    ...declared.filter(column => ["rule_code", "employee", "share_mask", "smb_mask", "ntfs_mask"].includes(column.key)).map(column => ({
+      key: column.key, label: column.label, value: (row: FileAuditRow) =>
+        ["share_mask", "smb_mask", "ntfs_mask"].includes(column.key)
+          ? fileMaskLabel(readPath(row, column.path), fileMaskLabels()) ?? columnValue(column, row)
+          : columnValue(column, row),
+    })),
+    { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
+  ];
   const count = (row: FileAuditRow) => row.permission_changes != null ? String(row.permission_changes)
     : row.permission_change_count_min != null && row.permission_change_count_max != null
-      ? `${row.permission_change_count_min}–${row.permission_change_count_max}` : "—";
-  const overviewColumns: TableColumn<FileAuditRow>[] = [
-    { key: "source_name", label: t("file-audit.workspace.server"), width: "12%", render: row =>
-      typeof row.source_instance_id === "string" && params
+      ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : "—";
+  return [
+    { key: "source_name", label: t("file-audit.workspace.server"), render: row => {
+      const name = hostText(row.source_name, 256);
+      return name && typeof row.source_instance_id === "string" && params
         ? <a onClick={event => event.stopPropagation()} href={withDomain(fileAuditHref("overview", params, undefined,
-          { source_instance_id: row.source_instance_id, share: null, path: null }), window.location.search)}>{String(row.source_name ?? row.source_instance_id)}</a>
-        : String(row.source_name ?? "—") },
-    { key: "resource", label: t("file-audit.workspace.resource_path"), width: "28%", wrap: true, render: row => <span className="sli-file-audit__resource">
-      <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>{String(row.share_name ?? row.share_label ?? row.path ?? "—")}</button>
-      <small>{String(row.path ?? "")}</small>
-    </span> },
-    { key: "fact", label: t("file-audit.workspace.observed_fact"), wrap: true, render: row =>
-      typeof row.fact === "string" ? <span>{row.severity ? <SeverityBadge severity={row.severity}/> : null}{row.fact}</span>
-      : Number(row.unread_objects) > 0 ? <span>{t("file-audit.workspace.scan_gaps")}: {String(row.unread_objects)}</span> : "—" },
+          { source_instance_id: row.source_instance_id, share: null, path: null }), window.location.search)}>{name}</a> : name ?? "—";
+    } },
+    { key: "resource", label: t("file-audit.workspace.resource_path"), width: "27%", wrap: true, render: row => {
+      const name = hostText(row.share_name, 256) || hostText(row.path) || "—";
+      return <span className="sli-file-audit__resource">
+        {canPermissions && row.snapshot_id && fileAuditShare(row) ? <button type="button" className="sli-ds-table__link"
+          onClick={event => { event.stopPropagation(); open(row); }}>{name}</button> : name}
+        {row.share_name ? <small>{hostText(row.path)}</small> : null}
+      </span>;
+    } },
+    { key: "fact", label: t("file-audit.workspace.observed_fact"), wrap: true, value: row =>
+      hostText(row.fact) ?? (row.last_permission_change ? t("file-audit.filters.permission-changes") : undefined) },
     { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
-      fileAuditShare(row) ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}
-        title={Number(row.permission_change_boundary_groups) > 0 ? t("file-audit.workspace.boundary") : undefined}>{count(row)}</a> : count(row) },
-    { ...dateColumn("last_permission_change"), key: "last_permission_change", label: t("file-audit.workspace.last_change"), kind: "datetime" },
-    { ...dateColumn("observed_at"), key: "observed_at", label: t("file-audit.workspace.snapshot"), kind: "datetime" },
+      fileAuditShare(row) && row.permission_change_groups !== 0
+        ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
+    { ...when("last_permission_change"), label: t("file-audit.workspace.last_change") },
+    { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
+    { ...when("audit_received_at"), label: t("file-audit.screen.audit"), render: row => <FileAuditReceipt row={row}/> },
   ];
-  return overviewColumns.filter(column => column.key !== "fact" || rows.some(row => typeof row.fact === "string" && row.fact.length > 0 || Number(row.unread_objects) > 0));
+}
+
+function FileAuditReceipt({ row }: { row: FileAuditRow }) {
+  const { formatCell } = useDateFormatters();
+  const receipt = row.audit_receipt as { state?: string; reason_code?: string; observed_at?: string } | undefined;
+  if (receipt?.observed_at && (receipt.state === "failed" || receipt.state === "blocked") &&
+      Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0)) {
+    const reason = receipt.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
+      : receipt.reason_code === "sacl_missing" ? "file-audit.screen.sacl_missing"
+      : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing" : "file-audit.screen.audit_failed";
+    return <>{t(reason)} · {formatCell(receipt.observed_at, "datetime")}</>;
+  }
+  return <>{row.audit_received_at ? formatCell(row.audit_received_at, "datetime") : t("file-audit.screen.no_batch")}</>;
 }

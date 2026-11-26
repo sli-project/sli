@@ -157,6 +157,7 @@ public sealed class FileAuditReportTests
             if (Failure is not null) throw Failure;
             if (sql.Contains("report_roots")) return Task.FromResult(new JsonArray(new JsonObject { ["roots"] = Roots.DeepClone() }));
             if (sql.Contains("read_file_ransom_details")) { Decisions++; return Task.FromResult(new JsonArray(new JsonObject { ["decisions"] = new JsonObject() })); }
+            if (sql.Contains("as r(root)") || sql.Contains("ad_context_entity_aliases")) return Task.FromResult(new JsonArray());
             Assert.Contains("report_rows($1::jsonb", sql); Pages++; Last = values;
             var row = Root(); row["id"] = "row-1"; row["subject_sid"] = "S-1-5-21-100000001-200000002-300000003-1001"; row["rule_code"] = "file-audit.mass-write";
             row["details"] = new JsonObject { ["distinct_files"] = 100, ["window_seconds"] = 300, ["operation"] = "write" }; row["evidence"] = new JsonArray(new JsonObject { ["path"] = @"C:\share\file", ["payload_sha256"] = new string('a',64) });
