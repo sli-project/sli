@@ -43,7 +43,7 @@ import { UserChanges, UserCheckFilters, userTableColumns } from "../../plugins/a
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
-import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
+import { ComputerPanel, computerEmpty, computerInventoryColumns, LogonComputerName } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -195,6 +195,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }, [computerLogons]);
   const [computerPageSize, setComputerPageSize] = useState(50);
   const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
+  const [logonPeriodTarget, setLogonPeriodTarget] = useState<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(true);
   const [detailsVisible, setDetailsVisible] = useState(true);
   const [refreshWindow, setRefreshWindow] = useState(0);
@@ -614,10 +615,12 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       ? t("reports.computers.page_of", { page: userPage + 1, total: Math.ceil(first.filtered_count / computerPageSize) })
       : t("reports.computers.page", { page: userPage + 1 }) : undefined };
   const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
-    : columns.map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false }));
+    : columns.map((column) => column.key === "name"
+      ? { ...column, hiddenByDefault: undefined, render: (row: Row) => <LogonComputerName row={row}/> }
+      : { ...column, hiddenByDefault: false });
   const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
     <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
-      emptyContent={t("table.noValue")} showFooter={false}/> : computerReport ? computerEmpty() : null;
+      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport ? computerEmpty() : null;
   const detailParams = new URLSearchParams(baseParams);
   for (const key of ["limit", "sort", "direction"]) detailParams.delete(key);
   if (first?.window.from_utc && first.window.to_utc_exclusive) {
@@ -688,7 +691,9 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       </div> : null}
       {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers || computersScreen ? "inline" : undefined}
         primaryKeys={computersScreen ? undefined : gpoReport || infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
-        applyInline={computersScreen} leadingControls={computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
+        applyInline={computersScreen} periodTarget={computerLogons ? logonPeriodTarget : undefined}
+        leadingControls={computerLogons ? <><div ref={setLogonPeriodTarget}/>{computerScope}</>
+          : computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
         values={values} defaults={resetValues} onApply={(next) => {
           setSelected(null);
           const domainChanged = next.domain !== values.domain;
