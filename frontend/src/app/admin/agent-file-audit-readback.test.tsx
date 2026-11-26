@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, expect, it, vi } from "vitest";
 import { api, ApiResponseError, type AgentItem, type AgentFileAuditCommand, type AgentFileAuditStatus } from "../../api/client";
 import { t, type MessageKey } from "../../i18n";
+import { formatDateTime } from "../../shared/date-time";
 import requests from "../../test-fixtures/file_audit_server_ui_requests.json";
 import { AgentFileAuditControls } from "./agent-file-audit";
 
@@ -108,7 +109,7 @@ it("keeps partial scope reasons in collapsed details", async () => {
   } });
   render(<AgentFileAuditControls {...props}/>); await selectServer();
   expect(await screen.findByText(t("agents.fileAudit.result.partial"))).toBeTruthy();
-  expect(screen.getByText("managed_by_gpo").closest("details")?.open).toBe(false);
+  expect(screen.getByText(t("agents.fileAudit.reason.managed_by_gpo")).closest("details")?.open).toBe(false);
 });
 
 it("does not present an older verified command as verification of an edited invalid draft", async () => {
@@ -152,13 +153,37 @@ it("identifies an unavailable status endpoint without inferring command failure"
   expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
 });
 
-it.each([["failed", "native_unavailable"], ["blocked", "managed_by_gpo"]])("shows an exact %s receipt and its scope reason", async (state, reason_code) => {
+it.each([
+  ["failed", "native_unavailable", "file-audit.screen.audit_unreadable"],
+  ["blocked", "managed_by_gpo", "agents.fileAudit.reason.managed_by_gpo"],
+] as const)("shows an exact %s receipt in words", async (state, reason_code, wording) => {
   vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt(state), scopes: {
     [body.command.collection_scope_ids[0]]: { state, reason_code },
   } });
   render(<AgentFileAuditControls {...props}/>); await selectServer();
-  expect(await screen.findByText(t(`agents.fileAudit.result.${state}` as MessageKey))).toBeTruthy();
-  expect(screen.getByText(reason_code).closest("details")).toBe(screen.getByText(t("agents.fileAudit.title")).closest("details"));
+  expect(await screen.findByText((text) => text.includes(t(wording)))).toBeTruthy();
+  expect(screen.queryByText(reason_code)).toBeNull();
+});
+
+it.each([1, 2])("shows one version requirement with the computer and time for a %i-scope check", async (scopeCount) => {
+  const scopeIds = [body.command.collection_scope_ids[0], "scope:another"].slice(0, scopeCount);
+  const command = { ...accepted, collection_scope_ids: scopeIds };
+  const observed = { ...receipt("failed"),
+    command,
+    check_agent_requirement: { agent_version: "26.0.136", minimum_version: "26.0.154" },
+    scopes: Object.fromEntries(scopeIds.map((id) => [id, { state: "failed", reason_code: "native_unavailable" }])),
+  };
+  vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue(observed);
+  render(<AgentFileAuditControls {...props} accepted={command}/>); await selectServer();
+  const reason = t("agents.fileAudit.result.requiresAgentVersion", { version: "26.0.136", minimum: "26.0.154" });
+  const line = await screen.findByText((text) => text.includes(reason));
+  expect(line.getAttribute("role")).toBe("status");
+  await waitFor(() => {
+    expect(line.textContent).toContain(agent.host_name);
+    expect(line.textContent).toContain(formatDateTime(observed.reported_at));
+    expect(line.textContent).toContain(reason);
+    expect(line.textContent).not.toContain("native_unavailable");
+  });
 });
 
 it("keeps an unmatched scope failure unknown", async () => {
@@ -170,15 +195,15 @@ it("keeps an unmatched scope failure unknown", async () => {
   expect(screen.queryByText("native_unavailable")).toBeNull();
 });
 
-it("shows the ACL read step and numeric code from the matching failed check", async () => {
+it("shows the ACL read step in the matching failed check line", async () => {
   vi.spyOn(api, "agentFileAuditStatus").mockResolvedValue({ ...receipt("failed"), scopes: {
     [body.command.collection_scope_ids[0]]: {
       state: "failed", reason_code: "native_unavailable", read_error: { stage: "acl", code_kind: "win32", code: 5 },
     },
   } });
   render(<AgentFileAuditControls {...props}/>); await selectServer();
-  expect(await screen.findByText(t("agents.fileAudit.readError.acl"))).toBeTruthy();
-  expect(screen.getByText(t("agents.fileAudit.readError.code", { code: 5 }))).toBeTruthy();
+  expect(await screen.findByText((text) => text.includes(t("agents.fileAudit.readError.acl")))).toBeTruthy();
+  expect(screen.queryByText(t("agents.fileAudit.readError.code", { code: 5 }))).toBeNull();
   expect(screen.queryByText(t("agents.fileAudit.result.verified"))).toBeNull();
 });
 

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Sli.Agent.Protocol;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.FileAudit;
 namespace Sli.Server.Agents.ClientControl;
 internal sealed record ClientPolicyReport(JsonObject Output, JsonObject Probe, long? AppliedRevision, string? AppliedState,
     bool Acknowledged, JsonObject? ProbeResult);
@@ -17,7 +18,10 @@ internal static class AgentClientPolicy
             ["collection_policy"]=control,["eventlog_diagnostics_supported"]=true,["delivery_diagnostics_supported"]=true };
         if(agent["source_host_id"] is JsonValue host && JsonRead.TryString(host,out var source) && source.Length>0)
             result["runtime_handoff"]=new JsonObject { ["source_host_id"]=source,["cursors"]=agent["runtime_resume"]?.DeepClone() ?? new JsonObject() };
-        if(fileAuditHook && agent["file_audit"]?["request"] is JsonObject request && request.Count>0) result["file_audit"]=request.DeepClone();
+        if (fileAuditHook && agent["file_audit"] is JsonObject audit && audit["request"] is JsonObject { Count: > 0 } request
+            && (request["command"]?["action"]?.ToString() != "check" || request["config"]?["source_kind"]?.ToString() == "workstation"
+                || FileAuditResult.OfferCheck(agent, audit)))
+            result["file_audit"] = request.DeepClone();
         return result;
     }
     internal static ClientPolicyReport Report(JsonObject agent, JsonNode? body, DateTimeOffset now)

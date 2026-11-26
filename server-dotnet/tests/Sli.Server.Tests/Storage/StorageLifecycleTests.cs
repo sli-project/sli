@@ -45,6 +45,8 @@ public sealed class StorageLifecycleTests
         };
         public Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct) { Phases.Add("inbox"); InboxCalls.Add((cutoff,after,limit)); InboxReceived.Add(afterReceivedAt); return Task.FromResult(InboxResults.Count>0 ? InboxResults.Dequeue() : Page("last_scanned_packet_id",after)); }
         public Task<JsonObject> RetainReceiptsAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) { Phases.Add("receipts"); ReceiptCalls.Add((cutoff,after,limit)); return Task.FromResult(ReceiptResults.Count>0 ? ReceiptResults.Dequeue() : Page("last_scanned_packet_id",after)); }
+        public Task<long?> PruneFileAuditCheckReceiptsAsync(int limit, CancellationToken ct)
+        { Phases.Add("file-audit-check-receipts"); return Task.FromResult<long?>(0); }
         public Task<JsonObject> RetainOutboxAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) { Phases.Add("outbox"); OutboxCalls.Add((cutoff,after,limit)); return Task.FromResult(OutboxResults.Count>0 ? OutboxResults.Dequeue() : Page("last_scanned_job_id",after)); }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
@@ -56,7 +58,7 @@ public sealed class StorageLifecycleTests
         using var state = new State(); var session = new Session();
         var result = await new StorageLifecycleWorker(session,state.Files,()=>Now).CycleAsync(new(),TestContext.Current.CancellationToken);
         Assert.Equal("ok", result["status"]?.ToString());
-        Assert.Equal(new[] {"inbox","partitions","receipts","outbox"},session.Phases);
+        Assert.Equal(new[] {"inbox","partitions","receipts","outbox","file-audit-check-receipts"},session.Phases);
         Assert.Equal(Now.AddDays(-7),Assert.Single(session.InboxCalls).Cutoff);
     }
     [Fact]

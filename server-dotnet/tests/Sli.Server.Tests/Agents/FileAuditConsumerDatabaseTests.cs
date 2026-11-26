@@ -76,6 +76,124 @@ public class FileAuditConsumerDatabaseTests
     }
 
     [Fact]
+    public async Task An_unsupported_check_waits_for_the_minimum_agent_version_and_stores_one_failure()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 424);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await Register(owner, ct);
+        await PostCollectionPostgres.Sql(owner, "update sli_agents set policy_revision=3,assigned_modules='[]',rights_probe='{\"agent_version\":\"26.0.136\"}'", ct);
+        var (_, _, policy) = AgentFileAuditValidatorTests.ActionPacket();
+        var identity = new AgentIdentity(Agent, AgentFileAuditValidatorTests.ActionHost, new string('a', 64), "active");
+        var principal = new Principal("session", 1, "admin");
+        var access = new CapabilityDecisionSet(true, new HashSet<string>(), new HashSet<string>(), [],
+            new Dictionary<string, System.Text.Json.JsonElement>());
+        var audit = new AgentControlAudit();
+        var control = new FileAuditControlService(audit);
+        var ingest = new FileAuditIngestService(null!);
+        var now = DateTimeOffset.Parse("2026-11-25T00:08:00Z");
+        var client = new AgentClientControlService(audit, new Clock(now));
+        await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+        await using var tx = await app.BeginTransactionAsync(ct);
+
+        async Task Enqueue(string id, int expected) => await control.Enqueue(app, tx, new JsonObject {
+            ["agent_id"] = Agent.ToString(), ["expected_revision"] = expected, ["config"] = policy.Value.DeepClone(),
+            ["command"] = new JsonObject {
+                ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = id,
+                ["action"] = "check", ["policy_revision"] = (expected + 1).ToString(), ["collection_scope_ids"] = new JsonArray("scope:files")
+            }
+        }, principal, access, ct);
+        async Task<string?> Offered() => (await client.CheckInAsync(app, tx, identity, ct))["file_audit"]?["command"]?["command_id"]?.ToString();
+        async Task ReportVersion(string version) => await client.ReportAsync(app, tx, identity, new JsonObject {
+            ["applied_policy_revision"] = 4, ["collection_state"] = "active", ["agent_version"] = version
+        }, ct);
+        async Task Accept(JsonObject report) => Assert.Equal("accepted",
+            (await ingest.Ingest(app, tx, identity, report, ct, () => new MemoryStream()))["status"]!.ToString());
+
+        const string commandId = "unsupported-check";
+        await Enqueue(commandId, 3);
+        Assert.Equal(commandId, await Offered());
+        var failed = ReportForRoot(policy, "directory", now, commandId, "4", "check");
+        failed["snapshots"] = new JsonArray();
+        failed["scopes"] = new JsonArray(new JsonObject {
+            ["collection_scope_id"] = "scope:files", ["state"] = "failed", ["reason_code"] = "native_unavailable",
+            ["required_masks"] = new JsonObject(), ["actual_masks"] = new JsonObject()
+        });
+        for (int i = 0; i < 100; i++)
+        {
+            failed["observed_at_utc"] = Iso8601.Format(now.AddSeconds(30 * i));
+            await Accept(failed);
+            Assert.Null(await Offered());
+        }
+        var status = await control.Status(app, tx, Agent.ToString(), principal, access, ct);
+        Assert.Equal("26.0.136", status.GetProperty("check_agent_requirement").GetProperty("agent_version").GetString());
+        Assert.Equal("26.0.154", status.GetProperty("check_agent_requirement").GetProperty("minimum_version").GetString());
+        Assert.Equal(now, DateTimeOffset.Parse(status.GetProperty("reported_at").GetString()!));
+
+        await ReportVersion("26.0.153");
+        Assert.Null(await Offered());
+        await ReportVersion("26.0.154");
+        Assert.Equal(commandId, await Offered());
+        var retry = await control.Status(app, tx, Agent.ToString(), principal, access, ct);
+        Assert.Equal("pending", retry.GetProperty("state").GetString());
+        // A new attempt can fail with the same reason. It is retained separately.
+        failed["observed_at_utc"] = Iso8601.Format(now.AddHours(2));
+        await Accept(failed);
+        Assert.Null(await Offered());
+        await Accept(failed);
+        Assert.Null(await Offered());
+        await Enqueue("new-file-check", 4);
+        Assert.Equal("new-file-check", await Offered());
+        await tx.CommitAsync(ct);
+        Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='unsupported-check'", ct));
+    }
+
+    [Fact]
+    public async Task Check_receipt_retention_keeps_the_first_and_last_legacy_failure_and_new_attempts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 424);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into sli_plugin_file_audit.audit_commands values
+                ('legacy-check','00000000-0000-4000-8000-000000000227','synthetic',4,'check',
+                 array['scope:files'],'2026-11-25 00:00:00+00','session',1,repeat('a',64));
+            insert into sli_plugin_file_audit.audit_receipts
+                (receipt_id,command_id,agent_id,source_instance_id,policy_revision,action,collection_scope_id,state,observed_at,reason_code)
+            select gen_random_uuid(),c.command_id,c.agent_id,c.source_instance_id,c.policy_revision,c.action,
+                c.collection_scope_ids[1],'failed',c.requested_at + n * interval '1 minute',
+                case when n=3 then 'unknown' else 'native_unavailable' end
+            from sli_plugin_file_audit.audit_commands c cross join generate_series(1,5) n;
+            """, ct);
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/431_file_audit_check_receipt_retention.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(5, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts", ct));
+        await PostCollectionPostgres.Sql(owner, """
+            insert into sli_plugin_file_audit.audit_receipts
+                (receipt_id,command_id,agent_id,source_instance_id,policy_revision,action,collection_scope_id,state,observed_at,reason_code)
+            select gen_random_uuid(),c.command_id,c.agent_id,c.source_instance_id,c.policy_revision,c.action,
+                c.collection_scope_ids[1],'failed',c.requested_at + n * interval '1 minute','native_unavailable'
+            from sli_plugin_file_audit.audit_commands c cross join generate_series(6,8) n;
+            """, ct);
+        await using var maintenance = new NpgsqlConnection(fixture.Dsn("sli_storage_lifecycle_delete_login"));
+        await maintenance.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(maintenance, "set role adlog_storage_lifecycle_delete", ct);
+        Assert.Equal(1, await Number(maintenance, "select public.prune_file_audit_check_receipts431(1)", ct));
+        Assert.Equal(1, await Number(maintenance, "select public.prune_file_audit_check_receipts431(1)", ct));
+        Assert.Equal(0, await Number(maintenance, "select public.prune_file_audit_check_receipts431(1)", ct));
+        await using var times = new NpgsqlCommand("""
+            select array_agg(extract(minute from observed_at at time zone 'UTC')::integer order by observed_at)
+            from sli_plugin_file_audit.audit_receipts
+            """, owner);
+        Assert.Equal(new[] { 1, 3, 5, 6, 7, 8 }, (int[])(await times.ExecuteScalarAsync(ct))!);
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Equal(0, await Number(owner, "select count(*) from schema_migrations where version=431", ct));
+    }
+
+    [Fact]
     public async Task First_check_result_is_accepted_without_authorizing_file_events()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -204,7 +322,7 @@ public class FileAuditConsumerDatabaseTests
             Assert.Equal(firstObserved, verifiedScopes.GetProperty("scope:files").GetProperty("observed_at_utc").GetString());
             await tx.CommitAsync(ct);
         }
-        Assert.Equal(4, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='multi-scope-check'", ct));
+        Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='multi-scope-check'", ct));
     }
 
     [Fact]

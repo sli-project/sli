@@ -14,6 +14,7 @@ internal interface ILifecycleSession : IAsyncDisposable
     Task HeartbeatAsync(string status, string phase, int interval, JsonObject details, CancellationToken ct);
     Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct);
     Task<JsonObject> RetainReceiptsAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct);
+    Task<long?> PruneFileAuditCheckReceiptsAsync(int limit, CancellationToken ct);
     Task<JsonObject> RetainOutboxAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct);
 }
 
@@ -88,6 +89,20 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             state["partitions"] = await session.ExpirePartitionsAsync(Now, ct);
             await Drain("agent_receipt_retention", "receipt_retention", "last_scanned_packet_id", (a, _) => session.RetainReceiptsAsync(cutoff, a, batch, ct));
             await Drain("semantic_outbox_retention", "outbox_retention", "last_scanned_job_id", (a, _) => session.RetainOutboxAsync(cutoff, a, batch, ct));
+            ReportProgress("file_audit_check_receipt_retention", state);
+            long deleted = 0;
+            while (true)
+            {
+                await session.EnsureLocksAsync(ct);
+                long? count = await session.PruneFileAuditCheckReceiptsAsync(batch, ct);
+                if (count is null)
+                    break;
+                deleted += count.Value;
+                state["file_audit_check_receipts_deleted_count"] = deleted;
+                ReportProgress("file_audit_check_receipt_retention", state);
+                if (count < batch)
+                    break;
+            }
         }
         await session.EnsureLocksAsync(ct);
         state["status"] = "ok";
