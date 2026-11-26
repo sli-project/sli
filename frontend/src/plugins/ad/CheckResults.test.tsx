@@ -4,18 +4,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReportResultDto } from "../../api/report-v2-types";
 import { localeRuntime, setLocale } from "../../i18n";
-import { UserChecks } from "./UserChecks";
 import { ComputerChecks } from "./ComputerChecks";
 
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 
 const page = (items: Record<string, unknown>[]): ReportResultDto => ({
-  contract_id: "sli.report-result.v2", report_key: "ad.users.v2", state: "ok", items,
+  contract_id: "sli.report-result.v2", report_key: "ad.computers.v6", state: "ok", items,
   filtered_count: items.length, has_more: false, next_cursor: null, metrics: [], series: {}, coverage: {},
   filter_options: {}, limitations: [], window: {},
 });
 
-it.each(["users", "computers"] as const)("omits unassessed %s checks while retaining zero and supplied counts", (kind) => {
+it("omits unassessed computer checks while retaining zero and supplied counts", () => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale("ru");
   const base = { severity: "medium", severity_text: "Средняя", status: "not_evaluated", status_text: "Не оценено", total: null, new_count: null };
@@ -27,8 +26,7 @@ it.each(["users", "computers"] as const)("omits unassessed %s checks while retai
     { ...base, key: "new", title: "New check", new_count: 2 },
   ]);
   const { container } = render(<QueryClientProvider client={new QueryClient()}>
-    {kind === "users" ? <UserChecks result={result} baseParams="" onSelect={vi.fn()}/>
-      : <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>}
+    <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>
   </QueryClientProvider>);
   expect(screen.queryByText("Unassessed check")).toBeNull();
   expect(screen.queryByText("Unassessed hygiene")).toBeNull();
@@ -40,15 +38,14 @@ it.each(["users", "computers"] as const)("omits unassessed %s checks while retai
   expect(container.textContent).not.toContain("≥");
 });
 
-it.each(["users", "computers"] as const)("labels the first %s assessment in the selected language", (kind) => {
+it("labels the first computer assessment in the selected language", () => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   const result = page([{ key: "first", title: "First check", total: 1, new_count: null,
     status: "no_comparison", status_text: "Нет сравнения с прошлым снимком" }]);
   for (const [locale, expected] of [["ru", "Первая проверка"], ["en", "First check"]] as const) {
     setLocale(locale);
     const { container, unmount } = render(<QueryClientProvider client={new QueryClient()}>
-      {kind === "users" ? <UserChecks result={result} baseParams="" onSelect={vi.fn()}/>
-        : <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>}
+      <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>
     </QueryClientProvider>);
     expect(container.querySelector(".sli-ds-review-list__status")?.textContent).toBe(expected);
     expect(container.textContent).not.toContain("Нет сравнения с прошлым снимком");
