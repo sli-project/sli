@@ -202,12 +202,15 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
             step = "default_detections"; result["detections"] = await Stage("default_detections", db, async connection => {
                 var defaults = await ProcessDefaultDetections(connection, ct); discovered = defaults.Sources; return defaults.Result;
             }, ct);
-            // Existing managed password writers keep their own admission, family locks and exact-proof checks.
-            // These stages own their runtime connections; do not allocate an unused wrapper connection.
+            // Keep the cycle result key for existing worker telemetry. Password
+            // thresholds now run alongside the other native threshold rules.
             step = "password_producer"; result["password_producer"] = await work.Run("password_producer", async () => {
                 if (Stopping) return EmptyStage();
-                var producer = await new PasswordProducerPoller(runtime, new PasswordProducer(), new Sli.Server.Semantic.Detections.DetectionProducer(new(), new()) { Work = work, Runtime = runtime }) { Work = work }.RunOnceAsync(ct, independent ? null : discovered);
-                return new JsonObject { ["sources"] = producer.Sources, ["completed"] = producer.Completed, ["failed"] = producer.Failed, ["jobs"] = producer.Jobs, ["skipped"] = producer.Skipped, ["failure_reasons"] = producer.FailureReasons, ["import_summary"] = producer.ImportSummary };
+                await using var detectorDb = await runtime.OpenAsync(ct);
+                var batch = await new Detections.DetectionProducer(new(), new()) { Work = work, Runtime = runtime }
+                    .RunOnceAsync(detectorDb, ct, independent ? null : discovered, refreshImport: false);
+                return new JsonObject { ["sources"] = batch.Sources, ["completed"] = batch.Completed, ["failed"] = batch.Failed,
+                    ["jobs"] = batch.Jobs, ["skipped"] = 0, ["failure_reasons"] = batch.FailureReasons, ["import_summary"] = batch.ImportSummary };
             }, ct) ?? EmptyStage();
             step = "password_risk"; var passwordRisk = await work.Run("password_risk", async () => {
                 if (Stopping) return EmptyStage();
