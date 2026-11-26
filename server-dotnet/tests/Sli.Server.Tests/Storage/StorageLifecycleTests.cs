@@ -58,6 +58,16 @@ public sealed class StorageLifecycleTests
         Assert.Equal("ok", result["status"]?.ToString());
         Assert.Equal(new[] {"inbox","partitions","receipts","outbox"},session.Phases);
         Assert.Equal(Now.AddDays(-7),Assert.Single(session.InboxCalls).Cutoff);
+        Assert.Equal(Now.AddDays(-1),Assert.Single(session.OutboxCalls).Cutoff);
+    }
+    [Fact]
+    public async Task Short_cycle_drains_outbox_without_running_partition_or_receipt_retention()
+    {
+        using var state = new State(); var session = new Session();
+        var worker = new StorageLifecycleWorker(session, state.Files, () => Now);
+        await worker.CycleAsync(new(), TestContext.Current.CancellationToken, inboxOnly: true);
+        Assert.Equal(new[] { "inbox", "outbox" }, session.Phases);
+        Assert.Equal(Now.AddDays(-1), Assert.Single(session.OutboxCalls).Cutoff);
     }
     [Fact]
     public async Task Queues_drain_more_than_fifty_batches_and_aggregate_holds_without_stalling_other_lanes()
