@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiResponseError, api, type SetupDomain, type SetupDomainController, type SetupSourceInstance } from "../../api/client";
@@ -74,10 +75,8 @@ export function DomainControllersStep({ controllers, domains, agentInstances }: 
       <div className="sli-ds-field"><label htmlFor="setup-dc-hostname">{t("setup.dc.labelHostname")}</label>
         <input id="setup-dc-hostname" value={hostname} onChange={(event) => setHostname(event.target.value)} autoComplete="off" spellCheck={false} placeholder={t("setup.dc.hostnamePlaceholder")}/></div>
       <div className="sli-ds-field"><label htmlFor="setup-dc-domain">{t("setup.dc.labelDomain")}</label>
-        {domains.length === 1 ? <input id="setup-dc-domain" value={registeredDomain} readOnly/> : <select id="setup-dc-domain" value={registeredDomain} onChange={(event) => setDomain(event.target.value)} disabled={!domains.length}>
-          <option value="">{t("setup.dc.selectDomain")}</option>
-          {domains.map((item) => <option key={item.fqdn} value={item.fqdn}>{item.fqdn}</option>)}
-        </select>}</div>
+        {domains.length === 1 ? <input id="setup-dc-domain" value={registeredDomain} readOnly/> : <Select label={t("setup.dc.labelDomain")} id="setup-dc-domain" value={registeredDomain} onChange={(selectedValue) => setDomain(selectedValue)} disabled={!domains.length}
+          options={[{ value: "", label: t("setup.dc.selectDomain") }, ...(domains.map((item) => ({ value: item.fqdn, label: item.fqdn })) ?? [])]}/>}</div>
       <FieldError error={controllerError(add.error)}/>
       {add.isSuccess ? <p className="sli-ds-header__subtitle" role="status">{t("setup.dc.added")}</p> : null}
       <div className="sli-ds-filters__actions">

@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
-import { DataTable, ReportLayout, type TableColumn } from "../../design-system";
+import { DataTable, FilterChip, ReportLayout, type TableColumn } from "../../design-system";
 import { Icon } from "../../design-system/Icon";
 import "../../design-system/split-report.css";
 import { t } from "../../i18n";
@@ -135,14 +135,12 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
         <div className="sli-ds-split-report__toolbar">
           <label className="sli-ds-field" data-search=""><Icon name="search"/><input type="search" aria-label={t("reports.gpo.search_policy")} placeholder={t("reports.gpo.search_policy")} maxLength={256}
             value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label>
-          <button className="sli-ds-chip" type="button" aria-pressed={mismatch} onClick={() => { setMismatch(!mismatch); setPage(1); }}>
-            {t("reports.gpo.mismatch")} <b>{visible.filter((item) => hasMismatch(item)).length}</b>
-          </button>
-          <button className="sli-ds-chip" type="button" aria-pressed={unlinked} onClick={() => { setUnlinked(!unlinked); setPage(1); }}>
-            {t("reports.gpo.unlinked")} <b>{visible.filter((item) => item.unlinked).length}</b>
-          </button>
+          <FilterChip aria-pressed={mismatch} count={visible.filter((item) => hasMismatch(item)).length}
+            onClick={() => { setMismatch(!mismatch); setPage(1); }}>{t("reports.gpo.mismatch")}</FilterChip>
+          <FilterChip aria-pressed={unlinked} count={visible.filter((item) => item.unlinked).length}
+            onClick={() => { setUnlinked(!unlinked); setPage(1); }}>{t("reports.gpo.unlinked")}</FilterChip>
         </div>
-        <DataTable columns={columns} rows={rows.slice(start, start + pageSize)} rowKey={(row) => row.id} caption={caption()}
+        <DataTable columns={columns} rows={rows.slice(start, start + pageSize)} columnSample={rows} rowKey={(row) => row.id} caption={caption()}
           selectedKey={focusId} emptyContent={firstAdSource ? <FirstAdSource/> : "—"} sort={{ field: "modification_time", direction }}
           onSort={() => { setDirection(direction === "desc" ? "asc" : "desc"); setPage(1); }}
           total={rows.length} pageSize={{ value: pageSize, options: pageSizes, onChange: (size) => { setPageSize(size); setPage(1); } }}

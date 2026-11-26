@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -66,17 +67,14 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
       event.preventDefault();
       if (selected.before && selected.after && canCompare) setSubmitted({ before: selected.before, after: selected.after });
     }}>
-      {(["before", "after"] as const).map((side) => <label className="sli-ds-field" key={side}>
+      {(["before", "after"] as const).map((side) => <div className="sli-ds-field" key={side}>
         <span>{t(`reports.gpo.snapshot_${side}`)}</span>
-        <select value={selected[side]} onChange={(event) => {
-          setSelection({ ...selected, [side]: event.target.value });
+        <Select label={t(`reports.gpo.snapshot_${side}`)} value={selected[side]} onChange={(selectedValue) => {
+          setSelection({ ...selected, [side]: selectedValue });
           setSubmitted(undefined);
-        }}>
-          {snapshots.map((snapshot) => <option key={snapshot.id} value={snapshot.id}>
-            {formatDateTime(snapshot.observed_at, timeZone, { seconds: true })}
-          </option>)}
-        </select>
-      </label>)}
+        }}
+          options={snapshots.map((snapshot) => ({ value: snapshot.id, label: formatDateTime(snapshot.observed_at, timeZone, { seconds: true }) }))}/>
+      </div>)}
       <button className="sli-ds-button" data-variant="primary" type="submit" disabled={!canCompare}>{t("reports.gpo.compare_snapshots")}</button>
     </form>
     {active && (comparison.isPending ? <div role="status">{t("state.loading")}</div> :

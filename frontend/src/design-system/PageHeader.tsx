@@ -1,10 +1,10 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
-import { dayKey, formatClockWithOffset, formatDateTime as formatDateRange, isValidTimeZone } from "../shared/date-time";
+import { dayKey, formatClockWithOffset, formatDateTime as formatDateRange, isValidTimeZone, utcToLocalDateTimeInput } from "../shared/date-time";
 import { useTimeZone } from "../shared/time-zone";
 import { formatDateTime } from "./format";
-import { Icon } from "./Icon";
-import { PeriodPicker, periodLabel, previousPeriod, type PeriodPreset, type PeriodValue } from "./PeriodPicker";
+import { PeriodPopover } from "./PeriodPopover";
+import { PeriodPicker, isPeriodBoundary, periodLabel, previousPeriod, type PeriodPreset, type PeriodValue } from "./PeriodPicker";
 import { Button } from "./Primitives";
 
 export type Crumb = { label: string; href?: string };
@@ -16,6 +16,10 @@ export type PageHeaderControls = {
     bounds?: { from: string; to: string };
     showBounds?: boolean;
     showPrevious?: boolean;
+    precision?: "date" | "datetime-local";
+    applyPresets?: boolean;
+    showSelection?: boolean;
+    strictRange?: boolean;
     onChange: (value: PeriodValue) => void;
     onClear?: () => void;
   };
@@ -23,43 +27,50 @@ export type PageHeaderControls = {
   refreshing?: boolean;
   onRefresh?: () => void;
   showRefreshLabel?: boolean;
-  showBreadcrumbs?: boolean;
 };
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear,
+  precision = "date", applyPresets = true, showSelection, strictRange }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();
   const activeCustom = value?.preset === "custom" ? value : undefined;
-  const inputValue = activeCustom?.from?.includes("T") && activeCustom.to && (timeZone === "browser" || isValidTimeZone(timeZone))
-    ? { preset: "custom" as const, from: dayKey(activeCustom.from, timeZone) ?? undefined, to: dayKey(new Date(Date.parse(activeCustom.to) - 1), timeZone) ?? undefined }
-    : value;
+  const toLocal = (end?: string, inclusiveEnd = false) => {
+    if (!end) return end;
+    if (precision === "datetime-local") {
+      if (end.length === 10) return end + "T00:00";
+      return /(?:Z|[+-]\d\d:\d\d)$/i.test(end) ? utcToLocalDateTimeInput(end, timeZone) : end;
+    }
+    if (!/(?:Z|[+-]\d\d:\d\d)$/i.test(end)) return end.slice(0, 10);
+    return dayKey(new Date(Date.parse(end) - (inclusiveEnd ? 1 : 0)), timeZone) ?? undefined;
+  };
+  const inputValue = activeCustom && (timeZone === "browser" || isValidTimeZone(timeZone))
+    ? { preset: "custom" as const, from: toLocal(activeCustom.from), to: toLocal(activeCustom.to, true) } : value;
   const previous = value && (presets?.includes("custom") ?? true) ? previousPeriod(value, bounds) : null;
+  const valid = draft && (draft.preset !== "custom" ||
+    isPeriodBoundary(draft.from, precision) && isPeriodBoundary(draft.to, precision) &&
+    (strictRange ? draft.from < draft.to : draft.from <= draft.to));
   const close = () => {
     if (!picker.current?.open) return;
+    setDraft(undefined);
     picker.current.open = false;
     picker.current.querySelector("summary")?.focus();
   };
+  const selection = showSelection && inputValue?.preset === "custom" && inputValue.from && inputValue.to
+    ? inputValue.from.replace("T", " ") + " – " + inputValue.to.replace("T", " ") : null;
   return <>
-    <details className="sli-ds-header__period" ref={picker} onToggle={(event) => {
-      if (!event.currentTarget.open) setDraft(undefined);
-    }} onKeyDown={(event) => {
-      if (event.key === "Escape" && event.currentTarget.open) { event.stopPropagation(); close(); }
-    }}>
-      <summary className="sli-ds-button">
-        <Icon name="calendar"/><span>{value ? periodLabel(value.preset) : t("shell.header.allTime")}</span><Icon name="chevron-down"/>
-      </summary>
-      <div className="sli-ds-header__period-menu">
-        {onClear ? <Button onClick={() => { onClear(); close(); }}>{t("shell.header.allTime")}</Button> : null}
-        <PeriodPicker value={draft ?? inputValue} presets={presets} onChange={(next) => {
-          if (next.preset !== "custom") { onChange(next); close(); return; }
-          setDraft(next);
-          if (next.from && next.to && next.from <= next.to && (next.from !== inputValue?.from || next.to !== inputValue?.to)) onChange(next);
-        }}/>
-      </div>
-    </details>
+    <PeriodPopover label={selection ?? (value ? periodLabel(value.preset) : t("shell.header.allTime"))}
+      pickerRef={picker} onDismiss={() => setDraft(undefined)}>
+      {onClear ? <Button onClick={() => { onClear(); close(); }}>{t("shell.header.allTime")}</Button> : null}
+      <PeriodPicker value={draft ?? inputValue} presets={presets} precision={precision} onChange={(next) => {
+        if (next.preset !== "custom" && applyPresets) { onChange(next); close(); return; }
+        setDraft(next);
+      }}/>
+      {draft?.preset === "custom" || inputValue?.preset === "custom" || !applyPresets ? <Button disabled={!valid}
+        onClick={() => { if (valid) { onChange(draft); close(); } }}>{t("filters.apply")}</Button> : null}
+    </PeriodPopover>
     {showBounds && bounds ? <span className="sli-ds-header__updated">{formatDateRange(bounds.from, timeZone, { withYear: false })} → {formatDateRange(bounds.to, timeZone, { withYear: false })}</span> : null}
     {showPrevious && (presets?.includes("custom") ?? true) ? <Button icon="chevron-left" disabled={!previous} onClick={() => { if (previous) onChange(previous); }}>
       {t("shell.header.previousPeriod")}
@@ -75,7 +86,7 @@ function UpdatedTime({ value }: { value: string | number }) {
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
-export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, domain, showDomain = true }: {
+export function PageHeader({ title, subtitle, actions, meta, controls, domain, domainPicker, periodPicker, showDomain = true }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -84,19 +95,18 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   meta?: ReactNode;
   controls?: PageHeaderControls;
   domain?: string;
+  domainPicker?: ReactNode;
+  periodPicker?: ReactNode;
   showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
-  const domainControl = showDomain ? scope.domain?.(domain) : null;
+  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel } = controls ?? scope.controls ?? {};
+  const domainControl = domainPicker ?? (showDomain ? scope.domain?.(domain) : null);
   return <header className="sli-ds-header">
-    {crumbs?.length ? <nav className="sli-ds-crumbs" data-visible={showBreadcrumbs || undefined} aria-label={t("reports.breadcrumbs_aria")}>
-      <ol>{crumbs.map((crumb, index) => <li key={`${crumb.label}-${index}`}>{crumb.href && index < crumbs.length - 1 ? <a href={crumb.href}>{crumb.label}</a> : <span aria-current={index === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>}</li>)}</ol>
-    </nav> : null}
     <div className="sli-ds-header__row">
       <h1 className="sli-ds-header__title" data-page-heading tabIndex={-1}>{title}</h1>
       {domainControl}
-      {period ? <HeaderPeriod {...period}/> : null}
+      {periodPicker ?? (period ? <HeaderPeriod {...period}/> : null)}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
         {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>

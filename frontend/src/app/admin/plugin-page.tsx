@@ -1,7 +1,8 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
-import { Button, PageHeader, Tabs, TabList, TabPanel, StateView } from "../../design-system";
+import { PageHeader, Tabs, TabList, TabPanel, StateView } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { navigationRedirect } from "../navigation";
@@ -43,9 +44,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   return <section className="sli-ds-report">
     <PageHeader title={title} subtitle={item ? pluginStatusText(item.status, title, timeZone) : undefined}
-      actions={item && plugins.data?.can_manage && canEdit ? <Button
-        disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
-        onClick={() => change.mutate({ item, enabled: !item.enabled })}>{t(item.enabled ? "plugins.disable" : "plugins.enable")}</Button> : undefined}/>
+      actions={item && plugins.data?.can_manage && canEdit ? <Checkbox role="switch" checked={item.enabled} disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))} onChange={(event) => change.mutate({ item, enabled: event.target.checked })}>{t("plugins.enabled")}</Checkbox> : undefined}/>
     <PluginReadState loading={plugins.isLoading} error={plugins.error} retry={() => void plugins.refetch()}/>
     {plugins.data && !plugins.isError && !item ? <StateView state="unavailable" message={t("plugins.error.notFound")}/> : null}
     {!canEdit ? <p role="note">{t("pluginPage.readOnly")}</p> : null}

@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -41,7 +42,7 @@ export function AdAccountsPage() {
       titleMessage={denied ? { code: "adAccounts.denied", params: {} } : undefined} detail={denied ? t("adAccounts.permission") : undefined} onRetry={() => void accounts.refetch()}/> : null}
     {accounts.data && !available ? <StateView state="unavailable" compact detail={t("adAccounts.keyUnavailable")}/> : null}
     {accounts.data && !items.length ? <StateView state="empty" titleMessage={{ code: "adAccounts.operationsUnavailable", params: {} }} detail={t("adAccounts.emptyHelp")}/> : null}
-    {items.length ? <DataTable rows={items} rowKey={(row) => row.credential_id} caption={t("adAccounts.title")} columns={[
+    {items.length ? <DataTable localPagination rows={items} rowKey={(row) => row.credential_id} caption={t("adAccounts.title")} columns={[
       { key: "label", label: t("adAccounts.label"), render: (row) => <><button type="button" className="sli-ds-link-button" onClick={() => open({ kind: "details", row })}>{row.label}</button><div>{row.username}</div></> },
       { key: "domain", label: t("adAccounts.domain"), mobile: false, value: (row) => domains.find((domain) => domain.id === row.domain_id)?.fqdn },
       { key: "username", label: t("adAccounts.account"), mobile: false },
@@ -100,7 +101,8 @@ function CredentialForm({ title, selected, domains, busy, error, close, onSave }
     }}>{t("adAccounts.saveCheck")}</button></>}>
     {!selected ? <>
       <div className="sli-ds-field"><label htmlFor="ad-label">{t("adAccounts.label")}</label><input id="ad-label" value={label} maxLength={128} disabled={busy} onChange={(event) => setLabel(event.target.value)}/></div>
-      <div className="sli-ds-field"><label htmlFor="ad-domain">{t("adAccounts.domain")}</label><select id="ad-domain" value={domain} disabled={busy} onChange={(event) => setDomain(Number(event.target.value))}>{domains.map((item) => <option key={item.id} value={item.id}>{item.fqdn}</option>)}</select></div>
+      <div className="sli-ds-field"><label htmlFor="ad-domain">{t("adAccounts.domain")}</label><Select label={t("adAccounts.domain")} id="ad-domain" value={domain} disabled={busy} onChange={(selectedValue) => setDomain(Number(selectedValue))}
+        options={domains.map((item) => ({ value: item.id, label: item.fqdn }))}/></div>
       <div className="sli-ds-field"><label htmlFor="ad-username">{t("adAccounts.account")}</label><input id="ad-username" value={username} maxLength={1024} autoComplete="off" spellCheck={false} disabled={busy} onChange={(event) => setUsername(event.target.value)}/></div>
     </> : null}
     <div className="sli-ds-field"><label htmlFor="ad-password">{selected ? t("adAccounts.newPassword") : t("adAccounts.password")}</label>

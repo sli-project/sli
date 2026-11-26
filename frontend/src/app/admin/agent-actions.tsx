@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useId, useRef, useState } from "react";
 import { Button, Dialog, Header, Heading, Menu, MenuItem, MenuSection, MenuTrigger, Modal, ModalOverlay, Popover, Separator } from "react-aria-components";
 import type { AgentItem } from "../../api/client";
@@ -79,7 +80,7 @@ export function AgentActions({ agent, busy, change, canRemove = false }: { agent
             <p>{t("agents.confirmTarget", { agent: agent.instance_name ? `${agent.instance_name} (${agent.id})` : agent.id, host: agent.host_id })}</p>
             {confirmation.serial ? <p>{t("agents.certificateSerial", { serial: confirmation.serial })}</p> : null}
             <p id={descriptionId}>{t(confirmation.message)}</p>
-            {confirmation.auditEnable ? <label><input type="checkbox" checked={commandLine} disabled={busy} onChange={(event) => setCommandLine(event.target.checked)}/>{t("agents.auditCommandLineConsent")}</label> : null}
+            {confirmation.auditEnable ? <Checkbox checked={commandLine} disabled={busy} onChange={(event) => setCommandLine(event.target.checked)}>{t("agents.auditCommandLineConsent")}</Checkbox> : null}
             <div className="agent-confirmation-actions">
               <Button className="sli-ds-button" autoFocus onPress={closeConfirmation}>{t("agents.cancel")}</Button>
               <Button className="sli-ds-button" data-danger={confirmation.kind === "disable" || confirmation.kind === "revoke" || confirmation.kind === "remove" || undefined} isDisabled={busy} onPress={() => {

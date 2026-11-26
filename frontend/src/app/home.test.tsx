@@ -96,7 +96,7 @@ it("requests server pages and keeps whole-population totals on filtered pages", 
   expect(screen.getByRole("tab", { name: /131/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
   await waitFor(() => expect(query(2).get("page")).toBe("2"));
-  fireEvent.change(screen.getByRole("combobox", { name: t("table.rowsPerPage") }), { target: { value: "100" } });
+  fireEvent.click(screen.getByRole("radio", { name: "100" }));
   await waitFor(() => expect(query(3).get("limit")).toBe("100"));
   expect(query(3).get("page")).toBe("1");
 });

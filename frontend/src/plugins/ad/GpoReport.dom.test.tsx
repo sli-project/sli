@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -176,7 +177,7 @@ it("finds settings by path and value, expands history inline, and renders host v
   expect(within(card).getByText("<img src=x>")).toBeTruthy();
   expect(card.querySelector("img")).toBeNull();
   fireEvent.change(search, { target: { value: "" } });
-  fireEvent.change(within(card).getByRole("combobox", { name: "Category" }), { target: { value: "Logging" } });
+  await chooseOption(within(card).getByLabelText("Category", { selector: "button" }), "Logging");
   expect(within(card).queryByText("Timeout")).toBeNull();
   fireEvent.click(within(card).getByRole("button", { name: "User 1" }));
   expect(within(card).getByRole("button", { name: "Theme" })).toBeTruthy();
@@ -187,13 +188,12 @@ it("finds settings by path and value, expands history inline, and renders host v
 it("compares either of two selected dates in the policy card and distinguishes an equal pair", async () => {
   openDetails("linked", "versions");
   const card = within(await screen.findByRole("tabpanel"));
-  const before = await card.findByRole("combobox", { name: "Before" });
-  const after = card.getByRole("combobox", { name: "After" });
-  expect(within(before).getAllByRole("option")).toHaveLength(4);
-  expect(within(before).getAllByRole("option")[0].textContent).not.toMatch(/snapshot-/);
+  const before = await card.findByLabelText("Before", { selector: "button" });
+  const after = card.getByLabelText("After", { selector: "button" });
+  expect(before.textContent).not.toMatch(/snapshot-/);
   const run = card.getByRole("button", { name: "Compare snapshots" });
-  fireEvent.change(before, { target: { value: "snapshot-1" } });
-  fireEvent.change(after, { target: { value: "snapshot-3" } });
+  await chooseOption(before, "snapshot-1");
+  await chooseOption(after, "snapshot-3");
   fireEvent.click(run);
   const result = within(await card.findByRole("table", { name: "Snapshot comparison" }));
   expect(result.getByRole("row", { name: /Timeout.*Changed.*900 seconds.*600 seconds/ })).toBeTruthy();
@@ -202,7 +202,7 @@ it("compares either of two selected dates in the policy card and distinguishes a
   expect(card.queryByRole("img")).toBeNull();
   const request = requests.find((url) => url.searchParams.has("before_snapshot"))!;
   expect(Object.fromEntries(request.searchParams)).toMatchObject({ policy_id: "linked", domain: "7", before_snapshot: "snapshot-1", after_snapshot: "snapshot-3" });
-  fireEvent.change(before, { target: { value: "snapshot-2" } });
+  await chooseOption(before, "snapshot-2");
   expect(card.queryByRole("table", { name: "Snapshot comparison" })).toBeNull();
   fireEvent.click(run);
   expect(await card.findByText("No differences in visible settings")).toBeTruthy();

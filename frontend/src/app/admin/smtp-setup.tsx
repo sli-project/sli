@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, ApiResponseError } from "../../api/client";
@@ -113,8 +115,8 @@ function SmtpSetupForm({ initial, canConfigure, subscriptions, onClose, onSave, 
     <div className="sli-ds-field"><label htmlFor="smtp-port">{t("notify.smtp.port")}</label>
       <input id="smtp-port" type="number" min="1" max="65535" step="1" value={port} disabled={disabled} onChange={(event) => setPort(event.target.value)}/></div>
     <div className="sli-ds-field"><label htmlFor="smtp-tls">{t("notify.tls")}</label>
-      <select id="smtp-tls" value={tls} disabled={disabled} onChange={(event) => setTls(event.target.value as SmtpSetup["tls_mode"])}>
-        <option value="tls">TLS</option><option value="starttls">STARTTLS</option></select></div>
+      <Select label={t("notify.tls")} id="smtp-tls" value={tls} disabled={disabled} onChange={(selectedValue) => setTls(selectedValue as SmtpSetup["tls_mode"])}
+        options={[{ value: "tls", label: "TLS" }, { value: "starttls", label: "STARTTLS" }]}/></div>
     <div className="sli-ds-field"><label htmlFor="smtp-username">{t("notify.smtp.username")}</label>
       <input id="smtp-username" value={username} maxLength={1024} disabled={disabled} autoComplete="off" onChange={(event) => setUsername(event.target.value)}/></div>
     <div className="sli-ds-field"><label htmlFor="smtp-password">{t("notify.smtp.password")}</label>
@@ -128,7 +130,7 @@ function SmtpSetupForm({ initial, canConfigure, subscriptions, onClose, onSave, 
       <input id={`smtp-recipient-${index}`} type="email" value={recipient.mailbox} maxLength={1024} disabled={disabled} autoComplete="off"
         onChange={(event) => setRecipients((current) => current.map((item, position) => position === index ? { ...item, mailbox: event.target.value } : item))}/>
     </div>)}
-    <label><input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => setEnabled(event.target.checked)}/> {t("notify.enabled")}</label>
+    <Checkbox checked={enabled} disabled={disabled} onChange={(event) => setEnabled(event.target.checked)}> {t("notify.enabled")}</Checkbox>
     {savedAt ? <p role="status">{t("notify.savedAt", { time: time(savedAt) })}</p> : null}
     <ChannelTest channel="smtp" subscriptions={subscriptions} enabled={!disabled && !dirty && initial.enabled && initial.secret_set && valid}
       destination={(item) => initial.recipients.find((recipient) => recipient.user_id === item.recipient_user_id)?.mailbox || "—"} onRefresh={() => undefined}/>
