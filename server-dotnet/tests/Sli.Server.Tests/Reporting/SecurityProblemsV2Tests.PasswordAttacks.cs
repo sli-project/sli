@@ -10,6 +10,39 @@ namespace Sli.Server.Tests.Reporting;
 public sealed partial class SecurityProblemsV2Tests
 {
     [Theory]
+    [InlineData("ru", 1, "1 адрес", "1 попытка", "1 учётная запись")]
+    [InlineData("ru", 2, "2 адреса", "2 попытки", "2 учётные записи")]
+    [InlineData("ru", 5, "5 адресов", "5 попыток", "5 учётных записей")]
+    [InlineData("ru", 21, "21 адрес", "21 попытка", "21 учётная запись")]
+    [InlineData("en", 1, "1 address", "1 attempt", "1 account")]
+    [InlineData("en", 2, "2 addresses", "2 attempts", "2 accounts")]
+    [InlineData("en", 5, "5 addresses", "5 attempts", "5 accounts")]
+    [InlineData("en", 21, "21 addresses", "21 attempts", "21 accounts")]
+    public void PasswordTitlesAndFactsUseLocalizedNumberForms(string language, int count, string addresses, string attempts, string accounts)
+    {
+        var brute = new JsonObject {
+            ["rule_code"] = "semantic.qw.password-brute-force",
+            ["presentation_facts"] = new JsonObject { ["version"] = 1, ["attempts"] = count,
+                ["address_count"] = count, ["account"] = "synthetic-user" }
+        };
+        var spray = new JsonObject {
+            ["rule_code"] = "semantic.qw.password-spray",
+            ["presentation_facts"] = new JsonObject { ["version"] = 1, ["attempts"] = count,
+                ["account_count"] = count, ["source"] = "192.0.2.10" }
+        };
+        string Message(JsonObject row, string suffix) =>
+            ProblemPresentation.RuleMessage(row, suffix, language)["text"]!.ToString();
+        Assert.EndsWith($"{addresses} · {attempts}", Message(brute, "title"));
+        Assert.EndsWith($"{accounts} · {attempts}", Message(spray, "title"));
+
+        var sprayFacts = spray["presentation_facts"]!.AsObject();
+        sprayFacts.Remove("version");
+        sprayFacts["count"] = count;
+        sprayFacts["time"] = "2026-11-13T08:00:00Z";
+        Assert.Contains(language == "ru" && count % 10 == 1 ? $"{count} учётную запись" : accounts, Message(spray, "what"));
+    }
+
+    [Theory]
     [InlineData("ru")]
     [InlineData("en")]
     public void PasswordFactsRespectQueueAndHomeFieldAccess(string language)
@@ -28,6 +61,10 @@ public sealed partial class SecurityProblemsV2Tests
             Assert.DoesNotContain("technical-marker", view.ToJsonString());
         }
         Assert.Equal(language == "ru" ? "После перебора паролей вход удался" : "Sign-in succeeded after password guessing", home["title"]!.ToString());
+        raw["presentation_facts"]!["version"] = 1;
+        raw["presentation_facts"]!["reported_domains"] = new JsonArray(JsonValue.Create("reported-domain-marker"));
+        Assert.DoesNotContain("reported-domain-marker", ProblemPresentation.Finding(raw, restricted, language, queue: true, includeDescription: true).ToJsonString());
+        Assert.Contains("reported-domain-marker", ProblemPresentation.Finding(raw, Access, language, queue: true, includeDescription: true)["what_happened"]!.ToString());
     }
 
     [Theory]

@@ -66,8 +66,14 @@ internal sealed partial class SemanticProduction
             var last = SigmaProjection.At(password, "last");
             var oldFirst = SigmaProjection.At(existing, "first_seen_utc");
             var oldLast = SigmaProjection.At(existing, "last_seen_utc");
+            first = first < oldFirst ? first : oldFirst;
+            last = last > oldLast ? last : oldLast;
+            // Keep the scenario's bounded time window. The open password
+            // problem retains its original first observation in its facts.
+            if (Detections.PasswordAttacks.ScenarioPartition(p.Policy.Selector, password) is not null && last - first > TimeSpan.FromHours(24))
+                first = last.AddHours(-24);
             int increment = replay is null ? 1 : 0;
-            await session.QueryAsync(SemanticRiskSql.refresh_scenario4, ct, first < oldFirst ? first : oldFirst, last > oldLast ? last : oldLast,
+            await session.QueryAsync(SemanticRiskSql.refresh_scenario4, ct, first, last,
                 riskClass, score.Raw, score.Display, score.HardCritical, score.Confidence, score.Score, score.Factors, score.Coverage,
                 (int)existing.Number("step_count") + increment, Math.Max((int)existing.Number("evidence_count"), p.Native.Count),
                 (int)existing.Number("contribution_count") + increment, "ready", scenario);
@@ -161,6 +167,7 @@ internal sealed partial class SemanticProduction
         var result = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding0, ct, job)).SingleOrDefault();
         if (result is null || result.Text("evaluation_mode") != "enabled" || result.Text("conclusion_state") != "observed" || result.Text("scenario_id") != sid.ToString() || !result.Flag("policy_admitted")) throw new InvalidOperationException("finding_requires_enabled_observed_result");
         bool passwordThreshold = p.PasswordThresholdFacts is not null;
+        string? findingFirst = scenario.Text("first_seen_utc"), findingLast = scenario.Text("last_seen_utc");
         if (!passwordThreshold)
         {
             await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding3, ct, sid);
@@ -189,6 +196,11 @@ internal sealed partial class SemanticProduction
         {
             var facts = (await session.QueryAsync("select public.publish_password_threshold_facts418($1,$2) as facts", ct, id, job)).Single()!["facts"]!;
             target = facts.Text("account"); source = facts.Text("source");
+            if (facts is JsonObject password && Detections.PasswordAttacks.ScenarioPartition(p.Policy.Selector, password) is not null)
+            {
+                findingFirst = facts.Text("first");
+                findingLast = facts.Text("last");
+            }
         }
         else
         {
@@ -209,7 +221,7 @@ internal sealed partial class SemanticProduction
         if (evidence.Number("count") <= 0) throw new InvalidOperationException("finding_without_exact_evidence");
         int? repeats = dcRepeats ?? (rule == "semantic.qw.agent-tamper"
             ? Math.Max(0, (int)evidence.Number("count") - 1) : (int?)null);
-        await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding12, ct, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, scenario.Text("first_seen_utc"), scenario.Text("last_seen_utc"), actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.", (int)evidence.Number("count"), evidence["max_event_id"] is null ? null : evidence.Number("max_event_id"), id, repeats);
+        await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding12, ct, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, findingFirst, findingLast, actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.", (int)evidence.Number("count"), evidence["max_event_id"] is null ? null : evidence.Number("max_event_id"), id, repeats);
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding13, ct, sid, id, job, fingerprint, (int)evidence.Number("count"));
         var publication = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding14, ct, sid)).Single()!;
         if (publication.Number("finding_id") != id || publication.Text("finding_fingerprint") != fingerprint) throw new InvalidDataException("finding_publication_replay_conflict");

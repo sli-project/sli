@@ -2,10 +2,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Agent.Protocol;
 using Sli.Server.Problems;
 using Sli.Server.Semantic;
 using Sli.Server.Semantic.Detections;
 using Sli.Server.Semantic.Password;
+using Sli.Server.Semantic.Risk;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Storage;
 using Xunit;
@@ -14,6 +16,44 @@ namespace Sli.Server.Tests.Semantic;
 
 public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void BruteForceUsesTheCollectionDomainAndFoldedAccount()
+    {
+        var scope = new PasswordScope("00000000-0000-0000-0000-000000000001", "sli.windows.ad-dc", "synthetic", "generation", "");
+        var start = DateTimeOffset.Parse("2026-11-13T08:00:00Z", CultureInfo.InvariantCulture);
+        var claims = new[] { "DEMO", "", "WORKGROUP" };
+        var rows = Enumerable.Range(1, 60).Select(id =>
+        {
+            int stream = (id - 1) / 20;
+            return new DetectionRow(new(scope, "core_event", id.ToString(CultureInfo.InvariantCulture), new('a', 64)),
+                start.AddSeconds(id), 4625, Fields: new JsonObject {
+                    ["TargetUserName"] = stream == 0 ? "Администратор" : "АДМИНИСТРАТОР",
+                    ["TargetDomainName"] = claims[stream], ["IpAddress"] = $"192.0.2.{stream + 1}",
+                    ["domain_id"] = 1, ["domain_netbios"] = "EXAMPLE", ["domain_fqdn"] = "example.test"
+                });
+        }).ToArray();
+        var signal = Assert.Single(PasswordAttacks.Evaluate(scope, PasswordAttacks.Brute, new(), rows, 0, new Dictionary<string, PasswordAttacks.Episode>(), start.AddMinutes(2)));
+        var facts = PasswordAttacks.Validate(signal);
+        Assert.Equal(60, facts.Number("attempts"));
+        Assert.Equal(3, facts.Number("address_count"));
+        Assert.Equal(new[] { "DEMO", "WORKGROUP" }, facts["reported_domains"]!.AsArray().Select(value => value!.ToString()));
+
+        var active = new Dictionary<string, PasswordAttacks.Episode> {
+            [D.Text(signal["entity_key"])] = PasswordAttacks.Episode.Read(D.Text(signal["episode_key"]), facts)
+        };
+        var later = rows.Take(20).Select((row, index) => row with {
+            At = row.At.AddHours(25), Ref = row.Ref with { NativeId = (61 + index).ToString(CultureInfo.InvariantCulture) }
+        }).ToArray();
+        Assert.Empty(PasswordAttacks.Evaluate(scope, PasswordAttacks.Brute, new(), later[..19], 60, active, start.AddHours(26)));
+        var resumed = Assert.Single(PasswordAttacks.Evaluate(scope, PasswordAttacks.Brute, new(), later, 60, active, later[^1].At.AddSeconds(1)));
+        Assert.Equal(D.Text(signal["episode_key"]), D.Text(resumed["episode_key"]));
+        Assert.Equal(80, PasswordAttacks.Validate(resumed).Number("attempts"));
+
+        foreach (var row in rows[40..]) row.Fields!["domain_id"] = 2;
+        var split = PasswordAttacks.Evaluate(scope, PasswordAttacks.Brute, new(), rows, 0, new Dictionary<string, PasswordAttacks.Episode>(), start.AddMinutes(2));
+        Assert.Equal(new long[] { 40, 20 }, split.Select(item => PasswordAttacks.Validate(item).Number("attempts")));
+    }
+
     [Fact]
     public async Task Previous_maximum_accepts_the_threshold_migration_and_rollback()
     {
@@ -24,6 +64,124 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
         await fixture.Pg.ApplyFileAsync(path, null, ct);
         await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(path, ".rollback.sql"), null, ct);
         await fixture.Pg.ApplyFileAsync(path, null, ct);
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
+    public async Task UpgradeMergesThresholdFindingsAndResolvesV2WithReversibleDecisions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 417);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await using var runtime = Runtime(fixture);
+        await using var worker = await runtime.OpenAsync(ct);
+        var start = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(-6).ToUnixTimeSeconds());
+        var legacyAccounts = Enumerable.Repeat("synthetic-legacy", 25).Concat(Enumerable.Range(1, 15).Select(i => "legacy-user-" + i)).ToArray();
+        var legacy = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, occurredAt: start,
+            eventKinds: legacyAccounts.Select(_ => 4625).ToArray(), nativeAccounts: legacyAccounts,
+            nativeTargetSids: legacyAccounts.Select((_, i) => $"S-1-5-21-100000001-200000002-300000003-{(i < 25 ? 1001 : 1100 + i)}").ToArray(),
+            nativeTimestamps: legacyAccounts.Select((_, i) => PasswordJson.Stamp(start.AddSeconds(i))).ToArray());
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, legacy, ct);
+        var scope = await Scope(worker, ct);
+        await PostCollectionPostgres.Sql(owner, """
+            update sli_agent_module_bindings set password_detection_domain_id=1 where module_id='sli.windows.ad-dc';
+            """, ct);
+        foreach (string kind in new[] { "brute", "spray" }) {
+            var result = await new PasswordProducer().RunAsync(worker, new(scope, kind), ct);
+            Assert.False(result.Failed, result.Diagnostic?.ToJsonString());
+            Assert.True(result.Jobs > 0);
+        }
+        var v2 = await new PasswordRiskConsumer(runtime, new()).RunOnceAsync(ct);
+        Assert.Equal(0, v2.Failed);
+        await using var retired = new NpgsqlCommand("select count(distinct rule_code) from findings where status='new'", owner);
+        Assert.Equal(2L, await retired.ExecuteScalarAsync(ct));
+
+        var migrations = MigrationDirectory.Read(418);
+        foreach (var migration in migrations.Where(m => m.Version < 420)) await fixture.Pg.ApplyFileAsync(migration.Path, null, ct);
+        string upgrade = migrations.Single(m => m.Version == 420).Path;
+        var agent = ShortEventAdmissionPostgresTests.Agent;
+        var ids = Enumerable.Range(0, 60).ToArray();
+        var claims = new[] { "DEMO", "", "WORKGROUP" };
+        var events = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: ids.Select(_ => 4625).ToArray(),
+            registered: (agent, agent, 900001, 1), packetId: Guid.NewGuid(), sequence: 2, firstRecordId: 101,
+            nativeAccounts: ids.Select(i => i < 20 ? "Администратор" : "АДМИНИСТРАТОР").ToArray(),
+            nativeDomains: ids.Select(i => claims[i / 20]).ToArray(),
+            nativeAddresses: ids.Select(i => $"192.0.2.{10 + i / 20}").ToArray(),
+            nativeTimestamps: ids.Select(i => PasswordJson.Stamp(start.AddSeconds(60 + i))).ToArray());
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, events, ct);
+        await using (var tx = await worker.BeginTransactionAsync(ct)) {
+            var sql = new DetectionSql(worker, tx);
+            var policy = new PasswordThresholdPolicy();
+            var definition = PasswordAttacks.PolicyDefinition(scope, PasswordAttacks.Brute, policy);
+            Assert.True((await sql.Rows("select public.admit_password_threshold418(@id,@definition) as enabled", ct,
+                ("id", DetectionSignal.PolicyId(definition["source_selector"]!["execution"]!.AsObject())),
+                ("definition", CanonicalJson.Serialize(definition, ensureAscii: false)))).Single().Flag("enabled"));
+            var seen = await sql.Rows("select * from public.read_password_threshold_events418(@scope,@rule,@from,@from,0,@now,9223372036854775807)", ct,
+                ("scope", scope.Document), ("rule", PasswordAttacks.Brute), ("from", start.AddSeconds(59)), ("now", start.AddMinutes(3)));
+            Assert.Equal(60, seen.Count);
+            var episodes = new JsonArray();
+            foreach (var batch in seen.Chunk(20)) {
+                string entity = D.Hash(new JsonArray(batch[0]["fields"]!["TargetDomainName"]?.DeepClone(), JsonValue.Create("администратор")));
+                string episode = D.Hash(JsonValue.Create(batch[0].Number("native_id")));
+                var facts = new JsonObject { ["version"] = 1, ["attempts"] = 20, ["first"] = D.Stamp(D.Time(batch[0]["occurred_at_utc"])),
+                    ["last_failure"] = D.Stamp(D.Time(batch[^1]["occurred_at_utc"])), ["last"] = D.Stamp(D.Time(batch[^1]["occurred_at_utc"])),
+                    ["password_success"] = false, ["account"] = batch[0]["fields"]!["TargetUserName"]!.DeepClone(),
+                    ["address_count"] = 1, ["addresses"] = new JsonArray(batch[0]["fields"]!["IpAddress"]!.DeepClone()) };
+                var refs = batch.Select(row => new DetectionRef(scope, "core_event", row.Number("native_id").ToString(CultureInfo.InvariantCulture), D.Text(row["sha256"])));
+                var signal = DetectionSignal.Create(PasswordAttacks.Brute, "threshold", D.Text(PasswordAttacks.Execution(scope, PasswordAttacks.Brute, policy)["rule_sha256"]),
+                    entity, episode, refs, D.Time(batch[^1]["occurred_at_utc"]), start.AddMinutes(3), "high",
+                    "password_threshold_context", new() { ["policy"] = policy.Document, ["facts"] = facts.DeepClone() });
+                Assert.Equal(1, await DetectionProducer.Enqueue(sql, signal, ct));
+                episodes.Add(new JsonObject { ["entity_key"] = entity, ["episode_key"] = episode, ["facts"] = facts });
+            }
+            await sql.Execute("select public.write_password_threshold_pass418(@scope,@rule,@cursor,'current',@episodes)", ct,
+                ("scope", scope.Document), ("rule", PasswordAttacks.Brute), ("cursor", seen[^1].Number("native_id")), ("episodes", episodes));
+            await tx.CommitAsync(ct);
+        }
+        await Publish(runtime, worker, 3, ct);
+        await using var threshold = new NpgsqlCommand("select min(id) from findings where password_threshold_facts418 is not null", owner);
+        long oldest = Assert.IsType<long>(await threshold.ExecuteScalarAsync(ct));
+        async Task<long> Count(string sql) {
+            await using var command = new NpgsqlCommand(sql, owner);
+            command.Parameters.AddWithValue("oldest", oldest);
+            return Assert.IsType<long>(await command.ExecuteScalarAsync(ct));
+        }
+        long retiredCount = await Count("select count(*) from findings where password_threshold_facts418 is null and status='new'");
+        await fixture.Pg.ApplyFileAsync(upgrade, null, ct);
+        Assert.Equal(retiredCount, await Count("""
+            select count(*) from findings_active f join finding_status_history h on h.finding_id=f.id
+            where f.status='closed' and h.new_status='closed' and h.changed_by='SLI' and h.note='password_rule_replaced420'
+            """));
+        Assert.Equal(2L, await Count("""
+            select count(*) from findings_active f join finding_status_history h on h.finding_id=f.id
+            where f.status='closed' and h.changed_by='SLI' and h.note='password_rule_merged420:'||@oldest
+            """));
+        Assert.Equal(1L, await Count("""
+            select count(*) from findings where id=@oldest and status='new'
+                and (password_threshold_facts418->>'attempts')::bigint=60
+                and (password_threshold_facts418->>'address_count')::bigint=3 and evidence_count=50
+                and password_threshold_facts418->'reported_domains' @> '["DEMO","WORKGROUP"]'::jsonb
+            """));
+
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(upgrade, ".rollback.sql"), null, ct);
+        Assert.Equal(retiredCount, await Count("select count(*) from findings where password_threshold_facts418 is null and status='new'"));
+        Assert.Equal(3L, await Count("select count(*) from findings where status='new' and password_threshold_facts418->>'attempts'='20' and evidence_count=20"));
+        Assert.Equal(0L, await Count("select count(*) from finding_status_history where changed_by='SLI'"));
+        await fixture.Pg.ApplyFileAsync(upgrade, null, ct);
+
+        var secondDc = Guid.NewGuid();
+        await ShortEventAdmissionPostgresTests.RegisterDcAsync(owner, secondDc, secondDc, 900002, 1, "dc2.example.test", "Security", ct);
+        var continued = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+            registered: (secondDc, secondDc, 900002, 1), packetId: Guid.NewGuid(), hostName: "dc2.example.test", firstRecordId: 201,
+            occurredAt: start.AddSeconds(120), eventKinds: [4625], nativeAccounts: ["администратор"], nativeDomains: ["NEW-CLAIM"]);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, continued, ct);
+        var secondScope = await Scope(worker, ct, secondDc.ToString());
+        Assert.Equal(1, await DetectionProducer.RunPasswordThreshold(worker, secondScope, PasswordAttacks.Brute, start.AddMinutes(3), ct));
+        await Publish(runtime, worker, 1, ct);
+        Assert.Equal(1L, await Count("select count(*) from findings where status='new' and rule_code='semantic.qw.password-brute-force'"));
+        Assert.Equal(61L, await Count("select (password_threshold_facts418->>'attempts')::bigint from findings where id=@oldest"));
+        Assert.Equal(4L, await Count("select (password_threshold_facts418->>'address_count')::bigint from findings where id=@oldest"));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
@@ -144,9 +302,13 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
         name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
         _ => throw new InvalidOperationException());
 
-    private static async Task<PasswordScope> Scope(NpgsqlConnection db, CancellationToken ct)
+    private static async Task<PasswordScope> Scope(NpgsqlConnection db, CancellationToken ct, string sourceInstance = "")
     {
-        await using var source = new NpgsqlCommand("select source::text from public.default_detection_sources() where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'", db);
+        await using var source = new NpgsqlCommand("""
+            select source::text from public.default_detection_sources() where source#>>'{scope,plugin_id}'='sli.windows.ad-dc'
+                and (@instance='' or source#>>'{scope,source_instance_id}'=@instance)
+            """, db);
+        source.Parameters.AddWithValue("instance", sourceInstance);
         return PasswordScope.Read(JsonNode.Parse((string)(await source.ExecuteScalarAsync(ct))!)!["scope"]);
     }
 
