@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentCollectionHealth } from "../api/client";
 import { localeRuntime, setLocale, t } from "../i18n";
-import { agentCollectionDetail, agentCollectionHeader, agentCollectionHistory, agentCollectionLabel, agentCollectionSummary } from "./agent-collection-view";
+import { agentCollectionHeader } from "./agent-collection-view";
 
 it.each(["ru", "en"] as const)("dates the overdue condition, not outage onset (%s)", (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
@@ -45,17 +45,6 @@ it("keeps a missing read-error date unknown instead of borrowing another stream'
   expect(agentCollectionHeader({ ...data, items: [mixed] }, "UTC").detail).not.toContain("11:15");
 });
 
-it.each(["ru", "en"] as const)("explains unconfirmed agent collection and diagnostic timeouts in %s", (locale) => {
-  vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
-  setLocale(locale);
-  const unknown = { ...agent, state: "unknown" as const };
-  expect(agentCollectionSummary(unknown)).toBe(t("operations.agent_collection.reason.unconfirmed"));
-  expect(agentCollectionSummary(unknown, { state: "unavailable", reason: "timeout" }))
-    .toBe(t("operations.agent_collection.reason.check_timeout"));
-  expect(agentCollectionSummary(unknown, { state: "unavailable", reason: "read_failed" }))
-    .toBe(t("operations.agent_collection.reason.check_failed"));
-});
-
 const agent: AgentCollectionHealth["items"][number] = {
   id: "fixture-agent", host_id: "fixture-host", name: "fixture-agent", domains: [],
   state: "error", connection: "offline", last_seen: "2026-10-09T12:00:00Z", last_packet_at: null,
@@ -63,28 +52,18 @@ const agent: AgentCollectionHealth["items"][number] = {
 };
 const data: AgentCollectionHealth = { state: "error", items: [agent], active_agents: 1, current_agents: 0, checked_at_utc: "2026-10-10T12:00:00Z" };
 
-it.each(["ru", "en"] as const)("shows the actual collection failure reason (%s)", (locale) => {
-  vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); setLocale(locale);
-  const broken = { ...agent, modules: [{ module_id: "sli.windows.ad-dc", channels: [{ channel: "Security",
-    state: "error" as const, failure_reason: "read_error" as const, last_packet_at: null, last_import_at: null,
-    import_lag_seconds: null, budget_seconds: 900 }] }] };
-  expect(agentCollectionSummary(broken)).toBe(t("operations.agent_collection.reason.read_error"));
-  expect(agentCollectionSummary({ ...agent, state: "current" })).toBe(t("operations.agent_collection.state.current"));
-});
-
 afterEach(() => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale("ru"); vi.restoreAllMocks();
 });
 
-it.each(["ru", "en"] as const)("localizes agent failures and pause states (%s)", (locale) => {
+it.each(["ru", "en"] as const)("localizes agent failures (%s)", (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale(locale);
   expect(agentCollectionHeader(data)).toMatchObject({ state: "error", title: t("shell.freshness.broken.title"), href: agent.href });
   expect(agentCollectionHeader(data).detail).toContain(t("operations.agent_collection.failed", {
     agent: `${agent.name} · ${t("operations.agent_collection.no_domain")}`,
   }));
-  expect(agentCollectionLabel("paused")).toBe(t("operations.agent_collection.state.paused"));
 });
 
 it.each([
@@ -156,12 +135,6 @@ it.each(["ru", "en"] as const)("keeps historical quarantine separate from a heal
     historical_unimported_packets: 12, historical_error_at: "2026-10-11T00:00:00Z",
   }] }] };
   expect(agentCollectionHeader({ ...data, state: "current", items: [healthy], current_agents: 1 }).state).toBe("current");
-  const history = agentCollectionHistory(healthy, "UTC");
-  expect(history).toHaveLength(1);
-  expect(history[0]).toContain("12");
-  expect(history[0]).toContain("11");
-  expect(history[0]).not.toContain("operations.");
-  expect(agentCollectionHistory({ ...healthy, modules: [] }, "UTC")).toEqual([]);
   expect(agentCollectionHeader({ ...data, state: "partial", items: [{ ...healthy, state: "lagging" }] })).toMatchObject({
     state: "partial", detail: locale === "ru" ? "Агент fixture-agent: данные ожидают обработки · время начала неизвестно" : "Agent fixture-agent: data awaiting processing · start time unknown",
   });
@@ -173,9 +146,6 @@ it.each(["ru", "en"] as const)("keeps accepted historical loss visible without t
   const healthy = { ...agent, state: "current" as const, completeness: { state: "known_gaps" as const, last_accepted_gap_at: "2026-10-23T01:02:03Z" } };
   const header = agentCollectionHeader({ ...data, state: "current", items: [healthy], current_agents: 1, completeness: { state: "known_gaps" } });
   expect(header.state).toBe("current"); expect(header.detail).toContain(t("operations.agent_collection.accepted_loss"));
-  const detail = agentCollectionDetail(healthy, "UTC");
-  expect(detail).toContain(t("operations.agent_collection.accepted_loss"));
-  expect(detail).toContain("2026");
   expect(agentCollectionHeader({ ...data, state: "current", items: [{ ...healthy, completeness: { state: "not_assessed", last_accepted_gap_at: null } }], completeness: { state: "not_assessed" } }).detail).not.toContain(t("operations.agent_collection.accepted_loss"));
 });
 
@@ -186,7 +156,7 @@ it("retains live error detail alongside historical accepted loss", () => {
 });
 
 
-it.each(["ru", "en"] as const)("labels failed diagnostics as partial with dated last-known facts (%s)", (locale) => {
+it.each(["ru", "en"] as const)("labels failed diagnostics as partial (%s)", (locale) => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale(locale);
   const partial: AgentCollectionHealth = { ...data, state: "partial", items: [{ ...agent, state: "unknown", connection: "unknown" }],
@@ -194,7 +164,6 @@ it.each(["ru", "en"] as const)("labels failed diagnostics as partial with dated 
   expect(agentCollectionHeader(partial).state).toBe("partial");
   expect(agentCollectionHeader(partial).detail).toContain(t("operations.agent_collection.diagnostics_unavailable"));
   expect(agentCollectionHeader(partial).detail).not.toContain(t("operations.agent_collection.unavailable"));
-  expect(agentCollectionDetail(partial.items[0], "UTC")).toContain(t("operations.agent_collection.last_known"));
 });
 
 

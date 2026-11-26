@@ -156,6 +156,28 @@ public sealed partial class HomeSummaryEndpointTests
     }
 
     [Fact]
+    public async Task Aborted_request_ignores_postgres_query_cancellation()
+    {
+        var config = new ConfigurationBuilder().Build();
+        var domains = new Domains(false) { Error = new Npgsql.PostgresException("query canceled", "ERROR", "ERROR", "57014") };
+        using var services = new ServiceCollection().AddLogging().AddSingleton(new TransportGate(config))
+            .AddSingleton<IPrincipalAuthenticator>(new Authentication()).AddSingleton<IDomainAccessService>(new Access(true))
+            .AddSingleton<IHomeSummaryAccess>(new Reports()).AddSingleton<IDomainRepository>(domains)
+            .AddSingleton<IHomeSummaryRepository>(new Rows()).AddSingleton<HomeSummaryReaders>().AddSingleton<HomeSummaryService>()
+            .BuildServiceProvider();
+        using var abort = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        abort.Cancel();
+        var context = new DefaultHttpContext { RequestServices = services, RequestAborted = abort.Token };
+        context.Request.Path = "/api/v1/home/summary";
+        context.Response.Body = new MemoryStream();
+
+        await HomeSummaryEndpoints.HandleAsync(context);
+
+        Assert.Equal(0, context.Response.Body.Length);
+        Assert.Equal(200, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Unavailable_vpn_package_removes_home_contribution_without_cache_reset()
     {
         using var files = new Sli.Server.Tests.Access.ReportCatalogLifecycleTests.CatalogFiles();
@@ -231,7 +253,13 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.Contains(error, Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray()));
     }
 
-    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+    private static readonly DateTimeOffset Now = new(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+
+    private sealed class Clock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
     private static string Stamp(DateTimeOffset at) => at.ToString("O");
     private sealed class Domains(bool populated, bool archived = false) : IDomainRepository
     {
@@ -368,6 +396,7 @@ public sealed partial class HomeSummaryEndpointTests
             .AddSingleton<IPrincipalAuthenticator>(new Authentication()).AddSingleton<IDomainAccessService>(new Access(true))
             .AddSingleton<IHomeSummaryAccess>(new Reports(reports.Length > 0 ? reports : [Report("security.problems"), Report("ad.infrastructure"), Report("ad.computers.v6"), Report("vpn.connections")]))
             .AddSingleton<IDomainRepository>(new Domains(populated, archived)).AddSingleton<IHomeSummaryRepository>(rows)
+            .AddSingleton<TimeProvider>(new Clock())
             .AddSingleton(rows.Links).AddSingleton<HomeSummaryReaders>().AddSingleton<HomeSummaryService>().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Path = "/api/v1/home/summary"; context.Request.QueryString = new QueryString(query); context.Response.Body = new MemoryStream();

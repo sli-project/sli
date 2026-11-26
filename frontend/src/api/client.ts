@@ -1244,6 +1244,7 @@ export type AgentCollectionCompleteness = {
 };
 
 export type AgentCollectionHealth = {
+  connected_domain_controllers?: number;
   replaced_agents?: Array<{ id: string; name: string; agent_version?: string | null; replacement_version?: string | null; certificate_reissue_required?: boolean }>;
   diagnostics?: { state: "unavailable"; reason: "timeout" | "read_failed" };
   completeness?: AgentCollectionCompleteness;

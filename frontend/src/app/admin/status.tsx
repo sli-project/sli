@@ -74,16 +74,14 @@ export function SystemStatusPage() {
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-  const dcTargets = setup.data?.domain_controllers ?? [];
-  const connected = setup.data?.sources.find((source) => source.pack_id === "sli.windows.ad-dc")?.instances?.some((instance) =>
-    instance.configured && instance.enabled && instance.data_received && dcTargets.some((target) =>
-      target.source === "db" && target.enabled && target.domain &&
-      [target.hostname, target.connect_address].some((name) => name.toLowerCase() === instance.source_instance_id.toLowerCase()))) ?? false;
+  const connectedControllers = setup.isError ? undefined : health?.connected_domain_controllers;
+  const connected = connectedControllers !== undefined && connectedControllers > 0;
   const channelReady = !notifications.isError && (notifications.data?.channels.some((channel) => channel.enabled && (channel.last_accepted_at
     || (channel.kind === "smtp" && !smtp.isError && smtp.data?.host && smtp.data.sender && smtp.data.secret_set && smtp.data.needs_save === false)
     || (channel.kind === "telegram" && !telegram.isError && telegram.data?.secret_set && telegram.data.chat_bound))) ?? false);
   const sourcesReady = !setup.isError && health && health.state !== "unavailable" && !health.diagnostics;
-  const showSteps = sourcesReady && !(connected && channelReady && latest);
+  const showSteps = connectedControllers !== undefined && !(connected && channelReady && latest);
+  const controllerCount = connected ? t("setup.controllers.currentCount", { count: connectedControllers }) : null;
   const release = diagnostics.data?.release_metadata;
   const webConsole = diagnostics.data?.web_console;
   const consoleUrl = access?.subject?.coarse_role === "admin" && !diagnostics.isError && webConsole?.available ? webConsole.url : null;
@@ -127,12 +125,15 @@ export function SystemStatusPage() {
     {copyError ? <p role="alert">{t("systemStatus.copyFailed")}</p> : null}
     {exportError ? <p role="alert">{t("systemStatus.downloadFailed")}</p> : null}
     {showSteps ? <ol aria-label={t("systemStatus.firstRun")}>
-      <li><span aria-label={t(connected ? "systemStatus.done" : "systemStatus.pending")}>{connected ? "✓" : "○"}</span> {t("systemStatus.step.agent")} <a className="sli-ds-button" href="/app/agents">{t("systemStatus.connect")}</a></li>
+      <li><span aria-label={t(connected ? "systemStatus.done" : "systemStatus.pending")}>{connected ? "✓" : "○"}</span> {connected
+        ? controllerCount
+        : <>{t("systemStatus.step.agent")} <a className="sli-ds-button" href="/app/agents">{t("systemStatus.connect")}</a></>}</li>
       <li><span aria-label={t(channelReady ? "systemStatus.done" : "systemStatus.pending")}>{channelReady ? "✓" : "○"}</span> {t("systemStatus.step.notifications")} <a className="sli-ds-button" href="/app/notifications">{t("systemStatus.configure")}</a></li>
       <li><span aria-label={t(latest ? "systemStatus.done" : "systemStatus.pending")}>{latest ? "✓" : "○"}</span> {latest ? t("systemStatus.step.received", { time: formatDateTime(latest, timeZone, { withYear: false }) }) : t("systemStatus.step.waiting")}</li>
     </ol> : null}
     {showSteps && (notifications.isError || smtp.isError || telegram.isError) ? failed(t("systemStatus.notifications"), () => Promise.all([notifications.refetch(), smtp.isEnabled ? smtp.refetch() : null, telegram.isEnabled ? telegram.refetch() : null])) : null}
     <h2 className="sli-ds-section-title">{t("systemStatus.sources")}</h2>
+    {!showSteps && controllerCount ? <p>{controllerCount}</p> : null}
     {setup.isPending ? loading(sourceColumns.length) : sourcesReady ? <DataTable columns={sourceColumns} rows={sources} rowKey={(row) => row.id} caption={t("systemStatus.sources")} showFooter={false}/>
       : failed(t("systemStatus.sources"), setup.refetch)}
     {gaps.map(([key, gap]) => <p key={key}>{t("systemStatus.dataGap", { computer: gap.name || EMPTY_VALUE,

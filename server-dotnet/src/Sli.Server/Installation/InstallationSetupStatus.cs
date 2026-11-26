@@ -70,10 +70,8 @@ public sealed partial class InstallationService
         int fresh = ready.Count(i => Bool(i["data_received"]));
         string sourceState = ready.Length > 0 ? "done" : sources.OfType<JsonObject>().Any(s => s["configured"] is null || Text(s["activation_state"]) == "unavailable") ? "unavailable" : "todo";
         string collectionState = health["diagnostics"] is not null || Text(health["state"]) is "unknown" or "unavailable" ? "unavailable" : Text(health["state"]) == "current" ? "done" : "todo";
-        var dc = sources.OfType<JsonObject>().FirstOrDefault(s => Text(s["pack_id"]) == "sli.windows.ad-dc");
-        var dcInstances = Instances(dc).OfType<JsonObject>().ToArray();
-        string controllerState = dc is null || dc["configured"] is null || dcInstances.Any(i => Text(i["collection_state"]) is "" or "unknown")
-            ? "unavailable" : dcInstances.Length > 0 && dcInstances.All(i => Text(i["collection_state"]) == "current") ? "done" : "todo";
+        int? connectedControllers = health["connected_domain_controllers"]?.GetValue<int>();
+        string controllerState = connectedControllers is null ? "unavailable" : connectedControllers > 0 ? "done" : "todo";
         JsonObject? next = null;
         foreach (var source in sources.OfType<JsonObject>())
         {
@@ -95,8 +93,8 @@ public sealed partial class InstallationService
         var domainsStep = Step("domains", "Домены Active Directory", domains is null ? "unavailable" : domains.Count > 0 ? "done" : "todo",
             domains is null ? "Список доменов недоступен." : domains.Count > 0 ? $"Найдено доменов: {domains.Count}." : "Домены ещё не загружены.");
         domainsStep["manual"] = "Домен можно добавить на этой странице (администратору) или он появится при первой загрузке данных каталога. Удалять домены нельзя: на них ссылаются события."; domainsStep["doc"] = "docs/ADMIN_GUIDE.md";
-        var dcStep = Step("domain-controllers", "Контроллеры домена", controllerState, controllerState == "unavailable" ? "Состояние агентов контроллеров недоступно." : $"Контроллеров с работающим агентом: {dcInstances.Count(i => Text(i["collection_state"]) == "current")}.");
-        dcStep["manual"] = "Контроллеры добавляются на этой странице (администратору). Пока список берётся из файла config/domain_controllers.json, его можно перенести в базу скриптом scripts/maintenance/import_domain_controllers_from_file.py."; dcStep["doc"] = "docs/ADMIN_GUIDE.md";
+        var dcStep = Step("domain-controllers", "Контроллеры домена", controllerState, connectedControllers is null ? "Состояние агентов контроллеров недоступно." : $"Контроллеров с работающим агентом: {connectedControllers}.");
+        dcStep["link"] = "/agents";
         var sourcesStep = Step("sources", "Источники", sourceState, sourceState == "unavailable" ? "Состояние источников недоступно." : $"Настроено и включено экземпляров источников: {ready.Length}.");
         sourcesStep["manual"] = "Новые пакеты источников подключаются по инструкции разработчика."; sourcesStep["doc"] = "docs/HOW_TO_ADD_A_SOURCE.md";
         string summaryState = health["diagnostics"] is not null ? "unavailable" : Text(health["state"]);
