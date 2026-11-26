@@ -56,7 +56,7 @@ it("shows every step with its live state, details and manual hints", async () =>
   expect(screen.getByText(/sli.windows.ad-dc 1.0.0/)).toBeTruthy();
   expect(screen.getByText("docs/ADMIN_GUIDE.md")).toBeTruthy();
   expect(screen.getByText("docs/ADMIN_GUIDE.md").closest("details")?.open).toBe(false);
-  expect(screen.getByRole("heading", { name: /Источники со свежими данными/ })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: /Первый сбор/ })).toBeTruthy();
   expect((screen.getByRole("link", { name: t("platformSettings.page.title") }) as HTMLAnchorElement).getAttribute("href")).toBe("/app/platform-settings");
 });
 
@@ -290,7 +290,7 @@ it.each(["ru", "en"] as const)("shows independent source states and a specific n
     expect(within(source).getByText(t("setup.source.installed"))).toBeTruthy();
     expect(within(source).getByText(t("setup.source.configured"))).toBeTruthy();
     expect(within(source).getByText(t("setup.source.disabled"))).toBeTruthy();
-    expect(within(source).getByText(t("setup.source.data.stale"))).toBeTruthy();
+    expect(within(source).getByText(t("setup.source.lastData"))).toBeTruthy();
     expect(within(source).getByText(t("setup.source.next.ad_enable"))).toBeTruthy();
     expect(within(source).getByRole("link", { name: t("setup.steps.controllers.title") }).getAttribute("href")).toBe("#setup-domain-controllers");
     const unknown = screen.getByRole("group", { name: `${t("setup.source.name.domainController")}: source-2` });
@@ -350,8 +350,8 @@ it.each([
   mount();
   const source = await screen.findByRole("group", { name: `${t("setup.source.name.domainController")}: source-1` });
   expect(within(source).getByText(t(enabled ? "setup.source.enabled" : "setup.source.disabled"))).toBeTruthy();
-  expect(within(source).getByText(t(`setup.source.data.${dataState as "fresh" | "stale" | "never"}`))).toBeTruthy();
-  expect(screen.getByText(t("setup.sources.collectionSummary", { count: enabled && dataState === "fresh" ? 1 : 0 }))).toBeTruthy();
+  expect(within(source).getByText(t(received ? "setup.source.lastData" : "setup.source.data.never"))).toBeTruthy();
+  expect(screen.getByText(t("setup.sources.collectionSummary", { count: enabled && received ? 1 : 0 }))).toBeTruthy();
   expect(screen.queryByText(t("setup.source.nextStep")) !== null).toBe(Boolean(action));
 });
 
@@ -471,7 +471,7 @@ it("keeps the saved domain on a failed explicit change and allows retry", async 
 });
 
 
-it.each(["ru", "en"] as const)("uses registered DC collection for the active domain without changing legacy settings in %s", async (locale) => {
+it.each(["ru", "en"] as const)("counts a connected controller before collection in %s", async (locale) => {
   const previous = getLocale();
   const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => {});
   setLocale(locale);
@@ -480,26 +480,25 @@ it.each(["ru", "en"] as const)("uses registered DC collection for the active dom
       domains: [{ fqdn: "corp.example.test", forest: "corp.example.test", server_count: 1, is_archived: false }],
       domain_controllers: [{ hostname: "dc1.example.test", connect_address: "dc1.example.test", domain: "corp.example.test", enabled: false, source: "db", dns_readback: true }],
       sources: [{ ...status.sources[0], collection_basis: "agents", configured: true, activation_state: "enabled", instances: [
-        { source_instance_id: "DC1.EXAMPLE.TEST", configured: true, enabled: true, collection_state: "current", data_received: true, data_state: "fresh", next_action: null, last_data_utc: null },
-        { source_instance_id: "agent-only.example.test", configured: true, enabled: true, collection_state: "current", data_received: true, data_state: "fresh", next_action: null, last_data_utc: null },
+        { source_instance_id: "DC1.EXAMPLE.TEST", configured: true, enabled: true, collection_state: "waiting", data_received: false, data_state: "never", next_action: null, last_data_utc: null },
+        { source_instance_id: "agent-only.example.test", configured: true, enabled: true, collection_state: "waiting", data_received: false, data_state: "never", next_action: null, last_data_utc: null },
       ] }],
-      agent_collection: { state: "current", active_agents: 2, current_agents: 2, items: [] },
+      agent_collection: { state: "partial", active_agents: 1, current_agents: 0, connected_domain_controllers: 1, items: [] },
     });
     mount();
     const table = await screen.findByRole("table", { name: t("setup.dc.tableCaption") });
-    expect(within(table).getAllByText(t("operations.agent_collection.state.current"))).toHaveLength(2);
     expect(within(table).queryByText(t("setup.dc.disabled"))).toBeNull();
     expect(within(table).getByText("agent-only.example.test")).toBeTruthy();
     expect(within(table).queryAllByRole("button")).toHaveLength(0);
     const domainTable = screen.getByRole("table", { name: t("setup.domain.tableCaption") });
     expect(within(domainTable).queryByText(t("domain.archive.label"), { exact: false })).toBeNull();
-    expect(screen.getByText(t("setup.controllers.currentCount", { count: 2 }))).toBeTruthy();
+    expect(screen.getByText(t("setup.controllers.currentCount", { count: 1 }))).toBeTruthy();
     expect(state.toggleDc).not.toHaveBeenCalled();
     expect(state.archive).not.toHaveBeenCalled();
   } finally { setLocale(previous); reload.mockRestore(); }
 });
 
-it.each(["ru", "en"] as const)("keeps unbound controller unknown and legacy controls explicit in %s", async (locale) => {
+it.each(["ru", "en"] as const)("keeps existing controller actions available in %s", async (locale) => {
   const previous = getLocale();
   const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => {});
   setLocale(locale);
@@ -512,10 +511,9 @@ it.each(["ru", "en"] as const)("keeps unbound controller unknown and legacy cont
     });
     mount();
     const table = await screen.findByRole("table", { name: t("setup.dc.tableCaption") });
-    expect(within(table).getByText(t("setup.source.unknown"))).toBeTruthy();
-    expect(within(table).getByText(`${t("setup.controllers.targetConfiguration")}: ${t("setup.dc.enabled")}`)).toBeTruthy();
+    expect(within(table).queryByText(t("setup.dc.enabled"))).toBeNull();
     expect(within(table).getByRole("button", { name: t("setup.dc.actionDisable") })).toBeTruthy();
-    expect(within(table).queryByText(t("operations.agent_collection.state.current"))).toBeNull();
+    expect(within(table).queryByRole("columnheader", { name: t("setup.dc.colState") })).toBeNull();
     expect(state.toggleDc).not.toHaveBeenCalled();
   } finally { setLocale(previous); reload.mockRestore(); }
 });
@@ -551,8 +549,8 @@ it.each(["ru", "en"] as const)("names setup navigation destinations while preser
     });
     mount();
     expect((await screen.findByRole("link", { name: t("platformSettings.page.title") })).getAttribute("href")).toBe("/app/platform-settings");
-    expect(screen.getByRole("link", { name: t("shell.nav.operations") }).getAttribute("href")).toBe("/app/operations");
-    expect(screen.getAllByRole("link", { name: t("agents.title") }).map((link) => link.getAttribute("href"))).toEqual(["/app/agents", "/app/agents"]);
+    expect(screen.getByRole("link", { name: t("shell.adminNav.status") }).getAttribute("href")).toBe("/app/admin/status");
+    expect(screen.getAllByRole("link", { name: t("agents.title") }).map((link) => link.getAttribute("href"))).toEqual(["/app/agents"]);
     expect(screen.queryByRole("link", { name: t("setup.step.openPage") })).toBeNull();
     expect(state.addDc).not.toHaveBeenCalled();
     expect(state.toggleDc).not.toHaveBeenCalled();
