@@ -5,7 +5,7 @@ namespace Sli.Server.Notifications;
 public sealed class NotificationDatabase : IPostgresConnectionFactory,IAsyncDisposable
 {
     private readonly NpgsqlDataSource source;
-    private NotificationDatabase(string dsn) => source=new NpgsqlDataSourceBuilder(dsn).Build();
+    internal NotificationDatabase(string dsn) => source=new NpgsqlDataSourceBuilder(dsn).Build();
     public static NotificationDatabase? TryCreate()
     {
         static byte[] Read(string p){using var f=File.OpenRead(p);var b=new byte[65537];int n=0,k;while(n<b.Length && (k=f.Read(b,n,b.Length-n))>0)n+=k;if(n>65536)throw new FormatException();return b[..n];}

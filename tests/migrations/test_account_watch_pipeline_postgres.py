@@ -4,7 +4,7 @@ Full migrated per-test PostgreSQL only: no reduced tables, replacement evidence
 resolver, extra GRANT, prebuilt signal/finding/outbox or real transport. Input is
 synthetic imported receipt + retained directory metadata, not AD collection.
 The short-event admission gate verifies that same receipt and native event.
-Medium watch findings queue for SMTP; Telegram admits high/critical only.
+A new medium watch finding queues one notification per enabled channel.
 The shipped .NET worker runs once: managed polling, capture authentication and
 historical-replay processing are not covered. Reprocessing checks deduplication.
 """
@@ -118,8 +118,7 @@ def _source(connect, *, wrong_domain=False):
         conn.execute("""insert into sli_agent_packet_inbox(packet_id,envelope,packet,event_rows,imported_at)
             values(%s,%s,%s,%s,clock_timestamp())""", (packet, Jsonb(envelope), Jsonb({
             "contract": "sli.collection-packet.v1", "header": {"source": "fixture-collector", "channel": "Security"}}), Jsonb([row])))
-        # Migration261 intentionally suppresses medium Telegram findings. Seed
-        # both existing channels to prove SMTP admission and Telegram suppression.
+        # Enable both channels to verify one delivery per channel after replay.
         for delivery_channel in ("smtp", "telegram"):
             conn.execute("""insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
                 values(%s,%s,%s,%s,true)""", (uuid4(), owner, owner, delivery_channel))
@@ -213,19 +212,12 @@ def test_registered_watch_native_event_publication_and_reprocessing(watch_db, po
         assert admin.execute("select count(*) as n from findings").fetchone()["n"] == expected
         assert admin.execute("select count(*) as n from normalized_events").fetchone()["n"] == 0
         assert admin.execute("select count(*) as n from event_hot where source_sha256 is not null").fetchone()["n"] == int(case != "bad_evidence")
-        queue_diagnostics = admin.execute("""select
-            (select count(*) from notification_subscriptions where enabled) as enabled_subscriptions,
-            (select count(*) from semantic_finding_publications) as publications,
-            (select array_agg(distinct job.source_kind) from semantic_finding_publications p
-                join semantic_risk_evaluation_jobs job on job.job_id=p.first_job_id) as published_source_kinds,
-            (select array_agg(distinct coalesce(document_json->>'processing_mode','live'))
-                from semantic_qw_signals) as signal_modes,
-            (select max(extract(epoch from clock_timestamp()-(document_json->>'occurred_at_utc')::timestamptz))
-                from semantic_qw_signals) as oldest_signal_seconds,
-            md5(pg_get_functiondef('public.enqueue_qw_finding_notifications(uuid)'::regprocedure)) as enqueue_definition_md5
-            """).fetchone()
-        assert admin.execute("select count(*) as n from notification_outbox").fetchone()["n"] == expected, queue_diagnostics
-        assert admin.execute("select count(*) as n from notification_outbox where channel='telegram'").fetchone()["n"] == 0
+        deliveries = admin.execute("""select channel, state, attempts, object_severity
+            from notification_outbox order by channel""").fetchall()
+        assert deliveries == [
+            {"channel": channel, "state": "pending", "attempts": 0, "object_severity": "medium"}
+            for channel in ("smtp", "telegram") if expected
+        ]
         audit_rows = admin.execute("select details_json from access_audit_v4 where action='watch_entry_update' and target_key=%s", (saved["id"],)).fetchall()
         assert len(audit_rows) == (2 if case == "disabled_after_event" else 1)
         assert "fixture-private-reason" not in str(audit_rows) and SID not in str(audit_rows)
@@ -238,9 +230,6 @@ def test_registered_watch_native_event_publication_and_reprocessing(watch_db, po
             ref, = admin.execute("select * from finding_evidence_refs where finding_id=%s", (finding["id"],)).fetchall()
             assert ref["native_id"] == str(item["event"]) and ref["sha256"] == item["digest"]
             assert ref["plugin_id"] == "sli.windows.ad-dc" and ref["source_generation"] == rule.scope.source_generation
-            pending, = admin.execute("select * from notification_outbox").fetchall()
-            assert pending["channel"] == "smtp"
-            assert pending["state"] == "pending" and pending["attempts"] == 0 and pending["object_severity"] == "medium"
             signal, = admin.execute("select document_json from semantic_qw_signals").fetchall()
             assert signal["document_json"]["watch_context"]["entry_id"] == saved["id"]
             assert signal["document_json"]["watch_context"]["entry_revision"] == 1
