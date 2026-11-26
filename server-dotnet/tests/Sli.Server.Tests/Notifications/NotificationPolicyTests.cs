@@ -7,6 +7,17 @@ using Xunit;
 namespace Sli.Server.Tests.Notifications;
 public class NotificationPolicyTests
 {
+    [Fact]
+    public void One_hundred_updates_to_the_same_open_problem_admit_only_the_initial_alert()
+    {
+        const string severity = "medium";
+        int admissions = ProblemNotification.IsTransition(true, false, "new", severity, severity) ? 1 : 0;
+        string[] openStatuses = ["confirmed", "repeated", "active", "review"];
+        for (int update = 0; update < 100; update++)
+            if (ProblemNotification.IsTransition(false, false, openStatuses[update % openStatuses.Length], severity, severity)) admissions++;
+        Assert.Equal(1, admissions);
+    }
+
     [Theory] [InlineData(1,0,"retry",60)] [InlineData(2,600,"retry",600)] [InlineData(4,0,"retry",3600)] [InlineData(5,0,"failed",3600)]
     public void RetryScheduleAndLimit(int attempt,int provider,string expected,int delay)
     {Assert.Equal((expected,delay),TelegramWorker.Completion("retry",attempt,provider));}
@@ -17,6 +28,15 @@ public class NotificationPolicyTests
         Assert.Contains("channel='telegram'",TelegramWorker.ClaimSql);Assert.Contains("'test_problem','semantic_finding'",TelegramWorker.ClaimSql);
         Assert.Contains("for update skip locked",TelegramWorker.ClaimSql);Assert.Contains("lease_token=@token",TelegramWorker.ClaimSql);Assert.Contains("60 seconds",TelegramWorker.ClaimSql);
         Assert.Contains("report_schedule",TelegramWorker.ClaimSql);Assert.DoesNotContain("smtp",TelegramWorker.ClaimSql);
+    }
+    [Fact]
+    public void Host_fields_cannot_add_a_line_or_a_scheme_and_are_bounded()
+    {
+        string input = "synthetic\n\u202Ehttps://example.test/" + new string('x', 400);
+        var value = NotificationMessage.Line(input, 120);
+        Assert.Equal(120, value.Length);
+        Assert.StartsWith("synthetic https:∕∕example.test/", value);
+        Assert.DoesNotContain('\u202E', value);
     }
     [Fact] public void SyntheticFileSettingsRequireSecretFileAndUserMapping()
     {
@@ -48,7 +68,8 @@ public class NotificationPolicyTests
         string text = NotificationMessage.Format(j, "https://sli.invalid/app", finding, access, language, TimeZoneInfo.FindSystemTimeZoneById("Asia/Bangkok"));
         var lines = text.Split('\n');
         Assert.Equal(4, lines.Length);
-        Assert.Equal($"{severity} · {queue["title_text"]}", lines[0]);
+        Assert.StartsWith($"{severity} · {queue["title_text"]}", lines[0]);
+        Assert.Contains("Administrator", lines[0]); Assert.Contains("192.0.2.10", lines[0]);
         Assert.Contains("Administrator", lines[1]); Assert.Contains("192.0.2.10", lines[1]); Assert.Contains("12", lines[1]);
         Assert.Contains($"{firstSeen}: 22.11 03:00", lines[1]); Assert.Contains(delay, lines[1]);
         Assert.Equal(queue["next_text"]!.ToString(), lines[2]);

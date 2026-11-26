@@ -13,12 +13,9 @@ const kindLabel = (kind: NotificationKind) => t(`reports.v2.notifications.channe
 const known = (value: number | null | undefined) => value == null ? "—" : String(value);
 const stateCodes = new Set(["pending", "sending", "dry_run", "accepted", "delivery_unknown", "retry", "failed", "blocked", "cancelled"]);
 export const deliveryState = (value: string) => stateCodes.has(value) ? t(`reports.v2.notifications.deliveries.columns.state.labels.${value}` as MessageKey) : "—";
-const problemLabel = (row: NotificationDelivery) => row.object_kind === "test_problem" ? t("notify.testProblem") : row.finding_id ? t("notify.problem", { id: row.finding_id }) : t("notify.publishedProblems");
+const problemLabel = (row: NotificationDelivery) => row.object_kind === "test_problem" ? t("notify.testProblem")
+  : row.problem_title || (row.finding_id ? t("notify.problem", { id: row.finding_id }) : t("notify.publishedProblems"));
 const errorCode = (code: string | null) => !!code && !["accepted", "simulated", "historical_replay", "history_import"].includes(code);
-const processingLabel = (row: NotificationDelivery) => row.delivery_reason === "pipeline_delay" && Number.isSafeInteger(row.delay_minutes) && (row.delay_minutes ?? 0) >= 15
-  ? t("notifications.delivery.delayed", { minutes: row.delay_minutes! })
-  : row.delivery_reason && ["live", "historical_replay", "history_import"].includes(row.delivery_reason)
-    ? t(`reports.v2.notifications.deliveries.columns.delivery_reason.labels.${row.delivery_reason}` as MessageKey) : "—";
 const ruleSaveError = (error: Error | null) => error instanceof ApiResponseError && error.status === 409 ? t("notify.conflict") : error instanceof ApiResponseError && error.status === 403 ? t("notify.denied") : t("notify.ruleSaveFailed");
 
 /** The API, rather than menu visibility, enforces both report grants. */
@@ -103,7 +100,8 @@ export function NotificationsPage() {
       </>}><FactList facts={[
         { label: t("notify.channel"), value: kindLabel(delivery.channel) }, { label: t("notify.state"), value: deliveryState(delivery.state) },
         { label: t("notify.reason"), value: resultLabel(delivery.result_code) },
-        { label: t("reports.v2.notifications.deliveries.columns.delivery_reason.label"), value: processingLabel(delivery) },
+        ...(delivery.delivery_reason === "pipeline_delay" && Number.isSafeInteger(delivery.delay_minutes) && (delivery.delay_minutes ?? 0) >= 15
+          ? [{ label: t("reports.v2.notifications.deliveries.columns.delivery_reason.label"), value: t("notifications.delivery.delayed", { minutes: delivery.delay_minutes! }) }] : []),
         { label: t("notify.repeats"), value: delivery.attempts == null ? "—" : Math.max(0, delivery.attempts - 1) },
         ...(delivery.state === "retry" ? [{ label: t("notify.when"), value: stamp(delivery.available_at) }] : []),
       ]}/></DetailDrawer> : null}

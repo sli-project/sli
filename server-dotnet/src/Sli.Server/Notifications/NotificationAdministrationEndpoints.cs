@@ -8,6 +8,7 @@ using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Compatibility;
 using Sli.Server.Domains;
+using Sli.Server.Problems;
 
 namespace Sli.Server.Notifications;
 
@@ -85,7 +86,8 @@ public static class NotificationAdministrationEndpoints
                     if (!NotificationAccess.Allowed(access, "notifications.deliveries")) throw new NotificationException(denied, 403);
                     var query = NotificationWorkspaceQuery.Parse(context.Request.Query); bool links = NotificationAccess.Queue(access);
                     if (query.Finding is not null && !links) throw new NotificationException(denied, 403);
-                    result = await repository.WorkspaceAsync(principal, query, links, NotificationAccess.Allowed(access, action: "configure_channel"), ct);
+                    result = await repository.WorkspaceAsync(principal, query, links ? new ProblemAccess(access) : null,
+                        NotificationAccess.Allowed(access, action: "configure_channel"), context.Request.Headers.AcceptLanguage.ToString(), ct);
                 }
                 else result = new JsonObject { ["items"] = channel ? await repository.ChannelsAsync(ct) : await repository.SubscriptionsAsync(ct) };
             }

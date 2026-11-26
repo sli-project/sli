@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Sli.Server.Notifications;
 using Sli.Server.Semantic.Password;
 
 namespace Sli.Server.Semantic.Risk;
@@ -59,7 +60,7 @@ internal static class PasswordRiskPublication
               'Review the linked evidence and validate the security impact.',0,'created from enabled semantic scenario',0,null)
             on conflict(fingerprint) do nothing returning id
             """,ct,("fingerprint",fingerprint),("rule",ruleCode),("title",RiskJson.String(scenario,"title")),("risk",severity),("confidence",RiskJson.Int(scenario,"confidence_score")/100.0),("first",RiskJson.String(scenario,"first_seen_utc")),("last",RiskJson.String(scenario,"last_seen_utc")),("explanation",RiskJson.String(scenario,"explanation")));
-        var findings=await sql.Rows("select id,rule_code from public.findings where fingerprint=@fingerprint for update",ct,("fingerprint",fingerprint));
+        var findings=await sql.Rows($"select id,rule_code,status,severity,{ProblemNotification.AdmissionAvailable} as transition_admission from public.findings where fingerprint=@fingerprint for update",ct,("fingerprint",fingerprint));
         RiskJson.Require(findings.Count==1&&RiskJson.String(findings[0],"rule_code")==ruleCode,"password_risk_finding_replay_conflict");long finding=RiskJson.Long(findings[0],"id");
         // Re-resolve and reparse again before linking. No preflight cache/verdict is reused.
         var batches=await PasswordRiskProof.VerifyScenario(sql,sid,work.Proposal.Signal,ct);
@@ -112,7 +113,11 @@ internal static class PasswordRiskPublication
             insert into public.finding_status_history(finding_id,old_status,new_status,changed_by,note)
             values(@finding,null,'new','semantic-worker','created from enabled semantic scenario')
             """,ct,("finding",finding));
-        await sql.Rows("select public.enqueue_qw_finding_notifications(@scenario) as enqueued",ct,("scenario",sid));
+        if(findings[0]["transition_admission"]?.GetValue<bool>()!=true)
+            await sql.Rows("select public.enqueue_qw_finding_notifications(@scenario) as enqueued",ct,("scenario",sid));
+        else if(ProblemNotification.IsTransition(created.Count>0,reopened.Count>0,RiskJson.String(findings[0],"status"),
+            RiskJson.String(findings[0],"severity"),severity))
+            await sql.Rows("select public.enqueue_problem_notification419(@scenario,@job) as enqueued",ct,("scenario",sid),("job",work.Lease.Id));
         await SupersedeFinding(sql,sid,finding,ct);return finding;
     }
 
