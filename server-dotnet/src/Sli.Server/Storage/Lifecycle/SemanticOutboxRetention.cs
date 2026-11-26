@@ -42,9 +42,7 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
             await Execute(db, tx, "set local statement_timeout=0; set local lock_timeout=0", ct);
             waiting?.Invoke(true);
             try {
-                // Freeze
-                // leases, repairs and new references while
-                // taking a fresh READ COMMITTED classification snapshot.
+                // Freeze leases, repairs and new references while taking a fresh classification snapshot.
                 await Execute(db, tx, "lock table public.semantic_processing_outbox,public.semantic_producer_coverage in share row exclusive mode", ct);
             } finally { waiting?.Invoke(false); }
             var dependencies = await Rows(db, tx, "select conrelid::regclass::text as relation,confdeltype::text as action from pg_constraint where contype='f' and confrelid='public.semantic_processing_outbox'::regclass", ct);
@@ -52,17 +50,14 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
                 throw new LifecycleBlocked("unknown_outbox_dependency");
             var rows = await Rows(db, tx, """
                 with jobs as materialized (
-                  select * from public.semantic_processing_outbox where job_id>@after order by job_id limit @limit
+                  select job_id,source_event_id from public.semantic_processing_outbox
+                  where status='completed' and job_id>@after and greatest(created_at,updated_at,completed_at)<@cutoff
+                  order by job_id limit @limit
                 )
                 select j.job_id,case
-                  when j.status not in ('completed','quarantined') then 'processing_pending'
-                  when greatest(j.created_at,j.updated_at,j.completed_at)>=@cutoff then 'within_seven_days'
                   when exists(select 1 from public.entity_identity_semantic_replays_v2 r where r.replay_job_id=j.job_id) then 'evidence_reference'
                   when exists(select 1 from public.semantic_processing_outbox r where r.source_event_id=j.source_event_id
                     and r.payload_json->>'original_job_id'=j.job_id::text) then 'repair_reference'
-                  -- Producer coverage alone is not success: a live quarantined
-                  -- job must keep vetoing event deletion, even if covered in 331.
-                  when j.status='quarantined' then 'semantic_unresolved'
                   else 'eligible' end as classification
                 from jobs j order by j.job_id
                 """, ct, ("after", after), ("limit", limit), ("cutoff", cutoff));
