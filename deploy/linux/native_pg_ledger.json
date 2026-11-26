@@ -627,6 +627,8 @@
     "config/postgres_migrations/420_password_rule_identity.sql": "415b4684896f22a4a3c065c82ee74434729353c778c22a113c4e8c556945242f",
     "config/postgres_migrations/421_sli_own_actions.rollback.sql": "6cedda18582b07b3fd160ad5e0f40870da692b7b82b1ac818515cd40343e8396",
     "config/postgres_migrations/421_sli_own_actions.sql": "f36100524b637e3fe349d869bab7a7621f4d6ac07861c12cbd52cd3286938853",
+    "config/postgres_migrations/426_semantic_outbox_retention.rollback.sql": "eb5351d089373eba7e3fb43fab4840ee1347dadc6f0bbe87a28ad3b3cd7a84f8",
+    "config/postgres_migrations/426_semantic_outbox_retention.sql": "415ad119bc2052ac95b95d4027286dfa04f1a1b1c7301017cebb5b78ba379111",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
