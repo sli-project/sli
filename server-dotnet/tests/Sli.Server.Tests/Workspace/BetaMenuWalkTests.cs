@@ -72,13 +72,18 @@ public sealed class BetaMenuWalkTests
                     ["Sli:AuthRequired"] = "1", ["Sli:AllowUnauthenticated"] = "0",
                     ["Sli:AuthAllowInsecureHttp"] = "1", ["Sli:AuthCookieSecure"] = "0",
                     ["Sli:OwnerSetup"] = "0", ["Sli:ProjectRoot"] = root,
+                    ["modules:preview"] = "false",
                     ["Sli:WebRoot"] = Path.Combine(root, "web/app"),
                     ["Sli:ReactRoot"] = Path.Combine(root, "artifacts/frontend/react-build"),
                     ["Sli:DataDirectory"] = Path.Combine(fixture.Pg.Root, "app-data"),
                     ["Sli:LogDirectory"] = Path.Combine(fixture.Pg.Root, "app-logs")
                 })));
+        using var previewHost = host.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["modules:preview"] = "true" })));
         host.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
+        previewHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
         using var client = host.CreateClient();
+        using var previewClient = previewHost.CreateClient();
         heartbeat.Change(Timeout.Infinite, Timeout.Infinite);
         Assert.True(client.BaseAddress!.IsLoopback);
         // Validate the same real API the browser uses, before entering the menu walk.
@@ -124,7 +129,8 @@ public sealed class BetaMenuWalkTests
         {
             await browser.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new
             {
-                url = client.BaseAddress.AbsoluteUri, token, results, file_servers = fileServers,
+                url = client.BaseAddress.AbsoluteUri, preview_url = previewClient.BaseAddress!.AbsoluteUri,
+                token, results, file_servers = fileServers,
                 workstations
             }));
             browser.StandardInput.Close();

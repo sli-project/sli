@@ -211,6 +211,53 @@ public sealed class AdReviewChecksTests : IClassFixture<AdReviewChecksTests.Data
         Assert.All(row["objects"]!.AsArray(), o => { Assert.True(o.Int("domain_id") > 0); Assert.EndsWith("example.test", o.Text("domain_name")); });
         Number(result["coverage"]!.AsObject(), "population", 6); Number(result["coverage"]!.AsObject(), "affected_objects", 6);
     }
+    [Fact] public async Task Review_accounts_page_unique_accounts_and_keep_other_checks_when_filtered()
+    {
+        await using var db = await Open();
+        var overlapping = User(1, 512 | 128 | 65536);
+        await Seed(db, true, [overlapping, overlapping, User(2, 512 | 65536)]);
+        await Seed(db, true, [overlapping], domain: 2);
+        var request = new AdV2Request("ad.users.v2", "view", null, [1, 2], new() { ["account_rows"] = "yes" },
+            "checks", null, false, 1, null, "UTC") { QualifyNames = true };
+        var sources = await AdV2Store.Snapshots(db, "users_v2", request.Domains, Ct);
+        Task<JsonObject> Query(AdV2Request query) => AdReviewChecks.ReadAsync(db, query, sources, Ct, Legacy);
+        var first = await Query(request);
+        var row = Assert.Single(first["items"]!.AsArray())!;
+        Assert.StartsWith("reversible_password", row["review_reasons"]![0].Text("key"));
+        Assert.Contains(row["review_reasons"]!.AsArray(), reason => reason.Text("key") == "password_never_expires");
+        var second = await Query(request with { Cursor = first.Text("next_cursor") });
+        var nextRow = Assert.Single(second["items"]!.AsArray())!;
+        Assert.NotEqual(row.Text("id"), nextRow.Text("id"));
+        Assert.NotEqual(row.Int("domain_id"), nextRow.Int("domain_id"));
+        Assert.Contains("\\", row.Text("sam"));
+
+        var filtered = await Query(request with { Limit = 50, Params = new() { ["account_rows"] = "yes", ["check"] = "reversible_password" } });
+        Assert.All(filtered["items"]!.AsArray(), item => Assert.Contains(item!["review_reasons"]!.AsArray(), reason => reason.Text("key") == "reversible_password"));
+        var chips = filtered["filter_options"]!["check"]!.AsArray();
+        Assert.Contains(chips, chip => chip.Text("value") == "password_never_expires" && chip.Int("count") > filtered.Int("filtered_count"));
+        Assert.DoesNotContain(chips, chip => chip.Int("count") == 0);
+
+        var store = new CheckStore(db);
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en");
+        const string path = "/api/v2/reports/ad.users.v2/data?tab=checks&account_rows=yes&domain=2&check=reversible_password";
+        using var response = await client.GetAsync(path, Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var localized = JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!;
+        var localizedAccount = Assert.Single(localized["items"]!.AsArray())!;
+        Assert.Equal(2, localizedAccount.Int("domain_id"));
+        var reasonLabel = localizedAccount["review_reasons"]![0].Text("label");
+        Assert.Contains(localized["filter_options"]!["check"]!.AsArray(), chip =>
+            chip.Text("value") == "reversible_password" && chip.Text("label") == reasonLabel);
+        Assert.Null(localizedAccount["department"]);
+
+        var deniedStore = new CheckStore(db);
+        using var deniedHost = await Host(deniedStore, false);
+        using var deniedResponse = await deniedHost.GetTestClient().GetAsync(path, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+        Assert.Empty(deniedStore.Reads);
+    }
     [Fact] public async Task Login_baseline_is_distinct_from_latest_pair_and_creation()
     {
         await using var db = await Open(); await Login(db);
