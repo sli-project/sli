@@ -40,6 +40,7 @@ public sealed class HomeSummaryRepository(IPostgresConnectionFactory connections
             var type = value switch
             {
                 long[] => NpgsqlDbType.Array | NpgsqlDbType.Bigint, long => NpgsqlDbType.Bigint,
+                int[] => NpgsqlDbType.Array | NpgsqlDbType.Integer, int => NpgsqlDbType.Integer,
                 string[] => NpgsqlDbType.Array | NpgsqlDbType.Text,
                 DateTimeOffset => NpgsqlDbType.TimestampTz, bool => NpgsqlDbType.Boolean,
                 _ => key is "since" or "from" or "to" ? NpgsqlDbType.TimestampTz : NpgsqlDbType.Text

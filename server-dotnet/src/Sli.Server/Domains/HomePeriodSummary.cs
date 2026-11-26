@@ -16,6 +16,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         HomeSummaryQuery query, CancellationToken ct)
     {
         var window = query.Period!;
+        bool openQueue = query.OpenQueue;
         var candidates = domains.Where(d => d.Id == query.Domain || !d.IsArchived).ToArray();
         var chosen = query.Domain is { } domain ? candidates.First(d => d.Id == domain) : candidates.FirstOrDefault();
         DomainItem[] selection = chosen is null ? [] : [chosen];
@@ -41,6 +42,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         bool queueTechnical = queueIds.Length > 0 && queue!.Fields(queueIds, "technical");
         bool queueEvidence = queueTechnical && queue!.Fields(queueIds, "raw_evidence");
         bool eventLinks = chosen is not null && journal?.Fields([chosen.Id], "raw_evidence") == true;
+        bool eventIdentity = chosen is not null && journal?.Fields([chosen.Id], "identity_basic") == true;
         bool objectLinks = infrastructure?.Capabilities?.Decide("entity.view").Allowed == true
             || queue?.Capabilities?.Decide("entity.view").Allowed == true;
 
@@ -50,7 +52,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         var passwordTask = ReadBlock("changes", dcIds.Length == 0 ? Task.FromResult<IReadOnlyList<JsonObject>>([])
             : reads.Read(HomePeriodSql.PasswordPolicyChanges, ct, [.. windowArgs, ("ids", dcIds)]));
         var gpoTask = ReadBlock("changes", policyIds.Length == 0 || gpo is null ? Task.FromResult<IEnumerable<JsonObject>>([]) : ReadGpo());
-        var activityTask = ReadBlock("activity", eventScope is { } activityScope ? ReadActivity(activityScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
+        var activityTask = ReadBlock("activity", !openQueue && eventScope is { } activityScope ? ReadActivity(activityScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
         var eventsTask = ReadBlock("changes", eventScope is { } changeScope ? ReadEventChanges(changeScope) : Task.FromResult<IReadOnlyList<JsonObject>>([]));
         await Task.WhenAll(problemsTask, controllerTask, passwordTask, gpoTask, activityTask, eventsTask);
 
@@ -71,17 +73,26 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             var observations = Rows(row["observations"]).Select(observation => new {
                 at = observation.Stamp("at"), event_id = observation.Number("event_kind"),
                 source = DisplayName(observation.Text("source")),
-                href = queueEvidence && eventLinks && eventScope is not null ? "/app/events/" + observation.Number("event_id") : null
+                href = queueEvidence && eventLinks && eventScope is not null && (!openQueue || observation.Stamp("at") >= retention) ? "/app/events/" + observation.Number("event_id") : null
             }).ToArray();
             return new {
                 id, name, fact,
-                severity = row.Text("severity"), at = row.Stamp("first_seen"), source = observations.FirstOrDefault()?.source,
+                severity = row.Text("severity") ?? "unknown",
+                at = row.Stamp(openQueue ? "last_seen" : "first_seen"),
+                source = openQueue && queueTechnical
+                    ? DisplayName(row.Text("source")) ?? observations.FirstOrDefault()?.source
+                    : observations.FirstOrDefault()?.source,
+                status = row.Text("status"), assignee = row.Text("assignee"), assignee_state = row.Text("assignee_state"),
+                occurrence_count = row.Number("occurrence_count"),
+                repeats_href = openQueue && queueIdentity && queueTechnical && row.Number("occurrence_count") > 1
+                    && row["key"] is JsonArray key ? HomeSummaryQuery.Href("security.problems",
+                        new Dictionary<string, object?>(links) { ["population"] = "open", ["cohort"] = key.ToJsonString() }) : null,
                 observations,
                 href = HomeSummaryQuery.Href("security.problems", new Dictionary<string, object?>(links) { ["id"] = id }),
                 object_href = objectLinks && lookup is not null && entity.Number("id") > 0
                     && string.Equals(lookup, DisplayName(entity.Text("name")), StringComparison.OrdinalIgnoreCase)
                     ? "/app/entities/" + entity.Number("id") : null,
-                events_href = eventScope is not null && lookup is not null
+                events_href = !openQueue && eventScope is not null && lookup is not null
                     ? HomeSummaryQuery.Href("events.journal", new Dictionary<string, object?>(filters) { ["q"] = lookup }) : null
             };
         }).ToArray();
@@ -90,29 +101,31 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
         var eventChanges = events?.Select(row => Object(new {
             at = row.Stamp("at"), name = DisplayName(row.Text("name")), event_id = row.Number("event_id"),
             initiator = DisplayName(row.Text("initiator")), value = DisplayName(row.Text("value")),
+            before = DisplayName(row.Text("before")), after = DisplayName(row.Text("after")),
             href = eventLinks && row.Stamp("at") >= retention ? "/app/events/" + row.Number("id") : null
         }));
         var passwordChanges = passwords?.Select(row => Object(new {
             at = row.Stamp("at"), name = row.Text("name"), kind = "password", field = row.Text("field"),
-            before = Scalar(row["before"]), after = Scalar(row["after"])
+            before = Scalar(row["before"]), after = Scalar(row["after"]), before_at = row.Stamp("before_at")
         }));
-        return Object(new {
+        var result = Object(new {
             domains = candidates.Select(d => new { id = d.Id, name = d.DisplayName }), domain_id = chosen?.Id,
             from = window.From, to = window.To, updated_at = query.Now,
             problems = problems is null ? null : new {
                 new_count = counts?["new_count"], closed_count = counts?["closed_count"], open_count = counts?["open_count"],
-                items = problemRows, href = counts is not null ? HomeSummaryQuery.Href("security.problems",
+                unassigned_count = counts?["unassigned_count"], in_work_count = counts?["in_work_count"],
+                page = counts?["page"], items = problemRows, href = counts is not null ? HomeSummaryQuery.Href("security.problems",
                     new Dictionary<string, object?>(links) { ["population"] = "open" }) : null
             },
             controllers = controllers is null ? null : new {
                 items = controllers.OrderBy(row => row.Text("name"), StringComparer.Ordinal)
                     .Select(row => Controller(row, window.To, objectLinks)),
-                href = dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", links) : null
+                href = dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", openQueue ? filters : links) : null
             },
             changes = eventChanges is null || passwordChanges is null || gpoChanges is null ? null : new {
-                items = eventChanges.Concat(passwordChanges).Concat(gpoChanges).OrderByDescending(row => row.Stamp("at")).Take(200),
+                items = eventChanges.Concat(passwordChanges).Concat(gpoChanges).OrderByDescending(row => row.Stamp("at")).Take(openQueue ? 10 : 200),
                 href = Ids(domainChanges).Length > 0 ? HomeSummaryQuery.Href("security.events.chains", filters)
-                    : eventScope is not null ? HomeSummaryQuery.Href("events.journal", filters)
+                    : openQueue ? null : eventScope is not null ? HomeSummaryQuery.Href("events.journal", filters)
                     : dcIds.Length > 0 ? HomeSummaryQuery.Href("ad.infrastructure", new Dictionary<string, object?>(filters) { ["tab"] = "changes" })
                     : policyIds.Length > 0 ? HomeSummaryQuery.Href("ad.gpo.v2", new Dictionary<string, object?>(filters) { ["tab"] = "changes" }) : null
             },
@@ -124,9 +137,15 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                 })
             }
         });
+        if (openQueue) result.Remove("activity");
+        return result;
 
         Task<IReadOnlyList<JsonObject>> ReadProblems() =>
-            reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
+            openQueue
+                ? reads.Read(HomePeriodSql.OpenQueue, ct, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical),
+                    ("queue", query.QueueFilter == "unassigned" && !queueIdentity ? "all" : query.QueueFilter),
+                    ("limit", query.QueueLimit), ("offset", (query.QueuePage - 1L) * query.QueueLimit))
+                : reads.Read(HomePeriodSql.Problems, ct, [.. windowArgs, ("ids", queueIds), ("identity", queueIdentity), ("technical", queueTechnical)]);
 
         async Task<T?> ReadBlock<T>(string block, Task<T> read) where T : class
         {
@@ -162,9 +181,15 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
 
         Task<IReadOnlyList<JsonObject>> ReadEventChanges((string Sql, Dictionary<string, object> Parameters) scope)
         {
-            return reads.Read(HomePeriodSql.EventChanges(EventReadService.ShortSource("@from", daily: false), scope.Sql), ct,
-                [.. windowArgs, ("ids", new[] { chosen!.Id }),
-                 .. scope.Parameters.Select(p => (p.Key, (object?)p.Value))]);
+            var source = EventReadService.ShortSource("@from", daily: false);
+            (string Key, object? Value)[] args = [
+                .. windowArgs, ("ids", new[] { chosen!.Id }), .. scope.Parameters.Select(p => (p.Key, (object?)p.Value))
+            ];
+            return openQueue
+                ? reads.Read(HomePeriodSql.OpenQueueChanges(source, scope.Sql), ct,
+                    [.. args, ("queue_access", queueIds.Length > 0), ("identity", queueIdentity), ("event_identity", eventIdentity),
+                     ("kinds", AdSecurity.ChangeEventIds().Where(id => id is not (4723 or 4724)).ToArray())])
+                : reads.Read(HomePeriodSql.EventChanges(source, scope.Sql), ct, args);
         }
 
         Task<IReadOnlyList<JsonObject>> ReadActivity((string Sql, Dictionary<string, object> Parameters) scope)

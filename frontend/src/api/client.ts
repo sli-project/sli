@@ -2366,7 +2366,7 @@ export const api = {
   homeSummary: () => request<HomeSummary>("/api/v1/home/summary").then(localizeHomeSummary),
   homePeriod: (params: URLSearchParams) => {
     const query = new URLSearchParams(params);
-    query.set("contract", "v4");
+    query.set("contract", "v5");
     return request<HomePeriod>(`/api/v1/home/summary?${query}`);
   },
   homeDecisions: (params = new URLSearchParams()) => {
