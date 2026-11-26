@@ -19,25 +19,65 @@ public sealed class FileAuditManagerTests : IDisposable
     private AgentPolicy Policy(JsonObject? request, bool manage = true) => new(1,new CollectionControl("active",60,32,120,10000000,manage,false),new JsonArray(),null,null,null) { FileAuditRequest = request };
 
     [Theory]
-    [InlineData("audit_policy")]
-    [InlineData("share")]
-    [InlineData("local_groups")]
-    [InlineData("directory")]
-    [InlineData("acl")]
-    public void AFailedServerCheckReportsOnlyItsReadStageAndWindowsCode(string stage)
+    [InlineData("audit_policy", "audit_policy_read_unavailable:5")]
+    [InlineData("share", "share_read_unavailable:5")]
+    [InlineData("directory", "directory_read_unavailable:5")]
+    [InlineData("acl", "acl_read_unavailable:5")]
+    public void AFailedServerCheckReportsOnlyItsReadStageAndWindowsCode(string stage, string reason)
     {
         var api = new FakeFileApi(_dir) { FailedRead = stage };
         var manager = new FileAuditManager(_dir, _files, api);
         var report = manager.Reconcile(Policy(Request("check")), new FakeAudit(), Helpers.Now, readDiagnostics: true).Report!;
         var scope = Assert.Single(report["scopes"]!.AsArray())!;
         Assert.Equal("failed", scope["state"]!.ToString());
-        Assert.Equal("native_unavailable", scope["reason_code"]!.ToString());
+        Assert.Equal(reason, scope["reason_code"]!.ToString());
         Assert.Equal(stage, scope["read_error"]!["stage"]!.ToString());
         Assert.Equal("win32", scope["read_error"]!["code_kind"]!.ToString());
         Assert.Equal(5u, scope["read_error"]!["code"]!.GetValue<uint>());
         Assert.Empty(report["snapshots"]!.AsArray());
         Assert.Equal(0, api.Writes);
         Assert.DoesNotContain("synthetic private path or ACL", report.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DomainControllerGroupFailureKeepsTheShareMasksAndFileInventory(bool readDiagnostics)
+    {
+        var api = new FakeFileApi(_dir) { FailedRead = "local_groups", GroupError = 2221 };
+        var manager = new FileAuditManager(_dir, _files, api);
+
+        var report = manager.Reconcile(Policy(Request("check")), new FakeAudit(), Helpers.Now, readDiagnostics).Report!;
+
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("partial", scope["state"]!.ToString());
+        Assert.Equal("local_groups_unavailable:2221", scope["reason_code"]!.ToString());
+        Assert.NotEmpty(scope["required_masks"]!.AsObject());
+        Assert.NotEmpty(scope["actual_masks"]!.AsObject());
+        var snapshot = Assert.Single(report["snapshots"]!.AsArray())!;
+        Assert.Equal("partial", snapshot["completeness"]!.ToString());
+        Assert.False(snapshot["local_groups"]!["complete"]!.GetValue<bool>());
+        Assert.Empty(snapshot["local_groups"]!["groups"]!.AsArray());
+        Assert.True(snapshot["share"]!["complete"]!.GetValue<bool>());
+        Assert.Single(snapshot["objects"]!.AsArray());
+        Assert.Equal(0, snapshot["unread_objects"]!.GetValue<int>());
+        Assert.Equal(0, api.Writes);
+    }
+
+    [Theory]
+    [InlineData("share_path_mismatch", "share_path_mismatch")]
+    [InlineData("security_privilege_missing", "security_privilege_missing:1300")]
+    [InlineData("preflight_privilege_missing", "security_privilege_missing:1300")]
+    public void NativeChecksReportSharePathMismatchOrMissingPrivilegeWithoutDiagnosticCapability(string failure, string reason)
+    {
+        var api = new FakeFileApi(_dir) { FailedRead = failure };
+        var report = new FileAuditManager(_dir, _files, api).Reconcile(Policy(Request("check")), new FakeAudit(), Helpers.Now).Report!;
+
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("failed", scope["state"]!.ToString());
+        Assert.Equal(reason, scope["reason_code"]!.ToString());
+        Assert.Empty(report["snapshots"]!.AsArray());
+        Assert.Equal(0, api.Writes);
     }
 
     [Fact]
@@ -54,7 +94,7 @@ public sealed class FileAuditManagerTests : IDisposable
 
         manager.Acknowledge(check);
         var apply = manager.Reconcile(Policy(Request("apply", "apply")), new FakeAudit(), Helpers.Now).Report!;
-        Assert.Equal("native_unavailable", Assert.Single(apply["scopes"]!.AsArray())!["reason_code"]!.ToString());
+        Assert.Equal("local_group_identity_unavailable", Assert.Single(apply["scopes"]!.AsArray())!["reason_code"]!.ToString());
         Assert.Empty(apply["snapshots"]!.AsArray());
         Assert.Equal(0, api.Writes);
     }
@@ -77,7 +117,7 @@ public sealed class FileAuditManagerTests : IDisposable
         var report = result.Report!;
         var scope = Assert.Single(report["scopes"]!.AsArray())!;
         Assert.Equal("failed", scope["state"]!.ToString());
-        Assert.Equal("native_unavailable", scope["reason_code"]!.ToString());
+        Assert.Equal(unresolvedSid ? "local_group_identity_unavailable" : "local_groups_unavailable:5", scope["reason_code"]!.ToString());
         Assert.Null(scope["read_error"]);
         Assert.Empty(report["snapshots"]!.AsArray());
         Assert.False(report["ownership_remaining"]!.GetValue<bool>());
@@ -336,7 +376,7 @@ public sealed class FileAuditManagerTests : IDisposable
         var config=Config(); config[limit]=value;
         var report=new FileAuditManager(_dir,_files,api).Reconcile(Policy(Request("check",config:config)),new FakeAudit(),Helpers.Now).Report!;
         Assert.Single(report["snapshots"]![0]!["objects"]!.AsArray());
-        Assert.Equal("coverage_incomplete",report["scopes"]![0]!["reason_code"]!.ToString());
+        Assert.Equal(denyChild ? "directory_reparse_point" : "coverage_incomplete",report["scopes"]![0]!["reason_code"]!.ToString());
         Assert.Equal(1,report["snapshots"]![0]!["unread_objects"]!.GetValue<int>()); Assert.Equal(0,api.Writes);
     }
 
@@ -373,6 +413,7 @@ public sealed class FileAuditManagerTests : IDisposable
         public bool RejectChildren { get; set; }
         public string ChildSacl { get; set; } = "S:old";
         public string? FailedRead { get; set; }
+        public uint GroupError { get; set; } = 5;
         public bool UnresolvedGroupSid { get; set; }
         public bool IncompleteGroupPage { get; set; }
         public int LocalGroupReads { get; private set; }
@@ -380,7 +421,11 @@ public sealed class FileAuditManagerTests : IDisposable
         {
             if (stage == FailedRead) throw new System.ComponentModel.Win32Exception(5, "synthetic private path or ACL");
         }
-        public string Preflight(JsonArray roots) => Owner;
+        public string Preflight(JsonArray roots)
+        {
+            if (FailedRead == "preflight_privilege_missing") throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", 1300);
+            return Owner;
+        }
         public int CheckPreflightCalls { get; private set; }
         public string CheckPreflight(JsonArray roots, bool describeReadErrors)
         {
@@ -389,6 +434,7 @@ public sealed class FileAuditManagerTests : IDisposable
         }
         public Dictionary<string,int> QueryMasks(IReadOnlyCollection<string> guids)
         {
+            if (FailedRead == "security_privilege_missing") throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", 1300);
             FailRead("audit_policy");
             return guids.ToDictionary(g => g,g => 3);
         }
@@ -402,13 +448,14 @@ public sealed class FileAuditManagerTests : IDisposable
         }
         public JsonObject Share(string name,string root)
         {
+            if (FailedRead == "share_path_mismatch") throw new AgentException("file_audit_share_root_mismatch");
             FailRead("share");
             return new() { ["name"]=name,["path"]=root,["dacl"]="D:(A;;FA;;;SY)",["complete"]=true };
         }
         public JsonObject LocalGroups(int limit, bool allowUnresolvedSid = false)
         {
             LocalGroupReads++;
-            if (FailedRead == "local_groups") throw new FileAuditNativeReadException("file_audit_groups_unavailable", 5);
+            if (FailedRead == "local_groups") throw new FileAuditNativeReadException("file_audit_groups_unavailable", GroupError);
             if (UnresolvedGroupSid && !allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
             return new() { ["complete"] = !UnresolvedGroupSid && !IncompleteGroupPage, ["groups"] = new JsonArray() };
         }

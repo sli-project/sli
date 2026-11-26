@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Sli.Agent.Protocol;
@@ -11,6 +12,28 @@ namespace Sli.Server.Agents.FileAudit;
 public static class FileAuditResult
 {
     private static readonly HashSet<string> Reasons=["ok","coverage_incomplete","sacl_missing","policy_missing","restore_incomplete","native_unavailable","policy_blocked","management_disabled","restore_required","restore_scope_mismatch","system_required","managed_by_gpo","unknown","global_sacl_unknown","global_sacl_present","restore_scan_incomplete","inheritance_untracked","restore_conflict"];
+    private static readonly HashSet<string> InventoryReasons =
+    [
+        "share_path_mismatch", "directory_reparse_point", "directory_root_invalid", "inventory_limit"
+    ];
+    private static readonly HashSet<string> NativeReasons =
+    [
+        "audit_policy_read_unavailable", "security_log_unavailable", "share_read_unavailable", "local_groups_unavailable",
+        "local_group_members_unavailable", "local_group_identity_unavailable", "directory_open_unavailable",
+        "directory_read_unavailable", "acl_read_unavailable", "security_privilege_missing", "security_privilege_unavailable",
+        "sacl_plan_failed", "sacl_write_failed", "sacl_readback_failed", "inventory_unavailable", "global_sacl_unknown"
+    ];
+
+    private static bool NativeReason(string reason)
+    {
+        var separator = reason.IndexOf(':');
+        if (separator < 0) return NativeReasons.Contains(reason);
+        var status = reason.AsSpan(separator + 1);
+        return status.Length is >= 1 and <= 10 && status[0] is >= '1' and <= '9'
+            && status.IndexOfAnyExceptInRange('0', '9') < 0
+            && uint.TryParse(status, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+            && NativeReasons.Contains(reason[..separator]);
+    }
     private static bool Text(JsonNode? n,out string s)=>JsonRead.TryString(n,out s);
     private static string S(JsonNode? n)=>n!.GetValue<string>();
     private static bool Bool(JsonNode? n)=>n is JsonValue v && v.TryGetValue<bool>(out _);
@@ -44,9 +67,11 @@ public static class FileAuditResult
         foreach(var item in scopes)
         {
             if(item is not JsonObject row || !ScopeShape(row) || !Text(row["collection_scope_id"],out var id) || !seen.Add(id) || !selected.Contains(id)
-                || !Text(row["state"],out var state) || state is not ("verified" or "partial" or "blocked" or "failed") || !Text(row["reason_code"],out var reason) || !Reasons.Contains(reason)
+                || !Text(row["state"],out var state) || state is not ("verified" or "partial" or "blocked" or "failed") || !Text(row["reason_code"],out var reason)
+                || !(Reasons.Contains(reason) || state != "verified" && (InventoryReasons.Contains(reason) || NativeReason(reason)))
                 || row["required_masks"] is not JsonObject required || row["actual_masks"] is not JsonObject actual) return false;
-            if (row.ContainsKey("read_error") && (state!="failed" || reason!="native_unavailable" || S(command["action"])!="check"
+            if (row.ContainsKey("read_error") && (state!="failed" || S(command["action"])!="check"
+                || !(reason is "native_unavailable" or "unknown" || InventoryReasons.Contains(reason) || NativeReason(reason))
                 || selected.Count!=1 || config["source_kind"]?.ToString()=="workstation" || snapshots.Count!=0
                 || !FileAuditReadError.Valid(row["read_error"]))) return false;
             var root=config["roots"]!.AsArray().OfType<JsonObject>().Single(x=>S(x["collection_scope_id"])==id);var expected=Requirements(config,root);
