@@ -2,6 +2,11 @@
   display: contents;
 }
 
+[data-problems-queue-drawer] .sli-ds-drawer__body section > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The inline drawer and the list begin below the same report controls. */
 [data-problems-queue-drawer] > .sli-ds-drawer[data-inline][data-responsive] > .sli-ds-drawer__panel {
   max-height: calc(100dvh - var(--sli-list-viewport-inset));

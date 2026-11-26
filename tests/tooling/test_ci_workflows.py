@@ -418,8 +418,10 @@ def test_disposable_postgres_jobs_keep_shared_gates() -> None:
 
     pr_steps = {step.get("name"): step for step in pr["steps"] if "name" in step}
     upgrade_name = "Verify migrations and backup recovery on private PostgreSQL 18"
+    kit_name = "Verify the beta kit migration path on private PostgreSQL 18"
     once_per_matrix = (
         upgrade_name,
+        kit_name,
         "Signed AD packet reaches the journal on current PostgreSQL",
         "T002 actual PostgreSQL context at synthetic enterprise scale",
         "T051 bounded synthetic context plans and typed timeout",
@@ -436,6 +438,7 @@ def test_disposable_postgres_jobs_keep_shared_gates() -> None:
     assert "tests/unit/test_linux_install_upgrade_checks.py" in upgrade["run"]
     assert "tests/unit/test_linux_native_pg_migrate.py" in upgrade["run"]
     pr["steps"].remove(upgrade)
+    pr["steps"].remove(pr_steps[kit_name])
     pr["steps"].remove(pr_steps["Preserve per-case PostgreSQL test results"])
 
     # Compare all shared gates after accounting for the verified selection differences.

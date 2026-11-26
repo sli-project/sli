@@ -14,6 +14,29 @@ public class FileAuditResultTests
         report["scopes"]![0]!["required_masks"]!["x"]=1; Assert.False(FileAuditResult.Valid(report,config,command));
         report["scopes"]![0]!["required_masks"]!.AsObject().Clear(); report["command_id"]="old"; Assert.False(FileAuditResult.Valid(report,config,command));
     }
+
+    [Theory]
+    [InlineData("share_path_mismatch", true)]
+    [InlineData("security_privilege_missing:1300", true)]
+    [InlineData("local_groups_unavailable:2221", true)]
+    [InlineData("share_read_unavailable:2310", true)]
+    [InlineData("directory_open_unavailable:4294967295", true)]
+    [InlineData("local_groups_unavailable:4294967296", false)]
+    [InlineData("share_path_mismatch:5", false)]
+    [InlineData("local_groups_unavailable:02221", false)]
+    [InlineData("local_groups_unavailable:0", false)]
+    [InlineData("local_groups_unavailable:5\0", false)]
+    [InlineData("local_groups_unavailable:5:private", false)]
+    [InlineData("unexpected_call:5", false)]
+    public void FailureReasonsAcceptOnlyKnownStepsAndBoundedWindowsCodes(string reason, bool expected)
+    {
+        var config = JsonNode.Parse("""{"policy_revision":"2","source_kind":"server","roots":[{"collection_scope_id":"scope","path":"C:\\data","share_name":"synthetic","important":false,"sacl":{"trustee_sids":["S-1-1-0"],"inherit_files":true,"inherit_directories":true}}]}""")!.AsObject();
+        var command = JsonNode.Parse("""{"contract_id":"sli.file-audit.audit-command.v1","command_id":"cmd","action":"check","policy_revision":"2","collection_scope_ids":["scope"]}""")!.AsObject();
+        var report = JsonNode.Parse("""{"contract_id":"sli.file-audit.audit-result.v1","command_id":"cmd","policy_revision":"2","action":"check","observed_at_utc":"2026-01-01T00:00:00+00:00","scopes":[{"collection_scope_id":"scope","state":"failed","reason_code":"unknown","required_masks":{},"actual_masks":{}}],"snapshots":[],"ownership_remaining":false}""")!.AsObject();
+        report["scopes"]![0]!["reason_code"] = reason;
+        Assert.Equal(expected, FileAuditResult.Valid(report, config, command));
+    }
+
     [Fact]
     public void DiagnosticAcceptsOnlyFixedFieldsAndCodesForFailedSingleServerCheck()
     {

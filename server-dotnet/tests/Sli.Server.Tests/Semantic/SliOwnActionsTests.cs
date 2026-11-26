@@ -121,7 +121,8 @@ public sealed class SliOwnActionsTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct);
-        string migration = Assert.Single(await fixture.RollbackAfterAsync(420, ct));
+        // Later migrations may exist on disk; take only 421 from the rolled-back set.
+        string migration = Assert.Single(await fixture.RollbackAfterAsync(420, ct), path => Path.GetFileName(path).StartsWith("421_", StringComparison.Ordinal));
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(owner, """
             insert into findings(fingerprint,rule_code,title,severity,status,first_seen_utc,last_seen_utc,evidence_count)

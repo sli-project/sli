@@ -180,7 +180,9 @@ it.each([
   expect(await screen.findByText(message)).toBeTruthy();
   expect(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }).textContent).toContain(share.share_name);
   expect((screen.getByLabelText(t("agents.fileAudit.catalog.path")) as HTMLInputElement).value).toBe(share.path);
-  const technicalDetails = screen.getByText(reason).closest("details");
+  const reasonLabel = requestedAction === "apply" ? t("agents.fileAudit.reason.global_sacl_unknown") : reason;
+  const technicalDetails = screen.getByText(reasonLabel).closest("details");
+  if (requestedAction === "apply") expect(screen.queryByText(reason)).toBeNull();
   expect(technicalDetails?.querySelector("summary")?.textContent).toBe(t("agents.technicalDetails"));
   expect(technicalDetails?.open).toBe(false);
   expect(screen.queryByRole("link", { name: t("file-audit.tabs.permission-changes") })).toBeNull();
@@ -190,7 +192,7 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.result.refresh") }));
   expect(await screen.findByText(t(permissionDenied ? "agents.fileAudit.result.denied" : "agents.fileAudit.result.stale"))).toBeTruthy();
   expect(screen.queryByText(message)).toBeNull();
-  expect(screen.queryByText(reason)).toBeNull();
+  expect(screen.queryByText(reasonLabel)).toBeNull();
   expect(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }).textContent).toContain(share.share_name);
   expect(mutate).not.toHaveBeenCalled();
 });

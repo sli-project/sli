@@ -52,6 +52,15 @@ public sealed class FileServersReportPostgresTests
             Assert.Equal(1, page["filtered_count"]!.GetValue<int>());
         }
 
+        Assert.Single((await Read("overview", Filter() + "&file_server_domain=" + sample["domain_id"]))["items"]!.AsArray());
+        Assert.Empty((await Read("overview", Filter() + "&file_server_domain=99999999"))["items"]!.AsArray());
+
+        var foundByPath = await Read("actions", Filter() + "&path_search=finance&account_search=1199");
+        Assert.Single(foundByPath["items"]!.AsArray());
+        Assert.Empty((await Read("actions", Filter() + "&path_search=missing-example"))["items"]!.AsArray());
+        Assert.Empty((await Read("actions", Filter() + "&activity=changes"))["items"]!.AsArray());
+        Assert.Empty((await Read("overview", Filter() + "&source_instance_id=another-source"))["items"]!.AsArray());
+
         var first = DateTimeOffset.Parse(sample["first_seen_utc"]!.ToString(), CultureInfo.InvariantCulture);
         var last = DateTimeOffset.Parse(sample["last_seen_utc"]!.ToString(), CultureInfo.InvariantCulture);
         string boundary = Filter(first.AddSeconds(5).ToString("O"), last.AddSeconds(5).ToString("O"));

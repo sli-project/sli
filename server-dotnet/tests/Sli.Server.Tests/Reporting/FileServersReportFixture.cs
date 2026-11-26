@@ -52,9 +52,11 @@ internal static class FileServersReportFixture
             await command.ExecuteNonQueryAsync(ct);
         }
         await Execute("""
+            insert into public.servers(domain_id,hostname,fqdn,role)
+            values(@domain,'FS-01','FS-01.example.test','file_server');
             insert into public.sli_agents(id,host_id,key_fingerprint,registration_host_name,last_seen)
             values(@agent,@source,repeat('4',64),'FS-01.example.test',@now);
-            """, ("agent", Agent), ("source", Source), ("now", now.UtcDateTime));
+            """, ("agent", Agent), ("source", Source), ("now", now.UtcDateTime), ("domain", domain));
 
         foreach (var (id, revision, observed, dacl) in new[]
         {
