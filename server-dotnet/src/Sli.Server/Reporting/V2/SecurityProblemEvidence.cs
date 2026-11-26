@@ -58,13 +58,24 @@ public sealed class SecurityProblemEvidence(ISemanticDatabase database) : ISecur
         var core = new JsonArray();
         if (position is null || position.Text("storage_kind") == "core_event") core = await Rows("""
             select e.event_db_id as evidence_id,e.event_db_id,e.event_id,e.channel,e.time_created_utc,
-                   e.event_record_id,e.hostname,e.evidence_role,e.note
+                   e.event_record_id,e.hostname,e.evidence_role,e.note,
+                   case when e.channel is not null and e.identity_provider is not null and e.event_id is not null
+                       then concat(left(e.channel,128),':',left(e.identity_provider,128),':',e.event_id,'.title')
+                   end as event_title_code,
+                   case when $6::boolean then left(case when e.event_id in (4728,4729,4732,4733,4756,4757)
+                       then e.subject_user_name
+                       else coalesce(nullif(nullif(e.target_user_name,''),'-'),e.subject_user_name)
+                   end,256) end as account,
+                   case when $7::boolean then left(coalesce(nullif(nullif(e.ip_address,''),'-'),
+                       nullif(nullif(e.workstation_name,''),'-'),e.hostname),256) end as source
             from finding_event_details337 e
             where e.finding_id=$1
               and (e.event_db_id>$2 or e.event_db_id=$2 and $4::timestamptz is not null
                 and (e.time_created_utc,e.evidence_role collate "C")>($4::timestamptz,$5::text collate "C"))
             order by e.event_db_id,e.time_created_utc,e.evidence_role collate "C" limit $3
-            """, finding, after, limit + 1,afterTime,afterRole);
+            """, finding, after, limit + 1, afterTime, afterRole,
+            c.FieldAccess(["security", "raw_evidence", "identity_basic"]),
+            c.FieldAccess(["security", "raw_evidence", "technical"]));
         var native = new JsonObject { ["items"] = new JsonArray(), ["total"] = 0, ["has_more"] = false };
         if (allowed.Count > 0) native = (await Rows("select public.read_file_acl_finding_evidence($1::bigint,$2::jsonb,$3::text,$4::integer,$5::timestamptz,$6::bigint[]) as evidence", finding, allowed, position?.Text("storage_kind") == "file_audit_snapshot" ? position.Text("native_key") : null, core.Count > limit ? 1 : limit, watermark, c.DomainIds))[0]!["evidence"]!.DeepClone().AsObject();
         foreach (var row in core.OfType<JsonObject>()) { row["storage_kind"] = "core_event"; row["_native_key"] = new JsonArray(row["event_db_id"]!.DeepClone(),row["time_created_utc"]?.DeepClone(),row["evidence_role"]?.DeepClone()).ToJsonString(); }

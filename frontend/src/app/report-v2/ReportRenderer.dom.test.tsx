@@ -6,6 +6,7 @@ import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportIntentDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "./ReportRenderer";
+import { ProblemsQueue } from "./ProblemsQueue";
 import { api } from "../../api/client";
 import { OverlayProvider } from "../../design-system";
 import { PAGE_ACTIONS } from "./custom";
@@ -306,6 +307,63 @@ it.each((["ru", "en"] as const).flatMap(locale =>
     expect(screen.queryByRole("button", { name: t("state.retry") })).toBeNull();
   },
 );
+
+it.each(["en", "ru"] as const)("shows the problem card's facts, action and expandable Windows events (%s)", async (locale) => {
+  setLocale(locale);
+  const raw = {
+    ...definition, key: "security.problems", params: [{ key: "queue_view", kind: "choice", label: "View" }],
+    detail: { columns: [], query_available: true },
+  } as unknown as ReportDefinitionDto;
+  const attack = {
+    id: 1700, status: "new", severity: "high", title_text: "Failed sign-ins", rule_code: "semantic.qw.password-spray",
+    first_seen_utc: "2026-11-26T03:00:00Z", last_seen_utc: "2026-11-26T03:09:00Z", evidence_total: 1,
+    queue_attack: { accounts: ["Tatiana", "backup", "TATIANA", "Victoria", "admins", "bad�name", "РўРµСЃС‚"], addresses: ["203.0.113.5"] },
+    what_happened: "Failed sign-ins were recorded.", next_text: "Check the affected accounts.",
+    presentation_messages: {
+      what_happened: { code: "security.problems.presentation.spray_threshold_what", rendered: true, text: "Failed sign-ins were recorded." },
+      next_text: { code: "security.problems.presentation.password_next", rendered: true, text: "Check the affected accounts." },
+    },
+    status_history: [{ id: 1, changed_by: "semantic-worker", new_status: "new", note: "created from enabled semantic scenario" }],
+  };
+  const event = { event_db_id: 42, event_id: 4625, event_record_id: 25735126, time_created_utc: attack.last_seen_utc,
+    account: "bad�name<img>", source: "203.0.113.5", hostname: "dc01.example.test",
+    event_title_code: "Security:Microsoft-Windows-Security-Auditing:4625.title" };
+  const publicAttack = { id: attack.id, title_text: attack.title_text, queue_attack: attack.queue_attack };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.origin);
+    return Response.json(page({ items: url.pathname.endsWith("/detail") ? [event] :
+      url.searchParams.has("id") ? [attack] : [publicAttack] }));
+  }));
+  window.history.replaceState(null, "", "/app/report/security.problems?id=1700");
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><OverlayProvider><ProblemsQueue definition={raw}/></OverlayProvider></QueryClientProvider>);
+
+  const drawer = within(await screen.findByRole("dialog"));
+  const title = await drawer.findByRole("heading", { name: /Tatiana, backup, Victoria/ });
+  expect(title.textContent).toContain(locale === "en" ? "and 1 more" : "и ещё 1");
+  expect(title.textContent).not.toMatch(/admins|TATIANA|bad�name|РўРµСЃС‚/);
+  const what = drawer.getByText(locale === "en" ? "What happened" : "Что случилось");
+  const action = await drawer.findByText(locale === "en" ? "What to do" : "Что сделать");
+  expect(what.parentElement?.textContent).toContain("203.0.113.5");
+  expect(what.parentElement?.textContent).toContain("10:00:00");
+  expect(what.parentElement?.textContent).toContain("10:09:00");
+  expect(action.parentElement?.textContent).toContain(locale === "en" ? "block 203.0.113.5" : "заблокируйте адрес 203.0.113.5");
+  const events = within(await drawer.findByRole("table", { name: locale === "en" ? "Events" : "События" }));
+  expect(events.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(
+    locale === "en" ? ["Time", "Event", "Account", "From"] : ["Время", "Событие", "Учётная запись", "Откуда"]);
+  expect(events.getByText("bad�name<img>")).toBeTruthy();
+  expect(events.queryByRole("img")).toBeNull();
+  expect(drawer.queryByText(/semantic\.qw\.|EventRecordID|25735126|Опубликовано|Published|Участник|Participant/)).toBeNull();
+  expect(drawer.queryByText(/Сервис семантического анализа|Semantic analysis service|Создана по опубликованному/)).toBeNull();
+  const expand = events.getByRole("button", { name: /4625/ });
+  expect(expand.textContent).toContain(t("events.semantic.Security:Microsoft-Windows-Security-Auditing:4625.title"));
+  fireEvent.click(expand);
+  expect(events.getByText(locale === "en" ? "Windows event record number" : "Номер записи в журнале Windows")).toBeTruthy();
+  expect(events.getByText("25735126")).toBeTruthy();
+  expect(events.getByRole("link", { name: /Open original event|Открыть исходное событие/ }).getAttribute("href")).toBe("/app/events/42");
+  fireEvent.click(events.getByRole("button", { name: /4625/ }));
+  expect(events.queryByText("25735126")).toBeNull();
+});
 
 it.each(["ru", "en"] as const)("shows the problem queue's default columns and three labelled paragraphs (%s)", async (locale) => {
   setLocale(locale);
