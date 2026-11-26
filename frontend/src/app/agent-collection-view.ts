@@ -1,4 +1,3 @@
-import { EMPTY_VALUE } from "../shared/format";
 import type { AgentCollectionHealth } from "../api/client";
 import { t } from "../i18n";
 import { formatDateTime } from "../shared/date-time";
@@ -58,44 +57,3 @@ export function agentCollectionHeader(data?: AgentCollectionHealth | null, timeZ
     tooltip: failed ? agentCollectionTooltip(failed) : lagging && !data?.diagnostics ? agentCollectionTooltip(lagging) : undefined,
   };
 }
-
-export function agentCollectionLabel(state: AgentCollectionHealth["items"][number]["state"]) {
-  return t(`operations.agent_collection.state.${state}`);
-}
-
-export function agentCollectionSummary(agent: CollectionAgent, diagnostics?: AgentCollectionHealth["diagnostics"]) {
-  if (agent.state === "unknown") return t(diagnostics?.reason === "timeout"
-    ? "operations.agent_collection.reason.check_timeout" : diagnostics
-      ? "operations.agent_collection.reason.check_failed" : "operations.agent_collection.reason.unconfirmed");
-  const reason = agent.modules.flatMap((module) => module.channels)
-    .find((channel) => channel.state === "error")?.failure_reason;
-  return agent.state === "error" && reason
-    ? t(`operations.agent_collection.reason.${reason}`)
-    : agentCollectionLabel(agent.state);
-}
-
-export function agentCollectionDetail(agent: AgentCollectionHealth["items"][number], timeZone: string) {
-  const date = (value: string | null) => formatDateTime(value, timeZone);
-  const channels = agent.modules.flatMap((module) => module.channels.length ? module.channels.map((channel) =>
-    `${module.module_id}${channel.channel ? ` · ${channel.channel}` : ""}: ${agentCollectionLabel(channel.state)} · ${t("operations.agent_collection.import", {
-      time: date(channel.last_import_at), lag: channel.import_lag_seconds === null ? EMPTY_VALUE : channel.import_lag_seconds,
-    })}`) : [`${module.module_id}: ${agentCollectionLabel("unknown")}`]);
-  return [
-    ...(agent.connection === "unknown" ? [t("operations.agent_collection.last_known")] : []),
-    t("operations.agent_collection.connection", { state: t(`operations.agent_collection.connection.${agent.connection}`), time: date(agent.last_seen) }),
-    t("operations.agent_collection.packet", { time: date(agent.last_packet_at) }),
-    t("agents.revisions", { desired: agent.policy_revision, applied: agent.applied_policy_revision }),
-    ...(agent.completeness?.state === "known_gaps" ? [t("operations.agent_collection.accepted_loss"),
-      t("operations.agent_collection.accepted_loss_at", { time: date(agent.completeness.last_accepted_gap_at) })] : []),
-    ...channels,
-  ].join(" · ");
-}
-
-export function agentCollectionHistory(agent: CollectionAgent, timeZone: string) {
-  return agent.modules.flatMap((module) => module.channels.filter((channel) => (channel.historical_unimported_packets ?? 0) > 0)
-    .map((channel) => t("operations.agent_collection.historical", {
-      count: channel.historical_unimported_packets!,
-      time: formatDateTime(channel.historical_error_at, timeZone),
-    })));
-}
-

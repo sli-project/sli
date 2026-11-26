@@ -26,9 +26,9 @@ const cases = [
 for (const locale of ["en", "ru"] as const) {
   it.each(cases)(`${locale}: localizes readiness warnings and queue verdicts at %i`, (count, warning, task) => {
     setLocale(locale);
-    const view = operationsReadinessView({ postgres: { warnings: Array(count).fill("synthetic") }, storage: {} } as PlatformReadiness);
-    expect(view.metrics[0].caption).toContain(count === 0 ? (locale === "en" ? "no warnings" : "без предупреждений")
-      : `${count} ${locale === "en" ? count === 1 ? "warning" : "warnings" : warning}`);
+    const checks = operationsReadinessView({ postgres: { available: true, warnings: Array(count).fill("synthetic") }, storage: {} } as PlatformReadiness);
+    if (count === 0) expect(checks).toEqual([]);
+    else expect(checks[0].meaning).toBe(`${count} ${locale === "en" ? count === 1 ? "warning" : "warnings" : warning}`);
     for (const status of ["queued", "quarantined"]) {
       const queue = { status: "ok", items: [{ queue_name: "processing", queue_status: status, depth: count, expired_leases: 0, retries: 0 }] } as SemanticQueueOverview;
       const verdict = вердиктКонтура(queue, false, null);
