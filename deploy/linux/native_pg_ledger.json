@@ -627,6 +627,8 @@
     "config/postgres_migrations/420_password_rule_identity.sql": "415b4684896f22a4a3c065c82ee74434729353c778c22a113c4e8c556945242f",
     "config/postgres_migrations/421_sli_own_actions.rollback.sql": "6cedda18582b07b3fd160ad5e0f40870da692b7b82b1ac818515cd40343e8396",
     "config/postgres_migrations/421_sli_own_actions.sql": "3787a1ca08cc8878322bfe7c4176c71729d6b5a4d9fd20c8dbb2135961915abc",
+    "config/postgres_migrations/422_file_audit_scope_inventory.rollback.sql": "72978f3d6e750d56396b2964f48da8c6e3ef72a550dfc5deb09900d0e8632edb",
+    "config/postgres_migrations/422_file_audit_scope_inventory.sql": "92abc6c650cdf9ab1bbd9d226c6e62f058dc17d0af1e13610dfb19d183b5adb6",
     "config/postgres_migrations/426_semantic_outbox_retention.rollback.sql": "eb5351d089373eba7e3fb43fab4840ee1347dadc6f0bbe87a28ad3b3cd7a84f8",
     "config/postgres_migrations/426_semantic_outbox_retention.sql": "415ad119bc2052ac95b95d4027286dfa04f1a1b1c7301017cebb5b78ba379111",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
