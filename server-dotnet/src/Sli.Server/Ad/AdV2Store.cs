@@ -58,6 +58,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             _=>await Infrastructure(db,request,ct)
         };
         else if (request.Key == "ad.new-logon-pairs") result = await AdLogonPairs.ReadAsync(db, request, configuration, ct);
+        else if (request.Key == "ad.computer-logons" && (request.Row is null || !long.TryParse(request.Row, out _)))
+            result = await AdLogonReports.ReadStoredAsync(db, request, ct);
         else
         {
             bool users = request.Key == "ad.users.v2";
