@@ -25,9 +25,31 @@ internal static class AdUsersActivity
     }
     internal static (string Sql,object?[] Args) EventSql(long[]? domains,int[] codes,AdPeriod period,IConfiguration? config=null)
     {
-        string scope=domains is null?"":" and e.domain_id=any($4)";
-        return (AdAccountEvents.Source(config)+$" select e.* from account_events e where e.event_id=any($1) and e.time_created_utc>=$2 and e.time_created_utc<$3{scope} order by e.time_created_utc,e.id,e.summary_key",
+        string scope=domains is null?"":" and h.domain_id=any($4)";
+        return (AdAccountEvents.Source(config, scope: scope)+" select e.* from account_events e where e.time_created_utc>=$2 and e.time_created_utc<$3 order by e.time_created_utc,e.id,e.summary_key",
             domains is null?[codes,period.Start,period.End]:[codes,period.Start,period.End,domains]);
+    }
+
+    private static async Task<long> UnknownLogonsAsync(NpgsqlConnection db, long[] domains, AdPeriod period,
+        IEnumerable<(long Domain, string Sid)> identities, IConfiguration? config, CancellationToken ct)
+    {
+        const string accounts = "unnest($5::bigint[], $6::text[]) account(domain_id,sid)";
+        string cold = AdAccountEvents.Source(config, scope: " and h.domain_id=any($4)", hot: false);
+        var rows = await Read(db, cold + $"""
+            select (select count(*) from event_hot h
+                join servers recorder on recorder.id=h.ad_user_logon_recorder435
+                    and recorder.domain_id=h.domain_id and recorder.role='domain_controller'
+                where h.ad_user_logon_recorder435 is not null and h.domain_id=any($4)
+                    and h.time_created_utc >= {AdAccountEvents.Boundary(config)}
+                    and h.time_created_utc >= $2 and h.time_created_utc < $3
+                    and not exists (select 1 from {accounts} where account.domain_id=h.domain_id
+                        and account.sid=case when h.actor ilike 'S-1-%' then {AdAccountEvents.ExactSid} end))
+                + (select count(*) from account_events e where e.time_created_utc >= $2 and e.time_created_utc < $3
+                    and not exists (select 1 from {accounts} where account.domain_id=e.domain_id
+                        and account.sid=btrim(e.target_user_sid,{AdAccountEvents.Whitespace}) collate "C")) as total
+            """, ct, new[] { 4624 }, period.Start, period.End, domains,
+            identities.Select(key => key.Domain).ToArray(), identities.Select(key => key.Sid).ToArray());
+        return rows[0].Int("total");
     }
     // Q500 forbids elapsed-time cutoffs and arbitrary source scan caps.
     static async Task<List<JsonObject>> Read(NpgsqlConnection db,string sql,CancellationToken ct,params object?[] args)
@@ -122,7 +144,23 @@ internal static class AdUsersActivity
             var exact=aliases.Where(a=>a.Text("sid") is not null).GroupBy(a=>(a.Int("domain_id"),a.Text("sid")!)).Where(g=>g.Select(a=>a.Int("entity_id")).Distinct().Count()==1).ToDictionary(g=>g.Key,g=>g.First().Int("entity_id"));
             var identities=exact.Where(p=>users.ContainsKey(p.Value)).ToDictionary(p=>p.Key,p=>users[p.Value]);var watched=exact.Where(p=>groups.ContainsKey(p.Value)).ToDictionary(p=>p.Key,p=>groups[p.Value]);
             if(identities.Count==0||!disabled&&watched.Count==0)return empty;
-            var events=new List<JsonObject>();foreach(int[] codes in new[]{disabled?new[]{4722,4725}:MembershipIds,new[]{4624,6272}}){var(sql,args)=EventSql(domains,codes,period,config);events.AddRange(await Read(db,sql,ct,args));}
+            var (eventSql, eventArgs) = EventSql(domains, disabled ? [4722, 4725] : MembershipIds, period, config);
+            var events = await Read(db, eventSql, ct, eventArgs);
+            // Only these exact accounts can contribute logon evidence. Count unresolved
+            // logons independently so narrowing the evidence read preserves coverage.
+            var relevant = events.Where(e => disabled
+                    ? e.Int("event_id") == 4725
+                    : Pairs.ContainsKey((int)e.Int("event_id")) && watched.ContainsKey((e.Int("domain_id"), e.Text("target") ?? "")))
+                .Select(e => (e.Int("domain_id"), Sid: e.Text(disabled ? "target_user_sid" : "membership_member_sid") ?? ""))
+                .Where(key => identities.TryGetValue(key, out var user) && (!disabled || AdInventoryRows.Bool(user["enabled"]) == false))
+                .ToHashSet();
+            if (relevant.Count > 0)
+            {
+                var logons = await AdAccountEvents.ReadUserLogonsAsync(db, domains, relevant.Select(key => key.Sid).Distinct().ToArray(),
+                    period, ct, config, ignoreCase: false);
+                events.AddRange(logons.Where(e => relevant.Contains((e.Int("domain_id"), e.Text("target_user_sid") ?? ""))));
+            }
+            long unknownLogons = await UnknownLogonsAsync(db, domains, period, identities.Keys, config, ct);
             var anchors=events.Where(e=>Pairs.ContainsKey((int)e.Int("event_id"))&&e.Text("normalized_event_id") is not null).Select(e=>Guid.Parse(e.Text("normalized_event_id")!)).ToArray();
             var candidates=new Dictionary<long,JsonObject>();if(!disabled&&anchors.Length>0)
             {
@@ -139,7 +177,9 @@ internal static class AdUsersActivity
                     order by anchor.source_event_id,c.rule_version desc,c.last_matched_at desc,c.candidate_id
                     """,ct,anchors,Chain,period.Start,period.End);candidates=rows.ToDictionary(r=>r.Int("add_id"));
             }
-            var shaped=Shape(events,identities,watched,candidates,minutes,repeats);foreach(var(key,value)in shaped)empty[key]=value?.DeepClone();return empty;
+            var shaped=Shape(events,identities,watched,candidates,minutes,repeats);
+            shaped["unknown_identity_events"] = shaped.Int("unknown_identity_events") + unknownLogons;
+            foreach(var(key,value)in shaped)empty[key]=value?.DeepClone();return empty;
         }
         catch(PostgresException error)when(error.SqlState is "42P01" or "42703" or "42501")
         {await Read(db,"rollback to savepoint ad_users_activity",ct);empty["state"]="unavailable";return empty;}

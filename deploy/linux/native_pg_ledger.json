@@ -631,6 +631,8 @@
     "config/postgres_migrations/422_file_audit_scope_inventory.sql": "92abc6c650cdf9ab1bbd9d226c6e62f058dc17d0af1e13610dfb19d183b5adb6",
     "config/postgres_migrations/424_home_read_indexes.rollback.sql": "ce79ddab8bd6ccaab3a100691ed5c68e010b0e8c1c3bb3b8d776bc28a04667b3",
     "config/postgres_migrations/424_home_read_indexes.sql": "2e1a65d14e9310c075be3b8c591065bd09ff959bf0329e49cc8d331d2a07be0c",
+    "config/postgres_migrations/435_user_activity_indexes.rollback.sql": "925e35526b524c98cc55496eff1109c65f0c17bfe5ba8694f053ed679195280b",
+    "config/postgres_migrations/435_user_activity_indexes.sql": "952ea66b5e559a1f457c171e13740958ac2653a40f2cec331836441dd07a5416",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
