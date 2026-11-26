@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Sli.Server.Agents.Registry;
 
 namespace Sli.Server.Agents.Control;
 
@@ -50,10 +51,5 @@ internal static class AgentControlJson
         return value[start..end];
     }
     internal static string? ReportedName(JsonElement value) => ReportedName(String(value));
-    internal static string? ReportedName(string? value)
-    {
-        if (value is null || value.Length is < 1 or > 253 || value.ToLowerInvariant() is "localhost" or "localhost.localdomain" or "unknown"
-            || Matches(value, @"\A[0-9]+(?:\.[0-9]+){3}\z") || value.Split('.').Any(label => !Matches(label, @"\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\z"))) return null;
-        try { _ = Id(value); return null; } catch (AgentControlException) { return value; }
-    }
+    internal static string? ReportedName(string? value) => AgentEnrollmentService.HostName(value);
 }

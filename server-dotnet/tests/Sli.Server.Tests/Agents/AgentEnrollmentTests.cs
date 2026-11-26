@@ -13,11 +13,126 @@ using Sli.Server.Agents.Control;
 using Sli.Server.Agents.ClientControl;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Hosting;
+using System.Net.Http.Json;
+using Sli.Server.Agents;
+using Sli.Server.Infrastructure;
 
 namespace Sli.Server.Tests.Agents;
 
 public class AgentEnrollmentTests
 {
+    [Fact]
+    public async Task Enrollment_preserves_unicode_and_audits_repeated_rejections_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var root = CaRequest("CN=enrollment test root", rootKey, 1)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
+        using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var issuer = CaRequest("CN=enrollment test issuer", issuerKey, 0)
+            .Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddYears(1), RandomNumberGenerator.GetBytes(16));
+        using var ca = new AgentIssuingCa(new X509Certificate2(root), issuer.CopyWithPrivateKey(issuerKey));
+        using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer()
+            .ConfigureAppConfiguration((_, builder) => builder.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user")
+            }))
+            .ConfigureServices(services =>
+            {
+                services.AddRouting();
+                services.AddSingleton<IPostgresConnectionFactory, PostgresConnectionFactory>();
+                services.AddSingleton(new AgentEnrollmentService(ca, new AgentIdentityService(ca)));
+            })
+            .Configure(app =>
+            {
+                app.Use(async (context, next) =>
+                {
+                    context.Features.Get<IHttpRequestFeature>()!.RawTarget = context.Request.Path.Value!;
+                    context.Connection.RemoteIpAddress = IPAddress.Parse("192.0.2.91");
+                    await next(context);
+                });
+                app.UseRouting();
+                app.UseEndpoints(routes => routes.MapAgentEnrollmentEndpoints());
+            })).StartAsync(ct);
+        using var client = host.GetTestClient();
+        client.BaseAddress = new Uri("https://agents.example.test");
+        await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await db.OpenAsync(ct);
+        var manager = new AgentManagementService(new AgentControlAudit());
+
+        async Task<(string Token, string Csr)> CreateToken(string? approved = null)
+        {
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var hostId = Guid.NewGuid();
+            var csr = new CertificateRequest($"CN={hostId}", key, HashAlgorithmName.SHA256);
+            var input = new JsonObject
+            {
+                ["host_id"] = hostId,
+                ["key_fingerprint"] = Convert.ToHexStringLower(SHA256.HashData(key.ExportSubjectPublicKeyInfo())),
+                ["registration_host_name"] = approved
+            };
+            await using var tx = await db.BeginTransactionAsync(ct);
+            var grant = await manager.CreateTokenAsync(db, tx, JsonSerializer.SerializeToElement(input), "synthetic", ct);
+            await tx.CommitAsync(ct);
+            return (grant.GetProperty("token").GetString()!, csr.CreateSigningRequestPem());
+        }
+
+        async Task<(HttpStatusCode Status, JsonObject Body)> Enroll((string Token, string Csr) grant, string name)
+        {
+            var payload = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                token = grant.Token, csr_pem = grant.Csr, reported_hostname = name
+            });
+            using var content = new ByteArrayContent(payload);
+            content.Headers.ContentType = new("application/json");
+            content.Headers.ContentLength = payload.Length;
+            using var response = await client.PostAsync("/api/v1/agent/enroll", content, ct);
+            return (response.StatusCode, (await response.Content.ReadFromJsonAsync<JsonObject>(ct))!);
+        }
+
+        var retryGrant = await CreateToken();
+        foreach (var rejected in new[] { "localhost", "192.0.2.1", Guid.NewGuid().ToString(), "PC\u200B01", new string('Я', 64) })
+        {
+            var response = await Enroll(retryGrant, rejected);
+            Assert.Equal(HttpStatusCode.BadRequest, response.Status);
+            Assert.Equal("invalid_agent_registration_name", response.Body["error"]!.GetValue<string>());
+        }
+        var repeated = await Task.WhenAll(Enroll(retryGrant, "PC\u200B01"), Enroll(retryGrant, "pc\u200b01"));
+        Assert.All(repeated, response => Assert.Equal(HttpStatusCode.BadRequest, response.Status));
+        await using (var count = new NpgsqlCommand("select count(*) from sli_agent_audit where action='enroll_rejected'", db))
+            Assert.Equal(5L, await count.ExecuteScalarAsync(ct));
+        await using (var audit = new NpgsqlCommand("""
+            select details::text from sli_agent_audit where action='enroll_rejected'
+                and details->>'reported_hostname'=@name
+            """, db))
+        {
+            audit.Parameters.AddWithValue("name", "PC\\u200B01");
+            await using var rows = await audit.ExecuteReaderAsync(ct);
+            Assert.True(await rows.ReadAsync(ct));
+            var details = JsonNode.Parse(rows.GetString(0))!;
+            Assert.Equal("invalid_agent_registration_name", details["code"]!.GetValue<string>());
+            Assert.Equal("192.0.2.91", details["source_address"]!.GetValue<string>());
+            Assert.DoesNotContain(retryGrant.Token, rows.GetString(0), StringComparison.Ordinal);
+            Assert.False(await rows.ReadAsync(ct));
+        }
+        foreach (var accepted in new[] { "user-ПК", "БУХГАЛТЕРИЯ-1", "PC_01", new string('Я', 63), "И\u0306-ПК" })
+        {
+            var grant = accepted == "user-ПК" ? retryGrant : await CreateToken(accepted.ToLowerInvariant());
+            var enrolled = await Enroll(grant, accepted);
+            Assert.Equal(HttpStatusCode.OK, enrolled.Status);
+            await using var read = new NpgsqlCommand("select registration_host_name from sli_agents where id=@id", db);
+            read.Parameters.AddWithValue("id", Guid.Parse(enrolled.Body["agent_id"]!.GetValue<string>()));
+            Assert.Equal(accepted.Normalize(), await read.ExecuteScalarAsync(ct));
+        }
+    }
+
     [Fact]
     public async Task Agent_command_denies_non_root_before_loading_configuration()
     {

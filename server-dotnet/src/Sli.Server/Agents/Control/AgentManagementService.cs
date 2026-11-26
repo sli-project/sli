@@ -22,8 +22,8 @@ public sealed partial class AgentManagementService(IAgentControlAudit audit, Age
         if (instanceValue.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null) && !AgentControlJson.Matches(instance, @"\A[a-z0-9][a-z0-9_-]{0,47}\z")) throw new AgentControlException("invalid_agent_instance_name");
         string? fp = AgentControlJson.String(AgentControlJson.Get(payload, "key_fingerprint"));
         var ttlValue = AgentControlJson.Get(payload, "ttl_seconds");
-        var nameValue = AgentControlJson.Get(payload, "registration_host_name"); string? name = AgentControlJson.String(nameValue);
-        if (nameValue.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null) && AgentControlJson.ReportedName(nameValue) is null) throw new AgentControlException("invalid_agent_registration_name");
+        var nameValue = AgentControlJson.Get(payload, "registration_host_name"); string? name = AgentControlJson.ReportedName(nameValue);
+        if (nameValue.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null) && name is null) throw new AgentControlException("invalid_agent_registration_name");
         if (!AgentControlJson.Matches(fp, @"\A[0-9a-f]{64}\z")) throw new AgentControlException("invalid_key_fingerprint");
         long ttl = 900;
         if (ttlValue.ValueKind != JsonValueKind.Undefined && (ttlValue.ValueKind != JsonValueKind.Number || !ttlValue.TryGetInt64(out ttl) || ttl is < 60 or > 3600)) throw new AgentControlException("invalid_enrollment_ttl");
@@ -35,7 +35,7 @@ public sealed partial class AgentManagementService(IAgentControlAudit audit, Age
         insert.Parameters.AddWithValue("now", now); insert.Parameters.AddWithValue("expires", expires);
         insert.Parameters.AddWithValue("instance", NpgsqlDbType.Text, (object?)instance ?? DBNull.Value); insert.Parameters.AddWithValue("replacement", NpgsqlDbType.Uuid, (object?)replacement ?? DBNull.Value); await insert.ExecuteNonQueryAsync(ct);
         var details = new Dictionary<string, object?> { ["ttl_seconds"] = ttl, ["instance_name"] = instance };
-        if (replacement is not null) details["replacement_for"] = replacement.Value.ToString(); if (!string.IsNullOrEmpty(name)) details["registration_host_name"] = name.ToLowerInvariant();
+        if (replacement is not null) details["replacement_for"] = replacement.Value.ToString(); if (name is not null) details["registration_host_name"] = name;
         await audit.AppendAsync(db, tx, "token_create", actor, id.ToString(), details, ct);
         return JsonSerializer.SerializeToElement(new { id, token, host_id = host, expires_at = AgentControlJson.Stamp(expires, true), instance_name = instance });
     }
