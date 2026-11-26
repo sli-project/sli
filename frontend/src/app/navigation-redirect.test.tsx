@@ -63,7 +63,13 @@ describe("registry compatibility redirects", () => {
     expect(navigationRedirect(path, {})).toBeNull();
   });
 
-  it.each(["/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
+  it("opens file-server settings without opening the preview reports", () => {
+    const path = "/admin/plugins/sli.file-audit";
+    expect(navigationRedirect(path, {})).toBeNull();
+    expect(previewModulePath(path)).toBe(false);
+  });
+
+  it.each(["/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
     "/admin/plugins/sli.workstations", "/report/workstations.overview", "/extensions/sli.sigma/rules",
     "/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/report/vpn.connections", "/reports/vpn.audit",
   ])("retains %s so the shell can show the server-controlled availability state", (path) => {

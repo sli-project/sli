@@ -143,7 +143,7 @@ describe("AppShell", () => {
     }
   });
 
-  it.each(["/admin/plugins/sli.file-audit", "/admin/plugins/sli.sigma", "/report/vpn.connections"])(
+  it.each(["/admin/plugins/sli.sigma", "/report/vpn.connections"])(
     "keeps the unavailable page at %s and mounts the route after server opt-in", async (path) => {
       state.access = adminAccess;
       const client = await renderShell(path, false, false);
@@ -156,6 +156,12 @@ describe("AppShell", () => {
       expect(within(main).queryByText("Модуль недоступен.")).toBeNull();
     },
   );
+
+  it("opens the file-server settings from Plugins with preview off", async () => {
+    state.access = adminAccess;
+    await renderShell("/admin/plugins/sli.file-audit");
+    expect(within(await screen.findByRole("main")).queryByText("Модуль недоступен.")).toBeNull();
+  });
 
   const placeholderPages = [
     ["/admin/language-time", "Язык и время", "Language & time"],

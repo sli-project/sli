@@ -22,14 +22,17 @@ const entries = declarations.sections.flatMap((section) => section.groups.flatMa
 const betaEntries = entries.filter((entry) => betaOrder.has(entry.id));
 const betaReportPaths = new Set(betaEntries.flatMap((entry) => [entry.path, ...(entry.views?.map((view) => view.path) ?? [])]));
 const betaPlugins = new Set(betaEntries.flatMap((entry) => entry.plugin_id ? [entry.plugin_id] : []));
+const fileServerSettings = "/admin/plugins/sli.file-audit";
 
 export function previewModulePath(path: string): boolean {
+  if (path.replace(/\/+$/, "") === fileServerSettings) return false;
   const plugin = /^\/(?:admin\/plugins|extensions)\/([^/]+)/.exec(path);
   if (plugin) return declarations.preview_plugins.includes(plugin[1]);
   return /^\/reports?\/(?:file-audit|workstations|vpn|sigma)\./.test(path);
 }
 
 function outsideBeta(path: string): boolean {
+  if (path === fileServerSettings) return false;
   if (["/cases", "/report-management", "/report-editor", "/report-builder"].some((alias) => isActivePath(alias, path))) return true;
   const plugin = /^\/(?:admin\/plugins|extensions)\/([^/]+)/.exec(path);
   if (plugin) return !betaPlugins.has(plugin[1]) && !betaEntries.some((entry) => isActivePath(entry.path, path));

@@ -140,6 +140,8 @@ export type PluginState = {
   plugin_id: string; package_version: string; installed: boolean; configured: boolean;
   enabled: boolean; receiving_data: boolean; component_runtime: string; queue_state: string;
   revision: number; last_data_at_utc: string | null;
+  source_count?: number;
+  source_names?: string[];
   status?: {
     state: "disabled" | "no_sources" | "waiting" | "working" | "error";
     last_data_at: string | null;

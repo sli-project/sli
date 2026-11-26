@@ -54,7 +54,7 @@ public sealed partial class InstallationService
     {
         var rows = await database.ReadAsync(s => s.QueryAsync("select * from read_plugin_states_v1()", ct), ct);
         var items = new JsonArray(rows.OfType<JsonObject>()
-            .Where(r => preview || !NavigationRegistry.IsPreviewPlugin(Text(r["plugin_id"])))
+            .Where(r => preview || Text(r["plugin_id"]) == "sli.file-audit" || !NavigationRegistry.IsPreviewPlugin(Text(r["plugin_id"])))
             .Select(r => (JsonNode)PluginState(r)).ToArray());
         var moduleReceipts = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         var receipts = await ReceiptsAsync(items.OfType<JsonObject>().Select(i => Text(i["plugin_id"])).ToArray(), ct, moduleReceipts);
