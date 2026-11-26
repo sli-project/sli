@@ -533,9 +533,6 @@ def units(config):
 def bootstrap_event_storage(connection):
     """Authorize the native short-event store once, while it is provably empty."""
     from psycopg import sql
-    from server.sli.storage.storage_v2_runtime_authorization import (
-        FRESH_BOOTSTRAP_AUTHORITY, runtime_authorization_digest,
-    )
 
     tables = ("event_hot", "event_cold_facts", "event_cold_daily",
               "storage_v2_event_identity_allocations", "storage_v2_outbox",
@@ -572,13 +569,17 @@ def bootstrap_event_storage(connection):
         issued = datetime.now(UTC)
         expires = issued + timedelta(days=365)
         authorized_by = "sli-native-installer"
-        digest = runtime_authorization_digest(route="v2", authority=FRESH_BOOTSTRAP_AUTHORITY,
-                                              preflight_digest=preflight, archive_root=archive_root, evidence=evidence,
-                                              authorized_by=authorized_by, authorized_at=issued, expires_at=expires)
+        authority = "storage-v2-fresh-bootstrap/v1"
+        payload = dict(route="v2", authority=authority, preflight_digest=preflight, archive_root=archive_root,
+                       evidence=evidence, authorized_by=authorized_by,
+                       authorized_at=issued.isoformat(), expires_at=expires.isoformat())
+        # The .NET worker checks this canonical digest before admitting writes.
+        digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                                           separators=(",", ":")).encode("utf-8")).hexdigest()
         connection.execute("""insert into public.storage_v2_runtime_authorizations
             (route,authority,preflight_digest,authorization_digest,archive_root,evidence,authorized_by,authorized_at,expires_at)
             values ('v2',%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
-            (FRESH_BOOTSTRAP_AUTHORITY, preflight, digest, archive_root, json.dumps(evidence), authorized_by, issued, expires))
+            (authority, preflight, digest, archive_root, json.dumps(evidence), authorized_by, issued, expires))
 
 
 def configure_worker_accounts():
@@ -588,14 +589,14 @@ def configure_worker_accounts():
     service and its password-file environment. The coordinator applies and
     verifies the schema before calling candidate configuration.
     """
-    from deploy.linux import backup, native_backup, native_install
-    from deploy.linux.migrate import configure_worker_logins
+    from deploy.linux import backup, native_backup, native_install, native_worker_accounts
 
     try:
         with native_backup.environment(native_install.environment()), backup.pg_passfile() as passfile:
             with backup.pg_connect(passfile, autocommit=True) as connection:
                 connection.execute("select pg_advisory_lock(hashtext('sli_linux_stand_migrate'))")
-                configure_worker_logins(connection)
+                native_worker_accounts.ensure_passwords(native_install.SECRETS)
+                native_worker_accounts.configure_worker_logins(connection)
                 try:
                     bootstrap_event_storage(connection)
                 except RuntimeErrorCode:
@@ -722,7 +723,7 @@ def process_start(pid):
 
 
 def healthy_service(service):
-    from deploy.linux.healthcheck import healthy
+    from deploy.linux.healthcheck import native_healthy
 
     try:
         first = systemd(service)
@@ -746,7 +747,7 @@ def healthy_service(service):
             status_path = RUN / service / "heartbeat.json"
         elif service == "notification-setup":
             status_path = RUN / service / "control.sock"
-        success = healthy(SERVICES[service][1], process_pid=pid, started_at=stamp, status_path=status_path)
+        success = native_healthy(SERVICES[service][1], process_pid=pid, started_at=stamp, status_path=status_path)
         return success and first == systemd(service) and proc_start == process_start(pid)
     except Exception:  # noqa: BLE001 - fixed success/failure only
         return False
@@ -775,11 +776,9 @@ def no_transaction(*, agents_reconfigure=False):
 
 
 def observe(root, installed):
-    from urllib.request import urlopen
-
     import psycopg
 
-    from deploy.linux.installed_state import pointers_match
+    from deploy.linux.installed_state import native_pointers_match
     from deploy.linux.native_host import credential
     from deploy.linux.native_plugins import verify_registry
 
@@ -797,7 +796,7 @@ def observe(root, installed):
             WHERE package_lifecycle = 'registered' ORDER BY plugin_id""").fetchall()
     require(roles == installed["roles"] and roles, "native_roles_mismatch")
     verify_registry(root, installed["plugins"], plugins)
-    pointers_match(Path("/var/lib/sli"), installed)
+    native_pointers_match(Path("/var/lib/sli"), installed)
     return pg_version, [], ledger
 
 
@@ -860,7 +859,7 @@ def observe_when_available(root, installed):
 
 def ready():
     from deploy.linux import native_host as host
-    from deploy.linux.installed_state import ledger_matches
+    from deploy.linux.installed_state import native_ledger_matches
     from deploy.linux.native_pg_inventory import verify_ledger
 
     with host.administrative_lock():
@@ -879,7 +878,7 @@ def ready():
                 "native_database_version_mismatch")
         checksums = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in (root / "config/postgres_migrations").glob("*.sql")}
-        ledger_matches({**manifest, "migrations": checksums}, {
+        native_ledger_matches({**manifest, "migrations": checksums}, {
             "migration_ledger": manifest["migration_ledger"],
             "migration_ledger_max": max(row["version"] for row in manifest["migration_ledger"])})
         verify_ledger(ledger, manifest["migration_ledger"], root=root)

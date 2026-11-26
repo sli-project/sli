@@ -25,8 +25,8 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     from contextlib import nullcontext
     from types import SimpleNamespace
 
-    from deploy.linux import backup, migrate, native_host as host, native_install as install
-    from deploy.linux import native_runtime as runtime, sli_secrets
+    from deploy.linux import backup, native_host as host, native_install as install
+    from deploy.linux import native_runtime as runtime, native_worker_accounts
 
     events = []
     users = set()
@@ -83,8 +83,9 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(tmp_path / 'synthetic-passfile'))
     monkeypatch.setattr(backup, 'pg_connect', lambda *a, **kw: nullcontext(Connection()))
     monkeypatch.setattr(runtime, 'bootstrap_event_storage', bootstrapped.append)
-    monkeypatch.setattr(migrate, 'secret_value', lambda setting: 'synthetic-password')
-    monkeypatch.setattr(sli_secrets, 'ensure', lambda directory, *, names: secrets.update(names))
+    monkeypatch.setattr(native_worker_accounts, 'secret_value', lambda setting: 'synthetic-password')
+    monkeypatch.setattr(native_worker_accounts, 'ensure_passwords',
+                        lambda directory: secrets.update(native_worker_accounts.PASSWORD_NAMES))
 
     def candidate(argv, **kwargs):
         assert argv[:4] == ['/pinned/python', '-I', '-B', '-c']
@@ -172,6 +173,49 @@ def test_worker_provisioning_error_is_fail_closed_and_redacted(monkeypatch, tmp_
     monkeypatch.setattr(backup, 'pg_connect', unavailable)
     with pytest.raises(runtime.RuntimeErrorCode, match='^native_worker_logins_failed$'):
         runtime.configure_worker_accounts()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_native_worker_logins_match_migration_privilege_decisions(monkeypatch, existing):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from deploy.linux import migrate, native_install, native_worker_accounts
+
+    for setting, value in native_install.environment().items():
+        if setting.endswith("_PASSWORD_FILE"):
+            monkeypatch.setenv(setting, value)
+    monkeypatch.setenv("SLI_DEPLOYMENT_MODE", "fixture")
+    monkeypatch.setenv("SLI_CORE_JOB_RADIUS_PILOT", "0")
+    monkeypatch.setenv("SLI_CORE_JOB_AD_GPO_PILOT", "0")
+    for module in (migrate, native_worker_accounts):
+        monkeypatch.setattr(module, "secret_value", lambda setting: "synthetic-password")
+
+    class Connection:
+        def __init__(self):
+            self.statements = []
+
+        def transaction(self):
+            return nullcontext()
+
+        def execute(self, query, params=None):
+            sql = query if isinstance(query, str) else query.as_string()
+            self.statements.append((sql, params))
+            if sql.startswith("select 1 from pg_roles"):
+                row = (1,) if existing else None
+            else:
+                row = ("WITH login" in sql,)
+            return SimpleNamespace(fetchone=lambda: row)
+
+    migration, native = Connection(), Connection()
+    for connection, configure in ((migration, migrate.configure_worker_logins),
+                                  (native, native_worker_accounts.configure_worker_logins)):
+        if existing:
+            with pytest.raises(RuntimeError, match="linux_worker_login_privileges_mismatch"):
+                configure(connection)
+        else:
+            configure(connection)
+    assert migration.statements == native.statements
 
 
 def test_new_closed_lifecycle_roles_and_logins_are_compatible():
