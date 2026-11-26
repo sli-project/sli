@@ -43,15 +43,18 @@ internal static class HomePresentation
                 finding = finding.DeepClone().AsObject();
                 finding["presentation_facts"] = new JsonObject { ["password_success"] = true };
             }
-            var accounts = password.Number("accounts");
+            var totals = finding["password_totals"];
+            var accounts = totals?["accounts"] is null ? password.Number("accounts") : totals.Number("accounts");
             var addresses = password.Number("addresses");
-            var name = accounts > 1 ? NumberMessage("accounts", accounts) : DisplayName(password.Text("account"));
+            var name = accounts > 1
+                ? NumberMessage(query.OpenQueue && totals?["accounts"] is null ? "sample_accounts" : "accounts", accounts)
+                : DisplayName(totals.Text("account") ?? password.Text("account"));
             string? title = Title();
-            if (password is null) return (null, title);
 
-            var attempts = password.Number("attempts");
+            var attempts = totals?["attempts"] is null ? password.Number("attempts") : totals.Number("attempts");
             var detail = new List<string>();
-            if (attempts > 0) detail.Add(NumberMessage("attempts", attempts));
+            if (attempts > 0)
+                detail.Add(NumberMessage(query.OpenQueue && totals?["attempts"] is null ? "sample_attempts" : "attempts", attempts));
             if (addresses > 1) detail.Add(NumberMessage("addresses", addresses));
             else if (DisplayName(password.Text("address")) is { } address) detail.Add(address);
             if (password.Stamp("first_at") is { } first && password.Stamp("last_at") is { } last)
