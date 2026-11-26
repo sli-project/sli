@@ -125,7 +125,7 @@ public sealed partial class HomeSummaryEndpointTests
                 (11,7,'qw.ad-hardening.lockout-threshold','Lockout threshold',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
                 (12,7,'qw.ad-hardening.privileged-nonexpiring','Password never expires',null,'high',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (13,7,'semantic.security.privileged_group_member_added','Earlier occurrence',null,'high',null,'test-group',(@end-interval '8 days')::text,null,'new',0);
-            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int;
+            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int, add column assigned_to text;
             update findings_active set last_seen_utc=first_seen_utc;
             insert into finding_event_copies337 values
                 (1,250004,4728,7,@end-interval '35 minutes','DC01.example.test',
@@ -188,21 +188,31 @@ public sealed partial class HomeSummaryEndpointTests
             .AddSingleton<IHomeSummaryAccess>(new Reports(Report("security.problems", ["security","identity_basic","technical","raw_evidence"]) with { Capabilities = owner },
                  Report("ad.infrastructure") with { Capabilities = owner },
                  Report("ad.gpo.v2") with { Capabilities = owner },
+                 Report("security.events.chains") with { Capabilities = owner },
                  Report("events.journal", ["security","identity_basic","technical","raw_evidence"]) with { Capabilities = owner }))
             .AddSingleton<IDomainRepository>(new Domains(true))
             .AddSingleton<IConfiguration>(config).AddSingleton<IGpoReadStore, GpoReadStore>()
             .AddSingleton<IPostgresConnectionFactory>(database).AddSingleton<IHomeSummaryRepository>(repository)
             .AddScoped<HomeSummaryReaders>().AddScoped<HomeSummaryService>().BuildServiceProvider();
-        async Task<JsonObject> Read(int days, string language = "en", DateTimeOffset? until = null)
+        async Task<JsonObject> Read(int days, string language = "en", DateTimeOffset? until = null, bool openQueue = false,
+            int page = 1, int limit = 25, string filter = "all")
         {
             using var scope = services.CreateScope();
             var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider, RequestAborted = ct };
             context.Request.Path = "/api/v1/home/summary";
             context.Request.Headers.AcceptLanguage = language;
             var to = until ?? end;
-            context.Request.QueryString = QueryString.Create(new Dictionary<string,string?> {
-                ["contract"]="v4",["domain_id"]="7",["period"]="custom",["from"]=to.AddDays(-days).ToString("O"),["to"]=to.ToString("O")
-            });
+            var args = new Dictionary<string,string?> {
+                ["contract"] = openQueue ? "v5" : "v4", ["domain_id"] = "7", ["period"] = "custom",
+                ["from"] = to.AddDays(-days).ToString("O"), ["to"] = to.ToString("O")
+            };
+            if (openQueue)
+            {
+                args["page"] = page.ToString(CultureInfo.InvariantCulture);
+                args["limit"] = limit.ToString(CultureInfo.InvariantCulture);
+                args["queue"] = filter;
+            }
+            context.Request.QueryString = QueryString.Create(args);
             using var body = new MemoryStream();
             context.Response.Body = body;
             await HomeSummaryEndpoints.HandleAsync(context);
@@ -316,6 +326,51 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.Equal(2400, weekHours[0].Number("typical"));
         Assert.Equal(3000, weekHours[^1].Number("typical"));
         Assert.All(noHistory["activity"]!["hours"]!.AsArray(), hour => Assert.Null(hour!["typical"]));
+
+        await PostCollectionPostgres.Sql(db, """
+            create function public.password_queue_presentation399(bigint,text) returns table(facts jsonb,aliases jsonb)
+                language sql as 'select public.password_problem_facts395($1,$2),null::jsonb';
+            update findings_active set assigned_to='analyst-example' where id=1;
+            update findings_active set repeat_count=2 where id=4;
+            insert into findings_active(id,domain_id,rule_code,severity,target,first_seen_utc,last_seen_utc,status)
+            select n,7,'test-paged','low','account-'||n,(now()-interval '2 days')::text,(now()-interval '1 day')::text,'new'
+            from generate_series(100,222) n;
+            insert into findings_active(id,domain_id,rule_code,severity,target,first_seen_utc,last_seen_utc,status,assigned_to)
+            select 223,domain_id,rule_code,severity,target,first_seen_utc,last_seen_utc,'new','another-analyst'
+            from findings_active where id=4;
+            """, ct);
+        await Read(7, openQueue: true);
+        queries.Clear();
+        var openTimer = Stopwatch.StartNew();
+        var open = await Read(7, openQueue: true);
+        openTimer.Stop();
+        output?.WriteLine($"7-day Home queue with {open["problems"].Number("open_count")} groups took {openTimer.ElapsedMilliseconds} ms.");
+        Assert.True(openTimer.Elapsed < TimeSpan.FromSeconds(3));
+        Assert.DoesNotContain(queries, item => item.Activity);
+        Assert.Null(open["activity"]);
+        var firstPage = open["problems"]!["items"]!.AsArray();
+        Assert.Equal(25, firstPage.Count);
+        Assert.DoesNotContain(firstPage, row => row.Number("id") is 2 or 5 or 9);
+        var inProgress = await Read(1, openQueue: true, filter: "in_work");
+        var olderProblem = inProgress["problems"]!["items"]!.AsArray().Single(row => row.Number("id") is 4 or 223);
+        Assert.Equal(4, olderProblem.Number("occurrence_count"));
+        Assert.Equal("mixed", olderProblem.Text("assignee_state"));
+        Assert.Null(olderProblem.Text("assignee"));
+        var second = await Read(1, openQueue: true, page: 2);
+        var unassigned = await Read(1, openQueue: true, filter: "unassigned", limit: 100);
+        Assert.Equal(100, unassigned["problems"]!["items"]!.AsArray().Count);
+        Assert.DoesNotContain(unassigned["problems"]!["items"]!.AsArray(), row => row.Number("id") is 1 or 4 or 223);
+        foreach (var subsequent in new[] { second, inProgress, unassigned })
+            foreach (var count in new[] { "open_count", "unassigned_count", "in_work_count" })
+                Assert.Equal(open["problems"].Number(count), subsequent["problems"].Number(count));
+        var secondPage = second["problems"]!["items"]!.AsArray();
+        Assert.Empty(firstPage.Select(row => row.Number("id")).Intersect(secondPage.Select(row => row.Number("id"))));
+        var topChanges = open["changes"]!["items"]!.AsArray();
+        Assert.Equal(10, topChanges.Count);
+        Assert.Contains(topChanges, row => row.Text("name") == "test-account" && row.Number("event_id") == 4720);
+        Assert.DoesNotContain(topChanges, row => row.Text("name") == "test-group" && row.Number("event_id") == 4728);
+        Assert.Contains("security.events.chains", open["changes"].Text("href"));
+        Assert.Contains("period=custom", open["changes"].Text("href"));
     }
 
     private sealed class ProfiledHomeRepository(HomeSummaryRepository repository,
