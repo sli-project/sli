@@ -92,7 +92,7 @@ public static class ProblemPresentation
     internal static bool IsDcCatalogFinding(string rule) => rule is "semantic.security.dc_scheduled_task_created" or "semantic.security.dc_service_installed";
     internal static bool IsPasswordFinding(string rule) => rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
 
-    private static string PasswordQuantity(string noun, JsonNode count, string language)
+    private static string PasswordQuantity(string noun, JsonNode count, string language, bool groupDigits = false)
     {
         long number = ProblemJson.Long(count);
         string form = DomainHttp.SelectEnglish(language) ? number == 1 ? "one" : "other" : (number % 100, number % 10) switch
@@ -102,8 +102,11 @@ public static class ProblemPresentation
             (_, >= 2 and <= 4) => "few",
             _ => "many"
         };
+        var displayCount = groupDigits
+            ? JsonValue.Create(number.ToString("N0", CultureInfo.GetCultureInfo(DomainHttp.SelectEnglish(language) ? "en-US" : "ru-RU")))
+            : count.DeepClone();
         return ProblemJson.Text(Message($"security.problems.presentation.quantity.{noun}.{form}", language,
-            new() { ["count"] = count.DeepClone() })["text"]);
+            new() { ["count"] = displayCount })["text"]);
     }
 
     internal static JsonObject RuleParameters(JsonObject finding, ProblemAccess? access = null, string language = "")
@@ -158,7 +161,7 @@ public static class ProblemPresentation
         foreach (string key in parameters.Where(p => p.Value is null).Select(p => p.Key).ToArray()) parameters.Remove(key);
         return parameters;
     }
-    internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null)
+    internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null, bool queueTitle = false)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
         if (IsDcCatalogFinding(rule) && suffix is "why" or "next") return new();
@@ -169,14 +172,20 @@ public static class ProblemPresentation
         if (threshold && suffix == "title")
         {
             bool spray = rule == "semantic.qw.password-spray";
-            if (spray ? parameters["source"] is not null && parameters["account_count"] is not null : parameters["account"] is not null)
+            if (parameters["attempts"] is { } attempts &&
+                (spray ? parameters["source"] is not null && parameters["account_count"] is not null : parameters["account"] is not null))
             {
-                string key = spray ? "spray_threshold_title" : ProblemJson.Long(parameters["address_count"]) > 0
-                    ? "brute_threshold_title" : "brute_threshold_title_account";
+                string key = (queueTitle, spray) switch {
+                    (true, true) => "queue_spray_title",
+                    (true, false) => "queue_brute_title",
+                    (false, true) => "spray_threshold_title",
+                    _ => "brute_threshold_title"
+                };
+                if (!spray && ProblemJson.Long(parameters["address_count"]) <= 0) key += "_account";
                 var titleParameters = parameters.DeepClone().AsObject();
-                if (parameters["attempts"] is { } attempts) titleParameters["attempt_quantity"] = PasswordQuantity("attempt", attempts, language);
-                if (parameters["address_count"] is { } addresses) titleParameters["address_quantity"] = PasswordQuantity("address", addresses, language);
-                if (parameters["account_count"] is { } accounts) titleParameters["account_quantity"] = PasswordQuantity("account", accounts, language);
+                titleParameters["attempt_quantity"] = PasswordQuantity("attempt", attempts, language, queueTitle);
+                if (parameters["address_count"] is { } addresses) titleParameters["address_quantity"] = PasswordQuantity("address", addresses, language, queueTitle);
+                if (parameters["account_count"] is { } accounts) titleParameters["account_quantity"] = PasswordQuantity("account", accounts, language, queueTitle);
                 var title = Message("security.problems.presentation." + key, language, titleParameters);
                 title["rendered"] = true;
                 return title;
@@ -207,6 +216,8 @@ public static class ProblemPresentation
             parameters["quantity"] = PasswordQuantity(noun, count, language);
         }
         var message = Message(code, language, parameters);
+        if (queueTitle && threshold && suffix == "title" && parameters["attempts"] is { } total)
+            message["text"] = $"{message["text"]} · {PasswordQuantity("attempt", total, language, groupDigits: true)}";
         if (suffix == "what" && CatalogDetection(rule)) {
             bool english = DomainHttp.SelectEnglish(language);
             var catalog = english ? En.Value : Ru.Value;
@@ -291,7 +302,7 @@ public static class ProblemPresentation
         string rule = ProblemJson.Text(finding["rule_code"]);
         bool acl = rule == "semantic.qw.file-acl-broad-write";
         var fields = new Dictionary<string, JsonNode?> {
-            ["title_text"] = RuleMessage(finding, "title", language, access),
+            ["title_text"] = RuleMessage(finding, "title", language, access, queueTitle: queue && !includeDescription),
             ["actor_text"] = actor is not null ? M("security.problems.identity.name", new() { ["name"] = actor["label"]?.DeepClone() }) : Principal(actorRaw, hideSid: true) ?? RuleParameters(finding, access)["actor"]?.DeepClone(),
             ["wording_limitation"] = null };
         if (!queue || includeDescription) {
@@ -419,6 +430,9 @@ public static class ProblemPresentation
         var queueRow = ProblemJson.Pick(row, "id", "status", "severity", "title_text", "entity_text", "actor_text", "last_seen_utc",
             "published_at_utc", "occurrence_count", "problem_cohort", "risk_acceptance", "review_hint_text", "suppressed", "assigned_to",
             "assigned_to_text", "evidence_total", "first_seen_utc", "repeat_count", "decoy_id", "decoy_revision");
+        if (!includeDescription && !acl) queueRow["evidence_total"] = finding["evidence_count"]?.DeepClone();
+        if (!includeDescription && !IsPasswordFinding(rule) && row["entity_messages"] is JsonArray { Count: > 0 } objects)
+            queueRow["entity_messages"] = objects.DeepClone();
         if (includeDescription) {
             foreach (string field in new[] { "title", "what_happened", "why_text", "next_text", "actor", "entity_identifiers",
                 "identity_sources_text", "status_history", "risk_audit", "linked_case", "evidence", "presentation_messages",
@@ -451,7 +465,9 @@ public static class ProblemPresentation
                     ["accounts"] = identityAllowed ? (witnesses?["accounts"] ?? aliases?["accounts"])?.DeepClone() : null,
                     ["addresses"] = sourceAllowed ? (witnesses?["addresses"] ?? aliases?["addresses"])?.DeepClone() : null,
                     ["account_count"] = identityAllowed ? witnesses?["account_count"]?.DeepClone() : null,
-                    ["event_count"] = witnesses?["attempts"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone()
+                    ["address_count"] = sourceAllowed ? witnesses?["address_count"]?.DeepClone() : null,
+                    // Only a published threshold total counts attempts beyond the retained evidence.
+                    ["event_count"] = witnesses?["version"] is not null ? witnesses["attempts"]?.DeepClone() : null
                 };
             }
         }

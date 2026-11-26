@@ -6,7 +6,7 @@ namespace Sli.Server.Notifications;
 
 internal static class NotificationLanguages
 {
-    private const string ServerDefault = "ru";
+    private const string ServerDefault = "en";
 
     internal static async Task RememberInterfaceAsync(IPostgresConnectionFactory database, long userId, string language, CancellationToken ct)
     {

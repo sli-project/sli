@@ -22,6 +22,7 @@ export type NotificationDelivery = {
   object_severity: string | null; channel: NotificationKind; state: string; attempts: number | null;
   result_code: string | null; created_at: string; updated_at: string; available_at: string | null;
   finding_id: number | null;
+  problem_title?: string | null;
   delivery_reason?: "live" | "pipeline_delay" | "historical_replay" | "history_import" | null;
   delay_minutes?: number | null;
 };

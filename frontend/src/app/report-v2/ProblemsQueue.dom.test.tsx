@@ -54,13 +54,11 @@ function renderQueue(data = (params: URLSearchParams) => {
   return reads;
 }
 
-it("shows filter counts, expands repeat rows in place and opens exact evidence", async () => {
+it("expands repeat rows in place and opens exact evidence", async () => {
   const user = userEvent.setup();
-  const reads = renderQueue();
-  await screen.findByRole("button", { name: "Open 2" });
-  expect(screen.queryByRole("link", { name: "Export CSV" })).toBeNull();
+  renderQueue();
+  const attack = await screen.findByRole("link", { name: "Password spray" });
   expect(screen.getByRole("checkbox", { name: "Collapse repeats" })).toHaveProperty("checked", true);
-  const attack = screen.getByRole("link", { name: /Password spray.*operator.one, operator.two.*192.0.2.28.*12 accounts.*64 events/ });
   await user.click(screen.getByRole("button", { name: "Expand repeats for #41" }));
   await screen.findByRole("link", { name: /Repeated sign-in failures/ });
   await user.click(screen.getByRole("button", { name: "Collapse repeats for #41" }));
@@ -73,6 +71,13 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
   await user.click(within(panel).getByRole("button", { name: "Next problem" }));
   expect(await screen.findByRole("dialog", { name: "Audit policy changed" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Close" }));
+});
+
+it("shows filter counts and requests the selected severity and domain", async () => {
+  const user = userEvent.setup();
+  const reads = renderQueue();
+  await screen.findByRole("button", { name: "Open 2" });
+  expect(screen.queryByRole("link", { name: "Export CSV" })).toBeNull();
   await chooseOption(screen.getByLabelText("Severity", { selector: "button" }), "high");
   await user.click(await screen.findByRole("button", { name: "In progress 1" }));
   expect(reads.mock.calls.some(([, params]) => params.get("queue_view") === "active" && params.get("severity") === "high")).toBe(true);
@@ -82,6 +87,49 @@ it("shows filter counts, expands repeat rows in place and opens exact evidence",
     expect(params?.has("domain")).toBe(false);
     expect(params?.has("scope")).toBe(false);
   });
+});
+
+it("shows short attack titles, two values per cell and the full attempt totals", async () => {
+  setLocale("ru");
+  const user = userEvent.setup();
+  const accounts = Array.from({ length: 18 }, (_, index) => `test-user${String(index + 1).padStart(2, "0")}`);
+  const addresses = Array.from({ length: 21 }, (_, index) => `198.51.100.${index + 10}`);
+  const sprayTitle = "Попытки входа с адреса 192.0.2.28 · 18 учётных записей · 2\u00a0002 попытки";
+  const bruteTitle = "Подбор пароля к учётной записи Администратор · 21 адрес · 111\u00a0890 попыток";
+  const spray = { ...problem, id: 1694, title_text: sprayTitle, rule_code: "semantic.qw.password-spray", evidence_total: 50,
+    occurrence_count: 2002, queue_attack: { accounts, addresses: ["192.0.2.28"], account_count: 18, event_count: 2002 } };
+  const brute = { ...problem, id: 1689, title_text: bruteTitle, rule_code: "semantic.qw.password-brute-force", evidence_total: 50,
+    occurrence_count: 111890, queue_attack: { accounts: ["Администратор", "АДМИНИСТРАТОР", "администратор", "test-alias"], addresses, address_count: 21, event_count: 111890 } };
+  renderQueue((params) => page(params.has("id") ? [params.get("id") === "1694" ? spray : brute] : [spray, brute]));
+
+  const sprayLink = await screen.findByRole("link", { name: sprayTitle });
+  const bruteLink = screen.getByRole("link", { name: bruteTitle });
+  const sprayRow = within(sprayLink.closest("tr")!);
+  const bruteRow = within(bruteLink.closest("tr")!);
+  expect(sprayLink.closest("td")?.textContent).toBe(`›${sprayTitle}`);
+  expect(bruteLink.closest("td")?.textContent).toBe(`›${bruteTitle}`);
+  expect(sprayLink.getAttribute("href")).toBe("/app/report/security.problems?id=1694&domain=7");
+  const object = sprayRow.getByText("+16").closest("td");
+  const initiator = bruteRow.getByText("+19").closest("td");
+  expect(object?.textContent).toBe("test-user01, test-user02+16");
+  expect(object?.title).toBe(accounts.join(", "));
+  expect(initiator?.textContent).toBe("198.51.100.10, 198.51.100.11+19");
+  expect(initiator?.title).toBe(addresses.join(", "));
+  expect(sprayRow.getByRole("button", { name: "2\u00a0002 события" })).toBeTruthy();
+  expect(bruteRow.getByRole("button", { name: "111\u00a0890 событий" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "50 событий" })).toBeNull();
+  expect(screen.queryByRole("columnheader", { name: "№" })).toBeNull();
+
+  await user.click(bruteLink);
+  const panel = await screen.findByRole("dialog");
+  expect(within(panel).getByText("#1689")).toBeTruthy();
+  expect(within(panel).getByText((content) => content.includes(addresses.join(", ")))).toBeTruthy();
+});
+
+it("omits the evidence column if a password finding has only a retained sample count", async () => {
+  renderQueue(() => page([{ ...problem, evidence_total: 50, queue_attack: { ...problem.queue_attack, event_count: null } }]));
+  await screen.findByRole("link", { name: "Password spray" });
+  expect(screen.queryByRole("columnheader", { name: "Evidence" })).toBeNull();
 });
 
 it("opens the finding journal directly and links back to the same problem", async () => {

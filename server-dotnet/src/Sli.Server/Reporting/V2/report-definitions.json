@@ -3886,8 +3886,8 @@
         "labels": {
           "live": "Обычная обработка",
           "pipeline_delay": "Задержка конвейера",
-          "historical_replay": "Перерасчёт истории: без отправки",
-          "history_import": "Импорт истории: без отправки"
+          "historical_replay": "Не отправлено: событие старше 24 ч",
+          "history_import": "Не отправлено: импортированное событие"
         },
         "field_categories": []
       },
@@ -3904,8 +3904,8 @@
         "kind": "state",
         "path": "result_code",
         "labels": {
-          "historical_replay": "Перерасчёт истории: уведомление подавлено",
-          "history_import": "Импорт истории: уведомление подавлено",
+          "historical_replay": "Не отправлено: событие старше 24 ч",
+          "history_import": "Не отправлено: импортированное событие",
           "simulated": "Симуляция",
           "subscription_changed": "Подписка изменена",
           "recipient_denied": "Нет доступа",
@@ -5617,6 +5617,10 @@
         "identity_basic"
       ],
       "queue_attack.addresses": [
+        "identity_basic",
+        "technical"
+      ],
+      "queue_attack.address_count": [
         "identity_basic",
         "technical"
       ],
@@ -13425,7 +13429,7 @@
       "scope": "AD workstation inventory and current agent bindings, bounded by the atomic overview grant and workstation read capability.",
       "exclusions": "No online state, current Defender or process state, USB activity, copying, work-duration or compliance conclusions are inferred.",
       "sources": [
-        "Published AD computers inventory and current agent registry with authoritative bindings.",
+        "Canonical: published AD computers inventory and current agent registry with authoritative bindings.",
         "Canonical: the shared event journal reader, including native retained daily groups and permitted published finding links."
       ],
       "freshness_expectation": "The published AD computers snapshot supplies the OS and last recorded AD logon.",
