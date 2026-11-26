@@ -75,6 +75,8 @@ def exercise(previous, work):
     shutil.chown(socket, user="postgres", group="postgres")
     subprocess.run(["mount", "--bind", str(socket), "/run/postgresql"], check=True)
     data = work / "data"
+    data.mkdir(mode=0o700)
+    shutil.chown(data, user="postgres", group="postgres")
     credentials = work / "credentials"
     credentials.mkdir(mode=0o700)
     shutil.chown(credentials, user="postgres", group="postgres")
