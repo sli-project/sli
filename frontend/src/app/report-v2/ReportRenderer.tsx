@@ -43,7 +43,7 @@ import { UserChanges, UserCheckFilters, userTableColumns } from "../../plugins/a
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
-import { ComputerLogonsEmpty, ComputerPanel, computerEmpty, computerInventoryColumns, computerLogonCount } from "./ComputersPanel";
+import { ComputerPanel, computerEmpty, computerInventoryColumns } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
@@ -183,6 +183,16 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const computerReport = definition.key === "ad.computers.v6";
   const computerLogons = definition.key === "ad.computer-logons";
   const computersScreen = computerReport || computerLogons;
+  const [wideLogons, setWideLogons] = useState(() => window.matchMedia?.("(min-width: 1376px)").matches ?? true);
+  useEffect(() => {
+    if (!computerLogons) return;
+    const viewport = window.matchMedia?.("(min-width: 1376px)");
+    if (!viewport) return;
+    const update = () => setWideLogons(viewport.matches);
+    update();
+    viewport.addEventListener("change", update);
+    return () => viewport.removeEventListener("change", update);
+  }, [computerLogons]);
   const [computerPageSize, setComputerPageSize] = useState(50);
   const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(true);
@@ -405,7 +415,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }, [data.data, data.isPlaceholderData, independentUsers, userReview, infrastructure, view.key, view.source, userPage, computersScreen]);
   const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
   const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
-    || (view.key === "checks" ? selected : rows[0]) : undefined;
+    || (view.key === "checks" ? selected : !computerLogons || wideLogons ? rows[0] : undefined) : undefined;
   const chooseComputer = (row: Row) => { setDetailsVisible(true); setSelected(row); };
   const compareView = views.find((item) => item.key === "changes" && item.access?.allowed !== false);
   const cardLogonParams = new URLSearchParams(inventoryLogonWindow ? { period: "custom", from: inventoryLogonWindow.from,
@@ -434,7 +444,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       if (independentUsers && field.kind === "select" && field.key !== "domain") return { ...field,
         options: [{ value: "", label: t("reports.ad.users.list.all") }, ...field.options.filter((option) => option.value !== ""
           && (field.key !== "account_state" || option.value !== "unknown"))] };
-      if (computerLogons && field.key === "with_logons") return { key: field.key, kind: "checkbox" as const, label: t("reports.computers.only_logons"), onValue: "yes", offValue: "no" };
+      if (computerLogons && field.key === "service_logons") return { key: field.key, kind: "checkbox" as const,
+        label: t("reports.v2.ad.computer-logons.params.service_logons.label"), onValue: "yes", offValue: "no" };
       if (computersScreen && field.kind === "text" && ["q", "user"].includes(field.key)) {
         const label = field.key === "user" ? t("reports.computers.user") : computerLogons ? t("reports.computers.computer") : t("reports.computers.search");
         return { ...field, label, placeholder: label };
@@ -603,12 +614,23 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       ? t("reports.computers.page_of", { page: userPage + 1, total: Math.ceil(first.filtered_count / computerPageSize) })
       : t("reports.computers.page", { page: userPage + 1 }) : undefined };
   const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
-    : columns.filter((column) => column.key !== "state").map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false,
-      ...(column.key === "count" ? { render: computerLogonCount } : {}) }));
-  const computerEmptyView = !computerLogons ? computerEmpty()
-    : first && ready && !data.isPlaceholderData && !data.error
-      ? <ComputerLogonsEmpty state={first.coverage.observation_state ?? state}/> : null;
-  const logonsNotCollected = computerLogons && state === "not_collected" && !data.isPlaceholderData;
+    : columns.map((column) => ({ ...column, hiddenByDefault: column.key === "name" ? undefined : false }));
+  const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
+    <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
+      emptyContent={t("table.noValue")} showFooter={false}/> : computerReport ? computerEmpty() : null;
+  const detailParams = new URLSearchParams(baseParams);
+  for (const key of ["limit", "sort", "direction"]) detailParams.delete(key);
+  if (first?.window.from_utc && first.window.to_utc_exclusive) {
+    detailParams.set("period", "custom");
+    detailParams.set("from", first.window.from_utc);
+    detailParams.set("to", first.window.to_utc_exclusive);
+  }
+  const logonParams = detailParams.toString();
+  const computerPanel = activeComputer && !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state)
+    ? <ComputerPanel key={`${rowKey(activeComputer)}:${computerLogons ? logonParams : baseParams}:${refreshWindow}`}
+      row={activeComputer} logons={computerLogons} logonParams={computerLogons ? logonParams : cardLogonParams.toString()}
+      changes={compareView?.columns ?? []} canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/>
+    : undefined;
   const scopeInstant = computerLogons ? bounds?.to : typeof snapshotAt === "string" ? snapshotAt : undefined;
   const computerScope = computersScreen && scopeInstant ? <span className="sli-ds-badge">
     {first?.domains?.length === 1 && !bodyFields.some((field) => field.key === "domain") ? <>{first.domains[0].display_name} · </> : null}
@@ -724,7 +746,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : independentUsers && state === "empty" ? <p>{t(userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : domainEvents && state === "empty" ? domainEventsEmpty
-      : computersScreen && state === "empty" ? computerEmptyView
+      : computersScreen && state === "empty" && computerEmptyView ? computerEmptyView
       : (domainEvents || problemQueue || infrastructure || computersScreen || independentUsers) && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></>
       : gpoReport && state === "empty" ? gpoEmpty : gpoReport && ["partial", "stale", "processing", "not_collected"].includes(state) ? <></> : <>{definition.key === "workstations.usb" && state === "not_collected" ? <p role="status">{t("workstations.usb.not_collected")} <a href="/app/agents">{t("agents.title")}</a></p> : null}{workstationFailure ? <p role="status">{workstationFailure}</p> : <ReportState state={state} message={first?.state === state ? first.state_message : undefined} details={{ ...(first?.state_details ?? { reason: "coverage_unknown", observed_at_utc: typeof first?.coverage.observed_at_utc === "string" ? first.coverage.observed_at_utc : null }), limitations: first?.limitations }}
       subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false}
@@ -734,9 +756,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     onRetry={() => void data.refetch()}
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
     sideSize={computerLogons ? "wide" : "standard"}
-    side={activeComputer && (logonsNotCollected || !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state)) ? <ComputerPanel key={`${rowKey(activeComputer)}:${baseParams}:${refreshWindow}`} row={activeComputer} logons={computerLogons} logonsNotCollected={logonsNotCollected}
-      logonParams={computerLogons ? baseParams : cardLogonParams.toString()} changes={compareView?.columns ?? []}
-      canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/> : undefined}
+    side={!computerLogons || wideLogons ? computerPanel : undefined}
     split={independentUsers}
     drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
@@ -772,6 +792,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         : <p>{t(state === "not_collected" ? "reports.ad.users.list.not_collected" : userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : computerReport && view.key === "checks"
       ? <ComputerChecks result={first} onSelect={chooseComputer} onInventory={() => selectView("computers")}/>
+      : computerLogons && !wideLogons && computerPanel ? computerPanel
       : computersScreen
       ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title}
         columns={computerReport && view.key === "changes" ? computerTableColumns(view.columns ?? [], chooseComputer, [], timeZone) : computerTable}

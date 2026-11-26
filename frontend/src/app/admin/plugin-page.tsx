@@ -2,15 +2,15 @@ import { Checkbox } from "../../design-system/Checkbox";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
-import { Badge, PageHeader, Tabs, TabList, TabPanel, StateView } from "../../design-system";
+import { PageHeader, Tabs, TabList, TabPanel, StateView } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
 import { useEffectiveAccess, useTimeZone } from "../App";
-import { formatDateTime } from "../../shared/date-time";
 import { navigationRedirect } from "../navigation";
 import { PluginSettingsForm } from "./plugin-settings-form";
 import { PluginReadState, PluginSources } from "./plugin-sources";
 import { PluginRadiusSources } from "./plugin-radius-sources";
 import { fileAuditAgentParameter } from "./plugin-file-audit-controls";
+import { pluginStatusText } from "./plugin-status";
 
 const tabIds = ["overview", "connection", "settings", "rules", "reports"] as const;
 
@@ -21,11 +21,11 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     && new URLSearchParams(window.location.search).has(fileAuditAgentParameter) ? "connection" : "overview");
   const client = useQueryClient();
   const { timeZone } = useTimeZone();
-  const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins });
+  const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
   const settings = useQuery({ queryKey: ["plugin-settings", pluginId], queryFn: () => api.pluginSettings(pluginId), enabled: tab === "settings" || tab === "rules" });
   const reports = useQuery({ queryKey: ["reports-v2-catalog"], queryFn: api.reportsV2Catalog, enabled: tab === "reports" });
   const sigma = useQuery({ queryKey: ["sigma-rules"], queryFn: () => api.sigmaRules(), enabled: tab === "rules" && pluginId === "sli.sigma" });
-  const item = plugins.data?.items.find((plugin) => plugin.plugin_id === pluginId);
+  const item = plugins.isError ? undefined : plugins.data?.items.find((plugin) => plugin.plugin_id === pluginId);
   const canEdit = !!access && (access.platform_owner === true || access.subject.coarse_role === "admin");
   const canManageAgents = canEdit && (access.platform_owner === true || access.capabilities.includes("access.manage"));
   const change = useMutation({
@@ -39,25 +39,22 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     },
     onError: () => void client.invalidateQueries({ queryKey: ["plugins"] }),
   });
-  const receipt = item?.data_receipts;
-  const latest = receipt ? receipt.last_received_at : item?.last_data_at_utc;
   const pluginReports = reports.data?.items.filter((report) => report.owner_id === pluginId
     && (!["sli.file-audit", "sli.remote-access"].includes(pluginId) || !navigationRedirect(`/report/${report.key}`, {}))) ?? [];
+  const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   return <section className="sli-ds-report">
-    <PageHeader title={title} subtitle={item ? <Badge tone={item.enabled ? "success" : "neutral"}>{t(!item.enabled ? "plugins.disabled" : item.component_runtime === "running" ? "plugins.runtime.running" : item.component_runtime === "draining" ? "plugins.runtime.draining" : item.component_runtime === "stopped" ? "plugins.runtime.stopped" : "plugins.runtime.unknown")}</Badge> : undefined}
+    <PageHeader title={title} subtitle={item ? pluginStatusText(item.status, title, timeZone) : undefined}
       actions={item && plugins.data?.can_manage && canEdit ? <Checkbox role="switch" checked={item.enabled} disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))} onChange={(event) => change.mutate({ item, enabled: event.target.checked })}>{t("plugins.enabled")}</Checkbox> : undefined}/>
     <PluginReadState loading={plugins.isLoading} error={plugins.error} retry={() => void plugins.refetch()}/>
-    {plugins.data && !item ? <StateView state="empty" detail={t("plugins.error.notFound")}/> : null}
+    {plugins.data && !plugins.isError && !item ? <StateView state="unavailable" message={t("plugins.error.notFound")}/> : null}
     {!canEdit ? <p role="note">{t("pluginPage.readOnly")}</p> : null}
     {change.error ? <p role="alert">{t(change.error instanceof ApiResponseError && change.error.code === "plugin_not_configured" ? "plugins.error.notConfigured"
       : change.error instanceof ApiResponseError && change.error.code === "plugin_revision_conflict" ? "plugins.error.revisionConflict" : "plugins.changeFailed")}</p> : null}
     <Tabs active={tab} onChange={setTab} items={tabIds.map((key) => ({ key, label: t(`pluginPage.tab.${key}`) }))}>
       <TabList label={title}/><TabPanel>
-        {tab === "overview" || tab === "connection" ? <>
-          {tab === "overview" && item ? <p>{receipt?.state === "unavailable" ? t("plugins.receiptUnavailable") : receipt?.state === "not_supported" ? t("plugins.receiptUnsupported") : latest ? t("pluginPage.latest", { time: formatDateTime(latest, timeZone) }) : t("pluginPage.noData")}</p> : null}
-          {pluginId === "sli.remote-access" ? <PluginRadiusSources connection={tab === "connection"}/>
-            : <PluginSources key={pluginId} pluginId={pluginId} connection={tab === "connection"} canEdit={canManageAgents}/>}
-        </> : null}
+        {tab === "overview" && !domainPlugin && item?.package_version ? <p>{t("plugins.version")} · {item.package_version}</p> : null}
+        {tab === "connection" || tab === "overview" && domainPlugin ? pluginId === "sli.remote-access" ? <PluginRadiusSources connection/>
+          : <PluginSources key={pluginId} pluginId={pluginId} connection={tab === "connection"} canEdit={canManageAgents}/> : null}
         {tab === "settings" || tab === "rules" ? <PluginReadState loading={settings.isLoading} error={settings.error} retry={() => void settings.refetch()}/> : null}
         {settings.data ? <div hidden={tab !== "settings"}><PluginSettingsForm key={pluginId} data={settings.data} canEdit={canEdit}/></div> : null}
         {tab === "rules" ? <>

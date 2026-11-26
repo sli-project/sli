@@ -2084,6 +2084,14 @@
             "label": "Входы и аутентификация"
           },
           {
+            "value": "failures",
+            "label": "Отказы входа"
+          },
+          {
+            "value": "service",
+            "label": "Служебные"
+          },
+          {
             "value": "accounts",
             "label": "Учётные записи"
           },
@@ -2136,12 +2144,6 @@
       {
         "key": "before",
         "label": "Earlier than event",
-        "kind": "int",
-        "hidden": true
-      },
-      {
-        "key": "member",
-        "label": "Repeat subgroup",
         "kind": "int",
         "hidden": true
       },

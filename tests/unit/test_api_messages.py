@@ -206,6 +206,7 @@ def test_catalog_completeness_and_frontend_wording():
         "ad.state.name.alias.seed035", "ad.state.purpose.alias.seed035", "ad.gpo.review.name.alias.seed035",
         "ad.gpo.review.purpose.alias.seed035", "ad.users.v2.name.alias.seed110", "ad.users.v2.purpose.alias.seed110",
         "ad.computers.v6.name.alias.seed113", "notifications.deliveries.purpose.alias.seed225",
+        "ad.computer-logons.name.alias.seed126", "ad.computer-logons.purpose.alias.seed126",
         "notifications.deliveries.purpose.alias.smtp226", "notifications.deliveries.purpose.alias.telegram227",
     )}
     # The legacy API still supplies this wording to clients that use the old problem presentation.

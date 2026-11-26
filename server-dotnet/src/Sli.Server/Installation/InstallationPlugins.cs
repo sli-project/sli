@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Auth;
 using Sli.Server.Agents.Radius;
+using Sli.Server.Workspace;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -49,16 +50,23 @@ public sealed partial class InstallationService
             throw new InstallationException(allowed.Contains(reason, StringComparer.Ordinal) ? reason : "plugin_state_conflict", 409);
         }
     }
-    async Task<JsonArray> PluginStatesAsync(CancellationToken ct)
+    async Task<JsonArray> PluginStatesAsync(bool preview, CancellationToken ct)
     {
         var rows = await database.ReadAsync(s => s.QueryAsync("select * from read_plugin_states_v1()", ct), ct);
-        var items = new JsonArray(rows.OfType<JsonObject>().Select(r => (JsonNode)PluginState(r)).ToArray());
-        var receipts = await ReceiptsAsync(items.OfType<JsonObject>().Select(i => Text(i["plugin_id"])).ToArray(), ct);
+        var items = new JsonArray(rows.OfType<JsonObject>()
+            .Where(r => preview || !NavigationRegistry.IsPreviewPlugin(Text(r["plugin_id"])))
+            .Select(r => (JsonNode)PluginState(r)).ToArray());
+        var moduleReceipts = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var receipts = await ReceiptsAsync(items.OfType<JsonObject>().Select(i => Text(i["plugin_id"])).ToArray(), ct, moduleReceipts);
+        var sources = await PluginSourcesAsync(items, ct);
+        var now = DateTimeOffset.UtcNow;
         foreach (var item in items.OfType<JsonObject>())
         {
             string id = Text(item["plugin_id"]);
             item["data_receipts"] = receipts[id];
             if (id == "sli.remote-access") item["configured"] = RemoteConfigured();
+            var sigma = id == "sli.sigma" && Bool(item["enabled"]) ? await SigmaStatusAsync(ct) : null;
+            item["status"] = PluginPresentation(item, receipts[id], moduleReceipts, sources, sigma, now);
         }
         return items;
     }
@@ -72,7 +80,8 @@ public sealed partial class InstallationService
     static readonly IReadOnlyDictionary<string, string[]> PluginModules = new Dictionary<string, string[]> {
         ["sli.ad"] = ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot"], ["sli.gpo"] = ["sli.gpo-snapshot"],
         ["sli.file-audit"] = ["sli.file-audit"], ["sli.workstations"] = ["sli.workstations"], ["sli.remote-access"] = ["sli.vpn-nps", "sli.radius-accounting"] };
-    internal async Task<Dictionary<string, JsonObject>> ReceiptsAsync(string[] ids, CancellationToken ct)
+    internal async Task<Dictionary<string, JsonObject>> ReceiptsAsync(string[] ids, CancellationToken ct,
+        Dictionary<string, JsonObject>? moduleReceipts = null)
     {
         string[] fields = ["last_received_at", "last_imported_at", "last_snapshot_completed_at"];
         var result = ids.Distinct().ToDictionary(id => id, id => new JsonObject { ["state"] = PluginModules.ContainsKey(id) ? "no_receipts" : "not_supported",
@@ -89,6 +98,8 @@ public sealed partial class InstallationService
             foreach (string id in ids.Where(PluginModules.ContainsKey)) result[id]["state"] = "unavailable";
             return result;
         }
+        if (moduleReceipts is not null)
+            foreach (var row in rows.OfType<JsonObject>()) moduleReceipts[Text(row["module_id"])] = row;
         foreach (string id in ids.Where(PluginModules.ContainsKey))
             foreach (string field in fields)
             {

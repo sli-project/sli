@@ -12,7 +12,7 @@ import { useEffectiveAccess, useTimeZone } from "../App";
 import { Note } from "./gate";
 import { AgentCollectionControls, AgentModuleControls } from "./agent-policy-controls";
 import { AgentActions, agentHasDcAudit, agentHostName, agentModuleName } from "./agent-actions";
-import { AgentWindowsAuditStatus } from "./agent-windows-audit";
+import { AgentWindowsAuditStatus, auditGroupPolicyStatus } from "./agent-windows-audit";
 import { AgentRemovalStatus, OldAgentsTable } from "./agent-removal-status";
 import { AgentDeploymentPanel } from "./agent-deployment";
 import { AgentDeliveryDiagnostics } from "./agent-delivery-diagnostics";
@@ -71,14 +71,16 @@ function auditDisabled(agent: AgentItem): number | null {
   return count || (rows.length && rows.every((row) => row.actual_success !== null && row.actual_failure !== null) ? 0 : null);
 }
 function dcAuditFailure(agent: AgentItem) {
-  if (!agentHasDcAudit(agent) || agent.status !== "active" || !agent.collection_policy?.manage_windows_audit) return null;
+  if (agent.status !== "active" || !agent.collection_policy?.manage_windows_audit) return null;
   const report = agent.windows_audit;
   if (report?.policy_revision !== agent.policy_revision) return null;
+  const policy = auditGroupPolicyStatus(report);
+  if (policy || !agentHasDcAudit(agent)) return policy;
   const rows = report.families?.domain_controller?.required.filter((row) => row.subcategory !== "domain_root_sacl");
   if (!rows?.length) return null;
   const missing = rows.filter(missingAuditSetting);
-  if (missing.some((row) => row.state === "managed_by_gpo")) return t("agents.auditBlockedByPolicy");
-  if (missing.length || rows.some((row) => row.actual_success === null || row.actual_failure === null)) return t("agents.auditApplyFailed");
+  if (report.management_state === "blocked" || missing.length ||
+      rows.some((row) => row.actual_success === null || row.actual_failure === null)) return t("agents.auditApplyFailed");
   return null;
 }
 const moduleId = (module: AgentItem["assigned_modules"][number]) => typeof module === "string" ? module : module.module_id;

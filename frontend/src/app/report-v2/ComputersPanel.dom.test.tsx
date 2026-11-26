@@ -92,3 +92,31 @@ it("keeps identical observations on separate selectable rows for an older respon
   fireEvent.click(rows[1]);
   expect(rows.map((row) => row.getAttribute("aria-selected"))).toEqual(["false", "true"]);
 });
+
+it("shows grouped stored logons and pages them independently of the computer list", async () => {
+  const grouped = { ...observation("101", "53"), logon_type: "3", source: "SOURCE-PC / 192.0.2.21", repeat_count: 4 };
+  const next = { ...observation("102", "37", 82), user_name: "EXAMPLE\\second" };
+  const request = vi.spyOn(api, "reportV2Detail").mockImplementation(async (_key, _row, params) =>
+    params.get("cursor") ? page([next]) : page([grouped], "next-group"));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <ComputerPanel row={{ ...workstation, computer_key: "host-1-cGMtdGVzdA" }} logons
+      logonParams="period=custom&from=2026-01-01T00%3A00%3A00Z&to=2026-01-15T00%3A00%3A00Z&service_logons=yes&limit=100"
+      changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+  </QueryClientProvider>);
+  const table = await screen.findByRole("table");
+  const row = within(table).getAllByRole("row")[1];
+  expect(row.textContent).toContain("SOURCE-PC");
+  expect(row.textContent).toContain("192.0.2.21");
+  expect(row.textContent).toContain("×4");
+  expect(within(row).getByRole("link").getAttribute("href")).toMatch(/^\/app\/events\/81(?:\?|$)/);
+  expect(request.mock.calls[0][1]).toBe("host-1-cGMtdGVzdA");
+  expect(request.mock.calls[0][2].get("limit")).toBe("50");
+  fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
+  await within(table).findByText("EXAMPLE\\second");
+  expect(within(table).queryByText("EXAMPLE\\test")).toBeNull();
+  const nextParams = request.mock.calls[1][2];
+  expect(nextParams.get("cursor")).toBe("next-group");
+  expect(nextParams.get("service_logons")).toBe("yes");
+  expect(nextParams.get("from")).toBe("2026-01-01T00:00:00Z");
+});

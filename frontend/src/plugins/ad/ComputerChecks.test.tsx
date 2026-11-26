@@ -330,14 +330,15 @@ it("opens every open state for the computer and keeps the scope in the queue req
 const logons: ReportDefinitionDto = { ...definition, key: "ad.computer-logons", title: "Входы на компьютеры", export: false,
   params: [{ key: "period", label: "Период", kind: "period", default: "30d", required: true },
     { key: "domain_id", label: "Домен", kind: "domain", hidden: true }, { key: "user", label: "Пользователь", kind: "text" },
-    { key: "with_logons", label: "Показывать", kind: "choice", options: [{ value: "yes", label: "Со входами" }] }],
+    { key: "with_logons", label: "Только ПК со входами", kind: "choice", hidden: true },
+    { key: "service_logons", label: "Служебные входы", kind: "choice" }],
   views: [{ key: "table", kind: "table" }],
   columns: [{ key: "name", label: "Компьютер", kind: "text", path: "display_name" },
     { key: "count", label: "Входов за период", kind: "number", path: "login_count" },
     { key: "last", label: "Последний вход", kind: "datetime", path: "last_observed_logon_at_utc" }],
 };
 
-it("keeps the logon window, account filter, and page boundary when reading the next computer", async () => {
+it("keeps the logon window and filters when paging and opening the next computer", async () => {
   const key = logons.key;
   const detail: URLSearchParams[] = [];
   respondTo = (url) => {
@@ -355,10 +356,18 @@ it("keeps the logon window, account filter, and page boundary when reading the n
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&user=synthetic-user");
   show({ reportKey: key });
   await screen.findByRole("link", { name: "#20" });
-  expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Только ПК со входами" }).checked).toBe(true);
+  const serviceLogons = screen.getByRole<HTMLInputElement>("checkbox", { name: "Служебные входы" });
+  expect(serviceLogons.checked).toBe(false);
+  expect(requests[0].get("service_logons")).not.toBe("yes");
+  fireEvent.click(serviceLogons);
+  await waitFor(() => expect(detail.at(-1)?.get("service_logons")).toBe("yes"));
+  const detailCountBeforePaging = detail.length;
   fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
   await screen.findByRole("complementary", { name: "synthetic-next" });
   expect(requests.at(-1)?.get("cursor")).toBe("opaque");
+  expect(requests.at(-1)?.get("service_logons")).toBe("yes");
+  await waitFor(() => expect(detail.length).toBeGreaterThan(detailCountBeforePaging));
+  expect(detail.at(-1)?.get("service_logons")).toBe("yes");
   for (const params of [...requests, ...detail]) {
     expect(params.get("period")).toBe("custom");
     expect(params.get("from")).toBe(requests[0].get("from"));
@@ -368,36 +377,19 @@ it("keeps the logon window, account filter, and page boundary when reading the n
   }
 });
 
-it.each([
-  ["empty", "available", "empty_unverified", "0", "За выбранный период сохранённых наблюдений входа не найдено."],
-  ["not_collected", "not_collected", "not_collected", "Данные не собраны", "Наблюдения входов ещё не собраны."],
-  ["partial", "partial", "partial", "Данные частичные", "Наблюдения входов собраны частично."],
-  ["partial", "available", "empty_unverified", "0", "За выбранный период сохранённых наблюдений входа не найдено."],
-] as const)("preserves observation coverage separately from list state %s, projection %s", async (filtered, projection, rowState, count, message) => {
-  const details = vi.fn(() => page({ report_key: logons.key, state: filtered, coverage: { observation_state: projection }, items: [] }));
+it("shows an empty logon table without requesting computer details", async () => {
+  const details = vi.fn();
   respondTo = (url) => {
     if (url.pathname.endsWith(logons.key)) return logons;
     if (url.pathname.endsWith("/detail")) return details();
     if (url.pathname.endsWith("/data")) {
-      const onlyWithLogons = url.searchParams.get("with_logons") === "yes";
-      return page({ report_key: logons.key, state: onlyWithLogons || filtered !== "empty" ? filtered : "ok",
-        coverage: { observation_state: projection }, items: onlyWithLogons ? [] : [{
-          ...host, computer_type: "workstation", observation_state: rowState, login_count: 0, last_observed_logon_at_utc: null,
-        }] });
+      return page({ report_key: logons.key, state: "empty", items: [], filtered_count: 0, coverage: {} });
     }
   };
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&with_logons=yes");
   show({ reportKey: logons.key });
-  await screen.findByText(message);
-  expect(screen.queryByRole("table")).toBeNull();
+  const table = await screen.findByRole("table", { name: "Входы на компьютеры" });
+  expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["—"]);
+  expect(screen.queryByRole("checkbox", { name: "Только ПК со входами" })).toBeNull();
   expect(details).not.toHaveBeenCalled();
-
-  fireEvent.click(screen.getByRole("checkbox", { name: "Только ПК со входами" }));
-  const station = await screen.findByRole("row", { name: /synthetic-host/ });
-  expect(within(station).getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual([count]);
-  fireEvent.click(station);
-  const panel = await screen.findByRole("complementary", { name: "synthetic-host" });
-  expect(await within(panel).findByText(message)).toBeTruthy();
-  expect(within(panel).queryByRole("table")).toBeNull();
-  expect(details).toHaveBeenCalledTimes(projection === "not_collected" ? 0 : 1);
 });

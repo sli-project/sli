@@ -235,6 +235,23 @@ it.each([["managed_by_gpo", "agents.auditBlockedByPolicy"], ["unknown", "agents.
     expect(within(row).queryByText(t("agents.auditOffStatus", { count: 1 }))).toBeNull();
   });
 
+it("reports the blocking group policy even when the current settings match", async () => {
+  const controller: AgentItem = { ...agent, last_seen: new Date().toISOString(),
+    assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }],
+    collection_policy: { state: "active", interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true },
+    windows_audit: { policy_revision: 2, reported_at: "2026-11-20T00:00:00Z", management_state: "blocked", command_line_enabled: null,
+      families: { domain_controller: { state: "managed_by_gpo", non_security_channels: [], required: [{
+        guid: "fixture-logon", subcategory: "logon", state: "managed_by_gpo", policy_name: "Fixture Audit",
+        success: true, failure: true, actual_success: true, actual_failure: true,
+      }] } } },
+  };
+  state.list.mockResolvedValue({ items: [controller] });
+  mount();
+  const row = (await screen.findByText(controller.host_name!)).closest("tr")!;
+  expect(within(row).getByText(t("agents.auditBlockedByNamedPolicy", { name: "Fixture Audit" }))).toBeTruthy();
+  expect(within(row).queryByText(t("agents.auditConfigured"))).toBeNull();
+});
+
 it("reads back the saved DC audit setting in the card", async () => {
   const control = { state: "active" as const, interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864 };
   const controller: AgentItem = { ...agent, assigned_modules: [{ module_id: "sli.windows.ad-dc", enabled: true, config: {} }],

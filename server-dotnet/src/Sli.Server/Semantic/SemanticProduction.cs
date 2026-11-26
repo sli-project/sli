@@ -344,7 +344,13 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
               expected_interval_seconds=excluded.expected_interval_seconds,started_at=case when runtime_worker_heartbeats.worker_id=excluded.worker_id then runtime_worker_heartbeats.started_at else excluded.started_at end,
               process_pid=excluded.process_pid,heartbeat_at=now(),updated_at=now(),
               details_json=jsonb_build_object('producer_cursors',coalesce(runtime_worker_heartbeats.details_json->'producer_cursors','{}'::jsonb),
-                'producer_import_busy_streak',coalesce(runtime_worker_heartbeats.details_json->'producer_import_busy_streak','0'::jsonb)) || case when runtime_worker_heartbeats.worker_id=excluded.worker_id
+                'producer_import_busy_streak',coalesce(runtime_worker_heartbeats.details_json->'producer_import_busy_streak','0'::jsonb),
+                'sigma_last_data_at',coalesce(excluded.details_json#>>'{result,sigma,last_data_at}',
+                    runtime_worker_heartbeats.details_json->>'sigma_last_data_at',runtime_worker_heartbeats.details_json#>>'{result,sigma,last_data_at}'),
+                'sigma_failure_at',case when excluded.details_json#>'{result,sigma}' is null
+                    then coalesce(runtime_worker_heartbeats.details_json->>'sigma_failure_at',
+                        runtime_worker_heartbeats.details_json#>>'{result,sigma,failure_at}')
+                    else excluded.details_json#>>'{result,sigma,failure_at}' end) || case when runtime_worker_heartbeats.worker_id=excluded.worker_id
                   and excluded.details_json->'result'='null'::jsonb
                 then jsonb_set(excluded.details_json,'{result}',coalesce(runtime_worker_heartbeats.details_json->'result','null'::jsonb))
                 else excluded.details_json end

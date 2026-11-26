@@ -196,6 +196,7 @@ export type NavigationEntryDto = {
   views?: NavigationViewDto[];
 };
 export type NavigationRegistryDto = {
+  modules_preview?: boolean;
   contract_id: "sli.navigation.v3";
   enabled_plugins: string[];
   global_search?: { path: string; capabilities: string[] };

@@ -12,15 +12,15 @@ const definition = { ...definitions.find((item) => item.key === "events.journal"
 const windowBounds = { from_utc: "2026-11-22T00:00:00Z", to_utc_exclusive: "2026-11-22T02:00:00Z" };
 const event = (id: number, title: string, fields = {}) => ({
   id, title_text: title, event_id: 4624, time_created_utc: "2026-11-22T01:30:05Z",
-  target: "synthetic.user", journal_computer: "dc01.example.test", ip_address: "192.0.2.10", journal_result: "success", ...fields,
+  target: "dc01.example.test", journal_account: "EXAMPLE\\synthetic.user", journal_computer: "dc01.example.test",
+  journal_address: "192.0.2.10", journal_initiator: "EXAMPLE\\operator", logon_type: "3", journal_result: "success", ...fields,
 });
 const group = event(3, "Logon failed", {
   event_id: 4625, event_count: 18, journal_expandable: true, journal_result: "failure",
   first_seen_utc: "2026-11-22T01:15:00Z", last_seen_utc: "2026-11-22T01:20:00Z",
 });
-const exact = event(4, "Logon succeeded", { journal_finding_id: 42, journal_severity: "high" });
+const exact = event(4, "Logon succeeded", { journal_finding_id: 42 });
 const preceding = event(2, "Previous logon failure", { event_id: 4625, journal_result: "failure" });
-const bucket = event(6, "Failures for one account", { event_count: 2, journal_expandable: true });
 
 beforeEach(() => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
@@ -36,7 +36,7 @@ function journal({
   const data: ReportResultDto = {
     contract_id: "sli.report-result.v2", report_key: "events.journal", state, items,
     has_more: pages, next_cursor: pages ? "next" : null, filtered_count: pages ? 51 : items.length,
-    journal_event_count: 19, journal_counts: { all: 19, authentication: 19, accounts: 0, groups: 0, audit: 0 },
+    journal_event_count: 19, journal_counts: { all: 19, authentication: 19, failures: 18, service: 0 },
     metrics: [], series: {}, filter_options: {}, coverage: { completeness: "not_proven" },
     state_details: { reason: "freshness_exceeded" }, limitations: [{ code: "synthetic", text: "Synthetic methodology" }],
     window: windowBounds,
@@ -50,10 +50,9 @@ function journal({
     const payload = url.pathname === "/api/v1/events/4" ? { item: { event_db_id: 4, event_record_id: 30, event_data: { AuthenticationPackageName: "Kerberos" } } }
       : !isData ? definition
       : params.has("before") ? { ...data, items: params.get("before") === "4" ? [preceding] : [] }
-      : params.has("member") ? { ...data, items: [event(6, "First source failure"), event(5, "Second source failure")], next_cursor: null }
-      : params.has("expand") ? { ...data, items: [bucket], next_cursor: null }
+      : params.has("expand") ? { ...data, items: [event(6, "First source failure"), event(5, "Second source failure")], next_cursor: null }
       : params.has("cursor") ? { ...data, items: [event(1, "Next page event")], next_cursor: null }
-      : params.get("view") === "audit" ? { ...data, items: [], state: "empty" }
+      : params.get("view") === "service" ? { ...data, items: [], state: "empty" }
       : data;
     return new Response(JSON.stringify(failed ? { error: "synthetic_failure" } : payload), {
       status: failed ? 500 : 200, headers: { "Content-Type": "application/json" },
@@ -73,7 +72,7 @@ it("keeps the workstation source and return context when changing journal filter
   const requests = journal();
   await screen.findByText("Logon succeeded");
   expect(screen.getByRole("link", { name: t("investigations.case.return_to_source_report") }).getAttribute("href")).toBe(returnTo);
-  fireEvent.click(screen.getByRole("tab", { name: "Audit 0" }));
+  fireEvent.click(screen.getByRole("tab", { name: /Service events/ }));
   await screen.findByText(t("reports.v2.events.journal.empty"));
   const dataRequests = requests.filter((url) => url.pathname.endsWith("/data"));
   expect(dataRequests.length).toBeGreaterThanOrEqual(2);
@@ -132,10 +131,11 @@ it("loads the new route period within the same journal domain and search text", 
 it.each(["ok", "partial", "stale", "processing"] as const)("shows journal facts and server counts without explanatory blocks (%s)", async (state) => {
   const requests = journal({ state });
   await screen.findByText("Logon succeeded");
-  expect(within(screen.getByRole("table")).getAllByRole("columnheader").map((cell) => cell.textContent))
-    .toEqual(["Severity", "Time", "Event", "Computer", "Account", "Source address", "Result", "Code"]);
-  expect(screen.getByRole("tab", { name: "All 19" }).getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tab", { name: "Logons 19" })).toBeTruthy();
+  expect(screen.queryByRole("columnheader", { name: "Severity" })).toBeNull();
+  expect(screen.getByRole("columnheader", { name: t("reports.v2.events.journal.problem") })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: /^All/ }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("tab", { name: /Logon failures/ })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: /Accounts|Groups and rights|Audit/ })).toBeNull();
   expect(screen.queryByText("Synthetic methodology")).toBeNull();
   expect(document.querySelector(".sli-ds-state--banner")).toBeNull();
   const request = requests.find((url) => url.pathname.endsWith("/data"))!;
@@ -145,9 +145,30 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows journal facts 
   const exportLink = screen.getByRole("link", { name: t("reports.renderer.export_csv") });
   expect(new URL(exportLink.getAttribute("href")!, window.location.href).searchParams.get("domain")).toBe("7");
 
-  fireEvent.click(screen.getByRole("tab", { name: "Audit 0" }));
+  fireEvent.click(screen.getByRole("tab", { name: /Service events/ }));
   await screen.findByText(t("reports.v2.events.journal.empty"));
-  expect(requests.some((url) => url.searchParams.get("view") === "audit")).toBe(true);
+  expect(requests.some((url) => url.searchParams.get("view") === "service")).toBe(true);
+});
+
+it("shows distinct subjects and links findings and changes by exact ID", async () => {
+  const changed = event(7, "Group membership changed", { event_id: 4728, journal_change_domain: 7,
+    journal_account: "<test-group>", journal_address: null, logon_type: null });
+  journal({ items: [exact, group, changed] });
+  const row = within((await screen.findByText("×18")).closest("tr")!);
+  expect(row.getByText(/(\d{2}):15:00 – \1:20:00/)).toBeTruthy();
+  expect(row.getByRole("link", { name: "EXAMPLE\\synthetic.user" })).toBeTruthy();
+  expect(row.getByRole("link", { name: "EXAMPLE\\operator" })).toBeTruthy();
+  expect(row.getByRole("link", { name: "192.0.2.10" })).toBeTruthy();
+  expect(row.getByRole("link", { name: "dc01.example.test" })).toBeTruthy();
+  expect(row.getByRole("cell", { name: "3" })).toBeTruthy();
+  expect(row.queryByRole("link", { name: /#\d/ })).toBeNull();
+  const finding = screen.getByRole("link", { name: /#42/ });
+  expect(finding.getAttribute("href")).toBe("/app/report/security.problems?id=42");
+  expect(screen.getByRole("link", { name: "<test-group>" })).toBeTruthy();
+  const query = new URL(screen.getByRole("link", { name: t("reports.v2.events.journal.open_change") }).getAttribute("href")!, window.location.href);
+  expect(query.pathname).toBe("/app/report/security.events.chains");
+  expect(Object.fromEntries(query.searchParams)).toMatchObject({ event_db_id: "7", domain: "7", repeat_mode: "individual",
+    from: windowBounds.from_utc, to: windowBounds.to_utc_exclusive });
 });
 
 it("only loads source rows on expansion and keeps the original query window", async () => {
@@ -161,10 +182,9 @@ it("only loads source rows on expansion and keeps the original query window", as
   expect(request.searchParams.get("from")).toBe(windowBounds.from_utc);
   expect(request.searchParams.get("to")).toBe(windowBounds.to_utc_exclusive);
   expect(request.searchParams.get("limit")).toBe("25");
-  expect(requests.some((url) => url.searchParams.has("member"))).toBe(false);
-  fireEvent.click(within(nested).getByRole("button", { name: "Expand repeats" }));
-  await screen.findByText("First source failure");
-  expect(requests.find((url) => url.searchParams.has("member"))?.searchParams.get("member")).toBe("6");
+  expect(within(nested).getByText("First source failure")).toBeTruthy();
+  expect(within(nested).getByText("Second source failure")).toBeTruthy();
+  expect(within(nested).queryByRole("button", { name: "Expand repeats" })).toBeNull();
   fireEvent.click(screen.getAllByRole("button", { name: "Hide repeats" })[0]);
   expect(screen.queryByText("First source failure")).toBeNull();
   fireEvent.click(screen.getByRole("checkbox", { name: "Collapse repeats" }));
@@ -210,7 +230,7 @@ it("pages with the server cursor and offers the approved row sizes", async () =>
   await waitFor(() => expect(requests.some((url) => url.searchParams.get("limit") === "100")).toBe(true));
 });
 
-it.each([["empty", "No records"], ["not_collected", "Journal not loaded"]] as const)("keeps an explicit period and represents %s as one line", async (state, message) => {
+it.each([["empty", "No records in the selected period"], ["not_collected", "Journal not loaded"]] as const)("keeps an explicit period and represents %s as one line", async (state, message) => {
   window.history.replaceState(null, "", "/app/report/events.journal?domain=7&period=24h");
   const requests = journal({ state, items: [] });
   await screen.findByText(message);
