@@ -150,7 +150,8 @@ describe("FilterBar", () => {
     const apply = vi.fn();
     render(<FilterBar fields={fields} values={{ period: { preset: "30d" } }} onApply={apply}/>);
     await userEvent.type(screen.getByLabelText("Поиск по имени"), "dc");
-    await userEvent.selectOptions(screen.getByLabelText("ОС"), "win11");
+    await userEvent.click(screen.getByLabelText("ОС", { selector: "button" }));
+    await userEvent.click(screen.getByRole("option", { name: /^Windows 11/ }));
     await userEvent.click(screen.getByRole("radio", { name: "7 дней" }));
     expect(apply).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Применить" }));

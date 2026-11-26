@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -54,7 +55,7 @@ it.each(["ru", "en"] as const)("shows a compact profile and saves the language o
   const save = screen.getByRole("button", { name: t("operations.settings.save") }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
   const next = locale === "ru" ? "en" : "ru";
-  fireEvent.change(screen.getByLabelText(t("shell.profile.language.title")), { target: { value: next } });
+  await chooseOption(screen.getByLabelText(t("shell.profile.language.title"), { selector: "button" }), next);
   expect(localStorage.getItem("sli.locale")).toBe(locale);
   expect(save.disabled).toBe(false);
   await userEvent.click(save);
@@ -124,14 +125,14 @@ it("saves the server schedule time zone through platform settings", async () => 
   state.settings.mockResolvedValue({ items: [{ key: "server.timezone", value: "host" }] });
   state.saveSetting.mockResolvedValue({ item: { key: "server.timezone", value: "Europe/Berlin" } });
   renderProfile();
-  const input = await screen.findByLabelText(t("operations.settings.server_tz_title")) as HTMLSelectElement;
-  expect(input.value).toBe("host");
-  fireEvent.change(input, { target: { value: "Europe/Berlin" } });
+  const input = await screen.findByLabelText(t("operations.settings.server_tz_title"), { selector: "button" });
+  expect(input.textContent).toBe(t("operations.settings.server_tz_host"));
+  await chooseOption(input, "Europe/Berlin");
   expect(state.saveSetting).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: t("operations.settings.save") }));
   expect(state.saveSetting).toHaveBeenCalledWith("server.timezone", "Europe/Berlin");
   await screen.findByRole("status");
-  expect(input.value).toBe("Europe/Berlin");
+  expect(input.textContent).toBe("Europe/Berlin");
   expect((screen.getByRole("combobox", { name: t("operations.settings.tz_title") }) as HTMLInputElement).value).toBe("UTC");
 });
 

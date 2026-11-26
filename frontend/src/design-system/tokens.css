@@ -22,8 +22,8 @@
   --sli-sidebar-width: 212px;
   --sli-sidebar-collapsed-width: 68px;
   --sli-topbar-height: 58px;
-  --sli-control-height: 38px;
-  --sli-control-height-compact: 32px;
+  --sli-control-height: 32px;
+  --sli-control-height-compact: var(--sli-control-height);
   --sli-control-font-size: 13px;
   --sli-control-line-height: 18px;
   --sli-space-1: 4px;
@@ -64,7 +64,7 @@
   --sli-action-hover: light-dark(#0649a7, #2459e6);
   --sli-action-text: #ffffff;
   --sli-brand-bg: light-dark(#e6f0fe, #16346b);
-  --sli-header-control-height: 36px;
+  --sli-header-control-height: var(--sli-control-height);
   --sli-search-width: 760px;
   --sli-table-heading-height: 32px;
   --sli-cell-text-width: 48ch;
@@ -121,7 +121,7 @@
   --sli-motion: 120ms ease-out;
   --sli-focus-width: 2px;
   --sli-focus-offset: 2px;
-  --sli-chip-height: 28px;
+  --sli-checkbox-size: 16px;
   --sli-icon-size: 18px;
   --sli-field-min-width: 180px;
   --sli-field-basis: 200px;

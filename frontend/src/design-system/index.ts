@@ -5,13 +5,17 @@ export { Skeleton, TableSkeleton, MetricStripSkeleton, CardSkeleton, LoadingRegi
 export { PageHeader, type Crumb } from "./PageHeader";
 export { MetricStrip, type MetricItem } from "./MetricStrip";
 export { DataTable, type TableColumn, type SortState } from "./DataTable";
-export { FilterBar, Select, type FilterField, type FilterValues, type FilterValue, type FilterOption } from "./FilterBar";
+export { FilterBar, type FilterField, type FilterValues, type FilterValue, type FilterOption } from "./FilterBar";
 export { PeriodPicker, periodBounds, type PeriodValue, type PeriodPreset } from "./PeriodPicker";
 export { SeverityBadge, type Severity } from "./SeverityBadge";
 export { DetailDrawer, FactList } from "./DetailDrawer";
 export { Chart, buildChartOption, chartIsEmpty, type ChartSpec, type ChartSeries, type HeatmapData } from "./Chart";
 export { ReportLayout } from "./ReportLayout";
 export { Tabs, TabList, TabPanel } from "./Tabs";
+export { FilterChip, FilterChips } from "./FilterChips";
+export { Checkbox } from "./Checkbox";
+export { Select } from "./Select";
+export { Pager } from "./Pager";
 export { useDateFormatters } from "./useDateFormatters";
 export { formatCell, formatDateTime, setDisplayTimeZone, type CellKind } from "./format";
 export { Icon, IconSprite } from "./Icon";

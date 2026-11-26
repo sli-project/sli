@@ -10,11 +10,89 @@ using Sli.Server.Domains;
 using Sli.Server.Agents.Registry;
 using Sli.Server.Problems;
 using Xunit;
+using AdV2Request = Sli.Server.Ad.AdV2Request;
+using IAdV2Store = Sli.Server.Ad.IAdV2Store;
+using IGpoReadStore = Sli.Server.Gpo.IGpoReadStore;
 
 namespace Sli.Server.Tests.Domains;
 
 public sealed partial class HomeSummaryEndpointTests
 {
+    [Fact]
+    public async Task Weak_spots_cap_results_and_represent_each_allowed_check_screen()
+    {
+        var ad = new WeakSpotAdStore();
+        var gpo = new WeakSpotGpoStore();
+        var reports = new[] { Report("ad.infrastructure"), Report("ad.users.v2"), Report("ad.computers.v6"), Report("ad.gpo.v2") };
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?contract=v5&domain_id=7");
+        var query = HomeSummaryQuery.Parse(context.Request.Query, Now);
+        async Task<JsonObject> Read(params HomeReport[] allowed)
+        {
+            var service = new HomeSummaryService(new Reports(allowed), new Domains(true), new HomeSummaryReaders(new Rows(false)), gpo, ad: ad);
+            return (await service.BuildAsync(new("session", 1, "viewer"), query, TestContext.Current.CancellationToken))["weak_spots"]!.AsObject();
+        }
+
+        var total = await Read(reports);
+        var items = total["items"]!.AsArray();
+        Assert.Equal(10, items.Count);
+        Assert.Empty(total["failed"]!.AsArray());
+        var controls = Assert.Single(items, item => item.Text("report") == "ad.infrastructure");
+        Assert.Equal(2, controls.Number("count"));
+        Assert.Contains("qualification=failed", controls.Text("href"));
+        Assert.Contains(items, item => item.Text("report") == "ad.users.v2" && item.Text("href")!.Contains("account_rows=yes"));
+        Assert.Contains(items, item => item.Text("id") == "ad.computers.v6:laps" && item.Text("href")!.Contains("tab=checks"));
+        Assert.Contains(items, item => item.Text("report") == "ad.gpo.v2" && item.Text("href")!.Contains("view=attention"));
+        Assert.DoesNotContain(items, item => item.Text("id") == "ad.computers.v6:new_computer");
+        Assert.All(items, item => Assert.Contains("domain=7", item.Text("href")));
+
+        ad.Requests.Clear();
+        var restricted = await Read(reports[0], Report("ad.users.v2", ["identity_basic", "security", "technical"]), reports[2]);
+        Assert.DoesNotContain(ad.Requests, request => request.Key == "ad.users.v2");
+        Assert.DoesNotContain(restricted["items"]!.AsArray(), item => item.Text("report") is "ad.users.v2" or "ad.gpo.v2");
+    }
+
+    private sealed class WeakSpotAdStore : IAdV2Store
+    {
+        public List<AdV2Request> Requests { get; } = [];
+        public Task<IReadOnlyList<JsonObject>> DomainsAsync(DomainGrant grant, CancellationToken ct) => throw new NotSupportedException();
+        public Task<JsonObject> ReadAsync(AdV2Request request, Func<IEnumerable<string>, bool> fields, CancellationToken ct)
+        {
+            Requests.Add(request);
+            Assert.Equal(new long[] { 7 }, request.Domains);
+            if (request.Key == "ad.users.v2")
+            {
+                Assert.Equal("yes", (string?)request.Params["account_rows"]);
+                var checks = Enumerable.Range(1, 12).Select(number => new { value = "user_" + number, count = number });
+                return Task.FromResult(HomeJson.Object(new { state = "ok", filter_options = new { check = checks } }));
+            }
+            object items = request.Key switch
+            {
+                "ad.infrastructure" => new[] { 1, 1, 2 }.Select(id => new { control_id = "dc.dns", qualification = "failed", entity_id = id, label = "DNS" }),
+                _ => new[] { new { key = "laps", title = "Expired LAPS", total = 4 },
+                    new { key = "new_computer", title = "New computers", total = 25 }, new { key = "rbcd", title = "Delegation", total = 0 } }
+            };
+            return Task.FromResult(HomeJson.Object(new { state = "ok", items }));
+        }
+    }
+
+    private sealed class WeakSpotGpoStore : IGpoReadStore
+    {
+        public Task<JsonObject> PairAsync(long[]? domains, CancellationToken ct)
+        {
+            Assert.Equal(new long[] { 7 }, domains);
+            return Task.FromResult(JsonNode.Parse("""
+                {"current":{"gpos":[{"computer":{"directory_version":12,"sysvol_version":11},
+                  "source_states":{"report":{"status":"observed"},"sysvol_gpt":{"status":"observed"}}}]}}
+                """)!.AsObject());
+        }
+        public Task<JsonObject> HistoryAsync(long[]? domains, DateTimeOffset from, DateTimeOffset to, string query, CancellationToken ct) =>
+            Task.FromResult(new JsonObject { ["items"] = new JsonArray() });
+        public Task<JsonObject> GraphAsync(JsonObject snapshot, long[]? domains, CancellationToken ct) => throw new NotSupportedException();
+        public Task<JsonObject> PolicyHistoryAsync(long[] domains, DateTimeOffset from, DateTimeOffset to, string policyId, string guid, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
+
     [Theory]
     [InlineData("problems")]
     [InlineData("controllers")]

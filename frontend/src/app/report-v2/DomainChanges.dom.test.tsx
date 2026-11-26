@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -87,7 +88,7 @@ it("shows server counts and sends the selected tab and operation", async () => {
   const verified = await screen.findByText("previous@example.test → current@example.test");
   expect(verified.closest("td")).toBeTruthy();
   expect(requests.at(-1)?.searchParams.get("changes_view")).toBe("accounts");
-  fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), { target: { value: "4728" } });
+  await chooseOption(screen.getByLabelText("Operation", { selector: "button" }), "4728");
   await waitFor(() => expect(requests.at(-1)?.searchParams.get("event_id")).toBe("4728"));
 });
 

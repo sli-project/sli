@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -63,20 +64,20 @@ it.each([
   ["en", "Accounts", "People", "Service accounts"],
 ] as const)("separates people from service inventory in %s without changing accounts", async (locale, label, people, service) => {
   setLocale(locale);
-  const user = userEvent.setup();
   mount(AdminPage);
   await screen.findByText("synthetic-person");
   expect(screen.getByText("report-key-person")).toBeTruthy();
   expect(screen.queryByText("renamed-reader")).toBeNull();
   expect(screen.queryByText("report-key-revoked")).toBeNull();
-  const filter = screen.getByRole("combobox", { name: label });
-  expect((filter as HTMLSelectElement).selectedOptions[0].textContent).toBe(people);
-  await user.selectOptions(filter, screen.getByRole("option", { name: service }));
+  const filter = screen.getByLabelText(label, { selector: "button" });
+  expect(filter.textContent).toBe(people);
+  await chooseOption(filter, "service");
+  expect(filter.textContent).toBe(service);
   expect(screen.getByText("renamed-reader")).toBeTruthy();
   expect(screen.getByText("report-key-revoked")).toBeTruthy();
   expect(screen.queryByText("synthetic-person")).toBeNull();
   expect(screen.queryByText("report-key-person")).toBeNull();
-  await user.selectOptions(filter, "people");
+  await chooseOption(filter, "people");
   expect(screen.getByText("synthetic-person")).toBeTruthy();
   expect(state.updateUser).not.toHaveBeenCalled();
   expect(state.resetPassword).not.toHaveBeenCalled();
@@ -84,12 +85,11 @@ it.each([
 
 it("shows an honest empty service filter and restores people", async () => {
   state.users.mockResolvedValue({ items: users.slice(0, 2), roles });
-  const user = userEvent.setup();
   mount(AdminPage);
   await screen.findByText("synthetic-person");
-  await user.selectOptions(screen.getByLabelText("Учётные записи"), "service");
+  await chooseOption(screen.getByLabelText("Учётные записи", { selector: "button" }), "service");
   expect(screen.getByText("Служебных учётных записей нет")).toBeTruthy();
-  await user.selectOptions(screen.getByLabelText("Учётные записи"), "people");
+  await chooseOption(screen.getByLabelText("Учётные записи", { selector: "button" }), "people");
   expect(screen.getByText("report-key-person")).toBeTruthy();
 });
 
@@ -99,7 +99,7 @@ it("does not leave a password-reset form for an account hidden by the filter", a
   const row = (await screen.findByText("synthetic-person")).closest("tr")!;
   await user.click(within(row).getByRole("button", { name: "Сбросить пароль" }));
   expect(screen.getByLabelText("Новый пароль")).toBeTruthy();
-  await user.selectOptions(screen.getByLabelText("Учётные записи"), "service");
+  await chooseOption(screen.getByLabelText("Учётные записи", { selector: "button" }), "service");
   expect(screen.queryByLabelText("Новый пароль")).toBeNull();
   expect(state.resetPassword).not.toHaveBeenCalled();
 });

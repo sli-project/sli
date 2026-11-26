@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { agentHostName } from "./agent-actions";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -144,29 +146,29 @@ function DeploymentControls({ agents }: { agents: AgentItem[] }) {
   return <section className="sli-ds-panel__body">
     {unavailable ? <StateView state="unavailable"/> : null}
     <div className="sli-ds-filters__fields" data-align="start">
-      <label className="sli-ds-field">{t("agents.deployment.domain")}<select disabled={busy} value={domain ?? ""} onChange={(event) => {
-        setDomain(event.target.value ? Number(event.target.value) : undefined); setOu(undefined); setSelected([]); setBindings([]); setSecret(undefined);
-      }}><option value="">{t("agents.deployment.choose")}</option>{domains.data?.domains?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="sli-ds-field">{t("agents.deployment.ou")}<select disabled={busy || directory.isFetching} value={ou ?? ""} onChange={(event) => {
-        setOu(event.target.value ? Number(event.target.value) : undefined); setSelected([]); setBindings([]); setSecret(undefined);
-      }}><option value="">{t("agents.deployment.wholeDomain")}</option>{directory.data?.ous?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="sli-ds-field">{t("agents.deployment.template")}<select value={templateId} disabled={busy} onChange={(event) => setTemplateId(event.target.value)}>
-        <option value="">{t("agents.deployment.choose")}</option>{templates.data?.items.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.version}</option>)}
-      </select></label>
-      <label className="sli-ds-field">{t("agents.deployment.templateSource")}<select value={sourceId} aria-describedby={sourceId ? "agent-template-source-identity" : undefined} disabled={busy} onChange={(event) => setSourceId(event.target.value)}>
-        <option value="">{t("agents.deployment.choose")}</option>{agents.filter((item) => item.status === "active").map((item) => <option key={item.id} value={item.id}>{agentHostName(item)}</option>)}
-      </select></label>
+      <div className="sli-ds-field">{t("agents.deployment.domain")}<Select label={t("agents.deployment.domain")} disabled={busy} value={domain ?? ""} onChange={(selectedValue) => {
+        setDomain(selectedValue ? Number(selectedValue) : undefined); setOu(undefined); setSelected([]); setBindings([]); setSecret(undefined);
+      }}
+        options={[{ value: "", label: t("agents.deployment.choose") }, ...(domains.data?.domains?.map((item) => ({ value: item.id, label: item.name })) ?? [])]}/></div>
+      <div className="sli-ds-field">{t("agents.deployment.ou")}<Select label={t("agents.deployment.ou")} disabled={busy || directory.isFetching} value={ou ?? ""} onChange={(selectedValue) => {
+        setOu(selectedValue ? Number(selectedValue) : undefined); setSelected([]); setBindings([]); setSecret(undefined);
+      }}
+        options={[{ value: "", label: t("agents.deployment.wholeDomain") }, ...(directory.data?.ous?.map((item) => ({ value: item.id, label: item.name })) ?? [])]}/></div>
+      <div className="sli-ds-field">{t("agents.deployment.template")}<Select label={t("agents.deployment.template")} value={templateId} disabled={busy} onChange={(selectedValue) => setTemplateId(selectedValue)}
+        options={[{ value: "", label: t("agents.deployment.choose") }, ...(templates.data?.items.map((item) => ({ value: item.id, label: String(item.id) + String(" · ") + String(item.version) })) ?? [])]}/></div>
+      <div className="sli-ds-field">{t("agents.deployment.templateSource")}<Select label={t("agents.deployment.templateSource")} value={sourceId} aria-describedby={sourceId ? "agent-template-source-identity" : undefined} disabled={busy} onChange={(selectedValue) => setSourceId(selectedValue)}
+        options={[{ value: "", label: t("agents.deployment.choose") }, ...(agents.filter((item) => item.status === "active").map((item) => ({ value: item.id, label: agentHostName(item) })) ?? [])]}/></div>
       {sourceId ? <details id="agent-template-source-identity"><summary>{t("agents.technicalDetails")}</summary>
         <dl><dt>{t("agents.agentId")}</dt><dd>{sourceId}</dd><dt>{t("agents.host")}</dt><dd>{agents.find((item) => item.id === sourceId)?.host_id}</dd></dl>
       </details> : null}
       <button type="button" className="sli-ds-button" disabled={busy || !sourceId} onClick={() => void saveTemplate()}>{t("agents.deployment.saveTemplate")}</button>
     </div>
-    <label><input type="checkbox" disabled={busy} checked={all} onChange={(event) => { setAll(event.target.checked); setSelected([]); }}/>{t("agents.deployment.allComputers")}</label>
+    <Checkbox disabled={busy} checked={all} onChange={(event) => { setAll(event.target.checked); setSelected([]); }}>{t("agents.deployment.allComputers")}</Checkbox>
     {directory.isFetching ? <StateView state="loading"/> : domain !== undefined && !directory.isError && !directory.data?.computers?.length ? <StateView state="empty"/> : null}
     {directory.data?.has_more ? <p role="status">{t("agents.deployment.more")}</p> : null}
-    {!all ? <ul>{directory.data?.computers?.map((item) => <li key={item.id}><label><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))}/>{item.name}</label></li>)}</ul> : null}
+    {!all ? <ul>{directory.data?.computers?.map((item) => <li key={item.id}><Checkbox disabled={busy} checked={selected.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))}>{item.name}</Checkbox></li>)}</ul> : null}
     <p>{t("agents.deployment.personal")}</p>
-    <label><input type="checkbox" checked={automatic} disabled={busy} onChange={(event) => setAutomatic(event.target.checked)}/>{t("agents.deployment.auto")}</label>
+    <Checkbox checked={automatic} disabled={busy} onChange={(event) => setAutomatic(event.target.checked)}>{t("agents.deployment.auto")}</Checkbox>
     <p>{t("agents.deployment.trustedHelp")}</p>
     <label className="sli-ds-field">{t("agents.deployment.trustedReport")}<input type="file" accept="application/json,.json" disabled={busy} onChange={(event) => void upload(event.target.files?.[0])}/></label>
     <label className="sli-ds-field">{t("agents.deployment.limit")}<input type="number" min={1} max={10000} value={maximum} disabled={busy} onChange={(event) => setMaximum(Number(event.target.value))}/></label>

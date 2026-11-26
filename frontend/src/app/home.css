@@ -1,12 +1,12 @@
 .sli-ds-home .sli-ds-home-main {
-  grid-template-areas: "problems" "controllers" "changes";
+  grid-template-areas: "problems" "weakSpots" "changes";
   gap: var(--sli-space-3);
   align-items: start;
 }
 
 .sli-ds-home-load-error { overflow-wrap: anywhere; }
 .sli-ds-home [data-home-block="problems"] { grid-area: problems; }
-.sli-ds-home [data-home-block="controllers"] { grid-area: controllers; }
+.sli-ds-home [data-home-block="weakSpots"] { grid-area: weakSpots; }
 .sli-ds-home [data-home-block="changes"] { grid-area: changes; }
 .sli-ds-home [data-home-block] { min-width: 0; }
 .sli-ds-home-main .sli-ds-panel__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sli-space-2) var(--sli-space-3); }
@@ -26,15 +26,13 @@
   gap: var(--sli-space-3);
 }
 .sli-ds-home > .sli-ds-header .sli-ds-header__actions { flex: 1; align-items: center; }
-.sli-ds-home > .sli-ds-header .sli-ds-field { width: auto; }
-.sli-ds-home > .sli-ds-header .sli-ds-field select { min-width: 9rem; }
 .sli-ds-home [data-home-updated] { margin-inline-start: auto; }
 .sli-ds-home-observations { padding: var(--sli-space-2) var(--sli-space-3); background: var(--sli-surface-2); }
 .sli-ds-home-inline-source { color: var(--sli-text-muted); }
 
 @media (min-width: 1400px) {
-  .sli-ds-home .sli-ds-home-main:has([data-home-block="controllers"]) {
+  .sli-ds-home .sli-ds-home-main:has([data-home-block="weakSpots"]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "problems problems" "controllers changes";
+    grid-template-areas: "problems problems" "weakSpots changes";
   }
 }

@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useEffect, useState } from "react";
 import { Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { api, ApiResponseError } from "../../api/client";
@@ -103,8 +104,7 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
               </div>
               <button className="sli-ds-button" data-variant="primary" type="submit" disabled={busy || addressStatus === "loading"}>{t("agents.console.issue")}</button>
             </div>
-            <label><input type="checkbox" checked={manageWindowsAudit} disabled={busy}
-              onChange={(event) => setManageWindowsAudit(event.target.checked)}/>{t("agents.console.manageWindowsAudit")}</label>
+            <Checkbox checked={manageWindowsAudit} disabled={busy} onChange={(event) => setManageWindowsAudit(event.target.checked)}>{t("agents.console.manageWindowsAudit")}</Checkbox>
           </>}
           {copied && <span role="status">{t("agents.copied")}</span>}
           {error && <span role="alert">{t(error === "copy" ? "agents.copyError" : error === "package" ? "agents.console.packageError" : "agents.console.issueError")}</span>}

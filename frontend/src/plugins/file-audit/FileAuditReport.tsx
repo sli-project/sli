@@ -170,11 +170,11 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
     <Tabs items={tabItems} active={view} onChange={switchView}>
       <ReportLayout title={t("file-audit.title")} tabbed state={state} busy={data.isFetching && !data.isLoading}
         controls={{
-          scope: <Select label={t("file-audit.workspace.server")} hideLabel options={servers}
+          scope: <Select label={t("file-audit.workspace.server")} options={servers}
             value={String(values.source_instance_id ?? "")} onChange={source => {
               reset(); setValues({ ...values, source_instance_id: source || undefined, share: undefined, path: undefined, device_id: undefined, snapshot_id: undefined });
             }}/>,
-          period: { value: period, presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", showBounds: true,
+          period: { value: period, presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", showBounds: true, strictRange: true,
             bounds: baseParams ? { from: baseParams.get("from")!, to: baseParams.get("to")! } : undefined,
             onChange: next => { reset(); setAnchor(minute()); setValues(appliedFileAuditValues({ ...values, period: next }, values, timeZone)); } },
           onRefresh: refresh, refreshing: data.isFetching,

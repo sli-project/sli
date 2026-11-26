@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiResponseError } from "../../api/client";
@@ -82,10 +83,8 @@ export function ChannelTest({ channel, enabled, subscriptions = [], destination,
   return <section>
     {channel === "smtp" && bindings.length > 1 ? <div className="sli-ds-field">
       <label htmlFor="notify-test-recipient">{t("notify.destination")}</label>
-      <select id="notify-test-recipient" value={recipient} disabled={!enabled || mutation.isPending || pending}
-        onChange={(event) => { setSelected(event.target.value); setProblemId(crypto.randomUUID()); }}>
-        {bindings.map((binding) => <option key={binding.id} value={binding.id}>{destination?.(binding) || "—"}</option>)}
-      </select>
+      <Select label={t("notify.destination")} id="notify-test-recipient" value={recipient} disabled={!enabled || mutation.isPending || pending} onChange={(selectedValue) => { setSelected(selectedValue); setProblemId(crypto.randomUUID()); }}
+        options={bindings.map((binding) => ({ value: binding.id, label: destination?.(binding) || "—" }))}/>
     </div> : null}
     <Button disabled={!enabled || mutation.isPending || pending || (channel === "smtp" && !recipient)} onClick={send}>{t("notify.sendTest")}</Button>
     {mutation.isError ? <p role="alert">{error}</p> : null}

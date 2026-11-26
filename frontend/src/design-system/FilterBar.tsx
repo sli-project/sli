@@ -1,8 +1,12 @@
 import { formatNumber } from "../shared/format";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { t } from "../i18n";
-import { PeriodPicker, type PeriodValue } from "./PeriodPicker";
+import { isPeriodBoundary, periodLabel, PeriodPicker, type PeriodValue } from "./PeriodPicker";
+import { PeriodPopover } from "./PeriodPopover";
 import { Button } from "./Primitives";
+import { Checkbox } from "./Checkbox";
+import { Select } from "./Select";
 import { SearchMultiSelect, type SearchOption } from "./SearchMultiSelect";
 
 export type FilterOption = { value: string; label: string; count?: number };
@@ -18,29 +22,21 @@ export type FilterField =
 export type FilterValue = string | string[] | PeriodValue | undefined;
 export type FilterValues = Record<string, FilterValue>;
 
+function optionWithCount(option: FilterOption) {
+  return { ...option, label: typeof option.count === "number" ? `${option.label} (${formatNumber(option.count)})` : option.label };
+}
+
 function isActive(value: FilterValue): boolean {
   if (value === undefined || value === "") return false;
   if (Array.isArray(value)) return value.length > 0;
   return true;
 }
 
-export function Select({ label, hideLabel, options, value, onChange }: {
-  label: string; hideLabel?: boolean; options: FilterOption[]; value: string; onChange: (value: string) => void;
-}) {
-  const id = useId();
-  return <div className="sli-ds-field" data-kind="select">
-    <label htmlFor={id} className={hideLabel ? "sli-ds-sr-only" : undefined}>{label}</label>
-    <select id={id} value={value} onChange={event => onChange(event.target.value)}>
-      {options.map(option => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? " (" + formatNumber(option.count) + ")" : ""}</option>)}
-    </select>
-  </div>;
-}
-
 /**
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline, compact }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline, compact, periodTarget }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -56,6 +52,8 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   leadingControls?: ReactNode;
   applyInline?: boolean;
   compact?: boolean;
+  /** Moves the period control into the page header while keeping one filter draft. */
+  periodTarget?: HTMLElement | null;
 }) {
   const [draft, setDraft] = useState<FilterValues>(values);
   // On a phone a long form hides the result; it starts folded behind one toggle.
@@ -73,54 +71,74 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   useEffect(() => { if (!quickFilters && additionalActive > 0) setAdditionalOpen(true); }, [additionalActive, quickFilters]);
   const set = (key: string, value: FilterValue) => setDraft((current) => ({ ...current, [key]: value }));
   const apply = (next: FilterValues) => { window.clearTimeout(searchTimer.current); onApply(next); };
-  const submit = (event: FormEvent) => { event.preventDefault(); apply(draft); };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (periodTarget && fields.some((field) => {
+      if (field.kind !== "period") return false;
+      const current = draft[field.key] as PeriodValue | undefined;
+      const precision = field.precision ?? "date";
+      return current?.preset === "custom" && (!isPeriodBoundary(current.from, precision) ||
+        !isPeriodBoundary(current.to, precision) || current.from > current.to);
+    })) {
+      const picker = periodTarget.querySelector("details");
+      if (picker) picker.open = true;
+      return;
+    }
+    apply(draft);
+    const picker = periodTarget?.querySelector("details");
+    if (picker) picker.open = false;
+  };
 
   const renderFields = (items: FilterField[]) => items.map((field) => {
     const id = `${formId}-${field.key}`;
     if (field.kind === "period") {
-      return <PeriodPicker key={field.key} label={field.label} presets={field.presets}
+      const current = (draft[field.key] as PeriodValue | undefined) ?? { preset: "30d" };
+      const picker = <PeriodPicker key={field.key} label={field.label} presets={field.presets}
         precision={field.precision} step={field.step}
-        value={(draft[field.key] as PeriodValue | undefined) ?? { preset: "30d" }}
+        value={current}
         onChange={(value) => {
           set(field.key, value);
-          if (applyInline && (value.preset !== "custom" || value.from && value.to && value.from <= value.to))
+          if (applyInline && (value.preset !== "custom" || isPeriodBoundary(value.from, field.precision ?? "date") && isPeriodBoundary(value.to, field.precision ?? "date") && value.from <= value.to))
             apply({ ...draft, [field.key]: value });
         }}/>;
+      return periodTarget ? createPortal(<PeriodPopover label={periodLabel(current.preset)} fieldLabel={field.label}>{picker}</PeriodPopover>,
+        periodTarget, field.key) : picker;
     }
-    if (field.kind === "checkbox") return <label key={field.key} className="sli-ds-button">
-      <input type="checkbox" checked={draft[field.key] === field.onValue} onChange={(event) => {
+    if (field.kind === "checkbox") return <Checkbox key={field.key} checked={draft[field.key] === field.onValue} onChange={(event) => {
         const value = event.target.checked ? field.onValue : field.offValue;
         set(field.key, value);
         if (applyInline) apply({ ...draft, [field.key]: value });
-      }}/>{field.label}
-    </label>;
+      }}>{field.label}</Checkbox>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
-    if (field.kind === "select") return <Select key={field.key} label={field.label} hideLabel={layout === "inline" && field.hideLabel}
-      options={field.options.some(option => option.value === "") ? field.options : [{ value: "", label: t("filters.any") }, ...field.options]}
-      value={(draft[field.key] as string | undefined) ?? ""} onChange={selected => {
-        const value = selected || undefined;
-        set(field.key, value);
-        if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
-      }}/>;
-    return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
-      <label htmlFor={id} className={layout === "inline" && field.kind === "text" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
-      {field.kind === "text"
-        ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
-          onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
-            set(field.key, event.target.value);
-            const next = { ...draft, [field.key]: event.target.value };
-            if (field.immediate && event.target.value) {
-              window.clearTimeout(searchTimer.current);
-              searchTimer.current = window.setTimeout(() => onApply(next), 250);
-            } else if (field.immediate || layout === "inline" && !event.target.value) apply(next);
-          }}/>
-          {field.nested ? <label className="sli-ds-field__help"><input type="checkbox" checked={draft[field.nested.key] === "true"}
-            onChange={(event) => set(field.nested!.key, String(event.target.checked))}/>{field.nested.label}</label> : null}</>
-        : <select id={id} multiple size={Math.min(6, Math.max(3, field.options.length))} value={(draft[field.key] as string[] | undefined) ?? []}
-              onChange={(event) => set(field.key, [...event.target.selectedOptions].map((option) => option.value))}>
-              {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
-            </select>}
+    if (field.kind === "multiselect") return <div key={field.key} className="sli-ds-field" data-kind="multiselect">
+      <label htmlFor={id}>{field.label}</label>
+      <Select id={id} label={field.label} multiple value={(draft[field.key] as string[] | undefined) ?? []}
+        options={field.options.map(optionWithCount)} onChange={(values) => set(field.key, values)}/>
+    </div>;
+    if (field.kind === "select") return <div key={field.key} className="sli-ds-field" data-kind="select">
+      <label htmlFor={id} className={layout === "inline" && field.hideLabel ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <Select id={id} label={field.label}
+        options={(field.options.some(option => option.value === "") ? field.options : [{ value: "", label: t("filters.any") }, ...field.options]).map(optionWithCount)}
+        value={(draft[field.key] as string | undefined) ?? ""} onChange={selected => {
+          const value = selected || undefined;
+          set(field.key, value);
+          if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
+        }}/>
+    </div>;
+    return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.wide || undefined}>
+      <label htmlFor={id} className={layout === "inline" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
+        onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
+          set(field.key, event.target.value);
+          const next = { ...draft, [field.key]: event.target.value };
+          if (field.immediate && event.target.value) {
+            window.clearTimeout(searchTimer.current);
+            searchTimer.current = window.setTimeout(() => onApply(next), 250);
+          } else if (field.immediate || layout === "inline" && !event.target.value) apply(next);
+        }}/>
+      {field.nested ? <Checkbox className="sli-ds-field__help" checked={draft[field.nested.key] === "true"}
+        onChange={(event) => set(field.nested!.key, String(event.target.checked))}>{field.nested.label}</Checkbox> : null}
     </div>;
   });
 

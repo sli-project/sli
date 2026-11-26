@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportIntentDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "./ReportRenderer";
@@ -116,8 +117,8 @@ it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-
   const { container } = renderReport(raw.key);
   const table = await screen.findByRole("table");
   expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent?.replace(/[↕↑↓]/g, ""))).toEqual(locale === "ru"
-    ? ["Параметр", "Объект", "Фактическое значение", "Ожидаемое условие", "Результат", "Наблюдалось"]
-    : ["Parameter", "Object", "Observed value", "Expected condition", "Result", "Observed"]);
+    ? ["Параметр", "Фактическое значение", "Результат"]
+    : ["Parameter", "Observed value", "Result"]);
   expect(within(table).queryByText("Synthetic missing check")).toBeNull();
   expect(table.querySelector("details")).toBeNull();
   expect(within(table).getByText("Synthetic value only")).toBeTruthy();
@@ -125,12 +126,12 @@ it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-
   expect(screen.queryByText("Synthetic methodological caveat")).toBeNull();
   expect(screen.queryByText(t("reports.passport.more"))).toBeNull();
   expect(window.location.search).not.toContain("spn_collisions_only");
-  expect(within(table).getByText("Synthetic successful check").closest("tr")!.querySelectorAll("td")[2].textContent).toBe("0");
+  expect(within(within(table).getByText("Synthetic successful check").closest("tr")!).getByRole("cell", { name: "0" })).toBeTruthy();
   expect(container.querySelector('.sli-ds-metrics')).toBeNull();
   for (const text of ["Synthetic zero metric", "Synthetic unknown metric", "Synthetic passed metric", "Данные не собраны", "Не оценено", "Synthetic limitation", t("reports.passport.more")]) expect(screen.queryByText(text)).toBeNull();
   expect(screen.queryByRole("group", { name: t("reports.renderer.quick_scenarios") })).toBeNull();
   expect(screen.getByRole("searchbox", { name: t("reports.ad.state.search") })).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: t("reports.ad.state.area") })).toBeTruthy();
+  expect(screen.getByLabelText(t("reports.ad.state.area"), { selector: "button" })).toBeTruthy();
 });
 
 it.each(["ru", "en"] as const)("keeps both change collections in one infrastructure tab (%s)", async (locale) => {
@@ -151,11 +152,11 @@ it.each(["ru", "en"] as const)("keeps both change collections in one infrastruct
   expect(screen.queryByRole("tab", { name: membershipTitle })).toBeNull();
   expect(screen.getByRole("tab", { name: new RegExp("^" + changesTitle) }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition");
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: changesTitle }), "changes");
+  await chooseOption(screen.getByLabelText(changesTitle, { selector: "button" }), "changes");
   await waitFor(() => expect(requested.some((url) => url.includes("tab=changes"))).toBe(true));
   expect((await screen.findByRole("table")).textContent).toContain("synthetic-object");
   expect(window.location.search).toContain("spn_collisions_only=false");
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: changesTitle }), "privileged_changes");
+  await chooseOption(screen.getByLabelText(changesTitle, { selector: "button" }), "privileged_changes");
   await waitFor(() => expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition"));
 });
 
@@ -182,8 +183,8 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows legacy domain 
   renderReport(raw.key);
   const table = await screen.findByRole("table", { name: "События" });
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Изменения в домене");
-  expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Время", "Что изменено", "Кто", "Над кем", "Группа", "Где", "Итог"]);
-  expect(within(table).getByText("—")).toBeTruthy();
+  expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Время", "Что изменено", "Кто", "Над кем", "Группа", "Где"]);
+  expect(within(table).queryByRole("columnheader", { name: "Итог" })).toBeNull();
   expect(screen.queryByLabelText("Домен")).toBeNull();
   expect(screen.queryByText("Подробнее")).toBeNull();
   expect(screen.queryByText("Synthetic coverage")).toBeNull();
@@ -203,7 +204,7 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows legacy domain 
   expect(document.querySelector(".sli-ds-filters__additional")?.hasAttribute("open")).toBe(false);
 });
 
-it.each(["ru", "en"] as const)("renders absent legacy domain event values as an em dash (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("omits empty legacy domain event columns (%s)", async (locale) => {
   setLocale(locale);
   const raw = legacyDomainEvents;
   const body = page({ report_key: raw.key, items: [{ event_db_id: 5, time_created_utc: "2026-11-14T01:00:00Z",
@@ -217,7 +218,7 @@ it.each(["ru", "en"] as const)("renders absent legacy domain event values as an 
   const table = await screen.findByRole("table");
   const cells = within(table).getAllByRole("row")[1].querySelectorAll("td");
   expect(cells[1].textContent).toBe(locale === "ru" ? "Неудачный вход" : "Failed sign-in");
-  for (const index of [2, 3]) expect(cells[index].textContent).toBe("—");
+  expect(within(table).getByRole("cell", { name: locale === "ru" ? "Отказ" : "Failure" })).toBeTruthy();
   expect(within(table).queryByRole("columnheader", { name: "Кто" })).toBeNull();
   expect(within(table).queryByRole("columnheader", { name: "Группа" })).toBeNull();
   expect(within(table).queryByText("-", { exact: true })).toBeNull();
@@ -335,10 +336,10 @@ it.each(["ru", "en"] as const)("shows the problem queue's default columns and th
   expect(screen.queryByText(t("reports.v2.security.problems.metrics.closed.label"))).toBeNull();
   expect(screen.queryByRole("region", { name: t("reports.summaryAria") })).toBeNull();
   const table = screen.getByRole("table");
-  const headers = locale === "ru" ? ["Важность", "Проблема", "Объект", "Кто", "Последнее событие", "Раз", "Состояние"]
-    : ["Severity", "Problem", "Object", "Who", "Last event", "Times", "State"];
+  const headers = locale === "ru" ? ["Важность", "Проблема", "Объект", "Последнее событие", "Раз", "Состояние"]
+    : ["Severity", "Problem", "Object", "Last event", "Times", "State"];
   expect(within(table).getAllByRole("columnheader")).toEqual(headers.map((name) => within(table).getByRole("columnheader", { name })));
-  expect(within(table).getAllByRole("row")[1].querySelectorAll("td")[3].textContent).toBe("—");
+  expect(within(table).queryByRole("columnheader", { name: locale === "ru" ? "Кто" : "Who" })).toBeNull();
   fireEvent.click(screen.getByText(t("table.columns")));
   for (const key of ["actor_identifier", "entity_identifiers", "identity_sources"] as const) {
     expect(screen.queryByRole("checkbox", { name: t(`reports.v2.security.problems.columns.${key}.label`) })).toBeNull();
@@ -465,30 +466,26 @@ it.each((["ru", "en"] as const).flatMap((locale) => [149, 161].map((repeats) => 
   expect(new URL(dataRequests[1], window.location.origin).searchParams.get("cursor")).toBe("next-50");
 });
 
-it("opens RANSOM reasons alongside the retained file evidence in both languages", async () => {
-  const raw: ReportDefinitionDto = { ...definition, key: "file-audit.mass-operations", params: [], presets: [], row_links: [],
-    columns: [{ key: "employee", label: "Synthetic actor", kind: "text", path: "employee" }],
-    detail: { title: "Synthetic file evidence", key: "id", kind: "inline", inline: "evidence", row_links: [],
-      columns: [{ key: "path", label: "Synthetic file", kind: "text", path: "path" }] } };
-  const body = page({ report_key: raw.key, items: [{ id: "synthetic-result", employee: "Synthetic actor",
-    details: { threshold: 100, window_seconds: 300, distinct_files: 110 },
-    ransom: { state: "excluded", exclusion: { reason: "Synthetic backup approval", approved_by: "synthetic-admin",
-      active_from: "2026-10-18T00:00:00Z", active_to: "2026-10-18T01:00:00Z" } },
-    evidence: [{ path: "C:\\synthetic\\file.txt" }],
+it.each(["ru", "en"] as const)("links a file action to Problems and opens its retained evidence in place (%s)", async (locale) => {
+  setLocale(locale);
+  const raw = reportDefinitions.find(item => item.key === "file-audit.actions")!;
+  const path = "C:\\Synthetic\\Report.txt";
+  const actor = "EXAMPLE\\operator";
+  const body = page({ report_key: raw.key, items: [{
+    id: "file-action", path, subject_name: actor, operation: "write", problem_id: 7,
+    evidence: [{ event_id: 4663, record_id: 40123 }],
   }] });
-  for (const locale of ["ru", "en"] as const) {
-    setLocale(locale);
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
-      JSON.stringify(String(input).includes("/data?") ? body : raw), { headers: { "Content-Type": "application/json" } },
-    )));
-    renderReport(raw.key);
-    fireEvent.click((await screen.findAllByText("Synthetic actor")).at(-1)!);
-    expect(await screen.findByRole("heading", { name: t("file-audit.ransom.title") })).toBeTruthy();
-    expect(screen.getByText(t("file-audit.ransom.state.excluded"))).toBeTruthy();
-    expect(screen.getByText("Synthetic backup approval")).toBeTruthy();
-    expect(screen.getByText("C:\\synthetic\\file.txt")).toBeTruthy();
-    cleanup();
-  }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(
+    String(input).includes("/data?") ? body : { ...raw, filter_options: {} },
+  )));
+  renderReport(raw.key);
+  const table = within(await screen.findByRole("table", { name: t("file-audit.screen.actions") }));
+  expect(table.getByText(actor)).toBeTruthy();
+  expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "7" }) }).getAttribute("href"))
+    .toBe("/app/report/security.problems?id=7");
+  await userEvent.click(table.getByRole("button", { name: path }));
+  expect(table.getByText(t("file-audit.workspace.interval")).closest("td")?.colSpan).toBeGreaterThan(1);
+  expect(table.getByText(/4663.*40123/)).toBeTruthy();
 });
 
 it.each([
@@ -612,7 +609,7 @@ it("selects the server-declared registered domain instead of the first domain", 
   }));
   renderReport();
   await screen.findByRole("table", { name: "Демо-события" });
-  expect((screen.getByLabelText("Домен") as HTMLSelectElement).value).toBe("17");
+  expect(screen.getByLabelText("Домен", { selector: "button" }).textContent).toContain(configured.filter_options.domain[1].label);
   const dataUrl = requested.find((url) => url.includes("/data?"))!;
   expect(new URL(dataUrl, window.location.origin).searchParams.get("domain")).toBe("17");
   expect(new URLSearchParams(window.location.search).get("domain")).toBe("17");
@@ -636,22 +633,31 @@ it.each(["ru", "en"] as const)("requests all accessible security domains and cat
   expect(query.has("domain")).toBe(false);
   expect(query.has("category")).toBe(false);
   expect(query.get("period")).toBe("7d");
-  expect(screen.getByRole("option", { name: t("reports.filters.all_domains") }).closest("select")?.value).toBe("");
+  expect(screen.getByRole("button", { name: new RegExp(t("reports.filters.all_domains")) })).toBeTruthy();
 });
 
-it.each(["ru", "en"] as const)("dispatches file audit to its eight-tab report body (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("routes File Servers views to their declared data sources (%s)", async (locale) => {
   setLocale(locale);
-  const raw: ReportDefinitionDto = { ...definition, key: "file-audit.actions", params: [
-    { key: "period", label: "Период", kind: "period", default: "24h", required: true },
-  ] };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(
-    String(input).includes("/data?") ? page({ report_key: raw.key, filtered_count: 1 }) : raw,
-  ), { headers: { "Content-Type": "application/json" } })));
-  renderReport(raw.key);
-  await screen.findByRole("table", { name: t("file-audit.tabs.actions") });
-  expect(screen.getAllByRole("tab")).toHaveLength(8);
-  expect(screen.getByRole("checkbox", { name: t("file-audit.include_nested") })).toBeTruthy();
-  expect(screen.getByText(t("table.range", { from: 1, to: 1, total: 1 }))).toBeTruthy();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requested.push(url);
+    const key = url.match(/\/reports\/(file-audit\.[a-z-]+)/)?.[1];
+    const declaration = reportDefinitions.find(item => item.key === key);
+    if (!declaration) return new Response(null, { status: 404 });
+    return Response.json(url.includes("/data?")
+      ? page({ report_key: declaration.key, items: [], filtered_count: 0 })
+      : { ...declaration, filter_options: {} });
+  }));
+  renderReport("file-audit.actions");
+  await screen.findByRole("table", { name: t("file-audit.screen.actions") });
+  expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("tab", { name: t("file-audit.tabs.mass-operations") })).toBeNull();
+  for (const view of ["overview", "permissions"] as const) {
+    const name = t(`file-audit.screen.${view}`);
+    await userEvent.click(screen.getByRole("tab", { name }));
+    await screen.findByRole("table", { name });
+    expect(requested.some(url => url.includes("/file-audit." + view + "/data?"))).toBe(true);
+  }
 });
 
 it.each(["ru", "en"] as const)("keeps an empty collection free of limitation notes (%s)", async (locale) => {
@@ -823,7 +829,8 @@ it.each(["ru", "en"] as const)("renders rule-quality passport, unknown rates, co
     requested.push(url);
     const body = url.includes("/data?") ? page({ report_key: raw.key,
       items: [{ rule_code: "semantic.synthetic", false_positive_rate: null,
-        cohort_from: "2026-10-01T00:00:00Z", cohort_to: "2026-10-07T00:00:00Z" }],
+        cohort_from: "2026-10-01T00:00:00Z", cohort_to: "2026-10-07T00:00:00Z" },
+        { rule_code: "semantic.other", false_positive_rate: 25 }],
       coverage: { completeness: "not_proven" },
       limitations: [{ code: "accepted_risk_unavailable", text: "Метрика принятого риска недоступна." }],
     }) : raw;
@@ -842,7 +849,8 @@ it.each(["ru", "en"] as const)("renders rule-quality passport, unknown rates, co
   expect(url.searchParams.get("created_from")).toBe("2026-10-01T00:00:00Z");
   expect(url.searchParams.get("created_to")).toBe("2026-10-07T00:00:00Z");
   expect(url.searchParams.get("show_suppressed")).toBe("true");
-  expect(within(screen.getByRole("table")).getByText("—")).toBeTruthy();
+  const rule = link.closest("tr")!;
+  expect(within(rule).getByRole("cell", { name: "—" })).toBeTruthy();
   expect(screen.getByText(locale === "en" ? en["reports.v2.security.rule-quality.limitations.accepted_risk_unavailable"]
     : "Метрика принятого риска недоступна.")).toBeTruthy();
   expect(requested.some((request) => request.includes("period=30d"))).toBe(true);
@@ -1097,7 +1105,7 @@ it("keeps the computer report's main controls visible and opens additional prese
   expect(screen.getByRole("region", { name: "Сводка" }).getAttribute("data-compact")).toBe("true");
   await userEvent.click(screen.getByRole("button", { name: "Servers" }));
   await waitFor(() => expect(more.open).toBe(true));
-  expect((screen.getByLabelText("Type") as HTMLSelectElement).value).toBe("server");
+  expect(screen.getByLabelText("Type", { selector: "button" }).textContent).toContain("Server");
 });
 
 function mockVpnReport(preset = "7d") {
@@ -1416,14 +1424,17 @@ describe("ReportRenderer", () => {
     renderReport("vpn.connections");
     await screen.findByRole("table");
     vi.setSystemTime(new Date("2026-10-06T15:00:00Z"));
-    await userEvent.click(screen.getByRole("radio", { name: "24 часа" }));
-    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+    const picker = document.querySelector<HTMLDetailsElement>(".sli-ds-header__period")!;
+    const period = within(picker);
+    await userEvent.click(picker.querySelector("summary")!);
+    await userEvent.click(period.getByRole("radio", { name: "24 часа" }));
     await waitFor(() => expect(requested.some((url) => new URL(url, "http://test").searchParams.get("from") === "2026-10-05T15:00:00.000Z")).toBe(true));
     expect(new URL(requested.at(-1)!, "http://test").searchParams.get("to")).toBe("2026-10-06T15:00:00.000Z");
-    await userEvent.click(screen.getByRole("radio", { name: "Свой период" }));
-    fireEvent.change(screen.getByLabelText("С"), { target: { value: "2026-09-14" } });
-    fireEvent.change(screen.getByLabelText("По"), { target: { value: "2026-09-14" } });
-    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+    await userEvent.click(picker.querySelector("summary")!);
+    await userEvent.click(period.getByRole("radio", { name: "Свой период" }));
+    fireEvent.change(period.getByLabelText("С"), { target: { value: "2026-09-14" } });
+    fireEvent.change(period.getByLabelText("По"), { target: { value: "2026-09-14" } });
+    await userEvent.click(period.getByRole("button", { name: "Применить" }));
     await waitFor(() => expect(requested.some((url) => new URL(url, "http://test").searchParams.get("from") === "2026-09-14")).toBe(true));
     const params = new URL(requested.at(-1)!, "http://test").searchParams;
     expect([params.get("period"), params.get("from"), params.get("to")]).toEqual(["custom", "2026-09-14", "2026-09-14"]);
@@ -1456,7 +1467,7 @@ describe("ReportRenderer", () => {
     expect(screen.getByRole("button", { name: "Lockouts" })).toBeTruthy();
     expect(within(table).getByText("Lockout and unlock")).toBeTruthy();
     expect(within(table).getByText("Политика")).toBeTruthy();
-    expect(screen.getByRole("navigation", { name: "Breadcrumbs" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Breadcrumbs" })).toBeNull();
   });
 
   it("builds the page from the declaration and shows server rows with labels", async () => {
@@ -1629,12 +1640,13 @@ it.each(['ru', 'en'] as const)('keeps rule-quality identifiers in the inline dra
   expect(within(drawer).getByText('semantic.synthetic-one')).toBeTruthy();
   expect(within(drawer).getByText('synthetic-policy:7')).toBeTruthy();
   const messages = locale === 'ru' ? ru : en;
-  for (const key of Object.keys(metrics)) {
+  expect(within(drawer).queryByRole('columnheader', { name: t('reports.v2.security.rule-quality.detail.columns.accepted_risk.label') })).toBeNull();
+  for (const key of Object.keys(metrics).filter((key) => key !== 'accepted_risk')) {
     const label = messages[`reports.v2.security.rule-quality.detail.columns.${key}.label` as keyof typeof messages];
     expect(label).toBeTruthy();
     expect(within(drawer).getByRole('columnheader', { name: label })).toBeTruthy();
   }
-  for (const value of ['2', '—', '0', '3', '4', '25']) expect(within(drawer).getByRole('cell', { name: value })).toBeTruthy();
+  for (const value of ['2', '0', '3', '4', '25']) expect(within(drawer).getByRole('cell', { name: value })).toBeTruthy();
   fireEvent.keyDown(drawer, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   fireEvent.click(links[1].closest('tr')!);

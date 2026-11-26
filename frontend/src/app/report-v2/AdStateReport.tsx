@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
@@ -211,9 +212,8 @@ function Parameters({ rows, filtered, reportKey, params, initialOpen, filters, s
     <div className="sli-ds-table__toolbar" role="group" aria-label={copy("result")}>
       {results.map((status) => <button key={status} type="button" className="sli-ds-chip" aria-pressed={status === result} onClick={() => setFilters({ ...filters, result: status })}>{copy(`filter.${status}`)} <strong>{formatNumber(count(rows, status))}</strong></button>)}
       <label className="sli-ds-field"><input type="search" maxLength={256} aria-label={copy("search")} placeholder={copy("search")} value={query} onChange={(event) => setFilters({ ...filters, query: event.target.value })}/></label>
-      <label className="sli-ds-table__toolbar-choice"><span style={{ whiteSpace: "nowrap" }}>{copy("area")}</span> <span className="sli-ds-field" style={{ minWidth: "var(--sli-field-min-width)" }}><select value={filterArea} onChange={(event) => setFilters({ ...filters, area: event.target.value })}>
-        <option value="">{copy("filter.all")}</option>{areas.filter((key) => groupRows(key).length).map((key) => <option key={key} value={key}>{copy(`area.${key}`)}</option>)}
-      </select></span></label>
+      <div className="sli-ds-table__toolbar-choice"><span style={{ whiteSpace: "nowrap" }}>{copy("area")}</span> <span className="sli-ds-field" style={{ minWidth: "var(--sli-field-min-width)" }}><Select label={String(copy("area")) + String("")} value={filterArea} onChange={(selectedValue) => setFilters({ ...filters, area: selectedValue })}
+        options={[{ value: "", label: copy("filter.all") }, ...(areas.filter((key) => groupRows(key).length).map((key) => ({ value: key, label: copy(`area.${key}`) })) ?? [])]}/></span></div>
     </div>
     <DataTable caption={copy("tab.controls")} columns={columns} rows={filtered} rowKey={id} showFooter={false} emptyContent={EMPTY_VALUE}
       selectedKey={selected} onRowClick={open} rowGroup={(row) => {
@@ -424,9 +424,8 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       {active.key === "controls" ? <Parameters key={detailParams.toString()} rows={controls} filtered={filteredControls} reportKey={definition.key} params={detailParams.toString()}
         filters={filters} setFilters={setFilters} wide={wide}
         initialOpen={initialOpen} selected={detailKey} select={selectDetail}/> : <>
-        {["changes", "privileged_changes"].includes(active.key) ? <label className="sli-ds-field">{copy("tab.parameter_changes")}<select value={active.key} onChange={(event) => select(event.target.value)}>
-          {views.filter((view) => ["parameter_changes", "changes", "privileged_changes"].includes(view.key) && view.access?.allowed !== false).map((view) => <option key={view.key} value={view.key}>{view.key === "parameter_changes" ? copy("tab.parameter_changes") : view.title}</option>)}
-        </select></label> : null}
+        {["changes", "privileged_changes"].includes(active.key) ? <div className="sli-ds-field">{copy("tab.parameter_changes")}<Select label={copy("tab.parameter_changes")} value={active.key} onChange={(selectedValue) => select(selectedValue)}
+          options={views.filter((view) => ["parameter_changes", "changes", "privileged_changes"].includes(view.key) && view.access?.allowed !== false).map((view) => ({ value: view.key, label: view.key === "parameter_changes" ? copy("tab.parameter_changes") : view.title ?? view.key }))}/></div> : null}
         <DataTable caption={title} columns={columns} rows={rows} rowKey={(row) => String(row.row_id ?? row.finding_id ?? row.id ?? JSON.stringify(row))}
           selectedKey={detailKey} onRowClick={active.key === "spn_collisions" ? selectDetail : undefined}
           showFooter={active.key === "parameter_changes" && Boolean(changes.hasNextPage)} hasMore={active.key === "parameter_changes" && changes.hasNextPage}

@@ -4,9 +4,21 @@ import { createPortal } from "react-dom";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type VisibilityState } from "@tanstack/react-table";
 import { t } from "../i18n";
 import { type CellKind } from "./format";
+import { Checkbox } from "./Checkbox";
+import { Pager, type PageSize } from "./Pager";
 import { useDateFormatters } from "./useDateFormatters";
 
 export type SortState = { field: string; direction: "asc" | "desc" };
+type TablePagination = {
+  start: number;
+  end?: number;
+  label?: ReactNode;
+  pageLabel?: string;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  busy?: boolean;
+};
+const LOCAL_PAGE_SIZES = [25, 50, 100, 200];
 
 export type TableColumn<Row> = {
   key: string;
@@ -28,10 +40,10 @@ export type TableColumn<Row> = {
 };
 
 export function DataTable<Row>({
-  columns, rows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
-  hasMore = false, loadingMore = false, onLoadMore, total, stickyHeader = true, pagination, showFooter = true,
+  columns, rows: resultRows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
+  hasMore = false, loadingMore = false, onLoadMore, total: serverTotal, stickyHeader = true, pagination: serverPaging, showFooter = true,
   compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
-  pageSize, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
+  pageSize: serverPageSize, localPagination, columnSample = resultRows, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
   columns: TableColumn<Row>[];
   rows: Row[];
@@ -49,7 +61,7 @@ export function DataTable<Row>({
   loadingMore?: boolean;
   onLoadMore?: () => void;
   total?: number | null;
-  pagination?: { start: number; end?: number; label?: ReactNode; onPrevious?: () => void; onNext?: () => void; busy?: boolean; pageLabel?: string };
+  pagination?: TablePagination;
   /** Embedded previews may provide their own count and open-all action. */
   showFooter?: boolean;
   renderExpandedRow?: (row: Row) => ReactNode;
@@ -64,33 +76,77 @@ export function DataTable<Row>({
   density?: "compact" | "comfortable" | "standard";
   expanded?: (row: Row) => ReactNode;
   afterRow?: (row: Row) => ReactNode;
-  pageSize?: { value: number; options: number[]; onChange: (size: number) => void };
+  pageSize?: PageSize;
+  /** Use when the caller has loaded the complete filtered result. */
+  localPagination?: boolean;
+  /** Complete result when the caller handles paging locally. */
+  columnSample?: Row[];
   columnsControlTarget?: HTMLElement | null;
 }) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
-  const defaultVisibility = Object.fromEntries(columns.map((column) => [column.key, !column.hiddenByDefault]));
-  const defs = useMemo<ColumnDef<Row>[]>(() => columns.map((column) => ({
+  const [localSize, setLocalSize] = useState(50);
+  const [localPage, setLocalPage] = useState(0);
+  const page = Math.min(localPage, Math.max(0, Math.ceil(resultRows.length / localSize) - 1));
+  const start = page * localSize;
+  const rows = useMemo(() => localPagination ? resultRows.slice(start, start + localSize) : resultRows,
+    [localPagination, resultRows, start, localSize]);
+  const total = localPagination ? resultRows.length : serverTotal;
+  const pageSize = localPagination ? { value: localSize, options: LOCAL_PAGE_SIZES, onChange: (size: number) => {
+    setLocalSize(size);
+    setLocalPage(0);
+  } } : serverPageSize;
+  const pagination: TablePagination | undefined = localPagination ? {
+    start: start + 1,
+    onPrevious: page ? () => setLocalPage(page - 1) : undefined,
+    onNext: start + localSize < resultRows.length ? () => setLocalPage(page + 1) : undefined,
+  } : serverPaging;
+  const dash = t("table.noValue");
+  const { content, displayed } = useMemo(() => {
+    const isEmpty = (value: unknown) => value == null || typeof value === "boolean" ||
+      typeof value === "string" && (value.trim() === "" || value.trim() === dash);
+    const content = new Map<Row, Map<string, ReactNode>>();
+    const emptyColumns = new Set(columns.map((column) => column.key));
+    const renderCell = (column: TableColumn<Row>, row: Row) => column.render ? column.render(row) : formatCell(
+      column.value ? column.value(row) : (row as Record<string, unknown>)[column.key], column.kind);
+    for (const row of rows) {
+      const cells = new Map<string, ReactNode>();
+      for (const column of columns) {
+        const cell = renderCell(column, row);
+        cells.set(column.key, cell);
+        if (!isEmpty(cell)) emptyColumns.delete(column.key);
+      }
+      content.set(row, cells);
+    }
+    if (columnSample !== rows) {
+      for (const column of columns) {
+        if (emptyColumns.has(column.key) && columnSample.some((row) => !isEmpty(content.get(row)?.get(column.key) ?? renderCell(column, row)))) {
+          emptyColumns.delete(column.key);
+        }
+      }
+    }
+    const populated = columnSample.length ? columns.filter((column) => !emptyColumns.has(column.key)) : columns;
+    return { content, displayed: populated.length ? populated : columns.slice(0, 1) };
+  }, [columns, rows, columnSample, formatCell, dash]);
+  const columnVisibility = Object.fromEntries(displayed.map((column) => [column.key, visibility[column.key] ?? !column.hiddenByDefault]));
+  const defs = useMemo<ColumnDef<Row>[]>(() => displayed.map((column) => ({
     id: column.key,
     header: column.label,
-    accessorFn: (row: Row) => (column.value ? column.value(row) : (row as Record<string, unknown>)[column.key]),
     meta: column,
-  })), [columns]);
+  })), [displayed]);
   const table = useReactTable({
     data: rows, columns: defs, getCoreRowModel: getCoreRowModel(), getRowId: (row) => rowKey(row),
-    state: { columnVisibility: { ...defaultVisibility, ...visibility } }, onColumnVisibilityChange: setVisibility, manualSorting: true,
+    state: { columnVisibility }, manualSorting: true,
   });
   const toggleable = columns.filter((column) => column.hiddenByDefault !== undefined);
   const visibleRows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
   const columnsControl = toggleable.length ? <details className="sli-ds-table__columns">
-      <summary className={columnsControlTarget ? "sli-ds-button" : undefined}>{t("table.columns")}</summary>
+      <summary className="sli-ds-button">{t("table.columns")}</summary>
       <div role="group" aria-label={t("table.columns")}>
-        {table.getAllLeafColumns().filter((column) => toggleable.some((item) => item.key === column.id)).map((column) => <label key={column.id}>
-          <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()}/>
-          {String(column.columnDef.header)}
-        </label>)}
+        {toggleable.map((column) => <Checkbox key={column.key} checked={columnVisibility[column.key] ?? false}
+          disabled={!displayed.some((item) => item.key === column.key)} onChange={(event) => setVisibility({ ...visibility, [column.key]: event.target.checked })}>{column.label}</Checkbox>)}
       </div>
     </details> : null;
   const columnsMenu = columnsControl && columnsControlTarget ? createPortal(columnsControl, columnsControlTarget) : columnsControl;
@@ -133,12 +189,12 @@ export function DataTable<Row>({
             aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
             {visibleCells.map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
-              const content = column.render ? column.render(row.original) : formatCell(cell.getValue(), column.kind);
-              const text = isValidElement<{ children?: ReactNode }>(content) && content.type === "a" ? content.props.children : content;
+              const value = content.get(row.original)?.get(column.key);
+              const text = isValidElement<{ children?: ReactNode }>(value) && value.type === "a" ? value.props.children : value;
               const title = typeof text === "string" || typeof text === "number" ? String(text) : undefined;
               return <td key={cell.id} data-mobile={column.mobile} data-wide-only={column.wideOnly || undefined}
                 data-wrap={column.wrap || undefined} style={{ minWidth: column.minWidth }} title={wrapCells === "all" ? undefined : title}
-                data-kind={column.kind} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{content}</td>;
+                data-kind={column.kind} data-empty={value === dash || undefined} data-align={column.align ?? (column.kind === "number" ? "end" : "start")}>{value}</td>;
             })}
           </tr>}
             {expansion ? <tr><td colSpan={columnCount} className="sli-ds-table__expanded">{expansion}</td></tr> : null}
@@ -151,24 +207,17 @@ export function DataTable<Row>({
         })}{!visibleRows.length && emptyContent != null ? <tr><td colSpan={columnCount}>{emptyContent}</td></tr> : null}</tbody>
       </table>
     </div>
-    {showFooter ? <div className="sli-ds-table__footer" aria-live="polite">
-      {pageSize ? <label className="sli-ds-header__actions">{t("table.rowsPerPage")}
-        <select value={pageSize.value} onChange={(event) => pageSize.onChange(Number(event.target.value))}>
-          {pageSize.options.map((size) => <option key={size} value={size}>{size}</option>)}
-        </select>
-      </label> : null}
+    {showFooter ? <Pager pageSize={pageSize} busy={pagination?.busy} onPrevious={pagination?.onPrevious} onNext={pagination?.onNext}
+      label={pagination && (pagination.pageLabel ?? (pageSize ? t("table.page", {
+        page: Math.floor((pagination.start - 1) / pageSize.value) + 1,
+        total: typeof total === "number" ? Math.max(1, Math.ceil(total / pageSize.value)) : dash,
+      }) : pagination.label) ?? t("table.range", { from: rows.length ? pagination.start : 0,
+        to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0, total: typeof total === "number" ? formatNumber(total) : dash }))}>
       {footerControls}
-      {pagination ? <>
-        <span>{pagination.label ?? pagination.pageLabel ?? t("table.range", { from: rows.length ? pagination.start : 0, to: rows.length ? pagination.end ?? pagination.start + rows.length - 1 : 0,
-          total: typeof total === "number" ? formatNumber(total) : t("table.noValue") })}</span>
-        <div className="sli-ds-header__actions">
-          <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onPrevious} onClick={pagination.onPrevious}>{t("table.previous")}</button>
-          <button type="button" className="sli-ds-button" disabled={pagination.busy || !pagination.onNext} onClick={pagination.onNext}>{t("table.next")}</button>
-        </div>
-      </> : <>
-        <span>{t("table.shown", { count: rows.length })}{typeof total === "number" ? ` ${t("table.of", { total: formatNumber(total) })}` : ""}</span>
+      {!pagination ? <>
+        <span aria-live="polite">{t("table.shown", { count: rows.length })}{typeof total === "number" ? ` ${t("table.of", { total: formatNumber(total) })}` : ""}</span>
         {hasMore && onLoadMore ? <button type="button" className="sli-ds-button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? t("table.loadingMore") : t("table.loadMore")}</button> : null}
-      </>}
-    </div> : null}
+      </> : null}
+    </Pager> : null}
   </div>;
 }

@@ -39,7 +39,8 @@ public sealed partial class HomeSummaryEndpointTests
         var end = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
         await PostCollectionPostgres.Sql(db, """
             create role adlog_user;
-            create table auth_users(id bigint,username text);
+            create table auth_users(id bigint,username text,role text,is_active bool,is_service bool,previous_login_at timestamptz);
+            create table auth_api_keys(report_subject_id bigint);
             create table semantic_suppressions(id bigint,finding_id bigint,kind text,state text,expires_at timestamptz,responsible_user_id bigint,semantic_type text);
             create table findings_active(id bigint primary key,domain_id bigint,rule_code text,title text,summary text,severity text,
                 actor text,target text,first_seen_utc text,closed_at text,status text,repeat_count int);
@@ -64,7 +65,8 @@ public sealed partial class HomeSummaryEndpointTests
             create table ad_snapshot_manifest_sources(manifest_id uuid,family text,source_id text);
             create table sli_agent_snapshot_cycles(manifest_id uuid,publication_state text,agent_id uuid,cycle_id uuid,gpo_source_run_id uuid);
             create table platform_settings(key text,value text);
-            create table gpo_report_v2_source_snapshots(domain_id bigint,source_run_id uuid,import_status text,payload_json jsonb);
+            create table gpo_report_v2_source_snapshots(domain_id bigint,source_run_id uuid,import_status text,payload_json jsonb,
+                schema_version text,source_completed_at_utc timestamptz,source_observed_at_utc timestamptz,payload_sha256 bytea);
             create table servers(id bigint primary key,domain_id bigint);
             create table event_hot(event_id bigint,time_created_utc timestamptz,event_kind int,domain_id bigint,
                 actor text,target text,source text,computer text,method jsonb,outcome jsonb,fields jsonb,
@@ -125,8 +127,17 @@ public sealed partial class HomeSummaryEndpointTests
                 (11,7,'qw.ad-hardening.lockout-threshold','Lockout threshold',null,'medium',null,'example.test',(@end-interval '3 hours')::text,null,'new',0),
                 (12,7,'qw.ad-hardening.privileged-nonexpiring','Password never expires',null,'high',null,'test-account',(@end-interval '3 hours')::text,null,'new',0),
                 (13,7,'semantic.security.privileged_group_member_added','Earlier occurrence',null,'high',null,'test-group',(@end-interval '8 days')::text,null,'new',0);
-            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int, add column assigned_to text;
-            update findings_active set last_seen_utc=first_seen_utc;
+            alter table findings_active add column last_seen_utc text, add column fingerprint text, add column source text, add column evidence_count int, add column assigned_to text,
+                add column created_at timestamptz, alter column closed_at type timestamptz using closed_at::timestamptz;
+            update findings_active set last_seen_utc=first_seen_utc,created_at=first_seen_utc::timestamptz;
+            insert into auth_users values
+                (1,'admin-example','admin',true,false,@end-interval '1 day'),
+                (2,'operator-example','operator',true,false,null),
+                (3,'viewer-example','viewer',true,false,null),
+                (4,'inactive-example','operator',false,false,null),
+                (5,'service-example','operator',true,true,null),
+                (6,'key-example','operator',true,false,null);
+            insert into auth_api_keys values(6);
             insert into finding_event_copies337 values
                 (1,250004,4728,7,@end-interval '35 minutes','DC01.example.test',
                  '{"$principals":{"TargetUserName":"test-group"}}','{"MemberName":"test-account"}'),
@@ -348,6 +359,13 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.True(openTimer.Elapsed < TimeSpan.FromSeconds(3));
         Assert.DoesNotContain(queries, item => item.Activity);
         Assert.Null(open["activity"]);
+        Assert.Equal(2, open.Number("active_operator_count"));
+        var delta = open["since_previous_login"]!;
+        Assert.Equal(8, delta.Number("new_count"));
+        Assert.Equal(1, delta.Number("closed_count"));
+        Assert.Equal(end.AddDays(-1), delta.Stamp("from"));
+        Assert.Contains("created_from=", delta.Text("new_href"));
+        Assert.Contains("created_to=", delta.Text("new_href"));
         var firstPage = open["problems"]!["items"]!.AsArray();
         Assert.Equal(25, firstPage.Count);
         Assert.DoesNotContain(firstPage, row => row.Number("id") is 2 or 5 or 9);
@@ -365,12 +383,21 @@ public sealed partial class HomeSummaryEndpointTests
                 Assert.Equal(open["problems"].Number(count), subsequent["problems"].Number(count));
         var secondPage = second["problems"]!["items"]!.AsArray();
         Assert.Empty(firstPage.Select(row => row.Number("id")).Intersect(secondPage.Select(row => row.Number("id"))));
-        var topChanges = open["changes"]!["items"]!.AsArray();
+        var topChanges = Assert.IsType<JsonObject>(open["changes"])["items"]!.AsArray();
         Assert.Equal(10, topChanges.Count);
         Assert.Contains(topChanges, row => row.Text("name") == "test-account" && row.Number("event_id") == 4720);
         Assert.DoesNotContain(topChanges, row => row.Text("name") == "test-group" && row.Number("event_id") == 4728);
         Assert.Contains("security.events.chains", open["changes"].Text("href"));
         Assert.Contains("period=custom", open["changes"].Text("href"));
+
+        await PostCollectionPostgres.Sql(db, "update auth_users set is_active=false where id=2", ct);
+        var oneOperator = await Read(1, openQueue: true, page: 2, filter: "unassigned");
+        Assert.Equal(1, oneOperator.Number("active_operator_count"));
+        Assert.Null(oneOperator["problems"]!["unassigned_count"]);
+        Assert.Equal(1, oneOperator["problems"].Number("page"));
+        var visible = oneOperator["problems"]!["items"]!.AsArray();
+        Assert.Equal(firstPage.Select(row => row.Number("id")), visible.Select(row => row.Number("id")));
+        Assert.All(visible, row => Assert.Null(row!["assignee"]));
     }
 
     private sealed class ProfiledHomeRepository(HomeSummaryRepository repository,

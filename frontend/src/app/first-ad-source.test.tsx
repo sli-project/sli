@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { chooseOption } from "../../tests/select-option";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -58,7 +59,7 @@ beforeEach(() => {
   vi.spyOn(api, "setupStatus").mockResolvedValue(emptySetup);
   vi.spyOn(api, "homePeriod").mockResolvedValue({
     domains: [], domain_id: null, from: checkedAt, to: checkedAt, updated_at: checkedAt,
-    problems: null, controllers: null, changes: null,
+    active_operator_count: null, since_previous_login: null, problems: null, weak_spots: null, changes: null,
   });
   vi.spyOn(api, "reportV2Definition").mockImplementation(async key => definition(key));
   vi.spyOn(api, "reportV2Data").mockRejectedValue(new ApiResponseError(403, "domain_scope_denied"));
@@ -170,8 +171,8 @@ it("replaces the old domain alias after choosing a different domain in the compu
   });
   try {
     show(<ReportRenderer reportKey="ad.computers.v6"/>);
-    const selector = await screen.findByRole("combobox", { name: "Domain" });
-    fireEvent.change(selector, { target: { value: "8" } });
+    const selector = await screen.findByLabelText("Domain", { selector: "button" });
+    await chooseOption(selector, "8");
     await waitFor(() => {
       const query = new URLSearchParams(window.location.search);
       expect(query.get("domain")).toBe("8");

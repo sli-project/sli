@@ -27,13 +27,15 @@ export type HomeProblem = {
   object_href: string | null;
 };
 
-export type HomeController = {
-  id: number;
-  name: string | null;
-  at: string | null;
-  passed: number;
-  failures: { key: "dns" | "sysvol" | "services" | "connectivity" | "advertising" | "time" | "os"; actual: string | null }[];
-  href: string | null;
+export type HomeCheckReport = "ad.infrastructure" | "ad.users.v2" | "ad.computers.v6" | "ad.gpo.v2";
+
+export type HomeWeakSpot = {
+  id: string;
+  label: string | null;
+  label_key?: "reports.v2.ad.gpo.v2.reasons.version_mismatch.title" | null;
+  count: number;
+  report: HomeCheckReport;
+  href: string;
 };
 
 export type HomeChange = {
@@ -53,6 +55,14 @@ export type HomePeriod = {
   from: string;
   to: string;
   updated_at: string;
+  active_operator_count: number | null;
+  since_previous_login: {
+    from: string;
+    to: string;
+    new_count: number;
+    closed_count: number;
+    new_href: string;
+  } | null;
   problems: {
     open_count: number | null;
     unassigned_count: number | null;
@@ -61,6 +71,6 @@ export type HomePeriod = {
     items: HomeProblem[];
     href: string | null;
   } | null;
-  controllers: { items: HomeController[]; href: string | null } | null;
+  weak_spots: { items: HomeWeakSpot[]; failed: HomeCheckReport[] } | null;
   changes: { items: HomeChange[]; href: string | null } | null;
 };

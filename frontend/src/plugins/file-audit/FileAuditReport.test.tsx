@@ -81,6 +81,21 @@ it.each([
   expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
 });
 
+it("applies a custom period from the header and preserves an unchanged exact boundary", async () => {
+  const from = "2026-10-23T11:59:37.125Z";
+  const to = "2026-10-24T11:59:37.125Z";
+  window.history.replaceState({}, "", `/app/report/file-audit.actions?${new URLSearchParams({ period: "custom", from, to })}`);
+  mount();
+  await screen.findByRole("table");
+  await userEvent.click(screen.getByLabelText(new RegExp(t("period.custom")), { selector: "summary" }));
+  expect((screen.getByLabelText(t("period.from")) as HTMLInputElement).value).toBe(from.slice(0, -1).replace("T", " "));
+  fireEvent.change(screen.getByLabelText(t("period.to")), { target: { value: "2026-10-24 12:30" } });
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("to")).toBe(to);
+  await userEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
+  await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("to")).toBe("2026-10-24T12:30:00.000Z"));
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("from")).toBe(from);
+});
+
 it("renders an aggregate, qualified account and Problem link, and expands inside the table", async () => {
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
     id: "group", path: "C:\\Fixture\\<name>", operation: "permissions", source_name: "FS.example.test",
@@ -115,7 +130,7 @@ it("sends typed searches to the server and resets the cursor when using 200 rows
   expect(table.getByText("192.0.2.1")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: t("table.next") }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBe("synthetic-cursor"));
-  fireEvent.change(await screen.findByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  await userEvent.click(screen.getByRole("radio", { name: "200" }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("limit")).toBe("200"));
   expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBeNull();
   fireEvent.change(await screen.findByRole("searchbox", { name: t("file-audit.screen.path_search") }), { target: { value: "filename.txt" } });

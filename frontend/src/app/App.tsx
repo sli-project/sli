@@ -183,13 +183,11 @@ function ShellContent() {
       <div className="sli-ds-shell__scrim" aria-hidden="true" onClick={() => { setMobileMenuOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}/>
       <header className="sli-ds-shell__topbar">
         <button className="sli-ds-button sli-ds-shell__menu-button" data-variant="ghost" ref={mobileMenuButtonRef} type="button" aria-label={t("shell.menu.open")} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Icon name="menu"/></button>
-        {isProblemsQueue ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}><ol>
-          <li>{t("problems.queue.crumb")}</li><li aria-current="page">{t("problems.queue.crumbTitle")}</li>
-        </ol></nav> : <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
+        {!isProblemsQueue ? <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
           <Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/>
           <input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/>
-        </form>}
+        </form> : null}
         {isProblemsQueue && agents && agents.state !== "unavailable" && Number.isFinite(agents.active_agents) && Number.isFinite(agents.current_agents)
           ? <span className="sli-ds-shell__indicator">{t("problems.queue.agentStatus", { current: agents.current_agents, total: agents.active_agents })}</span> : null}
         <div className="sli-ds-shell__profile" ref={profileMenuRef}>

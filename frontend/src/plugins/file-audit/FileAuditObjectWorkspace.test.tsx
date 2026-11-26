@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -51,10 +52,10 @@ it("pages and searches the entire retained ACL and preserves unknown ACE types",
   mount();
   const acl = within(await screen.findByRole("region", { name: t("file-audit.acl.ntfs") }));
   expect(acl.getAllByRole("row")).toHaveLength(51);
-  fireEvent.change(acl.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
+  fireEvent.click(acl.getByRole("radio", { name: "200" }));
   expect(acl.getAllByRole("row")).toHaveLength(127);
   fireEvent.change(acl.getByLabelText(t("file-audit.acl.search")), { target: { value: "S-1-5-21-100000001-200000002-300000003-1125" } });
-  fireEvent.change(acl.getByLabelText(t("file-audit.acl.filter")), { target: { value: "inherited" } });
+  await chooseOption(acl.getByLabelText(t("file-audit.acl.filter"), { selector: "button" }), "inherited");
   expect(acl.getAllByRole("row")).toHaveLength(2);
   expect(acl.getByText("Тип XA")).toBeTruthy();
   await userEvent.click(acl.getByText("S-1-5-21-100000001-200000002-300000003-1125"));

@@ -20,6 +20,8 @@ import { apiParams, defaultValues, filterFields, searchFromValues, valuesFromSea
 
 const categories = ["all", "authentication", "failures", "service"] as const;
 const sizes = [25, 50, 100, 200];
+const kerberosCodes = ["4768", "4769", "4770", "4771", "4772", "4773"] as const;
+const logonTypeCodes = ["2", "3", "4", "5", "7", "8", "9", "10", "11", "12", "13"] as const;
 type JournalTextKey<T> = T extends `reports.v2.events.journal.${infer Key}` ? Key : never;
 const journalText = (key: JournalTextKey<Parameters<typeof t>[0]>, params?: Record<string, string | number>) =>
   t(`reports.v2.events.journal.${key}`, params);
@@ -33,11 +35,14 @@ type JournalRow = {
   first: string;
   last: string;
   count: number;
+  sourceCount: number;
   expandable: boolean;
   account: string;
+  reportedAccount: string;
   initiator: string;
   computer: string;
   address: string;
+  workstation: string;
   result: string;
   channel: string;
   logonType: string;
@@ -50,17 +55,27 @@ function decode(row: Record<string, unknown>): JournalRow {
   const id = value("id");
   const messages = row.presentation_messages as Record<string, { code?: string }> | undefined;
   const account = value("journal_account");
+  const code = value("event_id");
+  const action = value("journal_action");
+  const kerberos = kerberosCodes.find((eventCode) => eventCode === code);
+  const rawLogonType = value("logon_type");
+  const logonType = logonTypeCodes.find((type) => type === rawLogonType);
+  const count = typeof row.event_count === "number" ? row.event_count : 1;
+  let title = messages?.title_text?.code === "events.unknown_type" ? "" : value("title_text");
+  if (action === "failed_logon" || action === "privileged_logon") title = journalText(`action.${action}`);
+  else if (kerberos && title) title = journalText(`event.${kerberos}`);
   return {
     key: id || `${value("day")}:${value("summary_key") || [value("time_created_utc"), value("event_id"), account, value("journal_computer")].join(":")}`,
     id: /^[1-9][0-9]*$/.test(id) ? id : undefined,
-    code: value("event_id"), title: messages?.title_text?.code === "events.unknown_type" ? "" : value("title_text"),
+    code, title,
     time: value("time_created_utc"),
     first: value("first_seen_utc"), last: value("last_seen_utc"),
-    count: typeof row.event_count === "number" ? row.event_count : 1,
+    count, sourceCount: typeof row.journal_source_count === "number" ? row.journal_source_count : count,
     expandable: row.journal_expandable === true,
-    account, initiator: value("journal_initiator"),
+    account, reportedAccount: value("journal_reported_account"), initiator: value("journal_initiator"),
     computer: value("journal_computer"), address: value("journal_address"), result: value("journal_result"),
-    channel: value("channel"), logonType: value("logon_type"),
+    workstation: value("journal_workstation"), channel: value("channel"),
+    logonType: logonType ? journalText(`logon_type.${logonType}`) : "",
     findingId: /^[1-9][0-9]*$/.test(value("journal_finding_id")) ? value("journal_finding_id") : "",
     changeDomain: /^[1-9][0-9]*$/.test(value("journal_change_domain")) ? value("journal_change_domain") : "",
   };
@@ -127,10 +142,14 @@ function RepeatRows({ params, row, columns, onSelect }: {
     getNextPageParam: (last) => last.next_cursor || undefined,
     retry: false,
   });
-  const rows = repeats.data?.pages[page]?.items.map(decode) ?? [];
+  const rows = repeats.data?.pages[page]?.items.map((item) => {
+    const member = decode(item);
+    return { ...member, account: member.reportedAccount || member.account };
+  }) ?? [];
+  const visibleColumns = columns.filter(({ key }) => key === "account" || key === "time" || key === "code" || distinguishes(rows, key));
   if (repeats.isLoading) return <span role="status">{t("state.loading")}</span>;
   return <>
-    {rows.length ? <DataTable compact caption={journalText("expand")} rows={rows} rowKey={(item) => item.key} columns={columns}
+    {rows.length ? <DataTable compact caption={journalText("expand")} rows={rows} rowKey={(item) => item.key} columns={visibleColumns}
       onRowClick={onSelect} stickyHeader={false}
       showFooter={page > 0 || repeats.hasNextPage}
       total={repeats.data?.pages[0]?.filtered_count}
@@ -175,8 +194,10 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
   const related = earlier.data?.items.map(decode) ?? [];
   const facts = [
     { label: journalText("account"), text: row.account, value: pivotLink(row.account, "account", link, pivot) },
+    { label: journalText("reported_account"), text: row.reportedAccount !== row.account ? row.reportedAccount : "" },
     { label: journalText("initiator"), text: row.initiator },
-    { label: journalText("address"), text: row.address, value: pivotLink(row.address, "address", link, pivot) },
+    { label: journalText("address"), text: row.address || row.workstation,
+      value: row.address ? pivotLink(row.address, "address", link, pivot) : row.workstation },
     { label: journalText("computer"), text: row.computer, value: pivotLink(row.computer, "computer", link, pivot) },
     { label: journalText("logon_type"), text: row.logonType },
     { label: journalText("authentication"), text: typeof event?.event_data?.AuthenticationPackageName === "string" ? event.event_data.AuthenticationPackageName : "" },
@@ -214,11 +235,20 @@ function JournalDetail({ row, params, zone, onClose, onSelect, onExpand, inline,
         ]}/>
     </section> : null}
     {earlier.isError ? <div role="alert">{journalText("before_failed")}{" "}<Button onClick={() => void earlier.refetch()}>{t("state.retry")}</Button></div> : null}
-    {onExpand ? <Button onClick={onExpand}>{journalText("source_count", { count: formatNumber(row.count) })}</Button> : null}
+    {onExpand ? <Button onClick={onExpand}>{journalText("source_count", { count: formatNumber(row.sourceCount) })}</Button> : null}
     <div className="sli-ds-header__meta">
       {(["account", "address", "computer"] as const).map((type) => row[type] ? <span key={type}>{pivotLink(row[type], type, link, pivot, journalText(`pivot.${type}`))}</span> : null)}
     </div>
   </DetailDrawer>;
+}
+
+function distinguishes(rows: JournalRow[], key: string) {
+  if (key === "title") return true;
+  if (key === "problem") return rows.some((row) => row.findingId);
+  const value = (row: JournalRow) => key === "address" ? row.address || row.workstation
+    : key === "time" ? [row.last || row.time, row.count > 1 ? row.first : ""].join("|")
+    : row[key as keyof JournalRow];
+  return rows.some((row) => value(row) !== value(rows[0]));
 }
 
 function journalRouteValues(definition: ReportDefinitionDto, routeSearch: string): FilterValues {
@@ -339,7 +369,8 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
       </span> },
     { key: "account", label: journalText("account"), render: (row) => pivotLink(row.account, "account", link, pivot) },
     { key: "initiator", label: journalText("initiator"), mobile: false, render: (row) => pivotLink(row.initiator, "account", link, pivot) },
-    { key: "address", label: journalText("address"), mobile: false, render: (row) => pivotLink(row.address, "address", link, pivot) },
+    { key: "address", label: journalText("address"), mobile: false,
+      render: (row) => row.address ? pivotLink(row.address, "address", link, pivot) : row.workstation || EMPTY_VALUE },
     { key: "logonType", label: journalText("logon_type"), mobile: false, render: (row) => row.logonType || EMPTY_VALUE },
     { key: "computer", label: journalText("computer"), render: (row) => pivotLink(row.computer, "computer", link, pivot) },
     { key: "result", label: journalText("result"), render: (row) => <Result value={row.result}/> },
@@ -348,6 +379,10 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
       href={`/app/report/security.problems?id=${row.findingId}`} onClick={(event) => event.stopPropagation()}>
       {journalText("problem_number", { id: row.findingId })}</a> : null },
   ];
+  const varying = first && "journal_varying_columns" in first && Array.isArray(first.journal_varying_columns) ? first.journal_varying_columns : undefined;
+  const visibleColumns = columns.filter(({ key }) => key === "title" || key === "problem" || !varying
+    ? distinguishes(rows, key)
+    : varying.includes(key));
   const denied = first?.state === "denied" || data.error instanceof ApiResponseError && data.error.status === 403;
   if (denied) return <ReportDenied reportKey={definition.key} page/>;
   const drawer = selected ? <JournalDetail row={selected} params={fixedParams} zone={timeZone}
@@ -362,7 +397,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   let content: ReactNode;
   if (!rows.length) content = firstAdSource ? <FirstAdSource/>
     : <p role="status">{journalText(first?.state === "not_collected" ? "not_loaded" : "empty")}</p>;
-  else content = <DataTable compact caption={definition.title} rows={rows} rowKey={(row) => row.key} columns={columns}
+  else content = <DataTable compact caption={definition.title} rows={rows} rowKey={(row) => row.key} columns={visibleColumns}
     sort={{ field: "time", direction: "desc" }} selectedKey={selected?.key} onRowClick={select} total={total} footerControls={footer}
     expanded={(row) => expanded === row.key && row.id ? <RepeatRows params={fixedParams} row={row} columns={columns} onSelect={select}/> : null}
     pagination={{ start: page * size + 1, busy: data.isFetchingNextPage,
