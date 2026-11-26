@@ -306,7 +306,7 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             return openQueue
                 ? reads.Read(HomePeriodSql.OpenQueueChanges(source, scope.Sql), ct,
                     [.. args, ("queue_access", queueIds.Length > 0), ("assignment", false), ("event_identity", eventIdentity),
-                     ("kinds", AdSecurity.ChangeEventIds().Where(id => id is not (4723 or 4724)).ToArray())])
+                     ("kinds", AdSecurity.ChangeEventIds().Where(id => id is not (4723 or 4724)).Distinct().ToArray())])
                 : reads.Read(HomePeriodSql.EventChanges(source, scope.Sql), ct, args);
         }
 

@@ -156,6 +156,28 @@ public sealed partial class HomeSummaryEndpointTests
     }
 
     [Fact]
+    public async Task Aborted_request_ignores_postgres_query_cancellation()
+    {
+        var config = new ConfigurationBuilder().Build();
+        var domains = new Domains(false) { Error = new Npgsql.PostgresException("query canceled", "ERROR", "ERROR", "57014") };
+        using var services = new ServiceCollection().AddLogging().AddSingleton(new TransportGate(config))
+            .AddSingleton<IPrincipalAuthenticator>(new Authentication()).AddSingleton<IDomainAccessService>(new Access(true))
+            .AddSingleton<IHomeSummaryAccess>(new Reports()).AddSingleton<IDomainRepository>(domains)
+            .AddSingleton<IHomeSummaryRepository>(new Rows()).AddSingleton<HomeSummaryReaders>().AddSingleton<HomeSummaryService>()
+            .BuildServiceProvider();
+        using var abort = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        abort.Cancel();
+        var context = new DefaultHttpContext { RequestServices = services, RequestAborted = abort.Token };
+        context.Request.Path = "/api/v1/home/summary";
+        context.Response.Body = new MemoryStream();
+
+        await HomeSummaryEndpoints.HandleAsync(context);
+
+        Assert.Equal(0, context.Response.Body.Length);
+        Assert.Equal(200, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Unavailable_vpn_package_removes_home_contribution_without_cache_reset()
     {
         using var files = new Sli.Server.Tests.Access.ReportCatalogLifecycleTests.CatalogFiles();

@@ -625,6 +625,8 @@
     "config/postgres_migrations/418_password_threshold_rules.sql": "07d6df70d50a29f59d93410773a0c1260b46bc508e567c3dfa3e29ac0468b5c8",
     "config/postgres_migrations/420_password_rule_identity.rollback.sql": "cd6e9933bd911553d5e7a49ee0cdd1d567d82ea853924dc396a6d20c23e497f8",
     "config/postgres_migrations/420_password_rule_identity.sql": "415b4684896f22a4a3c065c82ee74434729353c778c22a113c4e8c556945242f",
+    "config/postgres_migrations/424_home_read_indexes.rollback.sql": "ce79ddab8bd6ccaab3a100691ed5c68e010b0e8c1c3bb3b8d776bc28a04667b3",
+    "config/postgres_migrations/424_home_read_indexes.sql": "2e1a65d14e9310c075be3b8c591065bd09ff959bf0329e49cc8d331d2a07be0c",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
