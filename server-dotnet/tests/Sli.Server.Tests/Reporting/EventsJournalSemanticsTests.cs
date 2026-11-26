@@ -53,12 +53,14 @@ public sealed class EventsJournalSemanticsTests
                 new Dictionary<string,string?> { ["Sli:Storage:ShortEventReads"]="false" }).Build()); var repository = new ReportFixture.FactsRepo(Facts);
             Reader = new(runner, repository, Evidence, new BuiltinReportExports(runner, repository, null!, Evidence));
         }
-        internal Task<JsonObject> Query(int limit = 50)
+        internal Task<JsonObject> Query(int limit = 50, bool collapse = false)
         {
             var access = new ReportEligibility().Compose(Facts, new CapabilityComposer().Compose(Facts));
+            var parameters = O("""{"period":{"from_utc":"2026-10-01T00:00:00Z","to_utc":"2026-10-02T00:00:00Z"}}""");
+            if (collapse) parameters["collapse"] = "on";
             var c = new ReportQueryContext(Definition, access, new Principal("session", 7, "admin"),
-                O("""{"period":{"from_utc":"2026-10-01T00:00:00Z","to_utc":"2026-10-02T00:00:00Z"}}"""),
-                new(null, limit, "UTC", null, "desc", null), ReportScope.All, null, "view", _ => true, access.Reports.Single().Grants);
+                parameters, new(null, limit, "UTC", null, "desc", null), ReportScope.All, null, "view", _ => true,
+                access.Reports.Single(report => report.ReportKey == "events.explorer").Grants);
             return Reader.QueryAsync(c, TestContext.Current.CancellationToken);
         }
     }
@@ -80,13 +82,17 @@ public sealed class EventsJournalSemanticsTests
                 ["definition_json"] = JsonSerializer.SerializeToNode(new { columns = Columns, filters = Array.Empty<object>(), sort = Array.Empty<object>(), actions = new[] { "view" } }),
                 ["fields_json"] = JsonSerializer.SerializeToNode(Columns.Select(c => new { key = c, category = Categories.GetValueOrDefault(c, "technical") }))
             }]);
+            if (sql == "set local jit=off") return Task.FromResult<IReadOnlyList<JsonObject>>([]);
             Assert.Contains("from event_hot h", sql);
+            if (sql.Contains("as items from meta"))
+                return Task.FromResult<IReadOnlyList<JsonObject>>([new() { ["items"] = new JsonArray(Rows.Select(r => r.DeepClone()).ToArray()) }]);
             return Task.FromResult<IReadOnlyList<JsonObject>>(Rows.Select(r => r.DeepClone().AsObject()).ToArray());
         }
     }
     sealed class EvidenceDatabase : ISemanticDatabase, ISemanticSession
     {
         internal JsonObject[] Rows = [Source()];
+        internal JsonObject[] Links = [];
         internal Exception? Error;
         internal readonly List<(string Sql, object?[] Values)> Queries = [];
         internal int Opens;
@@ -96,12 +102,57 @@ public sealed class EventsJournalSemanticsTests
         {
             Queries.Add((sql, values));
             if (Error is not null) throw Error;
-            return Task.FromResult(new JsonArray(Rows.Select(r => (JsonNode)r.DeepClone()).ToArray()));
+            var result = values.Length == 2 && values[0] is long[] ids
+                ? Links.Where(link => ids.Contains(link["event_db_id"]!.GetValue<long>()))
+                : Rows.AsEnumerable();
+            return Task.FromResult(new JsonArray(result.Select(r => r.DeepClone()).ToArray()));
         }
         public Task CommitAsync(CancellationToken ct) => throw new InvalidOperationException("read_only");
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
     static JsonObject Row(JsonObject body) => Assert.Single(body["items"]!.AsArray())!.AsObject();
+
+    [Theory]
+    [InlineData(true, true, 41)]
+    [InlineData(true, false, 32)]
+    [InlineData(false, true, null)]
+    public async Task Group_links_use_admitted_members_and_require_queue_access(bool queue, bool otherServer, int? finding)
+    {
+        var facts = Facts();
+        if (!otherServer)
+            facts = facts with
+            {
+                IsOwner = false,
+                DirectCapabilities = [.. facts.DirectCapabilities, ReportFixture.J("""
+                    {"capability_key":"evidence.exact","effect":"deny","scope_json":{"kind":"server","ids":[2]}}
+                    """)]
+            };
+        if (queue)
+            facts = facts with
+            {
+                Definitions = [.. facts.Definitions, ReportFixture.J("""
+                    {"report_key":"security.queue","version":1,"dataset_version":1,"definition_json":{"actions":["view"]},"actions_json":["view"],"fields_json":[{"category":"security"}]}
+                    """)],
+                ReportAssignments = [.. facts.ReportAssignments, ReportFixture.J("""
+                    {"report_key":"security.queue","effect":"allow","allowed_actions":["view"],"field_categories":["security"],"scope_json":{"kind":"all"}}
+                    """)]
+            };
+        var f = new Fixture(facts);
+        f.Page.Rows = [O("""
+            {"id":5,"event_id":4625,"channel":"Security","time_created_utc":"2026-10-01T12:00:00Z",
+             "server_id":1,"domain_id":2,"provider_name":"Microsoft-Windows-Security-Auditing",
+             "journal_expandable":true,"_journal_members":[[5,1],[4,1],[3,2]]}
+            """)];
+        f.Evidence.Links = [
+            O("""{"event_db_id":4,"finding_id":32,"priority":1}"""),
+            O("""{"event_db_id":3,"finding_id":41,"priority":0}"""),
+        ];
+        var row = Row(await f.Query(collapse: true));
+        Assert.Equal((long?)finding, row["journal_finding_id"]?.GetValue<long>());
+        Assert.Null(row["_journal_origin"]);
+        Assert.Null(row["_journal_members"]);
+        if (!queue) Assert.Empty(f.Evidence.Queries);
+    }
 
     [Fact]
     public void Domain_change_link_requires_a_supported_source_and_destination_access()

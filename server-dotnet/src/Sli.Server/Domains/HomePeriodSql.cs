@@ -4,6 +4,26 @@ namespace Sli.Server.Domains;
 
 internal static class HomePeriodSql
 {
+    internal const string OperatorContext = """
+        select (select count(*) from auth_users u
+                where u.is_active and not u.is_service and u.role in ('admin','operator')
+                  and not exists (select 1 from auth_api_keys k where k.report_subject_id=u.id)) as active_operator_count,
+               (select previous_login_at from auth_users where @session and id=@user) as previous_login_at
+        """;
+
+    internal static readonly string SincePreviousLogin = $$"""
+        select count(*) filter (where findings.created_at>=@since and findings.created_at<@now) as new_count,
+               count(*) filter (where findings.closed_at>=@since and findings.closed_at<@now) as closed_count
+        {{HomeSummarySql.Population}}
+        where ((findings.created_at>=@since and findings.created_at<@now)
+                or (findings.closed_at>=@since and findings.closed_at<@now))
+          and is_semantic_finding_published_v1(findings.id)
+          and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
+          and not ({{ProblemRepository.Accepted}})
+          and not ({{ProblemRepository.Suppressed}})
+          and semantic_finding_in_domains_v265(findings.id,@ids)
+        """;
+
     // A single admitted population serves both the period totals and the current queue count.
     internal static readonly string Problems = $$"""
         with population as materialized (
@@ -96,7 +116,7 @@ internal static class HomePeriodSql
                findings.source,findings.fingerprint,findings.repeat_count,
                coalesce(findings.last_seen_utc,findings.first_seen_utc)::timestamptz as last_seen,
                ({{HomeSummarySql.EffectiveStatus}}) as status,
-               case when @identity then nullif(btrim(findings.assigned_to),'') end as assignee
+               case when @assignment then nullif(btrim(findings.assigned_to),'') end as assignee
         {{HomeSummarySql.Population}}
         where ({{HomeSummarySql.EffectiveStatus}}) in ('new','confirmed','repeated','active','review')
           and is_semantic_finding_published_v1(findings.id)
@@ -120,18 +140,18 @@ internal static class HomePeriodSql
                    bool_or(status in ('active','review')) as in_work,
                    count(assignee)=0 as unassigned,
                    case when count(*)=count(assignee) and min(assignee)=max(assignee) then min(assignee) end as assignee,
-                   case when not @identity then 'unknown' when count(assignee)=0 then 'unassigned'
+                   case when not @assignment then 'unknown' when count(assignee)=0 then 'unassigned'
                         when count(*)=count(assignee) and min(assignee)=max(assignee) then 'assigned' else 'mixed' end as assignee_state
             from ranked group by key
         ), totals as (
             select count(*) as open_count,
-                   case when @identity then count(*) filter(where unassigned) end as unassigned_count,
+                   case when @assignment then count(*) filter(where unassigned) end as unassigned_count,
                    count(*) filter(where in_work) as in_work_count,
-                   count(*) filter(where @queue='all' or (@queue='unassigned' and @identity and unassigned)
+                   count(*) filter(where @queue='all' or (@queue='unassigned' and @assignment and unassigned)
                                                     or (@queue='in_work' and in_work)) as filtered_count
             from groups
         ), page as (
-            select * from groups where @queue='all' or (@queue='unassigned' and @identity and unassigned)
+            select * from groups where @queue='all' or (@queue='unassigned' and @assignment and unassigned)
                                                     or (@queue='in_work' and in_work)
             order by importance,last_seen desc nulls last,id desc
             limit @limit offset (select least(@offset,greatest((filtered_count-1)/@limit,0)*@limit) from totals)
