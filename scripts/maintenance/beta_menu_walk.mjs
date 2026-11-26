@@ -22,6 +22,7 @@ Object.assign(testEnv, {
   ConnectionStrings__Sli: 'Host=sli-tests.invalid;Database=sli_test_unreachable;Username=sli_test',
   SLI_MENU_WALK_RESULTS: results,
 });
+if (process.env.SLI_MENU_WALK_ONLY) testEnv.SLI_MENU_WALK_ONLY = process.env.SLI_MENU_WALK_ONLY;
 if (process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH) testEnv.SLI_TEST_CHROMIUM_EXECUTABLE_PATH = process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH;
 async function run(command, argv, env = process.env) {
   await new Promise((ok, fail) => {
@@ -32,8 +33,8 @@ async function run(command, argv, env = process.env) {
 }
 try {
   await mkdir(results, { recursive: true });
-  await writeFile(resolve(results, 'menu-walk.md'), 'Обход не завершён: подготовка тестовой сборки и базы.\n');
-  await writeFile(resolve(results, 'menu-walk.json'), '[]\n');
+  if (!testEnv.SLI_MENU_WALK_ONLY) await writeFile(resolve(results, 'menu-walk.md'), 'Обход не завершён: подготовка тестовой сборки и базы.\n');
+  if (!testEnv.SLI_MENU_WALK_ONLY) await writeFile(resolve(results, 'menu-walk.json'), '[]\n');
   await run(process.execPath, ['frontend/node_modules/typescript/bin/tsc', '-b', 'frontend']);
   await run(process.execPath, ['frontend/node_modules/vite/bin/vite.js', 'build', 'frontend', '--config', 'frontend/vite.config.ts']);
   await run(dotnet, ['build', 'server-dotnet/Sli.Server.slnx']);

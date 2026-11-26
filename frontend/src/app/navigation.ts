@@ -26,7 +26,8 @@ const betaPlugins = new Set(betaEntries.flatMap((entry) => entry.plugin_id ? [en
 export function previewModulePath(path: string): boolean {
   const plugin = /^\/(?:admin\/plugins|extensions)\/([^/]+)/.exec(path);
   if (plugin) return declarations.preview_plugins.includes(plugin[1]);
-  return /^\/reports?\/(?:file-audit|workstations|vpn|sigma)\./.test(path);
+  return /^\/reports?\/(?:workstations|vpn|sigma)\./.test(path)
+    && !betaReportPaths.has(path.replace(/^\/reports\//, "/report/").replace(/\/+$/, ""));
 }
 
 function outsideBeta(path: string): boolean {
@@ -96,6 +97,10 @@ export function buildNavigation(access: NavAccess, registry?: NavigationRegistry
   const enabled = new Set(registry.enabled_plugins);
   const order = (id: string) => betaOrder.get(id) ?? (registry.modules_preview ? previewOrder.get(id) : undefined);
   const destination = (entry: NavigationEntryDto): NavigationEntryDto => {
+    if (entry.id === "file-audit" && !access.reports.has("file-audit.actions")) {
+      const allowed = entry.views?.find(view => view.reports?.some(key => access.reports.has(key)));
+      if (allowed) return { ...entry, path: allowed.path };
+    }
     if (entry.path === "/admin/language-time") return { ...entry, path: "/settings" };
     return entry;
   };
@@ -121,5 +126,6 @@ export function buildNavigation(access: NavAccess, registry?: NavigationRegistry
 /** A path is active for its own page and its sub-pages; "/" only matches itself. */
 export function isActivePath(itemPath: string, pathname: string): boolean {
   if (itemPath === "/") return pathname === "/";
+  if (itemPath.startsWith("/report/file-audit.")) return /^\/reports?\/file-audit\./.test(pathname);
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }

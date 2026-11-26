@@ -122,7 +122,7 @@ describe("AppShell", () => {
     const regions = within(nav).getAllByRole("region");
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
-      "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
+      "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2", "/report/file-audit.actions", "/report/workstations.overview",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
@@ -143,7 +143,7 @@ describe("AppShell", () => {
     }
   });
 
-  it.each(["/admin/plugins/sli.file-audit", "/admin/plugins/sli.sigma", "/report/vpn.connections"])(
+  it.each(["/admin/plugins/sli.sigma", "/report/vpn.connections"])(
     "keeps the unavailable page at %s and mounts the route after server opt-in", async (path) => {
       state.access = adminAccess;
       const client = await renderShell(path, false, false);
@@ -182,7 +182,7 @@ describe("AppShell", () => {
   });
 
   it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access", "sli.workstations"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
-    registryState.preview = true;
+    registryState.preview = id === "sli.remote-access";
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
     await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());

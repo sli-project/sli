@@ -32,7 +32,8 @@ async function readResponse(page, step, path, action, accepts = () => true) {
     const response = outcome.response;
     assert.equal(response.status(), 200, `Expected HTTP 200 from ${path}`);
     console.log(`menu-walk: FileServers ${step}; received HTTP ${response.status()}`);
-    return { body: await response.json(), params: new URL(response.url()).searchParams };
+    const body = await response.json();
+    return { body, params: new URL(response.url()).searchParams, milliseconds: Math.round(response.request().timing().responseEnd) };
   } catch (cause) {
     const error = new Error(`FileServers ${step}: ${phase} failed; expected GET ${path}: ${cause.message}`, { cause });
     error.fileServers = { step, phase, expected_api: path, observed: observed.slice(-10) };
@@ -95,13 +96,19 @@ export async function walkFileServers(page, { url, results, fixture }) {
 
 async function verifyFileServers(page, { url, directory, fixture }) {
   const evidence = [];
-  const screenshot = async (name, claim) => {
+  const screenshot = async (name, measurement) => {
     await assertFullPage(page);
-    await page.screenshot({ path: join(directory, name), fullPage: true });
-    evidence.push({ screenshot: name, claim });
-    await writeFile(join(directory, 'checks.json'), JSON.stringify(evidence, null, 2));
+    const rows = await page.locator('main table tbody > tr').evaluateAll(nodes => nodes.filter(node => {
+      const box = node.getBoundingClientRect();
+      const scroll = node.closest('.sli-ds-table__scroll')?.getBoundingClientRect();
+      return box.height > 0 && box.bottom <= Math.min(innerHeight, scroll?.bottom ?? innerHeight) && box.top >= (scroll?.top ?? 0)
+        && !node.querySelector('td[colspan]');
+    }).length);
+    await page.screenshot({ path: join(directory, name) });
+    evidence.push({ name, rows, milliseconds: measurement.milliseconds });
+    console.log('file-servers screenshot ' + JSON.stringify(evidence.at(-1)));
   };
-  const initial = new URL('app/report/file-audit.overview', url);
+  const initial = new URL('app/report/file-audit.actions', url);
   initial.search = new URLSearchParams({
     source_kind: 'server', source_instance_id: fixture.source_instance_id,
     period: 'custom', from: fixture.from_utc, to: fixture.to_utc,
@@ -109,7 +116,13 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   }).toString();
   console.log('menu-walk: FileServers resource → saved observations → full-page ACL → comparison');
 
-  let overview = await readResponse(page, 'open resource overview', reportPath('overview'), () => page.goto(initial.href));
+  const initialActions = await readResponse(page, 'open default Actions', reportPath('actions'), () => page.goto(initial.href));
+  await expect(page.getByRole('tab', { name: 'Действия', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Ресурсы', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Права', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByRole('link', { name: 'Файловые серверы', exact: true })).toHaveCount(1);
+  const overviewTab = page.getByRole('tab', { name: 'Ресурсы', exact: true });
+  let overview = await readResponse(page, 'open resources', reportPath('overview'), () => overviewTab.click());
   assertWindow(overview.params, fixture, false);
   const rootRow = () => page.getByRole('table').getByRole('row').filter({ hasText: fixture.path });
   await expect(rootRow()).toHaveCount(1);
@@ -123,7 +136,12 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(resource.permission_changes, fixture.event_count, 'The resource counter must count saved observations');
   await expect(rootRow().getByRole('link', { name: '7', exact: true })).toBeVisible();
   const resourceUrl = page.url();
-  await screenshot('01-resources.png', 'Authorized resource; seven retained 4670 observations; real API limit=200.');
+  await screenshot('01-resources.png', overview);
+  await readResponse(page, 'open permission checks', reportPath('permissions'),
+    () => page.getByRole('tab', { name: 'Права', exact: true }).click());
+  await expect(page.getByRole('table', { name: 'Права', exact: true })).toBeVisible();
+  await overviewTab.click();
+  await expect(rootRow()).toHaveCount(1);
 
   const changes = await readResponse(page, 'open observation count', reportPath('permission-changes'),
     () => rootRow().getByRole('link', { name: '7', exact: true }).click());
@@ -137,20 +155,15 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(groups[0].aggregate.boundary, 'inside');
   assert.equal(Date.parse(groups[0].aggregate.first_seen_utc), Date.parse(fixture.first_seen_utc));
   assert.equal(Date.parse(groups[0].aggregate.last_seen_utc), Date.parse(fixture.last_seen_utc));
-  const actions = page.getByRole('table', { name: 'Изменения прав и шар', exact: true });
+  const actions = page.getByRole('table', { name: 'Действия', exact: true });
   const actionRow = actions.locator('tbody > tr[data-clickable]');
   await expect(actionRow).toHaveCount(1);
-  const countColumn = await actions.getByRole('columnheader', { name: 'Наблюдений', exact: true })
-    .evaluate(header => header.cellIndex);
-  await expect(actionRow.locator(':scope > td').nth(countColumn)).toHaveText('7');
+  await expect(actionRow.getByText('×7', { exact: true })).toBeVisible();
   await actionRow.click();
-  await expect(page.getByText('Сохранённая группа наблюдений одного пути, субъекта, области и минуты.', { exact: true })).toBeVisible();
-  await expect(page.locator('button, a').filter({ hasText: /7 исходных|семь исходных/i })).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Сохранённая запись', exact: true })).toBeVisible();
-  await screenshot('04-actions.png', 'One retained group carries count=7 and its interval; its saved facts use the full workspace.');
+  await expect(actions.locator('tbody > tr > td[colspan]')).toBeVisible();
+  await screenshot('04-actions.png', changes);
+  assert.equal(initialActions.body.items.length, changes.body.items.length);
 
-  await page.getByRole('button', { name: 'К списку', exact: true }).click();
-  await expect(actions.locator('tbody > tr[data-clickable]')).toHaveCount(1);
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);
   await assertResourceReturn(page, resourceUrl);
@@ -176,7 +189,7 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   await expect(aceRows).toContainText(lastSid);
   await search.fill('');
   await expect(aceRows).toHaveCount(126);
-  await screenshot('02-permissions.png', 'Full-page NTFS ACL renders all 126 retained ACE at page size 200, alongside the independent SMB ACL.');
+  await screenshot('02-permissions.png', permissions);
 
   const compared = await readResponse(page, 'compare retained snapshots', detailPath,
     () => page.getByRole('button', { name: 'Сравнение снимков', exact: true }).click(),
@@ -205,7 +218,7 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(comparisonUrl.searchParams.get('snapshot_id'), fixture.snapshot_id);
   assert.equal(comparisonUrl.searchParams.get('compare_snapshot_id'), fixture.before_snapshot_id);
   assertWindow(comparisonUrl.searchParams, fixture);
-  await screenshot('03-comparison.png', 'Two compatible retained snapshots show an expanded before/after ACL difference.');
+  await screenshot('03-comparison.png', compared);
 
   await page.getByRole('link', { name: 'К списку', exact: true }).click();
   await expect(rootRow()).toHaveCount(1);

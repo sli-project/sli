@@ -1,22 +1,18 @@
-import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
-import { FactList, ReportLayout, StateView, Tabs, TabList, type ResultState } from "../../design-system";
+import { Button, FilterBar, ReportLayout, StateView, type ResultState } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t, type MessageKey } from "../../i18n";
 import { useEffectiveAccess } from "../../app/App";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
-import { withDomain } from "../../app/domain-navigation";
 import { FileAuditAclTable } from "./FileAuditAclTable";
 import { FileAuditComparison } from "./FileAuditComparison";
 import type { FileAuditDetailResult } from "./acl";
-import { fileAuditHref, tabTitle, type FileAuditTab } from "./report";
 
-const objectTabs = ["permissions", "permission-changes", "actions", "audit-state"] as const;
 const knownReasons = new Set(["snapshot_unavailable", "object_unavailable", "policy_incompatible", "source_generation_mismatch", "object_replaced", "object_type_mismatch", "path_mismatch", "same_snapshot", "acl_unavailable"]);
 // A browser handoff also carries navigation/domain context, which the detail API rejects.
-const detailQueryKeys = new Set(["period", "from", "to", "source_kind", "path", "include_nested", "employee", "share",
+const detailQueryKeys = new Set(["file_server_domain", "period", "from", "to", "source_kind", "path", "include_nested", "employee", "share",
   "operation", "show_service", "source_instance_id", "device_id", "tz", "limit"]);
 
 export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPath: initialPath, params: initialParams, backHref,
@@ -27,13 +23,13 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
   const initial = new URLSearchParams(window.location.search);
   const [snapshotId, setSnapshotId] = useState(initialSnapshot);
   const [path, setPath] = useState(initialPath);
-  const [tab, setTab] = useState<FileAuditTab>(initial.get("object_tab") === "audit-state" ? "audit-state"
-    : initial.get("object_tab") === "comparison" ? "permission-changes" : "permissions");
+  const [comparing, setComparing] = useState(initial.get("object_tab") === "comparison");
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [compareId, setCompareId] = useState(initial.get("compare_snapshot_id") ?? "");
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const params = new URLSearchParams([...new URLSearchParams(initialParams)].filter(([key]) => detailQueryKeys.has(key)));
   params.set("path", path); params.set("include_nested", "false");
-  if (compareId && tab === "permission-changes") params.set("compare_snapshot_id", compareId);
+  if (compareId && comparing) params.set("compare_snapshot_id", compareId);
   else params.delete("compare_snapshot_id");
   const canView = access?.reports?.some(report => report.report_key === "file-audit.permissions" && report.allowed) ?? false;
   const query = useQuery({ queryKey: ["report-v2", "file-audit", session, "acl", snapshotId, params.toString()],
@@ -56,30 +52,15 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
   };
   const selectObject = (nextPath: string) => { setPath(nextPath); setCopied("idle"); updateAddress({ object_path: nextPath }); };
   const openComparison = () => {
-    setTab("permission-changes");
+    if (comparing) { setComparing(false); updateAddress({ object_tab: null, compare_snapshot_id: null }); return; }
+    setComparing(true);
     const previous = compareId || (options[0] ? idOf(options[0]) : "");
     setCompareId(previous); updateAddress({ object_tab: "comparison", compare_snapshot_id: previous });
-  };
-  const scopedHref = (next: FileAuditTab) => {
-    const context = new URLSearchParams(params);
-    const comparison = detail?.comparison;
-    if (tab === "permission-changes" && comparison?.state === "available" && comparison.before && comparison.after) {
-      const observed = [comparison.before.snapshot.observed_at, comparison.after.snapshot.observed_at].sort((a, b) => Date.parse(a) - Date.parse(b));
-      if (observed[0] !== observed[1] && observed.every(value => Number.isFinite(Date.parse(value)))) {
-        context.set("period", "custom"); context.set("from", observed[0]); context.set("to", observed[1]);
-      }
-    }
-    return withDomain(fileAuditHref(next, context, undefined,
-      { path, include_nested: "false", return_to: `${window.location.pathname}${window.location.search}` }), window.location.search);
-  };
-  const selectTab = (next: string) => {
-    if (next === "actions" || next === "permission-changes") { window.location.assign(scopedHref(next)); return; }
-    setTab(next as FileAuditTab); updateAddress({ object_tab: next === "permissions" ? null : next });
   };
   const state: ResultState = denied ? "denied" : failed ? "error" : query.isFetching || query.isPending ? "loading"
     : !detail ? "not_collected" : "ok";
   const stateView = denied ? <ReportDenied reportKey="file-audit.permissions"/> : failed
-    ? <StateView state="error" onRetry={() => void query.refetch()}/> : <StateView state="not_collected" detail={t("file-audit.workspace.snapshot_missing")}/>;
+    ? <StateView state="error" detail={t("file-audit.screen.load_error", { subject: t("file-audit.workspace.snapshot") })} onRetry={() => void query.refetch()}/> : <StateView state="not_collected" detail={t("file-audit.workspace.snapshot_missing")}/>;
   const title = denied ? t("file-audit.title") : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
   const comparison = detail?.comparison;
   const unavailable = comparison?.reason && knownReasons.has(comparison.reason)
@@ -87,48 +68,77 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
   const copy = async () => {
     try { await navigator.clipboard.writeText(path); setCopied("copied"); } catch { setCopied("failed"); }
   };
-  return <div className="sli-file-audit sli-file-audit--object"><Tabs items={objectTabs.map(key => ({ key, label: tabTitle(key) }))} active={tab} onChange={selectTab}>
-    <ReportLayout title={title} subtitle={denied ? undefined : <span className="sli-file-audit__path">{path}</span>} tabbed state={state} stateView={stateView}
-      crumbs={[{ label: t("file-audit.title"), href: backHref }, ...(detail?.share.name ? [{ label: detail.share.name }] : [])]}
-      meta={detail && object ? <>{detail.snapshot.observed_at ? <span>{t("file-audit.workspace.snapshot")}: {formatCell(detail.snapshot.observed_at, "datetime")}</span> : null}
-        <span>{params.get("tz")}</span><span>{t("file-audit.workspace.owner")}: {object.owner_sid ?? "—"}</span></> : null}
+  const server = detail?.resource?.source_name?.slice(0, 256);
+  const share = detail?.share.name?.slice(0, 256);
+  const folders = [...new Set(objects.filter(row => row.object_type === "directory" && typeof row.path === "string").map(row => String(row.path)))];
+  const byParent = new Map<string | undefined, string[]>();
+  for (const folder of folders) {
+    const lower = folder.toLowerCase();
+    let parent: string | undefined;
+    for (const candidate of folders) {
+      if (candidate !== folder && lower.startsWith(candidate.replace(/\\+$/, "").toLowerCase() + "\\")
+          && (!parent || candidate.length > parent.length)) parent = candidate;
+    }
+    byParent.set(parent, [...(byParent.get(parent) ?? []), folder]);
+  }
+  const folderList = (parent?: string) => <ul>{byParent.get(parent)?.map(folder => {
+    const children = byParent.has(folder);
+    const expanded = !collapsed.has(folder);
+    return <li key={folder}>
+      {children ? <Button icon={expanded ? "chevron-down" : "chevron-right"} variant="ghost"
+        aria-label={t(expanded ? "file-audit.screen.collapse_folder" : "file-audit.screen.expand_folder", { path: folder })}
+        aria-expanded={expanded} onClick={() => setCollapsed(current => {
+          const next = new Set(current);
+          if (expanded) next.add(folder); else next.delete(folder);
+          return next;
+        })}/> : null}
+      <Button variant="ghost" aria-current={folder === path ? "page" : undefined} title={folder}
+        onClick={() => selectObject(folder)}>{folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder}</Button>
+      {children && expanded ? folderList(folder) : null}
+    </li>;
+  })}</ul>;
+  return <div className="sli-file-audit sli-file-audit--object">
+    <ReportLayout title={title.slice(0, 256)} subtitle={denied ? undefined : <span className="sli-file-audit__path">{path.slice(0, 4096)}</span>}
+      state={state} stateView={stateView} controls={{ showBreadcrumbs: true }}
+      crumbs={[{ label: t("file-audit.title"), href: backHref }, ...[server, share].flatMap(label => label ? [{ label }] : [])]}
+      meta={detail && object ? <>{detail.snapshot.observed_at ? <span>{t("file-audit.workspace.snapshot")} · {formatCell(detail.snapshot.observed_at, "datetime")}</span> : null}
+        <span>{params.get("tz")}</span><span>{t("file-audit.workspace.owner")} · {object.owner_sid ?? "—"}</span></> : null}
       actions={<><a className="sli-ds-button" href={backHref} onClick={onBack ? event => { event.preventDefault(); onBack(); } : undefined}>{t("file-audit.workspace.back")}</a>
-        {!denied && detail ? <button type="button" className="sli-ds-button" onClick={openComparison}>{t("file-audit.compare.title")}</button> : null}
-        {!denied && object && navigator.clipboard ? <button type="button" className="sli-ds-button" onClick={() => void copy()}>{t(copied === "copied" ? "file-audit.workspace.copied" : "file-audit.workspace.copy_path")}</button> : null}</>}
-      tabs={<TabList label={title} variant="underline"/>}>
+        {!denied && detail ? <Button aria-pressed={comparing} onClick={openComparison}>{t("file-audit.compare.title")}</Button> : null}
+        {!denied && object && navigator.clipboard ? <Button onClick={() => void copy()}>{t(copied === "copied" ? "file-audit.workspace.copied" : "file-audit.workspace.copy_path")}</Button> : null}</>}>
       {copied === "failed" ? <p role="alert">{t("file-audit.workspace.copy_error")}</p> : null}
-      {detail && tab === "permissions" ? <div className="sli-file-audit__object-grid">
-        {objects.length ? <details className="sli-file-audit__object-tree" open><summary>{t("file-audit.workspace.retained_objects")}</summary>
-          <nav aria-label={t("file-audit.workspace.retained_objects")}>{objects.map((row, index) => <button type="button"
-            key={String(row.id ?? row.path ?? index)} className="sli-ds-table__link" aria-current={row.path === path ? "page" : undefined}
-            onClick={() => selectObject(String(row.path))} title={String(row.path)}>{String(row.path)}</button>)}</nav>
-        </details> : null}
+      {detail && !comparing ? <div className="sli-file-audit__object-grid">
+        {folders.length ? <nav className="sli-file-audit__object-tree" aria-label={t("file-audit.workspace.retained_objects")}>
+          {folderList()}
+        </nav> : null}
         <div className="sli-file-audit__acl-content" key={`${snapshotId}:${path}`}>
-          <FileAuditAclTable acl={detail.share.dacl} title={`${t("file-audit.acl.smb")} · ${detail.share.name}`} initialPageSize={pageSize}/>
+          <FileAuditAclTable acl={detail.share.dacl} title={`${t("file-audit.acl.smb")} · ${detail.share.name}`} initialPageSize={pageSize} shareLevel/>
           {object ? <FileAuditAclTable acl={object.dacl} title={t("file-audit.acl.ntfs")} initialPageSize={pageSize}/>
             : <p className="sli-file-audit__local-state">{t("file-audit.workspace.snapshot_missing")}</p>}
         </div>
       </div> : null}
-      {detail && object && tab === "audit-state" ? <>
-        <FactList facts={[
-          { label: t("file-audit.detail.completeness"), value: detail.snapshot.completeness },
-          { label: t("file-audit.workspace.scan_gaps"), value: String(detail.snapshot.unread_objects) },
-          { label: t("file-audit.receipt.policy_revision"), value: String(detail.snapshot.policy_revision) },
-          { label: t("file-audit.acl.protected"), value: object.sacl_protected == null ? "—" : String(object.sacl_protected) },
-        ]}/><FileAuditAclTable key={`${snapshotId}:${path}:sacl`} acl={object.sacl} title={t("file-audit.acl.sacl")} initialPageSize={pageSize}/>
-      </> : null}
-      {detail && object && tab === "permission-changes" ? <>
-        <div className="sli-file-audit__compare-controls">
-          <div className="sli-ds-control-field">{t("file-audit.compare.before")}<Select label={t("file-audit.compare.before")} value={compareId} disabled={!options.length} onChange={(selectedValue) => { setCompareId(selectedValue); updateAddress({ compare_snapshot_id: selectedValue }); }}
-            options={[{ value: "", label: "—" }, ...(options.map(row => ({ value: idOf(row), label: String(formatCell(row.observed_at, "datetime")) + String(" · ") + String(idOf(row)) })) ?? [])]}/></div>
-          <div className="sli-ds-control-field">{t("file-audit.compare.after")}<Select label={t("file-audit.compare.after")} value={snapshotId} onChange={(selectedValue) => { setSnapshotId(selectedValue); setCompareId(""); updateAddress({ snapshot_id: selectedValue, compare_snapshot_id: null }); }}
-            options={[...(!snapshots.some(row => idOf(row) === snapshotId) ? [{ value: snapshotId, label: formatCell(detail.snapshot.observed_at, "datetime") }] : []), ...(snapshots.map(row => ({ value: idOf(row), label: String(formatCell(row.observed_at, "datetime")) + String(" · ") + String(idOf(row)) })) ?? [])]}/></div>
-          <a className="sli-ds-button" href={scopedHref("permission-changes")}>{t("file-audit.compare.events")}</a>
-        </div>
+      {detail && comparing ? <>
+        <FilterBar layout="inline" applyInline compact primaryKeys={["before", "after"]}
+          fields={[
+            { key: "before", kind: "select", label: t("file-audit.compare.before"), options: options.map(row =>
+              ({ value: idOf(row), label: formatCell(row.observed_at, "datetime") })) },
+            { key: "after", kind: "select", label: t("file-audit.compare.after"), options: [
+              ...(!snapshots.some(row => idOf(row) === snapshotId) ? [{ value: snapshotId, label: formatCell(detail.snapshot.observed_at, "datetime") }] : []),
+              ...snapshots.map(row => ({ value: idOf(row), label: formatCell(row.observed_at, "datetime") })),
+            ] },
+          ]}
+          values={{ before: compareId, after: snapshotId }}
+          onApply={next => {
+            if (typeof next.after === "string" && next.after !== snapshotId) {
+              setSnapshotId(next.after); setCompareId(""); updateAddress({ snapshot_id: next.after, compare_snapshot_id: null });
+            } else {
+              const before = typeof next.before === "string" ? next.before : "";
+              setCompareId(before); updateAddress({ compare_snapshot_id: before });
+            }
+          }}/>
         {comparison?.state === "available" ? <FileAuditComparison key={`${snapshotId}:${compareId}:${path}`} comparison={comparison} pageSize={pageSize}/>
           : <p className="sli-file-audit__local-state">{unavailable}</p>}
       </> : null}
-      {result?.limitations.filter(item => !item.code.endsWith("coverage_unverified")).length ? <ul className="sli-file-audit__limitations">{result.limitations.filter(item => !item.code.endsWith("coverage_unverified")).map(item => <li key={item.code}>{item.text}</li>)}</ul> : null}
     </ReportLayout>
-  </Tabs></div>;
+  </div>;
 }
