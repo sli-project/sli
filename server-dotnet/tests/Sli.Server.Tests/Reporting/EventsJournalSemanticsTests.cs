@@ -104,6 +104,28 @@ public sealed class EventsJournalSemanticsTests
     static JsonObject Row(JsonObject body) => Assert.Single(body["items"]!.AsArray())!.AsObject();
 
     [Fact]
+    public void Domain_change_link_requires_a_supported_source_and_destination_access()
+    {
+        var facts = Facts();
+        var owner = facts with { Definitions = [.. facts.Definitions,
+            ReportFixture.J("""{"report_key":"security.events.chains","version":1,"dataset_version":1,"definition_json":{"actions":["view"]},"actions_json":["view"],"fields_json":[{"category":"security"},{"category":"technical"},{"category":"raw_evidence"}]}""")] };
+        var viewer = owner with { IsOwner = false };
+        static AccessDecision Access(AccessFacts facts) => new ReportEligibility().Compose(facts, new CapabilityComposer().Compose(facts));
+        var source = O("""{"event_id":4728,"channel":"Security","provider_name":"Microsoft-Windows-Security-Auditing","server_role":"domain_controller","domain_id":2}""");
+        Assert.Equal(2L, EventsJournalReader.DomainChangeDomain(Access(owner), source));
+        Assert.Null(EventsJournalReader.DomainChangeDomain(Access(viewer), source));
+        source["server_role"] = "workstation";
+        Assert.Null(EventsJournalReader.DomainChangeDomain(Access(owner), source));
+        source["server_role"] = "domain_controller";
+        source["event_id"] = 4624;
+        Assert.Null(EventsJournalReader.DomainChangeDomain(Access(owner), source));
+        source["event_id"] = 1102;
+        Assert.Null(EventsJournalReader.DomainChangeDomain(Access(owner), source));
+        source["provider_name"] = "Microsoft-Windows-Eventlog";
+        Assert.Equal(2L, EventsJournalReader.DomainChangeDomain(Access(owner), source));
+    }
+
+    [Fact]
     public async Task ActualJournalShows7036CatalogueTitleWithoutDisclosingEnrichmentFields()
     {
         var body = await new Fixture().Query(); var row = Row(body);
