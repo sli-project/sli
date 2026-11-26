@@ -60,7 +60,7 @@ def test_catalog_completeness_and_frontend_wording():
                  "backup.restore_volume_mismatch"}
     # Setup shares only these operational summaries, not all frontend labels.
     expected |= {f"setup.agentCollection.{state}" for state in (
-        "current", "error", "partial", "unknown", "unavailable",
+        "current", "partial", "unknown", "unavailable",
     )}
     expected |= {f"notifications.smtp.setup.{code}" for code in ("invalid", "unavailable", "conflict", "needs_save")}
     expected |= {f"reports.state.{state}" for state in REPORT_STATES}
@@ -174,7 +174,7 @@ def test_catalog_completeness_and_frontend_wording():
         "home.queue.occurrences.many", "home.queue.occurrences.other",
     }
     frontend_only_user_labels = tuple(f"reports.ad.users.{section}." for section in (
-        "deviation", "list", "card", "event",
+        "deviation", "list", "card", "event", "count",
     ))
     expected |= {key for key in frontend_catalog("ru") if key.startswith((
         "reports.v2.security.problems.", "security.problems.status.", "security.problems.entity.",
@@ -213,6 +213,9 @@ def test_catalog_completeness_and_frontend_wording():
     legacy_problem_codes = {f"security.problems.presentation.{field}" for field in (
         "watch_limitation", "decoy_limitation", "default_next", "audit_limitations", "wording_limitation",
     )}
+    # The legacy setup API returns its collection failure summary as formatted text.
+    legacy_server_codes = legacy_problem_codes | {"setup.agentCollection.error"}
+
     # Home period facts are formatted on the server, like notification text.
     def is_server_rendered_message(code):
         return code.startswith(("notifications.message.", "notifications.bot.", "home.period.problem."))
@@ -223,7 +226,7 @@ def test_catalog_completeness_and_frontend_wording():
     assert set(catalog("ru")) == set(catalog("en"))
     assert {
         code for code in catalog("ru") if not is_server_rendered_message(code) and not is_domain_change_action(code)
-    } == expected | legacy_problem_codes
+    } == expected | legacy_server_codes
     attribute_change = "reports.v2.security.events.chains.actions.5136"
     for locale in ("ru", "en"):
         frontend = frontend_catalog(locale)
@@ -231,7 +234,7 @@ def test_catalog_completeness_and_frontend_wording():
         assert message(attribute_change, locale=locale)["text"] == frontend[attribute_change]
         for code, text in catalog(locale).items():
             assert text
-            if code in legacy_problem_codes or is_server_rendered_message(code):
+            if code in legacy_server_codes or is_server_rendered_message(code):
                 assert code not in frontend
                 assert message(code, locale=locale)["text"] == text
             else:

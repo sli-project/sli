@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SetupPage } from "./setup";
 import { localeRuntime, setLocale, t } from "../../i18n";
-import { formatDateTime } from "../../design-system/format";
+import { TimeZoneContext } from "../../shared/time-zone";
 
 const state = vi.hoisted(() => ({ status: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => undefined, useTimeZone: () => ({ timeZone: "UTC", setTimeZone: () => undefined }) }));
@@ -99,6 +99,7 @@ it("routes an empty agent-backed source to agents instead of legacy controller c
 });
 
 it("names the failed channel, controller and observed time", async () => {
+  setLocale("ru");
   const host = "dc.example.test";
   const observed = "2026-10-25T12:34:00Z";
   state.status.mockResolvedValue({ api_version: "v1", read_only: true, generated_at_utc: observed,
@@ -111,10 +112,12 @@ it("names the failed channel, controller and observed time", async () => {
       }] }],
     }] },
   });
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>);
+  render(<TimeZoneContext.Provider value={{ timeZone: "UTC", setTimeZone: () => undefined }}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SetupPage/></QueryClientProvider>
+  </TimeZoneContext.Provider>);
   const failure = (await screen.findByRole("link", { name: host })).parentElement!;
   expect(failure.textContent).toContain("Security");
-  expect(failure.textContent).toContain(formatDateTime(observed, true, "browser"));
+  expect(failure.textContent).toContain("25.10.2026, 12:34");
   expect(failure.textContent).toContain(t("operations.agent_collection.reason.read_error"));
   expect(screen.queryByText("Сбор нарушен")).toBeNull();
 });
