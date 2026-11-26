@@ -13,10 +13,10 @@ internal static class HomePeriodSql
 
     internal static readonly string SincePreviousLogin = $$"""
         select count(*) filter (where findings.created_at>=@since and findings.created_at<@now) as new_count,
-               count(*) filter (where findings.closed_at>=@since and findings.closed_at<@now) as closed_count
+               count(*) filter (where findings.closed_at::timestamptz>=@since and findings.closed_at::timestamptz<@now) as closed_count
         {{HomeSummarySql.Population}}
         where ((findings.created_at>=@since and findings.created_at<@now)
-                or (findings.closed_at>=@since and findings.closed_at<@now))
+                or (findings.closed_at::timestamptz>=@since and findings.closed_at::timestamptz<@now))
           and is_semantic_finding_published_v1(findings.id)
           and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
           and not ({{ProblemRepository.Accepted}})
@@ -112,16 +112,20 @@ internal static class HomePeriodSql
         """;
 
     private static string OpenPopulation => $$"""
-        select findings.id,findings.rule_code,findings.severity,findings.actor,findings.target,
-               findings.source,findings.fingerprint,findings.repeat_count,
-               coalesce(findings.last_seen_utc,findings.first_seen_utc)::timestamptz as last_seen,
-               ({{HomeSummarySql.EffectiveStatus}}) as status,
-               case when @assignment then nullif(btrim(findings.assigned_to),'') end as assignee
-        {{HomeSummarySql.Population}}
-        where ({{HomeSummarySql.EffectiveStatus}}) in ('new','confirmed','repeated','active','review')
-          and is_semantic_finding_published_v1(findings.id)
-          and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
-          and not coalesce(risk.state='active' and risk.expires_at>statement_timestamp(),false)
+        with candidates as materialized (
+            select findings.id,findings.rule_code,findings.severity,findings.actor,findings.target,
+                   findings.source,findings.fingerprint,findings.repeat_count,
+                   coalesce(findings.last_seen_utc,findings.first_seen_utc)::timestamptz as last_seen,
+                   ({{HomeSummarySql.EffectiveStatus}}) as status,
+                   case when @assignment then nullif(btrim(findings.assigned_to),'') end as assignee
+            {{HomeSummarySql.Population}}
+            where ({{HomeSummarySql.EffectiveStatus}}) in ('new','confirmed','repeated','active','review')
+              and not coalesce(risk.state='active' and risk.expires_at>statement_timestamp(),false)
+        ), published as materialized (
+            select finding_id from public.home_published_findings424(array(select id from candidates))
+        )
+        select findings.* from published join candidates findings on findings.id=published.finding_id
+        where (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
           and not ({{ProblemRepository.Suppressed}})
           and semantic_finding_in_domains_v265(findings.id,@ids)
         """;
@@ -196,17 +200,21 @@ internal static class HomePeriodSql
     internal const string PasswordPolicyChanges = """
         select e.display_name as name, v.valid_from_utc as at, prior.valid_from_utc as before_at, field.key as field,
                prior.attributes_json->'attributes'->field.key as before, field.value as after
-        from entities_v2_active e join storage_v2_entity_type kind on kind.id=e.entity_type_id
-        join ad_context_entity_versions v on v.entity_id=e.id and v.source_section='domain_posture'
-        join ad_context_entity_versions prior on prior.entity_id=e.id and prior.source_section=v.source_section
+        from ad_context_entity_versions v
+        join lateral (
+            select id,display_name from entities_v2_active
+            where id=v.entity_id and domain_id=any(@ids)
+              and entity_type_id=(select id from storage_v2_entity_type where value='password_policy')
+            limit 1
+        ) e on true
+        join ad_context_entity_versions prior on prior.entity_id=v.entity_id and prior.source_section=v.source_section
           and prior.valid_to_utc=v.valid_from_utc
         join ad_context_sections current_section on current_section.run_id=v.source_run_id
           and current_section.section_name=v.source_section and current_section.status='complete'
         join ad_context_sections prior_section on prior_section.run_id=prior.source_run_id
           and prior_section.section_name=prior.source_section and prior_section.status='complete'
         cross join lateral jsonb_each(v.attributes_json->'attributes') field
-        where e.domain_id=any(@ids) and kind.value='password_policy'
-          and v.valid_from_utc>=@from and v.valid_from_utc<@to
+        where v.source_section='domain_posture' and v.valid_from_utc>=@from and v.valid_from_utc<@to
           and field.key in ('password_min_length','password_history_length','password_min_age','password_max_age',
                             'lockout_threshold','lockout_duration','lockout_observation_window')
           and prior.attributes_json->'attributes'->field.key is distinct from field.value
@@ -274,9 +282,29 @@ internal static class HomePeriodSql
         order by at desc,e.id desc limit 200
         """;
 
+    // The global newest ten can only come from the newest ten of each kind.
+    // Apply visibility and queue coverage before taking each per-kind limit.
     internal static string OpenQueueChanges(string source, string scope) => $$"""
         with short_events as not materialized ({{source}}),
-        open_findings as materialized (select id from ({{OpenPopulation}}) admitted where @queue_access)
+        open_findings as materialized (select id from ({{OpenPopulation}}) admitted where @queue_access),
+        latest as (
+            select recent.* from unnest(@ids) domain(id) cross join unnest(@kinds) kind(id)
+            cross join lateral (
+                select e.id,e.time_created_utc,e.event_id,e.method,e.actor,e.target,e.fields
+                from short_events e
+                left join lateral (
+                    select true as matched
+                    from finding_event_copies337 copy
+                    where @queue_access and copy.domain_id=e.domain_id and copy.event_kind=e.event_id
+                      and copy.event_id=e.id and copy.time_created_utc=e.time_created_utc
+                      and copy.finding_id=any(array(select id from open_findings))
+                    limit 1
+                ) covered on true
+                where e.domain_id=domain.id and e.event_id=kind.id and e.event_id=any(@kinds)
+                  and e.time_created_utc<@to and coalesce(({{scope}}),false) and covered.matched is null
+                order by e.domain_id,e.event_id,e.time_created_utc desc,e.id desc limit 10
+            ) recent
+        )
         select e.id,e.time_created_utc as at,e.event_id,
                case when @event_identity then coalesce(nullif(e.method#>>'{$principals,SubjectUserName}','-'),e.actor) end as initiator,
                case when @event_identity then coalesce(nullif(e.fields->>'ObjectDN','-'),
@@ -286,13 +314,7 @@ internal static class HomePeriodSql
                     when @event_identity and e.event_id=4738 then nullif(e.fields->>'UserPrincipalName','-') end as value,
                case when @event_identity and e.event_id=4781 then nullif(e.fields->>'OldTargetUserName','-') end as before,
                case when @event_identity and e.event_id=4781 then nullif(e.fields->>'NewTargetUserName','-') end as after
-        from short_events e
-        where ({{scope}}) and e.time_created_utc<@to and e.event_id=any(@kinds)
-          and not exists (
-              select 1 from open_findings f
-              join finding_event_copies337 copy on copy.finding_id=f.id and copy.event_kind=e.event_id and copy.event_id=e.id
-              where copy.time_created_utc=e.time_created_utc and copy.domain_id=e.domain_id
-          )
+        from latest e
         order by at desc,e.id desc limit 10
         """;
 

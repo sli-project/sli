@@ -19,27 +19,27 @@ public sealed partial class InstallationService
     // The installation's configured flag controls admission. Agent assignments describe actual sources.
     private async Task<JsonArray?> PluginSourcesAsync(JsonArray items, CancellationToken ct)
     {
-        string[] modules = items.OfType<JsonObject>().Where(item => Bool(item["enabled"]))
+        string[] modules = items.OfType<JsonObject>()
             .SelectMany(item => PluginModules.GetValueOrDefault(Text(item["plugin_id"])) ?? [])
             .Where(module => module is not ("sli.vpn-nps" or "sli.radius-accounting")).Distinct().ToArray();
         if (modules.Length == 0) return new JsonArray();
         try
         {
             return await database.ReadAsync(s => s.QueryAsync("""
-                select module, a.collection_policy->>'interval_seconds' as interval_seconds,
+                select module, a.id as agent_id, a.collection_policy->>'interval_seconds' as interval_seconds,
                        m->'config'->'schedule'->'hours' as snapshot_hours,
                        m->'config'->>'capture_seconds' as capture_seconds,
                        case when module='sli.file-audit' and a.file_audit->>'state' in ('blocked','failed')
                             then a.file_audit->>'reported_at' end as failure_at,
-                       left(a.registration_host_name, 253) as source_name
+                       left(coalesce(nullif(btrim(a.registration_host_name), ''), nullif(btrim(m->'config'->>'source_name'), '')), 253) as source_name,
+                       (module <> 'sli.file-audit' or (jsonb_typeof(m->'config'->'roots')='array'
+                         and m->'config'->'roots' <> '[]'::jsonb)
+                         or exists (select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id=module)) is true as collects
                 from sli_agents a
                 cross join lateral jsonb_array_elements(a.assigned_modules) m
                 cross join lateral (select coalesce(m->>'module_id',m#>>'{}') as module) assigned
                 where a.status='active' and module=any(@p0)
                   and (jsonb_typeof(m)='string' or m->'enabled'='true'::jsonb)
-                  and (module <> 'sli.file-audit' or jsonb_typeof(m->'config'->'roots')='array'
-                       and m->'config'->'roots' <> '[]'::jsonb
-                       or exists (select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id=module))
                 """, ct, (object)modules), ct);
         }
         catch (Exception e) when (e is NpgsqlException or TimeoutException or InvalidOperationException)
@@ -75,13 +75,22 @@ public sealed partial class InstallationService
         bool agentBacked = PluginModules.TryGetValue(id, out var modules) && !remote;
         var assigned = agentBacked ? sources?.OfType<JsonObject>()
             .Where(row => modules!.Contains(Text(row["module"]))).ToArray() ?? [] : [];
-        var failed = assigned.Where(row => StatusTime(row["failure_at"], now) is not null)
+        var collecting = assigned.Where(row => Bool(row["collects"])).ToArray();
+        if (agentBacked && sources is not null)
+        {
+            var agents = (id == "sli.file-audit" ? assigned : collecting).GroupBy(row => Text(row["agent_id"])).ToArray();
+            item["source_count"] = agents.Length;
+            item["source_names"] = new JsonArray(agents.Select(group => group.Select(row => Text(row["source_name"]))
+                .FirstOrDefault(name => name.Length > 0)).Where(name => name is not null)
+                .Order(StringComparer.OrdinalIgnoreCase).Select(name => (JsonNode?)JsonValue.Create(name)).ToArray());
+        }
+        var failed = collecting.Where(row => StatusTime(row["failure_at"], now) is not null)
             .MaxBy(row => StatusTime(row["failure_at"], now));
         var telemetry = sigma?["telemetry"] as JsonObject;
-        bool hasSource = remote ? Bool(item["configured"]) : sigmaPlugin ? Bool(sigma?["has_source"]) : assigned.Length > 0;
+        bool hasSource = remote ? Bool(item["configured"]) : sigmaPlugin ? Bool(sigma?["has_source"]) : collecting.Length > 0;
         // Use the cadence of the module that produced each timestamp. A snapshot's
         // schedule must never make a stale event stream appear current.
-        var evidence = assigned.Select(source =>
+        var evidence = collecting.Select(source =>
             (At: EvidenceTime(moduleReceipts.GetValueOrDefault(Text(source["module"])),
                        source["snapshot_hours"] is JsonArray, now), Interval: SourceInterval(source))).ToArray();
         if (remote)
@@ -97,6 +106,9 @@ public sealed partial class InstallationService
         var failure = StatusTime(failed?["failure_at"], now) ?? (hasSource ? StatusTime(telemetry?["failure_at"], now) : null)
             ?? (unavailable ? now : (DateTimeOffset?)null);
         var status = DerivePluginStatus(enabled, hasSource, observation.At, observation.Interval, failure, now);
+
+        if (status.State == "error" && failure is null && collecting.Select(row => Text(row["agent_id"])).Distinct().Count() == 1)
+            failed = collecting.FirstOrDefault(row => Text(row["source_name"]).Length > 0);
 
         return new JsonObject
         {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { DataTable, LoadingRegion, PageHeader, TableSkeleton, type TableColumn } from "../../design-system";
@@ -10,6 +10,7 @@ import { downloadOperationsExport } from "../operations-actions";
 import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
+import { moduleName, moduleRows, moduleStatusId, moduleStatusText } from "./plugin-status";
 
 const updateCommand = "sudo apt update && sudo apt upgrade";
 
@@ -33,6 +34,12 @@ export function SystemStatusPage() {
   const diagnostics = useQuery({ queryKey: ["operations-diagnostics"], queryFn: api.diagnostics, ...options });
   const securityLogFull = useQuery({ queryKey: ["operations-security-log-full"], queryFn: api.securityLogFull, ...options,
     enabled: canViewOperations });
+  const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, ...options, enabled: canViewOperations });
+  const pluginItems = plugins.isError ? undefined : plugins.data?.items;
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (pluginItems && target.startsWith("module-")) document.getElementById(target)?.scrollIntoView?.();
+  }, [pluginItems]);
   const notifications = useQuery({ queryKey: ["system-status-notifications"], queryFn: () => api.notificationWorkspace(new URLSearchParams()), ...options });
   const smtp = useQuery({ queryKey: ["smtp-setup"], queryFn: api.smtpSetupStatus, ...options,
     enabled: !!notifications.data?.can_configure && notifications.data.channels.some((channel) => channel.kind === "smtp" && channel.enabled) });
@@ -67,16 +74,14 @@ export function SystemStatusPage() {
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-  const dcTargets = setup.data?.domain_controllers ?? [];
-  const connected = setup.data?.sources.find((source) => source.pack_id === "sli.windows.ad-dc")?.instances?.some((instance) =>
-    instance.configured && instance.enabled && instance.data_received && dcTargets.some((target) =>
-      target.source === "db" && target.enabled && target.domain &&
-      [target.hostname, target.connect_address].some((name) => name.toLowerCase() === instance.source_instance_id.toLowerCase()))) ?? false;
+  const connectedControllers = setup.isError ? undefined : health?.connected_domain_controllers;
+  const connected = connectedControllers !== undefined && connectedControllers > 0;
   const channelReady = !notifications.isError && (notifications.data?.channels.some((channel) => channel.enabled && (channel.last_accepted_at
     || (channel.kind === "smtp" && !smtp.isError && smtp.data?.host && smtp.data.sender && smtp.data.secret_set && smtp.data.needs_save === false)
     || (channel.kind === "telegram" && !telegram.isError && telegram.data?.secret_set && telegram.data.chat_bound))) ?? false);
   const sourcesReady = !setup.isError && health && health.state !== "unavailable" && !health.diagnostics;
-  const showSteps = sourcesReady && !(connected && channelReady && latest);
+  const showSteps = connectedControllers !== undefined && !(connected && channelReady && latest);
+  const controllerCount = connected ? t("setup.controllers.currentCount", { count: connectedControllers }) : null;
   const release = diagnostics.data?.release_metadata;
   const webConsole = diagnostics.data?.web_console;
   const consoleUrl = access?.subject?.coarse_role === "admin" && !diagnostics.isError && webConsole?.available ? webConsole.url : null;
@@ -120,12 +125,15 @@ export function SystemStatusPage() {
     {copyError ? <p role="alert">{t("systemStatus.copyFailed")}</p> : null}
     {exportError ? <p role="alert">{t("systemStatus.downloadFailed")}</p> : null}
     {showSteps ? <ol aria-label={t("systemStatus.firstRun")}>
-      <li><span aria-label={t(connected ? "systemStatus.done" : "systemStatus.pending")}>{connected ? "✓" : "○"}</span> {t("systemStatus.step.agent")} <a className="sli-ds-button" href="/app/agents">{t("systemStatus.connect")}</a></li>
+      <li><span aria-label={t(connected ? "systemStatus.done" : "systemStatus.pending")}>{connected ? "✓" : "○"}</span> {connected
+        ? controllerCount
+        : <>{t("systemStatus.step.agent")} <a className="sli-ds-button" href="/app/agents">{t("systemStatus.connect")}</a></>}</li>
       <li><span aria-label={t(channelReady ? "systemStatus.done" : "systemStatus.pending")}>{channelReady ? "✓" : "○"}</span> {t("systemStatus.step.notifications")} <a className="sli-ds-button" href="/app/notifications">{t("systemStatus.configure")}</a></li>
       <li><span aria-label={t(latest ? "systemStatus.done" : "systemStatus.pending")}>{latest ? "✓" : "○"}</span> {latest ? t("systemStatus.step.received", { time: formatDateTime(latest, timeZone, { withYear: false }) }) : t("systemStatus.step.waiting")}</li>
     </ol> : null}
     {showSteps && (notifications.isError || smtp.isError || telegram.isError) ? failed(t("systemStatus.notifications"), () => Promise.all([notifications.refetch(), smtp.isEnabled ? smtp.refetch() : null, telegram.isEnabled ? telegram.refetch() : null])) : null}
     <h2 className="sli-ds-section-title">{t("systemStatus.sources")}</h2>
+    {!showSteps && controllerCount ? <p>{controllerCount}</p> : null}
     {setup.isPending ? loading(sourceColumns.length) : sourcesReady ? <DataTable columns={sourceColumns} rows={sources} rowKey={(row) => row.id} caption={t("systemStatus.sources")} showFooter={false}/>
       : failed(t("systemStatus.sources"), setup.refetch)}
     {gaps.map(([key, gap]) => <p key={key}>{t("systemStatus.dataGap", { computer: gap.name || EMPTY_VALUE,
@@ -154,6 +162,14 @@ export function SystemStatusPage() {
         : <p role="status">{t("systemStatus.passwordDetection.unavailable")}</p>}
     </> : null}
     {importIssue ? <p>{importIssue}</p> : null}
+    {canViewOperations ? <>
+      <h2 className="sli-ds-section-title">{t("plugins.title")}</h2>
+      {plugins.isPending ? loading(2) : plugins.isError ? failed(t("plugins.title"), plugins.refetch)
+        : <DataTable caption={t("plugins.title")} rows={moduleRows(pluginItems ?? [])} rowKey={moduleStatusId} showFooter={false} columns={[
+          { key: "name", label: t("plugins.module"), render: (item) => <span id={moduleStatusId(item)} tabIndex={-1}>{moduleName(item)}</span> },
+          { key: "status", label: t("systemStatus.state"), render: (item) => moduleStatusText(item, timeZone) },
+        ]}/>}
+    </> : null}
     {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },

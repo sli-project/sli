@@ -292,13 +292,14 @@ public sealed class SetupAgentCollectionTests
         { false, "error" }, { true, "error" }, { false, "unknown" }, { true, "unknown" },
         { false, "disabled" }, { true, "disabled" }, { false, "paused" }, { true, "paused" } };
     [Theory, MemberData(nameof(ControllerStates))]
-    public async Task ControllerStepUsesSameAgentEvidenceAsSourceRegardlessOfLegacyFlag(bool legacyEnabled, string state)
+    public async Task ControllerStepUsesContactRegardlessOfCollectionStateOrLegacyFlag(bool legacyEnabled, string state)
     {
         await using var f = new InstallationFixture(); Configure(f, Agents(state), Streams(state), Controllers(enabled: legacyEnabled));
         await f.StartAsync(); var (status, body) = await f.SendAsync("GET", "/api/v1/setup/status");
         Assert.Equal(200, status); var source = Source(body); var item = Instance(source);
         Assert.Equal(state, T(item["collection_state"]));
-        Assert.Equal(state == "current" ? "done" : state == "unknown" ? "unavailable" : "todo", T(Step(body, "domain-controllers")["state"]));
+        Assert.Equal("done", T(Step(body, "domain-controllers")["state"]));
+        Assert.Equal(1, body["agent_collection"]!["connected_domain_controllers"]!.GetValue<int>());
         Assert.Equal(legacyEnabled, body["domain_controllers"]![0]!["enabled"]!.GetValue<bool>());
         Assert.False(body["domains"]![0]!["is_archived"]!.GetValue<bool>());
         Assert.Equal("agents", T(source["collection_basis"])); Assert.Null(body["collection"]!["block_reason"]);
@@ -313,6 +314,31 @@ public sealed class SetupAgentCollectionTests
             Assert.Equal("todo", T(Step(body, "first-collection")["state"]));
             Assert.Equal("check_data", T(item["next_action"]));
         }
+    }
+
+    [Theory]
+    [InlineData("sli.windows.ad-dc", "active", 600, 1)]
+    [InlineData("sli.windows.ad-dc", "active", 601, 0)]
+    [InlineData("sli.windows.ad-dc", "active", null, 0)]
+    [InlineData("sli.windows.ad-dc", "disabled", 0, 0)]
+    [InlineData("sli.windows.ad-dc-history", "active", 0, 1)]
+    [InlineData("sli.file-audit", "active", 0, 0)]
+    public void ConnectedControllersUseDcRoleAndExpectedContactWindow(string module, string status, int? age, int expected)
+    {
+        var now = DateTimeOffset.Parse(Stamp);
+        var agents = Agents();
+        var agent = agents[0]!;
+        agent["status"] = status;
+        agent["collection_policy"]!["interval_seconds"] = 200;
+        agent["last_seen"] = age is int seconds ? now.AddSeconds(-seconds).ToString("O") : null;
+        agent["assigned_modules"]![0]!["module_id"] = module;
+        var duplicate = agent.DeepClone();
+        duplicate["id"] = "agent-2";
+        agents.Add(duplicate);
+
+        var health = SetupCollectionHealth.View(agents, new(), now, diagnosticsAvailable: false);
+
+        Assert.Equal(expected, health["connected_domain_controllers"]!.GetValue<int>());
     }
 
     [Theory]
@@ -352,11 +378,11 @@ public sealed class SetupAgentCollectionTests
     }
 
     [Fact]
-    public async Task EnabledLegacyTargetWithoutBindingRemainsUnavailable()
+    public async Task ConnectedDcWithoutSourceBindingCompletesControllerStep()
     {
         await using var f = new InstallationFixture(); Configure(f, Agents(name: null), Streams(), Controllers());
         await f.StartAsync(); var (status, body) = await f.SendAsync("GET", "/api/v1/setup/status");
-        Assert.Equal(200, status); Assert.Equal("unavailable", T(Step(body, "domain-controllers")["state"]));
+        Assert.Equal(200, status); Assert.Equal("done", T(Step(body, "domain-controllers")["state"]));
         Assert.Null(Instance(Source(body))["configured"]);
     }
 

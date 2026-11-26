@@ -142,6 +142,8 @@ export type PluginState = {
   plugin_id: string; package_version: string; installed: boolean; configured: boolean;
   enabled: boolean; receiving_data: boolean; component_runtime: string; queue_state: string;
   revision: number; last_data_at_utc: string | null;
+  source_count?: number;
+  source_names?: string[];
   status?: {
     state: "disabled" | "no_sources" | "waiting" | "working" | "error";
     last_data_at: string | null;
@@ -1242,6 +1244,7 @@ export type AgentCollectionCompleteness = {
 };
 
 export type AgentCollectionHealth = {
+  connected_domain_controllers?: number;
   replaced_agents?: Array<{ id: string; name: string; agent_version?: string | null; replacement_version?: string | null; certificate_reissue_required?: boolean }>;
   diagnostics?: { state: "unavailable"; reason: "timeout" | "read_failed" };
   completeness?: AgentCollectionCompleteness;

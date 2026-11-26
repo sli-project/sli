@@ -629,6 +629,8 @@
     "config/postgres_migrations/421_sli_own_actions.sql": "3787a1ca08cc8878322bfe7c4176c71729d6b5a4d9fd20c8dbb2135961915abc",
     "config/postgres_migrations/422_file_audit_scope_inventory.rollback.sql": "72978f3d6e750d56396b2964f48da8c6e3ef72a550dfc5deb09900d0e8632edb",
     "config/postgres_migrations/422_file_audit_scope_inventory.sql": "92abc6c650cdf9ab1bbd9d226c6e62f058dc17d0af1e13610dfb19d183b5adb6",
+    "config/postgres_migrations/424_home_read_indexes.rollback.sql": "ce79ddab8bd6ccaab3a100691ed5c68e010b0e8c1c3bb3b8d776bc28a04667b3",
+    "config/postgres_migrations/424_home_read_indexes.sql": "2e1a65d14e9310c075be3b8c591065bd09ff959bf0329e49cc8d331d2a07be0c",
     "config/postgres_migrations/425_journal_finding_event_lookup.rollback.sql": "7eddccb4686d187ab1e56c20b7854fae35a48b7f0102f579b3ce026c0634bc35",
     "config/postgres_migrations/425_journal_finding_event_lookup.sql": "9d4e3e42a56638c03df8380fc934bb0f13c30e76ccae35fbb1ca6f1a01f6f952",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
