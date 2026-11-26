@@ -37,6 +37,27 @@ public sealed class PluginStatusTests
         Assert.All(items.Values, item => Assert.Equal("disabled", item["status"]!["state"]!.GetValue<string>()));
     }
 
+    [Fact]
+    public async Task Lists_assigned_file_servers_before_they_start_collecting()
+    {
+        var file = ScriptDatabase.State();
+        file["plugin_id"] = "sli.file-audit";
+        var database = new ScriptDatabase { Override = (sql, _) => sql.Contains("read_plugin_states_v1")
+            ? new JsonArray(file) : sql.Contains("from sli_agents a")
+            ? ScriptDatabase.Rows("""
+                [{"module":"sli.file-audit","agent_id":"00000000-0000-4000-8000-000000000001",
+                  "source_name":"FS01","collects":false}]
+                """) : null };
+        var configuration = new ConfigurationBuilder().Build();
+        var service = new InstallationService(database, new InstallationPackages(configuration), configuration);
+        var response = await service.DispatchAsync("GET", "/api/v1/plugins", new(),
+            new Principal("session", 1, "admin", "fixture"), null, false, TestContext.Current.CancellationToken);
+        var item = Assert.Single(response["items"]!.AsArray())!;
+        Assert.Equal(1, item["source_count"]!.GetValue<int>());
+        Assert.Equal("FS01", Assert.Single(item["source_names"]!.AsArray())!.GetValue<string>());
+        Assert.Equal("no_sources", item["status"]!["state"]!.GetValue<string>());
+    }
+
     [Theory]
     [InlineData(false, true, 2, false, "disabled")]
     [InlineData(true, false, null, false, "no_sources")]

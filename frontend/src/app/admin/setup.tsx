@@ -1,4 +1,4 @@
-import { agentCollectionDetail, agentCollectionHistory, agentCollectionLabel, agentCollectionName, agentCollectionSummary } from "../agent-collection-view";
+import { agentCollectionName } from "../agent-collection-view";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { DomainControllersStep } from "../../plugins/ad/DomainControllersStep";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { FieldError } from "./gate";
 import { t, type MessageKey } from "../../i18n";
 import { setupSourceName } from "./setup-source-labels";
 import { setupDestinationLabel, setupSourceAction, setupSourceAnchor, setupStepPresentation } from "./setup-presentation";
+import { agentModuleName } from "./agent-actions";
 import { useTimeZone } from "../App";
 import { formatDateTime as formatDateTimeTz } from "../../shared/date-time";
 
@@ -39,7 +40,7 @@ function SetupSteps({ status }: { status: SetupStatus }) {
     <ol className="sli-ds-setup-steps">
     {status.steps.map((item, index) => { const step = setupStepPresentation(item, status); return <li key={step.id} id={`setup-${step.id}`} className="sli-ds-filters">
       <h2 className="sli-ds-section-title">{index + 1}. {step.title} <Badge tone={STATE_TONES[step.state]}>{t(`setup.state.${step.state}`)}</Badge></h2>
-      <p className="sli-ds-header__subtitle">{step.summary}</p>
+      {step.summary ? <p className="sli-ds-header__subtitle">{step.summary}</p> : null}
       <StepDetails id={step.id} state={step.state} status={status}/>
       {step.manual || step.doc ? <details><summary>{t("setup.step.manualDetails")}</summary><p className="sli-ds-header__subtitle">{step.manual}{step.doc ? <> {t("setup.step.docPrefix")} <code>{step.doc}</code>.</> : null}</p></details> : null}
       {step.link ? <p><a href={`/app${step.link}`}>{setupDestinationLabel(step.link)}</a></p> : null}
@@ -138,12 +139,10 @@ function SourceStates({ pack, instance }: { pack: SetupSource; instance?: SetupS
       { label: t("setup.source.installation"), value: pack.installed === false ? t("setup.source.notInstalled") : t("setup.source.installed") },
       { label: t("setup.source.configuration"), value: configured == null ? t("setup.source.unknown") : configured ? t("setup.source.configured") : t("setup.source.notConfigured") },
       { label: t("setup.source.activation"), value: enabled == null ? t("setup.source.unknown") : enabled ? t("setup.source.enabled") : t("setup.source.disabled") },
-      { label: t("setup.source.data"), value: instance?.collection_state ? instance.collection_state === "disabled" ? t("setup.agentSource.disabled") : agentCollectionLabel(instance.collection_state) : t(`setup.source.data.${dataState}`) },
-      ...(instance?.last_data_utc && !agentBacked ? [{ label: t("setup.source.lastData"), value: formatDateTime(instance.last_data_utc) }] : []),
+      ...(!agentBacked && (dataState === "never" || dataState === "unavailable")
+        ? [{ label: t("setup.source.data"), value: t(`setup.source.data.${dataState}`) }] : []),
+      ...(instance?.last_data_utc ? [{ label: t("setup.source.lastData"), value: formatDateTime(instance.last_data_utc) }] : []),
     ]}/>
-    {agentBacked && instance?.last_data_utc ? <details><summary>{t("setup.source.technicalDetails")}</summary>
-      <p>{t("setup.source.lastData")}: {formatDateTime(instance.last_data_utc)}</p>
-    </details> : null}
     {action ? <p className="sli-ds-header__subtitle">{setupSourceAction(action, pack.pack_id, agentBacked)} <a href={destination.startsWith("#") ? destination : `/app${destination}`}>{setupDestinationLabel(destination)}</a></p> : null}
   </div>;
 }
@@ -215,19 +214,19 @@ function StepDetails({ id, state, status }: { id: string; state: SetupStep["stat
 
 
 function AgentCollectionDetails({ status }: { status: SetupStatus }) {
-  const { timeZone } = useTimeZone();
+  const { formatDateTime } = useDateFormatters();
   const health = status.agent_collection!;
-  return <>
-    <p>{t("operations.agent_collection.count", { current: health.current_agents, total: health.active_agents })}</p>
-    {health.items.map((agent) => <div key={agent.id}>
-      <a href={agent.href}>{agentCollectionName(agent)}</a> — {agentCollectionSummary(agent, health.diagnostics)}
-      <details><summary>{t("setup.source.technicalDetails")}</summary>
-        <p>{agentCollectionDetail(agent, timeZone)}</p>
-        {agentCollectionHistory(agent, timeZone).map((text, index) => <p key={index}>{text}</p>)}
-      </details>
-    </div>)}
-    {health.completeness?.state === "known_gaps" ? <details><summary>{t("setup.source.technicalDetails")}</summary><p>{t("operations.agent_collection.accepted_loss")}</p></details> : null}
-    <a href="/app/agents">{setupDestinationLabel("/agents")}</a>
-  </>;
+  return health.items.flatMap((agent) => agent.modules.flatMap((module) =>
+    module.channels.flatMap((channel) => {
+      const reason = channel.failure_reason;
+      if (channel.state !== "error" || !reason) return [];
+      const time = channel.issue_since_utc ?? channel.issue_observed_at_utc ?? channel.import_failure_at;
+      return <p key={`${agent.id}:${module.module_id}:${channel.channel ?? ""}`}>
+        <a href={agent.href}>{agentCollectionName(agent)}</a>
+        {` · ${channel.channel ?? agentModuleName(module.module_id)}`}
+        {time ? ` · ${formatDateTime(time)}` : ""}
+        {" · "}{t(`operations.agent_collection.reason.${reason}`)}
+      </p>;
+    })));
 }
 
