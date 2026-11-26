@@ -21,22 +21,24 @@ internal sealed class AdSecurityQuery
     private string Param(object value) { Args.Add(value); return "$" + Args.Count; }
     const string TargetSid = "coalesce(nullif(nullif(btrim(event.target_user_sid),'-'),''),nullif(nullif(btrim(facts.account_target_sid),'-'),''))";
     const string TargetName = "coalesce(nullif(nullif(btrim(event.target_user_name),'-'),''),nullif(nullif(btrim(facts.account_target_name),'-'),''))";
-    public static AdSecurityQuery Create(AdReportRequest r,JsonArray? cold=null,DateTimeOffset? cutoff=null,bool useColdFacts=false,IConfiguration? config=null)
+    public static AdSecurityQuery Create(AdReportRequest r,JsonArray? cold=null,DateTimeOffset? cutoff=null,bool useColdFacts=false,IConfiguration? config=null,bool maintenance=false)
     {
         var q = new AdSecurityQuery(); var f = r.Filters;
         bool changes = f["changes_view"] is not null;
         string joins=AdColdFactsSql.Joins(config,authentication:!changes);
         string metadata=",event.day,event.event_count,event.first_seen_utc,event.last_seen_utc,event.summary_key,event.actor,event.target,event.source,event.computer,event.fields::text as compact_fields,event.fields->>'CallerComputerName' as caller_computer ";
         q.selected = f["event_id"] is not null ? [checked((int)f.Int("event_id"))]
-            : (changes ? AdSecurity.ChangeEventIds() : AdReportStore.EventIds("security"))
+            : (changes ? AdSecurity.ChangeEventIds(maintenance) : AdReportStore.EventIds("security"))
                 .Where(id => f.Text("category") is null || AdSecurity.Family(id) == f.Text("category")).ToArray();
-        if (changes) q.selected = q.selected.Where(id => AdSecurity.ChangeView(id) is not null).ToArray();
+        if (changes) q.selected = q.selected.Where(id => AdSecurity.ChangeView(id) is not null && (maintenance || id is not (4697 or 7045))).ToArray();
         string groupKey = "event.summary_key";
         string idKey = "coalesce(event.id,0)";
         string domain = q.Param(r.Domain), codes = q.Param(q.selected);
         string start = q.Param(r.Period!.Start.UtcDateTime), end = q.Param(r.Period.End.UtcDateTime);
         string day = "event.day";
-        string where = $" where event.domain_id={domain} and server.role='domain_controller' and event.event_id=any({codes}) and channel.value='Security' and ((event.event_id=1102 and provider.value='Microsoft-Windows-Eventlog') or (event.event_id<>1102 and provider.value='Microsoft-Windows-Security-Auditing')) and (case when {day} is null then event.time_created_utc>={start} else {day}>=({start} at time zone 'UTC')::date end) and event.time_created_utc<{end}";
+        const string securityChannel = "(channel.value='Security' and ((event.event_id=1102 and provider.value='Microsoft-Windows-Eventlog') or (event.event_id<>1102 and provider.value='Microsoft-Windows-Security-Auditing')))";
+        string channels = maintenance && changes ? $"({securityChannel} or event.event_id=7045 and channel.value='System' and provider.value='Service Control Manager')" : securityChannel;
+        string where = $" where event.domain_id={domain} and server.role='domain_controller' and event.event_id=any({codes}) and {channels} and (case when {day} is null then event.time_created_utc>={start} else {day}>=({start} at time zone 'UTC')::date end) and event.time_created_utc<{end}";
         void Identity(string name, string sid, string value)
         {
             if (f.Text(name) is not {} filter) return;
@@ -45,6 +47,28 @@ internal sealed class AdSecurityQuery
         string actorName = changes ? "coalesce(event.method->'$principals'->>'SubjectUserName',event.subject_user_name)" : "event.subject_user_name";
         string actorSid = changes ? "coalesce(event.method->'$principals'->>'SubjectUserSid',event.subject_user_sid)" : "event.subject_user_sid";
         string targetName = changes ? $"coalesce(event.method->'$principals'->>'TargetUserName',{TargetName})" : TargetName;
+        string apply = "null::timestamptz", service = "null::text", gpo = "null::text";
+        if (changes && maintenance)
+        {
+            if (q.selected.Contains(4719))
+                apply = "case when event.event_id=4719 then public.sli_audit_apply421(event.id,event.time_created_utc) end";
+            if (q.selected.Any(id => id is 4697 or 7045))
+            {
+                service = "case when event.event_id in(4697,7045) then public.sli_service_install421(event.id,event.time_created_utc) end";
+                where += " and (event.event_id not in(4697,7045) or sli.service is not null)";
+            }
+            var identity = config?.GetSection($"Sli:OwnActions:AuditGpo:{r.Domain}");
+            if (q.selected.Contains(5136) && Guid.TryParse(identity?["Guid"], out var objectId)
+                && objectId != Guid.Empty && identity?["Name"] is { Length: > 0 and <= 256 } objectName)
+                gpo = $"case when event.event_id=5136 and lower(trim(both '{{}}' from event.target))={q.Param(objectId.ToString())} then {q.Param(objectName)}::text end";
+            joins += $"""
+
+                cross join lateral (select {apply} as applied_at,{service} as service,{gpo} as gpo) sli
+                """;
+            const string ownAction = "sli.applied_at is not null or sli.service is not null or sli.gpo is not null";
+            actorName = $"case when {ownAction} then 'SLI' else {actorName} end";
+            actorSid = $"case when not ({ownAction}) then {actorSid} end";
+        }
         Identity("actor", actorSid, actorName);
         if (changes && f.Text("target_account") is {} account)
         {
@@ -104,7 +128,7 @@ internal sealed class AdSecurityQuery
         q.DailySql = $"select to_char(event.time_created_utc at time zone ${q.Args.Count + 1},'YYYY-MM-DD') as date,event.event_id,sum(event.event_count) as count " + joins + where + " group by 1,event.event_id order by 1,event.event_id";
         if (changes)
         {
-            q.SelectChanges(r, joins, where, actorName, actorSid, targetName);
+            q.SelectChanges(r, joins, where, actorName, actorSid, targetName, maintenance);
             return q;
         }
         string pageWhere = "attempt_row=1", windowWhere = where;
@@ -155,7 +179,7 @@ internal sealed class AdSecurityQuery
         return q;
     }
 
-    private void SelectChanges(AdReportRequest request, string joins, string where, string actorName, string actorSid, string targetName)
+    private void SelectChanges(AdReportRequest request, string joins, string where, string actorName, string actorSid, string targetName, bool maintenance)
     {
         ChangeCounts = true;
         string view = Param(request.Filters.Text("changes_view")!);
@@ -179,6 +203,8 @@ internal sealed class AdSecurityQuery
             seek = $"where (time_created_utc,event_db_id){comparison}({Param(after.Time.UtcDateTime)},{Param(after.Id)})";
         }
         string limit = Param(request.Limit + 1);
+        const string subcategory = "lower(btrim(compact_fields::jsonb->>'SubcategoryGuid','{}'))";
+        string maintenanceColumns = maintenance ? "sli.applied_at,sli.service as sli_service,sli.gpo as sli_gpo" : "null::timestamptz as applied_at,null::text as sli_service,null::text as sli_gpo";
         SelectSql = $"""
             with candidates as (
                 select event.id as event_db_id,event.domain_id,event.server_id,event.event_record_id,event.event_id,event.time_created_utc,
@@ -187,20 +213,26 @@ internal sealed class AdSecurityQuery
                     {TargetSid} as target_user_sid,{targetName} as target_user_name,
                     facts.membership_member_sid,facts.membership_member_name,facts.account_name_before,facts.account_name_after,
                     facts.result_code,event.source_core_sha256,facts.source_facts_sha256,event.fields::text as compact_fields,
-                    case {category} end as change_view,
+                    case {category} end as change_view,{maintenanceColumns},
                     case when {actorSid} ~* '^S-1-[0-9]+(-[0-9]+)+$' then upper({actorSid}) end as actor_sid
                 {joins} {where} and event.day is null and event.id>0
+            ), audit_counts as (
+                select server_id,applied_at,count(distinct {subcategory}) as applied_subcategories
+                from candidates where applied_at is not null group by server_id,applied_at
             ), grouped as materialized (
                 select *, first_value(event_db_id) over batch as group_anchor,
                     count(*) over batch as repeat_count,min(time_created_utc) over batch as first_seen_utc
-                from candidates
-                window batch as (partition by server_id,event_id,actor_sid,audit_keywords,{groupId},
-                    date_bin(interval '5 minutes',time_created_utc,timestamptz '2000-01-01')
+                from candidates left join audit_counts using(server_id,applied_at)
+                window batch as (partition by server_id,event_id,actor_sid,applied_at,
+                    case when applied_at is null then audit_keywords end,
+                    case when applied_at is null then {groupId} end,
+                    case when applied_at is null then date_bin(interval '5 minutes',time_created_utc,timestamptz '2000-01-01') end
                     order by time_created_utc desc,event_db_id desc rows between unbounded preceding and unbounded following)
             ), selected_rows as materialized (
                 select * from grouped where ({view}='all' or change_view={view}) and {filter}
             ), counts as (
                 select count(*) as "all",{counts},(select count(*) from selected_rows) as display_count from grouped
+                where applied_at is null or event_db_id=group_anchor
             ), page as (
                 select * from selected_rows {seek} order by time_created_utc {order},event_db_id {order} limit {limit}
             )
