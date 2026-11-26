@@ -196,22 +196,33 @@ public sealed class PluginReceiptsPostgresTests
     }
 
     [Fact]
-    public async Task PluginStateUsesTheRealDatabaseReaderAndArrayBindings()
+    public async Task PluginStateReturnsReceiptsAndAssignedSourcesFromPostgres()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var f = new Fixture(); await f.StartAsync(ct);
         await f.SqlAsync("""
             insert into sli_agent_receipts values ('runtime','sli.windows.ad-dc','2026-10-25');
-            create function read_plugin_states_v1() returns table(plugin_id text)
-                language sql as $$select 'sli.ad'::text$$;
+            create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
+                file_audit jsonb, registration_host_name text);
+            create table sli_agent_module_bindings(agent_id integer, module_id text);
+            insert into sli_agents values
+                (1, 'active', '[{"module_id":"sli.workstations","enabled":true}]',
+                 '{"interval_seconds":60}', '{}', 'station.example.test');
+            create function read_plugin_states_v1() returns table(plugin_id text,enabled boolean)
+                language sql as $$values ('sli.ad'::text,true), ('sli.workstations'::text,true)$$;
             """, ct);
 
         var response = await f.Service.DispatchAsync("GET", "/api/v1/plugins", new JsonObject(),
             new Principal("session", 1, "admin", "synthetic"), null, false, ct);
 
-        var item = Assert.Single(response["items"]!.AsArray())!;
-        Assert.Equal("sli.ad", (string?)item["plugin_id"]);
-        FactEquals(item["data_receipts"]!.AsObject(), "observed", "2026-10-25T00:00:00+00:00");
-        Assert.Equal(2, f.Connections.Opens);
+        var items = response["items"]!.AsArray().OfType<JsonObject>().ToDictionary(item => (string)item["plugin_id"]!);
+        var ad = items["sli.ad"];
+        FactEquals(ad["data_receipts"]!.AsObject(), "observed", "2026-10-25T00:00:00+00:00");
+        Assert.Equal("no_sources", (string?)ad["status"]!["state"]);
+
+        var workstation = items["sli.workstations"];
+        Assert.Equal("waiting", (string?)workstation["status"]!["state"]);
+        Assert.Equal(1, (int?)workstation["source_count"]);
+        Assert.Equal("station.example.test", (string?)Assert.Single(workstation["source_names"]!.AsArray()));
     }
 }

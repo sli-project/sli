@@ -34,7 +34,8 @@ public static class HomeSummaryEndpoints
                 await DomainHttp.WriteAsync(context, new { error = "workspace_view_required" }, 403, ct);
                 return;
             }
-            var query = HomeSummaryQuery.Parse(context.Request.Query, DateTimeOffset.UtcNow) with { Language = context.Request.Headers.AcceptLanguage.ToString() };
+            var clock = services.GetService<TimeProvider>() ?? TimeProvider.System;
+            var query = HomeSummaryQuery.Parse(context.Request.Query, clock.GetUtcNow()) with { Language = context.Request.Headers.AcceptLanguage.ToString() };
             var payload = await services.GetRequiredService<HomeSummaryService>().BuildAsync(principal, query, ct);
             await DomainHttp.WriteAsync(context, payload, 200, ct);
         }
@@ -42,10 +43,11 @@ public static class HomeSummaryEndpoints
         { await DomainHttp.WriteAsync(context, new { error = error.Status == 400 ? "home_parameters_invalid" : error.Message }, error.Status, ct); }
         catch (DomainScopeCompositionException)
         { await DomainHttp.WriteAsync(context, new { error = "home_parameters_invalid" }, 400, ct); }
+        catch (Exception error) when (ct.IsCancellationRequested &&
+            error is OperationCanceledException or Npgsql.PostgresException { SqlState: "57014" }) { }
         catch (Exception error) when (error is TimeoutException or Npgsql.PostgresException { SqlState: "57014" }
             or Npgsql.NpgsqlException { InnerException: TimeoutException })
         { await DomainHttp.WriteAsync(context, new { error = "report_read_timeout", state = "unavailable" }, 503, ct); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception error)
         {
             if (context.Response.HasStarted) throw;

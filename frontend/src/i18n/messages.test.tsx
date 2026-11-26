@@ -11,7 +11,8 @@ import { ru } from "./ru";
 import { en } from "./en";
 
 const catalogRoot = existsSync("config/i18n") ? "config/i18n" : "../config/i18n";
-const legacyProblemMessages = new Set([
+const legacyServerMessages = new Set([
+  "setup.agentCollection.error",
   "security.problems.presentation.watch_limitation",
   "security.problems.presentation.decoy_limitation",
   "security.problems.presentation.default_next",
@@ -40,7 +41,7 @@ describe("API message resolution", () => {
     expect(row.title_text).toBe("other language");
     expect(resolvePresentation({ presentation_messages: { title: { code: "future.code", params: {}, text: "future wording" } }, title: "legacy" }).title).toBe("future wording");
   });
-  it.each(["ru", "en"] as const)("localizes shared API messages and accepts legacy problem messages in %s", (locale) => {
+  it.each(["ru", "en"] as const)("localizes shared API messages and accepts legacy server messages in %s", (locale) => {
     setLocale(locale);
     const server: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${locale}.json`, "utf8"));
     for (const [code, text] of Object.entries(server)) {
@@ -49,8 +50,9 @@ describe("API message resolution", () => {
         expect(Object.hasOwn(ru, code) || Object.hasOwn(en, code), code).toBe(false);
         continue;
       }
-      if (legacyProblemMessages.has(code)) {
-        expect(resolveMessage({ code, params: {}, text: "Legacy server wording" }), code).toBe("Legacy server wording");
+      if (legacyServerMessages.has(code)) {
+        expect(Object.hasOwn(ru, code) || Object.hasOwn(en, code), code).toBe(false);
+        expect(resolveMessage({ code, params: {}, text }), code).toBe(text);
         continue;
       }
       expect(Object.hasOwn(ru, code), `Missing ru translation: ${code}`).toBe(true);
