@@ -85,7 +85,9 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             long id = row.Number("id");
             var (name, fact) = HomePresentation.PeriodProblem(row, query, queueIdentity);
             var subject = row["subject"];
-            var lookup = DisplayName(subject.Text("group_name")) ?? (row["password"].Number("accounts") <= 1 ? name : null);
+            var accountCount = row["password_totals"]?["accounts"] is null
+                ? row["password"].Number("accounts") : row["password_totals"].Number("accounts");
+            var lookup = DisplayName(subject.Text("group_name")) ?? (accountCount <= 1 ? name : null);
             var entity = row["entity"];
             var observations = Rows(row["observations"]).Select(observation => new {
                 at = observation.Stamp("at"), event_id = observation.Number("event_kind"),
@@ -105,6 +107,8 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                     && row["key"] is JsonArray key ? HomeSummaryQuery.Href("security.problems",
                         new Dictionary<string, object?>(links) { ["population"] = "open", ["cohort"] = key.ToJsonString() }) : null,
                 observations,
+                observations_are_sample = row["password_totals"].Number("attempts") >
+                    observations.Count(observation => observation.event_id is 4625 or 4771 or 4776),
                 href = HomeSummaryQuery.Href("security.problems", new Dictionary<string, object?>(links) { ["id"] = id }),
                 object_href = objectLinks && lookup is not null && entity.Number("id") > 0
                     && string.Equals(lookup, DisplayName(entity.Text("name")), StringComparison.OrdinalIgnoreCase)

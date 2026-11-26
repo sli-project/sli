@@ -143,7 +143,10 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         return source is not null || c.WorkstationServerId.HasValue || c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
             pivot.Length > 0 || view is "groups" or "audit" or "failures" or "service"
             ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"))
-                { ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin } : null;
+                {
+                    ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin,
+                    PageOnly = c.Action == "view" && c.WorkstationServerId is null && source is null && before is null,
+                } : null;
     }
 
     private async Task LinkProblemsAsync(ReportQueryContext c, Dictionary<JsonObject, HashSet<long>> evidence, CancellationToken ct)
@@ -154,7 +157,18 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
 
         long[] ids = evidence.Values.SelectMany(group => group).Distinct().ToArray();
         await using var db = await database.OpenAsync(false, ct);
-        var links = await db.QueryAsync($"""
+        var links = await db.QueryAsync(ProblemLinksSql, ct, ids, domains);
+        var byId = links.OfType<JsonObject>().Where(link => Integer(link["event_db_id"], out _) && Integer(link["finding_id"], out _))
+            .ToDictionary(link => link["event_db_id"]!.GetValue<long>(), link => (Id: link["finding_id"]!.GetValue<long>(), Priority: link["priority"]!.GetValue<int>()));
+        foreach (var (row, group) in evidence)
+        {
+            var link = group.Where(byId.ContainsKey).Select(id => byId[id])
+                .DefaultIfEmpty().MinBy(link => (link.Priority, -link.Id));
+            if (link.Id > 0) row["journal_finding_id"] = link.Id;
+        }
+    }
+
+    internal static readonly string ProblemLinksSql = $"""
             select distinct on (linked.event_db_id) linked.event_db_id,findings.id as finding_id,
                    case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end as priority
             from (select distinct event_db_id,finding_id from finding_event_details337 where event_db_id=any($1)) linked
@@ -166,16 +180,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
               and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
                   and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
             order by linked.event_db_id,priority,findings.id desc
-            """, ct, ids, domains);
-        var byId = links.OfType<JsonObject>().Where(link => Integer(link["event_db_id"], out _) && Integer(link["finding_id"], out _))
-            .ToDictionary(link => link["event_db_id"]!.GetValue<long>(), link => (Id: link["finding_id"]!.GetValue<long>(), Priority: link["priority"]!.GetValue<int>()));
-        foreach (var (row, group) in evidence)
-        {
-            var link = group.Where(byId.ContainsKey).Select(id => byId[id])
-                .DefaultIfEmpty().MinBy(link => (link.Priority, -link.Id));
-            if (link.Id > 0) row["journal_finding_id"] = link.Id;
-        }
-    }
+            """;
 
     internal static long? DomainChangeDomain(AccessDecision access, JsonObject origin) =>
         origin.Text("server_role") == "domain_controller" && origin.Text("channel") == "Security" &&

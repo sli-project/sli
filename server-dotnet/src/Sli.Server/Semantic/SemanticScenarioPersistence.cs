@@ -226,9 +226,19 @@ internal sealed partial class SemanticProduction
         var publication = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding14, ct, sid)).Single()!;
         if (publication.Number("finding_id") != id || publication.Text("finding_fingerprint") != fingerprint) throw new InvalidDataException("finding_publication_replay_conflict");
         if (created.Count > 0) await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding15, ct, id);
-        if (p.Policy.Source == "qw_signal" && (!passwordThreshold || created.Count > 0)) await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding16, ct, sid);
-        if (p.DcCatalogEvidence is not null)
-            await session.QueryAsync("select public.enqueue_dc_catalog_notifications401($1) as enqueued", ct, sid);
+        bool legacyModule = rule is "semantic.qw.nps-denials" or "semantic.qw.file-decoy" or "semantic.qw.file-acl-broad-write";
+        if (finding.Flag("transition_admission") && !legacyModule)
+        {
+            if ((p.Policy.Source == "qw_signal" || p.DcCatalogEvidence is not null) &&
+                Notifications.ProblemNotification.IsTransition(created.Count > 0, false, finding.Text("status")!, finding.Text("severity")!, scenario.Text("risk_class")!))
+                await session.QueryAsync("select public.enqueue_problem_notification423($1,$2) as enqueued", ct, sid, job);
+        }
+        else
+        {
+            if (p.Policy.Source == "qw_signal" && (!passwordThreshold || created.Count > 0)) await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding16, ct, sid);
+            if (p.DcCatalogEvidence is not null)
+                await session.QueryAsync("select public.enqueue_dc_catalog_notifications401($1) as enqueued", ct, sid);
+        }
         await RecordFindingIdentitySupersessions(session, sid, id, ct);
         return created.Count > 0;
     }

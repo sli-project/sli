@@ -182,8 +182,8 @@ internal static class SemanticRiskSql
                 on conflict(fingerprint) do nothing
                 returning id
         """;
-    internal const string publish_enabled_scenario_finding8 = """
-        select id,rule_code from findings
+    internal const string publish_enabled_scenario_finding8 = $"""
+        select id,rule_code,status,severity,{Notifications.ProblemNotification.AdmissionAvailable} as transition_admission from findings
                 where fingerprint=$1
                 for update
         """;

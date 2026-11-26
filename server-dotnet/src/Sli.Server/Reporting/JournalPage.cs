@@ -11,6 +11,7 @@ internal sealed record JournalOptions(bool Collapse, long? Expand, long? Before,
     internal long? ServerId { get; init; }
     internal string? SourceInstanceId { get; init; }
     internal string? SourcePlugin { get; init; }
+    internal bool PageOnly { get; init; }
 }
 
 internal static class JournalPage
@@ -84,9 +85,12 @@ internal static class JournalPage
             sql.Predicates.Add(matches.Count > 0 ? string.Join(" or ", matches) : "false");
         }
 
-        var start = DateTimeOffset.Parse(query["time_from"], CultureInfo.InvariantCulture);
+        var start = DateTimeOffset.Parse(query["time_from"], CultureInfo.InvariantCulture).ToUniversalTime();
+        var end = DateTimeOffset.Parse(query["time_to"], CultureInfo.InvariantCulture).ToUniversalTime();
+        bool pageOnly = options.PageOnly && options.Before is null && start >= boundary;
+        int scanStartIndex = sql.Values.Count;
         string from = sql.Parameter(start);
-        string to = sql.Parameter(DateTimeOffset.Parse(query["time_to"], CultureInfo.InvariantCulture));
+        string to = sql.Parameter(end);
         string hotBoundary = sql.Parameter(boundary);
         string source = EntityShortSql.Source(hotBoundary, daily: start < boundary)
             .Replace("from event_hot h where ", $"from event_hot h where h.time_created_utc>={from} and h.time_created_utc<{to} and ", StringComparison.Ordinal)
@@ -235,9 +239,18 @@ internal static class JournalPage
             statement += $", visible as (select *,false as journal_expandable from candidates {categoryWhere})";
 
         sql.Predicates.Clear();
+        int cursorIndex = sql.Values.Count;
         if (query.TryGetValue("cursor", out var cursor)) sql.Interactive(Dataset, new Dictionary<string, string> { ["cursor"] = cursor }, 90);
+        var cursorTime = sql.Values.Count > cursorIndex ? (DateTimeOffset?)sql.Values[cursorIndex] : null;
+        int windowIndex = sql.Values.Count;
+        if (pageOnly && options.Expand is null)
+        {
+            sql.Add("event.time_created_utc>=", start);
+            sql.Add("event.time_created_utc<", end);
+        }
         string after = sql.Predicates.Count > 0 ? "where " + string.Join(" and ", sql.Predicates) : "";
-        bool metadata = options.Expand is null && options.Before is null;
+        // Exact totals and column variation require a separate full-period read.
+        bool metadata = !pageOnly && options.Expand is null && options.Before is null;
         string counts = "null::jsonb";
         string eventCount = "null::numeric";
         bool includeTotals = metadata && security;
@@ -269,13 +282,15 @@ internal static class JournalPage
                 select id,id,companion_id,server_id from page where repeat_key is null and companion_id is not null
             ),
             page_members as (
-                select anchor_id,jsonb_agg(jsonb_build_array(member.id,server_id)) as members
+                select anchor_id,jsonb_agg(jsonb_build_array(member.id,server_id) order by member.id,server_id) as members
                 from page_actions cross join lateral unnest(array[id,companion_id]) member(id)
                 where member.id is not null
                 group by anchor_id
             )
             """ : "";
-        string columns = metadata ? VaryingColumns(includeMembers, security, technical, accounts) : "null::jsonb";
+        string shape = pageOnly && options.Expand is null ? "null::bigint as filtered_count,null::jsonb as journal_varying_columns"
+            : $"count(*) as filtered_count,{(metadata ? VaryingColumns(includeMembers, security, technical, accounts) : "null::jsonb")} as journal_varying_columns from visible";
+        int limitIndex = sql.Values.Count;
         statement += $"""
             , page as (
                 select event.* from visible event {after}
@@ -283,7 +298,7 @@ internal static class JournalPage
             )
             {memberLookup}
             , shape as (
-                select count(*) as filtered_count,{columns} as journal_varying_columns from visible
+                select {shape}
             ),
             meta as (
                 select shape.*,
@@ -299,11 +314,18 @@ internal static class JournalPage
                 ),'[]'::jsonb) from page {(includeMembers ? "left join page_members on page_members.anchor_id=page.id" : "")}
             ) as items from meta
             """;
-        // Compile-time partition pruning still leaves a large plan on retained
-        // hosts. LLVM compilation is more expensive than this bounded scan.
+        // LLVM compilation is more expensive than running these report queries.
         await db.QueryAsync("set local jit=off", [], ct);
-        var meta = (await db.QueryAsync(statement, sql.Values, ct)).Single();
-        var rows = meta.Array("items").OfType<JsonObject>().ToArray();
+        JsonObject meta = new();
+        JsonObject[] rows;
+        if (pageOnly)
+            rows = await ReadWindowsAsync(db, statement, sql.Values, start, end, cursorTime, options.Expand, groupRepeats,
+                scanStartIndex, windowIndex, limitIndex, limit + 1, ct);
+        else
+        {
+            meta = (await db.QueryAsync(statement, sql.Values, ct)).Single();
+            rows = meta.Array("items").OfType<JsonObject>().ToArray();
+        }
         bool more = rows.Length > limit && security && !options.Before.HasValue &&
             (identity || rows[limit - 1]["day"] is not null);
         var items = Nodes(rows.Take(limit).Select(storedRow =>
@@ -362,6 +384,51 @@ internal static class JournalPage
             ["journal_event_count"] = metadata ? meta["journal_event_count"]?.DeepClone() : null,
             ["journal_counts"] = metadata && security ? meta["journal_counts"]?.DeepClone() : null,
         };
+    }
+
+    private static async Task<JsonObject[]> ReadWindowsAsync(IReportSession db, string statement, List<object?> values,
+        DateTimeOffset start, DateTimeOffset end, DateTimeOffset? cursor, long? expand, bool grouped,
+        int scanStartIndex, int windowIndex, int limitIndex, int take, CancellationToken ct)
+    {
+        // Windows align with repeat_key. A pair can span two seconds. Its
+        // mutual ranking can depend on a competing event two seconds farther.
+        var bucket = TimeSpan.FromMinutes(10);
+        var pairingMargin = TimeSpan.FromSeconds(grouped ? 4 : 0);
+        var rows = new List<JsonObject>(take);
+        var upper = expand is null && cursor is { } at && at < end ? at.AddTicks(10) : end;
+        string idFilter = expand.HasValue ? "and event_id=@p2" : "";
+        string seek = $"""
+            select greatest(
+                (select time_created_utc from event_hot where time_created_utc>=@p0 and time_created_utc<@p1 {idFilter}
+                    order by time_created_utc desc limit 1),
+                (select time_created_utc from event_cold_facts where time_created_utc>=@p0 and time_created_utc<@p1 {idFilter}
+                    order by time_created_utc desc limit 1)
+            ) as window_event
+            """;
+        while (rows.Count < take && upper > start)
+        {
+            object?[] seekValues = expand.HasValue ? [start, upper, expand.Value] : [start, upper];
+            var newest = (await db.QueryAsync(seek, seekValues, ct)).Single()["window_event"];
+            if (newest is null) break;
+            var stamp = DateTimeOffset.Parse(newest.ToString(), CultureInfo.InvariantCulture).ToUniversalTime();
+            var bucketStart = new DateTimeOffset(stamp.Ticks - stamp.Ticks % bucket.Ticks, TimeSpan.Zero);
+            var bucketEnd = bucketStart.Add(bucket);
+            var scanStart = bucketStart.Subtract(pairingMargin);
+            var scanEnd = bucketEnd.Add(pairingMargin);
+            values[scanStartIndex] = scanStart > start ? scanStart : start;
+            values[scanStartIndex + 1] = scanEnd < end ? scanEnd : end;
+            if (!expand.HasValue)
+            {
+                values[windowIndex] = bucketStart;
+                values[windowIndex + 1] = bucketEnd;
+            }
+            values[limitIndex] = take - rows.Count;
+            var page = (await db.QueryAsync(statement, values, ct)).Single();
+            rows.AddRange(page.Array("items").OfType<JsonObject>());
+            if (expand.HasValue) break;
+            upper = bucketStart;
+        }
+        return rows.ToArray();
     }
 
     // Logon IDs are local to the recording computer. NTLM validation does not
