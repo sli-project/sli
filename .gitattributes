@@ -52,3 +52,6 @@ config/sigma/licenses/* -text
 agent-dotnet/tests/vectors/file-audit-scenarios.json text eol=lf
 agent-dotnet/tests/vectors/nps-scenarios.json text eol=lf
 agent-dotnet/tests/vectors/workstations-scenarios.json text eol=lf
+
+# i18n dictionaries are edited by many parallel PRs: one line ending avoids whole-file conflicts (26.11).
+frontend/src/i18n/*.ts text eol=lf
