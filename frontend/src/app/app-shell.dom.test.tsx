@@ -123,6 +123,7 @@ describe("AppShell", () => {
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
       "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2",
+      "/report/file-audit.overview", "/report/workstations.overview",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
@@ -188,7 +189,7 @@ describe("AppShell", () => {
   });
 
   it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access", "sli.workstations"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
-    registryState.preview = true;
+    registryState.preview = id === "sli.remote-access";
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
     await waitFor(() => expect(screen.getByRole("main").querySelector('[data-state="denied"]')).not.toBeNull());
@@ -422,14 +423,14 @@ describe("AppShell", () => {
     for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
     expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
-      "/plugins",
+      "/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.workstations",
     ]);
     expect(within(nav).getAllByRole("link").slice(1).map((link) => link.textContent)).toEqual(locale === "ru" ? [
       "Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время",
-      "Все плагины",
+      "Все плагины", "Файловый аудит", "Рабочие станции",
     ] : [
       "System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time",
-      "All plugins",
+      "All plugins", "File auditing", "Workstations",
     ]);
     expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual(["/admin/status"]);
     expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");

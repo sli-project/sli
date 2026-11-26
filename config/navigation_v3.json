@@ -2,15 +2,14 @@
   "contract_id": "sli.navigation.v3",
   "beta_entries": [
     "workspace", "problems", "security-events", "events",
-    "ad-report", "users-report", "computers-report", "gpo-report",
+    "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "workstations-overview",
     "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale",
-    "plugins"
+    "plugins", "admin-plugin-file-audit", "admin-plugin-workstations"
   ],
   "preview_entries": [
-    "file-audit", "workstations-overview", "vpn-connections",
-    "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma"
+    "vpn-connections", "admin-plugin-remote-access", "admin-plugin-sigma"
   ],
-  "preview_plugins": ["sli.file-audit", "sli.workstations", "sli.remote-access", "sli.sigma"],
+  "preview_plugins": ["sli.remote-access", "sli.sigma"],
   "global_search": {
     "path": "/search",
     "capabilities": ["objects.view", "entity.view"]
@@ -257,7 +256,7 @@
           "entries": [
             {
               "id": "workstations-overview",
-              "label": "workstations.overview.nav_title",
+              "label": "plugins.workstations",
               "path": "/report/workstations.overview",
               "icon": "report",
               "plugin_id": "sli.workstations",
@@ -320,7 +319,7 @@
           "entries": [
             {
               "id": "file-audit",
-              "label": "file-audit.tabs.overview",
+              "label": "plugins.fileAudit",
               "path": "/report/file-audit.overview",
               "icon": "report",
               "plugin_id": "sli.file-audit",

@@ -11,8 +11,10 @@ namespace Sli.Server.Ad;
 public static class AdSecurity
 {
     internal static readonly string[] ChangeViews = ["all", "accounts", "groups", "passwords", "audit"];
-    internal static int[] ChangeEventIds() => AdReportStore.EventIds("security").Where(id => ChangeView(id) is not null).Append(5136).Order().ToArray();
-    internal static string? ChangeView(long id) => id == 5136 ? "accounts" : Family(id) switch
+    internal static int[] ChangeEventIds(bool maintenance = false) => AdReportStore.EventIds("security")
+        .Where(id => ChangeView(id) is not null)
+        .Concat(maintenance ? [4697, 5136, 7045] : new[] { 5136 }).Distinct().Order().ToArray();
+    internal static string? ChangeView(long id) => id is 4697 or 7045 ? "audit" : id == 5136 ? "accounts" : Family(id) switch
     {
         "account_lock" or "account_lifecycle" or "account_change" => "accounts",
         "group_membership" or "group_lifecycle" => "groups",
@@ -33,7 +35,7 @@ public static class AdSecurity
             string name = key switch { "target" => "target_account", "source" => "source_host", _ => key };
             if (key is "event_id" or "entity_id" or "event_db_id")
             {
-                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null && !(changes && id == 5136)) throw new AdInputException("security_events_filter_invalid");
+                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null && !(changes && id is (4697 or 5136 or 7045))) throw new AdInputException("security_events_filter_invalid");
                 filters[name] = id;
             }
             else filters[name] = key is "category" or "outcome" ? value.ToLowerInvariant() : value;
@@ -106,7 +108,8 @@ public static class AdSecurity
         foreach (var e in events)
         {
             long id = e.Int("event_id");
-            string? family = id == 5136 && request.Filters["changes_view"] is not null ? "directory_change" : Family(id);
+            string? family = request.Filters["changes_view"] is not null && id is (4697 or 5136 or 7045)
+                ? id == 5136 ? "directory_change" : "service_change" : Family(id);
             if (family is null) throw new AdInputException("security_events_event_invalid");
             if(e["day"] is not null)throw new AdInputException("security_events_event_identity_invalid");
             if (e.Int("event_db_id") <= 0 || items.Any(i => i.Int("event_db_id") == e.Int("event_db_id"))) throw new AdInputException("security_events_event_identity_invalid");
@@ -169,7 +172,11 @@ public static class AdSecurity
     }
     internal static async Task<JsonObject> ReadAsync(NpgsqlConnection db, AdReportRequest request, CancellationToken ct,Sli.Server.Storage.EventReports.IEventReadService details,IConfiguration? config=null, ILogger? logger=null)
     {
-        var query = AdSecurityQuery.Create(request,config:config);
+        bool maintenance = request.Filters["changes_view"] is not null
+            && (await AdJson.ReadAsync(db,
+                "select to_regprocedure('public.sli_audit_apply421(bigint,timestamptz)') is not null as available", ct))
+                .Single()["available"]!.GetValue<bool>();
+        var query = AdSecurityQuery.Create(request,config:config,maintenance:maintenance);
         var rows = await AdJson.ReadAsync(db, query.SelectSql, ct, query.Args.ToArray());
         var counts = query.ChangeCounts ? rows[0] : null;
         if (counts is not null) rows = rows.Where(r => r["event_db_id"] is not null).ToList();
@@ -200,12 +207,21 @@ public static class AdSecurity
             foreach (var item in result["items"]!.AsArray().OfType<JsonObject>())
             {
                 var source = sourceById[item.Int("event_db_id")];
-                if (source.Int("repeat_count") > 1 && request.Filters["batch"] is null)
+                if (source.Int("repeat_count") > 1 && source.Int("applied_subcategories") == 0 && request.Filters["batch"] is null)
                 {
                     item["repeat_count"] = source.Int("repeat_count");
                     item["first_seen_utc"] = source["first_seen_utc"]?.DeepClone();
                 }
                 item["channel"] = source["event_channel"]?.DeepClone();
+                if (source.Int("applied_subcategories") > 0)
+                {
+                    item["sli_audit_subcategories"] = source["applied_subcategories"]!.DeepClone();
+                    if (request.Filters["batch"] is null)
+                        item["change"] = Obj(new { state = "observed", kind = "audit_policy_changed" });
+                }
+                if (source.Text("sli_service") is not null) item["sli_service_install"] = true;
+                if ((source.Text("sli_service") ?? source.Text("sli_gpo")) is {} objectName)
+                    item["affected_account"] = Obj(new { state = "observed", name = objectName });
             }
             if (request.IncludeChangeSnapshotValues)
                 await DomainChangeSnapshotValues.AddAsync(db, request.Domain, result["items"]!.AsArray().OfType<JsonObject>().ToArray(), ct);

@@ -18,11 +18,12 @@ function destination(id, url) {
   if (!entry) throw new Error(`Missing navigation declaration: ${id}`);
   return { ...entry, url, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
 }
+const betaEntries = registry.beta_entries.map(id => destination(id, betaUrl));
 const previewEntries = registry.preview_entries.map(id => destination(id, previewUrl));
 for (const id of ['file-audit', 'workstations-overview']) {
-  if (!previewEntries.some(entry => entry.id === id)) throw new Error(`Missing preview destination for fixture: ${id}`);
+  if (!betaEntries.some(entry => entry.id === id)) throw new Error(`Missing default beta destination for fixture: ${id}`);
 }
-const entries = [...registry.beta_entries.map(id => destination(id, betaUrl)), ...previewEntries];
+const entries = [...betaEntries, ...previewEntries];
 await mkdir(results, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH, timeout: 0 });
 const rows = [];
