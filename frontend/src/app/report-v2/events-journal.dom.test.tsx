@@ -89,6 +89,23 @@ it("keeps the workstation source and return context when changing journal filter
   expect(normalized.get("source_instance_id")).toBe(source);
 });
 
+it("aborts the pending journal request when the report unmounts", async () => {
+  let dataSignal: AbortSignal | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!new URL(String(input), window.location.origin).pathname.endsWith("/data")) return Response.json(definition);
+    dataSignal = init?.signal ?? undefined;
+    return new Promise<Response>((_resolve, reject) => {
+      dataSignal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+  }));
+  const view = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ReportRenderer reportKey="events.journal"/>
+  </QueryClientProvider>);
+  await waitFor(() => expect(dataSignal?.aborted).toBe(false));
+  view.unmount();
+  expect(dataSignal?.aborted).toBe(true);
+});
+
 it("loads the new route period within the same journal domain and search text", async () => {
   const dataRequests: URLSearchParams[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
