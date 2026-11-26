@@ -4,10 +4,11 @@
     "workspace", "problems", "security-events", "events",
     "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "workstations-overview",
     "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale",
-    "plugins", "admin-plugin-file-audit", "admin-plugin-workstations"
+    "plugins"
   ],
   "preview_entries": [
-    "vpn-connections", "admin-plugin-remote-access", "admin-plugin-sigma"
+    "vpn-connections",
+    "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma"
   ],
   "preview_plugins": ["sli.remote-access", "sli.sigma"],
   "global_search": {
@@ -256,7 +257,7 @@
           "entries": [
             {
               "id": "workstations-overview",
-              "label": "plugins.workstations",
+              "label": "shell.section.workstations",
               "path": "/report/workstations.overview",
               "icon": "report",
               "plugin_id": "sli.workstations",
@@ -319,8 +320,8 @@
           "entries": [
             {
               "id": "file-audit",
-              "label": "plugins.fileAudit",
-              "path": "/report/file-audit.overview",
+              "label": "file-audit.title",
+              "path": "/report/file-audit.actions",
               "icon": "report",
               "plugin_id": "sli.file-audit",
               "reports": [
@@ -345,21 +346,21 @@
               ],
               "views": [
                 {
-                  "id": "overview",
-                  "label": "file-audit.tabs.overview",
-                  "path": "/report/file-audit.overview",
-                  "report_key": "file-audit.overview",
-                  "reports": [
-                    "file-audit.overview"
-                  ]
-                },
-                {
                   "id": "actions",
                   "label": "file-audit.tabs.actions",
                   "path": "/report/file-audit.actions",
                   "report_key": "file-audit.actions",
                   "reports": [
                     "file-audit.actions"
+                  ]
+                },
+                {
+                  "id": "overview",
+                  "label": "file-audit.tabs.overview",
+                  "path": "/report/file-audit.overview",
+                  "report_key": "file-audit.overview",
+                  "reports": [
+                    "file-audit.overview"
                   ]
                 },
                 {

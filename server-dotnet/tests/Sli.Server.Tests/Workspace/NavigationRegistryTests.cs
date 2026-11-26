@@ -145,9 +145,13 @@ public sealed class NavigationRegistryTests
         var access = Access(["vpn.audit", "file-audit.overview", "workstations.overview"], ["operations.view", "access.manage"]);
         var defaultNavigation = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States()));
         var preview = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States(), preview: true));
-        foreach (string id in new[] { "file-audit", "workstations-overview", "admin-plugin-file-audit", "admin-plugin-workstations" })
+        foreach (string id in new[] { "file-audit", "workstations-overview" })
+        {
             Assert.Contains(id, defaultNavigation);
-        foreach (string id in new[] { "vpn-connections", "admin-plugin-remote-access", "admin-plugin-sigma" })
+            Assert.Contains(id, preview);
+        }
+        foreach (string id in new[] { "vpn-connections", "admin-plugin-file-audit",
+            "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma" })
         {
             Assert.DoesNotContain(id, defaultNavigation);
             Assert.Contains(id, preview);
@@ -294,15 +298,13 @@ public sealed class NavigationRegistryTests
         var expected = new Dictionary<string, string[]>
         {
             ["status"] = ["/admin/status"], ["base"] = ["/agents", "/access", "/notifications", "/operations", "/admin/language-time", "/admin/update"],
-            ["plugins"] = ["/admin/plugins/sli.ad", "/admin/plugins/sli.gpo", "/admin/plugins/sli.workstations",
-                "/admin/plugins/sli.file-audit", "/plugins"],
+            ["plugins"] = ["/admin/plugins/sli.ad", "/admin/plugins/sli.gpo", "/plugins"],
             ["advanced"] = ["/report-studio", "/admin/activity"]
         };
         Assert.Equal(expected.Keys, admin["groups"]!.AsArray().Select(g => S(g!["id"])));
         foreach (var group in admin["groups"]!.AsArray()) Assert.Equal(expected[S(group!["id"])], group["entries"]!.AsArray().Select(e => S(e!["path"])));
         Assert.Equal(new[] { "workspace" }, Ids(Nav(Access([], []))));
-        Assert.Equal(new[] { "workspace", "admin-status", "operations", "admin-plugin-ad", "admin-plugin-gpo",
-                "admin-plugin-workstations", "admin-plugin-file-audit", "plugins" },
+        Assert.Equal(new[] { "workspace", "admin-status", "operations", "admin-plugin-ad", "admin-plugin-gpo", "plugins" },
             Ids(Nav(Access([], ["operations.view"]))));
     }
 
