@@ -5,18 +5,20 @@ set local lock_timeout='5s';
 select pg_advisory_xact_lock(hashtext('sli_sigma_live433_migration'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-        or not exists(select 1 from public.schema_migrations where version=424 and name='home_read_indexes')
+        or not exists(select 1 from public.schema_migrations where version=426 and name='semantic_outbox_retention')
         or exists(select 1 from public.schema_migrations where version>=433) then
         raise exception 'sigma_live433_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
 
-create temporary table sigma_seed433(
+-- Staging stays inside this transaction and requires only schema privileges.
+create table public.sigma_seed433(
     rule_id uuid primary key, sha text, path text, title text, author text, level text, status text, yaml text, canonical jsonb,
     check(encode(sha256(convert_to(yaml,'UTF8')),'hex')=sha)
-) on commit drop;
-insert into sigma_seed433 values
+);
+revoke all on public.sigma_seed433 from public,adlog_user,adlog_semantic_worker,adlog_storage_worker;
+insert into public.sigma_seed433 values
 ('14c71865-6cd3-44ae-adaa-1db923fae5f2','5b5ec26c8f1bc18f2f62fa4b0f062aeda129942cdebf5f6993aa23ba64449cba','rules/windows/powershell/powershell_script/posh_ps_tamper_windows_defender_set_mp.yml','Tamper Windows Defender - ScriptBlockLogging','frack113, elhoim, Tim Shelton (fps, alias support), Swachchhanda Shrawan Poudel, Nasreddine Bencherchali (Nextron Systems)','high','test',$sigma$title: Tamper Windows Defender - ScriptBlockLogging
 id: 14c71865-6cd3-44ae-adaa-1db923fae5f2
 related:
@@ -464,9 +466,9 @@ $sigma$,$canonical${"title":"PsExec Service Installation","id":"42c575ea-e41e-41
 
 -- The installation identity exists before this migration. A reserved source in
 -- the Sigma registry holds package revisions independently of DC enrollment.
-alter table sigma_seed433 add column installation_id uuid;
-update sigma_seed433 set installation_id=(select installation_id from public.semantic_default_installation);
-grant select on sigma_seed433 to adlog_sigma_owner;
+alter table public.sigma_seed433 add column installation_id uuid;
+update public.sigma_seed433 set installation_id=(select installation_id from public.semantic_default_installation);
+grant select on public.sigma_seed433 to adlog_sigma_owner;
 set local role adlog_sigma_owner;
 insert into sli_sigma.sigma_rule_revisions(
     installation_id,plugin_id,source_instance_id,rule_id,raw_yaml,canonical_rule,
@@ -475,7 +477,7 @@ select installation_id,'sli.sigma','starter',rule_id,yaml,
     canonical,
     '7d8b152a5fc062ebd309f62ae4d8276aca2786af',status,level,coalesce(canonical->'tags','[]'::jsonb),canonical->>'author','DRL-1.1',
     'https://github.com/SigmaHQ/sigma/blob/7d8b152a5fc062ebd309f62ae4d8276aca2786af/'||path
-from pg_temp.sigma_seed433 on conflict do nothing;
+from public.sigma_seed433 on conflict do nothing;
 set local role adlog_plugin_lifecycle_owner;
 grant select(plugin_id,package_lifecycle,desired_activation,component_runtime)
     on public.plugin_installations_v1 to adlog_storage_owner;
@@ -488,11 +490,12 @@ create table public.sigma_live_rules433 (
     enabled_at timestamptz not null default clock_timestamp()
 );
 insert into public.sigma_live_rules433(rule_id,raw_sha256,enabled)
-select s.rule_id,s.sha,coalesce(a.enabled,true) from pg_temp.sigma_seed433 s
+select s.rule_id,s.sha,coalesce(a.enabled,true) from public.sigma_seed433 s
 left join lateral (
     select (details->>'enabled')::boolean as enabled from public.semantic_control_audit
     where action='sigma_rule_live' and target=s.rule_id::text order by id desc limit 1
 ) a on true;
+drop table public.sigma_seed433;
 
 -- The inbox fills in the event transaction. A numeric event-id frontier alone
 -- would miss allocated IDs whose transactions commit after the frontier moves.

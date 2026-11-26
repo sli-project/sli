@@ -23,6 +23,7 @@ export type HomeProblem = {
   repeats_href?: string | null;
   source: string | null;
   observations: HomeObservation[];
+  observations_are_sample?: boolean;
   href: string;
   object_href: string | null;
 };

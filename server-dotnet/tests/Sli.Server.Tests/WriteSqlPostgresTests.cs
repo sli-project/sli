@@ -212,6 +212,11 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check(investigation + "/events", new { event_db_id = eventId }, 503, error: "module_disabled");
         await Check(investigation + "/events/remove", new { event_db_id = eventId }, 503, error: "module_disabled");
         await Check("/api/v1/platform-settings/semantic-control", new { action = "create_suppression", semantic_type = "sql.fixture", domain_id = 1, scope_kind = "bucket", scope_value = "unknown", reason = "Synthetic SQL suppression", expires_at = DateTimeOffset.UtcNow.AddDays(1) });
+        const string sigmaRule = "7b449a5e-1db5-4dd0-a2dc-4e3a67282538";
+        var sigma = await Check("/api/v1/semantic/sigma-live-rules", new { rule_id = sigmaRule, enabled = false });
+        var toggled = (sigma?["rules"] as JsonArray)?.SingleOrDefault(rule => rule?["rule_id"]?.GetValue<string>() == sigmaRule);
+        if (toggled?["enabled"]?.GetValue<bool>() is not false)
+            failures.Add("Sigma rule toggle did not return the starter rule as disabled.");
         await Check("/api/v1/semantic/scenarios/00000000-0000-4000-8000-000000000001/review", new { verdict = "confirmed_security", review_confidence = "high", rationale = "Synthetic SQL review", review_request_id = "00000000-0000-4000-8000-000000000002" }, 201);
         var search = await Check("/api/v1/event-search/query", new { contract_version = "evsearch.v1" });
         string execution = search?["execution_id"]?.ToString() ?? "missing";

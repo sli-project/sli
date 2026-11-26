@@ -49,18 +49,34 @@ function readableName(value: string) {
   return !/[\p{Cc}\p{Cf}\p{Cs}\uFFFD]|(?:[РС][\u0400-\u045f\u2010-\u203f]){2}|(?:[ÐÑ][\u0080-\u00bf\u2010-\u203f]){2}|[ÃÂ][\u0080-\u00bf]/u.test(value);
 }
 
-function quantity(kind: "eventCount" | "accountCount", count: number) {
+function eventQuantity(count: number) {
   const plural = new Intl.PluralRules(getLocale()).select(count);
-  return t(`problems.queue.${kind}.${plural === "zero" || plural === "two" ? "other" : plural}`, { count: formatNumber(count) });
+  return t(`problems.queue.eventCount.${plural === "zero" || plural === "two" ? "other" : plural}`, { count: formatNumber(count) });
+}
+
+function queueValues(values: string[], total: number | null) {
+  if (!values.length) return EMPTY_VALUE;
+  const count = Math.max(values.length, total ?? 0) - Math.min(values.length, 2);
+  const full = values.join(", ");
+  return <span data-problems-queue-values ref={(node) => {
+    const cell = node?.closest("td");
+    if (!cell) return;
+    cell.title = full;
+    return () => cell.removeAttribute("title");
+  }}>
+    <span>{values.slice(0, 2).join(", ")}</span>
+    {count > 0 ? <span>{t("problems.queue.moreValues", { count: formatNumber(count) })}</span> : null}
+  </span>;
 }
 
 function problemRow(row: RecordRow) {
   const attack = record(row.queue_attack);
+  const isAttack = Object.keys(attack).length > 0;
   const rawAccounts = distinctNames(attack.accounts);
   const accounts = rawAccounts.filter(readableName);
   const sources = distinctNames(attack.addresses);
   const addresses = sources.join(", ") || hostText(row.actor_text);
-  const accountCount = asCount(attack.account_count), eventCount = asCount(attack.event_count);
+  const accountCount = asCount(attack.account_count);
   const rule = asText(row.rule_code);
   const messages = record(row.presentation_messages);
   const displayText = (value: unknown, code: unknown) => {
@@ -69,9 +85,9 @@ function problemRow(row: RecordRow) {
   };
   const rawTitle = displayText(row.title_text, record(messages.title_text).code) || t("problems.queue.title");
   const brute = rule === "semantic.qw.password-brute-force";
+  const title = brute && !readableName(rawTitle) ? t("security.problems.presentation.brute_title") : rawTitle;
   const titleContainsAccount = accounts.some((name) => rawTitle.toLowerCase().includes(name.toLowerCase()));
-  const baseTitle = brute && (!readableName(rawTitle) || accounts.length > 1 && titleContainsAccount)
-    ? t("security.problems.presentation.brute_title") : rawTitle;
+  const baseTitle = brute && accounts.length > 1 && titleContainsAccount ? t("security.problems.presentation.brute_title") : title;
   const accountList = accounts.slice(0, 3).join(", ");
   const readableCount = Math.max(accounts.length, (accountCount ?? 0) - (rawAccounts.length - accounts.length));
   const more = readableCount - Math.min(accounts.length, 3);
@@ -81,9 +97,8 @@ function problemRow(row: RecordRow) {
   const participant = hostText(row.queue_participant);
   const group = hostText(row.queue_group);
   const entity = hostText(row.entity_text);
-  const facts = Object.keys(attack).length ? [addresses, accountCount ? quantity("accountCount", accountCount) : "", eventCount ? quantity("eventCount", eventCount) : ""]
-    : [group, participant || entity, hostText(row.actor_text)];
-  const title = [cardTitle, ...new Set(facts.filter((fact) => fact && !cardTitle.includes(fact)))].join(" · ");
+  const entities = distinctNames(Array.isArray(row.entity_messages)
+    ? row.entity_messages.map((value) => typeof value === "string" ? value : record(value).text) : []);
   const what = record(messages.what_happened);
   const parameters = record(what.params);
   const nextCode = record(messages.next_text).code;
@@ -92,11 +107,14 @@ function problemRow(row: RecordRow) {
       ? t("problems.queue.sprayAction", { source: sources[0] }) : displayText(row.next_text, nextCode);
   return {
     id: Number(row.id), state: stateOf(asText(row.status)), severity: row.severity, title, cardTitle,
-    entity: accountSummary || entity, actor: addresses, assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort),
-    evidence: asCount(row.evidence_total), occurrences: asCount(row.occurrence_count) ?? 1,
+    objects: accounts.length ? accounts : entities.length ? entities : [entity].filter(Boolean),
+    actors: sources.length ? sources : [addresses].filter(Boolean),
+    objectCount: accounts.length ? readableCount : null, addressCount: asCount(attack.address_count),
+    assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort), isAttack,
+    evidence: asCount(isAttack ? attack.event_count : row.evidence_total), occurrences: asCount(row.occurrence_count) ?? 1,
     first: asText(row.first_seen_utc), last: asText(row.last_seen_utc), until: asText(row.deferred_until),
-    object: accountSummary || [participant || entity, group].filter(Boolean).join(", "),
-    source: hostText(parameters.source) || (Object.keys(attack).length ? addresses : "") || hostText(parameters.computer),
+    object: accounts.join(", ") || [entities.length > 1 ? entities.join(", ") : participant || entity, group].filter(Boolean).join(", "),
+    source: (isAttack ? addresses : "") || hostText(parameters.source) || hostText(parameters.computer),
     description: displayText(row.what_happened, what.code), whatCode: asText(what.code), next,
     history: Array.isArray(row.status_history) ? row.status_history.map(record).filter((entry) =>
       !(entry.changed_by === "semantic-worker" && entry.note === "created from enabled semantic scenario")) : [],
@@ -248,27 +266,28 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       current={ids.length === 1 && ids[0] === active?.id ? active?.assignee : undefined} zone={timeZone} onSave={save}/> });
   };
   const columns: TableColumn<Problem>[] = [
-    ...(canManage ? [{ key: "select", label: "", width: "2.6rem", render: (row: Problem) => <Checkbox aria-label={t("problems.queue.selectNumber", { id: row.id })} checked={checked.includes(row.id)} disabled={checked.length >= 200 && !checked.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => setChecked((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))}/> }] : []),
-    { key: "number", align: "end", label: "№", width: "3.4rem", render: (row) => {
-      const index = rows.findIndex((item) => item.id === row.id);
-      return index < 0 ? EMPTY_VALUE : cursors.length * size + index + 1;
-    } },
-    { key: "severity", label: t("problems.queue.severity"), width: "9%", render: (row) => <SeverityBadge severity={row.severity}/> },
-    { key: "title", label: t("problems.queue.title"), width: "30%", render: (row) => <>
-      {fold && row.cohort && row.occurrences > 1 ? <><Button variant="ghost" aria-expanded={expanded === row.id} aria-label={t(expanded === row.id ? "problems.queue.collapse" : "problems.queue.expand", { id: row.id })} onClick={(event) => { event.stopPropagation(); setExpanded(expanded === row.id ? null : row.id); }}>{expanded === row.id ? "⌄" : "›"}</Button>{" "}</> : null}
-      <a href={`/app/report/security.problems?${new URLSearchParams({ id: String(row.id), ...(domain ? { domain } : {}) })}`} onClick={(event) => {
+    ...(canManage ? [{ key: "select", label: "", width: "var(--sli-space-10)", render: (row: Problem) => <Checkbox aria-label={t("problems.queue.selectNumber", { id: row.id })} checked={checked.includes(row.id)} disabled={checked.length >= 200 && !checked.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => setChecked((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))}/> }] : []),
+    { key: "severity", label: t("problems.queue.severity"), width: "calc(var(--sli-space-10) * 2 + var(--sli-space-6))", render: (row) => <SeverityBadge severity={row.severity}/> },
+    { key: "title", label: t("problems.queue.title"), render: (row) => <div data-problems-queue-title>
+      {fold && row.cohort && row.occurrences > 1 ? <Button variant="ghost" aria-expanded={expanded === row.id} aria-label={t(expanded === row.id ? "problems.queue.collapse" : "problems.queue.expand", { id: row.id })} onClick={(event) => { event.stopPropagation(); setExpanded(expanded === row.id ? null : row.id); }}>{expanded === row.id ? "⌄" : "›"}</Button> : null}
+      <a title={row.title} href={`/app/report/security.problems?${new URLSearchParams({ id: String(row.id), ...(domain ? { domain } : {}) })}`} onClick={(event) => {
         event.stopPropagation();
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault(); select(row.id);
-      }}>{row.title}</a>{` · #${row.id}`}
-      {fold && row.cohort && row.occurrences > 1 ? <> ×{formatNumber(row.occurrences)}{row.first && row.last && row.first !== row.last ? ` · ${timeLabel(row.first, timeZone, true)}–${timeLabel(row.last, timeZone, true)}` : ""}</> : null}
-    </> },
-    { key: "entities", label: t("problems.queue.object"), width: "12%", value: (row) => row.entity },
-    { key: "actor", label: t("problems.queue.actor"), width: "10%", value: (row) => row.actor },
-    { key: "last_seen_utc", label: t("problems.queue.latest"), width: "9%", sortable: true, render: (row) => timeLabel(row.last, timeZone, true) },
-    { key: "evidence", align: "end", label: t("problems.queue.evidence"), width: "8%", render: (row) => row.evidence ? <button className="sli-ds-link" type="button" onClick={(event) => { event.stopPropagation(); select(row.id); }}>{quantity("eventCount", row.evidence)}</button> : EMPTY_VALUE },
-    { key: "state", label: t("problems.queue.status"), width: "9%", render: (row) => stateName(row.state) },
-    { key: "owner", label: t("problems.queue.owner"), width: "9%", value: (row) => row.assignee },
+      }}>{row.title}</a>
+      {fold && row.cohort && row.occurrences > 1 && (!row.isAttack || row.occurrences !== row.evidence) ? <span>×{formatNumber(row.occurrences)}</span> : null}
+    </div> },
+    { key: "entities", label: t("problems.queue.object"), width: "11.5%", render: (row) => queueValues(row.objects, row.objectCount) },
+    { key: "actor", label: t("problems.queue.actor"), width: "11%", render: (row) => queueValues(row.actors, row.addressCount) },
+    { key: "last_seen_utc", label: t("problems.queue.latest"), width: "9.5%", sortable: true, render: (row) => timeLabel(row.last, timeZone, true) },
+    { key: "evidence", align: "end", label: t("problems.queue.evidence"), width: "8.2%", render: (row) => {
+      if (!row.evidence) return EMPTY_VALUE;
+      const label = eventQuantity(row.evidence);
+      return <button className="sli-ds-link" type="button" aria-label={label} title={label}
+        onClick={(event) => { event.stopPropagation(); select(row.id); }}>{formatNumber(row.evidence)}</button>;
+    } },
+    { key: "state", label: t("problems.queue.status"), width: "8%", render: (row) => stateName(row.state) },
+    { key: "owner", label: t("problems.queue.owner"), width: "10.5%", value: (row) => row.assignee },
   ];
   const availableColumns = columns.filter(({ key }) => key !== "owner" || ownerAllowed);
   const count = incomplete ? null : result?.filtered_count;
@@ -339,7 +358,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
           next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
           onChange={(kind, choose) => decide(kind, [active.id], choose)}/>
       </div> : undefined}>
-      <DataTable caption={definition.title} columns={availableColumns.filter(({ key }) => !hidden.includes(key))} rows={visibleRows} rowKey={(row) => String(row.id)}
+      <div data-problems-queue-table><DataTable caption={definition.title} columns={availableColumns.filter(({ key }) => !hidden.includes(key))} rows={visibleRows} rowKey={(row) => String(row.id)}
         onRowClick={(row) => select(row.id)} selectedKey={selected === null ? null : String(selected)} density={compact ? "compact" : "standard"} showFooter={false}
         sort={{ field: "last_seen_utc", direction }} onSort={() => { setDirection((current) => current === "asc" ? "desc" : "asc"); clearRows(); }}
         afterRow={representative ? (row) => {
@@ -348,7 +367,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
           if (row.id === (expandedRows.at(-1)?.id ?? representative.id) && members.hasNextPage)
             return <Button disabled={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>{t(members.isFetchNextPageError ? "state.retry" : "table.loadMore")}</Button>;
           return null;
-        } : undefined}/>
+        } : undefined}/></div>
       {firstAdSource ? <FirstAdSource/>
         : rows.length === 0 ? <p role="status">{incomplete ? EMPTY_VALUE : t("problems.queue.empty")}</p> : null}
       {footer}
