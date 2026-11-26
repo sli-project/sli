@@ -8746,6 +8746,7 @@ export const ru = {
   "reports.domain_changes.previous_observation": "Наблюдалось ранее",
   "reports.domain_changes.attribute.display_name": "Отображаемое имя",
   "reports.v2.security.events.chains.actions.5136": "Изменение атрибута каталога",
+  "reports.v2.security.events.chains.actions.sli_service": "Установлена служба агента",
   "reports.domain_changes.attribute.sam_account_name": "Имя учётной записи",
   "reports.domain_changes.attribute.user_principal_name": "UPN",
   "reports.domain_changes.attribute.home_directory": "Домашняя папка",

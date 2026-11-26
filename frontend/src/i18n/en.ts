@@ -8752,6 +8752,7 @@ export const en: Record<MessageKey, string> = {
   "reports.domain_changes.previous_observation": "Previously observed",
   "reports.domain_changes.attribute.display_name": "Display name",
   "reports.v2.security.events.chains.actions.5136": "Directory attribute changed",
+  "reports.v2.security.events.chains.actions.sli_service": "Agent service installed",
   "reports.domain_changes.attribute.sam_account_name": "Account name",
   "reports.domain_changes.attribute.user_principal_name": "UPN",
   "reports.domain_changes.attribute.home_directory": "Home directory",
