@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DataTable, FactList, type TableColumn } from "../../design-system";
+import { Button, DataTable, FactList, FilterBar, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { aclDifferences, type AclDifference, type FileAuditComparison as Comparison, type FileAuditObservation } from "./acl";
@@ -38,9 +38,8 @@ export function FileAuditComparison({ comparison, pageSize: initialSize }: { com
   ];
   return <section className="sli-file-audit__comparison" aria-label={t("file-audit.compare.title")}>
     <p className="sli-file-audit__local-state">{t("file-audit.compare.observations")}: {formatCell(before?.snapshot.observed_at, "datetime")} → {formatCell(after?.snapshot.observed_at, "datetime")}</p>
-    {comparison.identity_basis === "path" ? <p className="sli-file-audit__local-state">{t("file-audit.compare.identity_path")}</p> : null}
     <div className="sli-file-audit__segments" role="group" aria-label={t("file-audit.compare.layer")}>
-      {(Object.keys(labels) as Layer[]).map(key => <button className="sli-ds-button" type="button" key={key} aria-pressed={key === layer} onClick={() => { reset(); setLayer(key); }}>{labels[key]}</button>)}
+      {(Object.keys(labels) as Layer[]).map(key => <Button key={key} aria-pressed={key === layer} onClick={() => { reset(); setLayer(key); }}>{labels[key]}</Button>)}
     </div>
     {flagsChanged ? <div className="sli-file-audit__comparison-sides" aria-label={t("file-audit.compare.acl_flags")}>
       <section><h3>{t("file-audit.compare.before")}</h3><FactList facts={[{ label: t("file-audit.compare.acl_flags"), value: beforeFlags || "—" }]}/></section>
@@ -52,9 +51,13 @@ export function FileAuditComparison({ comparison, pageSize: initialSize }: { com
     </div> : changes === null ? <p className="sli-file-audit__local-state">{t("file-audit.compare.incomplete")}</p> : <DataTable
       caption={labels[layer]} columns={columns} rows={rows.slice(page * pageSize, (page + 1) * pageSize)} rowKey={row => row.id}
       compact density="compact" wrapCells selectedKey={selected} onRowClick={row => setSelected(current => current === row.id ? null : row.id)}
-      toolbar={<div className="sli-file-audit__acl-filters"><label><input type="checkbox" checked={onlyChanges} onChange={event => { reset(); setOnlyChanges(event.target.checked); }}/>{t("file-audit.compare.only_changes")}</label>
-        <input type="search" aria-label={t("file-audit.acl.search")} placeholder={t("file-audit.acl.search")} value={search} onChange={event => { reset(); setSearch(event.target.value); }}/></div>}
-      total={rows.length} emptyContent={t("file-audit.compare.no_change")}
+      toolbar={<FilterBar layout="inline" applyInline compact primaryKeys={["onlyChanges", "search"]} fields={[
+        { key: "onlyChanges", kind: "checkbox", label: t("file-audit.compare.only_changes"), onValue: "true", offValue: "false" },
+        { key: "search", kind: "text", label: t("file-audit.acl.search"), placeholder: t("file-audit.acl.search"), immediate: true },
+      ]} values={{ search, onlyChanges: String(onlyChanges) }} onApply={next => {
+        reset(); setSearch(String(next.search ?? "")); setOnlyChanges(next.onlyChanges === "true");
+      }}/>}
+      total={rows.length}
       pageSize={{ value: pageSize, options: FILE_AUDIT_PAGE_SIZES, onChange: size => { reset(); setPageSize(size); } }}
       pagination={{ start: page * pageSize + 1, onPrevious: page > 0 ? () => { setSelected(null); setPage(page - 1); } : undefined,
         onNext: (page + 1) * pageSize < rows.length ? () => { setSelected(null); setPage(page + 1); } : undefined }}
@@ -66,6 +69,5 @@ export function FileAuditComparison({ comparison, pageSize: initialSize }: { com
       <section><h3>{t("file-audit.compare.before")}</h3><pre>{aclAt(before, layer)?.raw ?? t("file-audit.acl.not_read")}</pre></section>
       <section><h3>{t("file-audit.compare.after")}</h3><pre>{aclAt(after, layer)?.raw ?? t("file-audit.acl.not_read")}</pre></section>
     </div></details> : null}
-    <p className="sli-file-audit__local-state">{t("file-audit.compare.no_actor")}</p>
   </section>;
 }

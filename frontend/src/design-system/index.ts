@@ -5,7 +5,7 @@ export { Skeleton, TableSkeleton, MetricStripSkeleton, CardSkeleton, LoadingRegi
 export { PageHeader, type Crumb } from "./PageHeader";
 export { MetricStrip, type MetricItem } from "./MetricStrip";
 export { DataTable, type TableColumn, type SortState } from "./DataTable";
-export { FilterBar, type FilterField, type FilterValues, type FilterValue, type FilterOption } from "./FilterBar";
+export { FilterBar, Select, type FilterField, type FilterValues, type FilterValue, type FilterOption } from "./FilterBar";
 export { PeriodPicker, periodBounds, type PeriodValue, type PeriodPreset } from "./PeriodPicker";
 export { SeverityBadge, type Severity } from "./SeverityBadge";
 export { DetailDrawer, FactList } from "./DetailDrawer";

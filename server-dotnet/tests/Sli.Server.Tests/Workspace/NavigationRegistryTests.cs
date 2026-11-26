@@ -145,7 +145,9 @@ public sealed class NavigationRegistryTests
         var access = Access(["vpn.audit", "file-audit.overview", "workstations.overview"], ["operations.view", "access.manage"]);
         var defaultNavigation = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States()));
         var preview = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States(), preview: true));
-        foreach (string id in new[] { "vpn-connections", "file-audit", "workstations-overview", "admin-plugin-file-audit",
+        Assert.Contains("file-audit", defaultNavigation);
+        Assert.Contains("file-audit", preview);
+        foreach (string id in new[] { "vpn-connections", "workstations-overview", "admin-plugin-file-audit",
             "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma" })
         {
             Assert.DoesNotContain(id, defaultNavigation);

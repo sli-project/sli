@@ -21,7 +21,7 @@ const observation = (): FileAuditObservation => ({
   object: { path, object_type: "directory", owner_sid: "S-1-5-18", file_id: "fixture-file", sacl_protected: false,
     dacl: { state: "complete", raw: "retained-source-dacl", flags_raw: "", aces: Array.from({ length: 126 }, (_, ordinal) => ({
       ordinal, type: ordinal === 125 ? "unknown" : "allow", ace_type: ordinal === 125 ? "XA" : "A",
-      sid: `S-1-5-21-1-${1000 + ordinal}`, mask: ordinal === 125 ? null : 0x120089, mask_raw: ordinal === 125 ? "conditional-mask" : "0x120089",
+      sid: `S-1-5-21-100000001-200000002-300000003-${1000 + ordinal}`, mask: ordinal === 125 ? null : 0x120089, mask_raw: ordinal === 125 ? "conditional-mask" : "0x120089",
       flags: ordinal >= 100 ? ["ID", "CI"] : [], flags_raw: ordinal >= 100 ? "IDCI" : "",
       inherited: ordinal >= 100, inherit_only: false, raw: `retained-ace-${ordinal}`,
     })) }, sacl: { state: "missing", raw: null, aces: [] } },
@@ -30,7 +30,7 @@ const response = (): FileAuditDetailResult => ({
   contract_id: "sli.report-result.v2", report_key: "file-audit.permissions", state: "ok", items: [], has_more: false, next_cursor: null,
   filtered_count: 0, metrics: [], series: {}, coverage: {}, filter_options: {}, limitations: [], window: {},
   detail: { ...observation(), comparison: { state: "not_requested", reason: null, identity_basis: null } },
-  collections: { objects: [{ id: "child", path }], snapshots: [{ id: snapshot, observed_at: "2026-11-24T10:00:00Z" }] },
+  collections: { objects: [{ id: "child", path, object_type: "directory" }], snapshots: [{ id: snapshot, observed_at: "2026-11-24T10:00:00Z" }] },
 });
 let client: QueryClient;
 const props = () => ({ snapshotId: snapshot, objectPath: path,
@@ -53,11 +53,11 @@ it("pages and searches the entire retained ACL and preserves unknown ACE types",
   expect(acl.getAllByRole("row")).toHaveLength(51);
   fireEvent.change(acl.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
   expect(acl.getAllByRole("row")).toHaveLength(127);
-  fireEvent.change(acl.getByLabelText(t("file-audit.acl.search")), { target: { value: "S-1-5-21-1-1125" } });
+  fireEvent.change(acl.getByLabelText(t("file-audit.acl.search")), { target: { value: "S-1-5-21-100000001-200000002-300000003-1125" } });
   fireEvent.change(acl.getByLabelText(t("file-audit.acl.filter")), { target: { value: "inherited" } });
   expect(acl.getAllByRole("row")).toHaveLength(2);
   expect(acl.getByText("Тип XA")).toBeTruthy();
-  await userEvent.click(acl.getByText("S-1-5-21-1-1125"));
+  await userEvent.click(acl.getByText("S-1-5-21-100000001-200000002-300000003-1125"));
   expect(acl.getByText("retained-ace-125")).toBeTruthy();
   const sent = state.detail.mock.calls[0][2] as URLSearchParams;
   expect(sent.getAll("share")).toEqual([share]);
@@ -82,12 +82,12 @@ it("keeps observed-object navigation when the requested root is missing from thi
     const item = response();
     if (params.get("path") === path) item.detail!.object = null;
     else item.detail!.object!.path = `${path}\\Retained`;
-    item.collections!.objects = [{ id: "retained", path: `${path}\\Retained` }];
+    item.collections!.objects = [{ id: "retained", object_type: "directory", path: `${path}\\Retained` }];
     return item;
   });
   mount();
   await screen.findByText(t("file-audit.workspace.snapshot_missing"));
-  await userEvent.click(screen.getByRole("button", { name: `${path}\\Retained` }));
+  await userEvent.click(screen.getByRole("button", { name: "Retained" }));
   await screen.findByRole("table", { name: t("file-audit.acl.ntfs") });
   expect((state.detail.mock.calls.at(-1)![2] as URLSearchParams).get("path")).toBe(`${path}\\Retained`);
 });
@@ -97,7 +97,6 @@ it("shows ACL header flag differences and keeps owner comparison separate from D
   after.object!.dacl.flags_raw = "P";
   after.object!.owner_sid = "S-1-5-32-544";
   render(<FileAuditComparison comparison={{ state: "available", reason: null, identity_basis: "path", before, after }} pageSize={50}/>);
-  expect(screen.getByText(t("file-audit.compare.identity_path"))).toBeTruthy();
   expect(screen.getByText("P")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.owner") }));
   expect(screen.getByText("S-1-5-18")).toBeTruthy();

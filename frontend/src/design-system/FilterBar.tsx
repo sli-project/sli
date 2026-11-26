@@ -24,11 +24,23 @@ function isActive(value: FilterValue): boolean {
   return true;
 }
 
+export function Select({ label, hideLabel, options, value, onChange }: {
+  label: string; hideLabel?: boolean; options: FilterOption[]; value: string; onChange: (value: string) => void;
+}) {
+  const id = useId();
+  return <div className="sli-ds-field" data-kind="select">
+    <label htmlFor={id} className={hideLabel ? "sli-ds-sr-only" : undefined}>{label}</label>
+    <select id={id} value={value} onChange={event => onChange(event.target.value)}>
+      {options.map(option => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? " (" + formatNumber(option.count) + ")" : ""}</option>)}
+    </select>
+  </div>;
+}
+
 /**
  * Declarative filter bar (ADR 0010 `params`). Edits stay in a draft until
  * the user applies them, so a report query runs once per decision.
  */
-export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline }: {
+export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys, additionalContent, align, layout, quickFilters, leadingControls, applyInline, compact }: {
   fields: FilterField[];
   values: FilterValues;
   onApply: (values: FilterValues) => void;
@@ -43,6 +55,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
   quickFilters?: ReactNode;
   leadingControls?: ReactNode;
   applyInline?: boolean;
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState<FilterValues>(values);
   // On a phone a long form hides the result; it starts folded behind one toggle.
@@ -83,8 +96,15 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     </label>;
     if (field.kind === "search-multiselect") return <SearchMultiSelect key={field.key} label={field.label} options={field.options}
       values={(draft[field.key] as string[] | undefined) ?? []} onChange={(value) => set(field.key, value)}/>;
+    if (field.kind === "select") return <Select key={field.key} label={field.label} hideLabel={layout === "inline" && field.hideLabel}
+      options={field.options.some(option => option.value === "") ? field.options : [{ value: "", label: t("filters.any") }, ...field.options]}
+      value={(draft[field.key] as string | undefined) ?? ""} onChange={selected => {
+        const value = selected || undefined;
+        set(field.key, value);
+        if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
+      }}/>;
     return <div key={field.key} className="sli-ds-field" data-kind={field.kind} data-wide={field.kind === "text" && field.wide || undefined}>
-      <label htmlFor={id} className={layout === "inline" && (field.kind === "text" || field.kind === "select" && field.hideLabel) ? "sli-ds-sr-only" : undefined}>{field.label}</label>
+      <label htmlFor={id} className={layout === "inline" && field.kind === "text" ? "sli-ds-sr-only" : undefined}>{field.label}</label>
       {field.kind === "text"
         ? <><input id={id} type="search" value={(draft[field.key] as string | undefined) ?? ""} placeholder={field.placeholder ?? t("filters.search")}
           onBlur={() => { if (applyInline && draft[field.key] !== values[field.key]) apply(draft); }} onChange={(event) => {
@@ -97,16 +117,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
           }}/>
           {field.nested ? <label className="sli-ds-field__help"><input type="checkbox" checked={draft[field.nested.key] === "true"}
             onChange={(event) => set(field.nested!.key, String(event.target.checked))}/>{field.nested.label}</label> : null}</>
-        : field.kind === "select"
-          ? <select id={id} value={(draft[field.key] as string | undefined) ?? ""} onChange={(event) => {
-              const value = event.target.value || undefined;
-              set(field.key, value);
-              if (field.immediate || applyInline) apply({ ...draft, [field.key]: value });
-            }}>
-              {!field.options.some((option) => option.value === "") ? <option value="">{t("filters.any")}</option> : null}
-              {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
-            </select>
-          : <select id={id} multiple size={Math.min(6, Math.max(3, field.options.length))} value={(draft[field.key] as string[] | undefined) ?? []}
+        : <select id={id} multiple size={Math.min(6, Math.max(3, field.options.length))} value={(draft[field.key] as string[] | undefined) ?? []}
               onChange={(event) => set(field.key, [...event.target.selectedOptions].map((option) => option.value))}>
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}{typeof option.count === "number" ? ` (${formatNumber(option.count)})` : ""}</option>)}
             </select>}
@@ -119,7 +130,7 @@ export function FilterBar({ fields, values, onApply, defaults = {}, primaryKeys,
     <Button type="submit" variant="primary">{t("filters.apply")}</Button>
   </div>;
 
-  return <form className="sli-ds-filters" onSubmit={submit} aria-label={t("filters.title")} data-layout={layout} data-collapsed={collapsed} data-grouped={primaryKeys ? true : undefined} data-quick-filters={quickFilters ? true : undefined}>
+  return <form className="sli-ds-filters" onSubmit={submit} aria-label={t("filters.title")} data-layout={layout} data-compact={compact || undefined} data-collapsed={collapsed} data-grouped={primaryKeys ? true : undefined} data-quick-filters={quickFilters ? true : undefined}>
     {!primaryKeys ? <Button className="sli-ds-filters__toggle" aria-expanded={!collapsed} aria-controls={`${formId}-fields`} onClick={() => setCollapsed((value) => !value)}>
       {t("filters.title")}{activeCount ? ` · ${t("filters.active", { count: activeCount })}` : ""}
     </Button> : null}

@@ -15,10 +15,12 @@ export type PageHeaderControls = {
     presets?: PeriodPreset[];
     bounds?: { from: string; to: string };
     showBounds?: boolean;
+    precision?: "date" | "datetime-local";
     showPrevious?: boolean;
     onChange: (value: PeriodValue) => void;
     onClear?: () => void;
   };
+  scope?: ReactNode;
   updatedAt?: string | number | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -28,12 +30,12 @@ export type PageHeaderControls = {
 
 export const PageHeaderContext = createContext<{ domain?: (id?: string) => ReactNode; controls?: PageHeaderControls }>({});
 
-function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
+function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !showBounds, precision = "date", onChange, onClear }: NonNullable<PageHeaderControls["period"]>) {
   const picker = useRef<HTMLDetailsElement>(null);
   const [draft, setDraft] = useState<PeriodValue>();
   const { timeZone } = useTimeZone();
   const activeCustom = value?.preset === "custom" ? value : undefined;
-  const inputValue = activeCustom?.from?.includes("T") && activeCustom.to && (timeZone === "browser" || isValidTimeZone(timeZone))
+  const inputValue = precision === "date" && activeCustom?.from?.includes("T") && activeCustom.to && (timeZone === "browser" || isValidTimeZone(timeZone))
     ? { preset: "custom" as const, from: dayKey(activeCustom.from, timeZone) ?? undefined, to: dayKey(new Date(Date.parse(activeCustom.to) - 1), timeZone) ?? undefined }
     : value;
   const previous = value && (presets?.includes("custom") ?? true) ? previousPeriod(value, bounds) : null;
@@ -53,7 +55,7 @@ function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !show
       </summary>
       <div className="sli-ds-header__period-menu">
         {onClear ? <Button onClick={() => { onClear(); close(); }}>{t("shell.header.allTime")}</Button> : null}
-        <PeriodPicker value={draft ?? inputValue} presets={presets} onChange={(next) => {
+        <PeriodPicker value={draft ?? inputValue} presets={presets} precision={precision} step={precision === "datetime-local" ? "any" : undefined} onChange={(next) => {
           if (next.preset !== "custom") { onChange(next); close(); return; }
           setDraft(next);
           if (next.from && next.to && next.from <= next.to && (next.from !== inputValue?.from || next.to !== inputValue?.to)) onChange(next);
@@ -87,7 +89,7 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
   showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
+  const { period, scope: scopeControl, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
   const domainControl = showDomain ? scope.domain?.(domain) : null;
   return <header className="sli-ds-header">
     {crumbs?.length ? <nav className="sli-ds-crumbs" data-visible={showBreadcrumbs || undefined} aria-label={t("reports.breadcrumbs_aria")}>
@@ -96,6 +98,7 @@ export function PageHeader({ title, subtitle, crumbs, actions, meta, controls, d
     <div className="sli-ds-header__row">
       <h1 className="sli-ds-header__title" data-page-heading tabIndex={-1}>{title}</h1>
       {domainControl}
+      {scopeControl}
       {period ? <HeaderPeriod {...period}/> : null}
       {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
         {updatedAt ? <UpdatedTime value={updatedAt}/> : null}

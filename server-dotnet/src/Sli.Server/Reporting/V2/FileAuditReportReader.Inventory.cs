@@ -49,6 +49,11 @@ public sealed partial class FileAuditReportReader
             var root = discovered.OfType<JsonObject>().SingleOrDefault(r => Admitted(context, r)
                 && ShareKey(r) == selected[0]!.GetValue<string>()
                 && (context.Params["source_kind"] is null || (Text(r, "source_kind") ?? "server") == context.Params.Text("source_kind")));
+            if (root is not null && context.Params["file_server_domain"] is { } domain)
+            {
+                var matching = (await session.QueryAsync(DomainRootsSql, ct, new JsonArray(root.DeepClone()), domain.GetValue<long>()))[0];
+                if (Array(matching!["roots"]).Count == 0) root = null;
+            }
             if (root is null) throw new ReportRequestException("file_audit_snapshot_not_found", 404);
             string path;
             try

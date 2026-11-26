@@ -19,10 +19,13 @@ function destination(id, url) {
   return { ...entry, url, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
 }
 const previewEntries = registry.preview_entries.map(id => destination(id, previewUrl));
-for (const id of ['file-audit', 'workstations-overview']) {
+for (const id of ['workstations-overview']) {
   if (!previewEntries.some(entry => entry.id === id)) throw new Error(`Missing preview destination for fixture: ${id}`);
 }
-const entries = [...registry.beta_entries.map(id => destination(id, betaUrl)), ...previewEntries];
+const allEntries = [...registry.beta_entries.map(id => destination(id, betaUrl)), ...previewEntries];
+const focus = process.env.SLI_MENU_WALK_ONLY;
+const entries = focus ? allEntries.filter(entry => entry.id === focus) : allEntries;
+if (!entries.length) throw new Error('Unknown menu destination');
 await mkdir(results, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH, timeout: 0 });
 const rows = [];
@@ -34,11 +37,12 @@ try {
     rows.push(row);
     console.log(`menu-walk: ${entry.id} ${entry.path}`);
     const heartbeat = setInterval(() => console.log(`menu-walk: waiting ${entry.id}`), 10_000);
-    const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'UTC', viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+    const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'UTC', viewport: entry.id === "file-audit" ? { width: 1920, height: 1080 } : { width: 1440, height: 900 }, serviceWorkers: 'block' });
     context.setDefaultTimeout(0);
     context.setDefaultNavigationTimeout(0);
     await context.addCookies([{ name: 'adlog_session', value: token, url, httpOnly: true, sameSite: 'Strict' }]);
-    await context.addInitScript(() => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', 'light'); });
+    await context.addInitScript(theme => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', theme); },
+      entry.id === 'file-audit' ? 'dark' : 'light');
     // Fixture navigation is read-only; never permit accidental external access.
     await context.route('**/*', route => {
       const target = new URL(route.request().url());
@@ -105,7 +109,7 @@ try {
       row.labels = leaves.flatMap(leaf => forbiddenLabels(leaf.text, [...reasons]).map(label => ({ label: clean(label), where: leaf.where })));
       // A phrase may be split across child nodes. Keep those matches visible too.
       for (const label of forbiddenLabels(visibleText, [...reasons])) if (!row.labels.some(item => item.label === clean(label))) row.labels.push({ label: clean(label), where: 'body' });
-      await page.screenshot({ path: join(results, `${entry.id}.png`), fullPage: true });
+      if (!focus) await page.screenshot({ path: join(results, `${entry.id}.png`), fullPage: true });
       if (entry.id === 'file-audit') await walkFileServers(page, { url, results, fixture: fileServers });
       if (entry.id === 'workstations-overview') await walkWorkstations(page, { url, results, fixture: workstations });
     } catch (error) { row.failures.push(clean(error.message)); }
@@ -114,8 +118,10 @@ try {
       await context.close();
       row.api = [...new Set(row.api)]; row.console = [...new Set(row.console)];
       row.failures = [...new Set([...row.failures, ...row.api, ...row.console])];
-      await writeFile(join(results, 'menu-walk.json'), JSON.stringify(rows, null, 2));
-      await writeFile(join(results, 'menu-walk.md'), markdown(rows));
+      if (!focus) {
+        await writeFile(join(results, 'menu-walk.json'), JSON.stringify(rows, null, 2));
+        await writeFile(join(results, 'menu-walk.md'), markdown(rows));
+      }
     }
   }
 } finally { await browser.close(); }
