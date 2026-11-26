@@ -132,6 +132,12 @@ public static class ProblemPresentation
         parameters["count"] = (guessing ? finding["occurrence_count"] : finding["presentation_facts"]?["count"])?.DeepClone() ??
             finding["presentation_facts"]?["count"]?.DeepClone() ?? finding["occurrence_count"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone();
         parameters["time"] = finding["presentation_facts"]?["time"]?.DeepClone() ?? finding["last_seen_utc"]?.DeepClone();
+        if (IsPasswordFinding(ProblemJson.Text(finding["rule_code"])) && finding["presentation_facts"] is { } password && password["version"] is not null)
+        {
+            parameters["attempts"] = password["attempts"]?.DeepClone();
+            if (identity) parameters["account_count"] = password["account_count"]?.DeepClone();
+            if (technical) parameters["address_count"] = password["address_count"]?.DeepClone();
+        }
         if (ProblemJson.Text(finding["rule_code"]) is "semantic.qw.kerberoasting" or "semantic.qw.asrep-roasting")
             parameters["minutes"] = finding["presentation_facts"]?["minutes"]?.DeepClone();
         foreach (string key in parameters.Where(p => p.Value is null).Select(p => p.Key).ToArray()) parameters.Remove(key);
@@ -142,9 +148,28 @@ public static class ProblemPresentation
         string rule = ProblemJson.Text(finding["rule_code"]);
         if (IsDcCatalogFinding(rule) && suffix is "why" or "next") return new();
         bool password = IsPasswordFinding(rule);
-        if (password && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
+        bool threshold = password && finding["presentation_facts"]?["version"] is not null;
+        if (password && !threshold && ProblemJson.Bool(finding["presentation_facts"]?["password_success"])) rule = "semantic.qw.password-success";
         var parameters = RuleParameters(finding, access, language);
+        if (threshold && suffix == "title")
+        {
+            bool spray = rule == "semantic.qw.password-spray";
+            if (spray ? parameters["source"] is not null && parameters["account_count"] is not null : parameters["account"] is not null)
+            {
+                string key = spray ? "spray_threshold_title" : ProblemJson.Long(parameters["address_count"]) > 0
+                    ? "brute_threshold_title" : "brute_threshold_title_account";
+                var title = Message("security.problems.presentation." + key, language, parameters);
+                title["rendered"] = true;
+                return title;
+            }
+        }
         string code = RuleMessageCode(rule, suffix);
+        if (threshold && suffix == "what")
+        {
+            string key = rule == "semantic.qw.password-spray" ? "spray" : "brute";
+            var tail = ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) ? "_threshold_success_what" : "_threshold_what";
+            code = "security.problems.presentation." + key + tail;
+        }
         if (suffix == "next" && (CatalogDetection(rule) || rule == "semantic.qw.agent-tamper") &&
             (parameters["actor"] is null || rule == "semantic.qw.privileged-group-addition" && parameters["member"] is null))
             code += "_without_names";
@@ -363,7 +388,8 @@ public static class ProblemPresentation
             var facts = RuleParameters(finding, access, language);
             queueRow["queue_participant"] = (facts["member"] ?? facts["account"] ?? facts["target"] ?? facts["computer"])?.DeepClone();
             queueRow["queue_group"] = facts["group"]?.DeepClone();
-            if (ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) || rule is "semantic.qw.account-decoy" or "semantic.qw.file-decoy")
+            if ((finding["presentation_facts"]?["version"] is null || rule == "semantic.qw.password-brute-force") &&
+                ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) || rule is "semantic.qw.account-decoy" or "semantic.qw.file-decoy")
                 queueRow["severity"] = "critical";
             if (IsPasswordFinding(rule)) {
                 var aliases = finding["queue_attack_aliases"];
@@ -371,8 +397,8 @@ public static class ProblemPresentation
                 bool identityAllowed = access.Fields("identity_basic");
                 bool sourceAllowed = access.Fields("identity_basic", "technical");
                 queueRow["queue_attack"] = new JsonObject {
-                    ["accounts"] = identityAllowed ? aliases?["accounts"]?.DeepClone() : null,
-                    ["addresses"] = sourceAllowed ? aliases?["addresses"]?.DeepClone() : null,
+                    ["accounts"] = identityAllowed ? (witnesses?["accounts"] ?? aliases?["accounts"])?.DeepClone() : null,
+                    ["addresses"] = sourceAllowed ? (witnesses?["addresses"] ?? aliases?["addresses"])?.DeepClone() : null,
                     ["account_count"] = identityAllowed ? witnesses?["account_count"]?.DeepClone() : null,
                     ["event_count"] = witnesses?["attempts"]?.DeepClone() ?? finding["evidence_count"]?.DeepClone()
                 };
