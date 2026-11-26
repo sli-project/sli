@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
@@ -118,13 +119,10 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
       </> : null}
       {detail && object && tab === "permission-changes" ? <>
         <div className="sli-file-audit__compare-controls">
-          <label>{t("file-audit.compare.before")}<select value={compareId} disabled={!options.length} onChange={event => { setCompareId(event.target.value); updateAddress({ compare_snapshot_id: event.target.value }); }}>
-            <option value="">—</option>{options.map(row => <option key={idOf(row)} value={idOf(row)}>{formatCell(row.observed_at, "datetime")} · {idOf(row)}</option>)}
-          </select></label>
-          <label>{t("file-audit.compare.after")}<select value={snapshotId} onChange={event => { setSnapshotId(event.target.value); setCompareId(""); updateAddress({ snapshot_id: event.target.value, compare_snapshot_id: null }); }}>
-            {!snapshots.some(row => idOf(row) === snapshotId) ? <option value={snapshotId}>{formatCell(detail.snapshot.observed_at, "datetime")}</option> : null}
-            {snapshots.map(row => <option key={idOf(row)} value={idOf(row)}>{formatCell(row.observed_at, "datetime")} · {idOf(row)}</option>)}
-          </select></label>
+          <div className="sli-ds-control-field">{t("file-audit.compare.before")}<Select label={t("file-audit.compare.before")} value={compareId} disabled={!options.length} onChange={(selectedValue) => { setCompareId(selectedValue); updateAddress({ compare_snapshot_id: selectedValue }); }}
+            options={[{ value: "", label: "—" }, ...(options.map(row => ({ value: idOf(row), label: String(formatCell(row.observed_at, "datetime")) + String(" · ") + String(idOf(row)) })) ?? [])]}/></div>
+          <div className="sli-ds-control-field">{t("file-audit.compare.after")}<Select label={t("file-audit.compare.after")} value={snapshotId} onChange={(selectedValue) => { setSnapshotId(selectedValue); setCompareId(""); updateAddress({ snapshot_id: selectedValue, compare_snapshot_id: null }); }}
+            options={[...(!snapshots.some(row => idOf(row) === snapshotId) ? [{ value: snapshotId, label: formatCell(detail.snapshot.observed_at, "datetime") }] : []), ...(snapshots.map(row => ({ value: idOf(row), label: String(formatCell(row.observed_at, "datetime")) + String(" · ") + String(idOf(row)) })) ?? [])]}/></div>
           <a className="sli-ds-button" href={scopedHref("permission-changes")}>{t("file-audit.compare.events")}</a>
         </div>
         {comparison?.state === "available" ? <FileAuditComparison key={`${snapshotId}:${compareId}:${path}`} comparison={comparison} pageSize={pageSize}/>

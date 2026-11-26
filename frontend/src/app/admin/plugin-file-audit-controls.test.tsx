@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import userEvent from "@testing-library/user-event";
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -51,7 +53,7 @@ it("submits a server check from Connection and displays its matching native rece
   }));
   const title = await screen.findByText(t("agents.fileAudit.title"));
   title.closest("details")!.open = true;
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: agent.host_name! })));
   await screen.findByLabelText(t("agents.fileAudit.paths"));
   fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.check") }));
@@ -90,7 +92,7 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   }));
   const view = mount(true, true, [target]);
   (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
   expect(refresh.mock.calls[0][0]).toBe(target.id);
@@ -98,9 +100,9 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   expect(screen.queryByRole("option", { name: share.share_name })).toBeNull();
   expect(action).not.toHaveBeenCalled();
   catalog = { ...catalog, state: "ready", items: [share] };
-  expect(await screen.findByRole("option", { name: share.share_name }, { timeout: 5_000 })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText(t("agents.fileAudit.catalog.pending"))).toBeNull(), { timeout: 4_500 });
   expect(refresh).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.catalog.share")), { target: { value: share.collection_scope_id } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }), share.collection_scope_id);
   const path = screen.getByLabelText(t("agents.fileAudit.catalog.path")) as HTMLInputElement;
   expect(path.value).toBe(share.path);
   expect(path.readOnly).toBe(true);
@@ -120,7 +122,7 @@ it("restores an authorized SMB selection on remount and distinguishes check from
   mount(true, true, [target]);
   expect(await screen.findByRole("heading", { name: t("agents.fileAudit.catalog.checkResult") })).toBeTruthy();
   expect(refresh).toHaveBeenCalledTimes(1);
-  expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
+  expect(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }).textContent).toContain(share.share_name);
   expect(await screen.findByText(t("agents.fileAudit.result.verified"))).toBeTruthy();
   const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.enabled")));
@@ -176,7 +178,7 @@ it.each([
   client.clear();
   mount(true, true, [target]);
   expect(await screen.findByText(message)).toBeTruthy();
-  expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
+  expect(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }).textContent).toContain(share.share_name);
   expect((screen.getByLabelText(t("agents.fileAudit.catalog.path")) as HTMLInputElement).value).toBe(share.path);
   const technicalDetails = screen.getByText(reason).closest("details");
   expect(technicalDetails?.querySelector("summary")?.textContent).toBe(t("agents.technicalDetails"));
@@ -189,7 +191,7 @@ it.each([
   expect(await screen.findByText(t(permissionDenied ? "agents.fileAudit.result.denied" : "agents.fileAudit.result.stale"))).toBeTruthy();
   expect(screen.queryByText(message)).toBeNull();
   expect(screen.queryByText(reason)).toBeNull();
-  expect((screen.getByLabelText(t("agents.fileAudit.catalog.share")) as HTMLSelectElement).value).toBe(share.collection_scope_id);
+  expect(screen.getByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }).textContent).toContain(share.share_name);
   expect(mutate).not.toHaveBeenCalled();
 });
 
@@ -204,7 +206,7 @@ it("keeps a manual share's explanation tied to the receipt scope", async () => {
   client = new QueryClient();
   render(<AgentFileAuditControls agents={[agent]} busy={false} change={vi.fn()} accepted={command}/>);
   screen.getByText(t("agents.fileAudit.title")).closest("details")!.open = true;
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: agent.host_name! })));
 
   const root = request.config.roots[0];
@@ -223,13 +225,16 @@ it.each(["ready", "denied"] as const)("keeps an existing catalog or leaves a den
   const action = vi.spyOn(api, "agentAction");
   mount(true, true, [target]);
   (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
   if (access === "denied") {
     await screen.findByText(t("agents.fileAudit.catalog.unavailable"));
+    const picker = screen.queryByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" });
+    if (picker) await userEvent.click(picker);
     expect(screen.queryByRole("option", { name: share.share_name })).toBeNull();
     expect(screen.queryByRole("button", { name: t("agents.fileAudit.catalog.manualEntry") })).toBeNull();
   } else {
+    await userEvent.click(await screen.findByLabelText(t("agents.fileAudit.catalog.share"), { selector: "button" }));
     expect(await screen.findByRole("option", { name: share.share_name })).toBeTruthy();
   }
   expect(catalog).toHaveBeenCalledExactlyOnceWith(target.id, expect.any(AbortSignal));
@@ -253,7 +258,7 @@ it.each(["unavailable", "incomplete", "transport"] as const)("allows a manual se
   }));
   mount(true, true, [target]);
   (await screen.findByText(t("agents.fileAudit.title"))).closest("details")!.open = true;
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: target.host_name! })));
   const manual = await screen.findByRole("button", { name: t("agents.fileAudit.catalog.manualEntry") });
   const check = screen.getByRole("button", { name: t("agents.fileAudit.check") }) as HTMLButtonElement;

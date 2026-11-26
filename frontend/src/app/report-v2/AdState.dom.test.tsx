@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -99,7 +100,7 @@ it("groups observed parameters, puts deviations first, and combines the filters"
   expect(screen.getByText("Lockout threshold")).toBeTruthy();
   expect(new URL(screen.getByRole("link", { name: "Export CSV" }).getAttribute("href")!, window.location.origin).searchParams.get("qualification")).toBe("failed");
   fireEvent.click(screen.getByRole("button", { name: "Matches 2" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "Area" }), { target: { value: "password_policy" } });
+  await chooseOption(screen.getByLabelText("Area", { selector: "button" }), "password_policy");
   expect(screen.queryByText("DNS")).toBeNull();
   fireEvent.change(screen.getByRole("searchbox", { name: "Parameter or object" }), { target: { value: "no match" } });
   expect(screen.queryByText("Minimum password length")).toBeNull();

@@ -29,6 +29,7 @@ function initialAnchor(search: URLSearchParams) {
 
 /** File-audit retains the shared report authorization and native row units. */
 export function FileAuditReport({ definition: initial }: { definition: ReportDefinitionDto }) {
+  const [periodTarget, setPeriodTarget] = useState<HTMLDivElement | null>(null);
   const { formatCell } = useDateFormatters();
   const access = useEffectiveAccess();
   const { timeZone } = useTimeZone();
@@ -170,7 +171,8 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   return <div className="sli-file-audit"><ResultWindowContext.Provider value={result?.window}>
     <Tabs items={FILE_AUDIT_TABS.map(key => ({ key, label: tabTitle(key) }))} active={tab} onChange={selectTab}>
       <ReportLayout title={values.source_kind === "workstation" ? t("file-audit.workspace.workstations") : t("file-audit.title")}
-        tabbed state={state} busy={data.isFetching && !data.isLoading}
+        tabbed state={state} periodPicker={state !== "denied" && definition && !visibleSelection ? <div ref={setPeriodTarget}/> : undefined}
+        busy={data.isFetching && !data.isLoading}
         meta={baseParams ? <><span>{t("file-audit.workspace.scope")}</span><span>{formatCell(baseParams.get("from"), "datetime")} — {formatCell(baseParams.get("to"), "datetime")}</span><span>{timeZone}</span>
           {values.show_service === "false" ? <span>{t("file-audit.workspace.service_hidden")}</span> : null}
           {values.record_unit === "saved_event_group" ? <span>{t("file-audit.workspace.saved_4670_groups")}</span> : null}</> : null}
@@ -178,7 +180,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
           : <button type="button" className="sli-ds-button" disabled={data.isFetching} onClick={() => { reset(); const next = new Date(Math.floor(Date.now() / 60_000) * 60_000); setAnchor(next); if (next.getTime() === anchor.getTime()) void data.refetch(); }}>{t("file-audit.workspace.refresh")}</button>}
           {exportHref && !visibleSelection ? <a className="sli-ds-button" href={exportHref} download title={exportLimit ? t("file-audit.workspace.export_limit", { count: exportLimit }) : undefined}>{t("reports.renderer.export_csv")}</a> : null}
           {!visibleSelection && fileAuditReturnHref(entrySearch.get("return_to")) ? <a className="sli-ds-button" href={fileAuditReturnHref(entrySearch.get("return_to"))!}>{t("file-audit.workspace.back")}</a> : null}</>}
-        filters={definition && !visibleSelection ? <FilterBar align="start" layout="grid" fields={fileAuditFields(definition, result?.filter_options)}
+        filters={definition && !visibleSelection ? <FilterBar periodTarget={periodTarget} align="start" layout="grid" fields={fileAuditFields(definition, result?.filter_options)}
           primaryKeys={tab === "overview" ? ["period", "source_instance_id", "share", "path"] : ["period", "source_instance_id", "share", "path", "employee", "operation", "record_unit"]}
           values={filterValues} defaults={defaultFilters} onApply={apply}/> : null}
         tabs={<TabList label={t("file-audit.title")} variant="underline"/>}

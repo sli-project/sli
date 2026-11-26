@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useEffect, useState } from "react";
 import { api, ApiResponseError, type AgentFileAuditCatalog, type AgentFileAuditCommand, type AgentFileAuditStatus, type AgentItem } from "../../api/client";
 import { t, type MessageKey } from "../../i18n";
@@ -156,22 +158,20 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
   return <details className="sli-ds-filters__additional" open={serverCatalog?.agentId ? true : undefined}><summary>{t("agents.fileAudit.title")}</summary>
     <fieldset disabled={busy} className="sli-ds-filters">
       <legend>{t("agents.fileAudit.select")}</legend>
-      <label className="sli-ds-field">{t("agents.fileAudit.sourceKind")}<select value={sourceKind} onChange={(event) => {
-        setSelected([]); serverCatalog?.selectAgent(null); setSourceKind(event.target.value as "workstation" | "server");
-      }}><option value="workstation">{t("agents.fileAudit.workstation")}</option><option value="server">{t("agents.fileAudit.server")}</option></select></label>
+      <div className="sli-ds-field">{t("agents.fileAudit.sourceKind")}<Select label={t("agents.fileAudit.sourceKind")} value={sourceKind} onChange={(selectedValue) => {
+        setSelected([]); serverCatalog?.selectAgent(null); setSourceKind(selectedValue as "workstation" | "server");
+      }}
+        options={[{ value: "workstation", label: t("agents.fileAudit.workstation") }, { value: "server", label: t("agents.fileAudit.server") }]}/></div>
       {eligible.map((agent) => <div key={agent.id}><label><input id={`file-audit-agent-${agent.id}`} aria-describedby={`file-audit-identity-${agent.id}`} type={sourceKind === "server" ? "radio" : "checkbox"} name="file-audit-agent" value={agent.id} checked={selected.includes(agent.id)} onChange={() => choose(agent)}/>{t("agents.fileAudit.agent", { host: agentHostName(agent) })}</label>
         <details id={`file-audit-identity-${agent.id}`}><summary>{t("agents.technicalDetails")}</summary><dl>
           <dt>{t("agents.agentId")}</dt><dd>{agent.id}</dd><dt>{t("agents.host")}</dt><dd>{agent.host_id}</dd>
         </dl></details></div>)}
       {!compatible ? <p role="alert">{t("agents.fileAudit.incompatible")}</p> : null}
       {chosen.length > 0 && !mayWrite ? <p>{t("agents.fileAudit.managementHint")}</p> : null}
-      <label><input type="checkbox" checked={enabled} disabled={!mayCollect} onChange={(event) => edit({ enabled: event.target.checked })}/>{t("agents.fileAudit.enabled")}</label>
+      <Checkbox checked={enabled} disabled={!mayCollect} onChange={(event) => edit({ enabled: event.target.checked })}>{t("agents.fileAudit.enabled")}</Checkbox>
       {useCatalog && catalog ? <div className="sli-ds-filters__fields" data-layout="grid" data-align="start">
-        <label className="sli-ds-field">{t("agents.fileAudit.catalog.share")}<select value={selectedShare?.collection_scope_id ?? ""}
-          onChange={(event) => edit({ catalogScope: event.target.value })}>
-          <option value="">{t("agents.deployment.choose")}</option>
-          {choices.map((item) => <option key={item.collection_scope_id} value={item.collection_scope_id}>{item.share_name}</option>)}
-        </select></label>
+        <div className="sli-ds-field">{t("agents.fileAudit.catalog.share")}<Select label={t("agents.fileAudit.catalog.share")} value={selectedShare?.collection_scope_id ?? ""} onChange={(selectedValue) => edit({ catalogScope: selectedValue })}
+          options={[{ value: "", label: t("agents.deployment.choose") }, ...(choices.map((item) => ({ value: item.collection_scope_id, label: item.share_name })) ?? [])]}/></div>
         <label className="sli-ds-field">{t("agents.fileAudit.catalog.path")}<input value={selectedShare?.path ?? ""} readOnly/></label>
         <button className="sli-ds-button" type="button" disabled={catalog.loading || catalog.result?.state === "pending"}
           onClick={catalog.refresh}>{t("agents.fileAudit.catalog.refresh")}</button>
@@ -190,7 +190,7 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
       {manualServer || canEnterManually ? <button className="sli-ds-button" type="button"
         onClick={() => edit({ manualServer: !manualServer })}>{t(manualServer
           ? "agents.fileAudit.catalog.backToShares" : "agents.fileAudit.catalog.manualEntry")}</button> : null}
-      <label><input type="checkbox" checked={important} onChange={(event) => edit({ important: event.target.checked })}/>{t("agents.fileAudit.important")}</label>
+      <Checkbox checked={important} onChange={(event) => edit({ important: event.target.checked })}>{t("agents.fileAudit.important")}</Checkbox>
       <label className="sli-ds-field">{t("agents.fileAudit.exclusions")}<textarea value={exclusions} onChange={(event) => edit({ exclusions: event.target.value })}/></label>
       <div className="sli-ds-filters__actions">
         <button className="sli-ds-button" type="button" disabled={!canSubmit} onClick={() => submit("check")}>{t("agents.fileAudit.check")}</button>

@@ -623,6 +623,8 @@
     "config/postgres_migrations/417_password_frozen_frontier_progress.sql": "e597c140155df34fa321a24afb5c3341a641d5335dbb91ad716014ac6d1759aa",
     "config/postgres_migrations/418_password_threshold_rules.rollback.sql": "9dd61e00c6da581d66339ddea6eceb5f0245ecf6ce578be1f62a23cfc3858c98",
     "config/postgres_migrations/418_password_threshold_rules.sql": "07d6df70d50a29f59d93410773a0c1260b46bc508e567c3dfa3e29ac0468b5c8",
+    "config/postgres_migrations/420_password_rule_identity.rollback.sql": "cd6e9933bd911553d5e7a49ee0cdd1d567d82ea853924dc396a6d20c23e497f8",
+    "config/postgres_migrations/420_password_rule_identity.sql": "415b4684896f22a4a3c065c82ee74434729353c778c22a113c4e8c556945242f",
     "config/postgres_migrations/422_file_audit_scope_inventory.rollback.sql": "72978f3d6e750d56396b2964f48da8c6e3ef72a550dfc5deb09900d0e8632edb",
     "config/postgres_migrations/422_file_audit_scope_inventory.sql": "92abc6c650cdf9ab1bbd9d226c6e62f058dc17d0af1e13610dfb19d183b5adb6",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",

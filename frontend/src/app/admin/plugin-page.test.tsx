@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -70,7 +71,7 @@ const writes = () => requests.filter((request) => request.method === "PUT");
 it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"])("renders five working tabs for %s", async (id) => {
   mount(id);
   expect(screen.getAllByRole("tab")).toHaveLength(5);
-  expect(await screen.findByRole("button", { name: "Выключить" })).toBeTruthy();
+  expect(await screen.findByRole("switch", { name: t("plugins.enabled"), checked: true })).toHaveProperty("disabled", false);
   expect(screen.queryByText("В разработке")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
   if (id === "sli.remote-access") expect(await screen.findByText("Журнал NPS Accounting не подключён.")).toBeTruthy();
@@ -148,7 +149,7 @@ it("renders nested workstation policy controls without a JSON editor", async () 
   fireEvent.click(await screen.findByRole("button", { name: "Настроить" }));
   fireEvent.click(screen.getByRole("button", { name: "Добавить запись" }));
   expect(screen.getByRole("textbox", { name: "Идентификатор станции" })).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "Область действия" }), { target: { value: "1" } });
+  await chooseOption(screen.getByLabelText("Область действия", { selector: "button" }), "1");
   expect(screen.getByRole("textbox", { name: "Путь подразделения" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Идентификатор станции" })).toBeNull();
 });
@@ -209,9 +210,9 @@ it("shows denied settings distinctly", async () => {
 });
 
 it("lists and filters multiple domains without discarding their controllers", async () => {
-  mount(); await screen.findByRole("combobox", { name: "Домен" });
+  mount(); await screen.findByLabelText("Домен", { selector: "button" });
   expect(screen.getByText(/DC-01/)).toBeTruthy(); expect(screen.getByText(/DC-02/)).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "Домен" }), { target: { value: "two.example.invalid" } });
+  await chooseOption(screen.getByLabelText("Домен", { selector: "button" }), "two.example.invalid");
   expect(screen.queryByText(/DC-01/)).toBeNull(); expect(screen.getByText(/DC-02/)).toBeTruthy();
 });
 

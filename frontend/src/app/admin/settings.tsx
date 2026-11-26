@@ -1,3 +1,4 @@
+import { Select } from "../../design-system/Select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
@@ -69,9 +70,8 @@ export function SettingsPage() {
       }
     }}>
       <div className="sli-ds-field" data-layout="row"><label htmlFor="settings-language">{t("shell.profile.language.title")}</label>
-        <select id="settings-language" value={language} aria-describedby={saveError ? "settings-save-error" : undefined} onChange={(event) => setLanguage(event.target.value as Locale)}>
-          {(["ru", "en"] as const).map((locale) => <option key={locale} value={locale}>{t(`shell.profile.language.${locale}`)}</option>)}
-        </select></div>
+        <Select label={t("shell.profile.language.title")} id="settings-language" value={language} aria-describedby={saveError ? "settings-save-error" : undefined} onChange={(selectedValue) => setLanguage(selectedValue as Locale)}
+          options={(["ru", "en"] as const).map((locale) => ({ value: locale, label: t(`shell.profile.language.${locale}`) }))}/></div>
       <ComboBox className="sli-ds-field" data-layout="row" selectedKey={zone} defaultItems={options} menuTrigger="focus"
         defaultFilter={(text, input) => text.toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())}
         onSelectionChange={(key) => { if (key !== null) setZone(String(key)); }}>
@@ -86,11 +86,8 @@ export function SettingsPage() {
       </ComboBox>
       {storedServerZone !== undefined ? <div className="sli-ds-field" data-layout="row">
         <label htmlFor="settings-server-time-zone">{t("operations.settings.server_tz_title")}</label>
-        <select id="settings-server-time-zone" value={serverZone ?? storedServerZone} disabled={saving}
-          aria-describedby={saveError ? "settings-save-error" : undefined} onChange={event => setServerZone(event.target.value)}>
-          <option value="host">{t("operations.settings.server_tz_host")}</option>
-          {serverZones.map(id => <option key={id} value={id}>{id}</option>)}
-        </select>
+        <Select label={t("operations.settings.server_tz_title")} id="settings-server-time-zone" value={serverZone ?? storedServerZone} disabled={saving} aria-describedby={saveError ? "settings-save-error" : undefined} onChange={(selectedValue) => setServerZone(selectedValue)}
+          options={[{ value: "host", label: t("operations.settings.server_tz_host") }, ...(serverZones.map(id => ({ value: id, label: id })) ?? [])]}/>
       </div> : null}
       {canSetServerZone && settings.isError ? <p role="alert">{t("operations.settings.server_tz_load_error")}</p> : null}
       {saveError ? <p id="settings-save-error" className="sli-ds-field__error" role="alert">{t("operations.settings.save_error")}</p> : null}

@@ -212,7 +212,7 @@ public class FileAuditConsumerDatabaseTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 418);
+        await fixture.StartAsync(ct, throughVersion: 420);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await Register(owner, ct);
         await PostCollectionPostgres.Sql(owner, "update sli_agents set policy_revision=3,assigned_modules='[]'", ct);

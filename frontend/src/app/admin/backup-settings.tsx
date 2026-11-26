@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiResponseError } from "../../api/client";
@@ -76,9 +77,8 @@ export function BackupSettingsSection() {
       }
     }}>
       <div className="sli-ds-form__fields">
-        <label><input type="checkbox" checked={enabled} disabled={locked}
-          onChange={(event) => edit({ enabled: event.target.checked, path })}/>{" "}
-          {t("backupSettings.enabled")}</label>
+        <Checkbox checked={enabled} disabled={locked} onChange={(event) => edit({ enabled: event.target.checked, path })}>{" "}
+          {t("backupSettings.enabled")}</Checkbox>
         <div className="sli-ds-form__row">
           <label className="sli-ds-form__label" htmlFor="backup-settings-path">{t("backupSettings.path")}</label>
           <div className="sli-ds-form__value sli-ds-field">

@@ -1,3 +1,6 @@
+import { DateInput } from "../../design-system/PeriodPicker";
+import { Select } from "../../design-system/Select";
+import { Checkbox } from "../../design-system/Checkbox";
 import { EMPTY_VALUE } from "../../shared/format";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 import { uniqueApprovalInstant } from "./approval-time";
@@ -57,7 +60,7 @@ function ManageGate({ title, capability, children }: { title: string; capability
 
 function ChoiceGroup({ legend, options, selected, onToggle }: { legend: string; options: Array<{ key: string; label: string }>; selected: string[]; onToggle: (key: string) => void }) {
   return <fieldset className="sli-ds-choices"><legend>{legend}</legend>
-    {options.map((option) => <label key={option.key}><input type="checkbox" checked={selected.includes(option.key)} onChange={() => onToggle(option.key)}/>{option.label}</label>)}
+    {options.map((option) => <Checkbox key={option.key} checked={selected.includes(option.key)} onChange={() => onToggle(option.key)}>{option.label}</Checkbox>)}
   </fieldset>;
 }
 
@@ -193,10 +196,8 @@ export function AccessCenterContent() {
       <div className="sli-ds-filters__fields">
         <AccountFilterField value={accountFilter} onChange={(value) => { setAccountFilter(value); setSelectedUser(undefined); }}/>
         <div className="sli-ds-field"><label htmlFor="access-subject">{t("access.center.audit.subject")}</label>
-          <select id="access-subject" value={selectedUser ?? ""} onChange={(event) => setSelectedUser(event.target.value ? Number(event.target.value) : undefined)}>
-            <option value="">{t("access.center.audit.effective")}</option>
-            {filterAccounts(subjects.data?.users ?? [], accountFilter).map((user) => <option key={user.id} value={user.id} disabled={!user.is_active}>{user.username} · {roleLabel(user.role)}{user.is_active ? "" : t("access.center.audit.loginDisabled")}</option>)}
-          </select></div>
+          <Select label={t("access.center.audit.subject")} id="access-subject" value={selectedUser ?? ""} onChange={(selectedValue) => setSelectedUser(selectedValue ? Number(selectedValue) : undefined)}
+            options={[{ value: "", label: t("access.center.audit.effective") }, ...(filterAccounts(subjects.data?.users ?? [], accountFilter).map((user) => ({ value: user.id, label: String(user.username) + String(" · ") + String(roleLabel(user.role)) + String(user.is_active ? "" : t("access.center.audit.loginDisabled")), disabled: !user.is_active })) ?? [])]}/></div>
       </div>
       {subjects.isLoading ? <StateView state="loading" compact/> : subjects.error ? <StateView state="unavailable" compact detail={subjects.error.message}/> : null}
     </div>
@@ -218,20 +219,16 @@ export function AccessCenterContent() {
       <h2 className="sli-ds-section-title">{t("access.center.package.title")}</h2>
       <div className="sli-ds-filters__fields">
         <div className="sli-ds-field"><label htmlFor="package-key">{t("access.center.kind.package")}</label>
-          <select id="package-key" required value={packageKey} onChange={(event) => setPackageKey(event.target.value)}>
-            <option value="">{t("access.center.package.field.package.placeholder")}</option>
-            {subjects.data?.packages.map((item) => <option key={item.package_key} value={item.package_key}>{item.name}</option>)}
-          </select></div>
+          <Select label={t("access.center.kind.package")} id="package-key" required value={packageKey} onChange={(selectedValue) => setPackageKey(selectedValue)}
+            options={[{ value: "", label: t("access.center.package.field.package.placeholder") }, ...(subjects.data?.packages.map((item) => ({ value: item.package_key, label: item.name })) ?? [])]}/></div>
         <div className="sli-ds-field"><label htmlFor="package-effect">{t("access.center.col.effect")}</label>
-          <select id="package-effect" value={packageEffect} onChange={(event) => setPackageEffect(event.target.value)}>
-            <option value="allow">{t("access.center.package.effect.allow")}</option><option value="deny">{t("access.center.package.effect.deny")}</option>
-          </select></div>
+          <Select label={t("access.center.col.effect")} id="package-effect" value={packageEffect} onChange={(selectedValue) => setPackageEffect(selectedValue)}
+            options={[{ value: "allow", label: t("access.center.package.effect.allow") }, { value: "deny", label: t("access.center.package.effect.deny") }]}/></div>
         <div className="sli-ds-field"><label htmlFor="package-source">{t("access.center.package.field.source")}</label>
-          <select id="package-source" value={packageSourceType} onChange={(event) => setPackageSourceType(event.target.value)}>
-            <option value="direct">{t("access.center.source.direct")}</option><option value="temporary">{t("access.center.source.temporary")}</option>
-          </select></div>
+          <Select label={t("access.center.package.field.source")} id="package-source" value={packageSourceType} onChange={(selectedValue) => setPackageSourceType(selectedValue)}
+            options={[{ value: "direct", label: t("access.center.source.direct") }, { value: "temporary", label: t("access.center.source.temporary") }]}/></div>
         <div className="sli-ds-field"><label htmlFor="package-expires">{t("access.center.package.field.expires")}</label>
-          <input id="package-expires" type="datetime-local" required={packageSourceType === "temporary"} value={packageExpires} onChange={(event) => setPackageExpires(event.target.value)}/></div>
+          <DateInput id="package-expires" label={t("access.center.package.field.expires")} required={packageSourceType === "temporary"} value={packageExpires} onChange={setPackageExpires}/></div>
         <div className="sli-ds-field"><label htmlFor="package-reason">{t("access.center.audit.basis")}</label>
           <input id="package-reason" required value={packageReason} onChange={(event) => setPackageReason(event.target.value)} placeholder={t("access.center.package.field.reason.placeholder")}/></div>
       </div>
@@ -250,26 +247,21 @@ export function AccessCenterContent() {
       {grantOptions.isLoading ? <StateView state="loading" compact/> : grantOptions.error ? <StateView state="unavailable" compact detail={grantOptions.error.message}/> : null}
       <div className="sli-ds-filters__fields">
         <div className="sli-ds-field"><label htmlFor="grant-report">{t("access.center.audit.report")}</label>
-          <select id="grant-report" required value={reportKey} onChange={(event) => chooseReport(event.target.value)}>
-            <option value="">{t("access.center.report.field.report.placeholder")}</option>
-            {grantOptions.data?.items.map((report) => <option key={report.report_key} value={report.report_key}>{reportTitle(report.report_key, report.name)} · {reportSensitivityLabel(report.sensitivity)}</option>)}
-          </select></div>
+          <Select label={t("access.center.audit.report")} id="grant-report" required value={reportKey} onChange={(selectedValue) => chooseReport(selectedValue)}
+            options={[{ value: "", label: t("access.center.report.field.report.placeholder") }, ...(grantOptions.data?.items.map((report) => ({ value: report.report_key, label: String(reportTitle(report.report_key, report.name)) + String(" · ") + String(reportSensitivityLabel(report.sensitivity)) })) ?? [])]}/></div>
         <div className="sli-ds-field"><label htmlFor="grant-effect">{t("access.center.col.effect")}</label>
-          <select id="grant-effect" value={effect} onChange={(event) => setEffect(event.target.value)}>
-            <option value="allow">{t("access.center.report.effect.allow")}</option><option value="deny">{t("access.center.report.effect.deny")}</option>
-          </select></div>
+          <Select label={t("access.center.col.effect")} id="grant-effect" value={effect} onChange={(selectedValue) => setEffect(selectedValue)}
+            options={[{ value: "allow", label: t("access.center.report.effect.allow") }, { value: "deny", label: t("access.center.report.effect.deny") }]}/></div>
         <div className="sli-ds-field"><label htmlFor="grant-source">{t("access.center.package.field.source")}</label>
-          <select id="grant-source" value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-            <option value="direct">{t("access.center.source.direct")}</option><option value="temporary">{t("access.center.source.temporary")}</option>
-          </select></div>
+          <Select label={t("access.center.package.field.source")} id="grant-source" value={sourceType} onChange={(selectedValue) => setSourceType(selectedValue)}
+            options={[{ value: "direct", label: t("access.center.source.direct") }, { value: "temporary", label: t("access.center.source.temporary") }]}/></div>
         {selectedGrant ? <div className="sli-ds-field"><label htmlFor="grant-scope-kind">{t("access.assign.field.scope")}</label>
-          <select id="grant-scope-kind" value={scopeKind} onChange={(event) => setScopeKind(event.target.value)}>
-            {selectedGrant.scope_kinds.map((kind) => <option key={kind} value={kind}>{scopeKindLabel(kind)}</option>)}
-          </select></div> : null}
+          <Select label={t("access.assign.field.scope")} id="grant-scope-kind" value={scopeKind} onChange={(selectedValue) => setScopeKind(selectedValue)}
+            options={selectedGrant.scope_kinds.map((kind) => ({ value: kind, label: scopeKindLabel(kind) }))}/></div> : null}
         {scopeKind !== "all" ? <div className="sli-ds-field"><label htmlFor="grant-scope-values">{t("access.center.report.field.scopeValues")}</label>
           <input id="grant-scope-values" required value={scopeValues} onChange={(event) => setScopeValues(event.target.value)} placeholder={scopeKind === "channel" ? "Security, System" : t("access.assign.field.scopeValues.placeholder")}/></div> : null}
         <div className="sli-ds-field"><label htmlFor="grant-expires">{t("access.assign.field.validUntil")}</label>
-          <input id="grant-expires" type="datetime-local" required={sourceType === "temporary"} value={expires} onChange={(event) => setExpires(event.target.value)}/></div>
+          <DateInput id="grant-expires" label={t("access.assign.field.validUntil")} required={sourceType === "temporary"} value={expires} onChange={setExpires}/></div>
         <div className="sli-ds-field"><label htmlFor="grant-reason">{t("access.center.audit.basis")}</label>
           <input id="grant-reason" required value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("access.center.report.field.reason.placeholder")}/></div>
       </div>
@@ -441,20 +433,18 @@ function DecisionDrawer({ item, mode, pending, onClose, onSubmit }: { item: V4Re
       ]}/>
       {mode === "approve" ? <>
         <div className="sli-ds-field"><label htmlFor="decision-scope-kind">{t("access.requests.drawer.grantedScope")}</label>
-          <select id="decision-scope-kind" name="scope_kind" defaultValue={requestedKind}>
-            <option value={requestedKind}>{scopeKindLabel(requestedKind)}</option>
-            {requestedKind === "all" ? <><option value="server">{t("access.requests.drawer.scope.servers")}</option><option value="domain">{t("access.requests.drawer.scope.domains")}</option><option value="channel">{t("access.requests.drawer.scope.channels")}</option></> : null}
-          </select></div>
+          <Select label={t("access.requests.drawer.grantedScope")} id="decision-scope-kind" name="scope_kind" defaultValue={requestedKind}
+            options={[{ value: requestedKind, label: scopeKindLabel(requestedKind) }, ...(requestedKind === "all" ? [{ value: "server", label: t("access.requests.drawer.scope.servers") }, { value: "domain", label: t("access.requests.drawer.scope.domains") }, { value: "channel", label: t("access.requests.drawer.scope.channels") }] : [])]}/></div>
         <div className="sli-ds-field"><label htmlFor="decision-scope-values">{t("access.center.report.field.scopeValues")}</label>
           <input id="decision-scope-values" name="scope_values" defaultValue={requestedValues.join(", ")} placeholder={requestedKind === "all" ? t("access.requests.drawer.scope.placeholder.all") : t("access.requests.drawer.scope.placeholder.values")}/></div>
         <div className="sli-ds-field"><label htmlFor="decision-valid-until">{t("access.requests.drawer.validUntilLimit")}</label>
-          <input id="decision-valid-until" name="valid_until" type="datetime-local" required defaultValue={initialValidUntil} aria-describedby="decision-time-zone" aria-invalid={deadlineError || undefined} onChange={() => setDeadlineError(false)}/>
+          <DateInput id="decision-valid-until" label={t("access.requests.drawer.validUntilLimit")} name="valid_until" required defaultValue={initialValidUntil} aria-describedby="decision-time-zone" aria-invalid={deadlineError || undefined} onChange={() => setDeadlineError(false)}/>
           <small id="decision-time-zone">{t("access.approval.editZone", { zone: editTimeZone })}</small>
           {deadlineError ? <p role="alert">{t("access.approval.invalidWallTime")}</p> : null}</div>
         <fieldset className="sli-ds-choices"><legend>{t("access.center.report.categories")}</legend>
-          {item.requested_field_categories.map((field) => <label key={field}><input type="checkbox" name={`field:${field}`} defaultChecked/>{fieldCategoryLabel(field)}</label>)}</fieldset>
+          {item.requested_field_categories.map((field) => <Checkbox key={field} name={`field:${field}`} defaultChecked>{fieldCategoryLabel(field)}</Checkbox>)}</fieldset>
         <fieldset className="sli-ds-choices"><legend>{t("access.user.col.actions")}</legend>
-          {item.requested_actions.map((action) => <label key={action}><input type="checkbox" name={`action:${action}`} defaultChecked disabled={action === "view"}/>{accessActionLabel(action)}</label>)}</fieldset>
+          {item.requested_actions.map((action) => <Checkbox key={action} name={`action:${action}`} defaultChecked disabled={action === "view"}>{accessActionLabel(action)}</Checkbox>)}</fieldset>
       </> : null}
       <div className="sli-ds-field"><label htmlFor="decision-reason">{mode === "approve" ? t("access.requests.drawer.decisionReason") : t("access.requests.drawer.rejectReason")}</label>
         <textarea id="decision-reason" name="decision_reason" required minLength={5} rows={3}/></div>

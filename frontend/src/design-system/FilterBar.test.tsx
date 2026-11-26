@@ -10,9 +10,9 @@ it("renders the declared all-domains option once and allows clearing a selected 
   render(<FilterBar fields={[{ key: "domain", label: "Domain", kind: "select", options: [
     { value: "", label: "All accessible domains" }, { value: "7", label: "Synthetic domain" },
   ] }]} values={{ domain: "7" }} onApply={apply}/>);
-  const select = screen.getByLabelText("Domain");
-  expect(within(select).getAllByRole("option")).toHaveLength(2);
-  fireEvent.change(select, { target: { value: "" } });
+  await userEvent.click(screen.getByLabelText("Domain", { selector: "button" }));
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  await userEvent.click(screen.getByRole("option", { name: "All accessible domains" }));
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   expect(apply).toHaveBeenCalledWith({ domain: undefined });
 });
@@ -110,7 +110,8 @@ it("keeps inline search outside additional filters and applies their draft toget
   expect(additional.contains(search)).toBe(false);
   await userEvent.click(screen.getByText("Ещё фильтры"));
   fireEvent.change(search, { target: { value: "synthetic" } });
-  fireEvent.change(screen.getByLabelText("Type"), { target: { value: "server" } });
+  await userEvent.click(screen.getByLabelText("Type", { selector: "button" }));
+  await userEvent.click(screen.getByRole("option", { name: "Server" }));
   expect(apply).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   expect(apply).toHaveBeenCalledWith({ q: "synthetic", type: "server" });

@@ -14,7 +14,7 @@ import { Panel } from "./Primitives";
  * Reports fill the slots; they do not define their own page geometry.
  * While loading, the metrics/table slots show skeletons of the final geometry.
  */
-export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, side, sideSize, split = false }: {
+export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls, domain, domainPicker, periodPicker, showDomain, metrics, filters, tabs, tabbed = false, panel = false, state = "ok", stateMessage, stateDetail, stateActions, stateView, staleAge, onRetry, busy = false, children, drawer, inlineDrawer, side, sideSize, split = false }: {
   title: string;
   subtitle?: ReactNode;
   crumbs?: Crumb[];
@@ -22,6 +22,8 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   actions?: ReactNode;
   controls?: PageHeaderControls;
   domain?: string;
+  domainPicker?: ReactNode;
+  periodPicker?: ReactNode;
   showDomain?: boolean;
   metrics?: ReactNode;
   filters?: ReactNode;
@@ -65,7 +67,7 @@ export function ReportLayout({ title, subtitle, crumbs, meta, actions, controls,
   </>;
   return <section className="sli-ds-report" data-state={state} data-busy={busy || undefined} aria-busy={busy || undefined}>
     {busy ? <div className="sli-ds-busybar" role="progressbar" aria-label={t("state.refreshing")}/> : null}
-    <PageHeader title={title} subtitle={subtitle} crumbs={crumbs} meta={meta} actions={actions} controls={controls} domain={domain} showDomain={showDomain}/>
+    <PageHeader title={title} subtitle={subtitle} crumbs={crumbs} meta={meta} actions={actions} controls={controls} domain={domain} domainPicker={domainPicker} periodPicker={periodPicker} showDomain={showDomain}/>
     {state !== "denied" ? metrics : null}
     {state !== "denied" ? filters : null}
     {panel ? <Panel>{content}</Panel> : content}

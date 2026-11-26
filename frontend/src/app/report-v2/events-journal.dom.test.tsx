@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -49,7 +50,10 @@ function journal({
     const payload = url.pathname === "/api/v1/events/4" ? { item: { event_db_id: 4, event_record_id: 30, event_data: { AuthenticationPackageName: "Kerberos" } } }
       : !isData ? definition
       : params.has("before") ? { ...data, items: params.get("before") === "4" ? [preceding] : [] }
-      : params.has("expand") ? { ...data, items: [event(6, "First source failure"), event(5, "Second source failure")], next_cursor: null }
+      : params.has("expand") ? { ...data, items: [
+        event(6, "First source failure", { journal_reported_account: "REPORTED\\synthetic.user" }),
+        event(5, "Second source failure", { journal_reported_account: "synthetic.user" }),
+      ], next_cursor: null }
       : params.has("cursor") ? { ...data, items: [event(1, "Next page event")], next_cursor: null }
       : params.get("view") === "service" ? { ...data, items: [], state: "empty" }
       : data;
@@ -151,7 +155,8 @@ it.each(["ok", "partial", "stale", "processing"] as const)("shows journal facts 
 
 it("shows distinct subjects and links findings and changes by exact ID", async () => {
   const changed = event(7, "Group membership changed", { event_id: 4728, journal_change_domain: 7,
-    journal_account: "<test-group>", journal_address: null, logon_type: null });
+    journal_account: "<test-group>", journal_address: null, logon_type: null,
+    journal_computer: "dc02.example.test", journal_initiator: "EXAMPLE\\other.operator" });
   journal({ items: [exact, group, changed] });
   const row = within((await screen.findByText("×18")).closest("tr")!);
   expect(row.getByText(/(\d{2}):15:00 – \1:20:00/)).toBeTruthy();
@@ -159,7 +164,7 @@ it("shows distinct subjects and links findings and changes by exact ID", async (
   expect(row.getByRole("link", { name: "EXAMPLE\\operator" })).toBeTruthy();
   expect(row.getByRole("link", { name: "192.0.2.10" })).toBeTruthy();
   expect(row.getByRole("link", { name: "dc01.example.test" })).toBeTruthy();
-  expect(row.getByRole("cell", { name: "3" })).toBeTruthy();
+  expect(row.getByRole("cell", { name: "Network" })).toBeTruthy();
   expect(row.queryByRole("link", { name: /#\d/ })).toBeNull();
   const finding = screen.getByRole("link", { name: /#42/ });
   expect(finding.getAttribute("href")).toBe("/app/report/security.problems?id=42");
@@ -168,6 +173,27 @@ it("shows distinct subjects and links findings and changes by exact ID", async (
   expect(query.pathname).toBe("/app/report/security.events.chains");
   expect(Object.fromEntries(query.searchParams)).toMatchObject({ event_db_id: "7", domain: "7", repeat_mode: "individual",
     from: windowBounds.from_utc, to: windowBounds.to_utc_exclusive });
+});
+
+it("renders paired actions, a plain workstation, and only distinguishing columns", async () => {
+  journal({ items: [
+    event(8, "Credential validation", { event_id: 4625, journal_action: "failed_logon", journal_expandable: true,
+      event_count: 1, journal_source_count: 2, journal_finding_id: 43 }),
+    event(9, "Credential validation", { event_id: 4776, journal_address: null, journal_workstation: "<reported workstation>" }),
+    event(10, "Kerberos service ticket", { event_id: 4769, journal_address: null, logon_type: null }),
+    event(11, "Logon succeeded", { journal_action: "privileged_logon", logon_type: "10" }),
+  ] });
+  const failed = within((await screen.findByText(t("reports.v2.events.journal.action.failed_logon"))).closest("tr")!);
+  expect(failed.getByRole("button", { name: "Expand repeats" })).toBeTruthy();
+  expect(failed.queryByText("×2")).toBeNull();
+  expect(failed.getByRole("link", { name: "#43" }).getAttribute("href")).toBe("/app/report/security.problems?id=43");
+  expect(screen.getByText(t("reports.v2.events.journal.action.privileged_logon"))).toBeTruthy();
+  expect(screen.getByText(t("reports.v2.events.journal.event.4769"))).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "<reported workstation>" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "<reported workstation>" })).toBeNull();
+  expect(screen.getByRole("cell", { name: "RDP" })).toBeTruthy();
+  for (const name of ["Computer", "Initiator / on behalf of", "Account", "Time", "Result"])
+    expect(screen.queryByRole("columnheader", { name })).toBeNull();
 });
 
 it("only loads source rows on expansion and keeps the original query window", async () => {
@@ -183,6 +209,8 @@ it("only loads source rows on expansion and keeps the original query window", as
   expect(request.searchParams.get("limit")).toBe("25");
   expect(within(nested).getByText("First source failure")).toBeTruthy();
   expect(within(nested).getByText("Second source failure")).toBeTruthy();
+  expect(within(nested).getByRole("link", { name: "REPORTED\\synthetic.user" })).toBeTruthy();
+  expect(within(nested).getByRole("link", { name: "synthetic.user" })).toBeTruthy();
   expect(within(nested).queryByRole("button", { name: "Expand repeats" })).toBeNull();
   fireEvent.click(screen.getAllByRole("button", { name: "Hide repeats" })[0]);
   expect(screen.queryByText("First source failure")).toBeNull();
@@ -212,7 +240,7 @@ it("applies search and result filters in the current domain", async () => {
   await screen.findByText("Logon succeeded");
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "synthetic.user" } });
   await waitFor(() => expect(requests.some((url) => url.searchParams.get("q") === "synthetic.user")).toBe(true));
-  fireEvent.change(screen.getByRole("combobox", { name: "Result" }), { target: { value: "failure" } });
+  await chooseOption(screen.getByLabelText("Result", { selector: "button" }), "failure");
   await waitFor(() => expect(requests.some((url) => url.searchParams.get("q") === "synthetic.user" &&
     url.searchParams.get("result") === "failure" && url.searchParams.get("domain") === "7")).toBe(true));
 });
