@@ -65,6 +65,18 @@ public sealed class AdUsersFiveTabsTests
     }
     static JsonArray Direct() => Array(new[] { new { group_id = 10, group = "Synthetic privileged group", relation = "direct", basis = "privileged_membership" } });
     static JsonArray Effective(string relation) => Array(new[] { new { id = "group:10", name = "Synthetic nested group", watchGroup = true, relation } });
+    [Fact] public void Established_protected_membership_remains_visible_as_privilege_without_a_deviation()
+    {
+        var account = Account(1, password: Observed, activity: Observed);
+        account["memberships"]!["effective"] = Effective("nested");
+        var inventory = Query(Snapshot(account), "privileged");
+        var row = Assert.Single(inventory["items"]!.AsArray());
+        Assert.Equal("Synthetic nested group", Assert.Single(row!["nested_privilege_groups"]!.AsArray())!.ToString());
+        Assert.Empty(row["reasons"]!.AsArray());
+        Assert.Null(row["reason_text"]);
+        Assert.Null(row["severity"]);
+        Assert.Empty(Query(Snapshot(account), "risk")["items"]!.AsArray());
+    }
     [Fact] public void Privilege_preserves_direct_nested_and_primary_evidence_disabled_counts_filters_and_input()
     {
         var a = Account(1); a["privilegedMemberships"] = Direct(); a["memberships"]!["effective"] = Effective("nested");

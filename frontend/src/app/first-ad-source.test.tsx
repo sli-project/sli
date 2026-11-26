@@ -124,16 +124,16 @@ it.each(["domain", "domain_id"])("keeps a direct %s on the AD state report when 
 });
 
 it.each([
-  ["ad.users.v2", "all"],
-  ["ad.computers.v6", "computers"],
-])("retains both direct selectors when switching denied %s tabs", async (reportKey, initialTab) => {
+  ["ad.users.v2", "all", "privileged"],
+  ["ad.computers.v6", "computers", "changes"],
+])("retains both direct selectors when switching denied %s tabs", async (reportKey, initialTab, nextTab) => {
   const previous = window.location.pathname + window.location.search + window.location.hash;
   window.history.replaceState(null, "", "/app/report/" + reportKey + "?domain=7&domain_id=8");
   vi.mocked(api.reportV2Definition).mockResolvedValue({
     ...definition(reportKey), params: [], default_domain_state: "unknown",
     views: [
       { kind: "table", key: initialTab, access: { allowed: false } },
-      { kind: "table", key: "changes", access: { allowed: false } },
+      { kind: "table", key: nextTab, access: { allowed: false } },
     ],
   });
   try {
@@ -142,7 +142,7 @@ it.each([
     fireEvent.click(screen.getAllByRole("tab")[1]);
     await waitFor(() => {
       const query = new URLSearchParams(window.location.search);
-      expect(query.get("tab")).toBe("changes");
+      expect(query.get("tab")).toBe(nextTab);
       expect(query.get("domain")).toBe("7");
       expect(query.get("domain_id")).toBe("8");
     });
