@@ -16,6 +16,11 @@ public sealed record HomeWindow(DateTimeOffset From, DateTimeOffset To)
 public sealed record HomeSummaryQuery(string Contract, long? Domain, string TimeZone, string Preset,
     DateTimeOffset Now, HomeWindow? Period, HomeWindow Current, HomeWindow Previous, bool WindowComplete)
 {
+    internal bool OpenQueue => Contract == "v5";
+    internal bool PeriodSummary => Contract is "v4" or "v5";
+    internal string QueueFilter { get; init; } = "all";
+    internal int QueuePage { get; init; } = 1;
+    internal int QueueLimit { get; init; } = 25;
     public string Language { get; init; } = "";
     public static string Iso(DateTimeOffset value)
     {
@@ -40,13 +45,22 @@ public sealed record HomeSummaryQuery(string Contract, long? Domain, string Time
         query = new QueryCollection(query.Select(p => KeyValuePair.Create(p.Key,
             new Microsoft.Extensions.Primitives.StringValues(p.Value.Where(v => !string.IsNullOrEmpty(v)).ToArray())))
             .Where(p => p.Value.Count > 0).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
-        string[] allowed = ["contract", "scope", "domain", "domain_id", "period", "from", "to", "tz"];
+        string[] allowed = ["contract", "scope", "domain", "domain_id", "period", "from", "to", "tz", "queue", "page", "limit"];
         if (query.Keys.Except(allowed, StringComparer.Ordinal).Any()) throw new HomeQueryException("home_parameter_unknown");
         var selectedDomain = DomainQuery.ParseDomainId(query);
         if (query.Any(p => p.Value.Count != 1)) throw new HomeQueryException("home_parameter_invalid");
         string First(string key, string fallback = "") => query.TryGetValue(key, out var values) ? values[0] ?? "" : fallback;
         var contract = First("contract", "v1");
-        if (contract is not ("v1" or "v2" or "v3" or "v4")) throw new HomeQueryException("home_contract_invalid");
+        if (contract is not ("v1" or "v2" or "v3" or "v4" or "v5")) throw new HomeQueryException("home_contract_invalid");
+        if (contract != "v5" && new[] { "queue", "page", "limit" }.Any(query.ContainsKey))
+            throw new HomeQueryException("home_parameter_unknown");
+        var filter = First("queue", "all");
+        if (filter is not ("all" or "unassigned" or "in_work")
+            || !int.TryParse(First("page", "1"), NumberStyles.None, CultureInfo.InvariantCulture, out int page) || page < 1
+            || !int.TryParse(First("limit", "25"), NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
+            || limit is not (25 or 50 or 100 or 200))
+            throw new HomeQueryException("home_parameter_invalid");
+        bool periodSummary = contract is "v4" or "v5";
         long? domain = selectedDomain;
         var scope = First("scope", "accessible");
         var rawDomain = First("domain");
@@ -71,7 +85,7 @@ public sealed record HomeSummaryQuery(string Contract, long? Domain, string Time
         // ZoneInfo accepts IANA names, not Windows registry aliases.
         if (zoneName != "UTC" && !TimeZoneInfo.TryConvertIanaIdToWindowsId(zoneName, out _))
             throw new HomeQueryException("home_timezone_invalid");
-        var preset = First("period", contract == "v4" ? "24h" : "current");
+        var preset = First("period", periodSummary ? "24h" : "current");
         HomeWindow? period = null;
         var days = preset switch { "current" or "24h" => 1, "7d" => 7, "30d" => 30, "90d" => 90, _ => 0 };
         if (preset == "current")
@@ -101,7 +115,7 @@ public sealed record HomeSummaryQuery(string Contract, long? Domain, string Time
         }
         else throw new HomeQueryException("report_period_invalid");
         if (period is not null) period = new(DateTimeOffset.FromUnixTimeSeconds(period.From.ToUnixTimeSeconds()), DateTimeOffset.FromUnixTimeSeconds(period.To.ToUnixTimeSeconds()));
-        if (contract == "v4" && (period is null || period.From >= period.To || period.To > now || period.To - period.From > TimeSpan.FromDays(7)))
+        if (periodSummary && (period is null || period.From >= period.To || period.To > now || period.To - period.From > TimeSpan.FromDays(7)))
             throw new HomeQueryException("report_period_invalid");
         HomeWindow current, previous;
         if (days > 0)
@@ -115,7 +129,8 @@ public sealed record HomeSummaryQuery(string Contract, long? Domain, string Time
         {
             current = period!; previous = new(current.From - (current.To - current.From), current.From);
         }
-        return new(contract, domain, zoneName, preset, now, period, current, previous, current.To <= now);
+        return new(contract, domain, zoneName, preset, now, period, current, previous, current.To <= now)
+        { QueueFilter = filter, QueuePage = page, QueueLimit = limit };
     }
 
     public Dictionary<string, object?> Filters(string key)

@@ -177,8 +177,9 @@ public static class DetectionSignal
     }
     internal static void ValidateEnvelope(JsonObject signal)
     {
-        string[] keys=["kind","rule_id","rule_version","rule_sha256","policy_revision","evaluation_mode","entity_key","episode_key","occurred_at_utc","received_at_utc","evidence_refs","base_severity","effective_severity","severity_reasons","quality","conclusion_state","evidence_total","identity_context","attack_context"];
-        D.Require(!signal.Select(p=>p.Key).Except(keys).Any()&&(signal["identity_context"]!=null)!=(signal["attack_context"]!=null),"detection_signal_invalid");
+        string[] contexts=["identity_context","attack_context","password_threshold_context"];
+        string[] keys=["kind","rule_id","rule_version","rule_sha256","policy_revision","evaluation_mode","entity_key","episode_key","occurred_at_utc","received_at_utc","evidence_refs","base_severity","effective_severity","severity_reasons","quality","conclusion_state","evidence_total",..contexts];
+        D.Require(!signal.Select(p=>p.Key).Except(keys).Any()&&contexts.Count(key=>signal[key]!=null)==1,"detection_signal_invalid");
         var refs=signal["evidence_refs"]!.AsArray().Select(DetectionRef.Read).ToArray();
         var anchor=signal["attack_context"]?["anchor_ref"];
         D.Require(refs.Length is >0 and <=256&&refs.Distinct().Count()==refs.Length&&refs.SequenceEqual(refs.OrderBy(r=>anchor!=null&&!JsonNode.DeepEquals(r.Document,anchor)).ThenBy(r=>r.SortKey,StringComparer.Ordinal)),"detection_signal_invalid");

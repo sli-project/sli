@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Npgsql;
 using static Sli.Server.Operations.OpsJson;
 
 namespace Sli.Server.Operations;
@@ -78,13 +79,20 @@ public sealed partial class OperationsService
         select rule_id,state,observed_at from public.read_password_live_status400(
             array(select d.id::bigint from public.domains d where not d.is_archived))
         """;
+    internal const string PasswordThresholdStatusSql = """
+        select rule_id,state,observed_at from public.read_password_threshold_status418(
+            array(select d.id::bigint from public.domains d where not d.is_archived))
+        """;
 
     private async Task<JsonObject> PasswordDetectionAsync(bool semanticStopped, bool semanticStale, CancellationToken ct)
     {
         static JsonObject UnavailableStatus() => new() { ["status"] = "unavailable", ["items"] = new JsonArray() };
         try
         {
-            var rows = await queries.ReadAsync(PasswordLiveStatusSql, ct);
+            JsonArray rows;
+            try { rows = await queries.ReadAsync(PasswordThresholdStatusSql, ct); }
+            catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.UndefinedFunction)
+            { rows = await queries.ReadAsync(PasswordLiveStatusSql, ct); }
             var items = new JsonArray();
             var rules = new HashSet<string>(StringComparer.Ordinal);
             foreach (var node in rows)
@@ -98,6 +106,7 @@ public sealed partial class OperationsService
                 if (state is not ("unknown" or "disabled" or "history_pending") && observed is null) return UnavailableStatus();
                 if (state == "behind" && (semanticStopped || semanticStale) || state == "catching_up" && semanticStopped)
                     state = "stalled";
+                if (state == "current" && (semanticStopped || semanticStale)) state = "stalled";
                 items.Add(new JsonObject { ["rule_id"] = rule, ["state"] = state,
                     ["observed_at"] = observed is {} at ? Stamp(at) : null });
             }
