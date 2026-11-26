@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { globalSearchTarget, navigationBeforeLoad, navigationRedirect, preserveNavigationView } from "./navigation";
+import { globalSearchTarget, navigationBeforeLoad, navigationRedirect, preserveNavigationView, previewModulePath } from "./navigation";
 
 beforeEach(() => { vi.spyOn(window, "scrollTo").mockImplementation(() => undefined); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -40,14 +40,10 @@ describe("registry compatibility redirects", () => {
   });
 
   it.each([
-    "/report/vpn.audit", "/report/vpn.accounts", "/report/vpn.synthetic",
     "/report/security.rule-quality", "/investigations", "/investigations/42", "/cases",
-    "/report/ad.new-logon-pairs", "/report/workstations.logons", "/report/workstations.processes",
-    "/report/workstations.usb", "/report/workstations.protection", "/report/sigma.rules",
+    "/report/ad.new-logon-pairs",
     "/report-studio", "/report-editor", "/report-management", "/report-builder", "/admin/update", "/admin/activity",
     "/cases/42", "/report-management/42", "/report-editor/42", "/report-builder/42", "/report-builder/",
-    "/admin/plugins/sli.sigma",
-    "/extensions/sli.sigma/rules", "/reports/vpn.audit",
   ])("replaces a direct visit to hidden %s with home before loading the page", async (from) => {
     const root = createRootRoute({ beforeLoad: ({ location }) => navigationBeforeLoad(location) });
     const hiddenLoad = vi.fn();
@@ -67,11 +63,12 @@ describe("registry compatibility redirects", () => {
     expect(navigationRedirect(path, {})).toBeNull();
   });
 
-  it.each(["/plugins", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access",
-    "/admin/plugins/sli.workstations", "/report/workstations.overview",
-    "/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/report/vpn.connections",
-  ])("opens plugin screens and reports directly at %s", (path) => {
+  it.each(["/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
+    "/admin/plugins/sli.workstations", "/report/workstations.overview", "/extensions/sli.sigma/rules",
+    "/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/report/vpn.connections", "/reports/vpn.audit",
+  ])("retains %s so the shell can show the server-controlled availability state", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();
+    expect(previewModulePath(path)).toBe(true);
   });
 
   it("opens the event journal with a trimmed query from the shell", () => {

@@ -2,10 +2,15 @@
   "contract_id": "sli.navigation.v3",
   "beta_entries": [
     "workspace", "problems", "security-events", "events",
-    "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "workstations-overview", "vpn-connections",
+    "ad-report", "users-report", "computers-report", "gpo-report",
     "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale",
-    "plugins", "admin-plugin-file-audit", "admin-plugin-remote-access"
+    "plugins"
   ],
+  "preview_entries": [
+    "file-audit", "workstations-overview", "vpn-connections",
+    "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma"
+  ],
+  "preview_plugins": ["sli.file-audit", "sli.workstations", "sli.remote-access", "sli.sigma"],
   "global_search": {
     "path": "/search",
     "capabilities": ["objects.view", "entity.view"]

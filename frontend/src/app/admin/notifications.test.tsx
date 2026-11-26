@@ -24,7 +24,7 @@ import { NotificationsPage } from "./notifications";
 
 function fixture(): NotificationWorkspace {
   return { channels: [{ kind: "smtp", enabled: true, tls_mode: "starttls", secret_ref: "SLI_NOTIFY_SMTP_PASSWORD",
-    state: "not_configured", revision: 3, updated_at: "2026-10-18T00:00:00Z", last_accepted_at: null, last_attempt_at: null,
+    state: "configured", revision: 3, updated_at: "2026-10-18T00:00:00Z", last_accepted_at: null, last_attempt_at: null,
     last_result_code: null, secret_status: null }],
   subscriptions: [{ id: "fixture-subscription", owner_user_id: 1, recipient_user_id: 2, channel: "smtp", enabled: true,
     revision: 4, updated_at: "2026-10-18T00:00:00Z" }],
@@ -40,7 +40,8 @@ function mount(client = new QueryClient({ defaultOptions: { queries: { retry: fa
 
 function telegramFixture() {
   const data = fixture();
-  data.channels = [{ ...data.channels[0], kind: "telegram" as const, tls_mode: "tls" as const, secret_ref: "SLI_NOTIFY_TELEGRAM_TOKEN" }];
+  data.channels = [{ ...data.channels[0], kind: "telegram" as const, tls_mode: "tls" as const,
+    secret_ref: "SLI_NOTIFY_TELEGRAM_TOKEN", state: "not_configured" }];
   return data;
 }
 
@@ -318,11 +319,15 @@ afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.clearAllM
 it.each(["ru", "en"] as const)("shows email configuration before the first delivery (%s)", async (locale) => {
   setLocale(locale); mount();
   expect(await screen.findByText(t("notify.configured"))).toBeTruthy();
+  expect(screen.getByText(t("notify.noAcceptedDelivery"))).toBeTruthy();
   expect(screen.queryByRole("columnheader", { name: t("notify.destination") })).toBeNull();
 });
 
 it.each(["ru", "en"] as const)("offers configuration for an unconfigured email channel (%s)", async (locale) => {
   setLocale(locale);
+  const data = fixture();
+  data.channels[0].state = "not_configured";
+  mock.list.mockResolvedValue(data);
   mock.smtpStatus.mockResolvedValue({ host: "", port: 587, username: "", sender: "", secret_set: false,
     needs_save: true, recipients: [{ user_id: 2, mailbox: "" }], self_user_id: 2, revision: 3, enabled: true, tls_mode: "starttls" });
   mount();
@@ -335,6 +340,7 @@ it.each(["ru", "en"] as const)("offers configuration for an unconfigured email c
 
 it("does not infer email configuration from an old successful delivery when status is unavailable", async () => {
   const data = fixture();
+  data.channels[0].state = "not_configured";
   data.channels[0].last_accepted_at = "2026-10-24T12:00:00Z";
   mock.list.mockResolvedValue(data);
   mock.smtpStatus.mockRejectedValue(new ApiResponseError(503, "smtp_setup_unavailable"));
@@ -343,7 +349,19 @@ it("does not infer email configuration from an old successful delivery when stat
   await waitFor(() => expect(mock.smtpStatus).toHaveBeenCalled());
   expect(within(row).queryByText(t("notify.accepted"))).toBeNull();
   expect(within(row).queryByText(t("notify.configured"))).toBeNull();
-  expect(within(row).queryByText(t("notify.disconnected"))).toBeNull();
+  expect(within(row).getByText(t("notify.disconnected"))).toBeTruthy();
+});
+
+it("keeps the confirmed Telegram status and accepted time when setup cannot be read", async () => {
+  const data = telegramFixture();
+  data.channels[0].state = "configured";
+  data.channels[0].last_accepted_at = "2026-10-24T12:00:00Z";
+  mock.list.mockResolvedValue(data);
+  mock.telegram.mockRejectedValue(new ApiResponseError(503, "telegram_setup_unavailable"));
+  mount();
+  const row = (await screen.findByRole("button", { name: "Telegram" })).closest("tr")!;
+  expect(within(row).getByText(t("notify.configured"))).toBeTruthy();
+  expect(within(row).getByText(/24\.10\.2026/)).toBeTruthy();
 });
 
 it("keeps the channel list readable when SMTP settings are malformed", async () => {
@@ -351,7 +369,7 @@ it("keeps the channel list readable when SMTP settings are malformed", async () 
   mount();
   const table = await screen.findByRole("table", { name: t("notify.channels") });
   await waitFor(() => expect(mock.smtpStatus).toHaveBeenCalled());
-  expect(within(table).queryByText(t("notify.configured"))).toBeNull();
+  expect(within(table).getByText(t("notify.configured"))).toBeTruthy();
   fireEvent.click(within(table).getByRole("button", { name: t("notify.edit") }));
   const panel = screen.getByRole("dialog");
   expect(await within(panel).findByRole("alert")).toBeTruthy();

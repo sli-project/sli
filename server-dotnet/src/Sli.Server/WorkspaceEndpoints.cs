@@ -54,7 +54,8 @@ public static class WorkspaceEndpoints
                         else await DomainHttp.WriteAsync(context, await new WorkspaceOverview(rows, context.RequestServices.GetRequiredService<DashboardSnapshotReader>(), context.RequestServices.GetService<IConfiguration>()).ReadAsync(context.Request.Query, ct), 200, ct);
                         return;
                     }
-                    await DomainHttp.WriteAsync(context, await new WorkspaceReportCatalog(rows, catalog).ReadAsync(access, ct), 200, ct);
+                    await DomainHttp.WriteAsync(context, await new WorkspaceReportCatalog(rows, catalog,
+                        context.RequestServices.GetService<IConfiguration>()).ReadAsync(access, ct), 200, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
                 catch (Exception ex) { if (context.Response.HasStarted) throw; await DomainHttp.WriteUnexpectedAsync(context, logger, ex, ct, route); }

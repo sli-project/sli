@@ -140,6 +140,21 @@ public sealed class NavigationRegistryTests
     }
 
     [Fact]
+    public void Preview_entries_require_opt_in_and_keep_existing_grants()
+    {
+        var access = Access(["vpn.audit", "file-audit.overview", "workstations.overview"], ["operations.view", "access.manage"]);
+        var defaultNavigation = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States()));
+        var preview = Ids(WorkspaceReportCatalog.Navigation(access, Rules, States(), preview: true));
+        foreach (string id in new[] { "vpn-connections", "file-audit", "workstations-overview", "admin-plugin-file-audit",
+            "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma" })
+        {
+            Assert.DoesNotContain(id, defaultNavigation);
+            Assert.Contains(id, preview);
+        }
+        Assert.DoesNotContain("admin-plugin-file-audit", Ids(WorkspaceReportCatalog.Navigation(Access([], []), Rules, States(), preview: true)));
+    }
+
+    [Fact]
     public void Navigation_never_widens_empty_or_denied_grants()
     {
         Assert.Equal(new[] { "workspace" }, Ids(Nav(Access([], []))));
@@ -154,7 +169,7 @@ public sealed class NavigationRegistryTests
     [InlineData("vpn.connections", "vpn-connections", "connections")]
     public void Merged_entries_keep_independent_view_grants(string grants, string entryId, string views)
     {
-        var nav = Nav(Access(grants.Split(','), []));
+        var nav = WorkspaceReportCatalog.Navigation(Access(grants.Split(','), []), Rules, States(), preview: true);
         Assert.Equal(views.Split(','), Entry(nav, entryId)["views"]!.AsArray().Select(v => S(v!["id"])));
         Assert.All(new[] { "objects", "logons-report", "vpn-access" }, id => Assert.DoesNotContain(id, Ids(nav)));
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"path":"/search","capabilities":["objects.view","entity.view"]}"""), nav["global_search"]));
@@ -278,13 +293,14 @@ public sealed class NavigationRegistryTests
         var expected = new Dictionary<string, string[]>
         {
             ["status"] = ["/admin/status"], ["base"] = ["/agents", "/access", "/notifications", "/operations", "/admin/language-time", "/admin/update"],
-            ["plugins"] = ["/admin/plugins/sli.ad", "/admin/plugins/sli.gpo", "/admin/plugins/sli.workstations", "/admin/plugins/sli.file-audit", "/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma", "/plugins"],
+            ["plugins"] = ["/admin/plugins/sli.ad", "/admin/plugins/sli.gpo", "/plugins"],
             ["advanced"] = ["/report-studio", "/admin/activity"]
         };
         Assert.Equal(expected.Keys, admin["groups"]!.AsArray().Select(g => S(g!["id"])));
         foreach (var group in admin["groups"]!.AsArray()) Assert.Equal(expected[S(group!["id"])], group["entries"]!.AsArray().Select(e => S(e!["path"])));
         Assert.Equal(new[] { "workspace" }, Ids(Nav(Access([], []))));
-        Assert.Equal(new[] { "workspace", "admin-status", "operations", "admin-plugin-ad", "admin-plugin-gpo", "admin-plugin-workstations", "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-sigma", "plugins" }, Ids(Nav(Access([], ["operations.view"]))));
+        Assert.Equal(new[] { "workspace", "admin-status", "operations", "admin-plugin-ad", "admin-plugin-gpo", "plugins" },
+            Ids(Nav(Access([], ["operations.view"]))));
     }
 
     [Theory]

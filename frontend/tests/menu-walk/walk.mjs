@@ -7,23 +7,29 @@ import { walkWorkstations } from './workstations.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
-const { url, token, results, file_servers: fileServers, workstations } = JSON.parse(input);
-if (!new URL(url).hostname.match(/^(127\.0\.0\.1|localhost|\[::1\])$/)) throw new Error('Owned loopback host required');
+const { url: betaUrl, preview_url: previewUrl, token, results, file_servers: fileServers, workstations } = JSON.parse(input);
+for (const url of [betaUrl, previewUrl]) {
+  if (!new URL(url).hostname.match(/^(127\.0\.0\.1|localhost|\[::1\])$/)) throw new Error('Owned loopback host required');
+}
 const registry = JSON.parse(await readFile(new URL('../../../config/navigation_v3.json', import.meta.url), 'utf8'));
 const all = registry.sections.flatMap(section => section.groups.flatMap(group => group.entries));
-const entries = registry.beta_entries.map(id => {
+function destination(id, url) {
   const entry = all.find(item => item.id === id);
   if (!entry) throw new Error(`Missing navigation declaration: ${id}`);
-  return { ...entry, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
-});
-if (workstations && !entries.some(entry => entry.id === 'workstations-overview'))
-  throw new Error('The workstation acceptance fixture requires a visible beta navigation entry');
+  return { ...entry, url, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
+}
+const previewEntries = registry.preview_entries.map(id => destination(id, previewUrl));
+for (const id of ['file-audit', 'workstations-overview']) {
+  if (!previewEntries.some(entry => entry.id === id)) throw new Error(`Missing preview destination for fixture: ${id}`);
+}
+const entries = [...registry.beta_entries.map(id => destination(id, betaUrl)), ...previewEntries];
 await mkdir(results, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.SLI_TEST_CHROMIUM_EXECUTABLE_PATH, timeout: 0 });
 const rows = [];
 const clean = value => redact(value, [token]);
 try {
   for (const entry of entries) {
+    const { url } = entry;
     const row = { id: entry.id, label: entry.id, path: entry.path, failures: [], api: [], console: [], labels: [], appearance: [] };
     rows.push(row);
     console.log(`menu-walk: ${entry.id} ${entry.path}`);
@@ -76,6 +82,12 @@ try {
       const match = links.find(item => item.path.replace(/\/$/, '') === new URL(target).pathname.replace(/\/$/, ''));
       if (!match) row.failures.push('Пункт отсутствует в меню владельца');
       else row.label = match.label;
+      if (url === betaUrl) {
+        for (const preview of previewEntries) {
+          if (links.some(item => item.path.replace(/\/$/, '') === `/app${preview.path}`))
+            row.failures.push(`Preview destination in the default beta menu: ${preview.id}`);
+        }
+      }
       if (new URL(page.url()).pathname.replace(/\/$/, '') !== new URL(target).pathname.replace(/\/$/, '')) row.failures.push('Перенаправление вместо страницы');
       const main = page.locator('main');
       if (!await main.count()) throw new Error('На странице нет рабочего экрана (main)');

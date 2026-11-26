@@ -6,10 +6,11 @@ using Npgsql;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Compatibility;
+using Sli.Server.Workspace;
 
 namespace Sli.Server.InstallationSetup;
 
-public sealed partial class InstallationService(IInstallationDatabase database, InstallationPackages packages)
+public sealed partial class InstallationService(IInstallationDatabase database, InstallationPackages packages, IConfiguration? configuration = null)
 {
     static string Text(JsonNode? n) => InstallationPackages.Text(n);
     static string Field(JsonObject body, string name) => AuthJsonBody.CredentialString(JsonSerializer.SerializeToElement(body), name);
@@ -55,7 +56,8 @@ public sealed partial class InstallationService(IInstallationDatabase database, 
             catch (InstallationException e) when (e.Status == 400) { throw new InstallationException("invalid_plugin_setting_value"); }
         }
         if (path == "/api/v1/plugins" && get)
-            return new JsonObject { ["items"] = await PluginStatesAsync(ct), ["can_manage"] = canManage, ["mutation_api_enabled"] = true };
+            return new JsonObject { ["items"] = await PluginStatesAsync(NavigationRegistry.PreviewEnabled(configuration), ct),
+                ["can_manage"] = canManage, ["mutation_api_enabled"] = true };
         if (path.StartsWith("/api/v1/plugins/", StringComparison.Ordinal) && !get)
             return Item(await ToggleAsync(Uri.UnescapeDataString(path["/api/v1/plugins/".Length..]), body, actor, ct));
         if (path == "/api/v1/operations/plugins" && get) return await PluginCatalogAsync(ct);

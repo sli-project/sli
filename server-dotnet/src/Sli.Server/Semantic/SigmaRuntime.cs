@@ -92,6 +92,7 @@ internal sealed partial class SemanticProduction
         JsonArray policies;
         await using (var tx = await db.BeginTransactionAsync(ct)) { policies = await new SemanticSession(db, tx).QueryAsync("select p.policy_id,p.policy_version from semantic_risk_policies p join semantic_policy_admission a using(policy_id,policy_version) where p.source_kind='detection_match' and a.enabled and semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status)='enabled' order by p.policy_id,p.policy_version limit 25", ct); await tx.CommitAsync(ct); }
         int jobs = 0, failed = 0;
+        DateTimeOffset? lastDataAt = null, failureAt = null;
         foreach (var policy in policies)
         {
             ct.ThrowIfCancellationRequested();
@@ -119,10 +120,13 @@ internal sealed partial class SemanticProduction
                 }
                 if (rows.Count > 0) await session.QueryAsync("update semantic_sigma_live_cursors set last_event_id=$1 where policy_id=$2 and policy_version=$3", ct, rows[^1].Number("source_event_id"), policyId, version);
                 await tx.CommitAsync(ct); jobs += added;
+                if (rows.Count > 0) lastDataAt = DateTimeOffset.UtcNow;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch { failed++; }
+            catch { failed++; failureAt = DateTimeOffset.UtcNow; }
         }
-        return new JsonObject { ["policies"] = policies.Count, ["jobs"] = jobs, ["failed"] = failed };
+        return new JsonObject { ["policies"] = policies.Count, ["jobs"] = jobs, ["failed"] = failed,
+            ["last_data_at"] = lastDataAt?.ToString("O", CultureInfo.InvariantCulture),
+            ["failure_at"] = failureAt?.ToString("O", CultureInfo.InvariantCulture) };
     }
 }

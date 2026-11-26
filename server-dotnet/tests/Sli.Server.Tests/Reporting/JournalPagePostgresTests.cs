@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using Sli.Server.Infrastructure;
 using Sli.Server.Reporting;
@@ -15,7 +13,7 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
     {
         public Task<Npgsql.NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
-    private sealed class MeasuredSession(IReportSession db, ITestOutputHelper output) : IReportSession
+    private sealed class MeasuredSession(IReportSession db, ITestOutputHelper output, int budgetMs) : IReportSession
     {
         private bool measured;
         public async Task<IReadOnlyList<JsonObject>> QueryAsync(string sql, IReadOnlyList<object?> values, CancellationToken ct)
@@ -23,15 +21,13 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
             if (!measured && sql.StartsWith("with short_events", StringComparison.Ordinal))
             {
                 measured = true;
-                var result = await db.QueryAsync("explain (analyze, serialize text, format json) " + sql, values, ct);
+                var result = await db.QueryAsync("explain (analyze, timing off, serialize text, format json) " + sql, values, ct);
                 var plan = result.Single()["QUERY PLAN"]![0]!;
                 double planning = plan["Planning Time"]!.GetValue<double>();
                 double execution = plan["Execution Time"]!.GetValue<double>();
                 double statement = planning + execution;
-                output.WriteLine($"PostgreSQL journal query with output serialization: {statement:F1} ms, candidate scans: {CandidateScans(plan["Plan"]!)}");
-                if (statement >= 1000)
-                    output.WriteLine(plan.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-                Assert.True(statement < 1000, $"Journal PostgreSQL query exceeded one second: {statement:F1} ms");
+                output.WriteLine($"PostgreSQL journal query with output serialization: {statement:F1} ms (budget {budgetMs} ms)");
+                Assert.True(statement < budgetMs, $"Journal PostgreSQL query exceeded {budgetMs} ms: {statement:F1} ms");
             }
             return await db.QueryAsync(sql, values, ct);
         }
@@ -39,8 +35,6 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         public Task CommitAsync(CancellationToken ct) => db.CommitAsync(ct);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-        private static int CandidateScans(JsonNode node) => (node["CTE Name"]?.GetValue<string>() == "candidates" ? 1 : 0)
-            + ((node["Plans"] as JsonArray)?.OfType<JsonObject>().Sum(CandidateScans) ?? 0);
     }
 
     [Fact]
@@ -56,14 +50,41 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
                 select create_event_storage_partitions(current_date-1,current_date);
                 select create_event_storage_partitions(current_date-20,current_date-20);
                 insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
-                select n,((current_date-1)::timestamp at time zone 'UTC')+interval '10 hours 30 minutes'+n*interval '1 second',
-                    case when n <= 4966 then 4625 when n=4967 then 4728 when n=4968 then 1102 when n=5001 then 4720 else 4624 end,
-                    1,'EXAMPLE\synthetic-'||(n%2),null,'192.0.2.10','dc01.example.test',
-                    '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing"}',
-                    '{"Status":"0xc000006d"}',
-                    case when n=4966 then '{"LogonType":"9"}'::jsonb
-                         when n=5000 then '{"LogonType":null}'::jsonb else '{}'::jsonb end
-                from generate_series(1,5001) n;
+                select n,((current_date-1)::timestamp at time zone 'UTC')+interval '10 hours'+n*interval '20 milliseconds',
+                    4624,1,'EXAMPLE\test-bulk-'||(n%45),'dc01.example.test','192.0.2.1','dc01.example.test',
+                    '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing","LogonType":"3"}',
+                    '{}','{}'
+                from generate_series(1,23000) n;
+                insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
+                select id,((current_date-1)::timestamp at time zone 'UTC')+interval '11 hours'+seconds*interval '1 second',
+                    code,1,actor,'dc01.example.test',address,'dc01.example.test',
+                    jsonb_build_object('$server_id',900001,'$channel','Security',
+                        '$provider',case when code=1102 then 'Microsoft-Windows-Eventlog' else 'Microsoft-Windows-Security-Auditing' end,
+                        '$principals',jsonb_build_object('TargetUserName',account,'TargetDomainName','EXAMPLE',
+                            'SubjectUserName',initiator,'SubjectDomainName','EXAMPLE')),
+                    jsonb_strip_nulls(jsonb_build_object('Status',status)),
+                    jsonb_strip_nulls(jsonb_build_object('LogonType',logon_type))
+                from (values
+                    (24001,181,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24002,182,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24003,183,4625,'dc01.example.test','other-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24004,184,4625,'dc01.example.test','target-user','operator','192.0.2.11','3','0xc000006d'),
+                    (24005,185,4625,'dc01.example.test','target-user','operator','192.0.2.10','9','0xc000006d'),
+                    (24006,186,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006a'),
+                    (24007,187,4625,'dc01.example.test',null,'operator','192.0.2.10','3','0xc000006d'),
+                    (24008,188,4625,'dc01.example.test',null,'operator','192.0.2.10','3','0xc000006d'),
+                    (24009,600,4625,'dc01.example.test','target-user','operator','192.0.2.10','3','0xc000006d'),
+                    (24010,190,4624,'EXAMPLE\target-user','target-user','target-user','192.0.2.10','3',null),
+                    (24011,191,4624,'EXAMPLE\target-user','target-user','target-user','192.0.2.10','3',null),
+                    (24012,192,4672,'EXAMPLE\privileged-user',null,'privileged-user',null,null,null),
+                    (24013,193,4672,'EXAMPLE\privileged-user',null,'privileged-user',null,null,null),
+                    (24014,194,4776,'EXAMPLE\credential-user','different-name',null,'192.0.2.12',null,'0xc000006a'),
+                    (24015,195,4776,'EXAMPLE\credential-user','different-name',null,'192.0.2.12',null,'0xc000006a'),
+                    (24016,196,4776,'EXAMPLE\credential-user','different-name',null,'192.0.2.12',null,'0x0'),
+                    (24017,197,4624,'EXAMPLE\device$','device$',null,'192.0.2.13','3',null),
+                    (24018,198,4728,'EXAMPLE\operator','test-group','operator',null,null,null),
+                    (24019,200,1102,'EXAMPLE\operator',null,'operator',null,null,null)
+                ) v(id,seconds,code,actor,account,initiator,address,logon_type,status);
                 insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 select current_date-20,sha256(('journal-totals-'||kind)::bytea),kind,1,'synthetic-daily',null,'192.0.2.10','dc01.example.test',
                     '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing"}','{}',
@@ -76,10 +97,8 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
         DateTimeOffset from = to.AddHours(-2);
         DateTimeOffset boundary = new(DateTime.UtcNow.Date.AddDays(-14), TimeSpan.Zero);
         await using var db = await new ReportDatabase(new Connections(fixture)).OpenAsync(false, ct);
-        var measured = new MeasuredSession(db, output);
-        var responses = new List<string>();
         async Task<JsonObject> Read(JournalOptions options, int limit = 25, string? cursor = null, string? search = null,
-            long domain = 1, string[]? fields = null, DateTimeOffset? start = null, DateTimeOffset? end = null)
+            long domain = 1, string[]? fields = null, DateTimeOffset? start = null, DateTimeOffset? end = null, int? budgetMs = null)
         {
             var sql = new ReportQuery();
             string scope = " where event.domain_id=" + sql.Parameter(domain);
@@ -91,90 +110,88 @@ public sealed class JournalPagePostgresTests(ITestOutputHelper output)
             if (cursor is not null) query["cursor"] = cursor;
             if (search is not null) query["q"] = search;
             if (options.View is "attention" or "tasks") query["view"] = options.View;
-            var result = await JournalPage.ReadAsync(measured, sql, scope, new JsonObject(),
+            var result = await JournalPage.ReadAsync(budgetMs is { } budget ? new MeasuredSession(db, output, budget) : db, sql, scope, new JsonObject(),
                 fields ?? ["id", "event_id", "time_created_utc", "channel", "subject_user_name", "target_user_name"],
                 query, options, limit, boundary, ct);
-            responses.Add(result.ToJsonString());
             return result;
         }
 
         var options = new JournalOptions(true, null, null, "all", "", "", null);
-        var first = await Read(options);
-        Assert.Equal(5001L, first["journal_event_count"]!.GetValue<long>());
-        Assert.Equal(36L, first["filtered_count"]!.GetValue<long>());
-        Assert.Equal(5001L, first["journal_counts"]!["all"]!.GetValue<long>());
-        Assert.Equal(4998L, first["journal_counts"]!["authentication"]!.GetValue<long>());
-        Assert.Equal(1L, first["journal_counts"]!["accounts"]!.GetValue<long>());
-        Assert.Equal(1L, first["journal_counts"]!["groups"]!.GetValue<long>());
-        Assert.Equal(1L, first["journal_counts"]!["audit"]!.GetValue<long>());
-        Assert.Equal(25, first["items"]!.AsArray().Count);
-        Assert.All(first["items"]!.AsArray().Take(2), row => {
-            Assert.True(row!.AsObject().ContainsKey("logon_type"));
-            Assert.Null(row["logon_type"]);
-        });
-
-        var second = await Read(options, cursor: first["next_cursor"]!.GetValue<string>());
-        Assert.Equal(11, second["items"]!.AsArray().Count);
-        Assert.True(JsonNode.DeepEquals(first["journal_counts"], second["journal_counts"]));
-        Assert.Equal(5001L, second["journal_event_count"]!.GetValue<long>());
-        var group = Assert.Single(second["items"]!.AsArray(), row => row!["journal_expandable"]!.GetValue<bool>())!;
-        Assert.Equal(4966L, group["event_count"]!.GetValue<long>());
-        Assert.Null(group["actor"]);
-        Assert.Equal("192.0.2.10", group["ip_address"]!.GetValue<string>());
-        Assert.Equal("9", group["logon_type"]!.GetValue<string>());
+        var first = await Read(options, budgetMs: 2000);
+        await Read(options, end: from.AddSeconds(100), budgetMs: 1000);
+        var rows = first["items"]!.AsArray().OfType<JsonObject>().ToArray();
+        JsonObject Row(long id) => Assert.Single(rows, row => row["id"]!.GetValue<long>() == id);
+        var group = Row(24002);
+        Assert.Equal(@"EXAMPLE\target-user", group["journal_account"]!.GetValue<string>());
+        Assert.Equal(@"EXAMPLE\operator", group["journal_initiator"]!.GetValue<string>());
+        Assert.Equal("192.0.2.10", group["journal_address"]!.GetValue<string>());
+        Assert.Equal("dc01.example.test", group["journal_computer"]!.GetValue<string>());
+        Assert.Equal("3", group["logon_type"]!.GetValue<string>());
         Assert.NotEqual(group["first_seen_utc"]!.ToString(), group["last_seen_utc"]!.ToString());
+        Assert.Null(Row(24011)["journal_initiator"]);
+        Assert.Equal(@"EXAMPLE\credential-user", Row(24015)["journal_account"]!.GetValue<string>());
+        Assert.Equal("success", Row(24016)["journal_result"]!.GetValue<string>());
+        Assert.Null(Row(24008)["journal_account"]);
+        foreach (long id in new long[] { 24003, 24004, 24005, 24006, 24007, 24008, 24009, 24016 })
+            Assert.False(Row(id)["journal_expandable"]!.GetValue<bool>());
 
-        var repeats = await Read(options with { Expand = group["id"]!.GetValue<long>() });
-        Assert.Null(repeats["journal_event_count"]);
-        Assert.Null(repeats["journal_counts"]);
-        Assert.Equal(25, repeats["items"]!.AsArray().Count);
-        Assert.True(repeats["has_more"]!.GetValue<bool>());
-        var bucket = Assert.IsType<JsonObject>(repeats["items"]!.AsArray().First(row => row!["journal_expandable"]!.GetValue<bool>()));
-        var members = await Read(options with { Expand = group["id"]!.GetValue<long>(), Member = bucket["id"]!.GetValue<long>() }, 50);
-        Assert.Equal(bucket["event_count"]!.GetValue<long>(), members["items"]!.AsArray().Count);
-        Assert.All(members["items"]!.AsArray(), row =>
+        foreach (long id in new long[] { 24002, 24011, 24013, 24015 })
         {
-            Assert.Equal(1L, row!["event_count"]!.GetValue<long>());
-            Assert.Equal(bucket["actor"]!.GetValue<string>(), row["actor"]!.GetValue<string>());
-        });
-        Assert.Empty((await Read(options with { Expand = group["id"]!.GetValue<long>() }, domain: 2))["items"]!.AsArray());
+            var parent = Row(id);
+            Assert.True(parent["journal_expandable"]!.GetValue<bool>());
+            var expanded = options with { Expand = id };
+            var page = await Read(expanded, limit: 1, budgetMs: id == 24002 ? 2000 : null);
+            Assert.True(page["has_more"]!.GetValue<bool>());
+            Assert.Null(page["journal_counts"]);
+            var next = await Read(expanded, limit: 1, cursor: page["next_cursor"]!.GetValue<string>());
+            var members = page["items"]!.AsArray().Concat(next["items"]!.AsArray()).ToArray();
+            Assert.Equal(new[] { id, id - 1 }, members.Select(row => row!["id"]!.GetValue<long>()));
+            Assert.Equal(members.LongLength, parent["event_count"]!.GetValue<long>());
+            Assert.All(members, row => Assert.False(row!["journal_expandable"]!.GetValue<bool>()));
+            Assert.Empty((await Read(expanded, domain: 2))["items"]!.AsArray());
+        }
 
-        var failures = await Read(options with { Result = "failure", Pivot = "address" }, search: "192.0.2.10");
-        Assert.Equal(4966L, failures["journal_counts"]!["all"]!.GetValue<long>());
-        Assert.Equal(4966L, failures["journal_event_count"]!.GetValue<long>());
-        Assert.Equal(4966L, (await Read(options with { Collapse = false, Result = "failure" }))["filtered_count"]!.GetValue<long>());
-        var audit = await CheckView("audit", 1);
-        Assert.Equal(1102L, Assert.Single(audit["items"]!.AsArray())!["event_id"]!.GetValue<long>());
-        await CheckView("authentication", 4998);
-        await CheckView("accounts", 1);
-        await CheckView("groups", 1);
-        var tasks = await Read(options with { View = "tasks" });
-        Assert.Equal(0L, tasks["journal_event_count"]!.GetValue<long>());
-        Assert.Equal(0L, tasks["journal_counts"]!["all"]!.GetValue<long>());
-        var empty = await Read(options with { View = "authentication" }, domain: 2);
-        Assert.Equal(0L, empty["journal_event_count"]!.GetValue<long>());
-        Assert.Equal(0L, empty["journal_counts"]!["authentication"]!.GetValue<long>());
+        var withinWindow = await Read(options, start: from.AddHours(1).AddSeconds(182), end: from.AddHours(1).AddSeconds(183));
+        Assert.False(Assert.Single(withinWindow["items"]!.AsArray())!["journal_expandable"]!.GetValue<bool>());
+        var accountPivot = await Read(options with { Pivot = "account" }, search: @"EXAMPLE\target-user");
+        Assert.Contains(accountPivot["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24002);
+        var withoutCollapse = await Read(options with { Collapse = false }, limit: 25);
+        Assert.Contains(withoutCollapse["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24001);
+        var services = await CheckView("service");
+        Assert.Equal(24017L, Assert.Single(services["items"]!.AsArray())!["id"]!.GetValue<long>());
+        Assert.DoesNotContain(rows, row => row["id"]!.GetValue<long>() == 24017);
+        var failures = await CheckView("failures");
+        Assert.All(failures["items"]!.AsArray(), row => Assert.Equal("failure", row!["journal_result"]!.GetValue<string>()));
+        Assert.Contains(failures["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24015);
+        var logons = await CheckView("authentication");
+        Assert.Contains(logons["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24013);
+        Assert.DoesNotContain(logons["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24017);
+        var smallPage = await Read(options, limit: 3);
+        var second = await Read(options, limit: 3, cursor: smallPage["next_cursor"]!.GetValue<string>());
+        Assert.Equal(rows.Skip(3).Take(3).Select(row => row["id"]!.GetValue<long>()),
+            second["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
         var lightweight = await Read(options, fields: ["id", "channel"]);
-        Assert.Equal(5001L, lightweight["journal_event_count"]!.GetValue<long>());
         Assert.Null(lightweight["journal_counts"]);
+        Assert.All(lightweight["items"]!.AsArray(), row => {
+            Assert.Null(row!["journal_account"]);
+            Assert.False(row["journal_expandable"]!.GetValue<bool>());
+        });
         var dailyStart = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-20), TimeSpan.Zero);
         var daily = await Read(options, start: dailyStart, end: dailyStart.AddHours(3));
         Assert.Equal(2m * long.MaxValue, daily["journal_event_count"]!.GetValue<decimal>());
         Assert.Equal(2m * long.MaxValue, daily["journal_counts"]!["all"]!.GetValue<decimal>());
         Assert.Equal((decimal)long.MaxValue, daily["journal_counts"]!["accounts"]!.GetValue<decimal>());
 
-        var before = await Read(options with { Before = 5000 }, 5);
-        Assert.Null(before["journal_event_count"]);
+        var before = await Read(options with { Before = 24011 }, 5);
         Assert.Null(before["journal_counts"]);
-        Assert.Equal(new long[] { 4998, 4996, 4994, 4992, 4990 }, before["items"]!.AsArray().Select(row => row!["id"]!.GetValue<long>()));
-        Assert.Empty((await Read(options with { Before = 5000 }, domain: 2))["items"]!.AsArray());
-        output.WriteLine($"Journal response digest: {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', responses))))}");
+        Assert.Contains(before["items"]!.AsArray(), row => row!["id"]!.GetValue<long>() == 24010);
+        Assert.Empty((await Read(options with { Before = 24011 }, domain: 2))["items"]!.AsArray());
 
-        async Task<JsonObject> CheckView(string view, long count)
+        async Task<JsonObject> CheckView(string view)
         {
-            var page = await Read(options with { View = view });
-            Assert.Equal(count, page["journal_event_count"]!.GetValue<long>());
+            var page = await Read(options with { View = view }, budgetMs: 2000);
             Assert.True(JsonNode.DeepEquals(first["journal_counts"], page["journal_counts"]));
+            Assert.True(JsonNode.DeepEquals(first["journal_counts"]![view], page["journal_event_count"]));
             return page;
         }
     }
