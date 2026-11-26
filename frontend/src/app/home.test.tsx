@@ -91,6 +91,20 @@ it("shows the open queue, repeats, review links and only failed checks", async (
   expect(request).toHaveBeenCalledTimes(1);
 });
 
+it("shows the password problem totals alongside the event sample size", async () => {
+  const finding = {
+    ...example.problems.items[0], name: "Accounts: 18", fact: "Failed attempts: 2,002",
+    observations_are_sample: true,
+  };
+  show(() => ({ ...example, problems: { ...example.problems, items: [finding] } }));
+
+  const accounts = await screen.findByRole("link", { name: "Accounts: 18" });
+  const row = accounts.closest("tr")!;
+  expect(within(row).getByText("Failed attempts: 2,002")).toBeTruthy();
+  fireEvent.keyDown(row, { key: "Enter" });
+  expect(screen.getByRole("table", { name: "Event sample (1)" })).toBeTruthy();
+});
+
 it("requests server pages and keeps whole-population totals on filtered pages", async () => {
   const request = show((url) => url.includes("queue=unassigned") ? {
     ...example, problems: { ...example.problems, items: [{ ...example.problems.items[0], name: "unassigned-example",

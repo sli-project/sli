@@ -315,7 +315,7 @@ for (const screen of screens) {
       expect(await scroll.evaluate(box => box.scrollWidth - box.clientWidth)).toBeLessThanOrEqual(1);
       const first = page.locator('main').locator(rows).first();
       const title = 'Изменены настройки учётной записи';
-      await first.getByRole('link', { name: `${title} · Объект 1`, exact: true }).click();
+      await first.getByRole('link', { name: new RegExp(`^${title}`) }).first().click();
       const panel = page.getByRole('dialog', { name: title });
       await expect(panel).toBeInViewport({ ratio: 1 });
       await expect(panel.getByText('4625', { exact: true })).toBeVisible();

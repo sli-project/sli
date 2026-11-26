@@ -111,7 +111,8 @@ function Problems({ data, zone, queue, setQueue, pending, showAssignment }: {
               onNext: total !== null && page * queue.limit < total ? () => select({ ...queue, filter: active, page: page + 1 }) : undefined,
             }}
             renderExpandedRow={(row) => <div className="sli-ds-home-observations">
-              {row.observations.length > 0 && <DataTable caption={t("home.observations")} columns={[
+              {row.observations.length > 0 && <DataTable caption={row.observations_are_sample
+                ? t("home.observations.sample", { count: formatNumber(row.observations.length) }) : t("home.observations")} columns={[
                 { key: "at", label: t("home.time"), render: (item) => formatDateTime(item.at, zone, { withYear: false }) },
                 { key: "event_id", label: t("home.fact"), wrap: true, render: (item) => link(item.href, eventFact(item.event_id)) },
                 { key: "source", label: t("home.source"), wrap: true },

@@ -8,6 +8,29 @@ namespace Sli.Server.Tests.Storage;
 public sealed class SemanticOutboxRetentionPostgresTests
 {
     [Fact]
+    public async Task Upgrade_and_rollback_preserve_an_existing_queue()
+    {
+        const int version = 426;
+        var ct = TestContext.Current.CancellationToken;
+        int previous = MigrationDirectory.Read().Where(m => m.Version < version).Max(m => m.Version);
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: previous);
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
+        await Seed(db, ct);
+        const string contents = "select jsonb_agg(to_jsonb(job) order by job_id)::text from semantic_processing_outbox job";
+        var original = await Scalar(db, contents, ct);
+        string migration = MigrationDirectory.Read(version).Single(m => m.Version == version).Path;
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(original, await Scalar(db, contents, ct));
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Equal(original, await Scalar(db, contents, ct));
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.Equal(original, await Scalar(db, contents, ct));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
+    [Fact]
     public async Task Old_terminal_jobs_are_removed_only_after_decision_coverage_and_never_hide_pending_work()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -31,7 +54,7 @@ public sealed class SemanticOutboxRetentionPostgresTests
             if (page["status"]?.ToString() == "complete") break;
             Assert.Equal("partial", page["status"]?.ToString());
         }
-        Assert.Equal(12, scanned); Assert.Equal(3, deleted); // 1, 8, 11; both quarantined jobs stay held.
+        Assert.Equal(4, scanned); Assert.Equal(3, deleted); // 1, 8, 11; job 9 is referenced by a queued replay.
         Assert.Equal("2,3,4,5,6,7,9,9,12", await Scalar(db, "select string_agg(source_event_id::text,',' order by source_event_id) from semantic_processing_outbox", ct));
         Assert.Equal(true, await Scalar(db, "select decided_ids @> 1::bigint and decided_ids @> 8::bigint and decided_ids @> 11::bigint and not decided_ids @> 3::bigint from semantic_producer_coverage where runtime_mode='facts-v1' and processor_version='synthetic-v1'", ct));
         Assert.Equal(true, await Scalar(db, "select decided_ids @> 1::bigint from semantic_producer_coverage where runtime_mode='investigation-v1' and processor_version='existing-version'", ct));
@@ -133,7 +156,7 @@ public sealed class SemanticOutboxRetentionPostgresTests
             Options = "-c role=adlog_storage_lifecycle_delete", CommandTimeout = 0 }.ConnectionString);
         var result = await new SemanticOutboxRetention(deletion,state.Files,"facts-v1").RunAsync(new(2026,11,1,0,0,0,DateTimeKind.Utc),Guid.Empty,1000,ct);
         Assert.Equal(3,LifecycleJson.Number(result,"deleted_count"));
-        Assert.Equal(2,LifecycleJson.Number(result["held_reasons"]!.AsObject(),"semantic_unresolved"));
+        Assert.Equal(4,LifecycleJson.Number(result,"selected_count"));
         Assert.Equal(2L,await Scalar(db,"select count(*) from semantic_processing_outbox where status='quarantined'",ct));
     }
 

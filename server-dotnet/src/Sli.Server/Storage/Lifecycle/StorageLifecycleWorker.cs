@@ -87,8 +87,10 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             await session.EnsureLocksAsync(ct);
             state["partitions"] = await session.ExpirePartitionsAsync(Now, ct);
             await Drain("agent_receipt_retention", "receipt_retention", "last_scanned_packet_id", (a, _) => session.RetainReceiptsAsync(cutoff, a, batch, ct));
-            await Drain("semantic_outbox_retention", "outbox_retention", "last_scanned_job_id", (a, _) => session.RetainOutboxAsync(cutoff, a, batch, ct));
         }
+        // Completed jobs need only a short retry tail even between full passes.
+        DateTime outboxCutoff = started.AddDays(-1);
+        await Drain("semantic_outbox_retention", "outbox_retention", "last_scanned_job_id", (a, _) => session.RetainOutboxAsync(outboxCutoff, a, batch, ct));
         await session.EnsureLocksAsync(ct);
         state["status"] = "ok";
         ReportProgress("completed", state);
@@ -141,7 +143,7 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
             result["result_digest"] = LifecycleJson.Hash(result).ToLowerInvariant();
             files.Write("storage-lifecycle-last.json", result); output((JsonObject)result.DeepClone());
             int wait = status == "partial" ? 0 : status == "blocked" ? 300 : interval;
-            // Inbox-only cycles must also wake for the next full cycle when it falls between polls.
+            // Queue-only cycles must also wake for the next full cycle when it falls between polls.
             if (nextFullCycle > ended) wait = Math.Min(wait, (int)Math.Ceiling((nextFullCycle - ended).TotalSeconds));
             await session.HeartbeatAsync(status == "ok" ? result["warning_reason"] is null ? "idle" : "warning" : status,
                 status == "failed" ? "error" : "sleep", wait, result, ct);
