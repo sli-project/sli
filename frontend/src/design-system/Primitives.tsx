@@ -1,4 +1,4 @@
-import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon";
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
@@ -12,17 +12,6 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { icon?: string; va
 
 export function Button({ icon, variant, className, children, type = "button", ...props }: ButtonProps) {
   return <button type={type} className={className ? `sli-ds-button ${className}` : "sli-ds-button"} data-variant={variant} {...props}>{icon ? <Icon name={icon}/> : null}{children}</button>;
-}
-
-export function Checkbox({ label, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label: string }) {
-  return <label className="sli-ds-button"><input type="checkbox" {...props}/>{label}</label>;
-}
-
-export function Select({ label, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { label: string }) {
-  const id = useId();
-  return <div className="sli-ds-field" data-kind="select">
-    <label htmlFor={id}>{label}</label><select {...props} id={id} data-size="compact">{children}</select>
-  </div>;
 }
 
 /** Explanation block with an icon; tone follows the semantic roles. */

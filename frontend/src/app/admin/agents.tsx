@@ -1,3 +1,5 @@
+import { FilterChips } from "../../design-system/FilterChips";
+import { Checkbox } from "../../design-system/Checkbox";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -175,16 +177,17 @@ function AgentsContent() {
       return dcAuditFailure(agent) ?? (count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured"));
     } },
   ];
+  const quickFilters = ["all", "silent", "auditOff", "disabled"] as const;
   const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
   const selectedState = selected && collectionState(selected);
   return <section className="sli-ds-report">
     <PageHeader title={t("agents.title")} actions={addButton}/>
-    <div className="sli-ds-filters" role="group" aria-label={t("agents.title")}>
-      {(["all", "silent", "auditOff", "disabled"] as const).map((key) => <button key={key} type="button" className="sli-ds-button" aria-pressed={filter === key} onClick={() => setQuickFilter(key)}>{t(`agents.quick.${key}`)} · {groups[key].length}</button>)}
-    </div>
+    <FilterChips label={t("agents.title")} value={filter}
+      items={quickFilters.map((key) => ({ key, label: t(`agents.quick.${key}`), count: String(groups[key].length) }))}
+      onChange={(key) => { const next = quickFilters.find((item) => item === key); if (next) setQuickFilter(next); }}/>
     {inventory.isLoading ? <StateView state="loading"/> : inventory.isError ? <div><p role="alert">{t("agents.loadError")}</p><button className="sli-ds-button" onClick={() => void inventory.refetch()}>{t("state.retry")}</button></div>
-      : groups[filter].length ? <div className="sli-ds-report__views"><DataTable columns={columns} rows={groups[filter]} rowKey={(agent) => agent.id} onRowClick={(agent) => setSelectedId(agent.id)} selectedKey={selectedId} caption={t("agents.title")}/></div>
+      : groups[filter].length ? <div className="sli-ds-report__views"><DataTable key={filter} localPagination columns={columns} rows={groups[filter]} rowKey={(agent) => agent.id} onRowClick={(agent) => setSelectedId(agent.id)} selectedKey={selectedId} caption={t("agents.title")}/></div>
       : items.length ? <p>{t("agents.noMatches")}</p>
       : <div><p>{t("agents.emptyComputers")}</p>{addButton}</div>}
     <OldAgentsTable agents={oldAgents} canRemove={Boolean(access?.platform_owner)}/>
@@ -205,8 +208,7 @@ function AgentsContent() {
         <h3>{t("agents.collection")}</h3>
         {selected.collection_policy ? <AgentCollectionControls key={`${selected.id}:${selected.policy_revision}`} agent={selected} busy={action.isPending} change={changePolicy}/> : null}
         {modules.map((module) => typeof module === "string" ? null : <section key={module.module_id}>
-          <label><input type="checkbox" checked={module.enabled} disabled={selected.status !== "active" || action.isPending || !["sli.workstations", "sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(module.module_id)}
-            onChange={() => action.mutate({ kind: "modules", body: { agent_id: selected.id, module_id: module.module_id, enabled: !module.enabled, config: module.module_id === "sli.workstations" && !module.enabled ? {} : module.config, expected_revision: selected.policy_revision } })}/>{agentModuleName(module.module_id)}</label>
+          <Checkbox checked={module.enabled} disabled={selected.status !== "active" || action.isPending || !["sli.workstations", "sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(module.module_id)} onChange={() => action.mutate({ kind: "modules", body: { agent_id: selected.id, module_id: module.module_id, enabled: !module.enabled, config: module.module_id === "sli.workstations" && !module.enabled ? {} : module.config, expected_revision: selected.policy_revision } })}>{agentModuleName(module.module_id)}</Checkbox>
           <AgentModuleControls key={`${selected.id}:${module.module_id}:${selected.policy_revision}`} agent={selected}
             module={module} busy={action.isPending} change={changePolicy} openPasswordDomain={selected.id === agentId && openPasswordDomain}/>
         </section>)}

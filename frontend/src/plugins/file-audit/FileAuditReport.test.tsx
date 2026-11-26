@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -65,8 +66,8 @@ afterEach(() => { cleanup(); client?.clear(); vi.useRealTimers(); });
 
 it("applies the source filter to data, URL, tabs and export and resets cursor", async () => {
   mount();
-  await screen.findByText("1–50 из 52");
-  fireEvent.change(screen.getByLabelText(t("file-audit.source")), { target: { value: "workstation" } });
+  await screen.findByText("Страница 1 из 2");
+  await chooseOption(screen.getByLabelText(t("file-audit.source"), { selector: "button" }), "workstation");
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("source_kind")).toBe("workstation"));
   expect(new URLSearchParams(window.location.search).get("source_kind")).toBe("workstation");
@@ -114,15 +115,17 @@ it.each(FILE_AUDIT_TABS)("keeps one complete filter panel on %s and applies a cu
   await screen.findByRole("table", { name: tabTitle(tab) });
   const form = screen.getByRole("form", { name: "Фильтры" });
   expect(screen.getAllByRole("form", { name: "Фильтры" })).toHaveLength(1);
-  expect(within(form).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["24 часа", "7 дней", "30 дней", "Свой период"]);
+  const period = screen.getByLabelText(new RegExp("^" + t("period.label") + " ·"), { selector: "summary" });
+  await userEvent.click(period);
+  expect(within(period.closest("details")!).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["24 часа", "7 дней", "30 дней", "Свой период"]);
   expect(within(form).getAllByRole("combobox", { name: t("file-audit.share") })).toHaveLength(1);
   expect(within(form).getByLabelText(t("file-audit.employee"))).toBeTruthy();
   expect(within(form).getByLabelText("Действие")).toBeTruthy();
   expect(within(form).getByLabelText("Включая вложенные")).toBeTruthy();
   await userEvent.click(screen.getByRole("radio", { name: "Свой период" }));
   const from = screen.getByLabelText("С"), to = screen.getByLabelText("По");
-  expect(from.getAttribute("type")).toBe("datetime-local");
-  expect(to.getAttribute("type")).toBe("datetime-local");
+  expect(from.getAttribute("type")).toBe("text");
+  expect(to.getAttribute("type")).toBe("text");
   fireEvent.change(from, { target: { value: "2026-10-01T09:15" } });
   fireEvent.change(to, { target: { value: "2026-10-01T10:45" } });
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
@@ -164,11 +167,11 @@ it("shows settings evidence without claiming every operation was delivered", asy
 
 it("keeps the shared filters across tabs and resets pagination on Apply", async () => {
   mount();
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   fireEvent.change(screen.getByLabelText("Объект"), { target: { value: "C:\\Synthetic\\Folder" } });
   await userEvent.click(screen.getByLabelText("Включая вложенные"));
   fireEvent.change(screen.getByLabelText(t("file-audit.employee")), { target: { value: "synthetic-user" } });
-  fireEvent.change(screen.getByLabelText("Действие"), { target: { value: "delete" } });
+  await chooseOption(screen.getByLabelText("Действие", { selector: "button" }), "delete");
   await userEvent.click(screen.getByRole("button", { name: "Применить" }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("path")).toBe("C:\\Synthetic\\Folder"));
   await userEvent.click(screen.getByRole("tab", { name: "Отказы доступа" }));
@@ -182,14 +185,14 @@ it("keeps the shared filters across tabs and resets pagination on Apply", async 
 
 it("uses cursor pages in both directions and exports the current filters without the page limit", async () => {
   mount();
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   expect((screen.getByRole("button", { name: "Назад" }) as HTMLButtonElement).disabled).toBe(true);
   await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
-  await screen.findByText("51–52 из 52");
+  await screen.findByText("Страница 2 из 2");
   expect(screen.queryByText("Synthetic object 0")).toBeNull();
   expect((screen.getByRole("button", { name: "Вперёд" }) as HTMLButtonElement).disabled).toBe(true);
   await userEvent.click(screen.getByRole("button", { name: "Назад" }));
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   const href = screen.getByRole("link", { name: /CSV/ }).getAttribute("href")!;
   expect(href).toContain("/file-audit.actions/export.csv?");
   expect(href).not.toContain("limit=");
@@ -203,11 +206,11 @@ it("applies page size to the server request and resets a previous cursor", async
     filtered_count: 260,
   }));
   mount({ ...declaration(), limits: { default: 50, max: 200 } });
-  await screen.findByText("1–50 из 260");
+  await screen.findByText("Страница 1 из 6");
   await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
-  await screen.findByText("51–100 из 260");
-  fireEvent.change(screen.getByLabelText(t("table.rowsPerPage")), { target: { value: "200" } });
-  await screen.findByText("1–200 из 260");
+  await screen.findByText("Страница 2 из 6");
+  fireEvent.click(screen.getByRole("radio", { name: "200" }));
+  await screen.findByText("Страница 1 из 2");
   expect(mocks.data.mock.calls.at(-1)?.[1].get("limit")).toBe("200");
   expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBeNull();
   expect(new URLSearchParams(window.location.search).get("limit")).toBe("200");
@@ -215,13 +218,13 @@ it("applies page size to the server request and resets a previous cursor", async
 
 it("opens retained row details across the full page and restores its cursor on return", async () => {
   mount();
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
   await userEvent.click(await screen.findByText("Synthetic object 50"));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
-  await screen.findByText("51–52 из 52");
+  await screen.findByText("Страница 2 из 2");
   expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBe("synthetic-cursor");
 });
 
@@ -244,19 +247,19 @@ it("shows partial results and unknown totals without a warning banner or a compl
     metrics: [{ key: "read", label: "Synthetic metric", value: null, quality: "unknown" }],
   }));
   const { container } = mount();
-  await screen.findByText("0–0 из —");
+  await screen.findByText("Страница 1 из —");
   expect(screen.queryByRole("status")).toBeNull();
   expect(container.querySelector(".sli-ds-state--banner")).toBeNull();
   expect(screen.getByRole("table", { name: tabTitle("actions") })).toBeTruthy();
   expect(screen.queryByText(t("state.empty.title"))).toBeNull();
   expect(screen.queryByText("Synthetic metric")).toBeNull();
-  expect(screen.queryByText("0–0 из 0")).toBeNull();
+  expect(screen.queryByText("Страница 1 из 1")).toBeNull();
 });
 
 it("keeps export hidden without its independent capability", async () => {
   mocks.access.capabilities = ["file-audit.view"];
   mount();
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
 });
 
@@ -420,8 +423,9 @@ it.each(["inside", "overlap"] as const)("keeps the resource counter's exact scop
   for (const key of ["from", "to", "share", "path", "record_unit"]) expect(exported.getAll(key), key).toEqual(target.getAll(key));
   expect(exported.get("from")).toBe("2026-10-23T11:59:37.125Z");
   expect(exported.get("to")).toBe("2026-10-24T11:59:37.125Z");
+  await userEvent.click(screen.getByLabelText(new RegExp(t("period.custom")), { selector: "summary" }));
   expect((screen.getByLabelText(t("period.from")) as HTMLInputElement).validity.valid).toBe(true);
-  fireEvent.change(screen.getByLabelText(t("file-audit.workspace.record_unit")), { target: { value: "" } });
+  await chooseOption(screen.getByLabelText(t("file-audit.workspace.record_unit"), { selector: "button" }), "");
   await userEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("record_unit")).toBeNull());
   expect(new URLSearchParams(window.location.search).has("record_unit")).toBe(false);
@@ -501,10 +505,10 @@ it("keeps page two and the frozen window in the source tab when opening an agent
     return { ...response, items: response.items.map((row) => ({ ...row, agent_id: linkedAgent })) };
   });
   mount();
-  await screen.findByText("1–50 из 52");
+  await screen.findByText("Страница 1 из 2");
   expect(screen.queryByRole("link", { name: t("file-audit.open_agent_new_tab") })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Вперёд" }));
-  await screen.findByText("51–52 из 52");
+  await screen.findByText("Страница 2 из 2");
   await userEvent.click(screen.getByText("Synthetic object 50"));
   const before = new URLSearchParams(mocks.data.mock.calls.at(-1)![1]);
   const requestCount = mocks.data.mock.calls.length;
@@ -515,7 +519,7 @@ it("keeps page two and the frozen window in the source tab when opening an agent
   fireEvent.click(screen.getByRole("link", { name: t("file-audit.open_agent_new_tab") }));
   expect(screen.getByRole("region", { name: t("file-audit.workspace.evidence") })).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: t("file-audit.workspace.back") }));
-  expect(screen.getByText("51–52 из 52")).toBeTruthy();
+  expect(screen.getByText("Страница 2 из 2")).toBeTruthy();
   expect(mocks.data.mock.calls.length).toBe(requestCount);
   const after = mocks.data.mock.calls.at(-1)![1] as URLSearchParams;
   for (const key of ["from", "to", "cursor", "path"]) expect(after.getAll(key)).toEqual(before.getAll(key));

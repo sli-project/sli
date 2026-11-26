@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, type PlatformSetting } from "../../api/client";
@@ -59,10 +61,8 @@ function ServiceAccountsField({ id, value, onChange }: { id: string; value: stri
   });
   return <div className="sli-ds-form__accounts">
     <input id={id} type="search" value={search} maxLength={256} aria-describedby={`${id}-help`} onChange={(event) => setSearch(event.target.value)} autoComplete="off"/>
-    {search && accounts.data?.items.some((item) => typeof item.sid === "string" && !selected.includes(item.sid)) ? <select aria-label={t("platformSettings.service_exceptions.choose")} value="" onChange={(event) => { if (event.target.value) { onChange([...selected, event.target.value].join("\n")); setSearch(""); } }}>
-      <option value="">—</option>
-      {accounts.data.items.filter((item) => typeof item.sid === "string" && !selected.includes(item.sid)).map((item) => <option key={String(item.sid)} value={String(item.sid)}>{String(item.sam || item.display_name || "—")}</option>)}
-    </select> : null}
+    {search && accounts.data?.items.some((item) => typeof item.sid === "string" && !selected.includes(item.sid)) ? <Select label={t("platformSettings.service_exceptions.choose")} value="" onChange={(selectedValue) => { if (selectedValue) { onChange([...selected, selectedValue].join("\n")); setSearch(""); } }}
+      options={[{ value: "", label: "—" }, ...(accounts.data.items.filter((item) => typeof item.sid === "string" && !selected.includes(item.sid)).map((item) => ({ value: String(item.sid), label: String(item.sam || item.display_name || "—") })) ?? [])]}/> : null}
     {selected.map((sid) => {
       const row = accounts.data?.items.find((item) => item.sid === sid);
       const name = names.data?.[sid] || (row ? String(row.sam || row.display_name || "—") : "—");
@@ -162,17 +162,15 @@ function SettingsForm({ items }: { items: PlatformSetting[] }) {
               </div>
               <div className="sli-ds-form__value sli-ds-field">
                 {c ? <div className="sli-ds-form__calendar" role="group" aria-labelledby={`${id}-label`} aria-describedby={`${id}-help`}>
-                  <div className="sli-ds-form__weekdays">{weekdays.map((day, index) => <label key={day}><input type="checkbox" checked={c.weekdays.includes(index)} onChange={(event) => edit(field.key, JSON.stringify({ ...c, weekdays: event.target.checked ? [...c.weekdays, index].sort() : c.weekdays.filter((n) => n !== index) }))}/>{t(`platformSettings.day.${day}`)}</label>)}</div>
+                  <div className="sli-ds-form__weekdays">{weekdays.map((day, index) => <Checkbox key={day} checked={c.weekdays.includes(index)} onChange={(event) => edit(field.key, JSON.stringify({ ...c, weekdays: event.target.checked ? [...c.weekdays, index].sort() : c.weekdays.filter((n) => n !== index) }))}>{t(`platformSettings.day.${day}`)}</Checkbox>)}</div>
                   <div className="sli-ds-form__hours">
                     <label>{t("platformSettings.time.start")}<input type="time" value={c.start} aria-invalid={Boolean(error)} onChange={(event) => edit(field.key, JSON.stringify({ ...c, start: event.target.value }))}/></label>
                     <label>{t("platformSettings.time.end")}<input type="time" value={c.end} aria-invalid={Boolean(error)} onChange={(event) => edit(field.key, JSON.stringify({ ...c, end: event.target.value }))}/></label>
-                    <label>{t("platformSettings.time.zone")}<select value={c.timezone} aria-invalid={Boolean(error)} onChange={(event) => edit(field.key, JSON.stringify({ ...c, timezone: event.target.value }))}><option value="">—</option>{zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></label>
+                    <div className="sli-ds-control-field">{t("platformSettings.time.zone")}<Select label={t("platformSettings.time.zone")} value={c.timezone} aria-invalid={Boolean(error)} onChange={(selectedValue) => edit(field.key, JSON.stringify({ ...c, timezone: selectedValue }))}
+                      options={[{ value: "", label: "—" }, ...(zones.map((zone) => ({ value: zone, label: zone })) ?? [])]}/></div>
                   </div>
-                </div> : field.key === "reports.domain_fqdn" ? <select id={id} value={value} aria-describedby={`${id}-help`} aria-invalid={Boolean(error)} disabled={!domains.isSuccess} onChange={(event) => edit(field.key, event.target.value)}>
-                  <option value="">—</option>
-                  {value && !domains.data?.items.some((domain) => domain.fqdn === value && !domain.is_archived) ? <option value={value} disabled>{value}</option> : null}
-                  {domains.data?.items.filter((domain) => !domain.is_archived).map((domain) => <option key={domain.fqdn} value={domain.fqdn}>{domain.fqdn}</option>)}
-                </select> : field.key === "ad.service_account_exceptions" ? <ServiceAccountsField id={id} value={value} onChange={(next) => edit(field.key, next)}/> : <input id={id} type="number" min={"min" in field ? field.min : undefined} max={"max" in field ? field.max : undefined} step={1} value={value} aria-describedby={`${id}-help`} aria-invalid={Boolean(error)} onChange={(event) => edit(field.key, event.target.value)}/>}
+                </div> : field.key === "reports.domain_fqdn" ? <Select label={message(field, "title")} id={id} value={value} aria-describedby={`${id}-help`} aria-invalid={Boolean(error)} disabled={!domains.isSuccess} onChange={(selectedValue) => edit(field.key, selectedValue)}
+                  options={[{ value: "", label: "—" }, ...(value && !domains.data?.items.some((domain) => domain.fqdn === value && !domain.is_archived) ? [{ value: value, label: value, disabled: true }] : []), ...(domains.data?.items.filter((domain) => !domain.is_archived).map((domain) => ({ value: domain.fqdn, label: domain.fqdn })) ?? [])]}/> : field.key === "ad.service_account_exceptions" ? <ServiceAccountsField id={id} value={value} onChange={(next) => edit(field.key, next)}/> : <input id={id} type="number" min={"min" in field ? field.min : undefined} max={"max" in field ? field.max : undefined} step={1} value={value} aria-describedby={`${id}-help`} aria-invalid={Boolean(error)} onChange={(event) => edit(field.key, event.target.value)}/>}
                 {error ? <p className="sli-ds-field__error" role="alert">{error}</p> : null}
                 {field.key === "reports.domain_fqdn" && domains.isError ? <p role="alert">{t("platformSettings.domainsFailed")}</p> : null}
               </div>

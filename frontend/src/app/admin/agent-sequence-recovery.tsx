@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AgentSequenceGap, type AgentSequenceRecoveryPreview } from "../../api/client";
@@ -64,7 +65,7 @@ function RecoveryBatch({ preview, hostName, active, timeZone, locked, setLocked 
     {authorized ? <p role="status">{t("agents.sequenceRecovery.authorized")}</p> : !active ? <p>{t("agents.sequenceRecovery.inactive")}</p>
       : review ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <p>{t("agents.sequenceRecovery.confirm", { host: hostName })}</p>
-        <label><input type="checkbox" checked={confirmed} disabled={locked || failed} onChange={(event) => setConfirmed(event.target.checked)}/>{t("agents.sequenceRecovery.consent")}</label>
+        <Checkbox checked={confirmed} disabled={locked || failed} onChange={(event) => setConfirmed(event.target.checked)}>{t("agents.sequenceRecovery.consent")}</Checkbox>
         <button type="submit" className="sli-ds-button" disabled={!confirmed || locked || failed}>{t("agents.sequenceRecovery.accept")}</button>
         <button type="button" className="sli-ds-button" disabled={locked} onClick={() => { setReview(false); setConfirmed(false); }}>{t("agents.cancel")}</button>
       </form> : <button type="button" className="sli-ds-button" disabled={locked || failed} onClick={() => setReview(true)}>{t("agents.sequenceRecovery.review")}</button>}

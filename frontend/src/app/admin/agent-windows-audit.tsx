@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { useState } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import type { AgentItem, AgentWindowsAudit } from "../../api/client";
@@ -109,8 +110,7 @@ export function AgentWindowsAuditStatus({ agent, change, busy = false, timeZone 
       if (disabled || auditEnabled === managed) return;
       if (auditEnabled) send(true); else setConfirmRestore(true);
     }}>
-      <label><input type="checkbox" checked={auditEnabled} disabled={disabled}
-        onChange={(event) => setAuditEnabled(event.target.checked)}/>{t("agents.manageWindowsAudit")}</label>
+      <Checkbox checked={auditEnabled} disabled={disabled} onChange={(event) => setAuditEnabled(event.target.checked)}>{t("agents.manageWindowsAudit")}</Checkbox>
       <button className="sli-ds-button" type="submit" disabled={disabled || auditEnabled === managed}>{t("agents.saveAudit")}</button>
       {hasDomainRoot && managed && !hasDomainConsent ? <button className="sli-ds-button" type="button" disabled={disabled}
         onClick={() => setConfirmDomain(true)}>{t("agents.auditSubcategory.domain_root_sacl")}</button> : null}

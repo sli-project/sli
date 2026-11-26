@@ -120,6 +120,7 @@ export function EntityCardPage() {
   const timeZone = investigationDisplayTimeZoneFromSearch(search, globalTimeZone).timeZone;
   const { entityId } = useParams({ from: "/entities/$entityId" });
   const returnTo = safeInvestigationReturnTo(new URLSearchParams(search).get("return_to"), "/app/objects");
+  const back = <a className="sli-ds-button" href={returnTo}>{t("entities.crumbs.back")}</a>;
   const requestedTab = new URLSearchParams(search).get("tab") ?? "overview";
   const entityRequest = useMemo(() => {
     try {
@@ -157,16 +158,16 @@ export function EntityCardPage() {
   const format = (value: string | null | undefined) => formatDateTime(value, timeZone, { seconds: true });
 
   if (entityRequest.error) {
-    return <section className="sli-ds-report"><PageHeader title={t("entities.error.invalidContext")} crumbs={[{ label: t("entities.crumbs.back"), href: returnTo }, { label: t("entities.crumbs.entity", { id: entityId }) }]}/>
+    return <section className="sli-ds-report"><PageHeader title={t("entities.error.invalidContext")} actions={back}/>
       <StateView state="unavailable" detail={t("entities.error.invalidContextDetail", { error: String(entityRequest.error) })}/></section>;
   }
   if (detail.isLoading) {
-    return <section className="sli-ds-report"><PageHeader title={t("entities.title")} crumbs={[{ label: t("entities.crumbs.back"), href: returnTo }, { label: t("entities.crumbs.entity", { id: entityId }) }]}/><StateView state="loading"/></section>;
+    return <section className="sli-ds-report"><PageHeader title={t("entities.title")} actions={back}/><StateView state="loading"/></section>;
   }
   if (detail.isError || !detail.data) {
     const failure = отказЗапроса(detail.error as { status?: number; code?: string } | null, t("entities.entityGenitive"));
     const denied = (detail.error as { status?: number } | null)?.status === 403;
-    return <section className="sli-ds-report"><PageHeader title={failure.title} crumbs={[{ label: t("entities.crumbs.back"), href: returnTo }, { label: t("entities.crumbs.entity", { id: entityId }) }]}/>
+    return <section className="sli-ds-report"><PageHeader title={failure.title} actions={back}/>
       <StateView state={denied ? "denied" : "unavailable"} detail={failure.detail} onRetry={failure.retry ? () => void detail.refetch() : undefined}/></section>;
   }
 
@@ -190,12 +191,11 @@ export function EntityCardPage() {
   return <section className="sli-ds-report">
     <PageHeader
       title={name}
-      crumbs={[{ label: t("entities.crumbs.back"), href: returnTo }, { label: t("entities.crumbs.entity", { id: entity.id }) }]}
       subtitle={<>{typeLabel}{latest?.status ? ` · ${t("entities.stateLabel")}: ${statusLabel(latest.status)}` : ` · ${t("entities.noConfirmedState")}`}</>}
       meta={provenance.length
         ? provenance.map((item) => <span key={item.source} className="sli-ds-chip">{item.source} · {format(item.observed_at_utc)} · {item.freshness}</span>)
         : <span className="sli-ds-chip">{t("entities.lastSeen")}: {format(entity.last_seen_utc)}</span>}
-      actions={<a className="sli-ds-button" data-variant="primary" href={investigateHref}>{t("entities.investigateAction")}</a>}
+      actions={<>{back}<a className="sli-ds-button" data-variant="primary" href={investigateHref}>{t("entities.investigateAction")}</a></>}
     />
     {entityType === "ad_user" ? <AccountWatch key={entity.id} entityId={entity.id}/> : null}
     {object.isError ? <StateView compact state="partial" detail={t("entities.error.v4Partial")}/> : null}

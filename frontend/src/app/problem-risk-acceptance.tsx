@@ -1,3 +1,5 @@
+import { DateInput } from "../design-system/PeriodPicker";
+import { Select } from "../design-system/Select";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError, type FindingRiskAcceptance, type FindingRiskAudit, type FindingRiskRequest } from "../api/client";
@@ -89,13 +91,11 @@ function RiskAcceptanceDialog({ row, onChanged }: { row: Row; onChanged: (risk: 
     <div className="sli-ds-field"><label htmlFor="risk-reason">{t("reports.risk.reason")}</label>
       <textarea id="risk-reason" required maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)}/></div>
     <div className="sli-ds-field"><label htmlFor="risk-responsible">{t("reports.risk.responsible")}</label>
-      <select id="risk-responsible" required value={responsible} disabled={users.isPending || Boolean(users.error)} onChange={(event) => setResponsible(event.target.value)}>
-        <option value="">{t("reports.risk.chooseUser")}</option>
-        {users.data?.items.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-      </select></div>
+      <Select label={t("reports.risk.responsible")} id="risk-responsible" required value={responsible} disabled={users.isPending || Boolean(users.error)} onChange={(selectedValue) => setResponsible(selectedValue)}
+        options={[{ value: "", label: t("reports.risk.chooseUser") }, ...(users.data?.items.map((user) => ({ value: user.id, label: user.username })) ?? [])]}/></div>
     {users.error ? <p role="alert">{t("reports.risk.usersFailed")}</p> : null}
     <div className="sli-ds-field"><label htmlFor="risk-expiry">{t("reports.risk.expiry")}</label>
-      <input id="risk-expiry" type="datetime-local" required value={expiry} onChange={(event) => setExpiry(event.target.value)}/></div>
+      <DateInput id="risk-expiry" label={t("reports.risk.expiry")} required value={expiry} onChange={setExpiry}/></div>
     <p className="sli-ds-header__subtitle">{t("reports.risk.expiryHint")}</p>
     {validation || save.error ? <p role="alert">{validation ? t("reports.risk.validation") : errorText(save.error)}</p> : null}
     <div className="sli-ds-filters__actions">

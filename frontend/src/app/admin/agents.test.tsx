@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -74,8 +75,8 @@ it("applies the reported share to the agent opened in the card", async () => {
   mount();
   const card = within(await openCard());
   await user.click(card.getByRole("checkbox", { name: t("agents.fileServer.role") }));
-  const option = await card.findByRole("option", { name: "Finance · C:\\Finance" });
-  await user.selectOptions(card.getByRole("combobox", { name: t("agents.fileServer.folder") }), option);
+  await user.click(card.getByLabelText(t("agents.fileServer.folder"), { selector: "button" }));
+  await user.click(await screen.findByRole("option", { name: `${share.share_name} · ${share.path}` }));
   await user.click(card.getByRole("button", { name: t("agents.saveAudit") }));
   await waitFor(() => expect(state.action).toHaveBeenCalledWith("file-audit", expect.objectContaining({
     agent_id: agent.id, expected_revision: 2, enabled: true, activate_collection: true,
@@ -203,7 +204,7 @@ it("shows the reissue fact without an owner action to a reader", async () => {
   mount();
   await screen.findByText(t("agents.certificateReissueRequired", { name: "fixture-host" }));
   const table = screen.getByRole("table", { name: t("agents.oldAgents") });
-  expect(within(table).getByText("—")).toBeTruthy();
+  expect(within(table).queryByRole("columnheader", { name: t("systemStatus.action") })).toBeNull();
   expect(within(table).queryByRole("link")).toBeNull();
   expect(within(table).queryByRole("button", { name: t("agents.removeOld") })).toBeNull();
 });
@@ -235,9 +236,9 @@ it("shows disabled computers only in their quick filter and counts each group", 
   state.list.mockResolvedValue({ items: [agent, { ...agent, id: "disabled-agent", host_id: "disabled-host", host_name: "disabled.example.test", status: "disabled" }] });
   mount(); await screen.findByText(agent.host_name!);
   expect(screen.queryByText("disabled.example.test")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Отключённые · 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Отключённые 1" }));
   expect(screen.getByText("disabled.example.test")).toBeTruthy(); expect(screen.queryByText(agent.host_name!)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Все · 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Все 1" }));
   expect(screen.queryByText("disabled.example.test")).toBeNull();
 });
 
@@ -248,10 +249,10 @@ it("filters silent computers and disabled audit requirements from received obser
       logons: { state: "missing", required: [{ guid: "fixture-logon", subcategory: "logon", success: true, failure: true, actual_success: false, actual_failure: true }], non_security_channels: [] } } },
   }] });
   mount(); await screen.findByText("silent.example.test");
-  fireEvent.click(screen.getByRole("button", { name: "Молчат · 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Молчат 1" }));
   expect(screen.queryByText(agent.host_name!)).toBeNull();
   expect(screen.getByText(/^Молчит с/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Аудит выключен · 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Аудит выключен 1" }));
   expect(screen.getByText("Выключено настроек: 1")).toBeTruthy();
   expect(window.location.search).toBe("?filter=auditOff");
 });
@@ -323,7 +324,7 @@ it("renders one row per computer using its active registration", async () => {
   state.list.mockResolvedValue({ items: [agent, { ...agent, id: "old-registration", status: "disabled", host_name: "old.example.test" }] });
   mount(); await screen.findByText(agent.host_name!);
   expect(screen.queryByText("old.example.test")).toBeNull();
-  expect(screen.getByRole("button", { name: "Все · 1" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Все 1" })).toBeTruthy();
 });
 
 it("opens a deep-linked computer directly in its card", async () => {
@@ -544,9 +545,8 @@ async function prepareRegistrationSession() {
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
   const view = mount();
   alternativeRegistration();
-  await screen.findByRole("option", { name: "fixture-enrollment-domain" });
-  fireEvent.change(screen.getByLabelText(t("agents.deployment.domain")), { target: { value: "1" } });
-  fireEvent.change(screen.getByLabelText(t("agents.deployment.template")), { target: { value: agent.id } });
+  await chooseOption(screen.getByLabelText(t("agents.deployment.domain"), { selector: "button" }), "1");
+  await chooseOption(screen.getByLabelText(t("agents.deployment.template"), { selector: "button" }), agent.id);
   fireEvent.click(screen.getByLabelText(t("agents.deployment.allComputers")));
   fireEvent.click(await screen.findByLabelText("fixture-enrollment-computer"));
   fireEvent.change(screen.getByLabelText(t("agents.deployment.registrationOrigin")), { target: { value: "https://sli.example.test" } });

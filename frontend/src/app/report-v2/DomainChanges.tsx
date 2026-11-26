@@ -3,13 +3,11 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import {
-  Badge, Button, DataTable, DetailDrawer, FactList, PeriodPicker, ReportLayout, TabList, TabPanel, Tabs,
+  Badge, Button, Checkbox, DataTable, DetailDrawer, FactList, ReportLayout, Select, TabList, TabPanel, Tabs,
   periodBounds, type FilterValues, type PeriodPreset, type PeriodValue, type TableColumn,
 } from "../../design-system";
-import { periodLabel } from "../../design-system/PeriodPicker";
-import { PageHeaderContext } from "../../design-system/PageHeader";
 import { t, type MessageKey } from "../../i18n";
-import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone, localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
+import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
 import { preserveNavigationView } from "../navigation";
@@ -120,30 +118,6 @@ function Result({ value }: { value: string }) {
 function shortTime(time: string, timeZone: string) {
   const today = !!time && dayKey(time, timeZone) === dayKey(new Date(), timeZone);
   return formatDateTime(time, timeZone, { seconds: true, timeOnly: today });
-}
-
-function PeriodControl({ period, timeZone, presets, apply }: {
-  period: PeriodValue; timeZone: string; presets?: PeriodPreset[]; apply: (period: PeriodValue) => void;
-}) {
-  const [draft, setDraft] = useState<PeriodValue>();
-  const toInput = (value?: string) => value && /(?:Z|[+-]\d\d:\d\d)$/i.test(value)
-    ? utcToLocalDateTimeInput(value, timeZone) : value?.length === 10 ? `${value}T00:00` : value;
-  const current = period.preset === "custom" ? { ...period, from: toInput(period.from), to: toInput(period.to) } : period;
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!draft || draft.preset === "custom" && (!draft.from || !draft.to || draft.from >= draft.to)) return;
-    apply(draft);
-    const details = event.currentTarget.closest("details");
-    if (details) details.open = false;
-  };
-  return <details className="sli-ds-header__period" onToggle={(event) => { if (!event.currentTarget.open) setDraft(undefined); }}>
-    <summary className="sli-ds-button">{period.preset === "custom" && current.from && current.to
-      ? `${current.from.replace("T", " ")} → ${current.to.replace("T", " ")}` : periodLabel(period.preset)}</summary>
-    <form className="sli-ds-header__period-menu" onSubmit={submit}>
-      <PeriodPicker value={draft ?? current} precision="datetime-local" presets={presets} onChange={setDraft}/>
-      <Button type="submit" disabled={!draft || draft.preset === "custom" && (!draft.from || !draft.to || draft.from >= draft.to)}>{t("filters.apply")}</Button>
-    </form>
-  </details>;
 }
 
 function ChangeDetails({ change, query, timeZone, close, pivot }: {
@@ -350,29 +324,30 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
     setExpanded("");
     setPosition({ query, page: to });
   };
-  return <PageHeaderContext.Provider value={{}}><Tabs items={views.map((key) => ({ key, label: counts && typeof counts[key] === "number" ? `${labels(key)} ${formatNumber(counts[key])}` : labels(key) }))}
+  return <Tabs items={views.map((key) => ({
+    key, label: labels(key), count: counts && typeof counts[key] === "number" ? formatNumber(counts[key]) : undefined,
+  }))}
     active={active} onChange={(key) => set({ ...values, changes_view: key })}>
-    <ReportLayout title={title} controls={{}} tabbed state={state}
-      stateView={failed ? <ErrorLine onRetry={() => void data.refetch()}/> : state === "empty"
-        ? <p role="status">{t("reports.domain_events.empty")}</p> : <></>} busy={data.isFetching && !data.isPending}
-      actions={<>
-        <Button icon="refresh" disabled={data.isFetching} onClick={refresh}>{t("shell.header.refresh")}</Button>
-        {definition.export ? <a className="sli-ds-button" href={exportHref} download>{t("reports.renderer.export_csv")}</a> : null}
-      </>}
-      filters={<div className="sli-ds-filters" data-layout="inline"><div className="sli-ds-filters__fields">
-        <PeriodControl period={period} timeZone={timeZone} presets={definition.params.find(({ key }) => key === "period")?.presets as PeriodPreset[] | undefined}
-          apply={(next) => {
+    <ReportLayout title={title} tabbed state={state}
+      controls={{
+        onRefresh: refresh, refreshing: data.isFetching,
+        period: { value: period, precision: "datetime-local", applyPresets: false, showSelection: true, strictRange: true, showPrevious: false,
+          presets: definition.params.find(({ key }) => key === "period")?.presets as PeriodPreset[] | undefined,
+          onChange: (next) => {
             if (next.preset === "custom" && (!localDateTimeToUtc(next.from!, timeZone) || !localDateTimeToUtc(next.to!, timeZone))) return;
             setAnchor(new Date());
             set({ ...values, period: next });
-          }}/>
+          },
+        },
+      }}
+      domainPicker={<Select label={labels("domain")} value={text(filters.domain)}
+        options={[{ value: "", label: t("reports.filters.all_domains") }, ...paramOptions(definition, "domain", page?.filter_options)]}
+        onChange={(domain) => set({ ...values, domain, scope: domain ? undefined : "all" })}/>}
+      stateView={failed ? <ErrorLine onRetry={() => void data.refetch()}/> : state === "empty"
+        ? <p role="status">{t("reports.domain_events.empty")}</p> : <></>} busy={data.isFetching && !data.isPending}
+      actions={definition.export ? <a className="sli-ds-button" href={exportHref} download>{t("reports.renderer.export_csv")}</a> : null}
+      filters={<div className="sli-ds-filters" data-layout="inline"><div className="sli-ds-filters__fields">
         <Badge>{zone}</Badge>
-        <label className="sli-ds-field"><span>{labels("domain")}</span>
-          <select value={text(filters.domain)} onChange={(event) => set({ ...values, domain: event.target.value, scope: event.target.value ? undefined : "all" })}>
-            <option value="">{t("reports.filters.all_domains")}</option>
-            {paramOptions(definition, "domain", page?.filter_options).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>
         <form className="sli-ds-field" onSubmit={submitSearch}>
           <label className="sli-ds-sr-only" htmlFor="domain-changes-search">{labels("search")}</label>
           <input id="domain-changes-search" type="search" maxLength={256} value={search} placeholder={labels("search")} onChange={(event) => {
@@ -381,20 +356,25 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
           }}/>
           <button className="sli-ds-sr-only" type="submit">{labels("submit_search")}</button>
         </form>
-        <label className="sli-ds-field"><span>{labels("operation")}</span>
-          <select value={text(filters.event_id)} onChange={(event) => set({ ...values, event_id: event.target.value, category: undefined, changes_view: "all" })}>
-            <option value="">{labels("any_operation")}</option>
-            {operations.map(({ value }) => <option key={value} value={value}>{t(`reports.v2.security.events.chains.actions.${value}` as MessageKey)} · {value}</option>)}
-          </select>
-        </label>
+        <div className="sli-ds-control-field"><span>{labels("operation")}</span>
+          <Select label={labels("operation")} value={text(filters.event_id)}
+            options={[{ value: "", label: labels("any_operation") }, ...operations.map(({ value }) => ({
+              value, label: t(`reports.v2.security.events.chains.actions.${value}` as MessageKey) + " · " + value,
+            }))]} onChange={(eventId) => set({ ...values, event_id: eventId, category: undefined, changes_view: "all" })}/>
+        </div>
       </div></div>}
-      tabs={<div className="sli-ds-header__meta">
+      tabs={<div className="sli-ds-list-toolbar">
         <TabList label={labels("views")}/>
-        <label><input type="checkbox" checked={collapse} onChange={(event) => set({ ...values, repeat_mode: event.target.checked ? "collapsed" : "individual" })}/>{labels("collapse")}</label>
         {["actor", "target", "group"].some((key) => values[key]) ? <Button variant="ghost"
           onClick={() => set({ ...values, actor: undefined, target: undefined, group: undefined })}>
           {labels("clear_pivot")} · {text(values.actor || values.target || values.group)}
         </Button> : null}
+        <div className="sli-ds-header__actions">
+          <Checkbox checked={collapse} onChange={(event) => set({ ...values, repeat_mode: event.target.checked ? "collapsed" : "individual" })}>{labels("collapse")}</Checkbox>
+          <Select label={labels("density")} value={density}
+            options={[{ value: "compact", label: labels("compact") }, { value: "comfortable", label: labels("comfortable") }]}
+            onChange={(value) => setDensity(value === "compact" ? "compact" : "comfortable")}/>
+        </div>
       </div>}
       side={chosen}>
       <div className="sli-ds-report__views">
@@ -404,20 +384,11 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
           onSort={() => set({ ...values, changes_order: values.changes_order === "asc" ? "desc" : "asc" })}
           onRowClick={(row) => { if (row.count > 1) setExpanded(expanded === row.id ? "" : row.id); else select(row); }}
           selectedKey={details ? selection?.id : null} total={count}
-          toolbar={<div className="sli-ds-field">
-            <select aria-label={labels("density")} value={density} onChange={(event) => setDensity(event.target.value === "compact" ? "compact" : "comfortable")}>
-              <option value="compact">{labels("compact")}</option><option value="comfortable">{labels("comfortable")}</option>
-            </select>
-          </div>}
           toolbarEnd={<Button aria-pressed={details} onClick={() => setDetails(!details)}>{labels("details")}</Button>}
-          footerControls={<div className="sli-ds-header__actions" role="group" aria-label={labels("rows_per_page")}>
-            <span>{labels("rows_per_page")}</span>{pageSizes.map((size) =>
-              <button className="sli-ds-chip" type="button" key={size} aria-pressed={size === limit} onClick={() => {
-                setLimit(size); setSelection(null); setExpanded(""); setPosition({ query: "", page: 0 });
-              }}>{size}</button>)}
-          </div>}
+          pageSize={{ value: limit, options: pageSizes, onChange: (size) => {
+            setLimit(size); setSelection(null); setExpanded(""); setPosition({ query: "", page: 0 });
+          }}}
           pagination={{ start: pageIndex * limit + 1, busy: data.isFetchingNextPage,
-            pageLabel: typeof count === "number" && count > 0 ? t(`${prefix}page`, { page: pageIndex + 1, total: Math.ceil(count / limit) }) : undefined,
             onPrevious: pageIndex ? () => void go(pageIndex - 1) : undefined,
             onNext: page?.has_more ? () => void go(pageIndex + 1) : undefined }}
           renderExpanded={(row, colSpan) => expanded === row.id && row.count > 1
@@ -425,5 +396,5 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
         {page?.state === "ok" && !rows.length ? <p role="status">{t("reports.domain_events.empty")}</p> : null}
       </div>
     </ReportLayout>
-  </Tabs></PageHeaderContext.Provider>;
+  </Tabs>;
 }

@@ -38,7 +38,7 @@ it("loads the source by the route hostname and keeps missing inventory honest", 
   expect(await screen.findByText("DC 01", { selector: "h1" })).toBeTruthy();
   expect(state.detail).toHaveBeenCalledWith("DC 01");
   expect(screen.getByText("не собраны", { selector: ".sli-ds-metric__value" })).toBeTruthy();
-  expect(screen.getAllByRole("cell", { name: "—" }).length).toBeGreaterThan(0);
+  expect(screen.getByRole("cell", { name: "C:" })).toBeTruthy();
   expect(screen.getByText("Инвентаризация неполная")).toBeTruthy();
   expect(screen.queryByText("0 Б")).toBeNull();
   expect(screen.getByText("не получена").closest(".sli-ds-metric")?.getAttribute("data-tone")).toBe("neutral");

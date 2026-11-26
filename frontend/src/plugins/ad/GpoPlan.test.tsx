@@ -1,3 +1,5 @@
+import userEvent from "@testing-library/user-event";
+import { chooseOption } from "../../../tests/select-option";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -102,11 +104,11 @@ it("requires an explicit account when there is no eligible last choice", async (
   vi.mocked(api.gpoPlanCredentials).mockResolvedValue({ items: [credential], selected_credential_id: null, write_enabled: false });
   render(<GpoPlanButton selection={selection}/>);
   fireEvent.click(screen.getByRole("button", { name: t("reports.ad.gpo.open") }));
-  const select = await screen.findByRole("combobox");
+  const select = await screen.findByLabelText(t("reports.ad.gpo.credential"), { selector: "button" });
   await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
   expect(api.previewGpoPlan).not.toHaveBeenCalled();
   expect((screen.getByRole("button", { name: t("reports.ad.gpo.confirm") }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(select, { target: { value: credential.credential_id } });
+  await chooseOption(select, credential.credential_id);
   await screen.findByText("synthetic-host");
   expect(api.previewGpoPlan).toHaveBeenCalledWith({ ...selection, ...credentialFields });
 });
@@ -117,9 +119,12 @@ it("disables an unsuitable account and never replaces it with another saved acco
     selected_credential_id: credential.credential_id, write_enabled: false });
   render(<GpoPlanButton selection={selection}/>);
   fireEvent.click(screen.getByRole("button", { name: t("reports.ad.gpo.open") }));
-  await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
-  expect((screen.getAllByRole("option")[1] as HTMLOptionElement).disabled).toBe(true);
-  expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+  const select = await screen.findByLabelText(t("reports.ad.gpo.credential"), { selector: "button" });
+  expect(select.textContent).toBe(t("reports.ad.gpo.credential.choose"));
+  await userEvent.click(select);
+  const options = await screen.findAllByRole("option");
+  expect(options).toHaveLength(3);
+  expect(options[1].getAttribute("aria-disabled")).toBe("true");
   expect(api.previewGpoPlan).not.toHaveBeenCalled();
 });
 
@@ -130,7 +135,7 @@ it("replaces the preview and clears acknowledgment when the account changes", as
   fireEvent.click(screen.getByRole("checkbox"));
   vi.mocked(api.previewGpoPlan).mockResolvedValue({ ...plan, plan_id: "second-plan",
     credential_binding: { ...plan.credential_binding, credential_id: other.credential_id } });
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: other.credential_id } });
+  await chooseOption(screen.getByLabelText(t("reports.ad.gpo.credential"), { selector: "button" }), other.credential_id);
   await waitFor(() => expect(api.previewGpoPlan).toHaveBeenCalledTimes(2));
   await waitFor(() => expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false));
   expect(api.cancelGpoPlan).toHaveBeenCalledTimes(1);
@@ -145,7 +150,7 @@ it("shows the three approved methods and never issues an AD credential for a man
   await open();
   expect(screen.getAllByRole("radio")).toHaveLength(3);
   fireEvent.click(screen.getByRole("radio", { name: new RegExp(t("reports.ad.gpo.method.manual")) }));
-  await waitFor(() => expect(screen.queryByRole("combobox")).toBeNull());
+  await waitFor(() => expect(screen.queryByLabelText(t("reports.ad.gpo.credential"), { selector: "button" })).toBeNull());
   expect((screen.getByRole("button", { name: t("reports.ad.gpo.confirm") }) as HTMLButtonElement).disabled).toBe(true);
   expect(api.previewGpoPlan).toHaveBeenCalledTimes(1);
   expect(api.cancelGpoPlan).toHaveBeenCalledTimes(1);

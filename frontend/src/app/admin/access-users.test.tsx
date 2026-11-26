@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -84,7 +85,7 @@ it.each(["viewer", "admin"])("creates a user with the entered name, password and
   expect((save as HTMLButtonElement).disabled).toBe(true);
   expect(within(dialog).queryByRole("option", { name: "Оператор" })).toBeNull();
   await user.type(within(dialog).getByLabelText("Имя"), "synthetic.colleague");
-  await user.selectOptions(within(dialog).getByLabelText("Роль"), role);
+  await chooseOption(within(dialog).getByLabelText("Роль", { selector: "button" }), role);
   await user.type(within(dialog).getByLabelText("Пароль"), "Synthetic-only-pass-69");
   await user.click(save);
   await within(dialog).findByRole("button", { name: "Скопировать" });
@@ -106,12 +107,14 @@ it("changes an existing operator to a beta role and can change it back after sav
   const row = (await screen.findByText("synthetic.operator")).closest("tr")!;
   await user.click(within(row).getByRole("button", { name: "Сменить роль" }));
   const dialog = screen.getByRole("dialog");
-  const select = within(dialog).getByLabelText("Роль");
-  expect((within(select).getByRole("option", { name: "Оператор" }) as HTMLOptionElement).disabled).toBe(true);
-  await user.selectOptions(select, "viewer");
+  const select = within(dialog).getByLabelText("Роль", { selector: "button" });
+  await user.click(select);
+  expect((await screen.findByRole("option", { name: "Оператор" })).getAttribute("aria-disabled")).toBe("true");
+  await user.keyboard("{Escape}");
+  await chooseOption(select, "viewer");
   await user.click(within(dialog).getByRole("button", { name: "Сохранить" }));
   expect(await within(dialog).findByRole("status")).toHaveProperty("textContent", expect.stringMatching(/^Сохранено в \d\d\.\d\d\.\d{4}, \d\d:\d\d$/));
-  await user.selectOptions(select, "admin");
+  await chooseOption(select, "admin");
   await user.click(within(dialog).getByRole("button", { name: "Сохранить" }));
   await waitFor(() => expect(mutations()).toHaveLength(2));
   expect(mutations().map(([url, init]) => [url, JSON.parse(init.body)])).toEqual([
@@ -208,7 +211,7 @@ it("does not attribute an API key's action to a person with the same numeric ide
   await user.click(screen.getByRole("tab", { name: "Журнал" }));
   const table = await screen.findByRole("table", { name: "Журнал" });
   expect(within(table).queryByText("synthetic.admin")).toBeNull();
-  expect(within(table).getByText("—")).toBeTruthy();
+  expect(within(table).queryByRole("columnheader", { name: t("access.people.audit.actor") })).toBeNull();
 });
 
 it("loads the inventory error independently and retries it", async () => {

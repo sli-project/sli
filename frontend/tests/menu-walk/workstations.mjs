@@ -160,9 +160,9 @@ async function verifyWorkstations(page, { url, directory, fixture }) {
   assert.equal(overview.body.items.length, 50);
   const fleet = page.getByRole('table', { name: 'Все станции', exact: true });
   await expect(fleet.locator('tbody > tr')).toHaveCount(50);
-  const size = page.getByRole('combobox', { name: 'Строк на странице', exact: true });
-  assert.deepEqual(await size.locator('option').evaluateAll(nodes => nodes.map(node => node.value)), ['25', '50', '100', '200']);
-  overview = await readResponse(page, 'select 200 fleet rows', dataPath, () => size.selectOption('200'),
+  const size = page.getByRole('radiogroup', { name: 'Строк на странице' });
+  assert.deepEqual(await size.getByRole('radio').evaluateAll(nodes => nodes.map(node => node.value)), ['25', '50', '100', '200']);
+  overview = await readResponse(page, 'select 200 fleet rows', dataPath, () => size.getByText('200', { exact: true }).click(),
     params => params.get('limit') === '200');
   assertWindow(overview.params, fixture);
   assert.equal(overview.body.items.length, 200, 'The API must return a real 200-row page');
@@ -261,6 +261,6 @@ async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, reco
   await page.getByRole('link', { name: 'К списку станций', exact: true }).click();
   await expect(page.getByRole('table', { name: 'Все станции', exact: true })).toBeVisible();
   await assertReturn(page, fleetUrl);
-  await expect(page.getByRole('combobox', { name: 'Строк на странице', exact: true })).toHaveValue('200');
+  await expect(page.getByRole('radiogroup', { name: 'Строк на странице' }).getByRole('radio', { name: '200', exact: true })).toBeChecked();
   await record({ claim: 'Returning from Collection restores the exact fleet period, selected source, search and page size.' });
 }

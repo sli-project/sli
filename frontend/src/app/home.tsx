@@ -2,8 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { api } from "../api/client";
-import type { HomeChange, HomeController, HomePeriod, HomeProblem, HomeQueueFilter, HomeQueuePage } from "../api/home-period";
-import { Button, DataTable, PageHeader, Panel, SeverityBadge, StateView, Tabs, TabList, TabPanel, type TableColumn } from "../design-system";
+import type { HomeChange, HomePeriod, HomeProblem, HomeQueueFilter, HomeQueuePage, HomeWeakSpot } from "../api/home-period";
+import { Button, DataTable, PageHeader, Panel, Select, SeverityBadge, StateView, Tabs, TabList, TabPanel, type TableColumn } from "../design-system";
 import { en } from "../i18n/en";
 import { getLocale, t, type MessageKey } from "../i18n";
 import { browserTimeZone, formatDateTime } from "../shared/date-time";
@@ -52,19 +52,20 @@ function savedQueue(key: string): HomeQueuePage {
   return initialQueue;
 }
 
-function Problems({ data, zone, queue, setQueue, pending }: {
+function Problems({ data, zone, queue, setQueue, pending, showAssignment }: {
   data: NonNullable<HomePeriod["problems"]>;
   zone: string;
   queue: HomeQueuePage;
   setQueue: (queue: HomeQueuePage) => void;
   pending: boolean;
+  showAssignment: boolean;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const title = t("home.problems");
-  const counts = { all: data.open_count, unassigned: data.unassigned_count, in_work: data.in_work_count };
+  const counts = { all: data.open_count, unassigned: showAssignment ? data.unassigned_count : null, in_work: data.in_work_count };
   const active = counts[queue.filter] !== null ? queue.filter : "all";
   const total = counts[active];
-  const page = pending ? queue.page : data.page ?? queue.page;
+  const page = active !== queue.filter ? 1 : pending ? queue.page : data.page ?? queue.page;
   const select = (next: HomeQueuePage) => { setExpanded(null); setQueue(next); };
   const columns: TableColumn<HomeProblem>[] = [
     { key: "severity", label: t("home.severity"), width: "9rem", render: ({ severity }) =>
@@ -76,12 +77,16 @@ function Problems({ data, zone, queue, setQueue, pending }: {
       {row.occurrence_count > 1 && <span className="sli-ds-home-inline-source"> {link(row.repeats_href, `×${formatNumber(row.occurrence_count)}`)}</span>}
     </> },
     { key: "at", label: t("home.lastSeen"), width: "10rem",
-      render: (row) => formatDateTime(row.at, zone, { withYear: false }) },
+      render: ({ at }) => at ? <time dateTime={at} title={`${formatDateTime(at, zone, { seconds: true })} (${zone})`}>
+        {formatDateTime(at, zone, { withYear: false })}
+      </time> : EMPTY_VALUE },
     { key: "review", label: t("home.review"), width: "7rem", wrap: true,
       render: (row) => link(row.href, t(`home.status.${row.status}`)) },
-    { key: "assignee", label: t("home.assignee"), width: "9rem", wrap: true,
-      render: (row) => row.assignee_state === "mixed" ? t("home.assignee.mixed") : row.assignee ?? EMPTY_VALUE },
   ];
+  if (showAssignment && data.unassigned_count !== null) columns.push({
+    key: "assignee", label: t("home.assignee"), width: "9rem", wrap: true,
+    render: (row) => row.assignee_state === "mixed" ? t("home.assignee.mixed") : row.assignee ?? EMPTY_VALUE,
+  });
   const items = queueFilters.filter((key) => counts[key] !== null).map((key) => ({
     key, label: t(`home.filter.${key}`, { count: formatNumber(counts[key]) }),
   }));
@@ -123,27 +128,24 @@ function Problems({ data, zone, queue, setQueue, pending }: {
   </div>;
 }
 
-type ControllerRow = { controller: HomeController; check: HomeController["failures"][number] };
-
-function Controllers({ data, zone }: { data: NonNullable<HomePeriod["controllers"]>; zone: string }) {
-  const rows = data.items.flatMap((controller) => controller.failures.map((check) => ({ controller, check })));
-  if (!rows.length) return null;
-  const title = t("home.controllers");
-  const columns: TableColumn<ControllerRow>[] = [
-    { key: "name", label: t("home.object"), wrap: true, render: ({ controller }) => link(controller.href, controller.name ?? EMPTY_VALUE) },
-    { key: "check", label: t("home.check"), wrap: true, render: ({ check }) => {
-      const actual = check.actual === "failed" ? t("home.failedState") : check.actual === "stopped" ? t("home.stopped") : check.actual;
-      return [t(`home.check.${check.key}`), actual].filter(Boolean).join(" · ");
-    } },
-    { key: "expected", label: t("home.expected"), width: "10rem", wrap: true, render: ({ check }) =>
-      t(check.key === "os" ? "home.supported" : check.key === "time" ? "home.running" : "home.passedState") },
-    { key: "observed", label: t("home.observed"), width: "10rem", wrap: true,
-      render: ({ controller }) => formatDateTime(controller.at, zone, { withYear: false }) },
+function WeakSpots({ data, fetching, retry }: {
+  data: NonNullable<HomePeriod["weak_spots"]>; fetching: boolean; retry: () => void;
+}) {
+  if (!data.items.length && !data.failed.length) return null;
+  const title = t("home.weakSpots");
+  const columns: TableColumn<HomeWeakSpot>[] = [
+    { key: "label", label: t("home.check"), wrap: true,
+      render: ({ label, label_key }) => label_key ? t(label_key) : label },
+    { key: "count", label: t("home.affectedObjects"), render: ({ count }) => formatNumber(count) },
+    { key: "report", label: t("home.checkScreen"), wrap: true,
+      render: ({ href, report }) => link(href, t(`home.checkScreen.${report}`)) },
   ];
-  return <div data-home-block="controllers"><Panel title={title}
-    action={data.href ? <span data-home-panel-action>{link(data.href, t("home.adStatus"))}</span> : null}>
-    <DataTable caption={title} columns={columns} rows={rows} rowKey={({ controller, check }) => `${controller.id}:${check.key}`}
-      density="compact" stickyHeader={false} showFooter={false}/>
+  return <div data-home-block="weakSpots"><Panel title={title}>
+    {data.items.length > 0 && <DataTable caption={title} columns={columns} rows={data.items} rowKey={({ id }) => id}
+      density="compact" stickyHeader={false} showFooter={false}/>}
+    {data.failed.length > 0 && <LoadError message={t("home.loadFailed.checkScreens", {
+      screens: data.failed.map((report) => t(`home.checkScreen.${report}`)).join(", "),
+    })} fetching={fetching} retry={retry}/>}
   </Panel></div>;
 }
 
@@ -191,14 +193,15 @@ function HomeComposition({ data, zone, fetching, retry, queue, setQueue, pending
   data: HomePeriod; zone: string; fetching: boolean; retry: () => void;
   queue: HomeQueuePage; setQueue: (queue: HomeQueuePage) => void; pending: boolean;
 }) {
-  const failure = (block: "problems" | "controllers" | "changes") => <div data-home-block={block}>
+  const failure = (block: "problems" | "weakSpots" | "changes") => <div data-home-block={block}>
     <Panel title={t(`home.${block}`)}>
       <LoadError message={t(`home.loadFailed.${block}`)} fetching={fetching} retry={retry}/>
     </Panel>
   </div>;
   return <div className="sli-ds-report__views sli-ds-home-main" aria-busy={fetching}>
-    {data.problems ? <Problems data={data.problems} zone={zone} queue={queue} setQueue={setQueue} pending={pending}/> : failure("problems")}
-    {data.controllers ? <Controllers data={data.controllers} zone={zone}/> : failure("controllers")}
+    {data.problems ? <Problems data={data.problems} zone={zone} queue={queue} setQueue={setQueue} pending={pending}
+      showAssignment={(data.active_operator_count ?? 0) >= 2}/> : failure("problems")}
+    {data.weak_spots ? <WeakSpots data={data.weak_spots} fetching={fetching} retry={retry}/> : failure("weakSpots")}
     {data.changes ? <Changes data={data.changes} zone={zone}/> : failure("changes")}
   </div>;
 }
@@ -248,15 +251,14 @@ export function HomePage() {
     }
   };
   const actions = <>
-    {data?.domains.length ? <label className="sli-ds-field"><select aria-label={t("home.domain")} value={data.domain_id ?? ""} onChange={(event) => {
-      const id = Number(event.target.value);
-      void navigate({ search: ((old: Record<string, unknown>) => ({ ...old, domain: id, domain_id: undefined, scope: undefined })) as never });
-    }}>
-      {data.domains.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-    </select></label> : null}
-    <label className="sli-ds-field"><select aria-label={t("home.period")} value={period} onChange={(event) => { setPeriod(event.target.value); setPrevious(null); }}>
-      <option value="24h">{t("home.period.24h")}</option><option value="7d">{t("home.period.7d")}</option>
-    </select></label>
+    {data?.domains.length ? <Select label={t("home.domain")} value={data.domain_id ?? undefined}
+      options={data.domains.map(({ id, name }) => ({ value: id, label: name }))} onChange={(value) => {
+        if (!value) return;
+        void navigate({ search: ((old: Record<string, unknown>) => ({ ...old, domain: Number(value), domain_id: undefined, scope: undefined })) as never });
+      }}/> : null}
+    <Select label={t("home.period")} value={period}
+      options={[{ value: "24h", label: t("home.period.24h") }, { value: "7d", label: t("home.period.7d") }]}
+      onChange={(value) => { if (value) { setPeriod(value); setPrevious(null); } }}/>
     <Button aria-pressed={previous !== null} disabled={!data && !previous} onClick={togglePrevious}>{t("home.period.previous")}</Button>
     {data ? <span>{formatDateTime(data.from, actualZone, { withYear: false })} → {formatDateTime(data.to, actualZone, { withYear: false })}</span> : null}
     {data ? <span data-home-updated>{t("home.updated", { time: clock(data.updated_at, actualZone) })}</span> : null}
@@ -266,8 +268,12 @@ export function HomePage() {
     <PageHeader title={t("home.title")}/>
     <FirstAdSource/>
   </section>;
+  const delta = data?.since_previous_login;
   return <section className="sli-ds-report sli-ds-home">
-    <PageHeader title={t("home.title")} actions={actions}/>
+    <PageHeader title={t("home.title")} actions={actions} meta={delta && <>
+      {t("home.sincePreviousLogin")} {link(delta.new_href, t("home.sincePreviousLogin.new", { count: formatNumber(delta.new_count) }))}
+      {" · "}{t("home.sincePreviousLogin.closed", { count: formatNumber(delta.closed_count) })}
+    </>}/>
     {accessStatus === "загружается" || summary.isLoading || firstAdSource === undefined ? <StateView state="loading" compact skeleton="table"/> : null}
     {accessStatus === "отказ" ? <p role="alert">{t("home.loadFailed")}</p> : null}
     {accessStatus === "получены" && <>

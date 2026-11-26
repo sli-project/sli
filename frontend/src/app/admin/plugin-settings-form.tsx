@@ -1,3 +1,5 @@
+import { Checkbox } from "../../design-system/Checkbox";
+import { Select } from "../../design-system/Select";
 import { useId, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
@@ -19,9 +21,8 @@ function ValueEditor({ node, value, onChange, label, id, describedBy }: {
     const branch = node.oneOf.find((item) => Object.entries(item.properties ?? {}).every(([key, child]) => !child.enum || child.enum.includes(record[key]))) ?? node.oneOf[0];
     return <>
       <label htmlFor={`${id}-kind`}>{t("pluginPage.scope")}</label>
-      <select id={`${id}-kind`} value={node.oneOf.indexOf(branch)} onChange={(event) => onChange(initialSetting(node.oneOf![Number(event.target.value)]))}>
-        {node.oneOf.map((item, index) => <option key={index} value={index}>{text(`pluginPage.field.${String(item.properties?.kind?.enum?.[0])}`, String(index + 1))}</option>)}
-      </select>
+      <Select label={t("pluginPage.scope")} id={`${id}-kind`} value={node.oneOf.indexOf(branch)} onChange={(selectedValue) => onChange(initialSetting(node.oneOf![Number(selectedValue)]))}
+        options={node.oneOf.map((item, index) => ({ value: index, label: text(`pluginPage.field.${String(item.properties?.kind?.enum?.[0])}`, String(index + 1)) }))}/>
       <ValueEditor node={{ ...branch, properties: Object.fromEntries(Object.entries(branch.properties ?? {}).filter(([key]) => key !== "kind")) }} value={value}
         onChange={onChange} label={label} id={id}/>
     </>;
@@ -51,9 +52,9 @@ function ValueEditor({ node, value, onChange, label, id, describedBy }: {
       <Button onClick={() => onChange(entries.filter((_, position) => position !== index))}>{t("pluginPage.removeItem", { index: index + 1 })}</Button>
     </div>)}<Button disabled={!node.items || entries.length >= (node.maxItems ?? 1000)} onClick={() => onChange([...entries, initialSetting(node.items!)])}>{t("pluginPage.addItem")}</Button></fieldset>;
   }
-  if (node.enum) return <><label htmlFor={id}>{label}</label><select id={id} value={serialized(value)} aria-describedby={describedBy}
-    onChange={(event) => onChange(JSON.parse(event.target.value))}>{node.enum.map((entry) => <option key={serialized(entry)} value={serialized(entry)}>{String(entry)}</option>)}</select></>;
-  if (types.includes("boolean")) return <label><input id={id} type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)}/>{label}</label>;
+  if (node.enum) return <><label htmlFor={id}>{label}</label><Select label={label} id={id} value={serialized(value)} aria-describedby={describedBy} onChange={(selectedValue) => onChange(JSON.parse(selectedValue))}
+    options={node.enum.map((entry) => ({ value: serialized(entry), label: String(entry) }))}/></>;
+  if (types.includes("boolean")) return <Checkbox id={id} checked={value === true} onChange={(event) => onChange(event.target.checked)}>{label}</Checkbox>;
   const numeric = types.includes("integer") || types.includes("number");
   return <><label htmlFor={id}>{label}</label><input id={id} type={node["x-secret"] ? "password" : numeric ? "number" : "text"}
     autoComplete={node["x-secret"] ? "new-password" : "off"} aria-describedby={describedBy} aria-invalid={!validSetting(value, node)}

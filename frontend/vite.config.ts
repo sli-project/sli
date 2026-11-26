@@ -41,6 +41,7 @@ export default defineConfig({
   base: "/app/",
   plugins: [react()],
   test: {
+    setupFiles: ["./tests/setup-dom.ts"],
     exclude: [...configDefaults.exclude, "tests/geometry/**"],
     css: {
       // Preserve raw CSS contracts without injecting viewport styles into jsdom.

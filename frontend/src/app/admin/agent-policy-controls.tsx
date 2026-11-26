@@ -1,3 +1,4 @@
+import { Checkbox } from "../../design-system/Checkbox";
 import { isValidTimeZone } from "../../shared/date-time";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentItem } from "../../api/client";
@@ -125,7 +126,7 @@ function DCInitialReadControls({ settings, disabled, save, backfill }: { setting
   const [hours, setHours] = useState(Number(settings.initial_read_hours === "all" ? 24 : settings.initial_read_hours ?? 24));
   return <>
     <form onSubmit={(event) => { event.preventDefault(); save({ initial_read_hours: all ? "all" : hours }); }}><fieldset disabled={disabled}>
-      <label><input type="checkbox" checked={all} onChange={(event) => setAll(event.target.checked)}/>{t("agents.initialReadAll")}</label>
+      <Checkbox checked={all} onChange={(event) => setAll(event.target.checked)}>{t("agents.initialReadAll")}</Checkbox>
       <label>{t("agents.initialReadHours")}<input type="number" required min={0} max={876000} step={1} disabled={all} value={hours} onChange={(event) => setHours(Number(event.target.value))}/></label>
       <p>{t("agents.initialReadHint")}</p>
       <button className="sli-ds-button" type="submit">{t("agents.saveInitialRead")}</button>
@@ -172,7 +173,7 @@ export function AgentModuleControls({ agent, module, busy, change, openPasswordD
     const filters = object(module.config.family_filters);
     return <details><summary>{t("agents.familySettings")}</summary>
       {FAMILIES.map((family) => <fieldset key={family}><legend>{t(`agents.family.${family}`)}</legend>
-        <label><input type="checkbox" checked={families[family] !== false} disabled={disabled} onChange={() => save({ families: { ...families, [family]: families[family] === false } })}/>{t(`agents.family.${family}`)}</label>
+        <Checkbox checked={families[family] !== false} disabled={disabled} onChange={() => save({ families: { ...families, [family]: families[family] === false } })}>{t(`agents.family.${family}`)}</Checkbox>
         <FilterControls settings={object(filters[family])} process={family === "processes"} disabled={disabled} save={(settings) => save({ family_filters: { ...filters, [family]: settings } })}/>
       </fieldset>)}
       <EventRateControls module={module} disabled={disabled} save={save}/>
@@ -182,7 +183,7 @@ export function AgentModuleControls({ agent, module, busy, change, openPasswordD
     const channels = object(module.config.channels);
     return <details open={openPasswordDomain}><summary>{t("agents.channelSettings")}</summary>
       <PasswordDetectionDomainControls agent={agent} disabled={disabled} change={change}/>
-      {CHANNELS.map((channel) => <label key={channel}><input type="checkbox" checked={channels[channel] !== false} disabled={disabled} onChange={() => save({ channels: { ...channels, [channel]: channels[channel] === false } })}/>{channel}</label>)}
+      {CHANNELS.map((channel) => <Checkbox key={channel} checked={channels[channel] !== false} disabled={disabled} onChange={() => save({ channels: { ...channels, [channel]: channels[channel] === false } })}>{channel}</Checkbox>)}
       <DCInitialReadControls settings={module.config} disabled={disabled} save={save} backfill={() => {
         const generation = crypto.randomUUID();
         change("modules", { agent_id: agent.id, module_id: "sli.windows.ad-dc-history", enabled: true, expected_revision: agent.policy_revision,

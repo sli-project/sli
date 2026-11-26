@@ -318,7 +318,7 @@ public sealed partial class SecurityProblemsV2Tests
                 long id = row!["id"]!.GetValue<long>();
                 string address = $"192.0.2.{id}";
                 Assert.Equal(address, row["actor_text"]!.ToString());
-                Assert.Equal(id % 2 == 0 ? $"{address} (учётных записей: 30)" : $"user-{id}", row["entity_text"]!.ToString());
+                Assert.Equal(id % 2 == 0 ? $"{address} (30 учётных записей)" : $"user-{id}", row["entity_text"]!.ToString());
                 Assert.Null(row["evidence"]);
                 Assert.Null(row["status_history"]);
                 Assert.Null(row["what_happened"]);
