@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportColumnDto } from "../../api/report-v2-types";
-import { Button, Chart, DataTable, DetailDrawer, FactList, SeverityBadge, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
+import { Button, Chart, DataTable, DetailDrawer, FactList, Icon, SeverityBadge, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t, type MessageKey } from "../../i18n";
 import { formatDateTime as formatZonedDateTime } from "../../shared/date-time";
@@ -37,6 +37,17 @@ const domainOf = (row: Row) => {
 
 export function computerEmpty() {
   return <p role="status">{dash()}</p>;
+}
+
+export function LogonComputerName({ row }: { row: Row }) {
+  const name = text(row.display_name) ?? dash();
+  const type = row.computer_type;
+  const icon = type === "domain_controller" ? "shield" : type === "server" ? "database" : type === "workstation" ? "computer" : undefined;
+  if (!icon) return name;
+  const role = computerRole(type);
+  return <span className="sli-ds-cell-with-icon">
+    <span role="img" aria-label={role} title={role}><Icon name={icon}/></span>{name}
+  </span>;
 }
 
 export function ComputerLogonsEmpty({ state }: { state: unknown }) {
@@ -304,7 +315,7 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
     { key: "source_event_id", label: t("reports.v2.ad.computer-logons.detail.columns.event.label"), render: eventLink },
   ];
   return <DataTable caption={subject} columns={columns} rows={rows} rowKey={(row) => row.row_id} compact wrapCells="all"
-    emptyContent={dash()} showFooter={rows.length > 0}
+    emptyContent={t("reports.states.empty.text")} showFooter={rows.length > 0}
     pageSize={{ value: pageSize, options: [25, 50, 100, 200], onChange: (size) => { setIndex(0); setPageSize(size); } }}
     total={page?.filtered_count}
     pagination={{ start: index * pageSize + 1, busy: query.isFetchingNextPage,

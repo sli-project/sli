@@ -53,17 +53,15 @@ internal static class AdUserCard
                 card.Text("domain_name") is {} dns && safe.Text("samAccountName") is {} sam ? dns + "\\" + sam : null }
                 .OfType<string>().Select(s => s.ToLowerInvariant()).Distinct().ToArray();
             var rows = await AdJson.ReadAsync(db, AdAccountEvents.Source(configuration) + ActivitySql, ct,
-                new[] { 4624, 4625, 4720, 4722, 4723, 4724, 4725, 4726, 4728, 4729, 4732, 4733, 4738, 4740, 4756, 4757, 4767, 4781 },
-                now.AddDays(-30), now, domain, sid.ToUpperInvariant(), names, today, fields(["privilege"]));
-            foreach (string key in new[] { "timeline", "changes", "computers", "logon_days", "logon_totals" })
+                new[] { 4624, 4625 }, now.AddDays(-30), now, domain, sid.ToUpperInvariant(), names, today);
+            foreach (string key in new[] { "timeline", "computers", "logon_days", "logon_totals" })
                 card[key] = JsonNode.Parse(rows[0].Text(key) ?? "null");
             var principals = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var groups = fields(["privilege"]) ? source?["snapshot"]?["groups"] as JsonArray ?? [] : [];
-            foreach (var principal in accounts.Concat(groups))
+            foreach (var principal in accounts)
                 if (principal.Text("sid") is {} principalSid && (principal.Text("samAccountName") ?? principal.Text("name")) is {} name)
                     principals.TryAdd(principalSid, name.Length <= 256 ? name : name[..256]);
-            foreach (var item in (card["timeline"] as JsonArray ?? []).Concat(card["changes"] as JsonArray ?? []))
-                foreach (string field in new[] { "actor", "target", "member" })
+            foreach (var item in card["timeline"] as JsonArray ?? [])
+                foreach (string field in new[] { "actor", "target" })
                     if (item.Text(field) is {} value && principals.TryGetValue(value, out var name)) item![field] = name;
         }
         return AdV2Store.Result(request.Key, "ok", [card]);
@@ -75,15 +73,13 @@ internal static class AdUserCard
         , activity as materialized (
             select id, event_id, day, event_count, first_seen_utc, last_seen_utc, summary_key,
                    left(actor,256) as actor, left(target,256) as target,
-                   left(membership_member_sid,256) as member, left(source,256) as source,
+                   left(source,256) as source,
                    left(case when source !~ '^[0-9.]+$' and strpos(source, ':')=0
                        and logon_type in ('2','10','11') then nullif(source,'-') end,256) as workstation,
                    logon_type
               from account_events
              where domain_id=$4 and event_id=any($1) and time_created_utc >= $2 and time_created_utc < $3
-               and (event_id not in (4728,4729,4732,4733,4756,4757) or $8)
-               and (upper(actor)=$5 or (event_id=4625 and lower(actor)=any($6))
-                 or (event_id not in (4624,4625) and (upper(target)=$5 or upper(membership_member_sid)=$5)))
+               and (upper(actor)=$5 or (event_id=4625 and lower(actor)=any($6)))
         ), daily as (
             select calendar.day,
                    coalesce(sum(event_count) filter (where event_id=4624),0)::bigint as successes,
@@ -99,13 +95,10 @@ internal static class AdUserCard
                        filter (where day<($7::timestamptz at time zone 'UTC')::date-1) as typical
               from daily having sum(successes+failures)>0
         ), timeline_rows as (
-            select id, event_id, last_seen_utc as at_utc, first_seen_utc, event_count, actor, target, member, source, summary_key
+            select id, event_id, last_seen_utc as at_utc, first_seen_utc, event_count, actor, target, source, summary_key
               from activity
         ), recent as (
             select * from timeline_rows order by at_utc desc, id desc nulls last, summary_key limit 50
-        ), changes as (
-            select * from timeline_rows where event_id not in (4624,4625)
-             order by at_utc desc, id desc nulls last, summary_key limit 50
         ), latest_computers as (
             select distinct on (lower(workstation)) workstation as computer, last_seen_utc as at_utc, id
               from activity where event_id=4624 and workstation is not null
@@ -114,7 +107,6 @@ internal static class AdUserCard
             select * from latest_computers order by at_utc desc, computer limit 50
         )
         select (select jsonb_agg(to_jsonb(r) order by r.at_utc desc, r.id desc nulls last, r.summary_key) from recent r)::text as timeline,
-               (select jsonb_agg(to_jsonb(c) order by c.at_utc desc, c.id desc nulls last, c.summary_key) from changes c)::text as changes,
                (select jsonb_agg(to_jsonb(c) order by c.at_utc desc, c.computer) from computers c)::text as computers,
                (select jsonb_agg(to_jsonb(d) order by d.day) from daily d where exists(select 1 from totals))::text as logon_days,
                (select to_jsonb(t) from totals t)::text as logon_totals
