@@ -30,7 +30,9 @@ public sealed class PluginStatusTests
         var items = response["items"]!.AsArray().OfType<JsonObject>().ToDictionary(item => item["plugin_id"]!.GetValue<string>());
         Assert.Contains("sli.ad", items.Keys);
         Assert.Contains("sli.gpo", items.Keys);
-        foreach (string id in new[] { "sli.file-audit", "sli.workstations", "sli.remote-access", "sli.sigma" })
+        Assert.Contains("sli.file-audit", items.Keys);
+        Assert.Contains("sli.workstations", items.Keys);
+        foreach (string id in new[] { "sli.remote-access", "sli.sigma" })
             Assert.Equal(visible, items.ContainsKey(id));
         Assert.All(items.Values, item => Assert.Equal("disabled", item["status"]!["state"]!.GetValue<string>()));
     }

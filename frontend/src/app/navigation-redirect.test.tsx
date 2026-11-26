@@ -63,14 +63,15 @@ describe("registry compatibility redirects", () => {
     expect(navigationRedirect(path, {})).toBeNull();
   });
 
-  it.each(["/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/admin/plugins/sli.file-audit"])
-  ("opens the File Servers workspace without preview permissions: %s", (path) => {
+  it.each(["/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/admin/plugins/sli.file-audit",
+    "/report/workstations.overview", "/admin/plugins/sli.workstations"])
+  ("opens product module routes without preview: %s", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();
     expect(previewModulePath(path)).toBe(false);
   });
 
   it.each(["/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
-    "/admin/plugins/sli.workstations", "/report/workstations.overview", "/extensions/sli.sigma/rules",
+    "/extensions/sli.sigma/rules",
     "/report/vpn.connections", "/reports/vpn.audit",
   ])("retains %s so the shell can show the server-controlled availability state", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();

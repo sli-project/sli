@@ -165,7 +165,15 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
         row["member_text"] = row["member"]?["state"]?.ToString() == "observed" ? (row["member"]?["name"] ?? row["member"]?["sid"])?.DeepClone() : null;
         string code = "reports.v2.security.events.chains.actions." + row["event_id"];
         if (row["event_id"]?.ToString() == "4776") code += "." + row["outcome_code"];
-        var message = ReportPresentation.Message(code, false);
+        if (row.Flag("sli_service_install")) code = "reports.v2.security.events.chains.actions.sli_service";
+        JsonObject? parameters = null;
+        if (row.Int("sli_audit_subcategories") is > 0 and var subcategories)
+        {
+            code = "reports.v2.security.events.chains.actions.sli_audit." + (subcategories % 100 is >= 11 and <= 14
+                ? "many" : (subcategories % 10) switch { 1 => subcategories == 1 ? "one" : "ending_one", >= 2 and <= 4 => "few", _ => "many" });
+            parameters = new JsonObject { ["count"] = subcategories };
+        }
+        var message = ReportPresentation.Message(code, false, parameters);
         row["change_text"] = message?["text"]?.DeepClone();
         if (message is not null)
         {

@@ -1,10 +1,7 @@
-import { useTimeZone } from "../../shared/time-zone";
-import { useDateFormatters } from "../../design-system/useDateFormatters";
-import { memo } from "react";
 import type { ReportColumnDto, ReportOption } from "../../api/report-v2-types";
-import { DataTable, SeverityBadge, formatCell, type TableColumn } from "../../design-system";
+import { SeverityBadge, formatCell, type TableColumn } from "../../design-system";
 import { isSeverity } from "../../design-system/SeverityBadge";
-import { t, type MessageKey } from "../../i18n";
+import { plural, t, type MessageKey } from "../../i18n";
 import { formatNumber } from "../../shared/format";
 import { tableColumns } from "../../app/report-v2/DetailSection";
 
@@ -22,7 +19,6 @@ const deviations: Record<string, MessageKey> = {
   account_expired: "reports.ad.users.deviation.account_expired",
   password_expired: "reports.ad.users.deviation.password_expired",
   sensitive_uac_flag: "reports.ad.users.deviation.sensitive_setting",
-  watch_group_membership: "reports.ad.users.deviation.monitored_group",
   password_not_required: "reports.ad.users.deviation.password_not_required",
   kerberos_no_preauth: "reports.ad.users.deviation.kerberos_no_preauth",
   spn_privileged: "reports.ad.users.deviation.spn_privileged",
@@ -32,6 +28,15 @@ const deviations: Record<string, MessageKey> = {
 };
 
 const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+
+export function userAccountCount(total: number) {
+  const params = { count: formatNumber(total) };
+  return plural(total, {
+    one: t("reports.ad.users.count.one", params),
+    few: t("reports.ad.users.count.few", params),
+    many: t("reports.ad.users.count.many", params),
+  });
+}
 
 export function userDeviations(row: Row) {
   const reviewReasons = objects(row.review_reasons);
@@ -111,18 +116,3 @@ export function UserCheckFilters({ options, selected, total, onChange }: {
       onClick={() => onChange(value === selected ? "" : value)}>{label} {formatNumber(count!)}</button>)}
   </div>;
 }
-
-export const UserChanges = memo(function UserChanges({ columns, rows, title, onSelect, paging }: { columns: ReportColumnDto[]; rows: Row[]; title: string; onSelect: (row: Row) => void; paging?: Pick<React.ComponentProps<typeof DataTable<Row>>, "pagination" | "pageSize" | "density" | "total"> }) {
-  const { timeZone } = useTimeZone();
-  const { formatCell } = useDateFormatters();
-  const mapped = tableColumns(columns.filter((column) => !["field", "group", "note", "quality", "source_id", "activity_type", "delay_minutes", "logon_type", "evidence"].includes(column.key)
-    && (column.key !== "actor" || rows.some((row) => text(row.actor)))), timeZone).map((column) => ({ ...column,
-    render: column.key === "name" ? (row: Row) => <button type="button" className="sli-ds-link-button" onClick={(event) => { event.stopPropagation(); onSelect(row); }}>{text(row.sam) ?? text(row.display_name) ?? missing()}</button>
-      : column.render ?? ((row: Row) => {
-        const value = column.value?.(row);
-        return value === null || value === undefined || value === "" ? missing() : formatCell(value, column.kind);
-      }),
-  }));
-  return rows.length ? <DataTable caption={title} columns={mapped} rows={rows} rowKey={(row) => JSON.stringify(row)} onRowClick={onSelect} wrapCells="all" {...paging}/>
-    : <p>{missing()}</p>;
-});

@@ -19,10 +19,11 @@ function destination(id, url) {
   return { ...entry, url, path: entry.path === '/admin/language-time' ? '/settings' : entry.path };
 }
 const previewEntries = registry.preview_entries.map(id => destination(id, previewUrl));
-for (const id of ['workstations-overview']) {
-  if (!previewEntries.some(entry => entry.id === id)) throw new Error(`Missing preview destination for fixture: ${id}`);
+const betaEntries = registry.beta_entries.map(id => destination(id, betaUrl));
+for (const id of ['file-audit', 'workstations-overview']) {
+  if (!betaEntries.some(entry => entry.id === id)) throw new Error(`Missing default destination for fixture: ${id}`);
 }
-const allEntries = [...registry.beta_entries.map(id => destination(id, betaUrl)), ...previewEntries];
+const allEntries = [...betaEntries, ...previewEntries];
 const focus = process.env.SLI_MENU_WALK_ONLY;
 const entries = focus ? allEntries.filter(entry => entry.id === focus) : allEntries;
 if (!entries.length) throw new Error('Unknown menu destination');

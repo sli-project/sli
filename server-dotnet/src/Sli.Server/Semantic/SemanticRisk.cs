@@ -69,6 +69,22 @@ internal sealed partial class SemanticProduction
                     if (!dcEvidence.Flag("host_eligible"))
                         throw new InvalidOperationException("dc_catalog_host_not_eligible");
                 }
+                if (policy.Source == "canonical_action" && policy.Selector == "audit.policy.changed"
+                    && (await session.QueryAsync("""
+                        select to_regprocedure('public.sli_audit_apply421(bigint,timestamptz)') is not null as available
+                        """, ct)).Single().Flag("available")
+                    && (await session.QueryAsync("""
+                        select count(*)>0 and bool_and(event.semantic_type='audit.policy.changed'
+                            and public.sli_audit_apply421(event.source_event_id,event.occurred_at_utc) is not null) as maintenance
+                        from public.canonical_action_evidence link join public.normalized_events event using(normalized_event_id)
+                        where link.canonical_action_id=$1
+                        """, ct, Guid.Parse(sourceId))).Single().Flag("maintenance"))
+                {
+                    await Complete(session, "semantic_risk_evaluation_jobs", "evaluation_status", job, ct);
+                    await tx.CommitAsync(ct);
+                    completed++;
+                    continue;
+                }
                 var proposal = await Proposal(session, policy, sourceId, evaluationMode, ct, dcEvidence);
                 var snapshot = await Completeness(session, proposal, ct);
                 string conclusion = ResolveConclusionState(proposal.Conclusion, snapshot);

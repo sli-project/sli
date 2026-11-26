@@ -26,7 +26,8 @@ const betaPlugins = new Set(betaEntries.flatMap((entry) => entry.plugin_id ? [en
 export function previewModulePath(path: string): boolean {
   const plugin = /^\/(?:admin\/plugins|extensions)\/([^/]+)/.exec(path);
   if (plugin) return declarations.preview_plugins.includes(plugin[1]);
-  return /^\/reports?\/(?:workstations|vpn|sigma)\./.test(path);
+  return /^\/reports?\/(?:workstations|vpn|sigma)\./.test(path)
+    && !betaReportPaths.has(path.replace(/^\/reports\//, "/report/").replace(/\/+$/, ""));
 }
 
 function outsideBeta(path: string): boolean {
