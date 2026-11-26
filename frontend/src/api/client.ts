@@ -72,6 +72,8 @@ export type AgentFileAuditReadError = {
 };
 export type AgentFileAuditStatus = {
   command: Omit<AgentFileAuditCommand, "agent_id">; state: string; reported_at?: string | null;
+  folders?: Record<string, string>;
+  last_event?: { collection_scope_id: string; observed_at: string; received_at: string } | null;
   scopes: Record<string, { state: string; reason_code: string; read_error?: AgentFileAuditReadError }>; may_own_audit: boolean;
 };
 

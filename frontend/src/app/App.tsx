@@ -163,7 +163,8 @@ function ShellContent() {
             <Icon name="chevron-left"/><span>{t("shell.backToWork")}</span>
           </Link> : null}
           {sidebarSections.map((section) => <section className="sli-ds-shell__section" key={section.id} aria-label={section.title}>
-            <div className="sli-ds-shell__section-title">{section.title}</div>
+            {section.groups.length !== 1 || section.groups[0].items.length !== 1 || section.groups[0].items[0].label !== section.title
+              ? <div className="sli-ds-shell__section-title">{section.title}</div> : null}
             {section.groups.map((group) => <div key={group.id} role="group" aria-label={group.title || section.title}>
               {inAdminZone && group.title ? <div className="sli-ds-shell__group-title">{group.title}</div> : null}
               {group.items.map((item) => {

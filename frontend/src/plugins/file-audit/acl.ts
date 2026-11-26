@@ -11,7 +11,7 @@ export type FileAuditObject = { path: string; object_type: string; owner_sid: st
 export type FileAuditShare = { name: string; path: string; complete: boolean; dacl: FileAuditAcl };
 export type FileAuditSnapshot = { id: string; observed_at: string; policy_revision: string; scan_id: string;
   page_number: number; has_more: boolean; completeness: string; unread_objects: number };
-export type FileAuditObservation = { snapshot: FileAuditSnapshot; share: FileAuditShare; object: FileAuditObject | null };
+export type FileAuditObservation = { resource?: { source_name?: string }; snapshot: FileAuditSnapshot; share: FileAuditShare; object: FileAuditObject | null };
 export type FileAuditComparison = { state: "available" | "unavailable" | "not_requested"; reason: string | null;
   identity_basis: "file_id" | "path" | null; before?: FileAuditObservation; after?: FileAuditObservation };
 export type FileAuditDetailResult = ReportResultDto & { detail?: FileAuditObservation & { comparison: FileAuditComparison } };

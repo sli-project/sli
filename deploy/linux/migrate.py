@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -191,10 +193,29 @@ def pgpass_escape(value: str) -> str:
     return backup.pgpass_escape(value)
 
 
+def _sql_failure(paths: list[Path], passfile: Path, stderr: str) -> str:
+    from deploy.linux.native_pg_migrate import psql_error_tail
+
+    lines = stderr.splitlines()
+    for line in lines:
+        match = re.fullmatch(r"psql:(.+):(\d+): (ERROR|FATAL|PANIC|error): (.+)", line)
+        if match and (source := Path(match[1])) in paths:
+            message = match[4].replace(str(passfile), "[redacted]")
+            diagnostic = psql_error_tail(f"{match[3].upper()}: {message}")
+            return f"{source.name}:{match[2]}: {diagnostic}"
+
+    files = ", ".join(path.name for path in paths)
+    for line in lines:
+        if line.startswith("psql: error: "):
+            message = line.removeprefix("psql: error: ").replace(str(passfile), "[redacted]")
+            return f"{files}: {psql_error_tail(f'ERROR: {message}')}"
+    return f"PostgreSQL failed while running {files}"
+
+
 def run_sql(paths: list[Path], *, passfile: Path, atomic: bool = False) -> None:
     from deploy.linux import operation_wait
 
-    command = ["psql", "-X", "--no-password", "--quiet", "--set", "ON_ERROR_STOP=1",
+    command = ["psql", "-X", "--no-password", "--quiet", "--set", "ON_ERROR_STOP=1", "--set", "VERBOSITY=terse",
                *backup.postgres_target().arguments(), "--dbname", "sli"]
     if atomic:
         command.append("--single-transaction")
@@ -211,13 +232,18 @@ def run_sql(paths: list[Path], *, passfile: Path, atomic: bool = False) -> None:
     application = os.environ.get('PGAPPNAME', 'sli_migration_' + uuid.uuid4().hex)
     environment['PGAPPNAME'] = application
     environment['PGOPTIONS'] = f'-c statement_timeout={int(watch.limit * 1000)}'
-    with tempfile.TemporaryFile() as output:
+    with tempfile.TemporaryFile() as stderr:
         # psql has no parallel clients; retain the coordinator's process group
         # so cancelling its Python process also stops this migration client.
-        result = subprocess.Popen(command, env=environment, stdout=output, stderr=output)
+        result = subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL, stderr=stderr)
         operation_wait.wait_process(result, watch, lambda: operation_wait.postgres_probe(passfile, application))
-    if result.returncode:
-        raise RuntimeError("linux_sql_step_failed")
+        if result.returncode:
+            # Keep only the primary error. SQL output, DETAIL and CONTEXT can contain private data.
+            end = stderr.seek(0, os.SEEK_END)
+            stderr.seek(max(0, end - backup.PG_DIAGNOSTIC_BYTES))
+            error = stderr.read().decode("utf-8", errors="replace")
+            print(_sql_failure(paths, passfile, error), file=sys.stderr, flush=True)
+            raise RuntimeError("linux_sql_step_failed")
     watch.success()
 
 

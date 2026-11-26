@@ -95,18 +95,6 @@
     "order": 3,
     "severity": "medium"
   },
-  "watch_group_membership": {
-    "key": "watch_group_membership",
-    "label": "Членство в контрольной группе",
-    "summary": "Example watch",
-    "observed": "Эффективные группы: Example watch",
-    "condition": "effectiveGroups ∩ metadata.watch_groups ≠ ∅",
-    "qualification": "Пользователь входит в явно настроенную контрольную выборку групп.",
-    "limitation": "Название группы и сам факт совпадения не являются автоматической оценкой привилегий.",
-    "next": "Открыть путь членства и проверить актуальность доступа по утверждённому владельцу группы.",
-    "order": 4,
-    "severity": "medium"
-  },
   "password_age": {
     "key": "password_age",
     "label": "Возраст пароля превышает политику",
