@@ -1,6 +1,5 @@
 .sli-ds-home .sli-ds-home-main {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "problems" "controllers" "changes" "activity";
+  grid-template-areas: "problems" "controllers" "changes";
   gap: var(--sli-space-3);
   align-items: start;
 }
@@ -9,48 +8,33 @@
 .sli-ds-home [data-home-block="problems"] { grid-area: problems; }
 .sli-ds-home [data-home-block="controllers"] { grid-area: controllers; }
 .sli-ds-home [data-home-block="changes"] { grid-area: changes; }
-.sli-ds-home [data-home-block="activity"] { grid-area: activity; min-width: 0; display: grid; }
 .sli-ds-home [data-home-block] { min-width: 0; }
-.sli-ds-home [data-home-block] > .sli-ds-panel { height: 100%; }
-.sli-ds-home-main .sli-ds-panel__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sli-space-2) var(--sli-space-3); }
+.sli-ds-home-main .sli-ds-panel__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sli-space-2) var(--sli-space-3); }
 .sli-ds-home-main [data-home-panel-action] { margin-inline-start: auto; }
 .sli-ds-home-main .sli-ds-panel__body { padding: 0; gap: 0; }
 .sli-ds-home-main .sli-ds-table__scroll { border: 0; border-radius: 0; }
 .sli-ds-home-main .sli-ds-table td[data-wrap] { overflow-wrap: anywhere; }
 .sli-ds-home-main .sli-ds-table [data-clickable] { cursor: pointer; }
 .sli-ds-home-main .sli-ds-table [data-clickable]:hover { background: var(--sli-surface-2); }
-.sli-ds-home-main .sli-ds-chart { display: grid; grid-template-rows: auto minmax(15rem, 1fr); }
-.sli-ds-home-main .sli-ds-chart figcaption { font-size: var(--sli-text-lg); font-weight: var(--sli-weight-bold); }
-.sli-ds-home-main .sli-ds-chart__canvas { min-height: 15rem; }
-.sli-ds-home-empty, .sli-ds-home-links { padding: var(--sli-space-2) var(--sli-space-4); }
-.sli-ds-home-links { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sli-space-3); justify-content: space-between; }
-.sli-ds-home-links[data-align="end"] { justify-content: flex-end; }
-.sli-ds-home-links[data-align="start"] { justify-content: flex-start; gap: var(--sli-space-2); }
+.sli-ds-home [data-home-block="problems"] .sli-ds-table__scroll[data-sticky] { max-height: 45dvh; }
+.sli-ds-home [data-home-block="problems"] .sli-ds-table__footer { padding-inline: var(--sli-space-3); }
+.sli-ds-home-links {
+  padding: var(--sli-space-2) var(--sli-space-4);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sli-space-3);
+}
 .sli-ds-home > .sli-ds-header .sli-ds-header__actions { flex: 1; align-items: center; }
 .sli-ds-home > .sli-ds-header .sli-ds-field { width: auto; }
 .sli-ds-home > .sli-ds-header .sli-ds-field select { min-width: 9rem; }
 .sli-ds-home [data-home-updated] { margin-inline-start: auto; }
 .sli-ds-home-observations { padding: var(--sli-space-2) var(--sli-space-3); background: var(--sli-surface-2); }
-.sli-ds-home-observations .sli-ds-home-links { justify-content: flex-start; }
-.sli-ds-home-inline-source, .sli-ds-home-chevron { color: var(--sli-text-muted); }
-.sli-ds-home-chevron { margin-inline-end: var(--sli-space-2); }
-.sli-ds-home [data-home-block="problems"] > .sli-ds-panel > .sli-ds-panel__body > .sli-ds-table > .sli-ds-table__scroll > table > :is(thead, tbody) > tr > :is(th, td):nth-child(4) { display: none; }
+.sli-ds-home-inline-source { color: var(--sli-text-muted); }
 
 @media (min-width: 1400px) {
-  .sli-ds-home .sli-ds-home-main {
+  .sli-ds-home .sli-ds-home-main:has([data-home-block="controllers"]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "problems problems" "controllers changes" "activity activity";
+    grid-template-areas: "problems problems" "controllers changes";
   }
-}
-
-@media (min-width: 2200px) {
-  .sli-ds-home .sli-ds-home-main {
-    min-height: calc(100dvh - 8rem);
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
-    grid-template-areas: "problems controllers changes" "activity activity activity";
-    align-items: stretch;
-  }
-  .sli-ds-home [data-home-block="problems"] > .sli-ds-panel > .sli-ds-panel__body > .sli-ds-table > .sli-ds-table__scroll > table > :is(thead, tbody) > tr > :is(th, td):nth-child(4) { display: table-cell; }
-  .sli-ds-home-inline-source { display: none; }
 }
